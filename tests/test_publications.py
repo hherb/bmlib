@@ -14,16 +14,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for bmlib.publications — models, schema, and storage."""
+"""Tests for bmlib.publications — models, schema, storage, and fetchers."""
 
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import date, datetime
+from unittest.mock import MagicMock
 
 import pytest
 
 from bmlib.db import connect_sqlite, execute, table_exists
+from bmlib.publications.fetchers.biorxiv import _normalize, fetch_biorxiv
 from bmlib.publications.models import (
     DownloadDay,
     FetchResult,
@@ -520,3 +522,195 @@ class TestStorage:
             (found.id,),
         )
         assert cur.fetchone()[0] == 2
+
+
+# ---------------------------------------------------------------------------
+# Task 4: bioRxiv/medRxiv fetcher tests
+# ---------------------------------------------------------------------------
+
+
+def _make_api_response(collection, total=None):
+    """Build a mock httpx response for the bioRxiv API."""
+    if total is None:
+        total = len(collection)
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "messages": [{"total": str(total), "count": str(len(collection))}],
+        "collection": collection,
+    }
+    mock_resp.raise_for_status = MagicMock()
+    return mock_resp
+
+
+def _sample_record(doi="10.1101/2024.01.01.000001", title="Sample Preprint"):
+    """Return a sample raw bioRxiv API record."""
+    return {
+        "doi": doi,
+        "title": title,
+        "authors": "Smith, J.; Doe, A.; Lee, B.",
+        "date": "2024-06-15",
+        "category": "neuroscience",
+        "abstract": "This is a sample abstract.",
+        "jatsxml": f"https://www.biorxiv.org/content/{doi}v1.source.xml",
+        "published": "NA",
+        "server": "biorxiv",
+    }
+
+
+class TestBiorxivNormalize:
+    def test_normalize_splits_authors(self):
+        raw = _sample_record()
+        result = _normalize(raw, "biorxiv")
+        assert result["authors"] == ["Smith, J.", "Doe, A.", "Lee, B."]
+
+    def test_normalize_builds_fulltext_sources(self):
+        raw = _sample_record(doi="10.1101/2024.01.01.000001")
+        result = _normalize(raw, "biorxiv")
+        sources = result["fulltext_sources"]
+        assert len(sources) == 2
+        pdf = sources[0]
+        assert pdf["format"] == "pdf"
+        assert pdf["url"] == "https://www.biorxiv.org/content/10.1101/2024.01.01.000001v1.full.pdf"
+        assert pdf["source"] == "biorxiv"
+        xml = sources[1]
+        assert xml["format"] == "xml"
+        assert "source.xml" in xml["url"]
+
+    def test_normalize_sets_source(self):
+        raw = _sample_record()
+        result = _normalize(raw, "medrxiv")
+        assert result["source"] == "medrxiv"
+
+    def test_normalize_open_access(self):
+        raw = _sample_record()
+        result = _normalize(raw, "biorxiv")
+        assert result["is_open_access"] is True
+
+
+class TestFetchBiorxiv:
+    def test_fetches_records_correctly(self):
+        """Mock 2 records and verify normalised output."""
+        records = [
+            _sample_record(doi="10.1101/2024.01.01.000001", title="Paper A"),
+            _sample_record(doi="10.1101/2024.01.01.000002", title="Paper B"),
+        ]
+        mock_resp = _make_api_response(records, total=2)
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        collected = []
+        result = fetch_biorxiv(
+            client,
+            date(2024, 6, 15),
+            on_record=collected.append,
+        )
+
+        assert result.status == "completed"
+        assert result.record_count == 2
+        assert result.source == "biorxiv"
+        assert result.date == "2024-06-15"
+        assert result.error is None
+
+        assert len(collected) == 2
+        assert collected[0]["title"] == "Paper A"
+        assert collected[1]["title"] == "Paper B"
+
+        # Verify normalisation
+        rec = collected[0]
+        assert isinstance(rec["authors"], list)
+        assert len(rec["authors"]) == 3
+        assert len(rec["fulltext_sources"]) == 2
+        assert rec["source"] == "biorxiv"
+        assert rec["is_open_access"] is True
+
+    def test_medrxiv_server_parameter(self):
+        """URL should contain 'medrxiv' and source field should be 'medrxiv'."""
+        records = [_sample_record()]
+        mock_resp = _make_api_response(records)
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        collected = []
+        result = fetch_biorxiv(
+            client,
+            date(2024, 6, 15),
+            on_record=collected.append,
+            server="medrxiv",
+        )
+
+        assert result.source == "medrxiv"
+        assert result.status == "completed"
+
+        # Verify the URL used contains "medrxiv"
+        call_url = client.get.call_args[0][0]
+        assert "medrxiv" in call_url
+
+        # Verify source in normalised record
+        assert collected[0]["source"] == "medrxiv"
+
+        # Verify PDF URL uses medrxiv domain
+        pdf_source = collected[0]["fulltext_sources"][0]
+        assert "medrxiv.org" in pdf_source["url"]
+
+    def test_http_error_returns_failed(self):
+        """HTTP error should return FetchResult with status='failed'."""
+        client = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.side_effect = Exception("503 Service Unavailable")
+        client.get.return_value = mock_resp
+
+        collected = []
+        result = fetch_biorxiv(
+            client,
+            date(2024, 6, 15),
+            on_record=collected.append,
+        )
+
+        assert result.status == "failed"
+        assert result.record_count == 0
+        assert result.error is not None
+        assert "503" in result.error
+        assert len(collected) == 0
+
+    def test_empty_collection_returns_complete_zero(self):
+        """Empty collection should return completed with 0 records."""
+        mock_resp = _make_api_response([], total=0)
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        collected = []
+        result = fetch_biorxiv(
+            client,
+            date(2024, 6, 15),
+            on_record=collected.append,
+        )
+
+        assert result.status == "completed"
+        assert result.record_count == 0
+        assert len(collected) == 0
+
+    def test_progress_callback_fires(self):
+        """Progress callback should be called after each page."""
+        records = [_sample_record(doi=f"10.1101/2024.01.01.{i:06d}") for i in range(3)]
+        mock_resp = _make_api_response(records, total=3)
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        progress_reports = []
+        result = fetch_biorxiv(
+            client,
+            date(2024, 6, 15),
+            on_record=lambda r: None,
+            on_progress=progress_reports.append,
+        )
+
+        assert result.status == "completed"
+        assert len(progress_reports) >= 1
+
+        progress = progress_reports[0]
+        assert isinstance(progress, SyncProgress)
+        assert progress.source == "biorxiv"
+        assert progress.date == "2024-06-15"
+        assert progress.records_processed == 3
+        assert progress.status == "in_progress"
