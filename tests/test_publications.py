@@ -18,8 +18,12 @@
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime
 
+import pytest
+
+from bmlib.db import connect_sqlite, execute, table_exists
 from bmlib.publications.models import (
     DownloadDay,
     FetchResult,
@@ -28,6 +32,7 @@ from bmlib.publications.models import (
     SyncProgress,
     SyncReport,
 )
+from bmlib.publications.schema import ensure_schema
 
 # ---------------------------------------------------------------------------
 # Task 1: Data model tests
@@ -207,3 +212,134 @@ class TestSyncReport:
             errors=["Failed to parse record X", "Duplicate DOI Y"],
         )
         assert len(sr.errors) == 2
+
+
+# ---------------------------------------------------------------------------
+# Task 2: Schema tests
+# ---------------------------------------------------------------------------
+
+
+def _schema_conn():
+    """Create an in-memory SQLite connection with schema applied."""
+    conn = connect_sqlite(":memory:")
+    ensure_schema(conn)
+    return conn
+
+
+class TestSchema:
+    def test_ensure_schema_creates_tables(self):
+        conn = _schema_conn()
+        assert table_exists(conn, "publications")
+        assert table_exists(conn, "fulltext_sources")
+        assert table_exists(conn, "download_days")
+
+    def test_ensure_schema_idempotent(self):
+        conn = connect_sqlite(":memory:")
+        ensure_schema(conn)
+        ensure_schema(conn)  # should not raise
+        assert table_exists(conn, "publications")
+
+    def test_doi_unique_index_enforced(self):
+        conn = _schema_conn()
+        now = datetime.now().isoformat()
+        sql = (
+            "INSERT INTO publications"
+            " (doi, title, sources, first_seen_source, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)"
+        )
+        execute(conn, sql, ("10.1234/test", "Paper A", "[]", "pubmed", now, now))
+        conn.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            execute(conn, sql, ("10.1234/test", "Paper B", "[]", "pubmed", now, now))
+
+    def test_null_doi_allows_multiples(self):
+        conn = _schema_conn()
+        now = datetime.now().isoformat()
+        for title in ("No DOI A", "No DOI B", "No DOI C"):
+            execute(
+                conn,
+                "INSERT INTO publications"
+                " (doi, title, sources, first_seen_source, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (None, title, "[]", "pubmed", now, now),
+            )
+        conn.commit()
+        # All three should be present
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM publications WHERE doi IS NULL")
+        assert cur.fetchone()[0] == 3
+
+    def test_download_days_unique_constraint(self):
+        conn = _schema_conn()
+        now = datetime.now().isoformat()
+        execute(
+            conn,
+            "INSERT INTO download_days (source, date, status, record_count, downloaded_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            ("pubmed", "2024-06-15", "completed", 100, now),
+        )
+        conn.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            execute(
+                conn,
+                "INSERT INTO download_days (source, date, status, record_count, downloaded_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                ("pubmed", "2024-06-15", "completed", 200, now),
+            )
+
+    def test_fulltext_sources_unique_by_pub_url(self):
+        conn = _schema_conn()
+        now = datetime.now().isoformat()
+        # Create a publication first
+        cur = execute(
+            conn,
+            "INSERT INTO publications (title, sources, first_seen_source, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            ("Test Paper", "[]", "pubmed", now, now),
+        )
+        pub_id = cur.lastrowid
+        conn.commit()
+
+        execute(
+            conn,
+            "INSERT INTO fulltext_sources (publication_id, source, url, format, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (pub_id, "pmc", "https://pmc.example.com/1", "xml", now),
+        )
+        conn.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            execute(
+                conn,
+                "INSERT INTO fulltext_sources (publication_id, source, url, format, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (pub_id, "pmc", "https://pmc.example.com/1", "xml", now),
+            )
+
+    def test_different_urls_same_pub_allowed(self):
+        conn = _schema_conn()
+        now = datetime.now().isoformat()
+        cur = execute(
+            conn,
+            "INSERT INTO publications (title, sources, first_seen_source, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            ("Test Paper", "[]", "pubmed", now, now),
+        )
+        pub_id = cur.lastrowid
+        conn.commit()
+
+        execute(
+            conn,
+            "INSERT INTO fulltext_sources (publication_id, source, url, format, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (pub_id, "pmc", "https://pmc.example.com/1", "xml", now),
+        )
+        execute(
+            conn,
+            "INSERT INTO fulltext_sources (publication_id, source, url, format, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (pub_id, "publisher", "https://publisher.example.com/1.pdf", "pdf", now),
+        )
+        conn.commit()
+        cur2 = conn.cursor()
+        cur2.execute("SELECT COUNT(*) FROM fulltext_sources WHERE publication_id=?", (pub_id,))
+        assert cur2.fetchone()[0] == 2
