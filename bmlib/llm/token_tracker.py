@@ -1,3 +1,19 @@
+# bmlib — shared library for biomedical literature tools
+# Copyright (C) 2024-2026 Dr Horst Herb
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Thread-safe token usage and cost tracking.
 
 Maintains a running total of token usage and estimated costs across all
@@ -22,8 +38,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Optional
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +50,7 @@ class TokenUsageRecord:
     model: str
     input_tokens: int
     output_tokens: int
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
     cost_usd: float = 0.0
 
 
@@ -68,6 +83,7 @@ class TokenTracker:
         output_tokens: int,
         cost: float = 0.0,
     ) -> None:
+        """Record token usage for a single LLM call."""
         record = TokenUsageRecord(
             model=model,
             input_tokens=input_tokens,
@@ -86,6 +102,7 @@ class TokenTracker:
         )
 
     def get_summary(self) -> TokenUsageSummary:
+        """Return an aggregate summary of all recorded usage."""
         with self._lock:
             by_model: dict[str, dict] = {}
             for record in self._records:
@@ -111,6 +128,7 @@ class TokenTracker:
             )
 
     def reset(self) -> None:
+        """Clear all recorded usage."""
         with self._lock:
             self._records.clear()
             self._total_input = 0
@@ -118,6 +136,7 @@ class TokenTracker:
             self._total_cost = 0.0
 
     def get_recent_records(self, count: int = 10) -> list[TokenUsageRecord]:
+        """Return the *count* most recent usage records."""
         with self._lock:
             return list(self._records[-count:])
 
@@ -125,11 +144,12 @@ class TokenTracker:
 # ---------------------------------------------------------------------------
 # Global singleton
 # ---------------------------------------------------------------------------
-_global_tracker: Optional[TokenTracker] = None
+_global_tracker: TokenTracker | None = None
 _tracker_lock = threading.Lock()
 
 
 def get_token_tracker() -> TokenTracker:
+    """Return the global :class:`TokenTracker` singleton (created on first call)."""
     global _global_tracker
     with _tracker_lock:
         if _global_tracker is None:
@@ -138,6 +158,7 @@ def get_token_tracker() -> TokenTracker:
 
 
 def reset_token_tracker() -> None:
+    """Replace the global :class:`TokenTracker` with a fresh instance."""
     global _global_tracker
     with _tracker_lock:
         _global_tracker = TokenTracker()

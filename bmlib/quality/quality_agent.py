@@ -1,3 +1,19 @@
+# bmlib — shared library for biomedical literature tools
+# Copyright (C) 2024-2026 Dr Horst Herb
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Tier 3: Deep methodological quality assessment.
 
 Uses a more capable model (e.g. Sonnet) for comprehensive assessment
@@ -9,21 +25,22 @@ assessment is explicitly requested.
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import Optional
 
 from bmlib.agents.base import BaseAgent
 from bmlib.quality.data_models import (
+    DESIGN_TO_TIER,
+    STUDY_DESIGN_MAPPING,
     BiasRisk,
     QualityAssessment,
     QualityTier,
     StudyDesign,
-    STUDY_DESIGN_MAPPING,
-    DESIGN_TO_TIER,
 )
 
 logger = logging.getLogger(__name__)
+
+# Maximum abstract length sent for deep assessment (characters)
+MAX_ABSTRACT_CHARS = 4000
 
 ASSESSMENT_SYSTEM_PROMPT = """\
 You are a research quality assessment expert.
@@ -45,7 +62,7 @@ Abstract: {abstract}
 
 Return JSON:
 {{
-    "study_design": "systematic_review|meta_analysis|rct|cohort_prospective|cohort_retrospective|case_control|cross_sectional|case_series|case_report|editorial|letter|guideline|other",
+    "study_design": "<see list below>",
     "quality_score": <1-10>,
     "evidence_level": "1a|1b|2a|2b|3a|3b|4|5|null",
     "design_characteristics": {{
@@ -68,6 +85,11 @@ Return JSON:
     "confidence": <0.0 to 1.0>
 }}
 
+Valid study_design values: systematic_review, meta_analysis, rct,
+cohort_prospective, cohort_retrospective, case_control,
+cross_sectional, case_series, case_report, editorial,
+letter, guideline, other.
+
 Focus on THIS study's methodology, not studies it references."""
 
 
@@ -86,7 +108,7 @@ class QualityAgent(BaseAgent):
         """
         prompt = ASSESSMENT_USER_TEMPLATE.format(
             title=title,
-            abstract=abstract[:4000],
+            abstract=abstract[:MAX_ABSTRACT_CHARS],
         )
 
         try:
@@ -105,6 +127,7 @@ class QualityAgent(BaseAgent):
             return QualityAssessment.unclassified()
 
     def _parse(self, text: str) -> QualityAssessment:
+        """Parse the LLM JSON response into a :class:`QualityAssessment`."""
         data = self.parse_json(text)
 
         design_str = data.get("study_design", "unknown").lower().strip()

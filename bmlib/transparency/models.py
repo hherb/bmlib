@@ -1,13 +1,29 @@
+# bmlib — shared library for biomedical literature tools
+# Copyright (C) 2024-2026 Dr Horst Herb
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Data models for transparency analysis."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
-
+# Score at or below which risk is MEDIUM (unless other factors override)
 MEDIUM_RISK_SCORE_THRESHOLD = 70
 
 
@@ -23,7 +39,7 @@ class TransparencyRisk(Enum):
 class TransparencySettings:
     """User-configurable transparency thresholds."""
     enabled: bool = True
-    score_threshold: int = 40          # Below this → HIGH risk
+    score_threshold: int = 40          # Below this -> HIGH risk
     industry_funding_triggers_downgrade: bool = True
     missing_coi_triggers_downgrade: bool = True
     tier_downgrade_amount: int = 1
@@ -36,7 +52,7 @@ class TransparencySettings:
 class TransparencyResult:
     """Result of a transparency analysis for a single document."""
     document_id: str
-    transparency_score: int                    # 0–100
+    transparency_score: int                    # 0-100
     risk_level: TransparencyRisk
 
     industry_funding_detected: bool = False
@@ -50,11 +66,12 @@ class TransparencyResult:
     risk_indicators: list[str] = field(default_factory=list)
     tier_downgrade_applied: int = 0
 
-    analyzed_at: datetime = field(default_factory=datetime.now)
+    analyzed_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
     analyzer_version: str = "1.0"
     full_text_analyzed: bool = False
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise to a JSON-safe dictionary."""
         return {
             "document_id": self.document_id,
             "transparency_score": self.transparency_score,
@@ -74,6 +91,13 @@ class TransparencyResult:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TransparencyResult:
+        """Deserialise from a dictionary produced by :meth:`to_dict`."""
+        analyzed_at_raw = data.get("analyzed_at")
+        if analyzed_at_raw:
+            analyzed_at = datetime.fromisoformat(analyzed_at_raw)
+        else:
+            analyzed_at = datetime.now(tz=UTC)
+
         return cls(
             document_id=data["document_id"],
             transparency_score=data["transparency_score"],
@@ -87,7 +111,7 @@ class TransparencyResult:
             outcome_switching_detected=data.get("outcome_switching_detected", False),
             risk_indicators=data.get("risk_indicators", []),
             tier_downgrade_applied=data.get("tier_downgrade_applied", 0),
-            analyzed_at=datetime.fromisoformat(data["analyzed_at"]),
+            analyzed_at=analyzed_at,
             analyzer_version=data.get("analyzer_version", "1.0"),
         )
 
@@ -103,7 +127,7 @@ def calculate_risk_level(
 
     Risk levels:
     - HIGH: score < threshold OR (industry + restricted data) OR missing COI
-    - MEDIUM: score ≤ 70 OR industry funding present
+    - MEDIUM: score <= 70 OR industry funding present
     - LOW: score > 70 and transparent
     """
     if score < settings.score_threshold:

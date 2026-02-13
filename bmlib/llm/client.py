@@ -1,3 +1,19 @@
+# bmlib — shared library for biomedical literature tools
+# Copyright (C) 2024-2026 Dr Horst Herb
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Unified LLM client with provider routing.
 
 Routes requests to the appropriate provider based on model strings of
@@ -19,16 +35,15 @@ Usage::
 from __future__ import annotations
 
 import logging
-from typing import Optional, Union
 
 from bmlib.llm.data_types import LLMMessage, LLMResponse
-from bmlib.llm.token_tracker import get_token_tracker
 from bmlib.llm.providers import (
     BaseProvider,
     ModelMetadata,
     get_provider,
     list_providers,
 )
+from bmlib.llm.token_tracker import get_token_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +60,8 @@ class LLMClient:
     def __init__(
         self,
         default_provider: str = DEFAULT_PROVIDER,
-        ollama_host: Optional[str] = None,
-        anthropic_api_key: Optional[str] = None,
+        ollama_host: str | None = None,
+        anthropic_api_key: str | None = None,
     ) -> None:
         self.default_provider = default_provider
         self._provider_config: dict[str, dict[str, object]] = {
@@ -56,12 +71,14 @@ class LLMClient:
         self._providers: dict[str, BaseProvider] = {}
 
     def _get_provider(self, name: str) -> BaseProvider:
+        """Return a cached provider instance, creating it on first access."""
         if name not in self._providers:
             config = self._provider_config.get(name, {})
             self._providers[name] = get_provider(name, **config)
         return self._providers[name]
 
-    def _parse_model_string(self, model: Optional[str]) -> tuple[str, str]:
+    def _parse_model_string(self, model: str | None) -> tuple[str, str]:
+        """Split ``"provider:model_name"`` into (provider, model_name)."""
         if model and ":" in model:
             provider, model_name = model.split(":", 1)
             return provider.lower(), model_name
@@ -73,10 +90,10 @@ class LLMClient:
     def chat(
         self,
         messages: list[LLMMessage],
-        model: Optional[str] = None,
+        model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
-        top_p: Optional[float] = None,
+        top_p: float | None = None,
         json_mode: bool = False,
         **kwargs: object,
     ) -> LLMResponse:
@@ -115,8 +132,8 @@ class LLMClient:
         return response
 
     def test_connection(
-        self, provider: Optional[str] = None,
-    ) -> Union[bool, dict[str, tuple[bool, str]]]:
+        self, provider: str | None = None,
+    ) -> bool | dict[str, tuple[bool, str]]:
         """Test connectivity to one or all providers."""
         if provider:
             try:
@@ -136,8 +153,8 @@ class LLMClient:
         return results
 
     def list_models(
-        self, provider: Optional[str] = None,
-    ) -> Union[list[str], list[ModelMetadata]]:
+        self, provider: str | None = None,
+    ) -> list[str] | list[ModelMetadata]:
         """List available models for one or all providers."""
         if provider:
             try:
@@ -156,8 +173,9 @@ class LLMClient:
         return all_models
 
     def get_model_metadata(
-        self, model: str, provider: Optional[str] = None,
-    ) -> Optional[ModelMetadata]:
+        self, model: str, provider: str | None = None,
+    ) -> ModelMetadata | None:
+        """Return metadata for *model*, or ``None`` if unavailable."""
         if provider is None and ":" in model:
             provider, model = model.split(":", 1)
         provider = provider or self.default_provider
@@ -168,6 +186,7 @@ class LLMClient:
             return None
 
     def get_provider_info(self, provider: str) -> dict[str, object]:
+        """Return a dict of provider metadata (name, URLs, capabilities)."""
         p = self._get_provider(provider)
         return {
             "name": p.PROVIDER_NAME,
@@ -188,10 +207,11 @@ class LLMClient:
 # Global singleton
 # ---------------------------------------------------------------------------
 
-_global_client: Optional[LLMClient] = None
+_global_client: LLMClient | None = None
 
 
 def get_llm_client() -> LLMClient:
+    """Return the global :class:`LLMClient` singleton (created on first call)."""
     global _global_client
     if _global_client is None:
         _global_client = LLMClient()
@@ -199,5 +219,6 @@ def get_llm_client() -> LLMClient:
 
 
 def reset_llm_client() -> None:
+    """Discard the global :class:`LLMClient` singleton so it is re-created on next use."""
     global _global_client
     _global_client = None

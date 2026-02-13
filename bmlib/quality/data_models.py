@@ -1,3 +1,19 @@
+# bmlib — shared library for biomedical literature tools
+# Copyright (C) 2024-2026 Dr Horst Herb
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Data models for the quality assessment pipeline.
 
 Defines enums for study design and quality tiers, plus the core
@@ -9,8 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import total_ordering
-from typing import Any, Optional
-
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Study design
@@ -170,22 +185,22 @@ class QualityAssessment:
     study_design: StudyDesign = StudyDesign.UNKNOWN
     quality_tier: QualityTier = QualityTier.UNCLASSIFIED
     quality_score: float = 0.0           # 0–10
-    evidence_level: Optional[str] = None # Oxford CEBM level
-    is_randomized: Optional[bool] = None
-    is_controlled: Optional[bool] = None
-    is_blinded: Optional[str] = None     # none / single / double / triple
-    is_prospective: Optional[bool] = None
-    is_multicenter: Optional[bool] = None
-    sample_size: Optional[int] = None
+    evidence_level: str | None = None # Oxford CEBM level
+    is_randomized: bool | None = None
+    is_controlled: bool | None = None
+    is_blinded: str | None = None     # none / single / double / triple
+    is_prospective: bool | None = None
+    is_multicenter: bool | None = None
+    sample_size: int | None = None
     confidence: float = 0.0              # 0–1
-    bias_risk: Optional[BiasRisk] = None
+    bias_risk: BiasRisk | None = None
     strengths: list[str] = field(default_factory=list)
     limitations: list[str] = field(default_factory=list)
     extraction_details: list[str] = field(default_factory=list)
 
     # Transparency integration
     transparency_result: Any = None
-    original_quality_tier: Optional[QualityTier] = None
+    original_quality_tier: QualityTier | None = None
     transparency_adjusted: bool = False
 
     # --- Factories ---
@@ -214,8 +229,8 @@ class QualityAssessment:
         cls,
         study_design: StudyDesign,
         confidence: float = 0.7,
-        sample_size: Optional[int] = None,
-        is_blinded: Optional[str] = None,
+        sample_size: int | None = None,
+        is_blinded: str | None = None,
     ) -> QualityAssessment:
         return cls(
             assessment_tier=2,
@@ -303,10 +318,10 @@ class QualityAssessment:
 @dataclass
 class QualityFilter:
     """User-configurable quality filter thresholds."""
-    min_tier: Optional[QualityTier] = None
+    min_tier: QualityTier | None = None
     require_randomization: bool = False
     require_blinding: bool = False
-    min_sample_size: Optional[int] = None
+    min_sample_size: int | None = None
     use_metadata_only: bool = False
     use_llm_classification: bool = True
     use_detailed_assessment: bool = False

@@ -1,3 +1,19 @@
+# bmlib — shared library for biomedical literature tools
+# Copyright (C) 2024-2026 Dr Horst Herb
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Ollama local model provider — native API.
 
 Uses the ``ollama`` Python package which talks to the Ollama server's
@@ -12,7 +28,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Optional
+from typing import Any
 
 from bmlib.llm.data_types import LLMMessage, LLMResponse
 from bmlib.llm.providers.base import (
@@ -23,6 +39,27 @@ from bmlib.llm.providers.base import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Rough chars-per-token ratio for fallback estimation
+CHARS_PER_TOKEN_ESTIMATE = 4
+
+# Default context window when model metadata is unavailable (tokens)
+FALLBACK_CONTEXT_WINDOW = 8192
+
+# Pricing for local models (always free)
+_FREE_PRICING = ModelPricing(0.0, 0.0)
+
+
+def _safe_get(obj: Any, key: str, default: Any = None) -> Any:
+    """Extract a field from a dict or Pydantic-model response.
+
+    The ``ollama`` SDK (>=0.4) returns Pydantic models with subscript
+    access but without ``.get()``.  Older versions returned plain dicts.
+    This helper handles both transparently.
+    """
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
 
 
 class OllamaProvider(BaseProvider):
@@ -36,8 +73,8 @@ class OllamaProvider(BaseProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         **kwargs: object,
     ) -> None:
         resolved_base_url = base_url or os.environ.get(
@@ -50,27 +87,33 @@ class OllamaProvider(BaseProvider):
 
     @property
     def is_local(self) -> bool:
+        """Whether this provider runs locally."""
         return True
 
     @property
     def is_free(self) -> bool:
+        """Whether this provider is free to use."""
         return True
 
     @property
     def requires_api_key(self) -> bool:
+        """Whether an API key is required."""
         return False
 
     @property
     def default_base_url(self) -> str:
+        """Default Ollama server URL."""
         return "http://localhost:11434"
 
     @property
     def default_model(self) -> str:
+        """Default model to use when none is specified."""
         return "medgemma4B_it_q8"
 
     # --- Client ---
 
-    def _get_client(self):
+    def _get_client(self) -> Any:
+        """Lazily initialise and return the ``ollama.Client``."""
         if self._client is None:
             try:
                 import ollama
@@ -86,17 +129,26 @@ class OllamaProvider(BaseProvider):
     def chat(
         self,
         messages: list[LLMMessage],
-        model: Optional[str] = None,
+        model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
         **kwargs: object,
     ) -> LLMResponse:
+        """Send a chat request to the local Ollama server.
+
+        Args:
+            messages: Conversation messages.
+            model: Model identifier.
+            temperature: Sampling temperature.
+            max_tokens: Maximum tokens to generate.
+            **kwargs: Extra options (``top_p``, ``json_mode``, ``think``).
+        """
         model = model or self.default_model
         client = self._get_client()
 
-        top_p: Optional[float] = kwargs.get("top_p")  # type: ignore[assignment]
+        top_p: float | None = kwargs.get("top_p")  # type: ignore[assignment]
         json_mode: bool = kwargs.get("json_mode", False)  # type: ignore[assignment]
-        think: Optional[bool] = kwargs.get("think")  # type: ignore[assignment]
+        think: bool | None = kwargs.get("think")  # type: ignore[assignment]
 
         ollama_messages = [
             {"role": msg.role, "content": msg.content} for msg in messages
@@ -123,11 +175,17 @@ class OllamaProvider(BaseProvider):
 
         response = client.chat(**request_kwargs)
 
-        content = response.get("message", {}).get("content", "")
-        input_tokens = response.get(
-            "prompt_eval_count", self._estimate_tokens(messages)
+        # ollama >=0.4 returns Pydantic models; older versions return dicts.
+        message = _safe_get(response, "message")
+        content: str = _safe_get(message, "content", "") if message else ""
+        input_tokens: int = (
+            _safe_get(response, "prompt_eval_count")
+            or self._estimate_tokens(messages)
         )
-        output_tokens = response.get("eval_count", len(content) // 4)
+        output_tokens: int = (
+            _safe_get(response, "eval_count")
+            or len(content) // CHARS_PER_TOKEN_ESTIMATE
+        )
 
         return LLMResponse(
             content=content,
@@ -140,6 +198,7 @@ class OllamaProvider(BaseProvider):
     # --- Model discovery (native API) ---
 
     def list_models(self) -> list[ModelMetadata]:
+        """List models currently available on the Ollama server."""
         try:
             client = self._get_client()
             response = client.list()
@@ -163,9 +222,9 @@ class OllamaProvider(BaseProvider):
         try:
             client = self._get_client()
             info = client.show(model_name)
-            context_window = self._extract_context_window(info)
-            details = info.get("details", {})
-            parameter_size = details.get("parameter_size", "")
+            context_window = _extract_context_window(info)
+            details = _safe_get(info, "details") or {}
+            parameter_size = _safe_get(details, "parameter_size", "")
             display_name = (
                 f"{model_name} ({parameter_size})" if parameter_size else model_name
             )
@@ -174,7 +233,7 @@ class OllamaProvider(BaseProvider):
                 model_id=model_name,
                 display_name=display_name,
                 context_window=context_window,
-                pricing=ModelPricing(0.0, 0.0),
+                pricing=_FREE_PRICING,
                 capabilities=ProviderCapabilities(
                     supports_system_messages=True,
                     max_context_window=context_window,
@@ -188,32 +247,14 @@ class OllamaProvider(BaseProvider):
             return ModelMetadata(
                 model_id=model_name,
                 display_name=model_name,
-                context_window=8192,
-                pricing=ModelPricing(0.0, 0.0),
+                context_window=FALLBACK_CONTEXT_WINDOW,
+                pricing=_FREE_PRICING,
             )
-
-    def _extract_context_window(self, info: dict) -> int:
-        """Extract context window from ``ollama.show()`` response."""
-        model_info = info.get("model_info", {})
-        for key, value in model_info.items():
-            if "context" in key.lower() and isinstance(value, int):
-                return value
-
-        parameters = info.get("parameters", {})
-        if isinstance(parameters, dict) and "num_ctx" in parameters:
-            return int(parameters["num_ctx"])
-
-        modelfile = info.get("modelfile", "")
-        if modelfile and "num_ctx" in modelfile:
-            match = re.search(r"num_ctx\s+(\d+)", modelfile)
-            if match:
-                return int(match.group(1))
-
-        return 8192
 
     # --- Connection test ---
 
     def test_connection(self) -> tuple[bool, str]:
+        """Test connectivity to the local Ollama server."""
         try:
             client = self._get_client()
             response = client.list()
@@ -228,15 +269,55 @@ class OllamaProvider(BaseProvider):
 
     # --- Tokens ---
 
-    def count_tokens(self, text: str, model: Optional[str] = None) -> int:
-        return len(text) // 4
+    def count_tokens(self, text: str, model: str | None = None) -> int:
+        """Estimate token count (character-based heuristic)."""
+        return len(text) // CHARS_PER_TOKEN_ESTIMATE
 
     def _estimate_tokens(self, messages: list[LLMMessage]) -> int:
+        """Estimate total token count across all messages."""
         total_chars = sum(len(m.content) for m in messages)
-        return total_chars // 4
+        return total_chars // CHARS_PER_TOKEN_ESTIMATE
 
     def get_model_pricing(self, model: str) -> ModelPricing:
-        return ModelPricing(0.0, 0.0)
+        """Return pricing for *model* (always free for Ollama)."""
+        return _FREE_PRICING
 
-    def get_model_metadata(self, model: str) -> Optional[ModelMetadata]:
+    def get_model_metadata(self, model: str) -> ModelMetadata | None:
+        """Return metadata for *model*, fetching via ``ollama.show()``."""
         return self._get_model_info(model)
+
+
+# ---------------------------------------------------------------------------
+# Pure helpers
+# ---------------------------------------------------------------------------
+
+def _extract_context_window(info: Any) -> int:
+    """Extract context window size from an ``ollama.show()`` response.
+
+    Checks (in order): ``model_info`` keys, ``parameters.num_ctx``,
+    and ``modelfile`` text.  Falls back to :data:`FALLBACK_CONTEXT_WINDOW`.
+    """
+    model_info = _safe_get(info, "model_info") or {}
+    if isinstance(model_info, dict):
+        for key, value in model_info.items():
+            if "context" in key.lower() and isinstance(value, int):
+                return value
+    else:
+        # Pydantic model — iterate via items if available
+        items = getattr(model_info, "items", None)
+        if callable(items):
+            for key, value in items():
+                if "context" in str(key).lower() and isinstance(value, int):
+                    return value
+
+    parameters = _safe_get(info, "parameters") or {}
+    if isinstance(parameters, dict) and "num_ctx" in parameters:
+        return int(parameters["num_ctx"])
+
+    modelfile = _safe_get(info, "modelfile", "")
+    if modelfile and "num_ctx" in modelfile:
+        match = re.search(r"num_ctx\s+(\d+)", modelfile)
+        if match:
+            return int(match.group(1))
+
+    return FALLBACK_CONTEXT_WINDOW

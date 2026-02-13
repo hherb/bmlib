@@ -1,3 +1,19 @@
+# bmlib — shared library for biomedical literature tools
+# Copyright (C) 2024-2026 Dr Horst Herb
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """Abstract base class for LLM providers.
 
 All LLM providers must inherit from :class:`BaseProvider` and implement the
@@ -9,7 +25,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from bmlib.llm.data_types import LLMMessage, LLMResponse
@@ -65,8 +81,8 @@ class BaseProvider(ABC):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         **kwargs: object,
     ) -> None:
         self._api_key = api_key
@@ -105,12 +121,12 @@ class BaseProvider(ABC):
     @abstractmethod
     def chat(
         self,
-        messages: list["LLMMessage"],
-        model: Optional[str] = None,
+        messages: list[LLMMessage],
+        model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
         **kwargs: object,
-    ) -> "LLMResponse": ...
+    ) -> LLMResponse: ...
 
     @abstractmethod
     def list_models(self) -> list[ModelMetadata]: ...
@@ -119,7 +135,7 @@ class BaseProvider(ABC):
     def test_connection(self) -> tuple[bool, str]: ...
 
     @abstractmethod
-    def count_tokens(self, text: str, model: Optional[str] = None) -> int: ...
+    def count_tokens(self, text: str, model: str | None = None) -> int: ...
 
     # --- Cost helpers ---
 
@@ -140,7 +156,7 @@ class BaseProvider(ABC):
 
     # --- Utility ---
 
-    def get_model_metadata(self, model: str) -> Optional[ModelMetadata]:
+    def get_model_metadata(self, model: str) -> ModelMetadata | None:
         for m in self.list_models():
             if m.model_id == model:
                 return m
