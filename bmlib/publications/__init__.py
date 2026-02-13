@@ -14,4 +14,36 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Publications module — models, schema, and storage for biomedical publications."""
+"""Publications module — models, schema, storage, and sync for biomedical publications."""
+
+from bmlib.publications.models import (
+    DownloadDay,
+    FetchResult,
+    FullTextSource,
+    Publication,
+    SyncProgress,
+    SyncReport,
+)
+from bmlib.publications.schema import ensure_schema
+from bmlib.publications.storage import (
+    add_fulltext_source,
+    get_publication_by_doi,
+    get_publication_by_pmid,
+    store_publication,
+)
+from bmlib.publications.sync import sync
+
+__all__ = [
+    "sync",
+    "SyncReport",
+    "Publication",
+    "FullTextSource",
+    "DownloadDay",
+    "SyncProgress",
+    "FetchResult",
+    "store_publication",
+    "get_publication_by_doi",
+    "get_publication_by_pmid",
+    "add_fulltext_source",
+    "ensure_schema",
+]

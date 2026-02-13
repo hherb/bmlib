@@ -30,8 +30,9 @@ anthropic = ["anthropic>=0.30"]
 ollama = ["ollama>=0.3"]
 postgresql = ["psycopg2-binary>=2.9"]
 transparency = ["httpx>=0.25"]
+publications = ["httpx>=0.25"]
 dev = ["pytest>=7.0", "pytest-cov", "ruff"]
-all = ["bmlib[anthropic,ollama,postgresql,transparency,dev]"]
+all = ["bmlib[anthropic,ollama,postgresql,transparency,publications,dev]"]
 
 [tool.ruff]
 target-version = "py311"
