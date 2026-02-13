@@ -187,20 +187,20 @@ def _upsert_download_day(
     status: str,
     record_count: int,
 ) -> None:
-    """Delete + insert a download_days row (upsert pattern)."""
+    """Atomically insert or update a download_days row."""
     day_str = day.isoformat()
     from datetime import UTC, datetime
 
     now = datetime.now(tz=UTC).isoformat()
     execute(
         conn,
-        "DELETE FROM download_days WHERE source = ? AND date = ?",
-        (source, day_str),
-    )
-    execute(
-        conn,
         "INSERT INTO download_days (source, date, status, record_count, downloaded_at,"
-        " last_verified_at) VALUES (?, ?, ?, ?, ?, ?)",
+        " last_verified_at) VALUES (?, ?, ?, ?, ?, ?)"
+        " ON CONFLICT (source, date) DO UPDATE SET"
+        "   status = excluded.status,"
+        "   record_count = excluded.record_count,"
+        "   downloaded_at = excluded.downloaded_at,"
+        "   last_verified_at = excluded.last_verified_at",
         (source, day_str, status, record_count, now, now),
     )
     conn.commit()
@@ -343,8 +343,8 @@ def sync(
 
                 fetch_result = fetcher(client, day, **fetcher_kwargs)
 
-                # Determine status for download_days tracking
-                status = "completed" if fetch_result.status not in ("failed", "error") else "failed"
+                # All fetchers use "completed" or "failed" as status strings
+                status = fetch_result.status if fetch_result.status == "failed" else "completed"
                 record_count = day_added + day_merged
 
                 _upsert_download_day(conn, source, day, status, record_count)

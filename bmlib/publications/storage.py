@@ -24,7 +24,6 @@ new sources, but never overwrites existing non-NULL values.
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
@@ -232,7 +231,7 @@ def add_fulltext_source(
     publication_id: int,
     source: str,
     url: str,
-    format: str,
+    fmt: str,
     version: str | None = None,
 ) -> bool:
     """Add a full-text source for a publication.
@@ -241,15 +240,13 @@ def add_fulltext_source(
     (publication_id, url) pair already exists.
     """
     now = _now_iso()
-    try:
-        execute(
-            conn,
-            "INSERT INTO fulltext_sources"
-            " (publication_id, source, url, format, version, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (publication_id, source, url, format, version, now),
-        )
-        conn.commit()
-        return True
-    except sqlite3.IntegrityError:
-        return False
+    cur = execute(
+        conn,
+        "INSERT INTO fulltext_sources"
+        " (publication_id, source, url, format, version, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?)"
+        " ON CONFLICT (publication_id, url) DO NOTHING",
+        (publication_id, source, url, fmt, version, now),
+    )
+    conn.commit()
+    return cur.rowcount > 0

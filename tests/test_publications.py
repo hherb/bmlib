@@ -25,7 +25,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from bmlib.db import connect_sqlite, execute, table_exists
-from bmlib.publications.fetchers.biorxiv import _normalize, fetch_biorxiv
+from bmlib.publications.fetchers.biorxiv import PAGE_SIZE, _normalize, fetch_biorxiv
 from bmlib.publications.models import (
     DownloadDay,
     FetchResult,
@@ -41,6 +41,7 @@ from bmlib.publications.storage import (
     get_publication_by_pmid,
     store_publication,
 )
+from bmlib.publications.sync import _raw_to_fulltext_sources
 
 # ---------------------------------------------------------------------------
 # Task 1: Data model tests
@@ -490,6 +491,55 @@ class TestStorage:
         assert add_fulltext_source(conn, found.id, "pmc", url, "xml") is True
         assert add_fulltext_source(conn, found.id, "pmc", url, "xml") is False
 
+    def test_merge_is_open_access_upgrades_false_to_true(self):
+        """When existing is_open_access is False and incoming is True, it should upgrade."""
+        conn = _schema_conn()
+        pub1 = Publication(
+            title="Closed Paper",
+            sources=["pubmed"],
+            first_seen_source="pubmed",
+            doi="10.1234/oa-merge",
+            is_open_access=False,
+        )
+        store_publication(conn, pub1)
+
+        pub2 = Publication(
+            title="Closed Paper",
+            sources=["openalex"],
+            first_seen_source="openalex",
+            doi="10.1234/oa-merge",
+            is_open_access=True,
+        )
+        result = store_publication(conn, pub2)
+        assert result == "merged"
+
+        merged = get_publication_by_doi(conn, "10.1234/oa-merge")
+        assert merged.is_open_access is True
+
+    def test_merge_is_open_access_keeps_true(self):
+        """When existing is_open_access is True and incoming is False, it stays True."""
+        conn = _schema_conn()
+        pub1 = Publication(
+            title="Open Paper",
+            sources=["openalex"],
+            first_seen_source="openalex",
+            doi="10.1234/oa-keep",
+            is_open_access=True,
+        )
+        store_publication(conn, pub1)
+
+        pub2 = Publication(
+            title="Open Paper",
+            sources=["pubmed"],
+            first_seen_source="pubmed",
+            doi="10.1234/oa-keep",
+            is_open_access=False,
+        )
+        store_publication(conn, pub2)
+
+        merged = get_publication_by_doi(conn, "10.1234/oa-keep")
+        assert merged.is_open_access is True
+
     def test_store_publication_with_fulltext_sources(self):
         conn = _schema_conn()
         pub = Publication(
@@ -714,3 +764,94 @@ class TestFetchBiorxiv:
         assert progress.date == "2024-06-15"
         assert progress.records_processed == 3
         assert progress.status == "in_progress"
+
+    def test_multi_page_pagination(self):
+        """When a page has PAGE_SIZE records, fetch continues to the next page."""
+        # Build a full page (PAGE_SIZE records) then a partial second page
+        page1_records = [
+            _sample_record(doi=f"10.1101/2024.01.01.{i:06d}") for i in range(PAGE_SIZE)
+        ]
+        page2_records = [
+            _sample_record(doi=f"10.1101/2024.01.01.{PAGE_SIZE + i:06d}") for i in range(3)
+        ]
+
+        page1_resp = _make_api_response(page1_records, total=PAGE_SIZE + 3)
+        page2_resp = _make_api_response(page2_records, total=PAGE_SIZE + 3)
+
+        client = MagicMock()
+        client.get.side_effect = [page1_resp, page2_resp]
+
+        collected = []
+        from unittest.mock import patch
+
+        with patch("bmlib.publications.fetchers.biorxiv.time.sleep") as mock_sleep:
+            result = fetch_biorxiv(
+                client,
+                date(2024, 6, 15),
+                on_record=collected.append,
+            )
+
+        assert result.status == "completed"
+        assert result.record_count == PAGE_SIZE + 3
+        assert len(collected) == PAGE_SIZE + 3
+        assert client.get.call_count == 2
+
+        # Verify rate-limiting sleep was called between pages
+        mock_sleep.assert_called_once_with(0.5)
+
+        # Verify second page URL has offset
+        second_url = client.get.call_args_list[1][0][0]
+        assert f"/{PAGE_SIZE}" in second_url
+
+
+# ---------------------------------------------------------------------------
+# Test _raw_to_fulltext_sources
+# ---------------------------------------------------------------------------
+
+
+class TestRawToFulltextSources:
+    def test_none_when_no_fulltext_sources(self):
+        """Returns None when raw dict has no fulltext_sources key."""
+        assert _raw_to_fulltext_sources({}) is None
+
+    def test_none_when_empty_list(self):
+        """Returns None when fulltext_sources is an empty list."""
+        assert _raw_to_fulltext_sources({"fulltext_sources": []}) is None
+
+    def test_extracts_sources_correctly(self):
+        """Correctly converts fulltext source dicts to FullTextSource objects."""
+        raw = {
+            "fulltext_sources": [
+                {
+                    "source": "pmc",
+                    "url": "https://pmc.example.com/1",
+                    "format": "xml",
+                    "version": "1.0",
+                },
+                {"source": "publisher", "url": "https://pub.example.com/1.pdf", "format": "pdf"},
+            ]
+        }
+        result = _raw_to_fulltext_sources(raw)
+        assert result is not None
+        assert len(result) == 2
+        assert result[0].source == "pmc"
+        assert result[0].url == "https://pmc.example.com/1"
+        assert result[0].format == "xml"
+        assert result[0].version == "1.0"
+        assert result[1].source == "publisher"
+        assert result[1].format == "pdf"
+        assert result[1].version is None
+
+    def test_defaults_for_missing_keys(self):
+        """Uses defaults when optional keys are missing from fulltext source dict."""
+        raw = {
+            "fulltext_sources": [
+                {"url": "https://example.com/paper"},
+            ]
+        }
+        result = _raw_to_fulltext_sources(raw)
+        assert result is not None
+        assert len(result) == 1
+        assert result[0].source == "unknown"
+        assert result[0].format == "html"
+        assert result[0].version is None

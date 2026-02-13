@@ -187,9 +187,13 @@ def _parse_article_xml(article_el: ET.Element) -> dict:
     # Fulltext sources
     fulltext_sources: list[dict[str, str]] = []
     if pmc_id:
-        fulltext_sources.append({"url": f"{PMC_BASE_URL}{pmc_id}/", "source": "pmc"})
+        fulltext_sources.append(
+            {"url": f"{PMC_BASE_URL}{pmc_id}/", "source": "pmc", "format": "html"}
+        )
     if doi:
-        fulltext_sources.append({"url": f"{DOI_BASE_URL}{doi}", "source": "publisher"})
+        fulltext_sources.append(
+            {"url": f"{DOI_BASE_URL}{doi}", "source": "publisher", "format": "html"}
+        )
 
     return {
         "pmid": pmid,
@@ -311,7 +315,7 @@ def fetch_pubmed(
             source="pubmed",
             date=date_str,
             record_count=0,
-            status="error",
+            status="failed",
             error=str(exc),
         )
 
@@ -321,7 +325,7 @@ def fetch_pubmed(
             source="pubmed",
             date=date_str,
             record_count=0,
-            status="complete",
+            status="completed",
         )
 
     logger.info("PubMed esearch: %d records for %s", count, date_str)
@@ -336,7 +340,7 @@ def fetch_pubmed(
                 source="pubmed",
                 date=date_str,
                 record_count=records_processed,
-                status="error",
+                status="failed",
                 error=str(exc),
             )
 
@@ -365,5 +369,5 @@ def fetch_pubmed(
         source="pubmed",
         date=date_str,
         record_count=records_processed,
-        status="complete",
+        status="completed",
     )

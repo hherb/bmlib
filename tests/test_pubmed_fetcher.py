@@ -157,9 +157,11 @@ class TestParseArticleXml:
         pmc_source = result["fulltext_sources"][0]
         assert pmc_source["source"] == "pmc"
         assert "PMC9999999" in pmc_source["url"]
+        assert pmc_source["format"] == "html"
         doi_source = result["fulltext_sources"][1]
         assert doi_source["source"] == "publisher"
         assert "10.1016/S0140-6736(24)00001-1" in doi_source["url"]
+        assert doi_source["format"] == "html"
 
     def test_minimal_article_missing_optional_fields(self):
         """Missing optional fields (DOI, abstract, authors) are handled gracefully."""
@@ -204,6 +206,52 @@ class TestParseArticleXml:
         el = ET.fromstring(xml)
         result = _parse_article_xml(el)
         assert result["publication_date"] == "2024-03-05"
+
+    def test_medline_date_fallback(self):
+        """When Year is missing, MedlineDate is used as fallback (first 4 chars)."""
+        xml = """\
+        <PubmedArticle>
+          <MedlineCitation>
+            <PMID>33333333</PMID>
+            <Article>
+              <ArticleTitle>MedlineDate test</ArticleTitle>
+              <Journal>
+                <Title>J</Title>
+                <JournalIssue>
+                  <PubDate>
+                    <MedlineDate>2024 Jan-Feb</MedlineDate>
+                  </PubDate>
+                </JournalIssue>
+              </Journal>
+            </Article>
+          </MedlineCitation>
+          <PubmedData><ArticleIdList/></PubmedData>
+        </PubmedArticle>
+        """
+        el = ET.fromstring(xml)
+        result = _parse_article_xml(el)
+        assert result["publication_date"] == "2024"
+
+    def test_no_pubdate_returns_none(self):
+        """When PubDate element is completely missing, publication_date is None."""
+        xml = """\
+        <PubmedArticle>
+          <MedlineCitation>
+            <PMID>44444444</PMID>
+            <Article>
+              <ArticleTitle>No date test</ArticleTitle>
+              <Journal>
+                <Title>J</Title>
+                <JournalIssue/>
+              </Journal>
+            </Article>
+          </MedlineCitation>
+          <PubmedData><ArticleIdList/></PubmedData>
+        </PubmedArticle>
+        """
+        el = ET.fromstring(xml)
+        result = _parse_article_xml(el)
+        assert result["publication_date"] is None
 
     def test_author_last_name_only(self):
         """Authors with only a last name (no fore name) are included."""
@@ -262,7 +310,7 @@ class TestFetchPubmed:
         assert result.source == "pubmed"
         assert result.date == "2024-01-15"
         assert result.record_count == 2
-        assert result.status == "complete"
+        assert result.status == "completed"
         assert result.error is None
 
         assert on_record.call_count == 2
@@ -294,7 +342,7 @@ class TestFetchPubmed:
         assert result.source == "pubmed"
         assert result.date == "2024-12-25"
         assert result.record_count == 0
-        assert result.status == "complete"
+        assert result.status == "completed"
         assert result.error is None
 
         # Only esearch should be called
@@ -364,7 +412,7 @@ class TestFetchPubmed:
 
         result = fetch_pubmed(client, date(2024, 1, 1), on_record=on_record)
 
-        assert result.status == "error"
+        assert result.status == "failed"
         assert "Network error" in result.error
         assert result.record_count == 0
         on_record.assert_not_called()
@@ -391,7 +439,7 @@ class TestFetchPubmed:
         with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
             result = fetch_pubmed(client, target, on_record=on_record)
 
-        assert result.status == "error"
+        assert result.status == "failed"
         assert result.record_count == 1  # only the first page succeeded
         assert "Server error" in result.error
 
@@ -413,7 +461,7 @@ class TestFetchPubmed:
         with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
             result = fetch_pubmed(client, target, on_record=on_record, on_progress=None)
 
-        assert result.status == "complete"
+        assert result.status == "completed"
         assert result.record_count == 1
 
     def test_rate_limiting_with_key(self):

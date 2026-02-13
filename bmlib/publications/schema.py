@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS publications (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_publications_doi
     ON publications (doi) WHERE doi IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_publications_pmid
+CREATE UNIQUE INDEX IF NOT EXISTS idx_publications_pmid
     ON publications (pmid) WHERE pmid IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_publications_publication_date

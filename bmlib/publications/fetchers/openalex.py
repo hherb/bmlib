@@ -186,7 +186,7 @@ def fetch_openalex(
     *,
     on_record: Callable[[dict], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
-    email: str = "user@example.com",
+    email: str,
     api_key: str | None = None,
 ) -> FetchResult:
     """Fetch all OpenAlex works published on *target_date*.
@@ -272,5 +272,5 @@ def fetch_openalex(
         source="openalex",
         date=date_str,
         record_count=records_processed,
-        status="ok",
+        status="completed",
     )

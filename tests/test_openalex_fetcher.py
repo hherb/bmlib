@@ -299,13 +299,14 @@ class TestFetchOpenAlex:
             client,
             date(2024, 6, 15),
             on_record=records.append,
+            email="test@example.com",
         )
 
         assert isinstance(result, FetchResult)
         assert result.source == "openalex"
         assert result.date == "2024-06-15"
         assert result.record_count == 1
-        assert result.status == "ok"
+        assert result.status == "completed"
         assert result.error is None
 
         assert len(records) == 1
@@ -330,10 +331,11 @@ class TestFetchOpenAlex:
             client,
             date(2024, 6, 15),
             on_record=records.append,
+            email="test@example.com",
         )
 
         assert result.record_count == 2
-        assert result.status == "ok"
+        assert result.status == "completed"
         assert len(records) == 2
         assert records[0]["title"] == "Paper 1"
         assert records[1]["title"] == "Paper 2"
@@ -355,9 +357,10 @@ class TestFetchOpenAlex:
             client,
             date(2024, 6, 15),
             on_record=records.append,
+            email="test@example.com",
         )
 
-        assert result.status == "ok"
+        assert result.status == "completed"
         assert result.record_count == 0
         assert result.error is None
         assert len(records) == 0
@@ -374,6 +377,7 @@ class TestFetchOpenAlex:
             client,
             date(2024, 6, 15),
             on_record=records.append,
+            email="test@example.com",
         )
 
         assert result.status == "failed"
@@ -396,6 +400,7 @@ class TestFetchOpenAlex:
             date(2024, 6, 15),
             on_record=records.append,
             on_progress=progress_reports.append,
+            email="test@example.com",
         )
 
         assert len(progress_reports) == 1
@@ -423,6 +428,7 @@ class TestFetchOpenAlex:
             date(2024, 6, 15),
             on_record=records.append,
             on_progress=progress_reports.append,
+            email="test@example.com",
         )
 
         assert len(progress_reports) == 2
@@ -443,9 +449,10 @@ class TestFetchOpenAlex:
             date(2024, 6, 15),
             on_record=records.append,
             on_progress=None,
+            email="test@example.com",
         )
 
-        assert result.status == "ok"
+        assert result.status == "completed"
         assert result.record_count == 1
 
     def test_mailto_param_sent(self):
@@ -472,6 +479,7 @@ class TestFetchOpenAlex:
             client,
             date(2024, 6, 15),
             on_record=lambda r: None,
+            email="test@example.com",
             api_key="my-secret-key",
         )
 
@@ -487,6 +495,7 @@ class TestFetchOpenAlex:
             client,
             date(2024, 6, 15),
             on_record=lambda r: None,
+            email="test@example.com",
         )
 
         call_params = client.get.call_args[1]["params"]
@@ -501,6 +510,7 @@ class TestFetchOpenAlex:
             client,
             date(2024, 6, 15),
             on_record=lambda r: None,
+            email="test@example.com",
         )
 
         call_params = client.get.call_args[1]["params"]
@@ -515,6 +525,7 @@ class TestFetchOpenAlex:
             client,
             date(2024, 6, 15),
             on_record=lambda r: None,
+            email="test@example.com",
         )
 
         call_params = client.get.call_args[1]["params"]
@@ -541,6 +552,7 @@ class TestFetchOpenAlex:
             client,
             date(2024, 6, 15),
             on_record=records.append,
+            email="test@example.com",
         )
 
         assert result.status == "failed"
