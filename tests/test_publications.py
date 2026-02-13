@@ -33,6 +33,12 @@ from bmlib.publications.models import (
     SyncReport,
 )
 from bmlib.publications.schema import ensure_schema
+from bmlib.publications.storage import (
+    add_fulltext_source,
+    get_publication_by_doi,
+    get_publication_by_pmid,
+    store_publication,
+)
 
 # ---------------------------------------------------------------------------
 # Task 1: Data model tests
@@ -343,3 +349,174 @@ class TestSchema:
         cur2 = conn.cursor()
         cur2.execute("SELECT COUNT(*) FROM fulltext_sources WHERE publication_id=?", (pub_id,))
         assert cur2.fetchone()[0] == 2
+
+
+# ---------------------------------------------------------------------------
+# Task 3: Storage tests
+# ---------------------------------------------------------------------------
+
+
+class TestStorage:
+    def test_store_new_publication(self):
+        conn = _schema_conn()
+        pub = Publication(
+            title="New Paper",
+            sources=["pubmed"],
+            first_seen_source="pubmed",
+            doi="10.1234/new",
+            pmid="11111111",
+            abstract="Abstract text.",
+        )
+        result = store_publication(conn, pub)
+        assert result == "added"
+
+        found = get_publication_by_doi(conn, "10.1234/new")
+        assert found is not None
+        assert found.title == "New Paper"
+        assert found.pmid == "11111111"
+        assert found.abstract == "Abstract text."
+        assert found.id is not None
+
+    def test_duplicate_doi_merges(self):
+        conn = _schema_conn()
+        pub1 = Publication(
+            title="First Version",
+            sources=["pubmed"],
+            first_seen_source="pubmed",
+            doi="10.1234/dup",
+            abstract="Original abstract.",
+        )
+        result1 = store_publication(conn, pub1)
+        assert result1 == "added"
+
+        pub2 = Publication(
+            title="Second Version",
+            sources=["biorxiv"],
+            first_seen_source="biorxiv",
+            doi="10.1234/dup",
+            pmid="99999999",
+            abstract="New abstract.",
+        )
+        result2 = store_publication(conn, pub2)
+        assert result2 == "merged"
+
+        merged = get_publication_by_doi(conn, "10.1234/dup")
+        assert merged is not None
+        # Title is kept from first insert (non-NULL not overwritten)
+        assert merged.title == "First Version"
+        # pmid was NULL, so it gets filled from incoming
+        assert merged.pmid == "99999999"
+        # abstract was non-NULL, so it stays
+        assert merged.abstract == "Original abstract."
+        # Sources should be merged
+        assert "pubmed" in merged.sources
+        assert "biorxiv" in merged.sources
+
+    def test_duplicate_pmid_merges(self):
+        conn = _schema_conn()
+        pub1 = Publication(
+            title="PMID Paper",
+            sources=["pubmed"],
+            first_seen_source="pubmed",
+            pmid="22222222",
+        )
+        store_publication(conn, pub1)
+
+        pub2 = Publication(
+            title="PMID Paper Updated",
+            sources=["biorxiv"],
+            first_seen_source="biorxiv",
+            pmid="22222222",
+            doi="10.1234/pmid-merge",
+            abstract="Now has abstract.",
+        )
+        result = store_publication(conn, pub2)
+        assert result == "merged"
+
+        merged = get_publication_by_pmid(conn, "22222222")
+        assert merged is not None
+        assert merged.title == "PMID Paper"  # kept from first
+        assert merged.doi == "10.1234/pmid-merge"  # filled NULL
+        assert merged.abstract == "Now has abstract."  # filled NULL
+
+    def test_no_identifiers_inserts(self):
+        conn = _schema_conn()
+        pub1 = Publication(
+            title="No ID Paper 1",
+            sources=["manual"],
+            first_seen_source="manual",
+        )
+        pub2 = Publication(
+            title="No ID Paper 2",
+            sources=["manual"],
+            first_seen_source="manual",
+        )
+        assert store_publication(conn, pub1) == "added"
+        assert store_publication(conn, pub2) == "added"
+
+    def test_get_not_found_returns_none(self):
+        conn = _schema_conn()
+        assert get_publication_by_doi(conn, "10.9999/nonexistent") is None
+        assert get_publication_by_pmid(conn, "00000000") is None
+
+    def test_add_fulltext_source_works(self):
+        conn = _schema_conn()
+        pub = Publication(
+            title="FTS Paper",
+            sources=["pubmed"],
+            first_seen_source="pubmed",
+            doi="10.1234/fts",
+        )
+        store_publication(conn, pub)
+        found = get_publication_by_doi(conn, "10.1234/fts")
+
+        inserted = add_fulltext_source(conn, found.id, "pmc", "https://pmc.example.com/fts", "xml")
+        assert inserted is True
+
+    def test_add_fulltext_source_rejects_duplicate_url(self):
+        conn = _schema_conn()
+        pub = Publication(
+            title="FTS Dup Paper",
+            sources=["pubmed"],
+            first_seen_source="pubmed",
+            doi="10.1234/fts-dup",
+        )
+        store_publication(conn, pub)
+        found = get_publication_by_doi(conn, "10.1234/fts-dup")
+        url = "https://pmc.example.com/fts-dup"
+
+        assert add_fulltext_source(conn, found.id, "pmc", url, "xml") is True
+        assert add_fulltext_source(conn, found.id, "pmc", url, "xml") is False
+
+    def test_store_publication_with_fulltext_sources(self):
+        conn = _schema_conn()
+        pub = Publication(
+            title="With FTS",
+            sources=["pubmed"],
+            first_seen_source="pubmed",
+            doi="10.1234/with-fts",
+        )
+        fts_list = [
+            FullTextSource(
+                publication_id=0,  # will be set by store
+                source="pmc",
+                url="https://pmc.example.com/with-fts",
+                format="xml",
+            ),
+            FullTextSource(
+                publication_id=0,
+                source="publisher",
+                url="https://publisher.example.com/with-fts.pdf",
+                format="pdf",
+            ),
+        ]
+        result = store_publication(conn, pub, fulltext_sources=fts_list)
+        assert result == "added"
+
+        found = get_publication_by_doi(conn, "10.1234/with-fts")
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM fulltext_sources WHERE publication_id=?",
+            (found.id,),
+        )
+        assert cur.fetchone()[0] == 2
