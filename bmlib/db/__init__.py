@@ -38,6 +38,7 @@ from bmlib.db.operations import (
     fetch_scalar,
     table_exists,
 )
+from bmlib.db.migrations import Migration, run_migrations
 from bmlib.db.transactions import transaction
 
 __all__ = [
@@ -51,4 +52,6 @@ __all__ = [
     "table_exists",
     "create_tables",
     "transaction",
+    "Migration",
+    "run_migrations",
 ]
