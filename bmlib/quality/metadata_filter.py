@@ -99,13 +99,29 @@ TYPE_PRIORITY: list[str] = [
 ]
 
 
+def _normalize_type(s: str) -> str:
+    """Normalize a publication type string for case-insensitive matching."""
+    return s.strip().lower().replace("-", " ").replace("_", " ")
+
+
+# Build a case-insensitive lookup: normalized form → canonical PubMed key
+_NORMALIZED_LOOKUP: dict[str, str] = {
+    _normalize_type(k): k for k in PUBMED_TYPE_TO_DESIGN
+}
+
+
 def classify_from_metadata(
     publication_types: Sequence[str],
 ) -> QualityAssessment:
     """Classify study design from PubMed publication types.
 
+    Performs case-insensitive matching and normalizes hyphens/underscores,
+    so ``"systematic review"``, ``"Systematic Review"``, and
+    ``"systematic-review"`` all match.
+
     Args:
-        publication_types: List of publication type strings from PubMed.
+        publication_types: List of publication type strings from PubMed
+            or other sources (EuropePMC, categories, etc.).
 
     Returns:
         A :class:`QualityAssessment` at tier 1 (metadata).  Returns
@@ -114,24 +130,29 @@ def classify_from_metadata(
     if not publication_types:
         return QualityAssessment.unclassified()
 
-    type_set = set(publication_types)
+    # Build normalized set for O(1) lookup
+    normalized_inputs = {_normalize_type(t): t for t in publication_types}
 
-    # Walk priority list and take the first match
+    # Walk priority list and take the first match (case-insensitive)
     for ptype in TYPE_PRIORITY:
-        if ptype in type_set:
+        if _normalize_type(ptype) in normalized_inputs:
             design = PUBMED_TYPE_TO_DESIGN[ptype]
             return QualityAssessment.from_metadata(
                 design=design,
                 confidence=METADATA_HIGH_CONFIDENCE,
             )
 
-    # Try remaining types not in the priority list
-    for ptype in publication_types:
-        if ptype in PUBMED_TYPE_TO_DESIGN:
-            design = PUBMED_TYPE_TO_DESIGN[ptype]
+    # Try remaining known types not in the priority list
+    for norm_input in normalized_inputs:
+        if norm_input in _NORMALIZED_LOOKUP:
+            canonical = _NORMALIZED_LOOKUP[norm_input]
+            design = PUBMED_TYPE_TO_DESIGN[canonical]
             return QualityAssessment.from_metadata(
                 design=design,
                 confidence=METADATA_HIGH_CONFIDENCE * 0.8,
             )
 
+    logger.debug(
+        "No metadata classification match for types: %s", list(publication_types)
+    )
     return QualityAssessment.unclassified()

@@ -133,3 +133,24 @@ class TestMetadataFilter:
         # RCT should take priority over editorial
         result = classify_from_metadata(["Editorial", "Randomized Controlled Trial"])
         assert result.study_design == StudyDesign.RCT
+
+    def test_case_insensitive_matching(self):
+        result = classify_from_metadata(["systematic review"])
+        assert result.study_design == StudyDesign.SYSTEMATIC_REVIEW
+
+    def test_hyphenated_type(self):
+        result = classify_from_metadata(["meta-analysis"])
+        assert result.study_design == StudyDesign.META_ANALYSIS
+
+    def test_mixed_case_with_noise(self):
+        # EuropePMC categories include journal name as noise
+        result = classify_from_metadata([
+            "European Radiology", "Systematic Review", "Meta-Analysis",
+        ])
+        assert result.study_design == StudyDesign.SYSTEMATIC_REVIEW
+
+    def test_lowercase_from_categories(self):
+        result = classify_from_metadata([
+            "some journal", "randomized controlled trial",
+        ])
+        assert result.study_design == StudyDesign.RCT
