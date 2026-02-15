@@ -15,3 +15,32 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """Full-text retrieval and JATS XML parsing for biomedical literature."""
+
+from bmlib.fulltext.cache import FullTextCache
+from bmlib.fulltext.jats_parser import JATSParser
+from bmlib.fulltext.models import (
+    FullTextResult,
+    JATSAbstractSection,
+    JATSArticle,
+    JATSAuthorInfo,
+    JATSBodySection,
+    JATSFigureInfo,
+    JATSReferenceInfo,
+    JATSTableInfo,
+)
+from bmlib.fulltext.service import FullTextError, FullTextService
+
+__all__ = [
+    "FullTextCache",
+    "FullTextError",
+    "FullTextResult",
+    "FullTextService",
+    "JATSAbstractSection",
+    "JATSArticle",
+    "JATSAuthorInfo",
+    "JATSBodySection",
+    "JATSFigureInfo",
+    "JATSParser",
+    "JATSReferenceInfo",
+    "JATSTableInfo",
+]

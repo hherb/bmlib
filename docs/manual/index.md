@@ -28,7 +28,7 @@ pip install -e ".[all]"
 
 ## Module Overview
 
-bmlib is organised into seven modules, each with a focused responsibility:
+bmlib is organised into eight modules, each with a focused responsibility:
 
 | Module | Description | Documentation |
 |--------|-------------|---------------|
@@ -39,6 +39,7 @@ bmlib is organised into seven modules, each with a focused responsibility:
 | [`bmlib.quality`](quality.md) | 3-tier quality assessment pipeline for biomedical publications | [quality.md](quality.md) |
 | [`bmlib.transparency`](transparency.md) | Multi-API transparency analysis (CrossRef, EuropePMC, OpenAlex, ClinicalTrials.gov) | [transparency.md](transparency.md) |
 | [`bmlib.publications`](publications.md) | Publication ingestion, deduplication, storage, and multi-source sync | [publications.md](publications.md) |
+| [`bmlib.fulltext`](fulltext.md) | Full-text retrieval (Europe PMC, Unpaywall, DOI), JATS XML parsing, disk caching | [fulltext.md](fulltext.md) |
 
 ## Architecture Principles
 
@@ -112,6 +113,20 @@ report = sync(
     email="researcher@example.com",
 )
 print(f"Added: {report.records_added}, Merged: {report.records_merged}")
+```
+
+### Full-Text Retrieval
+
+```python
+from bmlib.fulltext import FullTextService, FullTextCache
+
+service = FullTextService(email="researcher@example.com")
+result = service.fetch_fulltext(pmc_id="PMC7614751", doi="10.1234/example")
+
+if result.source == "europepmc" and result.html:
+    cache = FullTextCache()  # uses platform default directory
+    cache.save_html(result.html, "PMC7614751")
+    print(result.html[:200])
 ```
 
 ### Transparency Analysis
