@@ -66,8 +66,9 @@ class FullTextService:
         """Fetch full text using 3-tier fallback chain.
 
         Tries: Europe PMC XML -> Unpaywall PDF -> DOI resolution.
+        Always attempts Europe PMC first, discovering PMC ID if needed.
         """
-        # Tier 1: Europe PMC
+        # Tier 1a: Europe PMC with known PMC ID
         if pmc_id:
             try:
                 html = self._fetch_europepmc(pmc_id)
@@ -75,6 +76,23 @@ class FullTextService:
                 return FullTextResult(source="europepmc", html=html)
             except Exception:
                 logger.debug("Europe PMC failed for %s", pmc_id, exc_info=True)
+
+        # Tier 1b: Discover PMC ID via Europe PMC search, then fetch XML
+        if not pmc_id and (doi or pmid):
+            try:
+                discovered_pmc_id = self._resolve_pmc_id(doi=doi, pmid=pmid)
+                if discovered_pmc_id:
+                    html = self._fetch_europepmc(discovered_pmc_id)
+                    logger.info(
+                        "Full text retrieved from Europe PMC via discovered %s",
+                        discovered_pmc_id,
+                    )
+                    return FullTextResult(source="europepmc", html=html)
+            except Exception:
+                logger.debug(
+                    "Europe PMC discovery failed for doi=%s pmid=%s",
+                    doi, pmid, exc_info=True,
+                )
 
         # Tier 2: Unpaywall
         if doi:
@@ -96,6 +114,40 @@ class FullTextService:
             return FullTextResult(source="doi", web_url=f"{PUBMED_BASE}/{pmid}/")
 
         raise FullTextError("No identifiers provided")
+
+    def _resolve_pmc_id(
+        self, *, doi: str | None = None, pmid: str = "",
+    ) -> str | None:
+        """Search Europe PMC to discover a PMC ID for a paper.
+
+        Returns the PMC ID if the paper has full text in Europe PMC,
+        or None if not found.
+        """
+        if doi:
+            query = f"DOI:{doi}"
+        elif pmid:
+            query = f"EXT_ID:{pmid}"
+        else:
+            return None
+
+        url = (
+            f"{EUROPE_PMC_BASE}/search"
+            f"?query={quote(query, safe=':')}&format=json&resultType=core&pageSize=1"
+        )
+        resp = self._http_get(url, headers={"Accept": "application/json"})
+        if resp.status_code != 200:
+            return None
+
+        data = resp.json()
+        results = data.get("resultList", {}).get("result", [])
+        if not results:
+            return None
+
+        hit = results[0]
+        if hit.get("inEPMC") == "Y" and hit.get("pmcid"):
+            return hit["pmcid"]
+
+        return None
 
     def _fetch_europepmc(self, pmc_id: str) -> str:
         """Fetch JATS XML from Europe PMC and parse to HTML."""

@@ -48,8 +48,78 @@ class TestFetchEuropePMC:
         mock_unpaywall_404.status_code = 404
 
         service = FullTextService(email="test@example.com")
+        # PMC ID given: PMC 404 -> skip discovery -> Unpaywall 404 -> DOI fallback
         with patch.object(service, "_http_get", side_effect=[mock_404, mock_unpaywall_404]):
             result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test", pmid="456")
+
+        assert result.source == "doi"
+        assert result.web_url == "https://doi.org/10.1/test"
+
+
+class TestDiscoverPMCID:
+    def test_discovers_pmc_id_from_doi(self):
+        """When no PMC ID given, search Europe PMC by DOI and fetch fulltext."""
+        xml_data = (FIXTURES / "sample_article.xml").read_bytes()
+
+        # Search response: paper is in EPMC with a PMCID
+        mock_search = MagicMock()
+        mock_search.status_code = 200
+        mock_search.json.return_value = {
+            "resultList": {
+                "result": [{"pmcid": "PMC999", "inEPMC": "Y", "doi": "10.1/test"}]
+            }
+        }
+
+        # Fulltext XML response
+        mock_xml = MagicMock()
+        mock_xml.status_code = 200
+        mock_xml.content = xml_data
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", side_effect=[mock_search, mock_xml]):
+            result = service.fetch_fulltext(pmc_id=None, doi="10.1/test", pmid="")
+
+        assert result.source == "europepmc"
+        assert result.html is not None
+
+    def test_discovers_pmc_id_from_pmid(self):
+        """When no PMC ID or DOI, search Europe PMC by PMID."""
+        xml_data = (FIXTURES / "sample_article.xml").read_bytes()
+
+        mock_search = MagicMock()
+        mock_search.status_code = 200
+        mock_search.json.return_value = {
+            "resultList": {
+                "result": [{"pmcid": "PMC888", "inEPMC": "Y"}]
+            }
+        }
+        mock_xml = MagicMock()
+        mock_xml.status_code = 200
+        mock_xml.content = xml_data
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", side_effect=[mock_search, mock_xml]):
+            result = service.fetch_fulltext(pmc_id=None, doi=None, pmid="12345")
+
+        assert result.source == "europepmc"
+
+    def test_not_in_epmc_falls_through(self):
+        """Paper found in search but not in EPMC -> skip to Unpaywall."""
+        mock_search = MagicMock()
+        mock_search.status_code = 200
+        mock_search.json.return_value = {
+            "resultList": {
+                "result": [{"pmcid": None, "inEPMC": "N", "doi": "10.1/test"}]
+            }
+        }
+        mock_unpaywall_404 = MagicMock()
+        mock_unpaywall_404.status_code = 404
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(
+            service, "_http_get", side_effect=[mock_search, mock_unpaywall_404],
+        ):
+            result = service.fetch_fulltext(pmc_id=None, doi="10.1/test", pmid="")
 
         assert result.source == "doi"
         assert result.web_url == "https://doi.org/10.1/test"
@@ -82,8 +152,18 @@ class TestFetchUnpaywall:
 
 class TestFetchDOIFallback:
     def test_no_pmc_no_unpaywall(self):
+        # No PMC ID -> discovery search returns no match -> Unpaywall fails -> DOI fallback
+        mock_search_empty = MagicMock()
+        mock_search_empty.status_code = 200
+        mock_search_empty.json.return_value = {"resultList": {"result": []}}
+        mock_unpaywall_404 = MagicMock()
+        mock_unpaywall_404.status_code = 404
+
         service = FullTextService(email="test@example.com")
-        result = service.fetch_fulltext(pmc_id=None, doi="10.1/test", pmid="456")
+        with patch.object(
+            service, "_http_get", side_effect=[mock_search_empty, mock_unpaywall_404],
+        ):
+            result = service.fetch_fulltext(pmc_id=None, doi="10.1/test", pmid="456")
         assert result.source == "doi"
         assert result.web_url == "https://doi.org/10.1/test"
 
