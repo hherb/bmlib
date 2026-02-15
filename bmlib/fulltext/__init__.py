@@ -20,6 +20,7 @@ from bmlib.fulltext.cache import FullTextCache
 from bmlib.fulltext.jats_parser import JATSParser
 from bmlib.fulltext.models import (
     FullTextResult,
+    FullTextSourceEntry,
     JATSAbstractSection,
     JATSArticle,
     JATSAuthorInfo,
@@ -35,6 +36,7 @@ __all__ = [
     "FullTextError",
     "FullTextResult",
     "FullTextService",
+    "FullTextSourceEntry",
     "JATSAbstractSection",
     "JATSArticle",
     "JATSAuthorInfo",

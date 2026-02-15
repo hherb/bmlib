@@ -153,16 +153,16 @@ class TestParseArticleXml:
         assert result.keywords == ["Aspirin", "Cardiovascular Diseases"]
         assert result.source == "pubmed"
 
-        # Fulltext sources (still a list of dicts)
+        # Fulltext sources
         assert len(result.fulltext_sources) == 2
         pmc_source = result.fulltext_sources[0]
-        assert pmc_source["source"] == "pmc"
-        assert "PMC9999999" in pmc_source["url"]
-        assert pmc_source["format"] == "html"
+        assert pmc_source.source == "pmc"
+        assert "PMC9999999" in pmc_source.url
+        assert pmc_source.format == "html"
         doi_source = result.fulltext_sources[1]
-        assert doi_source["source"] == "publisher"
-        assert "10.1016/S0140-6736(24)00001-1" in doi_source["url"]
-        assert doi_source["format"] == "html"
+        assert doi_source.source == "publisher"
+        assert "10.1016/S0140-6736(24)00001-1" in doi_source.url
+        assert doi_source.format == "html"
 
     def test_minimal_article_missing_optional_fields(self):
         """Missing optional fields (DOI, abstract, authors) are handled gracefully."""

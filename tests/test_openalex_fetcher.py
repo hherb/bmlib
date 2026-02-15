@@ -244,22 +244,22 @@ class TestNormalize:
         assert len(fts) == 3
 
         # First location: html from Nature Medicine (publishedVersion -> published)
-        assert fts[0]["source"] == "Nature Medicine"
-        assert fts[0]["url"] == "https://nature.com/articles/test"
-        assert fts[0]["format"] == "html"
-        assert fts[0]["version"] == "published"
+        assert fts[0].source == "Nature Medicine"
+        assert fts[0].url == "https://nature.com/articles/test"
+        assert fts[0].format == "html"
+        assert fts[0].version == "published"
 
         # First location: pdf from Nature Medicine
-        assert fts[1]["source"] == "Nature Medicine"
-        assert fts[1]["url"] == "https://nature.com/articles/test.pdf"
-        assert fts[1]["format"] == "pdf"
-        assert fts[1]["version"] == "published"
+        assert fts[1].source == "Nature Medicine"
+        assert fts[1].url == "https://nature.com/articles/test.pdf"
+        assert fts[1].format == "pdf"
+        assert fts[1].version == "published"
 
         # Second location: html from PMC (acceptedVersion -> accepted)
-        assert fts[2]["source"] == "PubMed Central"
-        assert fts[2]["url"] == "https://pmc.ncbi.nlm.nih.gov/articles/PMC123/"
-        assert fts[2]["format"] == "html"
-        assert fts[2]["version"] == "accepted"
+        assert fts[2].source == "PubMed Central"
+        assert fts[2].url == "https://pmc.ncbi.nlm.nih.gov/articles/PMC123/"
+        assert fts[2].format == "html"
+        assert fts[2].version == "accepted"
 
     def test_version_mapping(self):
         locations = [
@@ -273,7 +273,7 @@ class TestNormalize:
         raw = _make_raw_work(locations=locations)
         result = _normalize(raw)
         assert isinstance(result, FetchedRecord)
-        assert result.fulltext_sources[0]["version"] == "preprint"
+        assert result.fulltext_sources[0].version == "preprint"
 
     def test_no_locations(self):
         raw = _make_raw_work(locations=[])

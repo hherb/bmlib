@@ -22,6 +22,7 @@ Mirrors the Swift BioMedLit library's JATSModels and FullTextResult types.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -147,6 +148,41 @@ class JATSArticle:
     figures: list[JATSFigureInfo]
     tables: list[JATSTableInfo]
     references: list[JATSReferenceInfo]
+
+
+@dataclass
+class FullTextSourceEntry:
+    """A known full-text source URL discovered by a fetcher.
+
+    Produced by publication fetchers, consumed by :class:`FullTextService`.
+    """
+
+    url: str
+    format: str  # "pdf", "xml", "html"
+    source: str  # e.g. "biorxiv", "medrxiv", "pmc", "publisher"
+    open_access: bool = True
+    version: str | None = None  # e.g. "preprint", "accepted", "published"
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
+            "url": self.url,
+            "format": self.format,
+            "source": self.source,
+            "open_access": self.open_access,
+        }
+        if self.version:
+            d["version"] = self.version
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> FullTextSourceEntry:
+        return cls(
+            url=data["url"],
+            format=data["format"],
+            source=data["source"],
+            open_access=data.get("open_access", True),
+            version=data.get("version"),
+        )
 
 
 @dataclass

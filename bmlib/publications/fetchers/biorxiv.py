@@ -28,6 +28,7 @@ from collections.abc import Callable
 from datetime import date
 from typing import Any
 
+from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.publications.models import FetchResult, FetchedRecord, SyncProgress
 
 # ---------------------------------------------------------------------------
@@ -51,17 +52,21 @@ def _normalize(raw: dict[str, Any], server: str) -> FetchedRecord:
     authors = [a.strip() for a in authors_raw.split(";") if a.strip()] if authors_raw else []
 
     # Build full-text sources
-    fulltext_sources: list[dict[str, str]] = []
+    fulltext_sources: list[FullTextSourceEntry] = []
 
     # PDF URL derived from DOI
     if doi:
         pdf_url = f"https://www.{server}.org/content/{doi}v1.full.pdf"
-        fulltext_sources.append({"url": pdf_url, "format": "pdf", "source": server})
+        fulltext_sources.append(FullTextSourceEntry(
+            url=pdf_url, format="pdf", source=server, open_access=True,
+        ))
 
     # JATS XML URL from the record
     jatsxml = raw.get("jatsxml", "")
     if jatsxml:
-        fulltext_sources.append({"url": jatsxml, "format": "xml", "source": server})
+        fulltext_sources.append(FullTextSourceEntry(
+            url=jatsxml, format="xml", source=server, open_access=True,
+        ))
 
     return FetchedRecord(
         title=raw.get("title", ""),

@@ -29,7 +29,7 @@ from urllib.parse import quote
 import httpx
 
 from bmlib.fulltext.jats_parser import JATSParser
-from bmlib.fulltext.models import FullTextResult
+from bmlib.fulltext.models import FullTextResult, FullTextSourceEntry
 
 logger = logging.getLogger(__name__)
 
@@ -59,15 +59,25 @@ class FullTextService:
     def fetch_fulltext(
         self,
         *,
+        fulltext_sources: list[FullTextSourceEntry] | None = None,
         pmc_id: str | None = None,
         doi: str | None = None,
         pmid: str = "",
     ) -> FullTextResult:
-        """Fetch full text using 3-tier fallback chain.
+        """Fetch full text using known sources + 3-tier fallback chain.
 
-        Tries: Europe PMC XML -> Unpaywall PDF -> DOI resolution.
-        Always attempts Europe PMC first, discovering PMC ID if needed.
+        Tries:
+          0. Known sources from fetcher (JATS XML > PDF > HTML)
+          1. Europe PMC XML (known PMC ID or discovered via DOI/PMID)
+          2. Unpaywall PDF URL
+          3. DOI / PubMed URL fallback
         """
+        # Tier 0: Try fetcher-provided sources
+        if fulltext_sources:
+            result = self._try_known_sources(fulltext_sources)
+            if result is not None:
+                return result
+
         # Tier 1a: Europe PMC with known PMC ID
         if pmc_id:
             try:
@@ -114,6 +124,48 @@ class FullTextService:
             return FullTextResult(source="doi", web_url=f"{PUBMED_BASE}/{pmid}/")
 
         raise FullTextError("No identifiers provided")
+
+    def _try_known_sources(
+        self, sources: list[FullTextSourceEntry],
+    ) -> FullTextResult | None:
+        """Try fetcher-provided fulltext sources in priority order.
+
+        Priority: xml (JATS) > pdf > html.
+        Returns FullTextResult on success, None if all fail.
+        """
+        priority = {"xml": 0, "pdf": 1, "html": 2}
+        sorted_sources = sorted(
+            sources, key=lambda s: priority.get(s.format, 99),
+        )
+
+        for entry in sorted_sources:
+            try:
+                if entry.format == "xml":
+                    html = self._fetch_jats_xml(entry.url)
+                    logger.info("Full text from JATS XML (%s)", entry.source)
+                    return FullTextResult(source=entry.source, html=html)
+                elif entry.format == "pdf":
+                    logger.info("PDF available from %s", entry.source)
+                    return FullTextResult(source=entry.source, pdf_url=entry.url)
+                elif entry.format == "html":
+                    logger.info("HTML source from %s", entry.source)
+                    return FullTextResult(source=entry.source, web_url=entry.url)
+            except Exception:
+                logger.debug(
+                    "Known source %s (%s) failed", entry.source, entry.url,
+                    exc_info=True,
+                )
+                continue
+
+        return None
+
+    def _fetch_jats_xml(self, url: str) -> str:
+        """Fetch JATS XML from an arbitrary URL and parse to HTML."""
+        resp = self._http_get(url, headers={"Accept": "application/xml"})
+        if resp.status_code != 200:
+            raise FullTextError(f"JATS XML fetch failed: HTTP {resp.status_code}")
+        parser = JATSParser(resp.content)
+        return parser.to_html()
 
     def _resolve_pmc_id(
         self, *, doi: str | None = None, pmid: str = "",

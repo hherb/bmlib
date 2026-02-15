@@ -621,12 +621,12 @@ class TestBiorxivNormalize:
         sources = result.fulltext_sources
         assert len(sources) == 2
         pdf = sources[0]
-        assert pdf["format"] == "pdf"
-        assert pdf["url"] == "https://www.biorxiv.org/content/10.1101/2024.01.01.000001v1.full.pdf"
-        assert pdf["source"] == "biorxiv"
+        assert pdf.format == "pdf"
+        assert pdf.url == "https://www.biorxiv.org/content/10.1101/2024.01.01.000001v1.full.pdf"
+        assert pdf.source == "biorxiv"
         xml = sources[1]
-        assert xml["format"] == "xml"
-        assert "source.xml" in xml["url"]
+        assert xml.format == "xml"
+        assert "source.xml" in xml.url
 
     def test_normalize_sets_source(self):
         raw = _sample_record()
@@ -703,7 +703,7 @@ class TestFetchBiorxiv:
 
         # Verify PDF URL uses medrxiv domain
         pdf_source = collected[0].fulltext_sources[0]
-        assert "medrxiv.org" in pdf_source["url"]
+        assert "medrxiv.org" in pdf_source.url
 
     def test_http_error_returns_failed(self):
         """HTTP error should return FetchResult with status='failed'."""

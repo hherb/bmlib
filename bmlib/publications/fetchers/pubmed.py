@@ -30,6 +30,7 @@ from collections.abc import Callable
 from datetime import date
 from typing import Any
 
+from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.publications.models import FetchResult, FetchedRecord, SyncProgress
 
 logger = logging.getLogger(__name__)
@@ -181,15 +182,17 @@ def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
                 keywords.append(text)
 
     # Fulltext sources
-    fulltext_sources: list[dict[str, str]] = []
+    fulltext_sources: list[FullTextSourceEntry] = []
     if pmc_id:
-        fulltext_sources.append(
-            {"url": f"{PMC_BASE_URL}{pmc_id}/", "source": "pmc", "format": "html"}
-        )
+        fulltext_sources.append(FullTextSourceEntry(
+            url=f"{PMC_BASE_URL}{pmc_id}/", source="pmc", format="html",
+            open_access=True,
+        ))
     if doi:
-        fulltext_sources.append(
-            {"url": f"{DOI_BASE_URL}{doi}", "source": "publisher", "format": "html"}
-        )
+        fulltext_sources.append(FullTextSourceEntry(
+            url=f"{DOI_BASE_URL}{doi}", source="publisher", format="html",
+            open_access=False,
+        ))
 
     return FetchedRecord(
         title=title or "",

@@ -24,7 +24,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from bmlib.fulltext.models import FullTextSourceEntry
 
 
 def _now_utc() -> datetime:
@@ -280,7 +283,7 @@ class FetchedRecord:
     # -- Access --
     is_open_access: bool = False
     license: str | None = None
-    fulltext_sources: list[dict[str, str]] = field(default_factory=list)
+    fulltext_sources: list[FullTextSourceEntry] = field(default_factory=list)
 
     # -- Source-specific extras --
     extras: dict[str, Any] = field(default_factory=dict)

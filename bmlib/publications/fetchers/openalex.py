@@ -28,6 +28,7 @@ from collections.abc import Callable
 from datetime import date
 from typing import Any
 
+from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.publications.models import FetchResult, FetchedRecord, SyncProgress
 
 # ---------------------------------------------------------------------------
@@ -130,33 +131,26 @@ def _normalize(raw: dict[str, Any]) -> FetchedRecord:
         publication_types.append(work_type)
 
     # Fulltext sources from locations
-    fulltext_sources: list[dict[str, Any]] = []
+    fulltext_sources: list[FullTextSourceEntry] = []
     for location in raw.get("locations") or []:
         loc_source = (location.get("source") or {}).get("display_name") or "unknown"
         version_raw = location.get("version") or ""
         version = _VERSION_MAP.get(version_raw, version_raw) if version_raw else None
+        loc_is_oa = bool(location.get("is_oa", False))
 
         landing_url = location.get("landing_page_url")
         if landing_url:
-            fulltext_sources.append(
-                {
-                    "source": loc_source,
-                    "url": landing_url,
-                    "format": "html",
-                    "version": version,
-                }
-            )
+            fulltext_sources.append(FullTextSourceEntry(
+                url=landing_url, format="html", source=loc_source,
+                open_access=loc_is_oa, version=version,
+            ))
 
         pdf_url = location.get("pdf_url")
         if pdf_url:
-            fulltext_sources.append(
-                {
-                    "source": loc_source,
-                    "url": pdf_url,
-                    "format": "pdf",
-                    "version": version,
-                }
-            )
+            fulltext_sources.append(FullTextSourceEntry(
+                url=pdf_url, format="pdf", source=loc_source,
+                open_access=loc_is_oa, version=version,
+            ))
 
     return FetchedRecord(
         title=raw.get("title") or "",
