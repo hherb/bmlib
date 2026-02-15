@@ -21,7 +21,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import time
 from typing import Any
 
@@ -32,6 +31,7 @@ from bmlib.llm.providers.base import (
     ModelPricing,
     ProviderCapabilities,
 )
+from bmlib.llm.utils import extract_json
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +185,7 @@ class AnthropicProvider(BaseProvider):
             try:
                 json.loads(content)
             except json.JSONDecodeError:
-                content = _extract_json(content)
+                content = extract_json(content)
 
         return LLMResponse(
             content=content,
@@ -279,35 +279,3 @@ class AnthropicProvider(BaseProvider):
         """Return pricing for *model*, falling back to default rates."""
         return self.MODEL_PRICING.get(model, self._FALLBACK_PRICING)
 
-
-# ---------------------------------------------------------------------------
-# Pure helpers
-# ---------------------------------------------------------------------------
-
-def _extract_json(text: str) -> str:
-    """Extract JSON from text that may contain markdown code blocks.
-
-    Tries code-block extraction first, then bare ``{...}`` matching.
-    Returns the original *text* unchanged if no JSON can be found.
-    """
-    code_block_match = re.search(
-        r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL
-    )
-    if code_block_match:
-        candidate = code_block_match.group(1).strip()
-        try:
-            json.loads(candidate)
-            return candidate
-        except json.JSONDecodeError:
-            pass
-
-    brace_match = re.search(r"\{.*\}", text, re.DOTALL)
-    if brace_match:
-        candidate = brace_match.group(0)
-        try:
-            json.loads(candidate)
-            return candidate
-        except json.JSONDecodeError:
-            pass
-
-    return text

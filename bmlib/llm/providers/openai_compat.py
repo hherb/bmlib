@@ -40,7 +40,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import time
 from typing import Any
 
@@ -51,6 +50,7 @@ from bmlib.llm.providers.base import (
     ModelPricing,
     ProviderCapabilities,
 )
+from bmlib.llm.utils import extract_json
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +164,7 @@ class OpenAICompatibleProvider(BaseProvider):
             try:
                 json.loads(content)
             except json.JSONDecodeError:
-                content = _extract_json(content)
+                content = extract_json(content)
 
         return LLMResponse(
             content=content,
@@ -175,6 +175,13 @@ class OpenAICompatibleProvider(BaseProvider):
         )
 
     # --- Model listing ---
+
+    def _known_context_window(self, model_id: str) -> int:
+        """Look up context window from FALLBACK_MODELS for known model IDs."""
+        for fb in self.FALLBACK_MODELS:
+            if fb.model_id == model_id:
+                return fb.context_window
+        return 128_000
 
     def list_models(self, force_refresh: bool = False) -> list[ModelMetadata]:
         if (
@@ -192,15 +199,16 @@ class OpenAICompatibleProvider(BaseProvider):
             for m in model_list:
                 model_id = m.id
                 pricing = self.MODEL_PRICING.get(model_id, self._FALLBACK_PRICING)
+                ctx = self._known_context_window(model_id)
                 models.append(
                     ModelMetadata(
                         model_id=model_id,
                         display_name=model_id,
-                        context_window=128_000,
+                        context_window=ctx,
                         pricing=pricing,
                         capabilities=ProviderCapabilities(
                             supports_system_messages=True,
-                            max_context_window=128_000,
+                            max_context_window=ctx,
                         ),
                     )
                 )
@@ -233,28 +241,3 @@ class OpenAICompatibleProvider(BaseProvider):
 
     def get_model_pricing(self, model: str) -> ModelPricing:
         return self.MODEL_PRICING.get(model, self._FALLBACK_PRICING)
-
-
-def _extract_json(text: str) -> str:
-    """Extract JSON from text that may contain markdown code blocks."""
-    code_block_match = re.search(
-        r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL
-    )
-    if code_block_match:
-        candidate = code_block_match.group(1).strip()
-        try:
-            json.loads(candidate)
-            return candidate
-        except json.JSONDecodeError:
-            pass
-
-    brace_match = re.search(r"\{.*\}", text, re.DOTALL)
-    if brace_match:
-        candidate = brace_match.group(0)
-        try:
-            json.loads(candidate)
-            return candidate
-        except json.JSONDecodeError:
-            pass
-
-    return text

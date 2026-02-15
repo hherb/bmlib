@@ -197,7 +197,7 @@ class OllamaProvider(BaseProvider):
 
     # --- Model discovery (native API) ---
 
-    def list_models(self) -> list[ModelMetadata]:
+    def list_models(self, force_refresh: bool = False) -> list[ModelMetadata]:
         """List models currently available on the Ollama server."""
         try:
             client = self._get_client()
