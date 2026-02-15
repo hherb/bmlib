@@ -62,12 +62,17 @@ class LLMClient:
         default_provider: str = DEFAULT_PROVIDER,
         ollama_host: str | None = None,
         anthropic_api_key: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
     ) -> None:
         self.default_provider = default_provider
         self._provider_config: dict[str, dict[str, object]] = {
-            "anthropic": {"api_key": anthropic_api_key},
+            "anthropic": {"api_key": anthropic_api_key or api_key},
             "ollama": {"base_url": ollama_host},
         }
+        # OpenAI-compatible providers share the generic api_key / base_url
+        for name in ("openai", "deepseek", "mistral", "gemini"):
+            self._provider_config[name] = {"api_key": api_key, "base_url": base_url}
         self._providers: dict[str, BaseProvider] = {}
 
     def _get_provider(self, name: str) -> BaseProvider:

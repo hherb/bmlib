@@ -87,3 +87,31 @@ def _ensure_builtins() -> None:
         _REGISTRY["ollama"] = OllamaProvider
     except ImportError:
         pass
+
+    # OpenAI
+    try:
+        from bmlib.llm.providers.openai_provider import OpenAIProvider
+        _REGISTRY["openai"] = OpenAIProvider
+    except ImportError:
+        pass
+
+    # DeepSeek
+    try:
+        from bmlib.llm.providers.deepseek import DeepSeekProvider
+        _REGISTRY["deepseek"] = DeepSeekProvider
+    except ImportError:
+        pass
+
+    # Mistral
+    try:
+        from bmlib.llm.providers.mistral import MistralProvider
+        _REGISTRY["mistral"] = MistralProvider
+    except ImportError:
+        pass
+
+    # Gemini
+    try:
+        from bmlib.llm.providers.gemini import GeminiProvider
+        _REGISTRY["gemini"] = GeminiProvider
+    except ImportError:
+        pass
