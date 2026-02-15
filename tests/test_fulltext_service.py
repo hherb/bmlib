@@ -21,8 +21,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bmlib.fulltext.cache import FullTextCache
 from bmlib.fulltext.models import FullTextSourceEntry
-from bmlib.fulltext.service import FullTextError, FullTextService
+from bmlib.fulltext.service import FullTextError, FullTextService, _sanitize_identifier
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -292,3 +293,201 @@ class TestFullTextError:
     def test_no_identifiers_message(self):
         err = FullTextError("No identifiers provided")
         assert "No identifiers" in str(err)
+
+
+class TestSanitizeIdentifier:
+    def test_doi_sanitized(self):
+        assert _sanitize_identifier("10.1234/test.paper-1") == "10.1234_test.paper-1"
+
+    def test_slashes_replaced(self):
+        result = _sanitize_identifier("10.1101/2024.01.15.123456")
+        assert "/" not in result
+
+    def test_safe_chars_preserved(self):
+        result = _sanitize_identifier("simple_name-1.0")
+        assert result == "simple_name-1.0"
+
+
+class TestCacheIntegration:
+    """Tests for FullTextCache integration in FullTextService."""
+
+    PDF_MAGIC = b"%PDF-1.4 fake content for testing"
+
+    def test_cached_html_returned_without_network(self, tmp_path):
+        """If HTML is in the disk cache, return it immediately."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_html("<h1>Cached</h1>", "10.1234_test")
+
+        service = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(service, "_http_get") as mock_get:
+            result = service.fetch_fulltext(
+                doi="10.1234/test", identifier="10.1234/test",
+            )
+            mock_get.assert_not_called()
+
+        assert result.source == "cached"
+        assert result.html == "<h1>Cached</h1>"
+
+    def test_cached_pdf_returned_without_network(self, tmp_path):
+        """If PDF is in the disk cache, return file_path immediately."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_pdf(self.PDF_MAGIC, "10.1234_test")
+
+        service = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(service, "_http_get") as mock_get:
+            result = service.fetch_fulltext(
+                doi="10.1234/test", identifier="10.1234/test",
+            )
+            mock_get.assert_not_called()
+
+        assert result.source == "cached"
+        assert result.file_path is not None
+        assert result.file_path.endswith(".pdf")
+
+    def test_fetched_jats_html_saved_to_cache(self, tmp_path):
+        """After fetching JATS XML from Europe PMC, HTML is saved to disk cache."""
+        xml_data = (FIXTURES / "sample_article.xml").read_bytes()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = xml_data
+
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(service, "_http_get", return_value=mock_response):
+            result = service.fetch_fulltext(
+                pmc_id="PMC123", identifier="10.1234/test",
+            )
+
+        assert result.source == "europepmc"
+        cached_html = cache.get_html("10.1234_test")
+        assert cached_html is not None
+        assert "<h1>" in cached_html
+
+    def test_pdf_downloaded_and_cached(self, tmp_path):
+        """When Unpaywall returns a PDF URL, the PDF is downloaded and cached."""
+        # Europe PMC search returns nothing
+        mock_search_empty = MagicMock()
+        mock_search_empty.status_code = 200
+        mock_search_empty.json.return_value = {"resultList": {"result": []}}
+
+        # Unpaywall returns a PDF URL
+        mock_unpaywall = MagicMock()
+        mock_unpaywall.status_code = 200
+        mock_unpaywall.json.return_value = {
+            "best_oa_location": {"url_for_pdf": "https://example.com/paper.pdf"}
+        }
+
+        # PDF download response
+        mock_pdf = MagicMock()
+        mock_pdf.status_code = 200
+        mock_pdf.content = self.PDF_MAGIC
+
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(
+            service, "_http_get",
+            side_effect=[mock_search_empty, mock_unpaywall, mock_pdf],
+        ):
+            result = service.fetch_fulltext(
+                doi="10.1234/test", identifier="10.1234/test",
+            )
+
+        assert result.source == "unpaywall"
+        assert result.pdf_url == "https://example.com/paper.pdf"
+        assert result.file_path is not None
+        assert result.file_path.endswith(".pdf")
+        # Verify file on disk
+        assert Path(result.file_path).exists()
+
+    def test_invalid_pdf_rejected_keeps_url(self, tmp_path):
+        """If downloaded PDF data is invalid, file_path stays None but pdf_url remains."""
+        mock_search_empty = MagicMock()
+        mock_search_empty.status_code = 200
+        mock_search_empty.json.return_value = {"resultList": {"result": []}}
+
+        mock_unpaywall = MagicMock()
+        mock_unpaywall.status_code = 200
+        mock_unpaywall.json.return_value = {
+            "best_oa_location": {"url_for_pdf": "https://example.com/paper.pdf"}
+        }
+
+        # Invalid PDF data (HTML error page)
+        mock_pdf = MagicMock()
+        mock_pdf.status_code = 200
+        mock_pdf.content = b"<html>Access Denied</html>"
+
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(
+            service, "_http_get",
+            side_effect=[mock_search_empty, mock_unpaywall, mock_pdf],
+        ):
+            result = service.fetch_fulltext(
+                doi="10.1234/test", identifier="10.1234/test",
+            )
+
+        assert result.source == "unpaywall"
+        assert result.pdf_url == "https://example.com/paper.pdf"
+        assert result.file_path is None
+
+    def test_no_identifier_skips_caching(self, tmp_path):
+        """Without identifier, caching is bypassed entirely."""
+        xml_data = (FIXTURES / "sample_article.xml").read_bytes()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = xml_data
+
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(service, "_http_get", return_value=mock_response):
+            result = service.fetch_fulltext(pmc_id="PMC123")
+
+        assert result.source == "europepmc"
+        # Nothing cached since no identifier was provided
+        assert not list((tmp_path / "html").iterdir())
+
+    def test_known_source_xml_cached(self, tmp_path):
+        """JATS XML from known sources is also cached."""
+        xml_data = (FIXTURES / "sample_article.xml").read_bytes()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = xml_data
+
+        sources = [
+            FullTextSourceEntry(
+                url="https://medrxiv.org/jats.xml", format="xml", source="medrxiv",
+            ),
+        ]
+
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(service, "_http_get", return_value=mock_response):
+            result = service.fetch_fulltext(
+                fulltext_sources=sources, identifier="10.1234/test",
+            )
+
+        assert result.source == "medrxiv"
+        assert cache.get_html("10.1234_test") is not None
+
+    def test_known_source_pdf_downloaded_and_cached(self, tmp_path):
+        """PDF from known sources is downloaded and cached."""
+        mock_pdf = MagicMock()
+        mock_pdf.status_code = 200
+        mock_pdf.content = self.PDF_MAGIC
+
+        sources = [
+            FullTextSourceEntry(
+                url="https://medrxiv.org/paper.pdf", format="pdf", source="medrxiv",
+            ),
+        ]
+
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(service, "_http_get", return_value=mock_pdf):
+            result = service.fetch_fulltext(
+                fulltext_sources=sources, identifier="10.1234/test",
+            )
+
+        assert result.source == "medrxiv"
+        assert result.file_path is not None
+        assert Path(result.file_path).exists()
