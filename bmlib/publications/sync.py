@@ -28,8 +28,9 @@ from datetime import date, timedelta
 from typing import Any
 
 from bmlib.db import execute, fetch_all
-from bmlib.publications.fetchers import ALL_SOURCES
+from bmlib.publications.fetchers.registry import get_fetcher, source_names
 from bmlib.publications.models import (
+    FetchedRecord,
     FullTextSource,
     Publication,
     SyncProgress,
@@ -52,18 +53,12 @@ _HTTP_TIMEOUT_SECONDS = 30.0
 # ---------------------------------------------------------------------------
 
 
-def _get_fetchers() -> dict[str, Callable]:
-    """Lazily load real fetcher functions to avoid import-time side effects."""
-    from bmlib.publications.fetchers.biorxiv import fetch_biorxiv
-    from bmlib.publications.fetchers.openalex import fetch_openalex
-    from bmlib.publications.fetchers.pubmed import fetch_pubmed
-
-    return {
-        "pubmed": fetch_pubmed,
-        "biorxiv": lambda client, d, **kw: fetch_biorxiv(client, d, server="biorxiv", **kw),
-        "medrxiv": lambda client, d, **kw: fetch_biorxiv(client, d, server="medrxiv", **kw),
-        "openalex": fetch_openalex,
-    }
+def _get_fetcher_for_source(source: str) -> Callable | None:
+    """Return the registered fetcher for a source, or None if unknown."""
+    try:
+        return get_fetcher(source)
+    except ValueError:
+        return None
 
 
 def _days_needing_fetch(
@@ -142,32 +137,31 @@ def _days_needing_fetch(
     return needed
 
 
-def _raw_to_publication(raw: dict[str, Any], source: str) -> Publication:
-    """Convert a raw fetcher dict to a Publication dataclass."""
+def _record_to_publication(record: FetchedRecord) -> Publication:
+    """Convert a :class:`FetchedRecord` to a :class:`Publication`."""
     return Publication(
-        title=raw.get("title", ""),
-        doi=raw.get("doi"),
-        pmid=raw.get("pmid"),
-        abstract=raw.get("abstract"),
-        authors=raw.get("authors", []),
-        journal=raw.get("journal"),
-        publication_date=raw.get("publication_date"),
-        publication_types=raw.get("publication_types", []),
-        keywords=raw.get("keywords", []),
-        is_open_access=raw.get("is_open_access", False),
-        license=raw.get("license"),
-        sources=[source],
-        first_seen_source=source,
+        title=record.title,
+        doi=record.doi,
+        pmid=record.pmid,
+        abstract=record.abstract,
+        authors=record.authors,
+        journal=record.journal,
+        publication_date=record.publication_date,
+        publication_types=record.publication_types,
+        keywords=record.keywords,
+        is_open_access=record.is_open_access,
+        license=record.license,
+        sources=[record.source],
+        first_seen_source=record.source,
     )
 
 
-def _raw_to_fulltext_sources(raw: dict[str, Any]) -> list[FullTextSource] | None:
-    """Extract FullTextSource objects from a raw fetcher dict, if any."""
-    fts_list = raw.get("fulltext_sources")
-    if not fts_list:
+def _record_to_fulltext_sources(record: FetchedRecord) -> list[FullTextSource] | None:
+    """Extract :class:`FullTextSource` objects from a :class:`FetchedRecord`."""
+    if not record.fulltext_sources:
         return None
     result = []
-    for fts in fts_list:
+    for fts in record.fulltext_sources:
         result.append(
             FullTextSource(
                 publication_id=0,  # will be set by store_publication
@@ -211,15 +205,34 @@ def _upsert_download_day(
 # ---------------------------------------------------------------------------
 
 
+def _build_source_configs(
+    source_configs: dict[str, dict[str, Any]] | None,
+    email: str,
+    api_keys: dict[str, str] | None,
+) -> dict[str, dict[str, Any]]:
+    """Merge legacy ``email``/``api_keys`` params into a ``source_configs`` dict."""
+    if source_configs is not None:
+        return source_configs
+
+    configs: dict[str, dict[str, Any]] = {}
+    if api_keys:
+        for src, key in api_keys.items():
+            configs.setdefault(src, {})["api_key"] = key
+    if email:
+        configs.setdefault("openalex", {})["email"] = email
+    return configs
+
+
 def sync(
     conn: Any,
     *,
     sources: list[str] | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
-    email: str,
+    email: str = "",
     api_keys: dict[str, str] | None = None,
-    on_record: Callable[[dict], None] | None = None,
+    source_configs: dict[str, dict[str, Any]] | None = None,
+    on_record: Callable[[FetchedRecord], None] | None = None,
     on_progress: Callable[[SyncProgress], None] | None = None,
     recheck_days: int = 0,
     _fetcher_override: dict[str, Callable] | None = None,
@@ -231,17 +244,21 @@ def sync(
     conn:
         A DB-API connection.
     sources:
-        Source names to sync.  Defaults to :data:`ALL_SOURCES`.
+        Source names to sync.  Defaults to all registered sources.
     date_from:
         Start date (inclusive).  Defaults to yesterday.
     date_to:
         End date (inclusive).  Defaults to today.
     email:
-        Contact email for polite API access (required by OpenAlex).
+        Contact email for polite API access (legacy; prefer *source_configs*).
     api_keys:
-        Optional dict mapping source names to API keys.
+        Dict mapping source names to API keys (legacy; prefer *source_configs*).
+    source_configs:
+        Dict mapping source names to config dicts.  Each config dict is
+        unpacked as ``**kwargs`` when calling the fetcher.  Supersedes
+        *email* and *api_keys* when provided.
     on_record:
-        Optional callback invoked with each raw record dict.
+        Optional callback invoked with each :class:`FetchedRecord`.
     on_progress:
         Optional callback invoked with progress updates.
     recheck_days:
@@ -258,24 +275,25 @@ def sync(
 
     today = date.today()
     if sources is None:
-        sources = list(ALL_SOURCES)
+        sources = list(source_names())
     if date_to is None:
         date_to = today
     if date_from is None:
         date_from = today - timedelta(days=1)
-    if api_keys is None:
-        api_keys = {}
 
-    fetchers = _fetcher_override if _fetcher_override is not None else _get_fetchers()
+    resolved_configs = _build_source_configs(source_configs, email, api_keys)
 
     # Create HTTP client only if using real fetchers
     client: Any = None
     if _fetcher_override is None:
         import httpx
 
+        user_agent_email = (
+            resolved_configs.get("openalex", {}).get("email", email) or "unknown"
+        )
         client = httpx.Client(
             timeout=_HTTP_TIMEOUT_SECONDS,
-            headers={"User-Agent": f"bmlib/0.1 (mailto:{email})"},
+            headers={"User-Agent": f"bmlib/0.1 (mailto:{user_agent_email})"},
         )
 
     total_added = 0
@@ -287,7 +305,11 @@ def sync(
 
     try:
         for source in sources:
-            fetcher = fetchers.get(source)
+            if _fetcher_override is not None:
+                fetcher = _fetcher_override.get(source)
+            else:
+                fetcher = _get_fetcher_for_source(source)
+
             if fetcher is None:
                 errors.append(f"No fetcher found for source: {source}")
                 continue
@@ -304,16 +326,18 @@ def sync(
                 sources_synced.append(source)
                 continue
 
+            src_config = resolved_configs.get(source, {})
+
             for day in days:
                 day_added = 0
                 day_merged = 0
                 day_failed = 0
 
-                def handle_record(raw: dict[str, Any]) -> None:
+                def handle_record(record: FetchedRecord) -> None:
                     nonlocal day_added, day_merged, day_failed
                     try:
-                        pub = _raw_to_publication(raw, source)
-                        fts = _raw_to_fulltext_sources(raw)
+                        pub = _record_to_publication(record)
+                        fts = _record_to_fulltext_sources(record)
                         result = store_publication(conn, pub, fulltext_sources=fts)
                         if result == "added":
                             day_added += 1
@@ -324,24 +348,14 @@ def sync(
                         logger.error("Failed to store record from %s: %s", source, exc)
 
                     if on_record is not None:
-                        on_record(raw)
+                        on_record(record)
 
-                # Build kwargs for the fetcher
-                fetcher_kwargs: dict[str, Any] = {
-                    "on_record": handle_record,
-                    "on_progress": on_progress,
-                }
-
-                # Pass api_key if available for this source
-                api_key = api_keys.get(source)
-                if api_key is not None:
-                    fetcher_kwargs["api_key"] = api_key
-
-                # Pass email for openalex
-                if source == "openalex":
-                    fetcher_kwargs["email"] = email
-
-                fetch_result = fetcher(client, day, **fetcher_kwargs)
+                fetch_result = fetcher(
+                    client, day,
+                    on_record=handle_record,
+                    on_progress=on_progress,
+                    **src_config,
+                )
 
                 # All fetchers use "completed" or "failed" as status strings
                 status = fetch_result.status if fetch_result.status == "failed" else "completed"

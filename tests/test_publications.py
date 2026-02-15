@@ -41,7 +41,8 @@ from bmlib.publications.storage import (
     get_publication_by_pmid,
     store_publication,
 )
-from bmlib.publications.sync import _raw_to_fulltext_sources
+from bmlib.publications.models import FetchedRecord
+from bmlib.publications.sync import _record_to_fulltext_sources
 
 # ---------------------------------------------------------------------------
 # Task 1: Data model tests
@@ -612,12 +613,12 @@ class TestBiorxivNormalize:
     def test_normalize_splits_authors(self):
         raw = _sample_record()
         result = _normalize(raw, "biorxiv")
-        assert result["authors"] == ["Smith, J.", "Doe, A.", "Lee, B."]
+        assert result.authors == ["Smith, J.", "Doe, A.", "Lee, B."]
 
     def test_normalize_builds_fulltext_sources(self):
         raw = _sample_record(doi="10.1101/2024.01.01.000001")
         result = _normalize(raw, "biorxiv")
-        sources = result["fulltext_sources"]
+        sources = result.fulltext_sources
         assert len(sources) == 2
         pdf = sources[0]
         assert pdf["format"] == "pdf"
@@ -630,12 +631,12 @@ class TestBiorxivNormalize:
     def test_normalize_sets_source(self):
         raw = _sample_record()
         result = _normalize(raw, "medrxiv")
-        assert result["source"] == "medrxiv"
+        assert result.source == "medrxiv"
 
     def test_normalize_open_access(self):
         raw = _sample_record()
         result = _normalize(raw, "biorxiv")
-        assert result["is_open_access"] is True
+        assert result.is_open_access is True
 
 
 class TestFetchBiorxiv:
@@ -663,16 +664,17 @@ class TestFetchBiorxiv:
         assert result.error is None
 
         assert len(collected) == 2
-        assert collected[0]["title"] == "Paper A"
-        assert collected[1]["title"] == "Paper B"
+        assert collected[0].title == "Paper A"
+        assert collected[1].title == "Paper B"
 
         # Verify normalisation
         rec = collected[0]
-        assert isinstance(rec["authors"], list)
-        assert len(rec["authors"]) == 3
-        assert len(rec["fulltext_sources"]) == 2
-        assert rec["source"] == "biorxiv"
-        assert rec["is_open_access"] is True
+        assert isinstance(rec, FetchedRecord)
+        assert isinstance(rec.authors, list)
+        assert len(rec.authors) == 3
+        assert len(rec.fulltext_sources) == 2
+        assert rec.source == "biorxiv"
+        assert rec.is_open_access is True
 
     def test_medrxiv_server_parameter(self):
         """URL should contain 'medrxiv' and source field should be 'medrxiv'."""
@@ -697,10 +699,10 @@ class TestFetchBiorxiv:
         assert "medrxiv" in call_url
 
         # Verify source in normalised record
-        assert collected[0]["source"] == "medrxiv"
+        assert collected[0].source == "medrxiv"
 
         # Verify PDF URL uses medrxiv domain
-        pdf_source = collected[0]["fulltext_sources"][0]
+        pdf_source = collected[0].fulltext_sources[0]
         assert "medrxiv.org" in pdf_source["url"]
 
     def test_http_error_returns_failed(self):
@@ -809,19 +811,23 @@ class TestFetchBiorxiv:
 # ---------------------------------------------------------------------------
 
 
-class TestRawToFulltextSources:
+class TestRecordToFulltextSources:
     def test_none_when_no_fulltext_sources(self):
-        """Returns None when raw dict has no fulltext_sources key."""
-        assert _raw_to_fulltext_sources({}) is None
+        """Returns None when record has no fulltext_sources."""
+        record = FetchedRecord(title="Test", source="test")
+        assert _record_to_fulltext_sources(record) is None
 
     def test_none_when_empty_list(self):
         """Returns None when fulltext_sources is an empty list."""
-        assert _raw_to_fulltext_sources({"fulltext_sources": []}) is None
+        record = FetchedRecord(title="Test", source="test", fulltext_sources=[])
+        assert _record_to_fulltext_sources(record) is None
 
     def test_extracts_sources_correctly(self):
         """Correctly converts fulltext source dicts to FullTextSource objects."""
-        raw = {
-            "fulltext_sources": [
+        record = FetchedRecord(
+            title="Test",
+            source="test",
+            fulltext_sources=[
                 {
                     "source": "pmc",
                     "url": "https://pmc.example.com/1",
@@ -829,9 +835,9 @@ class TestRawToFulltextSources:
                     "version": "1.0",
                 },
                 {"source": "publisher", "url": "https://pub.example.com/1.pdf", "format": "pdf"},
-            ]
-        }
-        result = _raw_to_fulltext_sources(raw)
+            ],
+        )
+        result = _record_to_fulltext_sources(record)
         assert result is not None
         assert len(result) == 2
         assert result[0].source == "pmc"
@@ -844,12 +850,14 @@ class TestRawToFulltextSources:
 
     def test_defaults_for_missing_keys(self):
         """Uses defaults when optional keys are missing from fulltext source dict."""
-        raw = {
-            "fulltext_sources": [
+        record = FetchedRecord(
+            title="Test",
+            source="test",
+            fulltext_sources=[
                 {"url": "https://example.com/paper"},
-            ]
-        }
-        result = _raw_to_fulltext_sources(raw)
+            ],
+        )
+        result = _record_to_fulltext_sources(record)
         assert result is not None
         assert len(result) == 1
         assert result[0].source == "unknown"

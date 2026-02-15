@@ -28,7 +28,7 @@ from collections.abc import Callable
 from datetime import date
 from typing import Any
 
-from bmlib.publications.models import FetchResult, SyncProgress
+from bmlib.publications.models import FetchResult, FetchedRecord, SyncProgress
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -44,22 +44,8 @@ RATE_LIMIT_SECONDS = 0.5
 # ---------------------------------------------------------------------------
 
 
-def _normalize(raw: dict[str, Any], server: str) -> dict[str, Any]:
-    """Convert a raw bioRxiv/medRxiv API record to the common publication dict.
-
-    Parameters
-    ----------
-    raw:
-        A single record from the bioRxiv API ``collection`` list.
-    server:
-        The server name (``"biorxiv"`` or ``"medrxiv"``), used to set
-        the ``source`` field and construct the PDF URL.
-
-    Returns
-    -------
-    dict
-        A normalised record dict suitable for downstream processing.
-    """
+def _normalize(raw: dict[str, Any], server: str) -> FetchedRecord:
+    """Convert a raw bioRxiv/medRxiv API record to a :class:`FetchedRecord`."""
     doi = raw.get("doi", "")
     authors_raw = raw.get("authors", "")
     authors = [a.strip() for a in authors_raw.split(";") if a.strip()] if authors_raw else []
@@ -77,19 +63,21 @@ def _normalize(raw: dict[str, Any], server: str) -> dict[str, Any]:
     if jatsxml:
         fulltext_sources.append({"url": jatsxml, "format": "xml", "source": server})
 
-    return {
-        "doi": doi or None,
-        "title": raw.get("title", ""),
-        "authors": authors,
-        "abstract": raw.get("abstract", ""),
-        "publication_date": raw.get("date", ""),
-        "category": raw.get("category", ""),
-        "source": server,
-        "is_open_access": True,
-        "fulltext_sources": fulltext_sources,
-        "published": raw.get("published", ""),
-        "server": raw.get("server", server),
-    }
+    return FetchedRecord(
+        title=raw.get("title", ""),
+        source=server,
+        doi=doi or None,
+        abstract=raw.get("abstract", ""),
+        authors=authors,
+        publication_date=raw.get("date", ""),
+        is_open_access=True,
+        fulltext_sources=fulltext_sources,
+        extras={
+            "category": raw.get("category", ""),
+            "published": raw.get("published", ""),
+            "server": raw.get("server", server),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

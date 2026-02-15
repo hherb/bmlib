@@ -30,7 +30,7 @@ from collections.abc import Callable
 from datetime import date
 from typing import Any
 
-from bmlib.publications.models import FetchResult, SyncProgress
+from bmlib.publications.models import FetchResult, FetchedRecord, SyncProgress
 
 logger = logging.getLogger(__name__)
 
@@ -109,12 +109,8 @@ def _parse_pubdate(pubdate_el: ET.Element | None) -> str | None:
     return f"{year}-{month}-{day_text.zfill(2)}"
 
 
-def _parse_article_xml(article_el: ET.Element) -> dict:
-    """Parse a PubmedArticle XML element into a flat dictionary.
-
-    Returns a dict with keys: pmid, title, abstract, authors, journal,
-    publication_date, doi, pmc_id, keywords, fulltext_sources, source.
-    """
+def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
+    """Parse a PubmedArticle XML element into a :class:`FetchedRecord`."""
     medline = article_el.find("MedlineCitation")
     article = medline.find("Article") if medline is not None else None
     pubmed_data = article_el.find("PubmedData")
@@ -195,19 +191,19 @@ def _parse_article_xml(article_el: ET.Element) -> dict:
             {"url": f"{DOI_BASE_URL}{doi}", "source": "publisher", "format": "html"}
         )
 
-    return {
-        "pmid": pmid,
-        "title": title or "",
-        "abstract": abstract,
-        "authors": authors,
-        "journal": journal,
-        "publication_date": publication_date,
-        "doi": doi,
-        "pmc_id": pmc_id,
-        "keywords": keywords,
-        "fulltext_sources": fulltext_sources,
-        "source": "pubmed",
-    }
+    return FetchedRecord(
+        title=title or "",
+        source="pubmed",
+        doi=doi,
+        pmid=pmid,
+        pmc_id=pmc_id,
+        abstract=abstract,
+        authors=authors,
+        journal=journal,
+        publication_date=publication_date,
+        keywords=keywords,
+        fulltext_sources=fulltext_sources,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -16,11 +16,21 @@
 
 """Publications module — models, schema, storage, and sync for biomedical publications."""
 
+from bmlib.publications.fetchers.registry import (
+    get_fetcher,
+    get_source,
+    list_sources,
+    register_source,
+    source_names,
+)
 from bmlib.publications.models import (
     DownloadDay,
+    FetchedRecord,
     FetchResult,
     FullTextSource,
     Publication,
+    SourceDescriptor,
+    SourceParam,
     SyncProgress,
     SyncReport,
 )
@@ -37,10 +47,18 @@ __all__ = [
     "sync",
     "SyncReport",
     "Publication",
+    "FetchedRecord",
     "FullTextSource",
     "DownloadDay",
     "SyncProgress",
     "FetchResult",
+    "SourceDescriptor",
+    "SourceParam",
+    "get_fetcher",
+    "get_source",
+    "list_sources",
+    "register_source",
+    "source_names",
     "store_publication",
     "get_publication_by_doi",
     "get_publication_by_pmid",

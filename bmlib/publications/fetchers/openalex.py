@@ -28,7 +28,7 @@ from collections.abc import Callable
 from datetime import date
 from typing import Any
 
-from bmlib.publications.models import FetchResult, SyncProgress
+from bmlib.publications.models import FetchResult, FetchedRecord, SyncProgress
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -75,8 +75,8 @@ def _reconstruct_abstract(inverted_index: dict[str, list[int]] | None) -> str | 
     return " ".join(word for _, word in pairs)
 
 
-def _normalize(raw: dict[str, Any]) -> dict[str, Any]:
-    """Convert a raw OpenAlex work record to the common publication format."""
+def _normalize(raw: dict[str, Any]) -> FetchedRecord:
+    """Convert a raw OpenAlex work record to a :class:`FetchedRecord`."""
     # DOI — strip prefix
     doi_raw = raw.get("doi") or ""
     doi = doi_raw.removeprefix(_DOI_PREFIX) if doi_raw else None
@@ -158,21 +158,21 @@ def _normalize(raw: dict[str, Any]) -> dict[str, Any]:
                 }
             )
 
-    return {
-        "title": raw.get("title") or "",
-        "doi": doi,
-        "pmid": pmid,
-        "authors": authors,
-        "journal": journal,
-        "abstract": abstract,
-        "publication_date": raw.get("publication_date"),
-        "keywords": keywords,
-        "is_open_access": is_open_access,
-        "license": license_value,
-        "publication_types": publication_types,
-        "fulltext_sources": fulltext_sources,
-        "source": "openalex",
-    }
+    return FetchedRecord(
+        title=raw.get("title") or "",
+        source="openalex",
+        doi=doi,
+        pmid=pmid,
+        abstract=abstract,
+        authors=authors,
+        journal=journal,
+        publication_date=raw.get("publication_date"),
+        keywords=keywords,
+        publication_types=publication_types,
+        is_open_access=is_open_access,
+        license=license_value,
+        fulltext_sources=fulltext_sources,
+    )
 
 
 # ---------------------------------------------------------------------------

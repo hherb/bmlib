@@ -22,7 +22,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from bmlib.db import connect_sqlite, execute
 from bmlib.publications.fetchers import ALL_SOURCES
-from bmlib.publications.models import FetchResult
+from bmlib.publications.models import FetchedRecord, FetchResult
 from bmlib.publications.schema import ensure_schema
 from bmlib.publications.storage import get_publication_by_doi
 from bmlib.publications.sync import _days_needing_fetch, sync
@@ -49,12 +49,12 @@ def _insert_download_day(conn, source, day, status="completed", last_verified_at
 
 
 def _make_fake_fetcher(records):
-    """Create a fake fetcher that calls on_record with the given records.
+    """Create a fake fetcher that calls on_record with the given FetchedRecords.
 
     Parameters
     ----------
     records:
-        List of raw record dicts to pass to on_record.
+        List of :class:`FetchedRecord` instances to pass to on_record.
 
     Returns
     -------
@@ -66,7 +66,7 @@ def _make_fake_fetcher(records):
         for rec in records:
             on_record(rec)
         return FetchResult(
-            source=rec.get("source", "test") if records else "test",
+            source=rec.source if records else "test",
             date=target_date.isoformat(),
             record_count=len(records),
             status="completed",
@@ -76,23 +76,23 @@ def _make_fake_fetcher(records):
 
 
 def _sample_raw_record(doi="10.1234/test.001", title="Test Paper", source="pubmed"):
-    """Return a sample raw record dict as produced by a fetcher."""
-    return {
-        "doi": doi,
-        "title": title,
-        "authors": ["Author A", "Author B"],
-        "abstract": "A test abstract.",
-        "journal": "Test Journal",
-        "publication_date": "2024-06-15",
-        "publication_types": ["journal-article"],
-        "keywords": ["testing"],
-        "is_open_access": False,
-        "license": None,
-        "source": source,
-        "fulltext_sources": [
+    """Return a sample :class:`FetchedRecord` as produced by a fetcher."""
+    return FetchedRecord(
+        doi=doi,
+        title=title,
+        authors=["Author A", "Author B"],
+        abstract="A test abstract.",
+        journal="Test Journal",
+        publication_date="2024-06-15",
+        publication_types=["journal-article"],
+        keywords=["testing"],
+        is_open_access=False,
+        license=None,
+        source=source,
+        fulltext_sources=[
             {"url": f"https://example.com/{doi}.pdf", "format": "pdf", "source": source},
         ],
-    }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +255,7 @@ class TestSync:
         ]
         fake_fetcher = _make_fake_fetcher(records)
 
-        callback_records: list[dict] = []
+        callback_records: list[FetchedRecord] = []
         sync(
             conn,
             sources=["test_source"],
@@ -267,8 +267,8 @@ class TestSync:
         )
 
         assert len(callback_records) == 2
-        assert callback_records[0]["doi"] == "10.1234/cb.001"
-        assert callback_records[1]["doi"] == "10.1234/cb.002"
+        assert callback_records[0].doi == "10.1234/cb.001"
+        assert callback_records[1].doi == "10.1234/cb.002"
 
     def test_sync_handles_empty_fetcher(self):
         """sync should handle a fetcher that returns no records."""

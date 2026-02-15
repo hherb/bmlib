@@ -26,7 +26,7 @@ from bmlib.publications.fetchers.openalex import (
     _reconstruct_abstract,
     fetch_openalex,
 )
-from bmlib.publications.models import FetchResult, SyncProgress
+from bmlib.publications.models import FetchedRecord, FetchResult, SyncProgress
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -173,62 +173,71 @@ class TestNormalize:
         raw = _make_raw_work()
         result = _normalize(raw)
 
-        assert result["doi"] == "10.1234/test.2024"
-        assert result["pmid"] == "12345678"
-        assert result["title"] == "Test Publication Title"
-        assert result["authors"] == ["Alice Smith", "Bob Jones"]
-        assert result["journal"] == "Nature Medicine"
-        assert result["abstract"] == "This is a test abstract."
-        assert result["publication_date"] == "2024-06-15"
-        assert result["keywords"] == ["Oncology"]
-        assert result["is_open_access"] is True
-        assert result["license"] == "cc-by-4.0"
-        assert result["publication_types"] == ["journal-article"]
-        assert result["source"] == "openalex"
+        assert isinstance(result, FetchedRecord)
+        assert result.doi == "10.1234/test.2024"
+        assert result.pmid == "12345678"
+        assert result.title == "Test Publication Title"
+        assert result.authors == ["Alice Smith", "Bob Jones"]
+        assert result.journal == "Nature Medicine"
+        assert result.abstract == "This is a test abstract."
+        assert result.publication_date == "2024-06-15"
+        assert result.keywords == ["Oncology"]
+        assert result.is_open_access is True
+        assert result.license == "cc-by-4.0"
+        assert result.publication_types == ["journal-article"]
+        assert result.source == "openalex"
 
     def test_doi_prefix_stripped(self):
         raw = _make_raw_work(doi="https://doi.org/10.5555/example")
         result = _normalize(raw)
-        assert result["doi"] == "10.5555/example"
+        assert isinstance(result, FetchedRecord)
+        assert result.doi == "10.5555/example"
 
     def test_pmid_prefix_stripped(self):
         raw = _make_raw_work(pmid="https://pubmed.ncbi.nlm.nih.gov/99887766")
         result = _normalize(raw)
-        assert result["pmid"] == "99887766"
+        assert isinstance(result, FetchedRecord)
+        assert result.pmid == "99887766"
 
     def test_none_doi(self):
         raw = _make_raw_work(doi=None)
         result = _normalize(raw)
-        assert result["doi"] is None
+        assert isinstance(result, FetchedRecord)
+        assert result.doi is None
 
     def test_none_pmid(self):
         raw = _make_raw_work()
         raw["ids"] = {}
         result = _normalize(raw)
-        assert result["pmid"] is None
+        assert isinstance(result, FetchedRecord)
+        assert result.pmid is None
 
     def test_missing_ids_dict(self):
         raw = _make_raw_work()
         del raw["ids"]
         result = _normalize(raw)
-        assert result["pmid"] is None
+        assert isinstance(result, FetchedRecord)
+        assert result.pmid is None
 
     def test_no_primary_topic(self):
         raw = _make_raw_work(primary_topic=None)
         raw["primary_topic"] = None
         result = _normalize(raw)
-        assert result["keywords"] == []
+        assert isinstance(result, FetchedRecord)
+        assert result.keywords == []
 
     def test_no_open_access(self):
         raw = _make_raw_work(open_access=None)
         raw["open_access"] = None
         result = _normalize(raw)
-        assert result["is_open_access"] is False
+        assert isinstance(result, FetchedRecord)
+        assert result.is_open_access is False
 
     def test_fulltext_sources_from_locations(self):
         raw = _make_raw_work()
         result = _normalize(raw)
-        fts = result["fulltext_sources"]
+        assert isinstance(result, FetchedRecord)
+        fts = result.fulltext_sources
 
         # Location 1 has both landing_page_url and pdf_url -> 2 entries
         # Location 2 has only landing_page_url (pdf_url is None) -> 1 entry
@@ -263,23 +272,27 @@ class TestNormalize:
         ]
         raw = _make_raw_work(locations=locations)
         result = _normalize(raw)
-        assert result["fulltext_sources"][0]["version"] == "preprint"
+        assert isinstance(result, FetchedRecord)
+        assert result.fulltext_sources[0]["version"] == "preprint"
 
     def test_no_locations(self):
         raw = _make_raw_work(locations=[])
         result = _normalize(raw)
-        assert result["fulltext_sources"] == []
+        assert isinstance(result, FetchedRecord)
+        assert result.fulltext_sources == []
 
     def test_empty_authorships(self):
         raw = _make_raw_work(authorships=[])
         result = _normalize(raw)
-        assert result["authors"] == []
+        assert isinstance(result, FetchedRecord)
+        assert result.authors == []
 
     def test_no_type(self):
         raw = _make_raw_work()
         raw["type"] = None
         result = _normalize(raw)
-        assert result["publication_types"] == []
+        assert isinstance(result, FetchedRecord)
+        assert result.publication_types == []
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +307,7 @@ class TestFetchOpenAlex:
         api_response = _make_api_response([raw], total_count=1, next_cursor=None)
         client = _mock_client([api_response])
 
-        records: list[dict] = []
+        records: list[FetchedRecord] = []
         result = fetch_openalex(
             client,
             date(2024, 6, 15),
@@ -311,11 +324,12 @@ class TestFetchOpenAlex:
 
         assert len(records) == 1
         rec = records[0]
-        assert rec["doi"] == "10.1234/test.2024"
-        assert rec["pmid"] == "12345678"
-        assert rec["abstract"] == "This is a test abstract."
-        assert rec["source"] == "openalex"
-        assert len(rec["fulltext_sources"]) == 3
+        assert isinstance(rec, FetchedRecord)
+        assert rec.doi == "10.1234/test.2024"
+        assert rec.pmid == "12345678"
+        assert rec.abstract == "This is a test abstract."
+        assert rec.source == "openalex"
+        assert len(rec.fulltext_sources) == 3
 
     def test_multi_page_pagination(self):
         """Verify cursor-based pagination follows next_cursor across pages."""
@@ -326,7 +340,7 @@ class TestFetchOpenAlex:
         page2 = _make_api_response([raw2], total_count=2, next_cursor=None)
         client = _mock_client([page1, page2])
 
-        records: list[dict] = []
+        records: list[FetchedRecord] = []
         result = fetch_openalex(
             client,
             date(2024, 6, 15),
@@ -337,8 +351,8 @@ class TestFetchOpenAlex:
         assert result.record_count == 2
         assert result.status == "completed"
         assert len(records) == 2
-        assert records[0]["title"] == "Paper 1"
-        assert records[1]["title"] == "Paper 2"
+        assert records[0].title == "Paper 1"
+        assert records[1].title == "Paper 2"
 
         # Client should have been called twice
         assert client.get.call_count == 2
@@ -352,7 +366,7 @@ class TestFetchOpenAlex:
         api_response = _make_api_response([], total_count=0, next_cursor=None)
         client = _mock_client([api_response])
 
-        records: list[dict] = []
+        records: list[FetchedRecord] = []
         result = fetch_openalex(
             client,
             date(2024, 6, 15),
@@ -372,7 +386,7 @@ class TestFetchOpenAlex:
         mock_resp.raise_for_status.side_effect = Exception("HTTP 500 Internal Server Error")
         client.get.return_value = mock_resp
 
-        records: list[dict] = []
+        records: list[FetchedRecord] = []
         result = fetch_openalex(
             client,
             date(2024, 6, 15),
@@ -393,7 +407,7 @@ class TestFetchOpenAlex:
         client = _mock_client([api_response])
 
         progress_reports: list[SyncProgress] = []
-        records: list[dict] = []
+        records: list[FetchedRecord] = []
 
         fetch_openalex(
             client,
@@ -421,7 +435,7 @@ class TestFetchOpenAlex:
         client = _mock_client([page1, page2])
 
         progress_reports: list[SyncProgress] = []
-        records: list[dict] = []
+        records: list[FetchedRecord] = []
 
         fetch_openalex(
             client,
@@ -443,7 +457,7 @@ class TestFetchOpenAlex:
         api_response = _make_api_response([raw], total_count=1, next_cursor=None)
         client = _mock_client([api_response])
 
-        records: list[dict] = []
+        records: list[FetchedRecord] = []
         result = fetch_openalex(
             client,
             date(2024, 6, 15),
@@ -547,7 +561,7 @@ class TestFetchOpenAlex:
         client = MagicMock()
         client.get.side_effect = [mock_resp1, mock_resp2]
 
-        records: list[dict] = []
+        records: list[FetchedRecord] = []
         result = fetch_openalex(
             client,
             date(2024, 6, 15),

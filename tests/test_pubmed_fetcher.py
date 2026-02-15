@@ -28,7 +28,7 @@ from bmlib.publications.fetchers.pubmed import (
     _parse_article_xml,
     fetch_pubmed,
 )
-from bmlib.publications.models import SyncProgress
+from bmlib.publications.models import FetchedRecord, SyncProgress
 
 # ---------------------------------------------------------------------------
 # Sample XML fragments
@@ -139,26 +139,27 @@ class TestParseArticleXml:
         el = ET.fromstring(FULL_ARTICLE_XML)
         result = _parse_article_xml(el)
 
-        assert result["pmid"] == "12345678"
-        assert result["title"] == "Effects of aspirin on cardiovascular outcomes"
-        assert "BACKGROUND: Heart disease is the leading cause of death." in result["abstract"]
-        assert "METHODS: We conducted a randomized trial." in result["abstract"]
-        assert "RESULTS: Aspirin reduced events by 20%." in result["abstract"]
-        assert result["authors"] == ["Smith, John A", "Jones, Mary B"]
-        assert result["journal"] == "The Lancet"
-        assert result["publication_date"] == "2024-01-15"
-        assert result["doi"] == "10.1016/S0140-6736(24)00001-1"
-        assert result["pmc_id"] == "PMC9999999"
-        assert result["keywords"] == ["Aspirin", "Cardiovascular Diseases"]
-        assert result["source"] == "pubmed"
+        assert isinstance(result, FetchedRecord)
+        assert result.pmid == "12345678"
+        assert result.title == "Effects of aspirin on cardiovascular outcomes"
+        assert "BACKGROUND: Heart disease is the leading cause of death." in result.abstract
+        assert "METHODS: We conducted a randomized trial." in result.abstract
+        assert "RESULTS: Aspirin reduced events by 20%." in result.abstract
+        assert result.authors == ["Smith, John A", "Jones, Mary B"]
+        assert result.journal == "The Lancet"
+        assert result.publication_date == "2024-01-15"
+        assert result.doi == "10.1016/S0140-6736(24)00001-1"
+        assert result.pmc_id == "PMC9999999"
+        assert result.keywords == ["Aspirin", "Cardiovascular Diseases"]
+        assert result.source == "pubmed"
 
-        # Fulltext sources
-        assert len(result["fulltext_sources"]) == 2
-        pmc_source = result["fulltext_sources"][0]
+        # Fulltext sources (still a list of dicts)
+        assert len(result.fulltext_sources) == 2
+        pmc_source = result.fulltext_sources[0]
         assert pmc_source["source"] == "pmc"
         assert "PMC9999999" in pmc_source["url"]
         assert pmc_source["format"] == "html"
-        doi_source = result["fulltext_sources"][1]
+        doi_source = result.fulltext_sources[1]
         assert doi_source["source"] == "publisher"
         assert "10.1016/S0140-6736(24)00001-1" in doi_source["url"]
         assert doi_source["format"] == "html"
@@ -168,17 +169,18 @@ class TestParseArticleXml:
         el = ET.fromstring(MINIMAL_ARTICLE_XML)
         result = _parse_article_xml(el)
 
-        assert result["pmid"] == "99999999"
-        assert result["title"] == "A minimal record"
-        assert result["abstract"] is None
-        assert result["authors"] == []
-        assert result["journal"] == "Some Journal"
-        assert result["publication_date"] == "2024"
-        assert result["doi"] is None
-        assert result["pmc_id"] is None
-        assert result["keywords"] == []
-        assert result["fulltext_sources"] == []
-        assert result["source"] == "pubmed"
+        assert isinstance(result, FetchedRecord)
+        assert result.pmid == "99999999"
+        assert result.title == "A minimal record"
+        assert result.abstract is None
+        assert result.authors == []
+        assert result.journal == "Some Journal"
+        assert result.publication_date == "2024"
+        assert result.doi is None
+        assert result.pmc_id is None
+        assert result.keywords == []
+        assert result.fulltext_sources == []
+        assert result.source == "pubmed"
 
     def test_numeric_month(self):
         """Numeric month values are zero-padded correctly."""
@@ -205,7 +207,8 @@ class TestParseArticleXml:
         """
         el = ET.fromstring(xml)
         result = _parse_article_xml(el)
-        assert result["publication_date"] == "2024-03-05"
+        assert isinstance(result, FetchedRecord)
+        assert result.publication_date == "2024-03-05"
 
     def test_medline_date_fallback(self):
         """When Year is missing, MedlineDate is used as fallback (first 4 chars)."""
@@ -230,7 +233,8 @@ class TestParseArticleXml:
         """
         el = ET.fromstring(xml)
         result = _parse_article_xml(el)
-        assert result["publication_date"] == "2024"
+        assert isinstance(result, FetchedRecord)
+        assert result.publication_date == "2024"
 
     def test_no_pubdate_returns_none(self):
         """When PubDate element is completely missing, publication_date is None."""
@@ -251,7 +255,8 @@ class TestParseArticleXml:
         """
         el = ET.fromstring(xml)
         result = _parse_article_xml(el)
-        assert result["publication_date"] is None
+        assert isinstance(result, FetchedRecord)
+        assert result.publication_date is None
 
     def test_author_last_name_only(self):
         """Authors with only a last name (no fore name) are included."""
@@ -277,7 +282,8 @@ class TestParseArticleXml:
         """
         el = ET.fromstring(xml)
         result = _parse_article_xml(el)
-        assert result["authors"] == ["Consortium"]
+        assert isinstance(result, FetchedRecord)
+        assert result.authors == ["Consortium"]
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +307,7 @@ class TestFetchPubmed:
 
         client.get.side_effect = [esearch_response, efetch_response]
 
-        records: list[dict] = []
+        records: list[FetchedRecord] = []
         on_record = MagicMock(side_effect=lambda r: records.append(r))
 
         with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
@@ -314,8 +320,10 @@ class TestFetchPubmed:
         assert result.error is None
 
         assert on_record.call_count == 2
-        assert records[0]["pmid"] == "12345678"
-        assert records[1]["pmid"] == "99999999"
+        assert isinstance(records[0], FetchedRecord)
+        assert records[0].pmid == "12345678"
+        assert isinstance(records[1], FetchedRecord)
+        assert records[1].pmid == "99999999"
 
         # Verify esearch was called with correct URL
         first_call = client.get.call_args_list[0]

@@ -247,3 +247,66 @@ class SyncReport:
     records_merged: int
     records_failed: int
     errors: list[str] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Canonical fetcher output
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FetchedRecord:
+    """Canonical record format returned by all source fetchers.
+
+    Core fields are guaranteed present (may be None/empty).
+    Source-specific data goes in ``extras``.
+    """
+
+    # -- Identifiers --
+    title: str
+    source: str
+    doi: str | None = None
+    pmid: str | None = None
+    pmc_id: str | None = None
+
+    # -- Content --
+    abstract: str | None = None
+    authors: list[str] = field(default_factory=list)
+    journal: str | None = None
+    publication_date: str | None = None
+    keywords: list[str] = field(default_factory=list)
+    publication_types: list[str] = field(default_factory=list)
+
+    # -- Access --
+    is_open_access: bool = False
+    license: str | None = None
+    fulltext_sources: list[dict[str, str]] = field(default_factory=list)
+
+    # -- Source-specific extras --
+    extras: dict[str, Any] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Source registry metadata
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SourceParam:
+    """Describes one configurable parameter for a source fetcher."""
+
+    name: str
+    description: str
+    required: bool = False
+    default: str | None = None
+    secret: bool = False
+
+
+@dataclass
+class SourceDescriptor:
+    """Metadata describing a registered publication source."""
+
+    name: str
+    display_name: str
+    description: str
+    params: list[SourceParam] = field(default_factory=list)

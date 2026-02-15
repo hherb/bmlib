@@ -16,4 +16,22 @@
 
 """Source fetchers for publication data."""
 
+from bmlib.publications.fetchers.registry import (
+    get_fetcher,
+    get_source,
+    list_sources,
+    register_source,
+    source_names,
+)
+
+# Backward compat: kept as a constant for code that reads it at module level.
 ALL_SOURCES = ["pubmed", "biorxiv", "medrxiv", "openalex"]
+
+__all__ = [
+    "ALL_SOURCES",
+    "get_fetcher",
+    "get_source",
+    "list_sources",
+    "register_source",
+    "source_names",
+]
