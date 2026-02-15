@@ -42,6 +42,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from typing import Any
 
 from bmlib.llm import LLMClient, LLMMessage, LLMResponse
@@ -109,6 +110,66 @@ class BaseAgent:
             json_mode=json_mode,
             **kwargs,
         )
+
+    def chat_json(
+        self,
+        messages: list[LLMMessage],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        max_retries: int = 3,
+        **kwargs: object,
+    ) -> dict:
+        """Chat with JSON mode, retry on empty/unparseable responses.
+
+        Combines :meth:`chat` with :meth:`parse_json` and exponential
+        backoff retry.  Empty responses are treated as transport/model
+        errors (WARNING).  Unparseable responses are logged at ERROR
+        with the full model output for diagnosis.
+
+        Returns the parsed dict.  Raises :class:`ValueError` after all
+        retries are exhausted.
+        """
+        last_error: str | None = None
+        for attempt in range(max_retries):
+            if attempt > 0:
+                delay = 2 ** (attempt - 1)  # 1s, 2s, 4s …
+                logger.warning(
+                    "Retry %d/%d after %.0fs (previous: %s)",
+                    attempt + 1, max_retries, delay, last_error,
+                )
+                time.sleep(delay)
+
+            response = self.chat(
+                messages,
+                json_mode=True,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs,
+            )
+
+            content = response.content.strip()
+
+            if not content:
+                last_error = "empty response from model"
+                logger.warning(
+                    "LLM returned empty response (attempt %d/%d)",
+                    attempt + 1, max_retries,
+                )
+                continue
+
+            try:
+                return self.parse_json(content)
+            except ValueError:
+                last_error = "unparseable response"
+                logger.error(
+                    "LLM returned unparseable response (attempt %d/%d), "
+                    "full response: %s",
+                    attempt + 1, max_retries, content,
+                )
+                continue
+
+        raise ValueError(f"Failed after {max_retries} attempts: {last_error}")
 
     # --- Template rendering ---
 

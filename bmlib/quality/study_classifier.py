@@ -85,23 +85,21 @@ class StudyClassifier(BaseAgent):
         )
 
         try:
-            response = self.chat(
+            data = self.chat_json(
                 messages=[
                     self.system_msg(CLASSIFIER_SYSTEM_PROMPT),
                     self.user_msg(prompt),
                 ],
-                json_mode=True,
                 temperature=0.1,
                 max_tokens=256,
             )
-            return self._parse(response.content)
+            return self._parse_data(data)
         except Exception as e:
-            logger.warning("Study classification failed: %s", e)
+            logger.warning("Study classification failed after retries: %s", e)
             return QualityAssessment.unclassified()
 
-    def _parse(self, text: str) -> QualityAssessment:
-        """Parse the LLM JSON response into a :class:`QualityAssessment`."""
-        data = self.parse_json(text)
+    def _parse_data(self, data: dict) -> QualityAssessment:
+        """Convert parsed JSON dict into a :class:`QualityAssessment`."""
         design_str = data.get("study_design", "unknown").lower().strip()
         design = STUDY_DESIGN_MAPPING.get(design_str, StudyDesign.UNKNOWN)
         confidence = max(0.0, min(1.0, float(data.get("confidence", 0.5))))
