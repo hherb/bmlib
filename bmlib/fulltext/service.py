@@ -14,11 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Full-text retrieval service with 3-tier fallback chain.
+"""Full-text retrieval service with multi-tier fallback chain.
 
-Tier 1: Europe PMC XML -> JATS parser -> HTML
-Tier 2: Unpaywall -> open-access PDF URL
-Tier 3: DOI resolution -> publisher website URL
+Tier 1a: Europe PMC XML -> JATS parser -> HTML
+Tier 1b: Discover PMC ID via search, then Europe PMC XML
+Tier 1c: Europe PMC PDF render URL (when XML unavailable but free PDF exists)
+Tier 2:  Unpaywall -> open-access PDF URL
+Tier 3:  DOI resolution -> publisher website URL
 """
 
 from __future__ import annotations
@@ -49,6 +51,27 @@ class FullTextError(Exception):
 def _sanitize_identifier(raw: str) -> str:
     """Turn a DOI or other identifier into a safe filename component."""
     return re.sub(r"[^\w.\-]", "_", raw)
+
+
+def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
+    """Extract free PDF URL from Europe PMC fullTextUrlList.
+
+    The Europe PMC search API includes ``fullTextUrlList`` with entries
+    for free PDFs (``?pdf=render`` URLs) even when JATS XML is unavailable.
+    """
+    url_list = result.get("fullTextUrlList")
+    if not isinstance(url_list, dict):
+        return None
+    for entry in url_list.get("fullTextUrl", []):
+        if (
+            isinstance(entry, dict)
+            and entry.get("documentStyle") == "pdf"
+            and entry.get("availability") == "Free"
+        ):
+            url = entry.get("url")
+            if isinstance(url, str):
+                return url
+    return None
 
 
 class FullTextService:
@@ -90,10 +113,12 @@ class FullTextService:
 
         Tries:
           Cache: check disk cache for HTML/PDF (if identifier given)
-          0. Known sources from fetcher (JATS XML > PDF > HTML)
-          1. Europe PMC XML (known PMC ID or discovered via DOI/PMID)
-          2. Unpaywall PDF URL
-          3. DOI / PubMed URL fallback
+          0.  Known sources from fetcher (JATS XML > PDF > HTML)
+          1a. Europe PMC XML (known PMC ID)
+          1b. Discover PMC ID via Europe PMC search, then fetch XML
+          1c. Europe PMC PDF render URL (free PDF when XML unavailable)
+          2.  Unpaywall PDF URL
+          3.  DOI / PubMed URL fallback
         """
         cache_id = _sanitize_identifier(identifier) if identifier else None
 
@@ -110,6 +135,7 @@ class FullTextService:
                 return result
 
         # Tier 1a: Europe PMC with known PMC ID
+        xml_failed = False
         if pmc_id:
             try:
                 html = self._fetch_europepmc(pmc_id)
@@ -118,11 +144,15 @@ class FullTextService:
                 return FullTextResult(source="europepmc", html=html)
             except Exception:
                 logger.debug("Europe PMC failed for %s", pmc_id, exc_info=True)
+                xml_failed = True
 
         # Tier 1b: Discover PMC ID via Europe PMC search, then fetch XML
+        pdf_render_url: str | None = None
         if not pmc_id and (doi or pmid):
             try:
-                discovered_pmc_id = self._resolve_pmc_id(doi=doi, pmid=pmid)
+                discovered_pmc_id, pdf_render_url = (
+                    self._resolve_pmc_id_and_pdf_url(doi=doi, pmid=pmid)
+                )
                 if discovered_pmc_id:
                     html = self._fetch_europepmc(discovered_pmc_id)
                     logger.info(
@@ -136,6 +166,22 @@ class FullTextService:
                     "Europe PMC discovery failed for doi=%s pmid=%s",
                     doi, pmid, exc_info=True,
                 )
+
+        # When XML failed with a known PMC ID, search for PDF render URL
+        if xml_failed and not pdf_render_url and (doi or pmid):
+            try:
+                _, pdf_render_url = self._resolve_pmc_id_and_pdf_url(
+                    doi=doi, pmid=pmid,
+                )
+            except Exception:
+                logger.debug("PDF URL resolution failed", exc_info=True)
+
+        # Tier 1c: Europe PMC PDF render (when XML unavailable but free PDF exists)
+        if pdf_render_url:
+            logger.info("PDF available from Europe PMC render: %s", pdf_render_url)
+            result = FullTextResult(source="europepmc_pdf", pdf_url=pdf_render_url)
+            self._download_and_cache_pdf(pdf_render_url, cache_id, result)
+            return result
 
         # Tier 2: Unpaywall
         if doi:
@@ -257,20 +303,22 @@ class FullTextService:
         parser = JATSParser(resp.content)
         return parser.to_html()
 
-    def _resolve_pmc_id(
+    def _resolve_pmc_id_and_pdf_url(
         self, *, doi: str | None = None, pmid: str = "",
-    ) -> str | None:
-        """Search Europe PMC to discover a PMC ID for a paper.
+    ) -> tuple[str | None, str | None]:
+        """Search Europe PMC to discover a PMC ID and free PDF URL.
 
-        Returns the PMC ID if the paper has full text in Europe PMC,
-        or None if not found.
+        Returns a tuple of (pmc_id, pdf_render_url). Either or both may
+        be None. The PDF render URL comes from the ``fullTextUrlList``
+        in the search response and provides a free PDF when JATS XML is
+        unavailable.
         """
         if doi:
             query = f"DOI:{doi}"
         elif pmid:
             query = f"EXT_ID:{pmid}"
         else:
-            return None
+            return None, None
 
         url = (
             f"{EUROPE_PMC_BASE}/search"
@@ -278,18 +326,20 @@ class FullTextService:
         )
         resp = self._http_get(url, headers={"Accept": "application/json"})
         if resp.status_code != 200:
-            return None
+            return None, None
 
         data = resp.json()
         results = data.get("resultList", {}).get("result", [])
         if not results:
-            return None
+            return None, None
 
         hit = results[0]
-        if hit.get("inEPMC") == "Y" and hit.get("pmcid"):
-            return hit["pmcid"]
+        pmc_id = hit.get("pmcid") if hit.get("inEPMC") == "Y" else None
 
-        return None
+        # Extract free PDF render URL from fullTextUrlList
+        pdf_render_url = _extract_free_pdf_url(hit)
+
+        return pmc_id, pdf_render_url
 
     def _fetch_europepmc(self, pmc_id: str) -> str:
         """Fetch JATS XML from Europe PMC and parse to HTML."""

@@ -46,12 +46,21 @@ class TestFetchEuropePMC:
     def test_404_falls_through(self):
         mock_404 = MagicMock()
         mock_404.status_code = 404
+        # Search for PDF render URL (returns no free PDF)
+        mock_search_no_pdf = MagicMock()
+        mock_search_no_pdf.status_code = 200
+        mock_search_no_pdf.json.return_value = {
+            "resultList": {"result": [{"pmcid": "PMC123", "inEPMC": "Y"}]}
+        }
         mock_unpaywall_404 = MagicMock()
         mock_unpaywall_404.status_code = 404
 
         service = FullTextService(email="test@example.com")
-        # PMC ID given: PMC 404 -> skip discovery -> Unpaywall 404 -> DOI fallback
-        with patch.object(service, "_http_get", side_effect=[mock_404, mock_unpaywall_404]):
+        # PMC XML 404 -> search (no PDF) -> Unpaywall 404 -> DOI fallback
+        with patch.object(
+            service, "_http_get",
+            side_effect=[mock_404, mock_search_no_pdf, mock_unpaywall_404],
+        ):
             result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test", pmid="456")
 
         assert result.source == "doi"
@@ -132,6 +141,13 @@ class TestFetchUnpaywall:
         mock_pmc_404 = MagicMock()
         mock_pmc_404.status_code = 404
 
+        # Search for PDF render URL (returns no free PDF)
+        mock_search_no_pdf = MagicMock()
+        mock_search_no_pdf.status_code = 200
+        mock_search_no_pdf.json.return_value = {
+            "resultList": {"result": [{"pmcid": "PMC123", "inEPMC": "Y"}]}
+        }
+
         unpaywall_json = {
             "best_oa_location": {
                 "url_for_pdf": "https://example.com/paper.pdf",
@@ -145,7 +161,10 @@ class TestFetchUnpaywall:
         mock_unpaywall.json.return_value = unpaywall_json
 
         service = FullTextService(email="test@example.com")
-        with patch.object(service, "_http_get", side_effect=[mock_pmc_404, mock_unpaywall]):
+        with patch.object(
+            service, "_http_get",
+            side_effect=[mock_pmc_404, mock_search_no_pdf, mock_unpaywall],
+        ):
             result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test", pmid="456")
 
         assert result.source == "unpaywall"
