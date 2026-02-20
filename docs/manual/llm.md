@@ -11,8 +11,14 @@ pip install bmlib[anthropic]
 # Ollama (local models)
 pip install bmlib[ollama]
 
-# Both
-pip install bmlib[anthropic,ollama]
+# OpenAI (also enables DeepSeek, Mistral, Gemini via OpenAI-compatible base)
+pip install bmlib[openai]
+
+# Multiple providers
+pip install bmlib[anthropic,ollama,openai]
+
+# Everything
+pip install bmlib[all]
 ```
 
 ## Imports
@@ -98,6 +104,8 @@ class LLMClient:
         default_provider: str = "anthropic",
         ollama_host: str | None = None,
         anthropic_api_key: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
     ) -> None
 ```
 
@@ -106,6 +114,8 @@ class LLMClient:
 | `default_provider` | `str` | `"anthropic"` | Provider to use when no `"provider:"` prefix is in the model string. |
 | `ollama_host` | `str \| None` | `None` | Ollama server URL. Defaults to `OLLAMA_HOST` env var or `http://localhost:11434`. |
 | `anthropic_api_key` | `str \| None` | `None` | Anthropic API key. Defaults to `ANTHROPIC_API_KEY` env var. |
+| `api_key` | `str \| None` | `None` | Generic API key used by OpenAI-compatible providers (OpenAI, DeepSeek, Mistral, Gemini). Each provider also checks its own env var (e.g. `OPENAI_API_KEY`). |
+| `base_url` | `str \| None` | `None` | Override the base URL for OpenAI-compatible providers. Each provider has its own default. |
 
 ---
 
@@ -115,8 +125,11 @@ Model strings use the format `"provider:model_name"`:
 
 ```
 "anthropic:claude-sonnet-4-20250514"
+"openai:gpt-4o"
 "ollama:medgemma4B_it_q8"
-"ollama:llama3.1:8b"
+"deepseek:deepseek-chat"
+"mistral:mistral-large-latest"
+"gemini:gemini-2.0-flash"
 ```
 
 If no provider prefix is given, `default_provider` is used. If no model is specified at all, the provider's default model is used.
@@ -393,19 +406,103 @@ for model, stats in summary.by_model.items():
 | Provider name | `anthropic` |
 | Default model | `claude-sonnet-4-20250514` |
 | API key env var | `ANTHROPIC_API_KEY` |
+| Base URL | `https://api.anthropic.com` |
 | Is local | No |
 | Is free | No |
 | System messages | Separated per Anthropic API requirement |
 
 **Known model pricing (per million tokens):**
 
-| Model | Input | Output |
-|-------|-------|--------|
-| `claude-opus-4-20250514` | $15.00 | $75.00 |
-| `claude-sonnet-4-20250514` | $3.00 | $15.00 |
-| `claude-sonnet-4-5-20250929` | $3.00 | $15.00 |
-| `claude-3-5-haiku-20241022` | $1.00 | $5.00 |
-| `claude-3-haiku-20240307` | $0.25 | $1.25 |
+| Model | Input | Output | Context |
+|-------|-------|--------|---------|
+| `claude-opus-4-20250514` | $15.00 | $75.00 | 200k |
+| `claude-sonnet-4-20250514` | $3.00 | $15.00 | 200k |
+| `claude-sonnet-4-5-20250929` | $3.00 | $15.00 | 200k |
+| `claude-3-5-haiku-20241022` | $1.00 | $5.00 | 200k |
+| `claude-3-haiku-20240307` | $0.25 | $1.25 | 200k |
+
+### OpenAI
+
+| Property | Value |
+|----------|-------|
+| Provider name | `openai` |
+| Default model | `gpt-4o` |
+| API key env var | `OPENAI_API_KEY` |
+| Base URL | `https://api.openai.com/v1` |
+| Is local | No |
+| Is free | No |
+
+**Known model pricing (per million tokens):**
+
+| Model | Input | Output | Context |
+|-------|-------|--------|---------|
+| `gpt-4o` | $2.50 | $10.00 | 128k |
+| `gpt-4o-mini` | $0.15 | $0.60 | 128k |
+| `gpt-4-turbo` | $10.00 | $30.00 | 128k |
+| `o1` | $15.00 | $60.00 | 200k |
+| `o1-mini` | $3.00 | $12.00 | 128k |
+| `o3-mini` | $1.10 | $4.40 | 200k |
+
+### DeepSeek
+
+| Property | Value |
+|----------|-------|
+| Provider name | `deepseek` |
+| Default model | `deepseek-chat` |
+| API key env var | `DEEPSEEK_API_KEY` |
+| Base URL | `https://api.deepseek.com` |
+| Is local | No |
+| Is free | No |
+
+**Known model pricing (per million tokens):**
+
+| Model | Input | Output | Context |
+|-------|-------|--------|---------|
+| `deepseek-chat` (V3) | $0.27 | $1.10 | 64k |
+| `deepseek-reasoner` (R1) | $0.55 | $2.19 | 64k |
+
+### Mistral
+
+| Property | Value |
+|----------|-------|
+| Provider name | `mistral` |
+| Default model | `mistral-large-latest` |
+| API key env var | `MISTRAL_API_KEY` |
+| Base URL | `https://api.mistral.ai/v1` |
+| Is local | No |
+| Is free | No |
+
+**Known model pricing (per million tokens):**
+
+| Model | Input | Output | Context |
+|-------|-------|--------|---------|
+| `mistral-large-latest` | $2.00 | $6.00 | 128k |
+| `mistral-small-latest` | $0.10 | $0.30 | 128k |
+| `codestral-latest` | $0.30 | $0.90 | 256k |
+| `ministral-8b-latest` | $0.10 | $0.10 | 128k |
+| `pixtral-large-latest` | $2.00 | $6.00 | 128k |
+
+### Gemini
+
+| Property | Value |
+|----------|-------|
+| Provider name | `gemini` |
+| Default model | `gemini-2.0-flash` |
+| API key env var | `GEMINI_API_KEY` |
+| Base URL | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| Is local | No |
+| Is free | No |
+
+**Known model pricing (per million tokens):**
+
+| Model | Input | Output | Context |
+|-------|-------|--------|---------|
+| `gemini-2.5-pro-preview-05-06` | $1.25 | $10.00 | 1M |
+| `gemini-2.5-flash-preview-05-20` | $0.15 | $0.60 | 1M |
+| `gemini-2.0-flash` | $0.10 | $0.40 | 1M |
+| `gemini-2.0-flash-lite` | $0.00 | $0.00 | 1M |
+| `gemini-1.5-pro` | $1.25 | $5.00 | 2M |
+| `gemini-1.5-flash` | $0.075 | $0.30 | 1M |
 
 ### Ollama
 

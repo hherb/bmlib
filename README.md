@@ -1,21 +1,161 @@
 # bmlib
 
-Shared library for biomedical literature tools — LLM abstraction, quality assessment, transparency analysis, and database utilities.
+Shared Python library for biomedical literature tools — LLM abstraction, quality assessment, transparency analysis, full-text retrieval, publication ingestion, and database utilities.
+
+**Version:** 0.2.1 | **License:** AGPL-3.0-or-later | **Python:** >=3.11
 
 ## Installation
 
 ```bash
+# Core (only jinja2 dependency)
+pip install bmlib
+
+# Editable install with all extras
 uv pip install -e ".[all]"
 ```
 
+### Optional dependency groups
+
+| Group | Install command | Provides |
+|-------|----------------|----------|
+| `anthropic` | `pip install bmlib[anthropic]` | Anthropic Claude LLM provider |
+| `ollama` | `pip install bmlib[ollama]` | Ollama local LLM provider |
+| `openai` | `pip install bmlib[openai]` | OpenAI, DeepSeek, Mistral, Gemini, and OpenAI-compatible providers |
+| `postgresql` | `pip install bmlib[postgresql]` | PostgreSQL database backend |
+| `transparency` | `pip install bmlib[transparency]` | Transparency analysis (httpx) |
+| `publications` | `pip install bmlib[publications]` | Publication ingestion and sync (httpx) |
+| `dev` | `pip install bmlib[dev]` | pytest, pytest-cov, ruff |
+| `all` | `pip install bmlib[all]` | All of the above |
+
 ## Modules
 
-- **bmlib.llm** — LLM provider abstraction (Ollama native, Anthropic)
-- **bmlib.db** — Thin database abstraction (SQLite, PostgreSQL) with pure functions
-- **bmlib.templates** — Jinja2 template engine with file-based prompt templates
-- **bmlib.agents** — Base agent class for LLM-driven tasks
-- **bmlib.quality** — 3-tier quality assessment pipeline for biomedical literature
-- **bmlib.transparency** — Multi-API transparency and bias analysis
+| Module | Description |
+|--------|-------------|
+| **bmlib.db** | Thin database abstraction (SQLite + PostgreSQL) with pure functions over DB-API connections |
+| **bmlib.llm** | Unified LLM client with pluggable providers (Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini) |
+| **bmlib.templates** | Jinja2-based prompt template engine with user-override directory fallback |
+| **bmlib.agents** | Base agent class for LLM-driven tasks with template rendering and JSON parsing |
+| **bmlib.quality** | 3-tier quality assessment pipeline for biomedical publications (metadata → LLM classifier → deep assessment) |
+| **bmlib.transparency** | Multi-API transparency and bias analysis (PubMed, CrossRef, EuropePMC, OpenAlex, ClinicalTrials.gov) |
+| **bmlib.publications** | Publication ingestion from PubMed, bioRxiv, medRxiv, and OpenAlex with deduplication and sync |
+| **bmlib.fulltext** | Full-text retrieval (Europe PMC → Unpaywall → DOI), JATS XML parsing, and disk-based caching |
+
+## Quick Start
+
+### Database
+
+```python
+from bmlib.db import connect_sqlite, execute, fetch_all, transaction
+
+conn = connect_sqlite("~/.myapp/data.db")
+with transaction(conn):
+    execute(conn, "INSERT INTO papers (doi, title) VALUES (?, ?)", ("10.1101/x", "A paper"))
+rows = fetch_all(conn, "SELECT * FROM papers")
+```
+
+### LLM
+
+```python
+from bmlib.llm import LLMClient, LLMMessage
+
+client = LLMClient(default_provider="ollama")
+response = client.chat(
+    messages=[LLMMessage(role="user", content="Summarise this paper.")],
+    model="ollama:medgemma4B_it_q8",
+)
+print(response.content)
+```
+
+Model strings use the format `"provider:model_name"`:
+
+```
+"anthropic:claude-sonnet-4-20250514"
+"openai:gpt-4o"
+"ollama:medgemma4B_it_q8"
+"deepseek:deepseek-chat"
+"mistral:mistral-large-latest"
+"gemini:gemini-2.0-flash"
+```
+
+### Publication Sync
+
+```python
+from datetime import date
+from bmlib.db import connect_sqlite
+from bmlib.publications import sync
+
+conn = connect_sqlite("publications.db")
+report = sync(
+    conn,
+    sources=["pubmed", "biorxiv"],
+    date_from=date(2025, 1, 1),
+    date_to=date(2025, 1, 7),
+    email="researcher@example.com",
+)
+print(f"Added: {report.records_added}, Merged: {report.records_merged}")
+```
+
+### Full-Text Retrieval
+
+```python
+from bmlib.fulltext import FullTextService, FullTextCache
+
+service = FullTextService(email="researcher@example.com")
+result = service.fetch_fulltext(pmc_id="PMC7614751", doi="10.1234/example")
+
+if result.source == "europepmc" and result.html:
+    cache = FullTextCache()  # uses platform default directory
+    cache.save_html(result.html, "PMC7614751")
+```
+
+### Quality Assessment
+
+```python
+from bmlib.llm import LLMClient
+from bmlib.quality import QualityManager
+
+llm = LLMClient()
+manager = QualityManager(
+    llm=llm,
+    classifier_model="anthropic:claude-3-haiku-20240307",
+    assessor_model="anthropic:claude-sonnet-4-20250514",
+)
+
+assessment = manager.assess(
+    title="A Randomized Controlled Trial of ...",
+    abstract="We conducted a double-blind RCT ...",
+    publication_types=["Randomized Controlled Trial"],
+)
+print(assessment.study_design, assessment.quality_tier)
+```
+
+### Transparency Analysis
+
+```python
+from bmlib.transparency import TransparencyAnalyzer
+
+analyzer = TransparencyAnalyzer(email="researcher@example.com")
+result = analyzer.analyze("doc-001", doi="10.1038/s41586-024-00001-0")
+print(result.transparency_score, result.risk_level)
+```
+
+## Development
+
+```bash
+# Install with dev dependencies
+uv pip install -e ".[all]"
+
+# Run tests
+pytest tests/ -v
+
+# Lint and format
+ruff check .
+ruff format --check .
+```
+
+## Documentation
+
+Full API documentation is available in [docs/manual/](docs/manual/index.md).
 
 ## License
 

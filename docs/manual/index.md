@@ -1,8 +1,8 @@
 # bmlib API Manual
 
-**Version 0.1.0** | **License: AGPL-3.0-or-later** | **Python >=3.11**
+**Version 0.2.1** | **License: AGPL-3.0-or-later** | **Python >=3.11**
 
-bmlib is a shared Python library for biomedical literature tools. It provides LLM abstraction, quality assessment, transparency analysis, database utilities, and publication ingestion/sync.
+bmlib is a shared Python library for biomedical literature tools. It provides LLM abstraction, quality assessment, transparency analysis, full-text retrieval, database utilities, and publication ingestion/sync.
 
 ## Installation
 
@@ -20,6 +20,7 @@ pip install -e ".[all]"
 |------------------|------------------------------------|--------------------------------------------|
 | `anthropic`      | `pip install bmlib[anthropic]`     | Anthropic Claude API provider              |
 | `ollama`         | `pip install bmlib[ollama]`        | Ollama local model provider                |
+| `openai`         | `pip install bmlib[openai]`        | OpenAI, DeepSeek, Mistral, Gemini, and OpenAI-compatible providers |
 | `postgresql`     | `pip install bmlib[postgresql]`    | PostgreSQL database backend                |
 | `transparency`   | `pip install bmlib[transparency]`  | Transparency analysis (httpx)              |
 | `publications`   | `pip install bmlib[publications]`  | Publication ingestion and sync (httpx)     |
@@ -33,7 +34,7 @@ bmlib is organised into eight modules, each with a focused responsibility:
 | Module | Description | Documentation |
 |--------|-------------|---------------|
 | [`bmlib.db`](database.md) | Thin database abstraction over DB-API connections (SQLite + PostgreSQL) | [database.md](database.md) |
-| [`bmlib.llm`](llm.md) | Unified LLM client with pluggable providers (Anthropic, Ollama) | [llm.md](llm.md) |
+| [`bmlib.llm`](llm.md) | Unified LLM client with pluggable providers (Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini) | [llm.md](llm.md) |
 | [`bmlib.templates`](templates.md) | Jinja2-based prompt template engine with directory fallback | [templates.md](templates.md) |
 | [`bmlib.agents`](agents.md) | Base class for LLM-driven tasks | [agents.md](agents.md) |
 | [`bmlib.quality`](quality.md) | 3-tier quality assessment pipeline for biomedical publications | [quality.md](quality.md) |
