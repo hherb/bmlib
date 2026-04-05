@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import logging
 
-from bmlib.llm.data_types import LLMMessage, LLMResponse
+from bmlib.llm.data_types import EmbeddingResponse, LLMMessage, LLMResponse
 from bmlib.llm.providers import (
     BaseProvider,
     ModelMetadata,
@@ -135,6 +135,49 @@ class LLMClient:
         )
 
         return response
+
+    def generate(
+        self,
+        prompt: str,
+        model: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        **kwargs: object,
+    ) -> LLMResponse:
+        """Convenience wrapper: generate a response from a single prompt.
+
+        Wraps *prompt* as a single user message and delegates to :meth:`chat`.
+        """
+        messages = [LLMMessage(role="user", content=prompt)]
+        return self.chat(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs,
+        )
+
+    def embed(
+        self,
+        text: str,
+        model: str | None = None,
+        **kwargs: object,
+    ) -> EmbeddingResponse:
+        """Generate an embedding vector for *text*.
+
+        Routes to the appropriate provider based on the *model* string.
+        Not all providers support embeddings — the call will raise
+        :class:`NotImplementedError` for providers that do not.
+
+        Args:
+            text: The text to embed.
+            model: Model string (``"provider:model_name"`` format).
+                   Defaults to the default provider's default model.
+            **kwargs: Extra provider-specific arguments.
+        """
+        provider_name, model_name = self._parse_model_string(model)
+        provider = self._get_provider(provider_name)
+        return provider.embed(text=text, model=model_name, **kwargs)
 
     def test_connection(
         self, provider: str | None = None,

@@ -30,7 +30,7 @@ import os
 import re
 from typing import Any
 
-from bmlib.llm.data_types import LLMMessage, LLMResponse
+from bmlib.llm.data_types import EmbeddingResponse, LLMMessage, LLMResponse
 from bmlib.llm.providers.base import (
     BaseProvider,
     ModelMetadata,
@@ -193,6 +193,43 @@ class OllamaProvider(BaseProvider):
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             stop_reason="stop",
+        )
+
+    def embed(
+        self,
+        text: str,
+        model: str | None = None,
+        **kwargs: object,
+    ) -> EmbeddingResponse:
+        """Generate an embedding vector for *text*.
+
+        Args:
+            text: The text to embed.
+            model: Embedding model identifier.  Defaults to
+                :pyattr:`default_model` (not ideal for embeddings — callers
+                should pass an embedding-specific model).
+            **kwargs: Reserved for future use.
+
+        Returns:
+            An :class:`EmbeddingResponse` with the embedding vector.
+        """
+        model = model or self.default_model
+        client = self._get_client()
+
+        try:
+            response = client.embeddings(model=model, prompt=text)
+        except Exception as e:
+            logger.error("Ollama embedding error: %s", e)
+            raise ConnectionError(f"Ollama embedding failed: {e}") from e
+
+        embedding: list[float] = _safe_get(response, "embedding", [])
+        input_tokens: int = _safe_get(response, "prompt_eval_count", 0) or 0
+
+        return EmbeddingResponse(
+            embedding=embedding,
+            model=model,
+            dimensions=len(embedding),
+            input_tokens=input_tokens,
         )
 
     # --- Model discovery (native API) ---

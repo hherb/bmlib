@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from bmlib.llm.data_types import LLMMessage, LLMResponse
+    from bmlib.llm.data_types import EmbeddingResponse, LLMMessage, LLMResponse
 
 
 @dataclass
@@ -127,6 +127,22 @@ class BaseProvider(ABC):
         max_tokens: int = 4096,
         **kwargs: object,
     ) -> LLMResponse: ...
+
+    def embed(
+        self,
+        text: str,
+        model: str | None = None,
+        **kwargs: object,
+    ) -> EmbeddingResponse:
+        """Generate an embedding vector for *text*.
+
+        Not all providers support embeddings.  The default raises
+        :class:`NotImplementedError`; providers that support embeddings
+        (e.g. Ollama) override this method.
+        """
+        raise NotImplementedError(
+            f"{self.PROVIDER_NAME} does not support embeddings"
+        )
 
     @abstractmethod
     def list_models(self, force_refresh: bool = False) -> list[ModelMetadata]: ...

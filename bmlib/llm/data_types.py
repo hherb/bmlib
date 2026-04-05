@@ -58,7 +58,25 @@ class LLMResponse:
     output_tokens: int = 0
     total_tokens: int = 0
     stop_reason: str | None = None
+    duration_seconds: float = 0.0
 
     def __post_init__(self) -> None:
         if self.total_tokens == 0:
             self.total_tokens = self.input_tokens + self.output_tokens
+
+
+@dataclass
+class EmbeddingResponse:
+    """Response from an embedding request.
+
+    Attributes:
+        embedding: The embedding vector.
+        model: The model that generated the embedding.
+        dimensions: Number of dimensions in the embedding vector.
+        input_tokens: Number of input tokens processed.
+    """
+
+    embedding: list[float]
+    model: str = ""
+    dimensions: int = 0
+    input_tokens: int = 0
