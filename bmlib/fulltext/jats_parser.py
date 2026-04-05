@@ -23,12 +23,15 @@ figures, tables, references, and inline formatting.
 
 from __future__ import annotations
 
+import logging
 import re
 import xml.sax
 import xml.sax.handler
 from dataclasses import dataclass, field
 from html import escape as html_escape
 from io import BytesIO
+
+logger = logging.getLogger(__name__)
 
 from bmlib.fulltext.models import (
     JATSAbstractSection,
@@ -552,8 +555,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     id_type = self.current_article_id_type.lower()
                     if id_type == "doi":
                         self.doi = text
-                    elif id_type in ("pmc", "pmcid"):
-                        self.pmc_id = text
+                    elif id_type in (
+                        "pmc", "pmcid", "pmcid-ver",
+                        "pmcaid", "pmcaiid",
+                    ):
+                        # All PMC-related identifiers — store the canonical
+                        # PMC ID only from "pmc" or "pmcid" variants (not
+                        # versioned or internal PMC article IDs).
+                        if id_type in ("pmc", "pmcid") and not self.pmc_id:
+                            self.pmc_id = text
                     elif id_type in ("pmid", "pubmed"):
                         self.pmid = text
                     else:
@@ -732,8 +742,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif text.startswith("PMC"):
             self.pmc_id = text
         elif text.isdigit() and len(text) >= 7:
-            if not self.pmid:
-                self.pmid = text
+            # Bare numeric IDs without a recognised pub-id-type are
+            # ambiguous — they could be PMC article IDs, publisher
+            # internal IDs, etc.  Never guess; PMIDs will arrive via
+            # the typed path (pub-id-type="pmid").
+            logger.debug("Ignoring untyped numeric article-id: %s", text)
 
 
 # ---------------------------------------------------------------------------
