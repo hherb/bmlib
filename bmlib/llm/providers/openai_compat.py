@@ -43,7 +43,12 @@ import os
 import time
 from typing import Any
 
-from bmlib.llm.data_types import LLMMessage, LLMResponse
+from bmlib.llm.data_types import (
+    LLMMessage,
+    LLMResponse,
+    LLMToolCall,
+    LLMToolDefinition,
+)
 from bmlib.llm.providers.base import (
     BaseProvider,
     ModelMetadata,
@@ -139,10 +144,10 @@ class OpenAICompatibleProvider(BaseProvider):
 
         top_p: float | None = kwargs.get("top_p")  # type: ignore[assignment]
         json_mode: bool = kwargs.get("json_mode", False)  # type: ignore[assignment]
+        tools: list[LLMToolDefinition] | None = kwargs.get("tools")  # type: ignore[assignment]
+        tool_choice: str = kwargs.get("tool_choice", "auto")  # type: ignore[assignment]
 
-        openai_messages: list[dict[str, str]] = [
-            {"role": msg.role, "content": msg.content} for msg in messages
-        ]
+        openai_messages = _convert_messages_to_openai(messages)
 
         request_kwargs: dict[str, object] = {
             "model": model,
@@ -155,10 +160,44 @@ class OpenAICompatibleProvider(BaseProvider):
         if json_mode:
             request_kwargs["response_format"] = {"type": "json_object"}
 
+        # Tool calling: convert LLMToolDefinition to OpenAI's nested
+        # function-spec format and pass tools + tool_choice through to
+        # the SDK. tool_choice maps from the bmlib canonical strings
+        # ("auto"/"required"/"none"/"any" or a specific tool name) to
+        # OpenAI's expected shape.
+        if tools is not None:
+            request_kwargs["tools"] = [_convert_tool_def_to_openai(t) for t in tools]
+            request_kwargs["tool_choice"] = _convert_tool_choice_to_openai(tool_choice)
+
         response = client.chat.completions.create(**request_kwargs)
 
         choice = response.choices[0]
         content = choice.message.content or ""
+
+        # Parse tool calls from the response. OpenAI returns them as
+        # choice.message.tool_calls with .id, .function.name,
+        # .function.arguments (a JSON string).
+        tool_calls: list[LLMToolCall] = []
+        raw_calls = getattr(choice.message, "tool_calls", None) or []
+        for raw in raw_calls:
+            call_id = getattr(raw, "id", "") or ""
+            fn = getattr(raw, "function", None)
+            if fn is None:
+                continue
+            name = getattr(fn, "name", "") or ""
+            args_raw = getattr(fn, "arguments", "") or ""
+            # OpenAI sends arguments as a JSON string. Parse to dict.
+            args: dict[str, Any] = {}
+            if isinstance(args_raw, dict):
+                args = args_raw
+            elif isinstance(args_raw, str) and args_raw:
+                try:
+                    parsed = json.loads(args_raw)
+                    if isinstance(parsed, dict):
+                        args = parsed
+                except (ValueError, TypeError):
+                    args = {"_raw": args_raw}
+            tool_calls.append(LLMToolCall(id=call_id, name=name, arguments=args))
 
         if json_mode and content:
             try:
@@ -172,6 +211,7 @@ class OpenAICompatibleProvider(BaseProvider):
             input_tokens=response.usage.prompt_tokens if response.usage else 0,
             output_tokens=response.usage.completion_tokens if response.usage else 0,
             stop_reason=choice.finish_reason,
+            tool_calls=tool_calls if tool_calls else None,
         )
 
     # --- Model listing ---
@@ -241,3 +281,119 @@ class OpenAICompatibleProvider(BaseProvider):
 
     def get_model_pricing(self, model: str) -> ModelPricing:
         return self.MODEL_PRICING.get(model, self._FALLBACK_PRICING)
+
+
+# ---------------------------------------------------------------------------
+# Tool-calling format converters (pure functions, unit-testable)
+# ---------------------------------------------------------------------------
+#
+# OpenAI is the canonical wire format for bmlib's LLMToolDefinition,
+# so this converter is essentially the identity transform — it wraps
+# the LLMToolDefinition into the {"type": "function", "function": {...}}
+# envelope that the OpenAI SDK expects.
+#
+# OpenAI-specific notes:
+#  * Tool definitions: {"type": "function", "function": {name, description, parameters}}
+#    where parameters is a JSON Schema object.
+#  * Tool results are sent as messages with role="tool" and a
+#    tool_call_id field. content is the result string. This matches
+#    bmlib's LLMMessage(role="tool", ...) shape directly.
+#  * Multi-turn assistant tool_use re-emission: assistant messages
+#    with previous tool_calls must include the tool_calls field on
+#    the message dict.
+#  * tool_choice values: "auto" / "required" / "none" / {"type":"function","function":{"name":...}}.
+#    bmlib's "any" alias maps to "required".
+
+
+def _convert_tool_def_to_openai(tool: LLMToolDefinition) -> dict[str, Any]:
+    """Convert an :class:`LLMToolDefinition` to OpenAI's tool format.
+
+    OpenAI expects::
+
+        {
+            "type": "function",
+            "function": {
+                "name": "...",
+                "description": "...",
+                "parameters": {<JSON Schema>}
+            }
+        }
+
+    bmlib's LLMToolDefinition.parameters is already in JSON Schema
+    form, so this is a near-identity wrap.
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.parameters or {"type": "object", "properties": {}},
+        },
+    }
+
+
+def _convert_tool_choice_to_openai(tool_choice: str) -> Any:
+    """Convert bmlib canonical tool_choice to OpenAI's format.
+
+    Mapping:
+        ``"auto"`` (default)     → ``"auto"``
+        ``"required"``/``"any"`` → ``"required"``
+        ``"none"``               → ``"none"``
+        anything else            → forced specific tool by name
+    """
+    if tool_choice in ("required", "any"):
+        return "required"
+    if tool_choice in ("auto", "none"):
+        return tool_choice
+    if not tool_choice:
+        return "auto"
+    # Specific tool name forced
+    return {"type": "function", "function": {"name": tool_choice}}
+
+
+def _convert_messages_to_openai(messages: list[LLMMessage]) -> list[dict[str, Any]]:
+    """Convert bmlib LLMMessage list to OpenAI message format.
+
+    Handles:
+      * Plain user/assistant/system → simple {role, content} dict
+      * ``role="tool"`` → {role: "tool", content, tool_call_id}
+        (OpenAI requires tool_call_id on tool result messages so the
+        model can correlate the result to the original tool call)
+      * Assistant messages with ``tool_calls`` → re-emitted with the
+        tool_calls field on the message dict, which OpenAI requires
+        for multi-turn tool conversations
+    """
+    out: list[dict[str, Any]] = []
+    for msg in messages:
+        if msg.role == "tool":
+            entry: dict[str, Any] = {
+                "role": "tool",
+                "content": msg.content,
+            }
+            if msg.tool_call_id:
+                entry["tool_call_id"] = msg.tool_call_id
+            out.append(entry)
+            continue
+
+        if msg.role == "assistant" and msg.tool_calls:
+            entry = {
+                "role": "assistant",
+                "content": msg.content or None,
+                "tool_calls": [
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            # OpenAI expects arguments as a JSON string
+                            "arguments": json.dumps(call.arguments),
+                        },
+                    }
+                    for call in msg.tool_calls
+                ],
+            }
+            out.append(entry)
+            continue
+
+        out.append({"role": msg.role, "content": msg.content})
+    return out
