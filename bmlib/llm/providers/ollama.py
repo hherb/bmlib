@@ -30,7 +30,13 @@ import os
 import re
 from typing import Any
 
-from bmlib.llm.data_types import EmbeddingResponse, LLMMessage, LLMResponse
+from bmlib.llm.data_types import (
+    EmbeddingResponse,
+    LLMMessage,
+    LLMResponse,
+    LLMToolCall,
+    LLMToolDefinition,
+)
 from bmlib.llm.providers.base import (
     BaseProvider,
     ModelMetadata,
@@ -137,11 +143,14 @@ class OllamaProvider(BaseProvider):
         """Send a chat request to the local Ollama server.
 
         Args:
-            messages: Conversation messages.
+            messages: Conversation messages. Supports tool-result
+                messages (``role="tool"``) and assistant messages with
+                ``tool_calls`` for multi-turn tool conversations.
             model: Model identifier.
             temperature: Sampling temperature.
             max_tokens: Maximum tokens to generate.
-            **kwargs: Extra options (``top_p``, ``json_mode``, ``think``).
+            **kwargs: Extra options (``top_p``, ``json_mode``, ``think``,
+                ``tools``, ``tool_choice``).
         """
         model = model or self.default_model
         client = self._get_client()
@@ -149,10 +158,14 @@ class OllamaProvider(BaseProvider):
         top_p: float | None = kwargs.get("top_p")  # type: ignore[assignment]
         json_mode: bool = kwargs.get("json_mode", False)  # type: ignore[assignment]
         think: bool | None = kwargs.get("think")  # type: ignore[assignment]
+        tools: list[LLMToolDefinition] | None = kwargs.get("tools")  # type: ignore[assignment]
+        # Note: Ollama's native API does not yet expose a tool_choice
+        # parameter the way OpenAI does. The model decides when to call
+        # a tool based on the conversation. We accept the kwarg for API
+        # symmetry with the other providers but do not forward it.
+        _ = kwargs.get("tool_choice", "auto")
 
-        ollama_messages = [
-            {"role": msg.role, "content": msg.content} for msg in messages
-        ]
+        ollama_messages = _convert_messages_to_ollama(messages)
 
         options: dict[str, object] = {
             "temperature": temperature,
@@ -173,11 +186,46 @@ class OllamaProvider(BaseProvider):
         if think is not None:
             request_kwargs["think"] = think
 
+        # Tool calling: ollama-python (>=0.3) accepts an OpenAI-style
+        # tools list directly. Convert our LLMToolDefinition into the
+        # standard {"type": "function", "function": {...}} shape.
+        if tools is not None:
+            request_kwargs["tools"] = [_convert_tool_def_to_ollama(t) for t in tools]
+
         response = client.chat(**request_kwargs)
 
         # ollama >=0.4 returns Pydantic models; older versions return dicts.
         message = _safe_get(response, "message")
         content: str = _safe_get(message, "content", "") if message else ""
+
+        # Parse tool calls from the response message. ollama-python
+        # exposes them as message.tool_calls — a list of objects with
+        # .function.name and .function.arguments (already parsed dict).
+        tool_calls: list[LLMToolCall] = []
+        if message:
+            raw_calls = _safe_get(message, "tool_calls") or []
+            for idx, raw in enumerate(raw_calls):
+                # Ollama doesn't always provide an id; synthesise one
+                # from the position so callers can correlate the
+                # tool result back in the next turn.
+                call_id = _safe_get(raw, "id") or f"call_{idx}"
+                fn = _safe_get(raw, "function") or raw
+                name = _safe_get(fn, "name") or ""
+                args = _safe_get(fn, "arguments") or {}
+                # Some Ollama models return arguments as a JSON string
+                # rather than a parsed object — handle both.
+                if isinstance(args, str):
+                    try:
+                        import json as _json
+                        args = _json.loads(args)
+                    except (ValueError, TypeError):
+                        args = {"_raw": args}
+                if not isinstance(args, dict):
+                    args = {}
+                tool_calls.append(
+                    LLMToolCall(id=str(call_id), name=str(name), arguments=args)
+                )
+
         input_tokens: int = (
             _safe_get(response, "prompt_eval_count")
             or self._estimate_tokens(messages)
@@ -192,7 +240,8 @@ class OllamaProvider(BaseProvider):
             model=model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            stop_reason="stop",
+            stop_reason="tool_calls" if tool_calls else "stop",
+            tool_calls=tool_calls if tool_calls else None,
         )
 
     def embed(
@@ -322,6 +371,98 @@ class OllamaProvider(BaseProvider):
     def get_model_metadata(self, model: str) -> ModelMetadata | None:
         """Return metadata for *model*, fetching via ``ollama.show()``."""
         return self._get_model_info(model)
+
+
+# ---------------------------------------------------------------------------
+# Tool-calling format converters (pure functions, unit-testable)
+# ---------------------------------------------------------------------------
+#
+# Ollama-specific notes:
+#  * Ollama's native API uses OpenAI-style tool definitions:
+#    [{"type": "function", "function": {"name", "description", "parameters"}}]
+#  * Ollama supports a "tool" role natively (since ollama-python >= 0.3),
+#    so we can pass tool result messages through as-is. The role goes in
+#    the message dict alongside content. Some models also use a
+#    "tool_call_id" field for correlation; we forward it when present.
+#  * Ollama does not have an explicit tool_choice parameter at this
+#    layer — the model decides. We accept tool_choice in the kwargs
+#    for API symmetry but do not forward it.
+#  * Multi-turn assistant tool_use re-emission: when re-sending an
+#    assistant turn, ollama-python expects the message to have a
+#    "tool_calls" field of the same shape it returns. We construct
+#    that from LLMMessage.tool_calls.
+
+
+def _convert_tool_def_to_ollama(tool: LLMToolDefinition) -> dict[str, Any]:
+    """Convert an :class:`LLMToolDefinition` to Ollama's tool format.
+
+    Ollama uses OpenAI-style tool definitions:
+        {
+            "type": "function",
+            "function": {
+                "name": "...",
+                "description": "...",
+                "parameters": {<JSON Schema>}
+            }
+        }
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.parameters or {"type": "object", "properties": {}},
+        },
+    }
+
+
+def _convert_messages_to_ollama(messages: list[LLMMessage]) -> list[dict[str, Any]]:
+    """Convert a list of LLMMessage to Ollama's message format.
+
+    Handles:
+      * Plain user/assistant/system messages → simple role+content dict
+      * ``role="tool"`` messages → forwarded with the same role plus
+        tool_call_id (when ollama-python recognises it). Ollama treats
+        tool result content as the result of the tool call referenced
+        by tool_call_id (if provided), or as a generic tool turn
+        otherwise.
+      * Assistant messages with ``tool_calls`` → re-emitted with the
+        OpenAI-style ``tool_calls`` field on the message dict so the
+        model can correlate the next turn's tool result.
+    """
+    out: list[dict[str, Any]] = []
+    for msg in messages:
+        if msg.role == "tool":
+            entry: dict[str, Any] = {
+                "role": "tool",
+                "content": msg.content,
+            }
+            if msg.tool_call_id:
+                entry["tool_call_id"] = msg.tool_call_id
+            out.append(entry)
+            continue
+
+        if msg.role == "assistant" and msg.tool_calls:
+            entry = {
+                "role": "assistant",
+                "content": msg.content or "",
+                "tool_calls": [
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": call.arguments,
+                        },
+                    }
+                    for call in msg.tool_calls
+                ],
+            }
+            out.append(entry)
+            continue
+
+        out.append({"role": msg.role, "content": msg.content})
+    return out
 
 
 # ---------------------------------------------------------------------------
