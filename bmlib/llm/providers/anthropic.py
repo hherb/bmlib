@@ -24,7 +24,12 @@ import os
 import time
 from typing import Any
 
-from bmlib.llm.data_types import LLMMessage, LLMResponse
+from bmlib.llm.data_types import (
+    LLMMessage,
+    LLMResponse,
+    LLMToolCall,
+    LLMToolDefinition,
+)
 from bmlib.llm.providers.base import (
     BaseProvider,
     ModelMetadata,
@@ -141,26 +146,28 @@ class AnthropicProvider(BaseProvider):
         """Send a chat request to the Anthropic API.
 
         Args:
-            messages: Conversation messages.
+            messages: Conversation messages. Supports tool-result
+                messages (``role="tool"``) and assistant messages with
+                ``tool_calls`` for multi-turn tool conversations.
             model: Model identifier (e.g. ``"claude-sonnet-4-20250514"``).
             temperature: Sampling temperature.
             max_tokens: Maximum tokens to generate.
-            **kwargs: Extra options (``top_p``, ``json_mode``).
+            **kwargs: Extra options (``top_p``, ``json_mode``,
+                ``tools``, ``tool_choice``).
         """
         model = model or self.default_model
         client = self._get_client()
 
         top_p: float | None = kwargs.get("top_p")  # type: ignore[assignment]
         json_mode: bool = kwargs.get("json_mode", False)  # type: ignore[assignment]
+        tools: list[LLMToolDefinition] | None = kwargs.get("tools")  # type: ignore[assignment]
+        tool_choice: str = kwargs.get("tool_choice", "auto")  # type: ignore[assignment]
 
-        # Separate system message (Anthropic API requirement)
-        system_content = ""
-        chat_messages: list[dict[str, str]] = []
-        for msg in messages:
-            if msg.role == "system":
-                system_content = msg.content
-            else:
-                chat_messages.append({"role": msg.role, "content": msg.content})
+        # Separate the system message and convert the rest into Anthropic
+        # message format. Anthropic uses content blocks for everything,
+        # so we route through a converter that handles both plain-text
+        # turns and tool-related turns (assistant tool_use, tool results).
+        system_content, chat_messages = _convert_messages_to_anthropic(messages)
 
         request_kwargs: dict[str, object] = {
             "model": model,
@@ -173,15 +180,35 @@ class AnthropicProvider(BaseProvider):
         if top_p is not None:
             request_kwargs["top_p"] = top_p
 
+        # Tool calling: convert OpenAI-style tool defs to Anthropic format
+        # and forward tool_choice if explicitly set.
+        if tools is not None:
+            request_kwargs["tools"] = [_convert_tool_def_to_anthropic(t) for t in tools]
+            anth_tool_choice = _convert_tool_choice_to_anthropic(tool_choice)
+            if anth_tool_choice is not None:
+                request_kwargs["tool_choice"] = anth_tool_choice
+
         response = client.messages.create(**request_kwargs)
 
+        # Anthropic returns content blocks. Walk them and split into
+        # text content vs tool calls.
         content = ""
+        tool_calls: list[LLMToolCall] = []
         if response.content:
             for block in response.content:
-                if hasattr(block, "text"):
-                    content += block.text
+                btype = getattr(block, "type", None)
+                if btype == "text" or hasattr(block, "text"):
+                    content += getattr(block, "text", "") or ""
+                elif btype == "tool_use":
+                    tool_calls.append(
+                        LLMToolCall(
+                            id=getattr(block, "id", ""),
+                            name=getattr(block, "name", ""),
+                            arguments=dict(getattr(block, "input", {}) or {}),
+                        )
+                    )
 
-        if json_mode:
+        if json_mode and content:
             try:
                 json.loads(content)
             except json.JSONDecodeError:
@@ -193,6 +220,7 @@ class AnthropicProvider(BaseProvider):
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
             stop_reason=response.stop_reason,
+            tool_calls=tool_calls if tool_calls else None,
         )
 
     # --- Model listing ---
@@ -278,4 +306,140 @@ class AnthropicProvider(BaseProvider):
     def get_model_pricing(self, model: str) -> ModelPricing:
         """Return pricing for *model*, falling back to default rates."""
         return self.MODEL_PRICING.get(model, self._FALLBACK_PRICING)
+
+
+# ---------------------------------------------------------------------------
+# Tool-calling format converters (pure functions, unit-testable)
+# ---------------------------------------------------------------------------
+#
+# bmlib's public LLMToolDefinition / LLMMessage / LLMToolCall types use
+# the OpenAI-style schema as the canonical wire format. Each provider
+# converts to/from its native format inside the provider module so
+# callers don't have to know provider-specific quirks.
+#
+# Anthropic-specific notes:
+#  * Tool definitions use ``input_schema`` (not ``parameters``).
+#  * Tool results are sent as user-role messages with content blocks
+#    of type ``tool_result``, NOT as a separate "tool" role.
+#  * Assistant messages that previously emitted a tool_use must be
+#    re-sent with the tool_use blocks intact in the next turn so the
+#    model can correlate the tool result.
+#  * tool_choice values map differently: OpenAI's "auto"/"required"/
+#    "none" become Anthropic's {"type": "auto"}, {"type": "any"},
+#    or omission.
+
+
+def _convert_tool_def_to_anthropic(tool: LLMToolDefinition) -> dict[str, Any]:
+    """Convert an :class:`LLMToolDefinition` to Anthropic's tool schema.
+
+    OpenAI's ``parameters`` becomes Anthropic's ``input_schema``.
+    Other fields pass through unchanged.
+    """
+    return {
+        "name": tool.name,
+        "description": tool.description,
+        "input_schema": tool.parameters or {"type": "object", "properties": {}},
+    }
+
+
+def _convert_tool_choice_to_anthropic(tool_choice: str) -> dict[str, Any] | None:
+    """Convert OpenAI-style tool_choice to Anthropic's tool_choice format.
+
+    Returns ``None`` for ``"auto"`` (Anthropic's default — omit the
+    parameter rather than send ``{"type": "auto"}``, equivalent
+    behaviour and slightly cleaner request payloads).
+
+    Mapping:
+        ``"auto"``               → ``None`` (default)
+        ``"required"``/``"any"`` → ``{"type": "any"}``
+        ``"none"``               → ``{"type": "none"}``
+        anything else            → treated as a specific tool name
+    """
+    if tool_choice == "auto" or not tool_choice:
+        return None
+    if tool_choice in ("required", "any"):
+        return {"type": "any"}
+    if tool_choice == "none":
+        return {"type": "none"}
+    # Any other value is interpreted as a specific tool name to force
+    return {"type": "tool", "name": tool_choice}
+
+
+def _convert_messages_to_anthropic(
+    messages: list[LLMMessage],
+) -> tuple[str, list[dict[str, Any]]]:
+    """Convert bmlib LLMMessage list to (system_content, anthropic_messages).
+
+    Handles:
+      * ``role="system"`` — extracted into the separate ``system``
+        parameter (Anthropic API requirement)
+      * ``role="user"`` / ``role="assistant"`` — passed through as
+        plain content blocks
+      * ``role="assistant"`` with ``tool_calls`` — re-emitted with
+        tool_use content blocks alongside any text content
+      * ``role="tool"`` — converted to a user-role message with a
+        ``tool_result`` content block referencing ``tool_call_id``
+
+    Consecutive ``role="tool"`` messages are merged into a single
+    user-role message with multiple ``tool_result`` blocks, which is
+    Anthropic's preferred shape when responding to multiple parallel
+    tool calls in one assistant turn.
+    """
+    system_content = ""
+    out: list[dict[str, Any]] = []
+
+    for msg in messages:
+        if msg.role == "system":
+            system_content = msg.content
+            continue
+
+        if msg.role == "tool":
+            # Tool result — Anthropic represents this as a user message
+            # containing one or more tool_result content blocks. If the
+            # previous message we emitted is already a user message
+            # composed of tool_result blocks, append to it; otherwise
+            # start a new one.
+            block = {
+                "type": "tool_result",
+                "tool_use_id": msg.tool_call_id or "",
+                "content": msg.content,
+            }
+            if (
+                out
+                and out[-1]["role"] == "user"
+                and isinstance(out[-1]["content"], list)
+                and all(
+                    isinstance(c, dict) and c.get("type") == "tool_result"
+                    for c in out[-1]["content"]
+                )
+            ):
+                out[-1]["content"].append(block)
+            else:
+                out.append({"role": "user", "content": [block]})
+            continue
+
+        if msg.role == "assistant" and msg.tool_calls:
+            # Re-emit a previous assistant turn that included tool_use
+            # blocks. Anthropic requires the original tool_use content
+            # blocks to be present so the model can correlate the next
+            # turn's tool_result blocks back to the original calls.
+            blocks: list[dict[str, Any]] = []
+            if msg.content:
+                blocks.append({"type": "text", "text": msg.content})
+            for call in msg.tool_calls:
+                blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": call.id,
+                        "name": call.name,
+                        "input": call.arguments,
+                    }
+                )
+            out.append({"role": "assistant", "content": blocks})
+            continue
+
+        # Plain text message (user or assistant without tool calls)
+        out.append({"role": msg.role, "content": msg.content})
+
+    return system_content, out
 
