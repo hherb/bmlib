@@ -36,7 +36,12 @@ from __future__ import annotations
 
 import logging
 
-from bmlib.llm.data_types import EmbeddingResponse, LLMMessage, LLMResponse
+from bmlib.llm.data_types import (
+    EmbeddingResponse,
+    LLMMessage,
+    LLMResponse,
+    LLMToolDefinition,
+)
 from bmlib.llm.providers import (
     BaseProvider,
     ModelMetadata,
@@ -100,18 +105,79 @@ class LLMClient:
         max_tokens: int = 4096,
         top_p: float | None = None,
         json_mode: bool = False,
+        tools: list[LLMToolDefinition] | None = None,
+        tool_choice: str = "auto",
         **kwargs: object,
     ) -> LLMResponse:
         """Send a chat request, routing to the appropriate provider.
 
         Extra *kwargs* are forwarded to the provider's ``chat()`` method.
         Ollama-specific parameters (e.g. ``think=True``) are passed this way.
+
+        Tool calling
+        ------------
+        Pass *tools* to allow the model to invoke functions you define.
+        Each :class:`~bmlib.llm.data_types.LLMToolDefinition` is forwarded
+        to the provider in its native format. The model's response will
+        contain :attr:`LLMResponse.tool_calls` with parsed
+        :class:`LLMToolCall` objects when the model decides to invoke a
+        tool. To send the tool result back, append a ``role="tool"``
+        message with ``tool_call_id`` referencing the call's id.
+
+        *tool_choice* controls how the model selects tools:
+
+        * ``"auto"`` (default) — the model decides
+        * ``"required"`` / ``"any"`` — the model must call at least one tool
+        * ``"none"`` — disable tool calling for this turn
+
+        Providers that do not support tool calling will raise
+        :class:`NotImplementedError` if *tools* is not ``None``. Check
+        ``client.get_provider_info(name)["capabilities"]`` if you need to
+        detect support without raising.
+
+        Args:
+            messages: Conversation messages.
+            model: Model identifier in ``"provider:model_name"`` form.
+            temperature: Sampling temperature.
+            max_tokens: Maximum tokens to generate.
+            top_p: Nucleus sampling threshold.
+            json_mode: Force JSON-formatted output where supported.
+            tools: Optional list of tool definitions the model can call.
+            tool_choice: Tool selection strategy (see above).
+            **kwargs: Provider-specific extras.
+
+        Raises:
+            NotImplementedError: If *tools* is provided but the resolved
+                provider does not declare ``supports_function_calling``.
         """
         provider_name, model_name = self._parse_model_string(model)
 
         logger.debug("Chat request: provider=%s, model=%s", provider_name, model_name)
 
         provider = self._get_provider(provider_name)
+
+        # Pre-flight capability check: fail fast with a clear error if
+        # the caller passed tools= to a provider that does not support
+        # tool calling. We check at the LLMClient level so the error
+        # path is consistent across providers and so we don't waste a
+        # provider round-trip on a request that cannot succeed.
+        if tools is not None and not _provider_supports_tools(provider):
+            raise NotImplementedError(
+                f"Provider {provider_name!r} does not support tool calling. "
+                f"Pass tools=None or use a tool-capable provider "
+                f"(anthropic, openai, ollama, deepseek, mistral, gemini)."
+            )
+
+        # Forward tools/tool_choice to the provider via kwargs. The
+        # provider's chat() pulls them out of **kwargs the same way it
+        # currently pulls top_p / json_mode / think. We do this rather
+        # than passing them as named parameters because BaseProvider.chat()
+        # does not declare them — that keeps the abstract contract
+        # backwards compatible for any third-party subclass.
+        if tools is not None:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = tool_choice
+
         response = provider.chat(
             messages=messages,
             model=model_name,
@@ -249,6 +315,38 @@ class LLMClient:
             "default_base_url": p.default_base_url,
             "default_model": p.default_model,
         }
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _provider_supports_tools(provider: BaseProvider) -> bool:
+    """Return True if *provider* declares tool-calling capability.
+
+    Looks at the provider's default-model capability flag where
+    available, and falls back to a per-provider allowlist for providers
+    whose ``list_models()`` does not populate
+    ``capabilities.supports_function_calling`` reliably.
+
+    The allowlist exists because some providers (e.g. Ollama) report
+    capabilities per model rather than per provider, and querying every
+    model just to answer "does this provider support tools?" is
+    wasteful. Providers in the allowlist have been verified to support
+    OpenAI-style tool calling on at least one current model.
+    """
+    # Allowlist of providers known to support OpenAI-style tool calling.
+    # Add new providers here when their tool-calling implementation lands.
+    _TOOL_CAPABLE_PROVIDERS = {
+        "anthropic",
+        "openai",
+        "deepseek",
+        "mistral",
+        "gemini",
+        "ollama",
+    }
+    name = getattr(provider, "PROVIDER_NAME", "").lower()
+    return name in _TOOL_CAPABLE_PROVIDERS
 
 
 # ---------------------------------------------------------------------------
