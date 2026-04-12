@@ -51,14 +51,26 @@ class LLMMessage:
             emitted by the model.
         content: The text content of the message. For tool-result
             messages this should be a JSON-encoded string representing
-            the tool output.
+            the tool output. For assistant messages that consist solely
+            of tool calls, this may be empty.
         tool_call_id: For ``role="tool"`` messages, the id of the tool
             call this message is responding to. Ignored for other roles.
+        tool_calls: For ``role="assistant"`` messages that re-send a
+            previous turn in which the model invoked tools, the list of
+            tool calls the model emitted. Used by callers who maintain
+            their own conversation state across turns: after receiving
+            an :class:`LLMResponse` with non-empty ``tool_calls``, the
+            caller appends an ``LLMMessage(role="assistant", content=...,
+            tool_calls=...)`` to the conversation, then appends one or
+            more ``LLMMessage(role="tool", ...)`` messages with the
+            tool results, and re-sends the full message list. Ignored
+            for non-assistant roles.
     """
 
     role: Literal["system", "user", "assistant", "tool"]
     content: str
     tool_call_id: str | None = None
+    tool_calls: list["LLMToolCall"] | None = None
 
 
 @dataclass
