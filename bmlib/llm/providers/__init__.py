@@ -63,9 +63,7 @@ def get_provider(name: str, **kwargs: object) -> BaseProvider:
     _ensure_builtins()
     cls = _REGISTRY.get(name)
     if cls is None:
-        raise ValueError(
-            f"Unknown provider {name!r}. Available: {list(_REGISTRY.keys())}"
-        )
+        raise ValueError(f"Unknown provider {name!r}. Available: {list(_REGISTRY.keys())}")
     return cls(**kwargs)
 
 
@@ -77,6 +75,7 @@ def _ensure_builtins() -> None:
     # Anthropic
     try:
         from bmlib.llm.providers.anthropic import AnthropicProvider
+
         _REGISTRY["anthropic"] = AnthropicProvider
     except ImportError:
         pass
@@ -84,6 +83,7 @@ def _ensure_builtins() -> None:
     # Ollama
     try:
         from bmlib.llm.providers.ollama import OllamaProvider
+
         _REGISTRY["ollama"] = OllamaProvider
     except ImportError:
         pass
@@ -91,6 +91,7 @@ def _ensure_builtins() -> None:
     # OpenAI
     try:
         from bmlib.llm.providers.openai_provider import OpenAIProvider
+
         _REGISTRY["openai"] = OpenAIProvider
     except ImportError:
         pass
@@ -98,6 +99,7 @@ def _ensure_builtins() -> None:
     # DeepSeek
     try:
         from bmlib.llm.providers.deepseek import DeepSeekProvider
+
         _REGISTRY["deepseek"] = DeepSeekProvider
     except ImportError:
         pass
@@ -105,6 +107,7 @@ def _ensure_builtins() -> None:
     # Mistral
     try:
         from bmlib.llm.providers.mistral import MistralProvider
+
         _REGISTRY["mistral"] = MistralProvider
     except ImportError:
         pass
@@ -112,6 +115,7 @@ def _ensure_builtins() -> None:
     # Gemini
     try:
         from bmlib.llm.providers.gemini import GeminiProvider
+
         _REGISTRY["gemini"] = GeminiProvider
     except ImportError:
         pass

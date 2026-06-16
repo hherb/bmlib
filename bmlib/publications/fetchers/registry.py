@@ -60,9 +60,7 @@ def get_source(name: str) -> tuple[SourceDescriptor, Callable[..., Any]]:
     _ensure_builtins()
     entry = _REGISTRY.get(name)
     if entry is None:
-        raise ValueError(
-            f"Unknown source {name!r}. Available: {sorted(_REGISTRY.keys())}"
-        )
+        raise ValueError(f"Unknown source {name!r}. Available: {sorted(_REGISTRY.keys())}")
     return entry
 
 
@@ -118,8 +116,12 @@ def _register_builtins() -> None:
             ],
         ),
         lambda client, target_date, *, on_record, on_progress=None, **config: fetch_biorxiv(
-            client, target_date, on_record=on_record, on_progress=on_progress,
-            server="biorxiv", api_key=config.get("api_key"),
+            client,
+            target_date,
+            on_record=on_record,
+            on_progress=on_progress,
+            server="biorxiv",
+            api_key=config.get("api_key"),
         ),
     )
 
@@ -133,8 +135,12 @@ def _register_builtins() -> None:
             ],
         ),
         lambda client, target_date, *, on_record, on_progress=None, **config: fetch_biorxiv(
-            client, target_date, on_record=on_record, on_progress=on_progress,
-            server="medrxiv", api_key=config.get("api_key"),
+            client,
+            target_date,
+            on_record=on_record,
+            on_progress=on_progress,
+            server="medrxiv",
+            api_key=config.get("api_key"),
         ),
     )
 

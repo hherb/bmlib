@@ -58,7 +58,8 @@ class TestFetchEuropePMC:
         service = FullTextService(email="test@example.com")
         # PMC XML 404 -> search (no PDF) -> Unpaywall 404 -> DOI fallback
         with patch.object(
-            service, "_http_get",
+            service,
+            "_http_get",
             side_effect=[mock_404, mock_search_no_pdf, mock_unpaywall_404],
         ):
             result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test", pmid="456")
@@ -76,9 +77,7 @@ class TestDiscoverPMCID:
         mock_search = MagicMock()
         mock_search.status_code = 200
         mock_search.json.return_value = {
-            "resultList": {
-                "result": [{"pmcid": "PMC999", "inEPMC": "Y", "doi": "10.1/test"}]
-            }
+            "resultList": {"result": [{"pmcid": "PMC999", "inEPMC": "Y", "doi": "10.1/test"}]}
         }
 
         # Fulltext XML response
@@ -100,9 +99,7 @@ class TestDiscoverPMCID:
         mock_search = MagicMock()
         mock_search.status_code = 200
         mock_search.json.return_value = {
-            "resultList": {
-                "result": [{"pmcid": "PMC888", "inEPMC": "Y"}]
-            }
+            "resultList": {"result": [{"pmcid": "PMC888", "inEPMC": "Y"}]}
         }
         mock_xml = MagicMock()
         mock_xml.status_code = 200
@@ -119,16 +116,16 @@ class TestDiscoverPMCID:
         mock_search = MagicMock()
         mock_search.status_code = 200
         mock_search.json.return_value = {
-            "resultList": {
-                "result": [{"pmcid": None, "inEPMC": "N", "doi": "10.1/test"}]
-            }
+            "resultList": {"result": [{"pmcid": None, "inEPMC": "N", "doi": "10.1/test"}]}
         }
         mock_unpaywall_404 = MagicMock()
         mock_unpaywall_404.status_code = 404
 
         service = FullTextService(email="test@example.com")
         with patch.object(
-            service, "_http_get", side_effect=[mock_search, mock_unpaywall_404],
+            service,
+            "_http_get",
+            side_effect=[mock_search, mock_unpaywall_404],
         ):
             result = service.fetch_fulltext(pmc_id=None, doi="10.1/test", pmid="")
 
@@ -162,7 +159,8 @@ class TestFetchUnpaywall:
 
         service = FullTextService(email="test@example.com")
         with patch.object(
-            service, "_http_get",
+            service,
+            "_http_get",
             side_effect=[mock_pmc_404, mock_search_no_pdf, mock_unpaywall],
         ):
             result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test", pmid="456")
@@ -182,7 +180,9 @@ class TestFetchDOIFallback:
 
         service = FullTextService(email="test@example.com")
         with patch.object(
-            service, "_http_get", side_effect=[mock_search_empty, mock_unpaywall_404],
+            service,
+            "_http_get",
+            side_effect=[mock_search_empty, mock_unpaywall_404],
         ):
             result = service.fetch_fulltext(pmc_id=None, doi="10.1/test", pmid="456")
         assert result.source == "doi"
@@ -203,7 +203,9 @@ class TestKnownSources:
         mock_response.content = xml_data
 
         sources = [
-            FullTextSourceEntry(url="https://medrxiv.org/paper.pdf", format="pdf", source="medrxiv"),
+            FullTextSourceEntry(
+                url="https://medrxiv.org/paper.pdf", format="pdf", source="medrxiv"
+            ),
             FullTextSourceEntry(url="https://medrxiv.org/jats.xml", format="xml", source="medrxiv"),
         ]
 
@@ -222,7 +224,9 @@ class TestKnownSources:
 
         sources = [
             FullTextSourceEntry(url="https://biorxiv.org/jats.xml", format="xml", source="biorxiv"),
-            FullTextSourceEntry(url="https://biorxiv.org/paper.pdf", format="pdf", source="biorxiv"),
+            FullTextSourceEntry(
+                url="https://biorxiv.org/paper.pdf", format="pdf", source="biorxiv"
+            ),
         ]
 
         service = FullTextService(email="test@example.com")
@@ -247,7 +251,8 @@ class TestKnownSources:
         service = FullTextService(email="test@example.com")
         with patch.object(service, "_http_get", side_effect=[mock_fail, mock_epmc]):
             result = service.fetch_fulltext(
-                fulltext_sources=sources, pmc_id="PMC123",
+                fulltext_sources=sources,
+                pmc_id="PMC123",
             )
 
         assert result.source == "europepmc"
@@ -268,7 +273,9 @@ class TestKnownSources:
     def test_html_source_returns_web_url(self):
         """HTML sources should be returned as web_url."""
         sources = [
-            FullTextSourceEntry(url="https://pmc.ncbi.nlm.nih.gov/PMC123/", format="html", source="pmc"),
+            FullTextSourceEntry(
+                url="https://pmc.ncbi.nlm.nih.gov/PMC123/", format="html", source="pmc"
+            ),
         ]
 
         service = FullTextService(email="test@example.com")
@@ -281,8 +288,11 @@ class TestKnownSources:
 class TestFullTextSourceEntry:
     def test_to_dict_and_from_dict(self):
         entry = FullTextSourceEntry(
-            url="https://example.com/paper.pdf", format="pdf",
-            source="biorxiv", open_access=True, version="preprint",
+            url="https://example.com/paper.pdf",
+            format="pdf",
+            source="biorxiv",
+            open_access=True,
+            version="preprint",
         )
         d = entry.to_dict()
         assert d == {
@@ -317,9 +327,7 @@ class TestFullTextError:
 class TestSanitizeIdentifier:
     def test_doi_sanitized(self):
         # Readable prefix is preserved (a collision-proof hash is appended).
-        assert _sanitize_identifier("10.1234/test.paper-1").startswith(
-            "10.1234_test.paper-1_"
-        )
+        assert _sanitize_identifier("10.1234/test.paper-1").startswith("10.1234_test.paper-1_")
 
     def test_slashes_replaced(self):
         result = _sanitize_identifier("10.1101/2024.01.15.123456")
@@ -352,7 +360,8 @@ class TestCacheIntegration:
         service = FullTextService(email="test@example.com", cache=cache)
         with patch.object(service, "_http_get") as mock_get:
             result = service.fetch_fulltext(
-                doi="10.1234/test", identifier="10.1234/test",
+                doi="10.1234/test",
+                identifier="10.1234/test",
             )
             mock_get.assert_not_called()
 
@@ -367,7 +376,8 @@ class TestCacheIntegration:
         service = FullTextService(email="test@example.com", cache=cache)
         with patch.object(service, "_http_get") as mock_get:
             result = service.fetch_fulltext(
-                doi="10.1234/test", identifier="10.1234/test",
+                doi="10.1234/test",
+                identifier="10.1234/test",
             )
             mock_get.assert_not_called()
 
@@ -386,7 +396,8 @@ class TestCacheIntegration:
         service = FullTextService(email="test@example.com", cache=cache)
         with patch.object(service, "_http_get", return_value=mock_response):
             result = service.fetch_fulltext(
-                pmc_id="PMC123", identifier="10.1234/test",
+                pmc_id="PMC123",
+                identifier="10.1234/test",
             )
 
         assert result.source == "europepmc"
@@ -416,11 +427,13 @@ class TestCacheIntegration:
         cache = FullTextCache(cache_dir=tmp_path)
         service = FullTextService(email="test@example.com", cache=cache)
         with patch.object(
-            service, "_http_get",
+            service,
+            "_http_get",
             side_effect=[mock_search_empty, mock_unpaywall, mock_pdf],
         ):
             result = service.fetch_fulltext(
-                doi="10.1234/test", identifier="10.1234/test",
+                doi="10.1234/test",
+                identifier="10.1234/test",
             )
 
         assert result.source == "unpaywall"
@@ -450,11 +463,13 @@ class TestCacheIntegration:
         cache = FullTextCache(cache_dir=tmp_path)
         service = FullTextService(email="test@example.com", cache=cache)
         with patch.object(
-            service, "_http_get",
+            service,
+            "_http_get",
             side_effect=[mock_search_empty, mock_unpaywall, mock_pdf],
         ):
             result = service.fetch_fulltext(
-                doi="10.1234/test", identifier="10.1234/test",
+                doi="10.1234/test",
+                identifier="10.1234/test",
             )
 
         assert result.source == "unpaywall"
@@ -486,7 +501,9 @@ class TestCacheIntegration:
 
         sources = [
             FullTextSourceEntry(
-                url="https://medrxiv.org/jats.xml", format="xml", source="medrxiv",
+                url="https://medrxiv.org/jats.xml",
+                format="xml",
+                source="medrxiv",
             ),
         ]
 
@@ -494,7 +511,8 @@ class TestCacheIntegration:
         service = FullTextService(email="test@example.com", cache=cache)
         with patch.object(service, "_http_get", return_value=mock_response):
             result = service.fetch_fulltext(
-                fulltext_sources=sources, identifier="10.1234/test",
+                fulltext_sources=sources,
+                identifier="10.1234/test",
             )
 
         assert result.source == "medrxiv"
@@ -508,7 +526,9 @@ class TestCacheIntegration:
 
         sources = [
             FullTextSourceEntry(
-                url="https://medrxiv.org/paper.pdf", format="pdf", source="medrxiv",
+                url="https://medrxiv.org/paper.pdf",
+                format="pdf",
+                source="medrxiv",
             ),
         ]
 
@@ -516,7 +536,8 @@ class TestCacheIntegration:
         service = FullTextService(email="test@example.com", cache=cache)
         with patch.object(service, "_http_get", return_value=mock_pdf):
             result = service.fetch_fulltext(
-                fulltext_sources=sources, identifier="10.1234/test",
+                fulltext_sources=sources,
+                identifier="10.1234/test",
             )
 
         assert result.source == "medrxiv"

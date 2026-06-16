@@ -29,6 +29,7 @@ Usage::
 """
 
 from bmlib.db.connection import connect_postgresql, connect_sqlite
+from bmlib.db.migrations import Migration, run_migrations
 from bmlib.db.operations import (
     create_tables,
     execute,
@@ -38,7 +39,6 @@ from bmlib.db.operations import (
     fetch_scalar,
     table_exists,
 )
-from bmlib.db.migrations import Migration, run_migrations
 from bmlib.db.transactions import transaction
 
 __all__ = [

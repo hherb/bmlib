@@ -159,8 +159,8 @@ class FullTextService:
         pdf_render_url: str | None = None
         if not pmc_id and (doi or pmid):
             try:
-                discovered_pmc_id, pdf_render_url = (
-                    self._resolve_pmc_id_and_pdf_url(doi=doi, pmid=pmid)
+                discovered_pmc_id, pdf_render_url = self._resolve_pmc_id_and_pdf_url(
+                    doi=doi, pmid=pmid
                 )
                 if discovered_pmc_id:
                     html = self._fetch_europepmc(discovered_pmc_id)
@@ -173,14 +173,17 @@ class FullTextService:
             except Exception:
                 logger.debug(
                     "Europe PMC discovery failed for doi=%s pmid=%s",
-                    doi, pmid, exc_info=True,
+                    doi,
+                    pmid,
+                    exc_info=True,
                 )
 
         # When XML failed with a known PMC ID, search for PDF render URL
         if xml_failed and not pdf_render_url and (doi or pmid):
             try:
                 _, pdf_render_url = self._resolve_pmc_id_and_pdf_url(
-                    doi=doi, pmid=pmid,
+                    doi=doi,
+                    pmid=pmid,
                 )
             except Exception:
                 logger.debug("PDF URL resolution failed", exc_info=True)
@@ -228,7 +231,8 @@ class FullTextService:
         """
         priority = {"xml": 0, "pdf": 1, "html": 2}
         sorted_sources = sorted(
-            sources, key=lambda s: priority.get(s.format, 99),
+            sources,
+            key=lambda s: priority.get(s.format, 99),
         )
 
         for entry in sorted_sources:
@@ -248,7 +252,9 @@ class FullTextService:
                     return FullTextResult(source=entry.source, web_url=entry.url)
             except Exception:
                 logger.debug(
-                    "Known source %s (%s) failed", entry.source, entry.url,
+                    "Known source %s (%s) failed",
+                    entry.source,
+                    entry.url,
                     exc_info=True,
                 )
                 continue
@@ -278,7 +284,10 @@ class FullTextService:
                 logger.debug("Failed to cache HTML for %s", cache_id, exc_info=True)
 
     def _download_and_cache_pdf(
-        self, pdf_url: str, cache_id: str | None, result: FullTextResult,
+        self,
+        pdf_url: str,
+        cache_id: str | None,
+        result: FullTextResult,
     ) -> None:
         """Download a PDF and save it to the disk cache.
 
@@ -313,7 +322,10 @@ class FullTextService:
         return parser.to_html()
 
     def _resolve_pmc_id_and_pdf_url(
-        self, *, doi: str | None = None, pmid: str = "",
+        self,
+        *,
+        doi: str | None = None,
+        pmid: str = "",
     ) -> tuple[str | None, str | None]:
         """Search Europe PMC to discover a PMC ID and free PDF URL.
 

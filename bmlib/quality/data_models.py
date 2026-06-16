@@ -31,6 +31,7 @@ from typing import Any
 # Study design
 # ---------------------------------------------------------------------------
 
+
 class StudyDesign(Enum):
     SYSTEMATIC_REVIEW = "systematic_review"
     META_ANALYSIS = "meta_analysis"
@@ -84,15 +85,17 @@ STUDY_DESIGN_MAPPING: dict[str, StudyDesign] = {
 # Quality tiers (Oxford CEBM–inspired)
 # ---------------------------------------------------------------------------
 
+
 @total_ordering
 class QualityTier(Enum):
     """Evidence quality tier.  Higher value = stronger evidence."""
+
     UNCLASSIFIED = 0
-    TIER_1_ANECDOTAL = 1       # case reports, editorials, letters
-    TIER_2_OBSERVATIONAL = 2   # cross-sectional, case-control
-    TIER_3_CONTROLLED = 3      # cohort studies
-    TIER_4_EXPERIMENTAL = 4    # RCTs
-    TIER_5_SYNTHESIS = 5       # systematic reviews, meta-analyses
+    TIER_1_ANECDOTAL = 1  # case reports, editorials, letters
+    TIER_2_OBSERVATIONAL = 2  # cross-sectional, case-control
+    TIER_3_CONTROLLED = 3  # cohort studies
+    TIER_4_EXPERIMENTAL = 4  # RCTs
+    TIER_5_SYNTHESIS = 5  # systematic reviews, meta-analyses
 
     def __lt__(self, other):
         if self.__class__ is other.__class__:
@@ -143,10 +146,12 @@ DESIGN_TO_SCORE: dict[StudyDesign, float] = {
 # Bias risk (Cochrane RoB)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BiasRisk:
     """Cochrane Risk-of-Bias across five domains."""
-    selection: str = "unclear"     # "low", "unclear", "high"
+
+    selection: str = "unclear"  # "low", "unclear", "high"
     performance: str = "unclear"
     detection: str = "unclear"
     attrition: str = "unclear"
@@ -164,10 +169,15 @@ class BiasRisk:
     @classmethod
     def from_dict(cls, data: dict) -> BiasRisk:
         valid = ("low", "unclear", "high")
-        def v(k): return data.get(k, "unclear") if data.get(k) in valid else "unclear"
+
+        def v(k):
+            return data.get(k, "unclear") if data.get(k) in valid else "unclear"
+
         return cls(
-            selection=v("selection"), performance=v("performance"),
-            detection=v("detection"), attrition=v("attrition"),
+            selection=v("selection"),
+            performance=v("performance"),
+            detection=v("detection"),
+            attrition=v("attrition"),
             reporting=v("reporting"),
         )
 
@@ -176,23 +186,24 @@ class BiasRisk:
 # Quality assessment result
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class QualityAssessment:
     """Result from any tier of the quality pipeline."""
 
-    assessment_tier: int = 0             # 0=unclassified, 1=metadata, 2=haiku, 3=sonnet
+    assessment_tier: int = 0  # 0=unclassified, 1=metadata, 2=haiku, 3=sonnet
     extraction_method: str = "none"
     study_design: StudyDesign = StudyDesign.UNKNOWN
     quality_tier: QualityTier = QualityTier.UNCLASSIFIED
-    quality_score: float = 0.0           # 0–10
-    evidence_level: str | None = None # Oxford CEBM level
+    quality_score: float = 0.0  # 0–10
+    evidence_level: str | None = None  # Oxford CEBM level
     is_randomized: bool | None = None
     is_controlled: bool | None = None
-    is_blinded: str | None = None     # none / single / double / triple
+    is_blinded: str | None = None  # none / single / double / triple
     is_prospective: bool | None = None
     is_multicenter: bool | None = None
     sample_size: int | None = None
-    confidence: float = 0.0              # 0–1
+    confidence: float = 0.0  # 0–1
     bias_risk: BiasRisk | None = None
     strengths: list[str] = field(default_factory=list)
     limitations: list[str] = field(default_factory=list)
@@ -315,9 +326,11 @@ class QualityAssessment:
 # Quality filter (user preferences)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class QualityFilter:
     """User-configurable quality filter thresholds."""
+
     min_tier: QualityTier | None = None
     require_randomization: bool = False
     require_blinding: bool = False

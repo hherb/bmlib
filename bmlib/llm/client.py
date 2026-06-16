@@ -192,9 +192,7 @@ class LLMClient:
 
         # Track token usage
         tracker = get_token_tracker()
-        cost = provider.calculate_cost(
-            model_name, response.input_tokens, response.output_tokens
-        )
+        cost = provider.calculate_cost(model_name, response.input_tokens, response.output_tokens)
         tracker.record_usage(
             model=f"{provider_name}:{model_name}",
             input_tokens=response.input_tokens,
@@ -248,7 +246,8 @@ class LLMClient:
         return provider.embed(text=text, model=model_name, **kwargs)
 
     def test_connection(
-        self, provider: str | None = None,
+        self,
+        provider: str | None = None,
     ) -> bool | dict[str, tuple[bool, str]]:
         """Test connectivity to one or all providers."""
         if provider:
@@ -269,7 +268,8 @@ class LLMClient:
         return results
 
     def list_models(
-        self, provider: str | None = None,
+        self,
+        provider: str | None = None,
     ) -> list[str] | list[ModelMetadata]:
         """List available models for one or all providers."""
         if provider:
@@ -289,7 +289,9 @@ class LLMClient:
         return all_models
 
     def get_model_metadata(
-        self, model: str, provider: str | None = None,
+        self,
+        model: str,
+        provider: str | None = None,
     ) -> ModelMetadata | None:
         """Return metadata for *model*, or ``None`` if unavailable."""
         if provider is None and ":" in model:
@@ -323,6 +325,18 @@ class LLMClient:
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Allowlist of providers known to support OpenAI-style tool calling.
+# Add new providers here when their tool-calling implementation lands.
+_TOOL_CAPABLE_PROVIDERS = {
+    "anthropic",
+    "openai",
+    "deepseek",
+    "mistral",
+    "gemini",
+    "ollama",
+}
+
+
 def _provider_supports_tools(provider: BaseProvider) -> bool:
     """Return True if *provider* declares tool-calling capability.
 
@@ -337,16 +351,6 @@ def _provider_supports_tools(provider: BaseProvider) -> bool:
     wasteful. Providers in the allowlist have been verified to support
     OpenAI-style tool calling on at least one current model.
     """
-    # Allowlist of providers known to support OpenAI-style tool calling.
-    # Add new providers here when their tool-calling implementation lands.
-    _TOOL_CAPABLE_PROVIDERS = {
-        "anthropic",
-        "openai",
-        "deepseek",
-        "mistral",
-        "gemini",
-        "ollama",
-    }
     name = getattr(provider, "PROVIDER_NAME", "").lower()
     return name in _TOOL_CAPABLE_PROVIDERS
 

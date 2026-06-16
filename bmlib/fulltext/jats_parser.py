@@ -31,8 +31,6 @@ from dataclasses import dataclass, field
 from html import escape as html_escape
 from io import BytesIO
 
-logger = logging.getLogger(__name__)
-
 from bmlib.fulltext.models import (
     JATSAbstractSection,
     JATSArticle,
@@ -42,6 +40,8 @@ from bmlib.fulltext.models import (
     JATSReferenceInfo,
     JATSTableInfo,
 )
+
+logger = logging.getLogger(__name__)
 
 MAX_HEADING_LEVEL = 6
 
@@ -147,9 +147,7 @@ class _TableBuilder:
                 self.current_row_cell_count > 0
                 and self.current_row_header_cell_count == self.current_row_cell_count
             )
-            if self.in_header or (
-                all_header_cells and not self.in_body and not self.header_rows
-            ):
+            if self.in_header or (all_header_cells and not self.in_body and not self.header_rows):
                 self.header_rows.append(self.current_row)
             else:
                 self.body_rows.append(self.current_row)
@@ -475,12 +473,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.current_figure = _FigureBuilder(id=attrs.get("id", ""))
         elif name == "graphic":
             if self.in_figure and self.current_figure is not None:
-                href = (
-                    attrs.get("xlink:href")
-                    or attrs.get("href")
-                    or attrs.get("xlink-href")
-                    or ""
-                )
+                href = attrs.get("xlink:href") or attrs.get("href") or attrs.get("xlink-href") or ""
                 if href:
                     self.current_figure.graphic_href = href
         elif name == "table-wrap":
@@ -571,8 +564,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     if id_type == "doi":
                         self.doi = text
                     elif id_type in (
-                        "pmc", "pmcid", "pmcid-ver",
-                        "pmcaid", "pmcaiid",
+                        "pmc",
+                        "pmcid",
+                        "pmcid-ver",
+                        "pmcaid",
+                        "pmcaiid",
                     ):
                         # All PMC-related identifiers — store the canonical
                         # PMC ID only from "pmc" or "pmcid" variants (not
@@ -602,9 +598,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 if self.current_abstract_text or self.current_abstract_title:
                     content = " ".join(self.current_abstract_text)
                     self.abstract_sections.append(
-                        JATSAbstractSection(
-                            title=self.current_abstract_title, content=content
-                        )
+                        JATSAbstractSection(title=self.current_abstract_title, content=content)
                     )
                     self.current_abstract_text = []
                 self.current_abstract_title = text
@@ -942,9 +936,7 @@ def _format_journal_html(h: _JATSHandler) -> str:
 def _format_identifiers_html(h: _JATSHandler) -> str:
     ids: list[str] = []
     if h.doi:
-        ids.append(
-            f'DOI: <a href="https://doi.org/{html_escape(h.doi)}">{html_escape(h.doi)}</a>'
-        )
+        ids.append(f'DOI: <a href="https://doi.org/{html_escape(h.doi)}">{html_escape(h.doi)}</a>')
     if h.pmc_id:
         pmc_num = h.pmc_id[3:] if h.pmc_id.startswith("PMC") else h.pmc_id
         ids.append(

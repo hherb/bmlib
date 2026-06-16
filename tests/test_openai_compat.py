@@ -10,12 +10,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from bmlib.llm.data_types import LLMMessage
-from bmlib.llm.providers.base import ModelMetadata, ModelPricing, ProviderCapabilities
+from bmlib.llm.providers.base import ModelMetadata, ModelPricing
 
 
 class _StubProvider:

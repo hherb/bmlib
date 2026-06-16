@@ -120,9 +120,7 @@ class OpenAICompatibleProvider(BaseProvider):
             try:
                 from openai import OpenAI
             except ImportError:
-                raise ImportError(
-                    "openai package not installed. Install with: pip install openai"
-                )
+                raise ImportError("openai package not installed. Install with: pip install openai")
             self._client = OpenAI(
                 api_key=self._api_key or "unused",
                 base_url=self._base_url,
@@ -272,9 +270,7 @@ class OpenAICompatibleProvider(BaseProvider):
                 self._cache_timestamp = time.time()
                 return models
         except Exception as e:
-            logger.warning(
-                "Failed to fetch models from %s API: %s", self.DISPLAY_NAME, e
-            )
+            logger.warning("Failed to fetch models from %s API: %s", self.DISPLAY_NAME, e)
 
         return list(self.FALLBACK_MODELS)
 
