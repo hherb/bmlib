@@ -123,3 +123,22 @@ class TestOllamaTokenAccounting:
         resp = provider.chat([LLMMessage(role="user", content="hello world")])
         # Falls back to an estimate (> 0) when the field is absent.
         assert resp.input_tokens > 0
+
+
+class TestModelStringParsing:
+    def test_default_provider_normalised_to_lowercase(self):
+        from bmlib.llm.client import LLMClient
+
+        client = LLMClient(default_provider="Anthropic")
+        assert client.default_provider == "anthropic"
+        # A bare model name routes to the (normalised) default provider.
+        provider, _model = client._parse_model_string(None)
+        assert provider == "anthropic"
+
+    def test_colon_form_lowercases_provider(self):
+        from bmlib.llm.client import LLMClient
+
+        client = LLMClient()
+        provider, model = client._parse_model_string("Anthropic:claude-x")
+        assert provider == "anthropic"
+        assert model == "claude-x"

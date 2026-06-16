@@ -70,7 +70,9 @@ class LLMClient:
         api_key: str | None = None,
         base_url: str | None = None,
     ) -> None:
-        self.default_provider = default_provider
+        # Provider keys in the registry are lowercase; normalise here so a
+        # mixed-case default ("Anthropic") routes and aggregates consistently.
+        self.default_provider = default_provider.lower()
         self._provider_config: dict[str, dict[str, object]] = {
             "anthropic": {"api_key": anthropic_api_key or api_key},
             "ollama": {"base_url": ollama_host},
@@ -92,7 +94,7 @@ class LLMClient:
         if model and ":" in model:
             provider, model_name = model.split(":", 1)
             return provider.lower(), model_name
-        provider = self.default_provider
+        provider = self.default_provider.lower()
         provider_instance = self._get_provider(provider)
         model_name = model or provider_instance.default_model
         return provider, model_name
@@ -292,7 +294,7 @@ class LLMClient:
         """Return metadata for *model*, or ``None`` if unavailable."""
         if provider is None and ":" in model:
             provider, model = model.split(":", 1)
-        provider = provider or self.default_provider
+        provider = (provider or self.default_provider).lower()
         try:
             p = self._get_provider(provider)
             return p.get_model_metadata(model)
