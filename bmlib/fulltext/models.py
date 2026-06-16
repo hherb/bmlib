@@ -189,7 +189,7 @@ class FullTextSourceEntry:
 class FullTextResult:
     """Result of a full-text retrieval attempt."""
 
-    source: str  # "europepmc", "unpaywall", "doi", "cached"
+    source: str  # "europepmc", "unpaywall", "doi", "pubmed", "cached"
     html: str | None = None
     pdf_url: str | None = None
     web_url: str | None = None

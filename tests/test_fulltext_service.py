@@ -316,7 +316,10 @@ class TestFullTextError:
 
 class TestSanitizeIdentifier:
     def test_doi_sanitized(self):
-        assert _sanitize_identifier("10.1234/test.paper-1") == "10.1234_test.paper-1"
+        # Readable prefix is preserved (a collision-proof hash is appended).
+        assert _sanitize_identifier("10.1234/test.paper-1").startswith(
+            "10.1234_test.paper-1_"
+        )
 
     def test_slashes_replaced(self):
         result = _sanitize_identifier("10.1101/2024.01.15.123456")
@@ -324,7 +327,16 @@ class TestSanitizeIdentifier:
 
     def test_safe_chars_preserved(self):
         result = _sanitize_identifier("simple_name-1.0")
-        assert result == "simple_name-1.0"
+        assert result.startswith("simple_name-1.0_")
+
+    def test_distinct_identifiers_do_not_collide(self):
+        # Two DOIs that sanitise to the same prefix must map to different keys.
+        a = _sanitize_identifier("10.1/a:b")
+        b = _sanitize_identifier("10.1/a/b")
+        assert a != b
+
+    def test_deterministic(self):
+        assert _sanitize_identifier("10.1/a:b") == _sanitize_identifier("10.1/a:b")
 
 
 class TestCacheIntegration:
@@ -335,7 +347,7 @@ class TestCacheIntegration:
     def test_cached_html_returned_without_network(self, tmp_path):
         """If HTML is in the disk cache, return it immediately."""
         cache = FullTextCache(cache_dir=tmp_path)
-        cache.save_html("<h1>Cached</h1>", "10.1234_test")
+        cache.save_html("<h1>Cached</h1>", _sanitize_identifier("10.1234/test"))
 
         service = FullTextService(email="test@example.com", cache=cache)
         with patch.object(service, "_http_get") as mock_get:
@@ -350,7 +362,7 @@ class TestCacheIntegration:
     def test_cached_pdf_returned_without_network(self, tmp_path):
         """If PDF is in the disk cache, return file_path immediately."""
         cache = FullTextCache(cache_dir=tmp_path)
-        cache.save_pdf(self.PDF_MAGIC, "10.1234_test")
+        cache.save_pdf(self.PDF_MAGIC, _sanitize_identifier("10.1234/test"))
 
         service = FullTextService(email="test@example.com", cache=cache)
         with patch.object(service, "_http_get") as mock_get:
@@ -378,7 +390,7 @@ class TestCacheIntegration:
             )
 
         assert result.source == "europepmc"
-        cached_html = cache.get_html("10.1234_test")
+        cached_html = cache.get_html(_sanitize_identifier("10.1234/test"))
         assert cached_html is not None
         assert "<h1>" in cached_html
 
@@ -486,7 +498,7 @@ class TestCacheIntegration:
             )
 
         assert result.source == "medrxiv"
-        assert cache.get_html("10.1234_test") is not None
+        assert cache.get_html(_sanitize_identifier("10.1234/test")) is not None
 
     def test_known_source_pdf_downloaded_and_cached(self, tmp_path):
         """PDF from known sources is downloaded and cached."""

@@ -25,6 +25,7 @@ Tier 3:  DOI resolution -> publisher website URL
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from urllib.parse import quote
@@ -49,8 +50,16 @@ class FullTextError(Exception):
 
 
 def _sanitize_identifier(raw: str) -> str:
-    """Turn a DOI or other identifier into a safe filename component."""
-    return re.sub(r"[^\w.\-]", "_", raw)
+    """Turn a DOI or other identifier into a safe, collision-free filename.
+
+    A readable prefix is kept for debuggability, but because many distinct
+    identifiers sanitise to the same string (every character outside
+    ``[\\w.\\-]`` maps to ``_``), a short hash of the *raw* identifier is
+    appended so two different identifiers can never share a cache file.
+    """
+    safe = re.sub(r"[^\w.\-]", "_", raw)
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
+    return f"{safe}_{digest}"
 
 
 def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
@@ -202,7 +211,7 @@ class FullTextService:
         # Final fallback: PubMed URL
         if pmid:
             logger.info("Falling back to PubMed URL for PMID %s", pmid)
-            return FullTextResult(source="doi", web_url=f"{PUBMED_BASE}/{pmid}/")
+            return FullTextResult(source="pubmed", web_url=f"{PUBMED_BASE}/{pmid}/")
 
         raise FullTextError("No identifiers provided")
 
@@ -358,7 +367,8 @@ class FullTextService:
     def _fetch_unpaywall(self, doi: str) -> str:
         """Query Unpaywall for open-access PDF URL."""
         encoded_doi = quote(doi, safe="")
-        url = f"{UNPAYWALL_BASE}/{encoded_doi}?email={self.email}"
+        encoded_email = quote(self.email, safe="")
+        url = f"{UNPAYWALL_BASE}/{encoded_doi}?email={encoded_email}"
 
         resp = self._http_get(url, headers={"Accept": "application/json"})
         if resp.status_code == 404:
