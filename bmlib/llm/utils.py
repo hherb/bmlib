@@ -22,15 +22,47 @@ import json
 import re
 
 
+def _iter_balanced_objects(text: str):
+    """Yield substrings of *text* that are balanced ``{...}`` blocks.
+
+    Brace counting respects string literals (and escaped quotes) so braces
+    inside JSON string values do not affect nesting. Each top-level object is
+    yielded in order, allowing the caller to pick the first that parses.
+    """
+    depth = 0
+    start = -1
+    in_str = False
+    escape = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start != -1:
+                    yield text[start : i + 1]
+
+
 def extract_json(text: str) -> str:
     """Extract JSON from text that may contain markdown code blocks.
 
-    Tries code-block extraction first, then bare ``{...}`` matching.
-    Returns the original *text* unchanged if no JSON can be found.
+    Tries code-block extraction first, then scans for the first balanced
+    ``{...}`` object that parses as JSON. Returns the original *text*
+    unchanged if no JSON can be found.
     """
-    code_block_match = re.search(
-        r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL
-    )
+    code_block_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
     if code_block_match:
         candidate = code_block_match.group(1).strip()
         try:
@@ -39,13 +71,14 @@ def extract_json(text: str) -> str:
         except json.JSONDecodeError:
             pass
 
-    brace_match = re.search(r"\{.*\}", text, re.DOTALL)
-    if brace_match:
-        candidate = brace_match.group(0)
+    # Scan for the first balanced object that actually parses. A greedy
+    # ``\{.*\}`` would span from the first "{" to the last "}", swallowing
+    # prose between two separate objects and failing to parse.
+    for candidate in _iter_balanced_objects(text):
         try:
             json.loads(candidate)
             return candidate
         except json.JSONDecodeError:
-            pass
+            continue
 
     return text
