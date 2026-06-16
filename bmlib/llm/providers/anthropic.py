@@ -123,6 +123,7 @@ class AnthropicProvider(BaseProvider):
         if self._client is None:
             try:
                 import anthropic
+
                 kwargs: dict[str, object] = {"api_key": self._api_key}
                 if self._base_url and self._base_url != self.default_base_url:
                     kwargs["base_url"] = self._base_url
@@ -442,4 +443,3 @@ def _convert_messages_to_anthropic(
         out.append({"role": msg.role, "content": msg.content})
 
     return system_content, out
-

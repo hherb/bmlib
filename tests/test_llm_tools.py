@@ -38,7 +38,6 @@ from bmlib.llm import (
     LLMToolDefinition,
 )
 
-
 # ===========================================================================
 # 1. DATA TYPE TESTS
 # ===========================================================================
@@ -227,9 +226,7 @@ class TestAnthropicConverters:
             LLMMessage(
                 role="assistant",
                 content="Let me add those.",
-                tool_calls=[
-                    LLMToolCall(id="toolu_01", name="add", arguments={"a": 2, "b": 3})
-                ],
+                tool_calls=[LLMToolCall(id="toolu_01", name="add", arguments={"a": 2, "b": 3})],
             ),
         ]
         _, out = _convert_messages_to_anthropic(msgs)
@@ -347,9 +344,7 @@ class TestOllamaConverters:
 
         msgs = [LLMMessage(role="tool", content="5", tool_call_id="call_0")]
         out = _convert_messages_to_ollama(msgs)
-        assert out == [
-            {"role": "tool", "content": "5", "tool_call_id": "call_0"}
-        ]
+        assert out == [{"role": "tool", "content": "5", "tool_call_id": "call_0"}]
 
     def test_messages_tool_role_without_id(self):
         from bmlib.llm.providers.ollama import _convert_messages_to_ollama
@@ -368,11 +363,7 @@ class TestOllamaConverters:
             LLMMessage(
                 role="assistant",
                 content="",
-                tool_calls=[
-                    LLMToolCall(
-                        id="call_0", name="add", arguments={"a": 2, "b": 3}
-                    )
-                ],
+                tool_calls=[LLMToolCall(id="call_0", name="add", arguments={"a": 2, "b": 3})],
             ),
         ]
         out = _convert_messages_to_ollama(msgs)
@@ -457,9 +448,7 @@ class TestOpenAICompatConverters:
 
         msgs = [LLMMessage(role="tool", content="5", tool_call_id="call_0")]
         out = _convert_messages_to_openai(msgs)
-        assert out == [
-            {"role": "tool", "content": "5", "tool_call_id": "call_0"}
-        ]
+        assert out == [{"role": "tool", "content": "5", "tool_call_id": "call_0"}]
 
     def test_messages_assistant_tool_calls_arguments_serialised_to_json_string(self):
         from bmlib.llm.providers.openai_compat import _convert_messages_to_openai
@@ -468,11 +457,7 @@ class TestOpenAICompatConverters:
             LLMMessage(
                 role="assistant",
                 content="",
-                tool_calls=[
-                    LLMToolCall(
-                        id="call_0", name="add", arguments={"a": 2, "b": 3}
-                    )
-                ],
+                tool_calls=[LLMToolCall(id="call_0", name="add", arguments={"a": 2, "b": 3})],
             ),
         ]
         out = _convert_messages_to_openai(msgs)
@@ -488,9 +473,7 @@ class TestOpenAICompatConverters:
             LLMMessage(
                 role="assistant",
                 content="",
-                tool_calls=[
-                    LLMToolCall(id="x", name="ping", arguments={})
-                ],
+                tool_calls=[LLMToolCall(id="x", name="ping", arguments={})],
             ),
         ]
         out = _convert_messages_to_openai(msgs)
@@ -575,9 +558,7 @@ class TestAnthropicProviderToolCalling:
             tool_name="add", tool_input={"a": 5, "b": 7}
         )
 
-        tool = LLMToolDefinition(
-            name="add", description="Add", parameters={}
-        )
+        tool = LLMToolDefinition(name="add", description="Add", parameters={})
         msgs = [LLMMessage(role="user", content="Add 5 and 7")]
         result = p.chat(msgs, model="claude-sonnet-4-20250514", tools=[tool])
 

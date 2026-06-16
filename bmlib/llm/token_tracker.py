@@ -98,7 +98,10 @@ class TokenTracker:
 
         logger.debug(
             "Recorded usage: %s, in=%d, out=%d, cost=$%.6f",
-            model, input_tokens, output_tokens, cost,
+            model,
+            input_tokens,
+            output_tokens,
+            cost,
         )
 
     def get_summary(self) -> TokenUsageSummary:

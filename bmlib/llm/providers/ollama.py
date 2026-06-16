@@ -83,9 +83,7 @@ class OllamaProvider(BaseProvider):
         base_url: str | None = None,
         **kwargs: object,
     ) -> None:
-        resolved_base_url = base_url or os.environ.get(
-            "OLLAMA_HOST", "http://localhost:11434"
-        )
+        resolved_base_url = base_url or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
         super().__init__(api_key=None, base_url=resolved_base_url, **kwargs)
         self._model_info_cache: dict[str, ModelMetadata] = {}
 
@@ -123,11 +121,10 @@ class OllamaProvider(BaseProvider):
         if self._client is None:
             try:
                 import ollama
+
                 self._client = ollama.Client(host=self._base_url)
             except ImportError:
-                raise ImportError(
-                    "ollama package not installed. Install with: pip install ollama"
-                )
+                raise ImportError("ollama package not installed. Install with: pip install ollama")
         return self._client
 
     # --- Core operations ---
@@ -217,22 +214,24 @@ class OllamaProvider(BaseProvider):
                 if isinstance(args, str):
                     try:
                         import json as _json
+
                         args = _json.loads(args)
                     except (ValueError, TypeError):
                         args = {"_raw": args}
                 if not isinstance(args, dict):
                     args = {}
-                tool_calls.append(
-                    LLMToolCall(id=str(call_id), name=str(name), arguments=args)
-                )
+                tool_calls.append(LLMToolCall(id=str(call_id), name=str(name), arguments=args))
 
+        # Use ``is None`` rather than truthiness: a real count of 0 (e.g. a
+        # fully cached prompt, or an empty/tool-only completion) is valid and
+        # must not be replaced by an estimate.
+        prompt_eval_count = _safe_get(response, "prompt_eval_count")
+        eval_count = _safe_get(response, "eval_count")
         input_tokens: int = (
-            _safe_get(response, "prompt_eval_count")
-            or self._estimate_tokens(messages)
+            prompt_eval_count if prompt_eval_count is not None else self._estimate_tokens(messages)
         )
         output_tokens: int = (
-            _safe_get(response, "eval_count")
-            or len(content) // CHARS_PER_TOKEN_ESTIMATE
+            eval_count if eval_count is not None else len(content) // CHARS_PER_TOKEN_ESTIMATE
         )
 
         return LLMResponse(
@@ -311,9 +310,7 @@ class OllamaProvider(BaseProvider):
             context_window = _extract_context_window(info)
             details = _safe_get(info, "details") or {}
             parameter_size = _safe_get(details, "parameter_size", "")
-            display_name = (
-                f"{model_name} ({parameter_size})" if parameter_size else model_name
-            )
+            display_name = f"{model_name} ({parameter_size})" if parameter_size else model_name
 
             metadata = ModelMetadata(
                 model_id=model_name,
@@ -468,6 +465,7 @@ def _convert_messages_to_ollama(messages: list[LLMMessage]) -> list[dict[str, An
 # ---------------------------------------------------------------------------
 # Pure helpers
 # ---------------------------------------------------------------------------
+
 
 def _extract_context_window(info: Any) -> int:
     """Extract context window size from an ``ollama.show()`` response.

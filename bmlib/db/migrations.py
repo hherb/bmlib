@@ -35,8 +35,9 @@ Usage::
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from bmlib.db.operations import create_tables, execute, fetch_all, table_exists
 from bmlib.db.transactions import transaction
@@ -125,9 +126,7 @@ def run_migrations(conn: Any, migrations: list[Migration]) -> int:
         if migration.version in applied:
             continue
 
-        logger.info(
-            "Applying migration %d: %s", migration.version, migration.name
-        )
+        logger.info("Applying migration %d: %s", migration.version, migration.name)
         with transaction(conn):
             migration.up(conn)
             execute(

@@ -120,9 +120,7 @@ class OpenAICompatibleProvider(BaseProvider):
             try:
                 from openai import OpenAI
             except ImportError:
-                raise ImportError(
-                    "openai package not installed. Install with: pip install openai"
-                )
+                raise ImportError("openai package not installed. Install with: pip install openai")
             self._client = OpenAI(
                 api_key=self._api_key or "unused",
                 base_url=self._base_url,
@@ -130,6 +128,15 @@ class OpenAICompatibleProvider(BaseProvider):
         return self._client
 
     # --- Chat ---
+
+    def _is_reasoning_model(self, model: str) -> bool:
+        """Whether *model* is a reasoning model with restricted parameters.
+
+        Reasoning models (e.g. OpenAI's o-series) use ``max_completion_tokens``
+        instead of ``max_tokens`` and reject non-default ``temperature``.
+        Overridden by providers that expose such models; defaults to ``False``.
+        """
+        return False
 
     def chat(
         self,
@@ -152,11 +159,17 @@ class OpenAICompatibleProvider(BaseProvider):
         request_kwargs: dict[str, object] = {
             "model": model,
             "messages": openai_messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
         }
-        if top_p is not None:
-            request_kwargs["top_p"] = top_p
+        # Reasoning models (e.g. OpenAI o1/o3) reject ``max_tokens`` (they
+        # require ``max_completion_tokens``) and only accept the default
+        # temperature. Branch on a provider-overridable hook.
+        if self._is_reasoning_model(model):
+            request_kwargs["max_completion_tokens"] = max_tokens
+        else:
+            request_kwargs["max_tokens"] = max_tokens
+            request_kwargs["temperature"] = temperature
+            if top_p is not None:
+                request_kwargs["top_p"] = top_p
         if json_mode:
             request_kwargs["response_format"] = {"type": "json_object"}
 
@@ -257,9 +270,7 @@ class OpenAICompatibleProvider(BaseProvider):
                 self._cache_timestamp = time.time()
                 return models
         except Exception as e:
-            logger.warning(
-                "Failed to fetch models from %s API: %s", self.DISPLAY_NAME, e
-            )
+            logger.warning("Failed to fetch models from %s API: %s", self.DISPLAY_NAME, e)
 
         return list(self.FALLBACK_MODELS)
 

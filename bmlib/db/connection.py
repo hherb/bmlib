@@ -82,9 +82,7 @@ def connect_postgresql(
         import psycopg2
         import psycopg2.extras
     except ImportError:
-        raise ImportError(
-            "psycopg2 not installed. Install with: pip install bmlib[postgresql]"
-        )
+        raise ImportError("psycopg2 not installed. Install with: pip install bmlib[postgresql]")
 
     if dsn:
         conn = psycopg2.connect(dsn, cursor_factory=psycopg2.extras.RealDictCursor)

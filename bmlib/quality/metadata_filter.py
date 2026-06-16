@@ -48,7 +48,12 @@ PUBMED_TYPE_TO_DESIGN: dict[str, StudyDesign] = {
     "Clinical Trial, Phase IV": StudyDesign.RCT,
     "Pragmatic Clinical Trial": StudyDesign.RCT,
     "Equivalence Trial": StudyDesign.RCT,
-    "Multicenter Study": StudyDesign.RCT,
+    # NOTE: "Multicenter Study" and "Comparative Study" are deliberately NOT
+    # mapped. They are organisational / generic attributes, not study designs
+    # (a multicenter or comparative study can be an RCT, cohort, etc.), so
+    # mapping them to a specific design misclassified papers with high
+    # confidence. Records carrying only such tags fall through to LLM
+    # classification instead.
     "Observational Study": StudyDesign.COHORT_PROSPECTIVE,
     "Cohort Study": StudyDesign.COHORT_PROSPECTIVE,
     "Longitudinal Study": StudyDesign.COHORT_PROSPECTIVE,
@@ -58,7 +63,6 @@ PUBMED_TYPE_TO_DESIGN: dict[str, StudyDesign] = {
     "Cross-Sectional Study": StudyDesign.CROSS_SECTIONAL,
     "Twin Study": StudyDesign.CROSS_SECTIONAL,
     "Validation Study": StudyDesign.CROSS_SECTIONAL,
-    "Comparative Study": StudyDesign.CROSS_SECTIONAL,
     "Case Reports": StudyDesign.CASE_REPORT,
     "Practice Guideline": StudyDesign.GUIDELINE,
     "Guideline": StudyDesign.GUIDELINE,
@@ -83,11 +87,14 @@ TYPE_PRIORITY: list[str] = [
     "Clinical Trial, Phase II",
     "Clinical Trial, Phase I",
     "Clinical Trial",
-    "Case-Control Study",
+    # Cohort designs outrank case-control in the evidence hierarchy, so they
+    # must come first: a paper tagged with both should resolve to the stronger
+    # (cohort) design, not be downgraded to case-control.
     "Cohort Study",
     "Longitudinal Study",
     "Prospective Study",
     "Retrospective Study",
+    "Case-Control Study",
     "Cross-Sectional Study",
     "Observational Study",
     "Case Reports",
@@ -105,9 +112,7 @@ def _normalize_type(s: str) -> str:
 
 
 # Build a case-insensitive lookup: normalized form → canonical PubMed key
-_NORMALIZED_LOOKUP: dict[str, str] = {
-    _normalize_type(k): k for k in PUBMED_TYPE_TO_DESIGN
-}
+_NORMALIZED_LOOKUP: dict[str, str] = {_normalize_type(k): k for k in PUBMED_TYPE_TO_DESIGN}
 
 
 def classify_from_metadata(
@@ -152,7 +157,5 @@ def classify_from_metadata(
                 confidence=METADATA_HIGH_CONFIDENCE * 0.8,
             )
 
-    logger.debug(
-        "No metadata classification match for types: %s", list(publication_types)
-    )
+    logger.debug("No metadata classification match for types: %s", list(publication_types))
     return QualityAssessment.unclassified()

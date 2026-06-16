@@ -140,9 +140,7 @@ class BaseProvider(ABC):
         :class:`NotImplementedError`; providers that support embeddings
         (e.g. Ollama) override this method.
         """
-        raise NotImplementedError(
-            f"{self.PROVIDER_NAME} does not support embeddings"
-        )
+        raise NotImplementedError(f"{self.PROVIDER_NAME} does not support embeddings")
 
     @abstractmethod
     def list_models(self, force_refresh: bool = False) -> list[ModelMetadata]: ...
@@ -165,10 +163,9 @@ class BaseProvider(ABC):
         output_tokens: int,
     ) -> float:
         pricing = self.get_model_pricing(model)
-        return (
-            (input_tokens / 1_000_000) * pricing.input_cost
-            + (output_tokens / 1_000_000) * pricing.output_cost
-        )
+        return (input_tokens / 1_000_000) * pricing.input_cost + (
+            output_tokens / 1_000_000
+        ) * pricing.output_cost
 
     # --- Utility ---
 

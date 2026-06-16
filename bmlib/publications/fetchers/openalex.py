@@ -29,7 +29,7 @@ from datetime import date
 from typing import Any
 
 from bmlib.fulltext.models import FullTextSourceEntry
-from bmlib.publications.models import FetchResult, FetchedRecord, SyncProgress
+from bmlib.publications.models import FetchedRecord, FetchResult, SyncProgress
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -140,17 +140,27 @@ def _normalize(raw: dict[str, Any]) -> FetchedRecord:
 
         landing_url = location.get("landing_page_url")
         if landing_url:
-            fulltext_sources.append(FullTextSourceEntry(
-                url=landing_url, format="html", source=loc_source,
-                open_access=loc_is_oa, version=version,
-            ))
+            fulltext_sources.append(
+                FullTextSourceEntry(
+                    url=landing_url,
+                    format="html",
+                    source=loc_source,
+                    open_access=loc_is_oa,
+                    version=version,
+                )
+            )
 
         pdf_url = location.get("pdf_url")
         if pdf_url:
-            fulltext_sources.append(FullTextSourceEntry(
-                url=pdf_url, format="pdf", source=loc_source,
-                open_access=loc_is_oa, version=version,
-            ))
+            fulltext_sources.append(
+                FullTextSourceEntry(
+                    url=pdf_url,
+                    format="pdf",
+                    source=loc_source,
+                    open_access=loc_is_oa,
+                    version=version,
+                )
+            )
 
     return FetchedRecord(
         title=raw.get("title") or "",

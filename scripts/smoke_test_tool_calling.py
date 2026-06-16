@@ -21,6 +21,7 @@ The test:
 
 Exits 0 on success, 1 on failure, 2 on configuration problem.
 """
+
 from __future__ import annotations
 
 import json
@@ -34,7 +35,6 @@ from bmlib.llm import (
     LLMToolCall,
     LLMToolDefinition,
 )
-
 
 ADD_TOOL = LLMToolDefinition(
     name="add",
@@ -147,10 +147,7 @@ def run_test(provider_name: str) -> int:
     expected_args = {1247, 3856}
     actual_args = set(call.arguments.values()) if call.arguments else set()
     if actual_args != expected_args:
-        print(
-            f"FAIL: tool call arguments {call.arguments!r} "
-            f"do not match expected {expected_args}"
-        )
+        print(f"FAIL: tool call arguments {call.arguments!r} do not match expected {expected_args}")
         return 1
 
     print(f"[dispatch] running add({call.arguments})")
@@ -198,9 +195,7 @@ def run_test(provider_name: str) -> int:
     # the content before matching so "5,103" / "5 103" / "5103" all
     # compare equal.
     expected_sum = 5103  # 1247 + 3856
-    content_stripped = (
-        resp2.content.replace(",", "").replace(" ", "").replace("\u00a0", "")
-    )
+    content_stripped = resp2.content.replace(",", "").replace(" ", "").replace("\u00a0", "")
     if str(expected_sum) not in content_stripped:
         print(
             f"FAIL: final response does not contain the expected sum "

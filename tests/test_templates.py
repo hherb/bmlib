@@ -77,9 +77,7 @@ def test_has_template(tmp_path):
 def test_jinja_conditionals(tmp_path):
     d = tmp_path / "d"
     d.mkdir()
-    (d / "cond.txt").write_text(
-        "{% if include_methods %}Methods: {{ methods }}{% endif %}"
-    )
+    (d / "cond.txt").write_text("{% if include_methods %}Methods: {{ methods }}{% endif %}")
 
     engine = TemplateEngine(default_dir=d)
     assert engine.render("cond.txt", include_methods=True, methods="RCT") == "Methods: RCT"
@@ -89,9 +87,7 @@ def test_jinja_conditionals(tmp_path):
 def test_jinja_loops(tmp_path):
     d = tmp_path / "d"
     d.mkdir()
-    (d / "loop.txt").write_text(
-        "{% for item in items %}- {{ item }}\n{% endfor %}"
-    )
+    (d / "loop.txt").write_text("{% for item in items %}- {{ item }}\n{% endfor %}")
 
     engine = TemplateEngine(default_dir=d)
     result = engine.render("loop.txt", items=["a", "b", "c"])

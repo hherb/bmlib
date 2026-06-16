@@ -210,6 +210,33 @@ class TestParseArticleXml:
         assert isinstance(result, FetchedRecord)
         assert result.publication_date == "2024-03-05"
 
+    def test_season_month_falls_back_to_year(self):
+        """A non-numeric, non-month value (e.g. a season) must not produce an
+        invalid date like '2024-Winter' — fall back to year only."""
+        xml = """\
+        <PubmedArticle>
+          <MedlineCitation>
+            <PMID>22222222</PMID>
+            <Article>
+              <ArticleTitle>Season month test</ArticleTitle>
+              <Journal>
+                <Title>Test Journal</Title>
+                <JournalIssue>
+                  <PubDate>
+                    <Year>2024</Year>
+                    <Month>Winter</Month>
+                  </PubDate>
+                </JournalIssue>
+              </Journal>
+            </Article>
+          </MedlineCitation>
+          <PubmedData><ArticleIdList/></PubmedData>
+        </PubmedArticle>
+        """
+        el = ET.fromstring(xml)
+        result = _parse_article_xml(el)
+        assert result.publication_date == "2024"
+
     def test_medline_date_fallback(self):
         """When Year is missing, MedlineDate is used as fallback (first 4 chars)."""
         xml = """\

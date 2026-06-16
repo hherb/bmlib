@@ -18,13 +18,10 @@
 
 from bmlib.fulltext.models import (
     FullTextResult,
-    JATSAbstractSection,
     JATSArticle,
     JATSAuthorInfo,
     JATSBodySection,
-    JATSFigureInfo,
     JATSReferenceInfo,
-    JATSTableInfo,
 )
 
 

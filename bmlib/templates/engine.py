@@ -47,7 +47,9 @@ class _FallbackLoader(BaseLoader):
         self.default_dir = default_dir
 
     def get_source(
-        self, environment: Environment, template: str,
+        self,
+        environment: Environment,
+        template: str,
     ) -> tuple[str, str, callable]:
         for directory in (self.user_dir, self.default_dir):
             if directory is None:

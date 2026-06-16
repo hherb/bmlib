@@ -50,6 +50,19 @@ class TestParseJson:
         with pytest.raises(ValueError, match="Could not parse JSON"):
             BaseAgent.parse_json("not json at all")
 
+    def test_json_with_braces_in_string_value(self):
+        # Braces inside a string value must not break brace balancing.
+        text = 'Result: {"expr": "f(x) = {x}", "ok": true} done.'
+        result = BaseAgent.parse_json(text)
+        assert result["expr"] == "f(x) = {x}"
+        assert result["ok"] is True
+
+    def test_picks_first_valid_object_among_prose(self):
+        # A broken brace pair before a valid object must not swallow it.
+        text = 'noise {not valid} more prose {"good": 1} trailing'
+        result = BaseAgent.parse_json(text)
+        assert result == {"good": 1}
+
     def test_message_helpers(self):
         sys = BaseAgent.system_msg("sys")
         usr = BaseAgent.user_msg("usr")
@@ -151,6 +164,7 @@ class TestChatJson:
         ]
 
         import logging
+
         with caplog.at_level(logging.WARNING, logger="bmlib.agents.base"):
             agent.chat_json([agent.user_msg("test")])
 
@@ -166,6 +180,7 @@ class TestChatJson:
         ]
 
         import logging
+
         with caplog.at_level(logging.ERROR, logger="bmlib.agents.base"):
             agent.chat_json([agent.user_msg("test")])
 

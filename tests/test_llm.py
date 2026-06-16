@@ -72,6 +72,7 @@ class TestTokenTracker:
 class TestProviderRegistry:
     def test_list_providers_includes_builtins(self):
         from bmlib.llm.providers import list_providers
+
         # Even without the actual packages installed, the registry
         # should at least attempt to register them.  If neither
         # anthropic nor ollama is installed, the list may be empty —
@@ -83,5 +84,61 @@ class TestProviderRegistry:
         import pytest
 
         from bmlib.llm.providers import get_provider
+
         with pytest.raises(ValueError, match="Unknown provider"):
             get_provider("nonexistent_provider_xyz")
+
+
+class TestOllamaTokenAccounting:
+    """Real token counts of 0 must not be replaced by estimates."""
+
+    class _FakeOllamaClient:
+        def __init__(self, response):
+            self._response = response
+
+        def chat(self, **kwargs):
+            return self._response
+
+    def _make_provider(self, response):
+        from bmlib.llm.providers.ollama import OllamaProvider
+
+        provider = OllamaProvider()
+        provider._client = self._FakeOllamaClient(response)
+        return provider
+
+    def test_zero_counts_preserved(self):
+        response = {
+            "message": {"content": "hi"},
+            "prompt_eval_count": 0,
+            "eval_count": 0,
+        }
+        provider = self._make_provider(response)
+        resp = provider.chat([LLMMessage(role="user", content="hello")])
+        assert resp.input_tokens == 0
+        assert resp.output_tokens == 0
+
+    def test_missing_counts_estimated(self):
+        response = {"message": {"content": "hi"}}  # no counts at all
+        provider = self._make_provider(response)
+        resp = provider.chat([LLMMessage(role="user", content="hello world")])
+        # Falls back to an estimate (> 0) when the field is absent.
+        assert resp.input_tokens > 0
+
+
+class TestModelStringParsing:
+    def test_default_provider_normalised_to_lowercase(self):
+        from bmlib.llm.client import LLMClient
+
+        client = LLMClient(default_provider="Anthropic")
+        assert client.default_provider == "anthropic"
+        # A bare model name routes to the (normalised) default provider.
+        provider, _model = client._parse_model_string(None)
+        assert provider == "anthropic"
+
+    def test_colon_form_lowercases_provider(self):
+        from bmlib.llm.client import LLMClient
+
+        client = LLMClient()
+        provider, model = client._parse_model_string("Anthropic:claude-x")
+        assert provider == "anthropic"
+        assert model == "claude-x"

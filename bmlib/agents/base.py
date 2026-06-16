@@ -41,11 +41,11 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 from typing import Any
 
 from bmlib.llm import LLMClient, LLMMessage, LLMResponse
+from bmlib.llm.utils import extract_json
 from bmlib.templates import TemplateEngine
 
 logger = logging.getLogger(__name__)
@@ -136,7 +136,10 @@ class BaseAgent:
                 delay = 2 ** (attempt - 1)  # 1s, 2s, 4s …
                 logger.warning(
                     "Retry %d/%d after %.0fs (previous: %s)",
-                    attempt + 1, max_retries, delay, last_error,
+                    attempt + 1,
+                    max_retries,
+                    delay,
+                    last_error,
                 )
                 time.sleep(delay)
 
@@ -154,7 +157,8 @@ class BaseAgent:
                 last_error = "empty response from model"
                 logger.warning(
                     "LLM returned empty response (attempt %d/%d)",
-                    attempt + 1, max_retries,
+                    attempt + 1,
+                    max_retries,
                 )
                 continue
 
@@ -163,9 +167,10 @@ class BaseAgent:
             except ValueError:
                 last_error = "unparseable response"
                 logger.error(
-                    "LLM returned unparseable response (attempt %d/%d), "
-                    "full response: %s",
-                    attempt + 1, max_retries, content,
+                    "LLM returned unparseable response (attempt %d/%d), full response: %s",
+                    attempt + 1,
+                    max_retries,
+                    content,
                 )
                 continue
 
@@ -176,9 +181,7 @@ class BaseAgent:
     def render_template(self, template_name: str, **variables: Any) -> str:
         """Render a prompt template.  Raises if no template engine configured."""
         if self.templates is None:
-            raise RuntimeError(
-                f"No template engine configured — cannot render {template_name!r}"
-            )
+            raise RuntimeError(f"No template engine configured — cannot render {template_name!r}")
         return self.templates.render(template_name, **variables)
 
     # --- JSON parsing ---
@@ -195,19 +198,12 @@ class BaseAgent:
         except json.JSONDecodeError:
             pass
 
-        # Try extracting from code block
-        match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
-        if match:
+        # Fall back to the shared extractor (code-block aware + balanced-brace
+        # scanning that picks the first parseable object).
+        candidate = extract_json(text)
+        if candidate != text:
             try:
-                return json.loads(match.group(1).strip())
-            except json.JSONDecodeError:
-                pass
-
-        # Try finding a JSON object
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(0))
+                return json.loads(candidate)
             except json.JSONDecodeError:
                 pass
 

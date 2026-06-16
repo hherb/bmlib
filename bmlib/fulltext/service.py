@@ -25,6 +25,7 @@ Tier 3:  DOI resolution -> publisher website URL
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from urllib.parse import quote
@@ -49,8 +50,16 @@ class FullTextError(Exception):
 
 
 def _sanitize_identifier(raw: str) -> str:
-    """Turn a DOI or other identifier into a safe filename component."""
-    return re.sub(r"[^\w.\-]", "_", raw)
+    """Turn a DOI or other identifier into a safe, collision-free filename.
+
+    A readable prefix is kept for debuggability, but because many distinct
+    identifiers sanitise to the same string (every character outside
+    ``[\\w.\\-]`` maps to ``_``), a short hash of the *raw* identifier is
+    appended so two different identifiers can never share a cache file.
+    """
+    safe = re.sub(r"[^\w.\-]", "_", raw)
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
+    return f"{safe}_{digest}"
 
 
 def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
@@ -150,8 +159,8 @@ class FullTextService:
         pdf_render_url: str | None = None
         if not pmc_id and (doi or pmid):
             try:
-                discovered_pmc_id, pdf_render_url = (
-                    self._resolve_pmc_id_and_pdf_url(doi=doi, pmid=pmid)
+                discovered_pmc_id, pdf_render_url = self._resolve_pmc_id_and_pdf_url(
+                    doi=doi, pmid=pmid
                 )
                 if discovered_pmc_id:
                     html = self._fetch_europepmc(discovered_pmc_id)
@@ -164,14 +173,17 @@ class FullTextService:
             except Exception:
                 logger.debug(
                     "Europe PMC discovery failed for doi=%s pmid=%s",
-                    doi, pmid, exc_info=True,
+                    doi,
+                    pmid,
+                    exc_info=True,
                 )
 
         # When XML failed with a known PMC ID, search for PDF render URL
         if xml_failed and not pdf_render_url and (doi or pmid):
             try:
                 _, pdf_render_url = self._resolve_pmc_id_and_pdf_url(
-                    doi=doi, pmid=pmid,
+                    doi=doi,
+                    pmid=pmid,
                 )
             except Exception:
                 logger.debug("PDF URL resolution failed", exc_info=True)
@@ -202,7 +214,7 @@ class FullTextService:
         # Final fallback: PubMed URL
         if pmid:
             logger.info("Falling back to PubMed URL for PMID %s", pmid)
-            return FullTextResult(source="doi", web_url=f"{PUBMED_BASE}/{pmid}/")
+            return FullTextResult(source="pubmed", web_url=f"{PUBMED_BASE}/{pmid}/")
 
         raise FullTextError("No identifiers provided")
 
@@ -219,7 +231,8 @@ class FullTextService:
         """
         priority = {"xml": 0, "pdf": 1, "html": 2}
         sorted_sources = sorted(
-            sources, key=lambda s: priority.get(s.format, 99),
+            sources,
+            key=lambda s: priority.get(s.format, 99),
         )
 
         for entry in sorted_sources:
@@ -239,7 +252,9 @@ class FullTextService:
                     return FullTextResult(source=entry.source, web_url=entry.url)
             except Exception:
                 logger.debug(
-                    "Known source %s (%s) failed", entry.source, entry.url,
+                    "Known source %s (%s) failed",
+                    entry.source,
+                    entry.url,
                     exc_info=True,
                 )
                 continue
@@ -269,7 +284,10 @@ class FullTextService:
                 logger.debug("Failed to cache HTML for %s", cache_id, exc_info=True)
 
     def _download_and_cache_pdf(
-        self, pdf_url: str, cache_id: str | None, result: FullTextResult,
+        self,
+        pdf_url: str,
+        cache_id: str | None,
+        result: FullTextResult,
     ) -> None:
         """Download a PDF and save it to the disk cache.
 
@@ -304,7 +322,10 @@ class FullTextService:
         return parser.to_html()
 
     def _resolve_pmc_id_and_pdf_url(
-        self, *, doi: str | None = None, pmid: str = "",
+        self,
+        *,
+        doi: str | None = None,
+        pmid: str = "",
     ) -> tuple[str | None, str | None]:
         """Search Europe PMC to discover a PMC ID and free PDF URL.
 
@@ -358,7 +379,8 @@ class FullTextService:
     def _fetch_unpaywall(self, doi: str) -> str:
         """Query Unpaywall for open-access PDF URL."""
         encoded_doi = quote(doi, safe="")
-        url = f"{UNPAYWALL_BASE}/{encoded_doi}?email={self.email}"
+        encoded_email = quote(self.email, safe="")
+        url = f"{UNPAYWALL_BASE}/{encoded_doi}?email={encoded_email}"
 
         resp = self._http_get(url, headers={"Accept": "application/json"})
         if resp.status_code == 404:

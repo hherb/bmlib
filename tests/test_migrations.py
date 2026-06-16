@@ -21,8 +21,8 @@ from __future__ import annotations
 from bmlib.db import (
     connect_sqlite,
     create_tables,
-    table_exists,
     fetch_scalar,
+    table_exists,
 )
 from bmlib.db.migrations import Migration, get_applied_versions, run_migrations
 
@@ -77,6 +77,51 @@ class TestRunMigrations:
         assert table_exists(conn, "schema_version")
 
 
+class TestSplitSqlStatements:
+    def test_splits_respecting_comments_and_strings(self):
+        from bmlib.db.operations import _split_sql_statements
+
+        script = (
+            "CREATE TABLE a (id INTEGER); -- trailing; comment\n"
+            "CREATE INDEX i ON a(id);\n"
+            "/* block; comment */ INSERT INTO a VALUES (1);\n"
+            "SELECT ';' AS x;"
+        )
+        out = _split_sql_statements(script)
+        assert out == [
+            "CREATE TABLE a (id INTEGER)",
+            "CREATE INDEX i ON a(id)",
+            "INSERT INTO a VALUES (1)",
+            "SELECT ';' AS x",
+        ]
+
+    def test_handles_escaped_quotes(self):
+        from bmlib.db.operations import _split_sql_statements
+
+        out = _split_sql_statements("SELECT 'it''s; ok' AS v; SELECT 2;")
+        assert out == ["SELECT 'it''s; ok' AS v", "SELECT 2"]
+
+
+class TestMigrationAtomicity:
+    def test_failed_migration_rolls_back_ddl(self):
+        """If a migration raises after creating a table, the DDL must roll back
+        and the version must not be recorded (no half-applied migration)."""
+        import pytest
+
+        def _bad(conn):
+            create_tables(conn, "CREATE TABLE t_bad (id INTEGER PRIMARY KEY);")
+            raise RuntimeError("boom after DDL")
+
+        conn = _mem()
+        with pytest.raises(RuntimeError, match="boom after DDL"):
+            run_migrations(conn, [Migration(1, "bad", _bad)])
+
+        # The table created inside the migration must have been rolled back.
+        assert not table_exists(conn, "t_bad")
+        # And the migration must not be marked as applied.
+        assert get_applied_versions(conn) == set()
+
+
 class TestGetAppliedVersions:
     def test_empty_on_fresh_db(self):
         conn = _mem()
@@ -104,7 +149,5 @@ class TestVersionTableTracking:
     def test_version_names_recorded(self):
         conn = _mem()
         run_migrations(conn, SAMPLE_MIGRATIONS)
-        name = fetch_scalar(
-            conn, "SELECT name FROM schema_version WHERE version = ?", (1,)
-        )
+        name = fetch_scalar(conn, "SELECT name FROM schema_version WHERE version = ?", (1,))
         assert name == "create_t1"

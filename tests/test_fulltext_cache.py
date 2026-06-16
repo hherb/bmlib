@@ -16,8 +16,6 @@
 
 """Tests for bmlib.fulltext.cache."""
 
-from pathlib import Path
-
 from bmlib.fulltext.cache import FullTextCache
 
 PDF_MAGIC = b"%PDF-1.4 fake content"

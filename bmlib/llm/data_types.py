@@ -70,7 +70,7 @@ class LLMMessage:
     role: Literal["system", "user", "assistant", "tool"]
     content: str
     tool_call_id: str | None = None
-    tool_calls: list["LLMToolCall"] | None = None
+    tool_calls: list[LLMToolCall] | None = None
 
 
 @dataclass

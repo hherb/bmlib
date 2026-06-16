@@ -10,12 +10,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from bmlib.llm.data_types import LLMMessage
-from bmlib.llm.providers.base import ModelMetadata, ModelPricing, ProviderCapabilities
+from bmlib.llm.providers.base import ModelMetadata, ModelPricing
 
 
 class _StubProvider:
@@ -96,6 +96,40 @@ class TestChat:
 
         call_kwargs = mock_client.chat.completions.create.call_args
         assert call_kwargs.kwargs["model"] == "stub-model"
+
+    def test_reasoning_model_uses_max_completion_tokens(self, StubProvider):
+        from bmlib.llm.providers.openai_compat import OpenAICompatibleProvider
+
+        class _Reasoning(_StubProvider, OpenAICompatibleProvider):
+            def _is_reasoning_model(self, model):
+                return True
+
+        p = _Reasoning(api_key="k")
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "ok"
+        mock_response.choices[0].message.tool_calls = None
+        mock_response.usage.prompt_tokens = 1
+        mock_response.usage.completion_tokens = 1
+        mock_response.choices[0].finish_reason = "stop"
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_response
+        p._client = mock_client
+
+        p.chat([LLMMessage(role="user", content="hi")], temperature=0.7, max_tokens=99)
+
+        kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert kwargs["max_completion_tokens"] == 99
+        assert "max_tokens" not in kwargs
+        assert "temperature" not in kwargs
+
+    def test_openai_provider_detects_reasoning_models(self):
+        from bmlib.llm.providers.openai_provider import OpenAIProvider
+
+        p = OpenAIProvider(api_key="k")
+        assert p._is_reasoning_model("o1") is True
+        assert p._is_reasoning_model("o3-mini") is True
+        assert p._is_reasoning_model("gpt-4o") is False
 
     def test_chat_separates_system_message(self, StubProvider):
         p = StubProvider(api_key="test-key")

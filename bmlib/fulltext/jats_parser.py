@@ -31,8 +31,6 @@ from dataclasses import dataclass, field
 from html import escape as html_escape
 from io import BytesIO
 
-logger = logging.getLogger(__name__)
-
 from bmlib.fulltext.models import (
     JATSAbstractSection,
     JATSArticle,
@@ -42,6 +40,8 @@ from bmlib.fulltext.models import (
     JATSReferenceInfo,
     JATSTableInfo,
 )
+
+logger = logging.getLogger(__name__)
 
 MAX_HEADING_LEVEL = 6
 
@@ -111,6 +111,8 @@ class _TableBuilder:
     in_row: bool = False
     in_cell: bool = False
     current_row_has_header_cells: bool = False
+    current_row_cell_count: int = 0
+    current_row_header_cell_count: int = 0
     current_colspan: int = 1
 
     def start_header(self) -> None:
@@ -131,27 +133,38 @@ class _TableBuilder:
         self.in_row = True
         self.current_row = []
         self.current_row_has_header_cells = False
+        self.current_row_cell_count = 0
+        self.current_row_header_cell_count = 0
 
     def end_row(self) -> None:
         if self.in_row and self.current_row:
-            if self.in_header or (
-                self.current_row_has_header_cells
-                and not self.in_body
-                and not self.header_rows
-            ):
+            # A row is a header when it is inside an explicit <thead>, or — for
+            # tables lacking <thead>/<tbody> wrappers — when it is the first row
+            # AND *every* cell is a header cell. Requiring all cells to be header
+            # cells avoids misclassifying a normal data row that merely starts
+            # with a single <th> row-label.
+            all_header_cells = (
+                self.current_row_cell_count > 0
+                and self.current_row_header_cell_count == self.current_row_cell_count
+            )
+            if self.in_header or (all_header_cells and not self.in_body and not self.header_rows):
                 self.header_rows.append(self.current_row)
             else:
                 self.body_rows.append(self.current_row)
         self.in_row = False
         self.current_row = []
         self.current_row_has_header_cells = False
+        self.current_row_cell_count = 0
+        self.current_row_header_cell_count = 0
 
     def start_cell(self, is_header: bool = False, colspan: int = 1) -> None:
         self.in_cell = True
         self.current_cell_text = ""
         self.current_colspan = max(1, colspan)
+        self.current_row_cell_count += 1
         if is_header or self.in_header:
             self.current_row_has_header_cells = True
+            self.current_row_header_cell_count += 1
 
     def end_cell(self) -> None:
         if self.in_cell:
@@ -460,12 +473,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.current_figure = _FigureBuilder(id=attrs.get("id", ""))
         elif name == "graphic":
             if self.in_figure and self.current_figure is not None:
-                href = (
-                    attrs.get("xlink:href")
-                    or attrs.get("href")
-                    or attrs.get("xlink-href")
-                    or ""
-                )
+                href = attrs.get("xlink:href") or attrs.get("href") or attrs.get("xlink-href") or ""
                 if href:
                     self.current_figure.graphic_href = href
         elif name == "table-wrap":
@@ -556,8 +564,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     if id_type == "doi":
                         self.doi = text
                     elif id_type in (
-                        "pmc", "pmcid", "pmcid-ver",
-                        "pmcaid", "pmcaiid",
+                        "pmc",
+                        "pmcid",
+                        "pmcid-ver",
+                        "pmcaid",
+                        "pmcaiid",
                     ):
                         # All PMC-related identifiers — store the canonical
                         # PMC ID only from "pmc" or "pmcid" variants (not
@@ -573,7 +584,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.current_article_id_type = None
 
         elif name == "abstract":
-            if self.current_abstract_text:
+            # Flush the final section when it has a title OR body text, so a
+            # titled-but-empty trailing subsection (or a title-only abstract)
+            # is not silently dropped.
+            if self.current_abstract_text or self.current_abstract_title:
                 content = " ".join(self.current_abstract_text)
                 self.abstract_sections.append(
                     JATSAbstractSection(title=self.current_abstract_title, content=content)
@@ -581,12 +595,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.in_abstract = False
         elif name == "title":
             if self.in_abstract:
-                if self.current_abstract_text:
+                if self.current_abstract_text or self.current_abstract_title:
                     content = " ".join(self.current_abstract_text)
                     self.abstract_sections.append(
-                        JATSAbstractSection(
-                            title=self.current_abstract_title, content=content
-                        )
+                        JATSAbstractSection(title=self.current_abstract_title, content=content)
                     )
                     self.current_abstract_text = []
                 self.current_abstract_title = text
@@ -599,8 +611,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             elif (self.in_body or self.in_back) and self.section_stack:
                 self.section_stack[-1].paragraphs.append(normalized_text)
             elif self.in_figure and self.current_figure:
+                if self.current_figure.caption and normalized_text:
+                    self.current_figure.caption += " "
                 self.current_figure.caption += normalized_text
             elif self.in_table_wrap and self.current_table:
+                if self.current_table.caption and normalized_text:
+                    self.current_table.caption += " "
                 self.current_table.caption += normalized_text
 
         elif name == "body":
@@ -920,9 +936,7 @@ def _format_journal_html(h: _JATSHandler) -> str:
 def _format_identifiers_html(h: _JATSHandler) -> str:
     ids: list[str] = []
     if h.doi:
-        ids.append(
-            f'DOI: <a href="https://doi.org/{html_escape(h.doi)}">{html_escape(h.doi)}</a>'
-        )
+        ids.append(f'DOI: <a href="https://doi.org/{html_escape(h.doi)}">{html_escape(h.doi)}</a>')
     if h.pmc_id:
         pmc_num = h.pmc_id[3:] if h.pmc_id.startswith("PMC") else h.pmc_id
         ids.append(
