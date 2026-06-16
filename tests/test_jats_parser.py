@@ -51,7 +51,55 @@ class TestJATSParserMetadata:
         assert article.doi != ""
 
 
+class TestTableBuilderHeaderClassification:
+    def test_row_label_th_not_treated_as_header(self):
+        # A table without <thead>/<tbody> whose first row is a data row with a
+        # leading <th> row-label must NOT be misclassified as a header row.
+        from bmlib.fulltext.jats_parser import _TableBuilder
+
+        b = _TableBuilder()
+        b.start_row()
+        b.start_cell(is_header=True)
+        b.append_cell_text("Gene")
+        b.end_cell()
+        b.start_cell(is_header=False)
+        b.append_cell_text("1.2")
+        b.end_cell()
+        b.end_row()
+
+        assert b.header_rows == []
+        assert len(b.body_rows) == 1
+
+    def test_all_th_row_is_header(self):
+        from bmlib.fulltext.jats_parser import _TableBuilder
+
+        b = _TableBuilder()
+        b.start_row()
+        for text in ("Gene", "Value"):
+            b.start_cell(is_header=True)
+            b.append_cell_text(text)
+            b.end_cell()
+        b.end_row()
+
+        assert len(b.header_rows) == 1
+        assert b.body_rows == []
+
+
 class TestJATSParserAbstract:
+    def test_titled_section_without_body_preserved(self):
+        # A structured-abstract subsection that has a title but no <p> body
+        # must still be emitted, not silently dropped.
+        xml = (
+            b"<article><front><article-meta><abstract>"
+            b"<sec><title>Background</title><p>Some text.</p></sec>"
+            b"<sec><title>Conclusions</title></sec>"
+            b"</abstract></article-meta></front></article>"
+        )
+        article = JATSParser(xml).parse()
+        titles = [s.title for s in article.abstract_sections]
+        assert "Background" in titles
+        assert "Conclusions" in titles
+
     def test_structured_abstract(self):
         data = _load_fixture("sample_article.xml")
         article = JATSParser(data).parse()
