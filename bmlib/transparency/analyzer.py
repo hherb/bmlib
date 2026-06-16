@@ -40,9 +40,18 @@ logger = logging.getLogger(__name__)
 
 # ---- Known pharma / industry funder keywords ----
 _INDUSTRY_KEYWORDS = [
-    "pharma", "biotech", "therapeutics", "inc.", "corp.", "ltd.",
-    "gmbh", "laboratories", "employee of", "speaker fee",
-    "consultant for", "advisory board",
+    "pharma",
+    "biotech",
+    "therapeutics",
+    "inc.",
+    "corp.",
+    "ltd.",
+    "gmbh",
+    "laboratories",
+    "employee of",
+    "speaker fee",
+    "consultant for",
+    "advisory board",
 ]
 
 # ---- Rate limiting ----
@@ -68,9 +77,12 @@ DEFAULT_INDUSTRY_CONFIDENCE = 0.8
 
 # ---- COI detection patterns ----
 _COI_PATTERNS = [
-    "conflict of interest", "competing interest",
-    "no conflict", "nothing to disclose",
-    "declare no", "financial disclosure",
+    "conflict of interest",
+    "competing interest",
+    "no conflict",
+    "nothing to disclose",
+    "declare no",
+    "financial disclosure",
 ]
 
 # ---- Data availability patterns ----
@@ -137,9 +149,10 @@ class TransparencyAnalyzer:
         industry_funding = False
         industry_confidence = 0.0
         data_level = "unknown"
-        coi_disclosed = False
+        coi_disclosed: bool | None = None
         trial_registered = False
         results_compliant = False
+        full_text_analyzed = False
 
         with httpx.Client(
             timeout=_HTTP_TIMEOUT_SECONDS,
@@ -147,18 +160,20 @@ class TransparencyAnalyzer:
         ) as client:
             # --- CrossRef (funder info) ---
             if doi:
-                score, industry_funding, industry_confidence, indicators = (
-                    self._check_crossref(
-                        client, doi, score, industry_funding,
-                        industry_confidence, indicators,
-                    )
+                score, industry_funding, industry_confidence, indicators = self._check_crossref(
+                    client,
+                    doi,
+                    score,
+                    industry_funding,
+                    industry_confidence,
+                    indicators,
                 )
 
-            # --- EuropePMC (abstract, COI) ---
+            # --- EuropePMC (full text / abstract, COI, data availability) ---
             epmc = self._fetch_europepmc(client, pmid, doi)
             if epmc:
-                coi_disclosed, data_level, score, indicators = (
-                    self._check_europepmc(epmc, score, indicators)
+                coi_disclosed, data_level, score, indicators, full_text_analyzed = (
+                    self._check_europepmc(client, epmc, score, indicators)
                 )
 
             # --- OpenAlex (additional metadata) ---
@@ -169,7 +184,11 @@ class TransparencyAnalyzer:
             if doi or pmid:
                 trial_registered, results_compliant, score, indicators = (
                     self._check_trial_registration(
-                        client, pmid, doi, score, indicators,
+                        client,
+                        pmid,
+                        doi,
+                        score,
+                        indicators,
                     )
                 )
 
@@ -194,10 +213,9 @@ class TransparencyAnalyzer:
             trial_registered=trial_registered,
             trial_results_compliant=results_compliant,
             risk_indicators=indicators,
+            full_text_analyzed=full_text_analyzed,
             tier_downgrade_applied=(
-                self.settings.tier_downgrade_amount
-                if risk_level == TransparencyRisk.HIGH
-                else 0
+                self.settings.tier_downgrade_amount if risk_level == TransparencyRisk.HIGH else 0
             ),
         )
 
@@ -222,18 +240,17 @@ class TransparencyAnalyzer:
                     name = (funder.get("name") or "").lower()
                     if any(kw in name for kw in _INDUSTRY_KEYWORDS):
                         industry_funding = True
-                        industry_confidence = max(
-                            industry_confidence, DEFAULT_INDUSTRY_CONFIDENCE
-                        )
-                        indicators.append(
-                            f"Industry funder: {funder.get('name')}"
-                        )
+                        industry_confidence = max(industry_confidence, DEFAULT_INDUSTRY_CONFIDENCE)
+                        indicators.append(f"Industry funder: {funder.get('name')}")
             else:
                 indicators.append("No funder information in CrossRef")
         return score, industry_funding, industry_confidence, indicators
 
     def _fetch_europepmc(
-        self, client: Any, pmid: str | None, doi: str | None,
+        self,
+        client: Any,
+        pmid: str | None,
+        doi: str | None,
     ) -> dict | None:
         """Fetch a paper record from EuropePMC."""
         if doi:
@@ -244,32 +261,64 @@ class TransparencyAnalyzer:
 
     def _check_europepmc(
         self,
+        client: Any,
         epmc: dict,
         score: int,
         indicators: list[str],
-    ) -> tuple[bool, str, int, list[str]]:
-        """Extract COI and data-availability signals from EuropePMC."""
-        coi_disclosed = False
+    ) -> tuple[bool | None, str, int, list[str], bool]:
+        """Extract COI and data-availability signals from EuropePMC.
+
+        COI and data-availability statements live in a paper's full text, not
+        its abstract.  We therefore fetch the full text from EuropePMC when it
+        is available (open-access articles) and scan that; we fall back to the
+        abstract only when full text cannot be retrieved.
+
+        Returns ``(coi_disclosed, data_level, score, indicators,
+        full_text_analyzed)`` where ``coi_disclosed`` is tri-state:
+        ``True`` (statement found), ``False`` (full text scanned, none found),
+        or ``None`` (undeterminable — full text unavailable and no abstract
+        signal).
+        """
+        coi_disclosed: bool | None = None
         data_level = "unknown"
+        full_text_analyzed = False
 
         result_list = epmc.get("resultList", {}).get("result", [])
         if not result_list:
-            return coi_disclosed, data_level, score, indicators
+            return coi_disclosed, data_level, score, indicators, full_text_analyzed
 
-        abstract_text = (result_list[0].get("abstractText") or "").lower()
+        record = result_list[0]
+        abstract_text = (record.get("abstractText") or "").lower()
 
-        # COI detection
-        for pat in _COI_PATTERNS:
-            if pat in abstract_text:
-                coi_disclosed = True
-                score += SCORE_COI_DISCLOSED
-                break
-        if not coi_disclosed:
-            indicators.append("No COI disclosure found")
+        # Prefer full text — COI / data-availability statements are not in the
+        # abstract. EuropePMC serves full text for open-access records.
+        search_text = abstract_text
+        if record.get("inEPMC") == "Y":
+            full_text = self._fetch_europepmc_fulltext(
+                client,
+                record.get("source"),
+                record.get("pmcid") or record.get("id"),
+            )
+            if full_text:
+                search_text = full_text.lower()
+                full_text_analyzed = True
+
+        # COI detection (a COI/disclosure statement counts as "disclosed",
+        # including a statement that there is nothing to declare).
+        if any(pat in search_text for pat in _COI_PATTERNS):
+            coi_disclosed = True
+            score += SCORE_COI_DISCLOSED
+        elif full_text_analyzed:
+            # Full text inspected and no COI statement found -> explicitly absent.
+            coi_disclosed = False
+            indicators.append("No COI disclosure found in full text")
+        else:
+            # Could not inspect full text; status is genuinely unknown.
+            indicators.append("COI disclosure status unknown (full text unavailable)")
 
         # Data availability
         for pattern, level in _DATA_PATTERNS.items():
-            if pattern in abstract_text:
+            if pattern in search_text:
                 data_level = level
                 break
         if data_level == "full_open":
@@ -279,10 +328,33 @@ class TransparencyAnalyzer:
         elif data_level == "not_available":
             indicators.append("Data explicitly not available")
 
-        return coi_disclosed, data_level, score, indicators
+        return coi_disclosed, data_level, score, indicators, full_text_analyzed
+
+    def _fetch_europepmc_fulltext(
+        self,
+        client: Any,
+        source: str | None,
+        ext_id: str | None,
+    ) -> str | None:
+        """Fetch full-text XML for an open-access EuropePMC record."""
+        if not source or not ext_id:
+            return None
+        self._rate_limit()
+        try:
+            resp = client.get(
+                f"https://www.ebi.ac.uk/europepmc/webservices/rest/{source}/{ext_id}/fullTextXML"
+            )
+            if resp.status_code == 200:
+                return resp.text
+        except Exception as e:
+            logger.debug("EuropePMC full-text fetch failed for %s/%s: %s", source, ext_id, e)
+        return None
 
     def _check_openalex(
-        self, client: Any, doi: str, score: int,
+        self,
+        client: Any,
+        doi: str,
+        score: int,
     ) -> int:
         """Check open-access status and citation count via OpenAlex."""
         oa = self._query_openalex(client, doi)
@@ -372,7 +444,10 @@ class TransparencyAnalyzer:
         return None
 
     def _find_trial_ids(
-        self, client: Any, pmid: str | None, doi: str | None,
+        self,
+        client: Any,
+        pmid: str | None,
+        doi: str | None,
     ) -> list[str]:
         """Look for clinical trial IDs linked to this paper."""
         ids: list[str] = []
@@ -389,16 +464,25 @@ class TransparencyAnalyzer:
         return list(set(ids))
 
     def _check_trial_results(self, client: Any, nct_id: str) -> bool:
-        """Check if a ClinicalTrials.gov trial has posted results."""
+        """Check if a ClinicalTrials.gov trial has posted results.
+
+        Uses the v2 API's top-level ``hasResults`` boolean. The previous
+        implementation requested a ``ResultsSection`` field but read a
+        ``resultsSection`` key, so it under-detected posted results.
+        """
         self._rate_limit()
         try:
             resp = client.get(
                 f"https://clinicaltrials.gov/api/v2/studies/{nct_id}",
-                params={"fields": "ResultsSection"},
+                params={"fields": "hasResults"},
             )
             if resp.status_code == 200:
                 data = resp.json()
-                return bool(data.get("resultsSection"))
+                has_results = data.get("hasResults")
+                if has_results is None:
+                    # Fall back to presence of a results section in the payload.
+                    has_results = bool(data.get("resultsSection"))
+                return bool(has_results)
         except Exception as e:
             logger.debug("ClinicalTrials.gov query failed for %s: %s", nct_id, e)
         return False

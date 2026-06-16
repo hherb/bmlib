@@ -29,6 +29,7 @@ MEDIUM_RISK_SCORE_THRESHOLD = 70
 
 class TransparencyRisk(Enum):
     """Risk level based on transparency analysis."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -38,12 +39,13 @@ class TransparencyRisk(Enum):
 @dataclass
 class TransparencySettings:
     """User-configurable transparency thresholds."""
+
     enabled: bool = True
-    score_threshold: int = 40          # Below this -> HIGH risk
+    score_threshold: int = 40  # Below this -> HIGH risk
     industry_funding_triggers_downgrade: bool = True
     missing_coi_triggers_downgrade: bool = True
     tier_downgrade_amount: int = 1
-    filtering_enabled: bool = False    # Whether to exclude high-risk papers
+    filtering_enabled: bool = False  # Whether to exclude high-risk papers
     max_concurrent_analyses: int = 3
     cache_results: bool = True
 
@@ -51,14 +53,15 @@ class TransparencySettings:
 @dataclass
 class TransparencyResult:
     """Result of a transparency analysis for a single document."""
+
     document_id: str
-    transparency_score: int                    # 0-100
+    transparency_score: int  # 0-100
     risk_level: TransparencyRisk
 
     industry_funding_detected: bool = False
     industry_funding_confidence: float = 0.0
     data_availability_level: str = "unknown"
-    coi_disclosed: bool = True
+    coi_disclosed: bool | None = True
     trial_registered: bool = False
     trial_results_compliant: bool = False
     outcome_switching_detected: bool = False
@@ -120,7 +123,7 @@ def calculate_risk_level(
     score: int,
     industry_funding: bool,
     data_availability: str,
-    coi_disclosed: bool,
+    coi_disclosed: bool | None,
     settings: TransparencySettings,
 ) -> TransparencyRisk:
     """Determine risk level from transparency metrics.
@@ -129,6 +132,12 @@ def calculate_risk_level(
     - HIGH: score < threshold OR (industry + restricted data) OR missing COI
     - MEDIUM: score <= 70 OR industry funding present
     - LOW: score > 70 and transparent
+
+    ``coi_disclosed`` is tri-state: ``True`` (a COI statement was found),
+    ``False`` (full text was inspected and no COI statement exists), or
+    ``None`` (could not be determined — e.g. full text unavailable). Only an
+    *explicit* ``False`` triggers the missing-COI downgrade; ``None`` does not,
+    to avoid penalising papers merely because their COI status is unknown.
     """
     if score < settings.score_threshold:
         return TransparencyRisk.HIGH
@@ -138,7 +147,7 @@ def calculate_risk_level(
         if industry_funding and restricted:
             return TransparencyRisk.HIGH
 
-    if settings.missing_coi_triggers_downgrade and not coi_disclosed:
+    if settings.missing_coi_triggers_downgrade and coi_disclosed is False:
         return TransparencyRisk.HIGH
 
     if score <= MEDIUM_RISK_SCORE_THRESHOLD:
