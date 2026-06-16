@@ -21,6 +21,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 from bmlib.db import connect_sqlite, execute
+from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.publications.fetchers import ALL_SOURCES
 from bmlib.publications.models import FetchedRecord, FetchResult
 from bmlib.publications.schema import ensure_schema
@@ -90,7 +91,7 @@ def _sample_raw_record(doi="10.1234/test.001", title="Test Paper", source="pubme
         license=None,
         source=source,
         fulltext_sources=[
-            {"url": f"https://example.com/{doi}.pdf", "format": "pdf", "source": source},
+            FullTextSourceEntry(url=f"https://example.com/{doi}.pdf", format="pdf", source=source),
         ],
     )
 
@@ -199,6 +200,19 @@ class TestSync:
         pub2 = get_publication_by_doi(conn, "10.1234/sync.002")
         assert pub2 is not None
         assert pub2.title == "Sync Paper 2"
+
+        # Verify the full-text source (a FullTextSourceEntry dataclass) was
+        # extracted and stored, not silently dropped.
+        from bmlib.db import fetch_all
+
+        fts_rows = fetch_all(
+            conn,
+            "SELECT * FROM fulltext_sources WHERE publication_id = ?",
+            (pub1.id,),
+        )
+        assert len(fts_rows) == 1
+        assert fts_rows[0]["url"] == "https://example.com/10.1234/sync.001.pdf"
+        assert fts_rows[0]["format"] == "pdf"
 
         # Verify download_days was updated
         from bmlib.db import fetch_one

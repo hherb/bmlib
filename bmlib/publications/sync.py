@@ -162,13 +162,27 @@ def _record_to_fulltext_sources(record: FetchedRecord) -> list[FullTextSource] |
         return None
     result = []
     for fts in record.fulltext_sources:
+        # Fetchers populate ``fulltext_sources`` with ``FullTextSourceEntry``
+        # dataclass instances; accept plain dicts too for robustness.
+        if isinstance(fts, dict):
+            url = fts.get("url")
+            source = fts.get("source", "unknown")
+            fmt = fts.get("format", "html")
+            version = fts.get("version")
+        else:
+            url = getattr(fts, "url", None)
+            source = getattr(fts, "source", "unknown")
+            fmt = getattr(fts, "format", "html")
+            version = getattr(fts, "version", None)
+        if not url:
+            continue
         result.append(
             FullTextSource(
                 publication_id=0,  # will be set by store_publication
-                source=fts.get("source", "unknown"),
-                url=fts["url"],
-                format=fts.get("format", "html"),
-                version=fts.get("version"),
+                source=source,
+                url=url,
+                format=fmt,
+                version=version,
             )
         )
     return result if result else None
@@ -288,9 +302,7 @@ def sync(
     if _fetcher_override is None:
         import httpx
 
-        user_agent_email = (
-            resolved_configs.get("openalex", {}).get("email", email) or "unknown"
-        )
+        user_agent_email = resolved_configs.get("openalex", {}).get("email", email) or "unknown"
         client = httpx.Client(
             timeout=_HTTP_TIMEOUT_SECONDS,
             headers={"User-Agent": f"bmlib/0.1 (mailto:{user_agent_email})"},
@@ -351,7 +363,8 @@ def sync(
                         on_record(record)
 
                 fetch_result = fetcher(
-                    client, day,
+                    client,
+                    day,
                     on_record=handle_record,
                     on_progress=on_progress,
                     **src_config,
