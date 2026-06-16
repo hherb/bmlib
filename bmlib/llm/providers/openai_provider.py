@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import re
+
 from bmlib.llm.providers.base import ModelMetadata, ModelPricing, ProviderCapabilities
 from bmlib.llm.providers.openai_compat import OpenAICompatibleProvider
 
@@ -70,3 +72,10 @@ class OpenAIProvider(OpenAICompatibleProvider):
             pricing=ModelPricing(input_cost=1.10, output_cost=4.40),
         ),
     ]
+
+    def _is_reasoning_model(self, model: str) -> bool:
+        """OpenAI o-series (o1/o3/o4...) are reasoning models."""
+        name = (model or "").lower()
+        # Match the o-series families (o1, o1-mini, o3, o3-mini, o4-mini, ...)
+        # without misfiring on names that merely start with the letter "o".
+        return bool(re.match(r"o\d", name))

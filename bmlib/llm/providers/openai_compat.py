@@ -131,6 +131,15 @@ class OpenAICompatibleProvider(BaseProvider):
 
     # --- Chat ---
 
+    def _is_reasoning_model(self, model: str) -> bool:
+        """Whether *model* is a reasoning model with restricted parameters.
+
+        Reasoning models (e.g. OpenAI's o-series) use ``max_completion_tokens``
+        instead of ``max_tokens`` and reject non-default ``temperature``.
+        Overridden by providers that expose such models; defaults to ``False``.
+        """
+        return False
+
     def chat(
         self,
         messages: list[LLMMessage],
@@ -152,11 +161,17 @@ class OpenAICompatibleProvider(BaseProvider):
         request_kwargs: dict[str, object] = {
             "model": model,
             "messages": openai_messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
         }
-        if top_p is not None:
-            request_kwargs["top_p"] = top_p
+        # Reasoning models (e.g. OpenAI o1/o3) reject ``max_tokens`` (they
+        # require ``max_completion_tokens``) and only accept the default
+        # temperature. Branch on a provider-overridable hook.
+        if self._is_reasoning_model(model):
+            request_kwargs["max_completion_tokens"] = max_tokens
+        else:
+            request_kwargs["max_tokens"] = max_tokens
+            request_kwargs["temperature"] = temperature
+            if top_p is not None:
+                request_kwargs["top_p"] = top_p
         if json_mode:
             request_kwargs["response_format"] = {"type": "json_object"}
 
