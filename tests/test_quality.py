@@ -44,8 +44,13 @@ class TestQualityTier:
 
 class TestBiasRisk:
     def test_roundtrip(self):
-        br = BiasRisk(selection="low", performance="high", detection="unclear",
-                      attrition="low", reporting="high")
+        br = BiasRisk(
+            selection="low",
+            performance="high",
+            detection="unclear",
+            attrition="low",
+            reporting="high",
+        )
         d = br.to_dict()
         br2 = BiasRisk.from_dict(d)
         assert br2.selection == "low"
@@ -71,7 +76,9 @@ class TestQualityAssessment:
 
     def test_from_classification(self):
         a = QualityAssessment.from_classification(
-            StudyDesign.COHORT_PROSPECTIVE, confidence=0.75, sample_size=500,
+            StudyDesign.COHORT_PROSPECTIVE,
+            confidence=0.75,
+            sample_size=500,
         )
         assert a.quality_tier == QualityTier.TIER_3_CONTROLLED
         assert a.assessment_tier == 2
@@ -98,9 +105,13 @@ class TestQualityAssessment:
             quality_tier=QualityTier.TIER_4_EXPERIMENTAL,
             quality_score=8.0,
             confidence=0.85,
-            bias_risk=BiasRisk(selection="low", performance="low",
-                               detection="unclear", attrition="low",
-                               reporting="low"),
+            bias_risk=BiasRisk(
+                selection="low",
+                performance="low",
+                detection="unclear",
+                attrition="low",
+                reporting="low",
+            ),
             strengths=["Large sample"],
             limitations=["Single center"],
         )
@@ -144,13 +155,35 @@ class TestMetadataFilter:
 
     def test_mixed_case_with_noise(self):
         # EuropePMC categories include journal name as noise
-        result = classify_from_metadata([
-            "European Radiology", "Systematic Review", "Meta-Analysis",
-        ])
+        result = classify_from_metadata(
+            [
+                "European Radiology",
+                "Systematic Review",
+                "Meta-Analysis",
+            ]
+        )
         assert result.study_design == StudyDesign.SYSTEMATIC_REVIEW
 
     def test_lowercase_from_categories(self):
-        result = classify_from_metadata([
-            "some journal", "randomized controlled trial",
-        ])
+        result = classify_from_metadata(
+            [
+                "some journal",
+                "randomized controlled trial",
+            ]
+        )
         assert result.study_design == StudyDesign.RCT
+
+    def test_cohort_outranks_case_control(self):
+        # A paper tagged with both should resolve to the stronger cohort design.
+        result = classify_from_metadata(["Case-Control Study", "Cohort Study"])
+        assert result.study_design == StudyDesign.COHORT_PROSPECTIVE
+
+    def test_multicenter_study_not_classified_as_rct(self):
+        # "Multicenter Study" is an organisational attribute, not a design.
+        result = classify_from_metadata(["Multicenter Study"])
+        assert result.quality_tier == QualityTier.UNCLASSIFIED
+
+    def test_comparative_study_not_classified(self):
+        # "Comparative Study" is a generic tag, not a specific design.
+        result = classify_from_metadata(["Comparative Study"])
+        assert result.quality_tier == QualityTier.UNCLASSIFIED
