@@ -31,7 +31,7 @@ from datetime import date
 from typing import Any
 
 from bmlib.fulltext.models import FullTextSourceEntry
-from bmlib.publications.models import FetchResult, FetchedRecord, SyncProgress
+from bmlib.publications.models import FetchedRecord, FetchResult, SyncProgress
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +100,17 @@ def _parse_pubdate(pubdate_el: ET.Element | None) -> str | None:
     if month_text is None:
         return year
 
-    # Convert text month to numeric
-    month = _MONTH_MAP.get(month_text.lower().strip()[:3], month_text.zfill(2))
+    # Convert text month to numeric. Accept known abbreviations or numeric
+    # months; for anything else (e.g. a season like "Winter"), drop the month
+    # rather than emit an invalid date such as "2024-Winter".
+    month_key = month_text.lower().strip()[:3]
+    stripped = month_text.strip()
+    if month_key in _MONTH_MAP:
+        month = _MONTH_MAP[month_key]
+    elif stripped.isdigit():
+        month = stripped.zfill(2)
+    else:
+        return year
 
     day_text = _text(pubdate_el.find("Day"))
     if day_text is None:
@@ -184,15 +193,23 @@ def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
     # Fulltext sources
     fulltext_sources: list[FullTextSourceEntry] = []
     if pmc_id:
-        fulltext_sources.append(FullTextSourceEntry(
-            url=f"{PMC_BASE_URL}{pmc_id}/", source="pmc", format="html",
-            open_access=True,
-        ))
+        fulltext_sources.append(
+            FullTextSourceEntry(
+                url=f"{PMC_BASE_URL}{pmc_id}/",
+                source="pmc",
+                format="html",
+                open_access=True,
+            )
+        )
     if doi:
-        fulltext_sources.append(FullTextSourceEntry(
-            url=f"{DOI_BASE_URL}{doi}", source="publisher", format="html",
-            open_access=False,
-        ))
+        fulltext_sources.append(
+            FullTextSourceEntry(
+                url=f"{DOI_BASE_URL}{doi}",
+                source="publisher",
+                format="html",
+                open_access=False,
+            )
+        )
 
     return FetchedRecord(
         title=title or "",

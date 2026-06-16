@@ -29,7 +29,7 @@ from datetime import date
 from typing import Any
 
 from bmlib.fulltext.models import FullTextSourceEntry
-from bmlib.publications.models import FetchResult, FetchedRecord, SyncProgress
+from bmlib.publications.models import FetchedRecord, FetchResult, SyncProgress
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -54,19 +54,31 @@ def _normalize(raw: dict[str, Any], server: str) -> FetchedRecord:
     # Build full-text sources
     fulltext_sources: list[FullTextSourceEntry] = []
 
-    # PDF URL derived from DOI
+    # PDF URL derived from DOI. Use the record's actual version rather than a
+    # hard-coded "v1", which 404s / points to the wrong revision for v2+.
     if doi:
-        pdf_url = f"https://www.{server}.org/content/{doi}v1.full.pdf"
-        fulltext_sources.append(FullTextSourceEntry(
-            url=pdf_url, format="pdf", source=server, open_access=True,
-        ))
+        version = str(raw.get("version") or "1").strip() or "1"
+        pdf_url = f"https://www.{server}.org/content/{doi}v{version}.full.pdf"
+        fulltext_sources.append(
+            FullTextSourceEntry(
+                url=pdf_url,
+                format="pdf",
+                source=server,
+                open_access=True,
+            )
+        )
 
     # JATS XML URL from the record
     jatsxml = raw.get("jatsxml", "")
     if jatsxml:
-        fulltext_sources.append(FullTextSourceEntry(
-            url=jatsxml, format="xml", source=server, open_access=True,
-        ))
+        fulltext_sources.append(
+            FullTextSourceEntry(
+                url=jatsxml,
+                format="xml",
+                source=server,
+                open_access=True,
+            )
+        )
 
     return FetchedRecord(
         title=raw.get("title", ""),

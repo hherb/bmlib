@@ -28,6 +28,7 @@ from bmlib.db import connect_sqlite, execute, table_exists
 from bmlib.publications.fetchers.biorxiv import PAGE_SIZE, _normalize, fetch_biorxiv
 from bmlib.publications.models import (
     DownloadDay,
+    FetchedRecord,
     FetchResult,
     FullTextSource,
     Publication,
@@ -41,7 +42,6 @@ from bmlib.publications.storage import (
     get_publication_by_pmid,
     store_publication,
 )
-from bmlib.publications.models import FetchedRecord
 from bmlib.publications.sync import _record_to_fulltext_sources
 
 # ---------------------------------------------------------------------------
@@ -627,6 +627,14 @@ class TestBiorxivNormalize:
         xml = sources[1]
         assert xml.format == "xml"
         assert "source.xml" in xml.url
+
+    def test_normalize_uses_record_version_for_pdf_url(self):
+        # A revised preprint (v2) must produce a v2 PDF URL, not a stale v1.
+        raw = _sample_record(doi="10.1101/2024.01.01.000001")
+        raw["version"] = 2
+        result = _normalize(raw, "biorxiv")
+        pdf = result.fulltext_sources[0]
+        assert pdf.url == ("https://www.biorxiv.org/content/10.1101/2024.01.01.000001v2.full.pdf")
 
     def test_normalize_sets_source(self):
         raw = _sample_record()
