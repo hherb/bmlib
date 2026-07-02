@@ -234,12 +234,24 @@ class OllamaProvider(BaseProvider):
             eval_count if eval_count is not None else len(content) // CHARS_PER_TOKEN_ESTIMATE
         )
 
+        # Ollama reports done_reason="length" when generation hit num_predict
+        # (the max_tokens ceiling) — surface it so callers can tell truncation
+        # from a normal stop.
+        done_reason = _safe_get(response, "done_reason")
+
+        if tool_calls:
+            stop_reason = "tool_calls"
+        elif done_reason == "length":
+            stop_reason = "length"
+        else:
+            stop_reason = "stop"
+
         return LLMResponse(
             content=content,
             model=model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            stop_reason="tool_calls" if tool_calls else "stop",
+            stop_reason=stop_reason,
             tool_calls=tool_calls if tool_calls else None,
         )
 
