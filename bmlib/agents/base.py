@@ -148,7 +148,10 @@ class BaseAgent:
                 delay = 2 ** (attempt - 1)  # 1s, 2s, 4s …
                 logger.warning(
                     "Retry %d/%d after %.0fs (previous: %s)",
-                    attempt + 1, max_retries, delay, last_error,
+                    attempt + 1,
+                    max_retries,
+                    delay,
+                    last_error,
                 )
                 time.sleep(delay)
 
@@ -176,11 +179,11 @@ class BaseAgent:
                 )
                 logger.error(
                     "LLM response truncated (attempt %d/%d), full response: %s",
-                    attempt + 1, max_retries, content,
+                    attempt + 1,
+                    max_retries,
+                    content,
                 )
-                effective_temperature = (
-                    temperature if temperature is not None else self.temperature
-                )
+                effective_temperature = temperature if temperature is not None else self.temperature
                 if effective_temperature == 0.0:
                     # Greedy sampling reproduces the identical truncation;
                     # retrying only pays for it again.
@@ -194,7 +197,8 @@ class BaseAgent:
                 last_error = "empty response from model"
                 logger.warning(
                     "LLM returned empty response (attempt %d/%d)",
-                    attempt + 1, max_retries,
+                    attempt + 1,
+                    max_retries,
                 )
                 continue
 
@@ -203,9 +207,10 @@ class BaseAgent:
             except ValueError:
                 last_error = "unparseable response"
                 logger.error(
-                    "LLM returned unparseable response (attempt %d/%d), "
-                    "full response: %s",
-                    attempt + 1, max_retries, content,
+                    "LLM returned unparseable response (attempt %d/%d), full response: %s",
+                    attempt + 1,
+                    max_retries,
+                    content,
                 )
                 continue
 
@@ -216,9 +221,7 @@ class BaseAgent:
     def render_template(self, template_name: str, **variables: Any) -> str:
         """Render a prompt template.  Raises if no template engine configured."""
         if self.templates is None:
-            raise RuntimeError(
-                f"No template engine configured — cannot render {template_name!r}"
-            )
+            raise RuntimeError(f"No template engine configured — cannot render {template_name!r}")
         return self.templates.render(template_name, **variables)
 
     # --- JSON parsing ---
