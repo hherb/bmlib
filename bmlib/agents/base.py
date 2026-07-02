@@ -50,6 +50,10 @@ from bmlib.templates import TemplateEngine
 
 logger = logging.getLogger(__name__)
 
+# Provider stop_reason values that mean the output hit the max_tokens ceiling:
+# Anthropic reports "max_tokens", OpenAI-compatible providers "length".
+_TRUNCATION_STOP_REASONS = ("max_tokens", "length")
+
 
 class BaseAgent:
     """Base class for LLM-powered agents.
@@ -127,8 +131,14 @@ class BaseAgent:
         errors (WARNING).  Unparseable responses are logged at ERROR
         with the full model output for diagnosis.
 
-        Returns the parsed dict.  Raises :class:`ValueError` after all
-        retries are exhausted.
+        An unparseable response that stopped because it hit the
+        ``max_tokens`` ceiling is a deterministic failure — retrying
+        resends the identical request and pays for another truncated
+        generation — so it raises immediately with the actual cause
+        instead of "unparseable response".
+
+        Returns the parsed dict.  Raises :class:`ValueError` on
+        truncation or after all retries are exhausted.
         """
         last_error: str | None = None
         for attempt in range(max_retries):
@@ -161,6 +171,13 @@ class BaseAgent:
             try:
                 return self.parse_json(content)
             except ValueError:
+                if response.stop_reason in _TRUNCATION_STOP_REASONS:
+                    budget = max_tokens if max_tokens is not None else self.max_tokens
+                    raise ValueError(
+                        f"Response truncated at max_tokens={budget} "
+                        f"(stop_reason={response.stop_reason!r}); retrying cannot help — "
+                        "raise max_tokens or request less output"
+                    ) from None
                 last_error = "unparseable response"
                 logger.error(
                     "LLM returned unparseable response (attempt %d/%d), "

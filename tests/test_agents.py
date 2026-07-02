@@ -110,6 +110,54 @@ class TestChatJson:
         assert agent.llm.chat.call_count == 2
 
     @patch("bmlib.agents.base.time.sleep")
+    def test_truncated_unparseable_response_fails_fast(self, mock_sleep):
+        # Truncation is deterministic: retrying resends the identical request,
+        # so chat_json must raise immediately and name the real cause.
+        agent = _make_agent()
+        agent.llm.chat.return_value = LLMResponse(
+            content='{"cases": [{"claim": "truncated mid-obj',
+            model="test",
+            stop_reason="max_tokens",
+        )
+
+        with pytest.raises(ValueError, match="truncated at max_tokens=4096"):
+            agent.chat_json([agent.user_msg("test")])
+
+        assert agent.llm.chat.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_truncated_length_stop_reason_fails_fast(self, mock_sleep):
+        # OpenAI-compatible providers report truncation as "length".
+        agent = _make_agent()
+        agent.llm.chat.return_value = LLMResponse(
+            content='{"cases": [{"claim": "truncated mid-obj',
+            model="test",
+            stop_reason="length",
+        )
+
+        with pytest.raises(ValueError, match="stop_reason='length'"):
+            agent.chat_json([agent.user_msg("test")], max_tokens=512)
+
+        assert agent.llm.chat.call_count == 1
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_truncated_but_parseable_response_returns(self, mock_sleep):
+        # If the JSON happens to be complete despite hitting the ceiling,
+        # the response is usable — no error.
+        agent = _make_agent()
+        agent.llm.chat.return_value = LLMResponse(
+            content='{"ok": true}',
+            model="test",
+            stop_reason="max_tokens",
+        )
+
+        result = agent.chat_json([agent.user_msg("test")])
+
+        assert result == {"ok": True}
+        assert agent.llm.chat.call_count == 1
+
+    @patch("bmlib.agents.base.time.sleep")
     def test_all_retries_exhausted_raises(self, mock_sleep):
         agent = _make_agent()
         agent.llm.chat.return_value = _make_response("")
