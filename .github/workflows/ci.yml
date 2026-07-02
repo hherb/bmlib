@@ -20,7 +20,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install ruff
-        run: python -m pip install --upgrade ruff
+        # Pinned so a ruff release with new formatting rules can't fail CI
+        # on files a PR never touched. Bump deliberately (and reformat in
+        # the same commit) with: pip install ruff==<new> && ruff format .
+        run: python -m pip install ruff==0.15.20
       - name: ruff check
         run: ruff check .
       - name: ruff format --check
