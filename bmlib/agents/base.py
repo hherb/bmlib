@@ -131,11 +131,13 @@ class BaseAgent:
         errors (WARNING).  Unparseable responses are logged at ERROR
         with the full model output for diagnosis.
 
-        An unparseable response that stopped because it hit the
-        ``max_tokens`` ceiling is a deterministic failure — retrying
-        resends the identical request and pays for another truncated
-        generation — so it raises immediately with the actual cause
-        instead of "unparseable response".
+        A response that stopped because it hit the ``max_tokens``
+        ceiling is reported as truncation, not "unparseable response".
+        At temperature 0 the retry is provably futile (greedy sampling
+        reproduces the identical truncation), so it raises immediately;
+        at temperature > 0 a retry may sample a shorter completion that
+        fits, so truncation still gets the normal retries, but the
+        final error names the real cause.
 
         Returns the parsed dict.  Raises :class:`ValueError` on
         truncation or after all retries are exhausted.
@@ -160,6 +162,34 @@ class BaseAgent:
 
             content = response.content.strip()
 
+            if response.stop_reason in _TRUNCATION_STOP_REASONS:
+                parsed = self._try_parse(content)
+                if parsed is not None:
+                    # The JSON happens to be complete despite hitting the
+                    # ceiling — usable as-is.
+                    return parsed
+                budget = max_tokens if max_tokens is not None else self.max_tokens
+                truncated = (
+                    f"response truncated at max_tokens={budget} "
+                    f"(stop_reason={response.stop_reason!r}) — raise max_tokens "
+                    "or request less output"
+                )
+                logger.error(
+                    "LLM response truncated (attempt %d/%d), full response: %s",
+                    attempt + 1, max_retries, content,
+                )
+                effective_temperature = (
+                    temperature if temperature is not None else self.temperature
+                )
+                if effective_temperature == 0.0:
+                    # Greedy sampling reproduces the identical truncation;
+                    # retrying only pays for it again.
+                    raise ValueError(truncated) from None
+                # A retry at temperature > 0 may sample a shorter completion
+                # that fits.
+                last_error = truncated
+                continue
+
             if not content:
                 last_error = "empty response from model"
                 logger.warning(
@@ -171,13 +201,6 @@ class BaseAgent:
             try:
                 return self.parse_json(content)
             except ValueError:
-                if response.stop_reason in _TRUNCATION_STOP_REASONS:
-                    budget = max_tokens if max_tokens is not None else self.max_tokens
-                    raise ValueError(
-                        f"Response truncated at max_tokens={budget} "
-                        f"(stop_reason={response.stop_reason!r}); retrying cannot help — "
-                        "raise max_tokens or request less output"
-                    ) from None
                 last_error = "unparseable response"
                 logger.error(
                     "LLM returned unparseable response (attempt %d/%d), "
@@ -199,6 +222,16 @@ class BaseAgent:
         return self.templates.render(template_name, **variables)
 
     # --- JSON parsing ---
+
+    @classmethod
+    def _try_parse(cls, text: str) -> dict | None:
+        """:meth:`parse_json`, but ``None`` instead of ``ValueError`` on failure."""
+        if not text:
+            return None
+        try:
+            return cls.parse_json(text)
+        except ValueError:
+            return None
 
     @staticmethod
     def parse_json(text: str) -> dict:

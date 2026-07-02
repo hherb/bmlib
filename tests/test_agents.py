@@ -109,10 +109,31 @@ class TestChatJson:
         assert result == {"study_design": "cohort_prospective"}
         assert agent.llm.chat.call_count == 2
 
+    # Anthropic reports truncation as "max_tokens", OpenAI-compatible
+    # providers (and now the Ollama provider, via done_reason) as "length".
+    @pytest.mark.parametrize("stop_reason", ["max_tokens", "length"])
     @patch("bmlib.agents.base.time.sleep")
-    def test_truncated_unparseable_response_fails_fast(self, mock_sleep):
-        # Truncation is deterministic: retrying resends the identical request,
-        # so chat_json must raise immediately and name the real cause.
+    def test_truncated_at_temperature_zero_fails_fast(self, mock_sleep, stop_reason):
+        # Greedy sampling reproduces the identical truncation, so retrying
+        # only pays for it again: raise immediately and name the real cause.
+        agent = _make_agent()
+        agent.llm.chat.return_value = LLMResponse(
+            content='{"cases": [{"claim": "truncated mid-obj',
+            model="test",
+            stop_reason=stop_reason,
+        )
+
+        with pytest.raises(ValueError, match=f"stop_reason={stop_reason!r}"):
+            agent.chat_json([agent.user_msg("test")], temperature=0.0)
+
+        assert agent.llm.chat.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_truncated_at_nonzero_temperature_retries_then_names_cause(self, mock_sleep):
+        # At temperature > 0 a retry may sample a shorter completion that
+        # fits, so truncation gets the normal retries — but the final error
+        # names truncation, not "unparseable response".
         agent = _make_agent()
         agent.llm.chat.return_value = LLMResponse(
             content='{"cases": [{"claim": "truncated mid-obj',
@@ -121,23 +142,40 @@ class TestChatJson:
         )
 
         with pytest.raises(ValueError, match="truncated at max_tokens=4096"):
-            agent.chat_json([agent.user_msg("test")])
+            agent.chat_json([agent.user_msg("test")], temperature=0.7)
 
-        assert agent.llm.chat.call_count == 1
-        mock_sleep.assert_not_called()
+        assert agent.llm.chat.call_count == 3
 
     @patch("bmlib.agents.base.time.sleep")
-    def test_truncated_length_stop_reason_fails_fast(self, mock_sleep):
-        # OpenAI-compatible providers report truncation as "length".
+    def test_truncated_then_shorter_retry_recovers(self, mock_sleep):
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [
+            LLMResponse(
+                content='{"cases": [{"claim": "truncated mid-obj',
+                model="test",
+                stop_reason="max_tokens",
+            ),
+            _make_response('{"study_design": "rct"}'),
+        ]
+
+        result = agent.chat_json([agent.user_msg("test")], temperature=0.7)
+
+        assert result == {"study_design": "rct"}
+        assert agent.llm.chat.call_count == 2
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_truncated_empty_response_reports_truncation(self, mock_sleep):
+        # A budget consumed before any visible text (e.g. by thinking tokens)
+        # is truncation, not "empty response from model".
         agent = _make_agent()
         agent.llm.chat.return_value = LLMResponse(
-            content='{"cases": [{"claim": "truncated mid-obj',
+            content="",
             model="test",
-            stop_reason="length",
+            stop_reason="max_tokens",
         )
 
-        with pytest.raises(ValueError, match="stop_reason='length'"):
-            agent.chat_json([agent.user_msg("test")], max_tokens=512)
+        with pytest.raises(ValueError, match="truncated at max_tokens=4096"):
+            agent.chat_json([agent.user_msg("test")], temperature=0.0)
 
         assert agent.llm.chat.call_count == 1
 
