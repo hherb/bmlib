@@ -27,7 +27,7 @@ from collections.abc import Callable
 from datetime import date, timedelta
 from typing import Any
 
-from bmlib.db import execute, fetch_all
+from bmlib.db import execute, fetch_all, transaction
 from bmlib.publications.fetchers.registry import get_fetcher, source_names
 from bmlib.publications.models import (
     FetchedRecord,
@@ -196,23 +196,28 @@ def _upsert_download_day(
     status: str,
     record_count: int,
 ) -> None:
-    """Atomically insert or update a download_days row."""
+    """Insert or update a download_days row.
+
+    Runs inside the caller's per-day transaction (see :func:`sync`), so the
+    day's status commits atomically with the day's records; commits itself
+    only when called with no transaction open.
+    """
     day_str = day.isoformat()
     from datetime import UTC, datetime
 
     now = datetime.now(tz=UTC).isoformat()
-    execute(
-        conn,
-        "INSERT INTO download_days (source, date, status, record_count, downloaded_at,"
-        " last_verified_at) VALUES (?, ?, ?, ?, ?, ?)"
-        " ON CONFLICT (source, date) DO UPDATE SET"
-        "   status = excluded.status,"
-        "   record_count = excluded.record_count,"
-        "   downloaded_at = excluded.downloaded_at,"
-        "   last_verified_at = excluded.last_verified_at",
-        (source, day_str, status, record_count, now, now),
-    )
-    conn.commit()
+    with transaction(conn):
+        execute(
+            conn,
+            "INSERT INTO download_days (source, date, status, record_count, downloaded_at,"
+            " last_verified_at) VALUES (?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (source, date) DO UPDATE SET"
+            "   status = excluded.status,"
+            "   record_count = excluded.record_count,"
+            "   downloaded_at = excluded.downloaded_at,"
+            "   last_verified_at = excluded.last_verified_at",
+            (source, day_str, status, record_count, now, now),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -363,33 +368,40 @@ def sync(
                     if on_record is not None:
                         on_record(record)
 
-                try:
-                    fetch_result = fetcher(
-                        client,
-                        day,
-                        on_record=handle_record,
-                        on_progress=on_progress,
-                        **src_config,
-                    )
-                except Exception as exc:
-                    # A misconfigured source (e.g. a required kwarg like
-                    # OpenAlex's ``email`` not supplied) or a bug inside a
-                    # fetcher must not abort the whole multi-source run and
-                    # discard the report. Record it as a failed day and move on.
-                    logger.error("Fetcher for %s/%s raised: %s", source, day.isoformat(), exc)
-                    fetch_result = FetchResult(
-                        source=source,
-                        date=day.isoformat(),
-                        record_count=day_added + day_merged,
-                        status="failed",
-                        error=str(exc),
-                    )
+                # One transaction per day: each store_publication call joins
+                # it (savepoint) instead of committing, so a day of thousands
+                # of records costs a single commit/fsync rather than one per
+                # statement. A record that fails to store rolls back to its
+                # own savepoint (see handle_record) without losing the batch,
+                # and the day-status row commits atomically with the records.
+                with transaction(conn):
+                    try:
+                        fetch_result = fetcher(
+                            client,
+                            day,
+                            on_record=handle_record,
+                            on_progress=on_progress,
+                            **src_config,
+                        )
+                    except Exception as exc:
+                        # A misconfigured source (e.g. a required kwarg like
+                        # OpenAlex's ``email`` not supplied) or a bug inside a
+                        # fetcher must not abort the whole multi-source run and
+                        # discard the report. Record it as a failed day and move on.
+                        logger.error("Fetcher for %s/%s raised: %s", source, day.isoformat(), exc)
+                        fetch_result = FetchResult(
+                            source=source,
+                            date=day.isoformat(),
+                            record_count=day_added + day_merged,
+                            status="failed",
+                            error=str(exc),
+                        )
 
-                # All fetchers use "completed" or "failed" as status strings
-                status = fetch_result.status if fetch_result.status == "failed" else "completed"
-                record_count = day_added + day_merged
+                    # All fetchers use "completed" or "failed" as status strings
+                    status = fetch_result.status if fetch_result.status == "failed" else "completed"
+                    record_count = day_added + day_merged
 
-                _upsert_download_day(conn, source, day, status, record_count)
+                    _upsert_download_day(conn, source, day, status, record_count)
 
                 total_added += day_added
                 total_merged += day_merged

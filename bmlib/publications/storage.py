@@ -19,6 +19,18 @@
 Provides de-duplicating insert, lookup by DOI/PMID, and full-text source
 management.  Merging fills NULL fields from incoming records and appends
 new sources, but never overwrites existing non-NULL values.
+
+This module is currently **SQLite-specific** (``?`` placeholders,
+``ON CONFLICT``, ``cur.lastrowid``) even though :mod:`bmlib.db` also
+supports PostgreSQL.
+
+Commit semantics: the public write functions (:func:`store_publication`,
+:func:`add_fulltext_source`) each run inside a :func:`bmlib.db.transaction`
+block. Called standalone they commit exactly once; called inside a
+caller-managed ``transaction(conn)`` they join it, leaving the commit — and
+the batch boundary — to the caller. Bulk ingestion (see
+:mod:`bmlib.publications.sync`) relies on this to batch a whole day of
+records into a single commit.
 """
 
 from __future__ import annotations
@@ -28,7 +40,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from bmlib.db import execute, fetch_one
+from bmlib.db import execute, fetch_one, transaction
 from bmlib.publications.models import FullTextSource, Publication
 
 
@@ -134,7 +146,6 @@ def _insert_publication(conn: Any, pub: Publication, now: str) -> int:
             now,
         ),
     )
-    conn.commit()
     return cur.lastrowid
 
 
@@ -210,7 +221,6 @@ def _merge_publication(
             existing["id"],
         ),
     )
-    conn.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -231,9 +241,9 @@ def _consolidate_rows(conn: Any, keep: Any, drop: Any, now: str) -> None:
     Ordering matters: the drop row is deleted *before* its identifier is merged
     onto the keep row, so the unique index is free when the merge runs (SQLite
     enforces UNIQUE per statement, so no intermediate commit is needed). The
-    whole consolidation stays uncommitted until the merge's own commit, so a
-    failure part-way through is fully rollback-able and cannot lose the drop
-    row's data.
+    whole consolidation runs inside :func:`store_publication`'s transaction,
+    so a failure part-way through is fully rollback-able and cannot lose the
+    drop row's data.
     """
     keep_id = keep["id"]
     drop_id = drop["id"]
@@ -267,6 +277,11 @@ def store_publication(
     from different sources — which disagree on DOI case and prefixes — resolves
     to a single row. ``pub`` is mutated in place to hold the canonical forms.
 
+    The whole store (row consolidation, insert/merge, and full-text sources)
+    is one atomic transaction. Standalone calls commit on return; calls made
+    inside a caller's ``transaction(conn)`` block join it, deferring the
+    commit to the caller (see the module docstring).
+
     Returns ``"added"`` for a new record or ``"merged"`` if an existing
     record was found and updated.
     """
@@ -275,37 +290,46 @@ def store_publication(
     pub.doi = _normalize_doi(pub.doi)
     pub.pmid = _normalize_pmid(pub.pmid)
 
-    # Look up by each identifier independently so we can detect a split
-    # identity (DOI and PMID pointing at two different existing rows).
-    row_by_doi = (
-        fetch_one(conn, "SELECT * FROM publications WHERE doi = ?", (pub.doi,)) if pub.doi else None
-    )
-    row_by_pmid = (
-        fetch_one(conn, "SELECT * FROM publications WHERE pmid = ?", (pub.pmid,))
-        if pub.pmid
-        else None
-    )
+    with transaction(conn):
+        # Look up by each identifier independently so we can detect a split
+        # identity (DOI and PMID pointing at two different existing rows).
+        row_by_doi = (
+            fetch_one(conn, "SELECT * FROM publications WHERE doi = ?", (pub.doi,))
+            if pub.doi
+            else None
+        )
+        row_by_pmid = (
+            fetch_one(conn, "SELECT * FROM publications WHERE pmid = ?", (pub.pmid,))
+            if pub.pmid
+            else None
+        )
 
-    if row_by_doi is not None and row_by_pmid is not None and row_by_doi["id"] != row_by_pmid["id"]:
-        # Split identity: consolidate the two rows into one (keep the DOI row),
-        # then re-read it before merging the incoming record.
-        _consolidate_rows(conn, row_by_doi, row_by_pmid, now)
-        existing = fetch_one(conn, "SELECT * FROM publications WHERE id = ?", (row_by_doi["id"],))
-    else:
-        existing = row_by_doi if row_by_doi is not None else row_by_pmid
+        if (
+            row_by_doi is not None
+            and row_by_pmid is not None
+            and row_by_doi["id"] != row_by_pmid["id"]
+        ):
+            # Split identity: consolidate the two rows into one (keep the DOI
+            # row), then re-read it before merging the incoming record.
+            _consolidate_rows(conn, row_by_doi, row_by_pmid, now)
+            existing = fetch_one(
+                conn, "SELECT * FROM publications WHERE id = ?", (row_by_doi["id"],)
+            )
+        else:
+            existing = row_by_doi if row_by_doi is not None else row_by_pmid
 
-    if existing is not None:
-        _merge_publication(conn, existing, pub, now)
-        pub_id = existing["id"]
-        result = "merged"
-    else:
-        pub_id = _insert_publication(conn, pub, now)
-        result = "added"
+        if existing is not None:
+            _merge_publication(conn, existing, pub, now)
+            pub_id = existing["id"]
+            result = "merged"
+        else:
+            pub_id = _insert_publication(conn, pub, now)
+            result = "added"
 
-    # Store any fulltext sources
-    if fulltext_sources:
-        for fts in fulltext_sources:
-            add_fulltext_source(conn, pub_id, fts.source, fts.url, fts.format, fts.version)
+        # Store any fulltext sources
+        if fulltext_sources:
+            for fts in fulltext_sources:
+                add_fulltext_source(conn, pub_id, fts.source, fts.url, fts.format, fts.version)
 
     return result
 
@@ -340,17 +364,20 @@ def add_fulltext_source(
 ) -> bool:
     """Add a full-text source for a publication.
 
+    Commits when called standalone; joins the caller's open transaction
+    otherwise (see the module docstring).
+
     Returns ``True`` if the record was inserted, ``False`` if the
     (publication_id, url) pair already exists.
     """
     now = _now_iso()
-    cur = execute(
-        conn,
-        "INSERT INTO fulltext_sources"
-        " (publication_id, source, url, format, version, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?)"
-        " ON CONFLICT (publication_id, url) DO NOTHING",
-        (publication_id, source, url, fmt, version, now),
-    )
-    conn.commit()
+    with transaction(conn):
+        cur = execute(
+            conn,
+            "INSERT INTO fulltext_sources"
+            " (publication_id, source, url, format, version, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (publication_id, url) DO NOTHING",
+            (publication_id, source, url, fmt, version, now),
+        )
     return cur.rowcount > 0
