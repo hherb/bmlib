@@ -88,6 +88,46 @@ class TestProviderRegistry:
         with pytest.raises(ValueError, match="Unknown provider"):
             get_provider("nonexistent_provider_xyz")
 
+    def test_builtin_registration_failure_is_retried(self, monkeypatch):
+        # A non-ImportError failure during built-in registration must not latch
+        # the registered flag — the next lookup retries instead of silently
+        # resolving without the built-ins forever.
+        import pytest
+
+        import bmlib.llm.providers as prov
+
+        saved_registry = dict(prov._REGISTRY)
+        saved_flag = prov._builtins_registered
+        try:
+            prov._REGISTRY.clear()
+            prov._builtins_registered = False
+
+            real_register = prov._register_builtins
+            calls = {"n": 0}
+
+            def flaky_register():
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise RuntimeError("transient failure")
+                real_register()
+
+            monkeypatch.setattr(prov, "_register_builtins", flaky_register)
+
+            with pytest.raises(RuntimeError):
+                prov.list_providers()
+
+            names = prov.list_providers()
+            assert isinstance(names, list)
+            assert calls["n"] == 2
+
+            # Success latches the flag: further lookups do not re-register.
+            prov.list_providers()
+            assert calls["n"] == 2
+        finally:
+            prov._REGISTRY.clear()
+            prov._REGISTRY.update(saved_registry)
+            prov._builtins_registered = saved_flag
+
 
 class TestOllamaTokenAccounting:
     """Real token counts of 0 must not be replaced by estimates."""

@@ -211,6 +211,223 @@ class TestCheckTrialResults:
         assert analyzer._check_trial_results(_Client(), "NCT12345678") is True
 
 
+class TestFindTrialIds:
+    """Only a paper's OWN registered trial should be credited — not the trials
+    a review or pooled analysis merely cites (phrasings taken from real
+    EuropePMC abstracts)."""
+
+    def _epmc(self, abstract):
+        return {"resultList": {"result": [{"abstractText": abstract}]}}
+
+    def test_registered_rct_clinicaltrials_gov_phrasing_credited(self):
+        analyzer = TransparencyAnalyzer()
+        epmc = self._epmc(
+            "Funded by the National Institutes of Health; ClinicalTrials.gov number, NCT01206062."
+        )
+        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == ["NCT01206062"]
+
+    def test_registered_rct_label_form_credited(self):
+        # "NCT number: NCT..." / "(NCT) Identified Number: NCT..." label forms.
+        analyzer = TransparencyAnalyzer()
+        epmc = self._epmc(
+            "Trial registration National Clinical Trial (NCT) Identified Number: NCT04088331."
+        )
+        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == ["NCT04088331"]
+
+    def test_two_linked_own_trials_credited(self):
+        # A paper reporting its own two linked registrations (e.g. ROMANA 1/2).
+        analyzer = TransparencyAnalyzer()
+        epmc = self._epmc(
+            "Trial registration NCT identifiers: ROMANA 1: NCT01387269; ROMANA 2: NCT01387282."
+        )
+        result = analyzer._find_trial_ids(None, None, None, epmc=epmc)
+        assert result == ["NCT01387269", "NCT01387282"]
+
+    def test_review_listing_many_trials_not_credited(self):
+        # A pooled analysis / review enumerating its constituent trials.
+        analyzer = TransparencyAnalyzer()
+        epmc = self._epmc(
+            "Trial registry name and numbers: ASCEND (NCT01416181), "
+            "ADVANCE (NCT00906399), DECIDE (NCT01064401)."
+        )
+        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == []
+
+    def test_review_prose_listing_included_trials_not_credited(self):
+        analyzer = TransparencyAnalyzer()
+        epmc = self._epmc(
+            "We included five randomized controlled trials (NCT01111111, "
+            "NCT02222222, NCT03333333, NCT04444444, NCT05555555) in the analysis."
+        )
+        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == []
+
+    def test_bare_nct_without_registration_language_not_credited(self):
+        # A single NCT mentioned with no registration cue is ambiguous; the
+        # conservative choice is not to credit it as the paper's registration.
+        analyzer = TransparencyAnalyzer()
+        epmc = self._epmc("Outcomes were compared across 20 high-volume centers (NCT03461341).")
+        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == []
+
+    def test_registration_cue_after_id_credited(self):
+        # The cue may follow the id: "NCT…; registered at ClinicalTrials.gov".
+        analyzer = TransparencyAnalyzer()
+        epmc = self._epmc(
+            "This study (NCT01234567, registered at ClinicalTrials.gov) enrolled 400 patients."
+        )
+        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == ["NCT01234567"]
+
+    def test_lowercase_nct_id_credited_and_normalized(self):
+        # NCT ids are conventionally upper-case but must match regardless of
+        # case, and be returned in the canonical upper-case form.
+        analyzer = TransparencyAnalyzer()
+        epmc = self._epmc("Trial registration: nct01206062.")
+        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == ["NCT01206062"]
+
+    def test_no_nct_returns_empty(self):
+        analyzer = TransparencyAnalyzer()
+        assert analyzer._find_trial_ids(None, None, None, epmc=self._epmc("No trials here.")) == []
+
+
+class TestCheckTrialRegistration:
+    """The registration credit (and downstream results check) must follow the
+    own-vs-cited distinction."""
+
+    def _epmc(self, abstract):
+        return {"resultList": {"result": [{"abstractText": abstract}]}}
+
+    def test_review_not_credited_registration_score(self):
+        analyzer = TransparencyAnalyzer()
+
+        class _Client:
+            def get(self, url, **kwargs):
+                # ClinicalTrials.gov results endpoint should never be reached.
+                raise AssertionError("results endpoint must not be queried for a review")
+
+        epmc = self._epmc("We included three trials (NCT01111111, NCT02222222, NCT03333333).")
+        registered, compliant, score, indicators = analyzer._check_trial_registration(
+            _Client(), pmid="123", doi=None, score=0, indicators=[], epmc=epmc
+        )
+        assert registered is False
+        assert compliant is False
+        assert score == 0
+
+    def test_registered_rct_credited_registration_score(self):
+        analyzer = TransparencyAnalyzer()
+
+        class _Client:
+            def get(self, url, **kwargs):
+                return _FakeResponse(status_code=200, json_data={"hasResults": False})
+
+        epmc = self._epmc("ClinicalTrials.gov number, NCT01206062.")
+        registered, _compliant, score, _indicators = analyzer._check_trial_registration(
+            _Client(), pmid="123", doi=None, score=0, indicators=[], epmc=epmc
+        )
+        assert registered is True
+        assert score == 20  # SCORE_TRIAL_REGISTERED
+
+
+class TestDataAvailabilityPatterns:
+    """Negated data-availability phrasing must not read as data sharing."""
+
+    def _epmc(self, abstract):
+        return {"resultList": {"result": [{"abstractText": abstract, "inEPMC": "N"}]}}
+
+    def test_not_available_upon_request_is_not_available(self):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(None)
+        _coi, level, score, _ind, _ft = analyzer._check_europepmc(
+            client,
+            self._epmc("The data are not available upon reasonable request."),
+            score=0,
+            indicators=[],
+        )
+        assert level == "not_available"
+        assert score == 0  # no on_request credit awarded
+
+    def test_available_upon_request_still_credited(self):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(None)
+        _coi, level, score, _ind, _ft = analyzer._check_europepmc(
+            client,
+            self._epmc("Data are available from the authors upon reasonable request."),
+            score=0,
+            indicators=[],
+        )
+        assert level == "on_request"
+        assert score == 10  # SCORE_DATA_ON_REQUEST
+
+    def test_mixed_statement_negation_takes_precedence(self):
+        # Deliberate: when an abstract carries both a sharing cue and a
+        # negation ("code on GitHub" + "data not available"), the conservative
+        # negation-first ordering of _DATA_PATTERNS wins.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(None)
+        _coi, level, score, _ind, _ft = analyzer._check_europepmc(
+            client,
+            self._epmc(
+                "Analysis code is available on GitHub; individual patient data are not available."
+            ),
+            score=0,
+            indicators=[],
+        )
+        assert level == "not_available"
+        assert score == 0
+
+
+class TestAnalyzeApiReachability:
+    """A run where no external API responds must be UNKNOWN, not HIGH."""
+
+    class _DeadClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, url, **kwargs):
+            raise RuntimeError("network down")
+
+    def test_total_outage_returns_unknown(self, monkeypatch):
+        import httpx
+
+        monkeypatch.setattr(
+            httpx, "Client", lambda *a, **k: TestAnalyzeApiReachability._DeadClient()
+        )
+        analyzer = TransparencyAnalyzer()
+        result = analyzer.analyze("doc1", doi="10.1234/x")
+        assert result.risk_level == TransparencyRisk.UNKNOWN
+        assert result.transparency_score == 0
+
+    def test_reachable_but_empty_paper_still_scores(self, monkeypatch):
+        # A paper the APIs know nothing transparent about must still be scored
+        # (not UNKNOWN) — reachability is what distinguishes the two cases.
+        import httpx
+
+        class _EmptyClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def get(self, url, **kwargs):
+                if "crossref" in url:
+                    return _FakeResponse(status_code=200, json_data={"message": {}})
+                if "europepmc" in url and "fullTextXML" not in url:
+                    return _FakeResponse(
+                        status_code=200,
+                        json_data={"resultList": {"result": [{"abstractText": "", "inEPMC": "N"}]}},
+                    )
+                if "openalex" in url:
+                    return _FakeResponse(status_code=200, json_data={})
+                return _FakeResponse(status_code=404)
+
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: _EmptyClient())
+        analyzer = TransparencyAnalyzer()
+        result = analyzer.analyze("doc1", doi="10.1234/x")
+        assert result.risk_level != TransparencyRisk.UNKNOWN
+        assert result.risk_level == TransparencyRisk.HIGH  # score 0 but measured
+
+
 class TestTransparencyResult:
     def test_roundtrip(self):
         result = TransparencyResult(

@@ -84,9 +84,12 @@ def _normalize(raw: dict[str, Any], server: str) -> FetchedRecord:
         title=raw.get("title", ""),
         source=server,
         doi=doi or None,
-        abstract=raw.get("abstract", ""),
+        # Use None (not "") for absent optional fields so the storage layer's
+        # COALESCE-based merge can still fill them in from another source later;
+        # an empty string is not SQL NULL and would block that fill-in forever.
+        abstract=raw.get("abstract") or None,
         authors=authors,
-        publication_date=raw.get("date", ""),
+        publication_date=raw.get("date") or None,
         is_open_access=True,
         fulltext_sources=fulltext_sources,
         extras={

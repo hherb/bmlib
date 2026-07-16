@@ -575,6 +575,183 @@ class TestStorage:
         assert cur.fetchone()[0] == 2
 
 
+class TestStorageDeduplication:
+    """Regression tests for cross-source deduplication (DOI/PMID normalization)."""
+
+    def _count(self, conn):
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM publications")
+        return cur.fetchone()[0]
+
+    def test_doi_case_insensitive_dedup(self):
+        # PubMed keeps the registered DOI case; OpenAlex lower-cases it. Both
+        # must resolve to a single row.
+        conn = _schema_conn()
+        store_publication(
+            conn,
+            Publication(
+                title="Lancet",
+                doi="10.1016/S0140-6736(24)00001-1",
+                sources=["pubmed"],
+                first_seen_source="pubmed",
+            ),
+        )
+        result = store_publication(
+            conn,
+            Publication(
+                title="Lancet",
+                doi="10.1016/s0140-6736(24)00001-1",
+                sources=["openalex"],
+                first_seen_source="openalex",
+            ),
+        )
+        assert result == "merged"
+        assert self._count(conn) == 1
+
+    def test_doi_prefix_stripped_for_dedup(self):
+        conn = _schema_conn()
+        store_publication(
+            conn,
+            Publication(
+                title="P", doi="10.1234/abc", sources=["pubmed"], first_seen_source="pubmed"
+            ),
+        )
+        result = store_publication(
+            conn,
+            Publication(
+                title="P",
+                doi="https://doi.org/10.1234/ABC",
+                sources=["openalex"],
+                first_seen_source="openalex",
+            ),
+        )
+        assert result == "merged"
+        assert self._count(conn) == 1
+
+    def test_doi_lookup_normalizes_query(self):
+        conn = _schema_conn()
+        store_publication(
+            conn,
+            Publication(
+                title="P", doi="10.1234/XyZ", sources=["pubmed"], first_seen_source="pubmed"
+            ),
+        )
+        assert get_publication_by_doi(conn, "10.1234/xyz") is not None
+        assert get_publication_by_doi(conn, "HTTPS://doi.org/10.1234/XYZ") is not None
+
+    def test_split_identity_consolidates_without_crash(self):
+        # Row A: pmid only. Row B: doi only. A later record carrying both must
+        # consolidate the two rows instead of raising a UNIQUE violation.
+        conn = _schema_conn()
+        store_publication(
+            conn,
+            Publication(
+                title="Paper", pmid="12345678", sources=["pubmed"], first_seen_source="pubmed"
+            ),
+        )
+        store_publication(
+            conn,
+            Publication(
+                title="Paper",
+                doi="10.1234/xyz",
+                abstract="Full abstract.",
+                sources=["openalex"],
+                first_seen_source="openalex",
+            ),
+        )
+        assert self._count(conn) == 2
+
+        result = store_publication(
+            conn,
+            Publication(
+                title="Paper",
+                pmid="12345678",
+                doi="10.1234/xyz",
+                sources=["openalex"],
+                first_seen_source="openalex",
+            ),
+        )
+        assert result == "merged"
+        assert self._count(conn) == 1
+
+        row = get_publication_by_doi(conn, "10.1234/xyz")
+        assert row.pmid == "12345678"
+        assert row.abstract == "Full abstract."
+        assert "pubmed" in row.sources
+        assert "openalex" in row.sources
+
+    def test_split_identity_moves_fulltext_sources(self):
+        conn = _schema_conn()
+        store_publication(
+            conn,
+            Publication(title="P", pmid="22222222", sources=["pubmed"], first_seen_source="pubmed"),
+        )
+        store_publication(
+            conn,
+            Publication(
+                title="P", doi="10.1234/q", sources=["openalex"], first_seen_source="openalex"
+            ),
+        )
+        pmid_row = get_publication_by_pmid(conn, "22222222")
+        add_fulltext_source(conn, pmid_row.id, "pmc", "https://pmc.example/q", "xml")
+
+        store_publication(
+            conn,
+            Publication(
+                title="P",
+                pmid="22222222",
+                doi="10.1234/q",
+                sources=["openalex"],
+                first_seen_source="openalex",
+            ),
+        )
+        keep = get_publication_by_doi(conn, "10.1234/q")
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM fulltext_sources WHERE publication_id=?", (keep.id,))
+        assert cur.fetchone()[0] == 1
+
+    def test_split_identity_consolidation_failure_loses_nothing(self, monkeypatch):
+        # Consolidation must not commit between deleting the drop row and
+        # merging its data: if the merge step fails, a rollback must restore
+        # both original rows instead of having durably lost the drop row.
+        import bmlib.publications.storage as storage_mod
+
+        conn = _schema_conn()
+        store_publication(
+            conn,
+            Publication(
+                title="Paper", pmid="12345678", sources=["pubmed"], first_seen_source="pubmed"
+            ),
+        )
+        store_publication(
+            conn,
+            Publication(
+                title="Paper", doi="10.1234/xyz", sources=["openalex"], first_seen_source="openalex"
+            ),
+        )
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("merge failed")
+
+        monkeypatch.setattr(storage_mod, "_merge_publication", boom)
+        with pytest.raises(RuntimeError):
+            store_publication(
+                conn,
+                Publication(
+                    title="Paper",
+                    pmid="12345678",
+                    doi="10.1234/xyz",
+                    sources=["openalex"],
+                    first_seen_source="openalex",
+                ),
+            )
+        conn.rollback()
+
+        assert self._count(conn) == 2
+        assert get_publication_by_pmid(conn, "12345678") is not None
+        assert get_publication_by_doi(conn, "10.1234/xyz") is not None
+
+
 # ---------------------------------------------------------------------------
 # Task 4: bioRxiv/medRxiv fetcher tests
 # ---------------------------------------------------------------------------
@@ -645,6 +822,16 @@ class TestBiorxivNormalize:
         raw = _sample_record()
         result = _normalize(raw, "biorxiv")
         assert result.is_open_access is True
+
+    def test_normalize_absent_abstract_is_none_not_empty_string(self):
+        # An absent/empty abstract must be None so the storage layer's
+        # COALESCE merge can fill it from another source later.
+        raw = _sample_record()
+        raw["abstract"] = ""
+        del raw["date"]
+        result = _normalize(raw, "biorxiv")
+        assert result.abstract is None
+        assert result.publication_date is None
 
 
 class TestFetchBiorxiv:

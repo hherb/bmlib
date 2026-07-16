@@ -92,3 +92,67 @@ class TestCustomRegistration:
 
         # Clean up to avoid polluting other tests
         _REGISTRY.pop("test_custom", None)
+
+    def test_custom_source_before_builtins_does_not_hide_them(self):
+        # Regression: a custom source registered before any lookup must not make
+        # _ensure_builtins believe built-ins are already present.
+        import bmlib.publications.fetchers.registry as reg
+
+        saved_registry = dict(reg._REGISTRY)
+        saved_flag = reg._builtins_registered
+        try:
+            reg._REGISTRY.clear()
+            reg._builtins_registered = False
+
+            def fake_fetcher(client, target_date, *, on_record, on_progress=None, **config):
+                return None
+
+            register_source(
+                SourceDescriptor(name="custom_first", display_name="C", description="d"),
+                fake_fetcher,
+            )
+
+            # Built-ins must still resolve.
+            desc, _ = get_source("pubmed")
+            assert desc.name == "pubmed"
+            assert "custom_first" in source_names()
+        finally:
+            reg._REGISTRY.clear()
+            reg._REGISTRY.update(saved_registry)
+            reg._builtins_registered = saved_flag
+
+    def test_builtin_registration_failure_is_retried(self, monkeypatch):
+        # A non-ImportError failure during built-in registration must not latch
+        # the registered flag — the next lookup retries instead of silently
+        # resolving without the built-ins forever.
+        import pytest
+
+        import bmlib.publications.fetchers.registry as reg
+
+        saved_registry = dict(reg._REGISTRY)
+        saved_flag = reg._builtins_registered
+        try:
+            reg._REGISTRY.clear()
+            reg._builtins_registered = False
+
+            real_register = reg._register_builtins
+            calls = {"n": 0}
+
+            def flaky_register():
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise RuntimeError("transient failure")
+                real_register()
+
+            monkeypatch.setattr(reg, "_register_builtins", flaky_register)
+
+            with pytest.raises(RuntimeError):
+                reg.get_source("pubmed")
+
+            desc, _ = reg.get_source("pubmed")
+            assert desc.name == "pubmed"
+            assert calls["n"] == 2
+        finally:
+            reg._REGISTRY.clear()
+            reg._REGISTRY.update(saved_registry)
+            reg._builtins_registered = saved_flag

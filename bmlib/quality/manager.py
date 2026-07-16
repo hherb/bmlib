@@ -114,19 +114,10 @@ class QualityManager:
         if metadata_is_confident and not filt.use_detailed_assessment:
             return metadata_result
 
-        # --- Tier 2: LLM classification ---
-        if filt.use_llm_classification:
-            classification = self.classifier.classify(title, abstract)
-            logger.debug(
-                "Tier 2: %s (confidence %.2f)",
-                classification.study_design.value,
-                classification.confidence,
-            )
-
-            if not filt.use_detailed_assessment:
-                return classification
-
         # --- Tier 3: deep assessment ---
+        # When a detailed assessment is requested it supersedes Tier 2, so we
+        # skip the (cheap but non-free) classifier entirely rather than running
+        # it and discarding its result.
         if filt.use_detailed_assessment:
             assessment = self.assessor.assess(title, abstract)
             logger.debug(
@@ -135,6 +126,16 @@ class QualityManager:
                 assessment.quality_score,
             )
             return assessment
+
+        # --- Tier 2: LLM classification ---
+        if filt.use_llm_classification:
+            classification = self.classifier.classify(title, abstract)
+            logger.debug(
+                "Tier 2: %s (confidence %.2f)",
+                classification.study_design.value,
+                classification.confidence,
+            )
+            return classification
 
         # Fallback
         return metadata_result

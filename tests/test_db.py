@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from bmlib.db import (
     connect_sqlite,
     create_tables,
@@ -107,3 +109,41 @@ class TestTransaction:
             pass
 
         assert fetch_one(conn, "SELECT * FROM t") is None
+
+    def test_works_with_pending_write(self):
+        # Regression: entering transaction() while sqlite has already auto-begun
+        # a transaction (an uncommitted write) must not raise "cannot start a
+        # transaction within a transaction".
+        conn = _mem_conn()
+        create_tables(conn, "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT);")
+
+        execute(conn, "INSERT INTO t (v) VALUES (?)", ("pending",))
+        assert conn.in_transaction
+
+        with transaction(conn):
+            execute(conn, "INSERT INTO t (v) VALUES (?)", ("inside",))
+
+        rows = {r["v"] for r in fetch_all(conn, "SELECT v FROM t")}
+        assert rows == {"pending", "inside"}
+
+    def test_exception_preserves_pending_write(self):
+        # When transaction() joins an already-open transaction, an exception
+        # inside the block must roll back only the block's own writes — the
+        # caller's pre-existing pending write is not ours to destroy.
+        conn = _mem_conn()
+        create_tables(conn, "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT);")
+
+        execute(conn, "INSERT INTO t (v) VALUES (?)", ("pending",))
+        assert conn.in_transaction
+
+        with pytest.raises(RuntimeError):
+            with transaction(conn):
+                execute(conn, "INSERT INTO t (v) VALUES (?)", ("inside",))
+                raise RuntimeError("boom")
+
+        rows = {r["v"] for r in fetch_all(conn, "SELECT v FROM t")}
+        assert rows == {"pending"}
+
+        # The pending write is still the caller's to commit.
+        conn.commit()
+        assert fetch_scalar(conn, "SELECT v FROM t") == "pending"

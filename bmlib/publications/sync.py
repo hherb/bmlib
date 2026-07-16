@@ -31,6 +31,7 @@ from bmlib.db import execute, fetch_all
 from bmlib.publications.fetchers.registry import get_fetcher, source_names
 from bmlib.publications.models import (
     FetchedRecord,
+    FetchResult,
     FullTextSource,
     Publication,
     SyncProgress,
@@ -362,13 +363,27 @@ def sync(
                     if on_record is not None:
                         on_record(record)
 
-                fetch_result = fetcher(
-                    client,
-                    day,
-                    on_record=handle_record,
-                    on_progress=on_progress,
-                    **src_config,
-                )
+                try:
+                    fetch_result = fetcher(
+                        client,
+                        day,
+                        on_record=handle_record,
+                        on_progress=on_progress,
+                        **src_config,
+                    )
+                except Exception as exc:
+                    # A misconfigured source (e.g. a required kwarg like
+                    # OpenAlex's ``email`` not supplied) or a bug inside a
+                    # fetcher must not abort the whole multi-source run and
+                    # discard the report. Record it as a failed day and move on.
+                    logger.error("Fetcher for %s/%s raised: %s", source, day.isoformat(), exc)
+                    fetch_result = FetchResult(
+                        source=source,
+                        date=day.isoformat(),
+                        record_count=day_added + day_merged,
+                        status="failed",
+                        error=str(exc),
+                    )
 
                 # All fetchers use "completed" or "failed" as status strings
                 status = fetch_result.status if fetch_result.status == "failed" else "completed"
