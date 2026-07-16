@@ -120,3 +120,39 @@ class TestCustomRegistration:
             reg._REGISTRY.clear()
             reg._REGISTRY.update(saved_registry)
             reg._builtins_registered = saved_flag
+
+    def test_builtin_registration_failure_is_retried(self, monkeypatch):
+        # A non-ImportError failure during built-in registration must not latch
+        # the registered flag — the next lookup retries instead of silently
+        # resolving without the built-ins forever.
+        import pytest
+
+        import bmlib.publications.fetchers.registry as reg
+
+        saved_registry = dict(reg._REGISTRY)
+        saved_flag = reg._builtins_registered
+        try:
+            reg._REGISTRY.clear()
+            reg._builtins_registered = False
+
+            real_register = reg._register_builtins
+            calls = {"n": 0}
+
+            def flaky_register():
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise RuntimeError("transient failure")
+                real_register()
+
+            monkeypatch.setattr(reg, "_register_builtins", flaky_register)
+
+            with pytest.raises(RuntimeError):
+                reg.get_source("pubmed")
+
+            desc, _ = reg.get_source("pubmed")
+            assert desc.name == "pubmed"
+            assert calls["n"] == 2
+        finally:
+            reg._REGISTRY.clear()
+            reg._REGISTRY.update(saved_registry)
+            reg._builtins_registered = saved_flag

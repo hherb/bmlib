@@ -82,14 +82,16 @@ DEFAULT_INDUSTRY_CONFIDENCE = 0.8
 # were calibrated against real EuropePMC abstracts (registered RCTs vs. reviews):
 # they credit ~97% of genuinely registered single-trial abstracts while
 # rejecting citation lists of three or more distinct trials.
-_NCT_ID_RE = re.compile(r"NCT\d{8}")
+_NCT_ID_RE = re.compile(r"NCT\d{8}", re.IGNORECASE)
 _REGISTRATION_CUE_RE = re.compile(
     r"clinicaltrials?\.?gov"  # ClinicalTrials.gov (tolerating a missing dot)
     r"|regist"  # register / registered / registration / registry
     r"|\bnct(?!\d)",  # "NCT" as a label ("NCT number:", "(NCT):", …), not an id
     re.IGNORECASE,
 )
-# Characters before an NCT id scanned for registration language.
+# Characters on either side of an NCT id scanned for registration language
+# (the cue may precede — "registered under NCT…" — or follow the id —
+# "NCT…; registered at ClinicalTrials.gov").
 _REGISTRATION_CUE_WINDOW = 60
 # A paper's own registration cites one (occasionally two linked) trial numbers;
 # three or more distinct ids indicate a citation list of constituent trials.
@@ -526,13 +528,17 @@ class TransparencyAnalyzer:
         # Strip XML/HTML markup so cue detection is not thrown off by tags.
         abstract = re.sub(r"<[^>]+>", " ", results[0].get("abstractText") or "")
 
-        # Deduplicate while preserving order.
-        distinct_ids = list(dict.fromkeys(_NCT_ID_RE.findall(abstract)))
+        # Deduplicate while preserving order, normalizing to the canonical
+        # upper-case form ClinicalTrials.gov uses.
+        distinct_ids = list(dict.fromkeys(m.upper() for m in _NCT_ID_RE.findall(abstract)))
         if not distinct_ids or len(distinct_ids) > _MAX_OWN_TRIAL_IDS:
             return []
 
         for match in _NCT_ID_RE.finditer(abstract):
-            window = abstract[max(0, match.start() - _REGISTRATION_CUE_WINDOW) : match.start()]
+            window = abstract[
+                max(0, match.start() - _REGISTRATION_CUE_WINDOW) : match.end()
+                + _REGISTRATION_CUE_WINDOW
+            ]
             if _REGISTRATION_CUE_RE.search(window):
                 return distinct_ids
 

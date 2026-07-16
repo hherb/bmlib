@@ -74,12 +74,22 @@ def get_provider(name: str, **kwargs: object) -> BaseProvider:
 
 
 def _ensure_builtins() -> None:
-    """Lazily register built-in providers on first access."""
+    """Lazily register built-in providers on first access.
+
+    The flag is set only after registration succeeds: a failure part-way
+    through must not be latched, or every later lookup would silently resolve
+    without the built-ins. Registration is idempotent, so a retry after a
+    transient failure simply re-registers.
+    """
     global _builtins_registered
     if _builtins_registered:
         return
+    _register_builtins()
     _builtins_registered = True
 
+
+def _register_builtins() -> None:
+    """Register all built-in providers whose dependencies are installed."""
     # Anthropic
     try:
         from bmlib.llm.providers.anthropic import AnthropicProvider

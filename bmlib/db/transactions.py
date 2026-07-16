@@ -41,15 +41,36 @@ def transaction(conn: Any) -> Generator[Any, None, None]:
     that ``conn.commit()`` has a well-defined scope.  For PostgreSQL
     (psycopg2), autocommit is off by default so we simply call
     ``conn.commit()`` or ``conn.rollback()``.
+
+    Joining an open transaction: sqlite3 auto-begins a transaction before
+    DML, so the connection may already hold uncommitted writes when the block
+    is entered (issuing ``BEGIN`` then would raise "cannot start a transaction
+    within a transaction"). In that case the block runs inside a ``SAVEPOINT``:
+    on exception only the block's own writes are rolled back — the caller's
+    pre-existing pending writes survive, still uncommitted. On success,
+    however, ``conn.commit()`` is connection-wide (a DB-API limitation), so it
+    necessarily commits those pending writes along with the block's. The same
+    connection-wide commit/rollback applies to the PostgreSQL path, which is
+    always inside a transaction once a statement has run.
     """
     module_name = type(conn).__module__
     is_sqlite = "sqlite3" in module_name
 
-    # Only issue an explicit BEGIN when no transaction is already active.
-    # sqlite3 auto-begins a transaction before DML, so a pending uncommitted
-    # write would otherwise make ``BEGIN`` raise "cannot start a transaction
-    # within a transaction".
-    if is_sqlite and not conn.in_transaction:
+    if is_sqlite and conn.in_transaction:
+        # Join the already-open transaction via a savepoint so an exception
+        # rolls back only the block's writes (see docstring).
+        conn.execute("SAVEPOINT bmlib_transaction")
+        try:
+            yield conn
+        except Exception:
+            conn.execute("ROLLBACK TO SAVEPOINT bmlib_transaction")
+            conn.execute("RELEASE SAVEPOINT bmlib_transaction")
+            raise
+        conn.execute("RELEASE SAVEPOINT bmlib_transaction")
+        conn.commit()
+        return
+
+    if is_sqlite:
         conn.execute("BEGIN")
 
     try:

@@ -242,7 +242,13 @@ class SyncProgress:
 
 @dataclass
 class SyncReport:
-    """Summary report after completing a sync operation."""
+    """Summary report after completing a sync operation.
+
+    ``sources_synced`` lists every source whose sync loop ran to completion —
+    including sources where individual days failed (a fetcher error records a
+    failed day and moves on). Check ``errors`` for per-day failures; a source
+    is only absent from this list when no fetcher was found for it.
+    """
 
     sources_synced: list[str]
     days_processed: int

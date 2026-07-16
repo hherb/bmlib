@@ -710,6 +710,47 @@ class TestStorageDeduplication:
         cur.execute("SELECT COUNT(*) FROM fulltext_sources WHERE publication_id=?", (keep.id,))
         assert cur.fetchone()[0] == 1
 
+    def test_split_identity_consolidation_failure_loses_nothing(self, monkeypatch):
+        # Consolidation must not commit between deleting the drop row and
+        # merging its data: if the merge step fails, a rollback must restore
+        # both original rows instead of having durably lost the drop row.
+        import bmlib.publications.storage as storage_mod
+
+        conn = _schema_conn()
+        store_publication(
+            conn,
+            Publication(
+                title="Paper", pmid="12345678", sources=["pubmed"], first_seen_source="pubmed"
+            ),
+        )
+        store_publication(
+            conn,
+            Publication(
+                title="Paper", doi="10.1234/xyz", sources=["openalex"], first_seen_source="openalex"
+            ),
+        )
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("merge failed")
+
+        monkeypatch.setattr(storage_mod, "_merge_publication", boom)
+        with pytest.raises(RuntimeError):
+            store_publication(
+                conn,
+                Publication(
+                    title="Paper",
+                    pmid="12345678",
+                    doi="10.1234/xyz",
+                    sources=["openalex"],
+                    first_seen_source="openalex",
+                ),
+            )
+        conn.rollback()
+
+        assert self._count(conn) == 2
+        assert get_publication_by_pmid(conn, "12345678") is not None
+        assert get_publication_by_doi(conn, "10.1234/xyz") is not None
+
 
 # ---------------------------------------------------------------------------
 # Task 4: bioRxiv/medRxiv fetcher tests

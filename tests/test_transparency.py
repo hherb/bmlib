@@ -267,6 +267,21 @@ class TestFindTrialIds:
         epmc = self._epmc("Outcomes were compared across 20 high-volume centers (NCT03461341).")
         assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == []
 
+    def test_registration_cue_after_id_credited(self):
+        # The cue may follow the id: "NCT…; registered at ClinicalTrials.gov".
+        analyzer = TransparencyAnalyzer()
+        epmc = self._epmc(
+            "This study (NCT01234567, registered at ClinicalTrials.gov) enrolled 400 patients."
+        )
+        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == ["NCT01234567"]
+
+    def test_lowercase_nct_id_credited_and_normalized(self):
+        # NCT ids are conventionally upper-case but must match regardless of
+        # case, and be returned in the canonical upper-case form.
+        analyzer = TransparencyAnalyzer()
+        epmc = self._epmc("Trial registration: nct01206062.")
+        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == ["NCT01206062"]
+
     def test_no_nct_returns_empty(self):
         analyzer = TransparencyAnalyzer()
         assert analyzer._find_trial_ids(None, None, None, epmc=self._epmc("No trials here.")) == []
@@ -339,6 +354,23 @@ class TestDataAvailabilityPatterns:
         )
         assert level == "on_request"
         assert score == 10  # SCORE_DATA_ON_REQUEST
+
+    def test_mixed_statement_negation_takes_precedence(self):
+        # Deliberate: when an abstract carries both a sharing cue and a
+        # negation ("code on GitHub" + "data not available"), the conservative
+        # negation-first ordering of _DATA_PATTERNS wins.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(None)
+        _coi, level, score, _ind, _ft = analyzer._check_europepmc(
+            client,
+            self._epmc(
+                "Analysis code is available on GitHub; individual patient data are not available."
+            ),
+            score=0,
+            indicators=[],
+        )
+        assert level == "not_available"
+        assert score == 0
 
 
 class TestAnalyzeApiReachability:

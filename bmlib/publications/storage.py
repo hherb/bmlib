@@ -229,7 +229,11 @@ def _consolidate_rows(conn: Any, keep: Any, drop: Any, now: str) -> None:
     aborting the write and leaving the duplicates stranded forever.
 
     Ordering matters: the drop row is deleted *before* its identifier is merged
-    onto the keep row, so the unique index is free when the merge runs.
+    onto the keep row, so the unique index is free when the merge runs (SQLite
+    enforces UNIQUE per statement, so no intermediate commit is needed). The
+    whole consolidation stays uncommitted until the merge's own commit, so a
+    failure part-way through is fully rollback-able and cannot lose the drop
+    row's data.
     """
     keep_id = keep["id"]
     drop_id = drop["id"]
@@ -248,7 +252,6 @@ def _consolidate_rows(conn: Any, keep: Any, drop: Any, now: str) -> None:
     # identifier), then fold its data into the keep row.
     drop_pub = _row_to_publication(drop)
     execute(conn, "DELETE FROM publications WHERE id = ?", (drop_id,))
-    conn.commit()
     _merge_publication(conn, keep, drop_pub, now)
 
 

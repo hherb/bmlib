@@ -88,12 +88,18 @@ def source_names() -> list[str]:
 
 
 def _ensure_builtins() -> None:
-    """Lazily register built-in fetchers on first access."""
+    """Lazily register built-in fetchers on first access.
+
+    The flag is set only after registration succeeds: a failure part-way
+    through must not be latched, or every later lookup would silently resolve
+    without the built-ins. Registration is idempotent, so a retry after a
+    transient failure simply re-registers.
+    """
     global _builtins_registered
     if _builtins_registered:
         return
-    _builtins_registered = True
     _register_builtins()
+    _builtins_registered = True
 
 
 def _register_builtins() -> None:
