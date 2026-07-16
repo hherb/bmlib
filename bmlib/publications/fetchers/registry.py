@@ -37,6 +37,12 @@ from bmlib.publications.models import SourceDescriptor, SourceParam
 # Registry: source name -> (descriptor, fetcher_func)
 _REGISTRY: dict[str, tuple[SourceDescriptor, Callable[..., Any]]] = {}
 
+# Tracks whether the built-in fetchers have been registered. A dedicated flag
+# (rather than testing ``_REGISTRY`` truthiness) is required so that a custom
+# fetcher registered via :func:`register_source` before any lookup does not
+# make ``_ensure_builtins`` believe the built-ins are already present.
+_builtins_registered: bool = False
+
 
 def register_source(
     descriptor: SourceDescriptor,
@@ -83,8 +89,10 @@ def source_names() -> list[str]:
 
 def _ensure_builtins() -> None:
     """Lazily register built-in fetchers on first access."""
-    if _REGISTRY:
+    global _builtins_registered
+    if _builtins_registered:
         return
+    _builtins_registered = True
     _register_builtins()
 
 

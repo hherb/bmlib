@@ -107,3 +107,19 @@ class TestTransaction:
             pass
 
         assert fetch_one(conn, "SELECT * FROM t") is None
+
+    def test_works_with_pending_write(self):
+        # Regression: entering transaction() while sqlite has already auto-begun
+        # a transaction (an uncommitted write) must not raise "cannot start a
+        # transaction within a transaction".
+        conn = _mem_conn()
+        create_tables(conn, "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT);")
+
+        execute(conn, "INSERT INTO t (v) VALUES (?)", ("pending",))
+        assert conn.in_transaction
+
+        with transaction(conn):
+            execute(conn, "INSERT INTO t (v) VALUES (?)", ("inside",))
+
+        rows = {r["v"] for r in fetch_all(conn, "SELECT v FROM t")}
+        assert rows == {"pending", "inside"}

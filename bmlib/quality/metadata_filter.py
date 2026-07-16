@@ -48,13 +48,14 @@ PUBMED_TYPE_TO_DESIGN: dict[str, StudyDesign] = {
     "Clinical Trial, Phase IV": StudyDesign.RCT,
     "Pragmatic Clinical Trial": StudyDesign.RCT,
     "Equivalence Trial": StudyDesign.RCT,
-    # NOTE: "Multicenter Study" and "Comparative Study" are deliberately NOT
-    # mapped. They are organisational / generic attributes, not study designs
-    # (a multicenter or comparative study can be an RCT, cohort, etc.), so
-    # mapping them to a specific design misclassified papers with high
-    # confidence. Records carrying only such tags fall through to LLM
-    # classification instead.
-    "Observational Study": StudyDesign.COHORT_PROSPECTIVE,
+    # NOTE: "Multicenter Study", "Comparative Study", and "Observational Study"
+    # are deliberately NOT mapped. The first two are organisational / generic
+    # attributes, not designs. "Observational Study" is PubMed's catch-all for
+    # non-experimental studies whose specific subtype (prospective cohort,
+    # retrospective cohort, cross-sectional, case-control) was not indexed, so
+    # mapping it to a specific design (prospective cohort) asserted prospectivity
+    # and a tier the evidence did not support, at high confidence. Records
+    # carrying only such tags fall through to LLM classification instead.
     "Cohort Study": StudyDesign.COHORT_PROSPECTIVE,
     "Longitudinal Study": StudyDesign.COHORT_PROSPECTIVE,
     "Prospective Study": StudyDesign.COHORT_PROSPECTIVE,
@@ -96,7 +97,6 @@ TYPE_PRIORITY: list[str] = [
     "Retrospective Study",
     "Case-Control Study",
     "Cross-Sectional Study",
-    "Observational Study",
     "Case Reports",
     "Practice Guideline",
     "Guideline",

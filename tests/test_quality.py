@@ -97,6 +97,24 @@ class TestQualityAssessment:
         f = QualityFilter()
         assert a.passes_filter(f)
 
+    def test_require_randomization_keeps_metadata_rct(self):
+        # Regression: a metadata/classifier RCT must pass require_randomization,
+        # not be silently rejected because is_randomized was never populated.
+        f = QualityFilter(require_randomization=True)
+        rct_meta = QualityAssessment.from_metadata(StudyDesign.RCT)
+        assert rct_meta.is_randomized is True
+        assert rct_meta.passes_filter(f)
+
+        rct_cls = QualityAssessment.from_classification(StudyDesign.RCT)
+        assert rct_cls.is_randomized is True
+        assert rct_cls.passes_filter(f)
+
+    def test_require_randomization_rejects_observational(self):
+        f = QualityFilter(require_randomization=True)
+        cohort = QualityAssessment.from_metadata(StudyDesign.COHORT_PROSPECTIVE)
+        assert cohort.is_randomized is False
+        assert not cohort.passes_filter(f)
+
     def test_serialisation_roundtrip(self):
         a = QualityAssessment(
             assessment_tier=3,
@@ -187,3 +205,53 @@ class TestMetadataFilter:
         # "Comparative Study" is a generic tag, not a specific design.
         result = classify_from_metadata(["Comparative Study"])
         assert result.quality_tier == QualityTier.UNCLASSIFIED
+
+    def test_bare_observational_study_not_classified(self):
+        # "Observational Study" is PubMed's catch-all; it must not be asserted
+        # as a specific prospective-cohort design at high confidence.
+        result = classify_from_metadata(["Observational Study"])
+        assert result.quality_tier == QualityTier.UNCLASSIFIED
+
+    def test_observational_with_specific_subtype_still_classifies(self):
+        result = classify_from_metadata(["Observational Study", "Retrospective Study"])
+        assert result.study_design == StudyDesign.COHORT_RETROSPECTIVE
+
+
+class TestQualityManager:
+    def _manager(self):
+        from unittest.mock import MagicMock
+
+        from bmlib.quality.manager import QualityManager
+
+        mgr = QualityManager(
+            llm=MagicMock(),
+            classifier_model="ollama:x",
+            assessor_model="ollama:y",
+        )
+        mgr.classifier = MagicMock()
+        mgr.assessor = MagicMock()
+        mgr.assessor.assess.return_value = QualityAssessment(
+            assessment_tier=3, study_design=StudyDesign.RCT
+        )
+        mgr.classifier.classify.return_value = QualityAssessment(
+            assessment_tier=2, study_design=StudyDesign.RCT
+        )
+        return mgr
+
+    def test_detailed_assessment_skips_tier2(self):
+        # Requesting a detailed (Tier 3) assessment must not also spend a
+        # Tier 2 classifier call whose result would be discarded.
+        mgr = self._manager()
+        f = QualityFilter(use_detailed_assessment=True, use_llm_classification=True)
+        result = mgr.assess("Title", "Abstract", publication_types=[], filter_settings=f)
+        assert result.assessment_tier == 3
+        mgr.assessor.assess.assert_called_once()
+        mgr.classifier.classify.assert_not_called()
+
+    def test_classification_only_runs_tier2(self):
+        mgr = self._manager()
+        f = QualityFilter(use_llm_classification=True, use_detailed_assessment=False)
+        result = mgr.assess("Title", "Abstract", publication_types=[], filter_settings=f)
+        assert result.assessment_tier == 2
+        mgr.classifier.classify.assert_called_once()
+        mgr.assessor.assess.assert_not_called()

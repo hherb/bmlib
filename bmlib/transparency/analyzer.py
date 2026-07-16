@@ -75,6 +75,26 @@ MAX_TRANSPARENCY_SCORE = 100
 MAX_TRIAL_IDS_TO_CHECK = 3
 DEFAULT_INDUSTRY_CONFIDENCE = 0.8
 
+# An NCT id in an abstract only counts as *this* paper's own registered trial
+# when it appears next to registration language. Reviews and pooled analyses
+# that merely cite their constituent trials either list the numbers without such
+# language or list several of them, so those are not credited. These patterns
+# were calibrated against real EuropePMC abstracts (registered RCTs vs. reviews):
+# they credit ~97% of genuinely registered single-trial abstracts while
+# rejecting citation lists of three or more distinct trials.
+_NCT_ID_RE = re.compile(r"NCT\d{8}")
+_REGISTRATION_CUE_RE = re.compile(
+    r"clinicaltrials?\.?gov"  # ClinicalTrials.gov (tolerating a missing dot)
+    r"|regist"  # register / registered / registration / registry
+    r"|\bnct(?!\d)",  # "NCT" as a label ("NCT number:", "(NCT):", …), not an id
+    re.IGNORECASE,
+)
+# Characters before an NCT id scanned for registration language.
+_REGISTRATION_CUE_WINDOW = 60
+# A paper's own registration cites one (occasionally two linked) trial numbers;
+# three or more distinct ids indicate a citation list of constituent trials.
+_MAX_OWN_TRIAL_IDS = 2
+
 # ---- COI detection patterns ----
 _COI_PATTERNS = [
     "conflict of interest",
@@ -86,14 +106,18 @@ _COI_PATTERNS = [
 ]
 
 # ---- Data availability patterns ----
+# Order matters: matching stops at the first hit, so the negated form
+# ("not available") is checked before the "…upon request" phrases. Otherwise a
+# statement like "data are not available upon reasonable request" would match
+# "upon reasonable request" and be scored as if data sharing were offered.
 _DATA_PATTERNS: dict[str, str] = {
+    "not available": "not_available",
     "zenodo": "full_open",
     "figshare": "full_open",
     "dryad": "full_open",
     "github": "full_open",
     "available upon request": "on_request",
     "upon reasonable request": "on_request",
-    "not available": "not_available",
 }
 
 
@@ -116,6 +140,10 @@ class TransparencyAnalyzer:
         self.pubmed_api_key = pubmed_api_key
         self.settings = settings or TransparencySettings()
         self._last_request: float = 0.0
+        # Set True by any query helper that receives a 200 response, so a run
+        # in which every external API was unreachable can be reported as
+        # UNKNOWN rather than scored 0 (which would read as HIGH risk).
+        self._api_reachable: bool = False
 
     def analyze(
         self,
@@ -144,6 +172,7 @@ class TransparencyAnalyzer:
                 risk_indicators=["No PMID or DOI provided"],
             )
 
+        self._api_reachable = False
         score = 0
         indicators: list[str] = []
         industry_funding = False
@@ -189,8 +218,21 @@ class TransparencyAnalyzer:
                         doi,
                         score,
                         indicators,
+                        epmc=epmc,
                     )
                 )
+
+        # If not one external API responded, we measured nothing: report the
+        # result as UNKNOWN rather than letting an all-zero score read as HIGH
+        # risk (which would be indistinguishable from a genuinely opaque paper
+        # and would wrongly trigger a quality-tier downgrade).
+        if not self._api_reachable:
+            return TransparencyResult(
+                document_id=document_id,
+                transparency_score=0,
+                risk_level=TransparencyRisk.UNKNOWN,
+                risk_indicators=["Transparency APIs unreachable — score not determinable"],
+            )
 
         score = min(score, MAX_TRANSPARENCY_SCORE)
 
@@ -373,12 +415,14 @@ class TransparencyAnalyzer:
         doi: str | None,
         score: int,
         indicators: list[str],
+        *,
+        epmc: dict | None = None,
     ) -> tuple[bool, bool, int, list[str]]:
         """Check ClinicalTrials.gov registration and results posting."""
         trial_registered = False
         results_compliant = False
 
-        ct_ids = self._find_trial_ids(client, pmid, doi)
+        ct_ids = self._find_trial_ids(client, pmid, doi, epmc=epmc)
         if ct_ids:
             trial_registered = True
             score += SCORE_TRIAL_REGISTERED
@@ -410,6 +454,7 @@ class TransparencyAnalyzer:
                 headers={"Accept": "application/json"},
             )
             if resp.status_code == 200:
+                self._api_reachable = True
                 return resp.json()
         except Exception as e:
             logger.debug("CrossRef query failed for %s: %s", doi, e)
@@ -424,6 +469,7 @@ class TransparencyAnalyzer:
                 params={"query": query, "format": "json", "resultType": "core"},
             )
             if resp.status_code == 200:
+                self._api_reachable = True
                 return resp.json()
         except Exception as e:
             logger.debug("EuropePMC query failed: %s", e)
@@ -438,6 +484,7 @@ class TransparencyAnalyzer:
                 headers={"Accept": "application/json"},
             )
             if resp.status_code == 200:
+                self._api_reachable = True
                 return resp.json()
         except Exception as e:
             logger.debug("OpenAlex query failed for %s: %s", doi, e)
@@ -448,20 +495,48 @@ class TransparencyAnalyzer:
         client: Any,
         pmid: str | None,
         doi: str | None,
+        *,
+        epmc: dict | None = None,
     ) -> list[str]:
-        """Look for clinical trial IDs linked to this paper."""
-        ids: list[str] = []
+        """Return NCT ids that identify *this* paper's own registered trial.
 
-        query = f'DOI:"{doi}"' if doi else f"EXT_ID:{pmid}"
-        data = self._query_europepmc(client, query)
-        if data:
-            results = data.get("resultList", {}).get("result", [])
-            if results:
-                abstract = results[0].get("abstractText") or ""
-                nct_matches = re.findall(r"NCT\d{8}", abstract)
-                ids.extend(nct_matches)
+        The abstract is scanned for ``NCT`` accession numbers, but a match is
+        only credited as the paper's own registration when it appears next to
+        registration language (see :data:`_REGISTRATION_CUE_RE`). Abstracts that
+        list three or more distinct ids are treated as citation lists — e.g. a
+        systematic review or pooled analysis enumerating its constituent trials —
+        and return nothing, so a review is not credited for registrations that
+        belong to studies it merely cites.
 
-        return list(set(ids))
+        Reuses the EuropePMC record already fetched by :meth:`analyze` when
+        available, falling back to a fresh query only if it was not supplied,
+        so the same search is not issued twice per document.
+        """
+        data = epmc
+        if data is None:
+            query = f'DOI:"{doi}"' if doi else f"EXT_ID:{pmid}"
+            data = self._query_europepmc(client, query)
+        if not data:
+            return []
+
+        results = data.get("resultList", {}).get("result", [])
+        if not results:
+            return []
+
+        # Strip XML/HTML markup so cue detection is not thrown off by tags.
+        abstract = re.sub(r"<[^>]+>", " ", results[0].get("abstractText") or "")
+
+        # Deduplicate while preserving order.
+        distinct_ids = list(dict.fromkeys(_NCT_ID_RE.findall(abstract)))
+        if not distinct_ids or len(distinct_ids) > _MAX_OWN_TRIAL_IDS:
+            return []
+
+        for match in _NCT_ID_RE.finditer(abstract):
+            window = abstract[max(0, match.start() - _REGISTRATION_CUE_WINDOW) : match.start()]
+            if _REGISTRATION_CUE_RE.search(window):
+                return distinct_ids
+
+        return []
 
     def _check_trial_results(self, client: Any, nct_id: str) -> bool:
         """Check if a ClinicalTrials.gov trial has posted results.

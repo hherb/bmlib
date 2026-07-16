@@ -45,7 +45,11 @@ def transaction(conn: Any) -> Generator[Any, None, None]:
     module_name = type(conn).__module__
     is_sqlite = "sqlite3" in module_name
 
-    if is_sqlite:
+    # Only issue an explicit BEGIN when no transaction is already active.
+    # sqlite3 auto-begins a transaction before DML, so a pending uncommitted
+    # write would otherwise make ``BEGIN`` raise "cannot start a transaction
+    # within a transaction".
+    if is_sqlite and not conn.in_transaction:
         conn.execute("BEGIN")
 
     try:

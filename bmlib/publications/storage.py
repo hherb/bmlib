@@ -38,6 +38,49 @@ def _now_iso() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Identifier normalization
+# ---------------------------------------------------------------------------
+
+# Prefixes that sources sometimes prepend to a DOI. Stripped so the same
+# work fetched from different sources dedups to a single canonical key.
+_DOI_PREFIXES = (
+    "https://doi.org/",
+    "http://doi.org/",
+    "https://dx.doi.org/",
+    "http://dx.doi.org/",
+    "doi:",
+)
+
+
+def _normalize_doi(doi: str | None) -> str | None:
+    """Return a canonical, case-folded DOI, or ``None``.
+
+    DOIs are case-insensitive (per the DOI handbook), but different sources
+    disagree on case: PubMed preserves the registered form (often mixed
+    case), while OpenAlex lower-cases everything. Storing and looking up a
+    single canonical form (lower-case, prefix- and whitespace-stripped) is
+    what makes cross-source deduplication actually work.
+    """
+    if not doi:
+        return None
+    d = doi.strip()
+    lowered = d.lower()
+    for prefix in _DOI_PREFIXES:
+        if lowered.startswith(prefix):
+            d = d[len(prefix) :]
+            break
+    d = d.strip().lower()
+    return d or None
+
+
+def _normalize_pmid(pmid: str | None) -> str | None:
+    """Return a whitespace-stripped PMID, or ``None`` for an empty value."""
+    if not pmid:
+        return None
+    return pmid.strip() or None
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
@@ -175,6 +218,40 @@ def _merge_publication(
 # ---------------------------------------------------------------------------
 
 
+def _consolidate_rows(conn: Any, keep: Any, drop: Any, now: str) -> None:
+    """Merge the *drop* row into the *keep* row, then delete *drop*.
+
+    Used when an incoming record carries both a DOI and a PMID that currently
+    point at two different existing rows (a "split identity" that arises when a
+    work is indexed by one identifier before its cross-reference to the other
+    exists). Without this, the subsequent ``COALESCE`` merge would try to write
+    the drop row's identifier onto the keep row and hit the UNIQUE constraint,
+    aborting the write and leaving the duplicates stranded forever.
+
+    Ordering matters: the drop row is deleted *before* its identifier is merged
+    onto the keep row, so the unique index is free when the merge runs.
+    """
+    keep_id = keep["id"]
+    drop_id = drop["id"]
+
+    # Move the drop row's full-text sources onto the keep row. UPDATE OR IGNORE
+    # skips any (publication_id, url) pair that already exists on the keep row;
+    # the leftover duplicates on the drop row are then removed.
+    execute(
+        conn,
+        "UPDATE OR IGNORE fulltext_sources SET publication_id = ? WHERE publication_id = ?",
+        (keep_id, drop_id),
+    )
+    execute(conn, "DELETE FROM fulltext_sources WHERE publication_id = ?", (drop_id,))
+
+    # Snapshot the drop row's data, delete the row (freeing its unique
+    # identifier), then fold its data into the keep row.
+    drop_pub = _row_to_publication(drop)
+    execute(conn, "DELETE FROM publications WHERE id = ?", (drop_id,))
+    conn.commit()
+    _merge_publication(conn, keep, drop_pub, now)
+
+
 def store_publication(
     conn: Any,
     pub: Publication,
@@ -182,17 +259,37 @@ def store_publication(
 ) -> str:
     """Store a publication, de-duplicating by DOI then PMID.
 
+    DOIs and PMIDs are normalized (see :func:`_normalize_doi` /
+    :func:`_normalize_pmid`) before lookup and storage so the same work fetched
+    from different sources — which disagree on DOI case and prefixes — resolves
+    to a single row. ``pub`` is mutated in place to hold the canonical forms.
+
     Returns ``"added"`` for a new record or ``"merged"`` if an existing
     record was found and updated.
     """
     now = _now_iso()
 
-    # Try to find existing by DOI first, then PMID
-    existing = None
-    if pub.doi:
-        existing = fetch_one(conn, "SELECT * FROM publications WHERE doi = ?", (pub.doi,))
-    if existing is None and pub.pmid:
-        existing = fetch_one(conn, "SELECT * FROM publications WHERE pmid = ?", (pub.pmid,))
+    pub.doi = _normalize_doi(pub.doi)
+    pub.pmid = _normalize_pmid(pub.pmid)
+
+    # Look up by each identifier independently so we can detect a split
+    # identity (DOI and PMID pointing at two different existing rows).
+    row_by_doi = (
+        fetch_one(conn, "SELECT * FROM publications WHERE doi = ?", (pub.doi,)) if pub.doi else None
+    )
+    row_by_pmid = (
+        fetch_one(conn, "SELECT * FROM publications WHERE pmid = ?", (pub.pmid,))
+        if pub.pmid
+        else None
+    )
+
+    if row_by_doi is not None and row_by_pmid is not None and row_by_doi["id"] != row_by_pmid["id"]:
+        # Split identity: consolidate the two rows into one (keep the DOI row),
+        # then re-read it before merging the incoming record.
+        _consolidate_rows(conn, row_by_doi, row_by_pmid, now)
+        existing = fetch_one(conn, "SELECT * FROM publications WHERE id = ?", (row_by_doi["id"],))
+    else:
+        existing = row_by_doi if row_by_doi is not None else row_by_pmid
 
     if existing is not None:
         _merge_publication(conn, existing, pub, now)
@@ -211,8 +308,12 @@ def store_publication(
 
 
 def get_publication_by_doi(conn: Any, doi: str) -> Publication | None:
-    """Look up a publication by DOI, or return None."""
-    row = fetch_one(conn, "SELECT * FROM publications WHERE doi = ?", (doi,))
+    """Look up a publication by DOI, or return None.
+
+    The DOI is normalized before lookup so a query using any case or prefix
+    variant matches the canonical stored form.
+    """
+    row = fetch_one(conn, "SELECT * FROM publications WHERE doi = ?", (_normalize_doi(doi),))
     if row is None:
         return None
     return _row_to_publication(row)
@@ -220,7 +321,7 @@ def get_publication_by_doi(conn: Any, doi: str) -> Publication | None:
 
 def get_publication_by_pmid(conn: Any, pmid: str) -> Publication | None:
     """Look up a publication by PMID, or return None."""
-    row = fetch_one(conn, "SELECT * FROM publications WHERE pmid = ?", (pmid,))
+    row = fetch_one(conn, "SELECT * FROM publications WHERE pmid = ?", (_normalize_pmid(pmid),))
     if row is None:
         return None
     return _row_to_publication(row)

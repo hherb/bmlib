@@ -92,3 +92,31 @@ class TestCustomRegistration:
 
         # Clean up to avoid polluting other tests
         _REGISTRY.pop("test_custom", None)
+
+    def test_custom_source_before_builtins_does_not_hide_them(self):
+        # Regression: a custom source registered before any lookup must not make
+        # _ensure_builtins believe built-ins are already present.
+        import bmlib.publications.fetchers.registry as reg
+
+        saved_registry = dict(reg._REGISTRY)
+        saved_flag = reg._builtins_registered
+        try:
+            reg._REGISTRY.clear()
+            reg._builtins_registered = False
+
+            def fake_fetcher(client, target_date, *, on_record, on_progress=None, **config):
+                return None
+
+            register_source(
+                SourceDescriptor(name="custom_first", display_name="C", description="d"),
+                fake_fetcher,
+            )
+
+            # Built-ins must still resolve.
+            desc, _ = get_source("pubmed")
+            assert desc.name == "pubmed"
+            assert "custom_first" in source_names()
+        finally:
+            reg._REGISTRY.clear()
+            reg._REGISTRY.update(saved_registry)
+            reg._builtins_registered = saved_flag

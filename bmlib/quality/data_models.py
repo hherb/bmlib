@@ -122,6 +122,25 @@ DESIGN_TO_TIER: dict[StudyDesign, QualityTier] = {
     StudyDesign.UNKNOWN: QualityTier.UNCLASSIFIED,
 }
 
+# Design → randomization status. ``True`` for designs that are randomized by
+# definition (RCT), ``False`` for designs that are inherently non-randomized,
+# and ``None`` where the design alone does not determine it (e.g. a systematic
+# review may synthesise RCTs or observational studies). Used to populate
+# ``is_randomized`` from Tier 1/Tier 2 results so the ``require_randomization``
+# filter can recognise a genuine RCT instead of silently rejecting it.
+DESIGN_TO_RANDOMIZED: dict[StudyDesign, bool | None] = {
+    StudyDesign.RCT: True,
+    StudyDesign.COHORT_PROSPECTIVE: False,
+    StudyDesign.COHORT_RETROSPECTIVE: False,
+    StudyDesign.CASE_CONTROL: False,
+    StudyDesign.CROSS_SECTIONAL: False,
+    StudyDesign.CASE_SERIES: False,
+    StudyDesign.CASE_REPORT: False,
+    StudyDesign.EDITORIAL: False,
+    StudyDesign.LETTER: False,
+    StudyDesign.COMMENT: False,
+}
+
 # Design → default numeric score (0–10)
 DESIGN_TO_SCORE: dict[StudyDesign, float] = {
     StudyDesign.SYSTEMATIC_REVIEW: 9.0,
@@ -232,6 +251,7 @@ class QualityAssessment:
             study_design=design,
             quality_tier=DESIGN_TO_TIER.get(design, QualityTier.UNCLASSIFIED),
             quality_score=DESIGN_TO_SCORE.get(design, 0.0),
+            is_randomized=DESIGN_TO_RANDOMIZED.get(design),
             confidence=confidence,
         )
 
@@ -249,6 +269,7 @@ class QualityAssessment:
             study_design=study_design,
             quality_tier=DESIGN_TO_TIER.get(study_design, QualityTier.UNCLASSIFIED),
             quality_score=DESIGN_TO_SCORE.get(study_design, 0.0),
+            is_randomized=DESIGN_TO_RANDOMIZED.get(study_design),
             confidence=confidence,
             sample_size=sample_size,
             is_blinded=is_blinded,
