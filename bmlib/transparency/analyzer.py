@@ -39,6 +39,7 @@ from bmlib.transparency.models import (
 logger = logging.getLogger(__name__)
 
 # ---- Known pharma / industry funder keywords ----
+# Matched against CrossRef's structured funder names (short org-name strings).
 _INDUSTRY_KEYWORDS = [
     "pharma",
     "biotech",
@@ -48,6 +49,14 @@ _INDUSTRY_KEYWORDS = [
     "ltd.",
     "gmbh",
     "laboratories",
+]
+
+# ---- Industry disclosure phrases ----
+# Matched against the paper's COI/disclosure statement in the full text. Kept
+# separate from _INDUSTRY_KEYWORDS: the generic org suffixes above ("inc.",
+# "ltd.", …) match far too freely in running text, while these phrases never
+# occur in a funder name.
+_INDUSTRY_COI_KEYWORDS = [
     "employee of",
     "speaker fee",
     "consultant for",
@@ -74,6 +83,9 @@ MAX_TRANSPARENCY_SCORE = 100
 # ---- Trial lookup ----
 MAX_TRIAL_IDS_TO_CHECK = 3
 DEFAULT_INDUSTRY_CONFIDENCE = 0.8
+# Industry involvement inferred from COI text is weaker evidence than a
+# structured CrossRef funder record, so it gets a moderate confidence.
+TEXT_INDUSTRY_CONFIDENCE = 0.5
 
 # An NCT id in an abstract only counts as *this* paper's own registered trial
 # when it appears next to registration language. Reviews and pooled analyses
@@ -106,6 +118,44 @@ _COI_PATTERNS = [
     "declare no",
     "financial disclosure",
 ]
+
+# ---- COI section extraction ----
+# JATS containers that hold the COI/disclosure statement: <fn fn-type="COI-statement">,
+# <sec sec-type="conflict">, <notes notes-type="COI-statement">, and case variants.
+_COI_SECTION_RE = re.compile(
+    r"<(fn|sec|notes)\b[^>]*-type=\"[^\"]*(?:coi|conflict|competing)[^\"]*\"[^>]*>(.*?)</\1>",
+    re.IGNORECASE | re.DOTALL,
+)
+# Sections whose <title> names conflicts/competing interests but carry no typed attribute.
+_COI_TITLED_SEC_RE = re.compile(
+    r"<sec\b[^>]*>\s*<title>[^<]*(?:conflict|competing|disclosure)[^<]*</title>(.*?)</sec>",
+    re.IGNORECASE | re.DOTALL,
+)
+_TAG_RE = re.compile(r"<[^>]+>")
+# When the full text has no tagged COI section, scan a bounded window after
+# each COI cue phrase instead of the whole document, so industry phrases in
+# references or author affiliations are not misread as disclosures.
+_COI_FALLBACK_WINDOW = 1000
+
+
+def _extract_coi_text(full_text: str) -> str:
+    """Return the COI/disclosure portion of *full_text*, tag-stripped and lowercased.
+
+    Prefers JATS-tagged COI containers; falls back to fixed-size windows
+    following each COI cue phrase (see :data:`_COI_PATTERNS`) when the text
+    carries no tagged section. Returns an empty string when no COI-like
+    region is found.
+    """
+    sections = [m.group(2) for m in _COI_SECTION_RE.finditer(full_text)]
+    sections += [m.group(1) for m in _COI_TITLED_SEC_RE.finditer(full_text)]
+    if sections:
+        return _TAG_RE.sub(" ", " ".join(sections)).lower()
+
+    text = _TAG_RE.sub(" ", full_text).lower()
+    cue_re = re.compile("|".join(re.escape(p) for p in _COI_PATTERNS))
+    windows = [text[m.start() : m.end() + _COI_FALLBACK_WINDOW] for m in cue_re.finditer(text)]
+    return " ".join(windows)
+
 
 # ---- Data availability patterns ----
 # Order matters: matching stops at the first hit, so the negated form
@@ -203,9 +253,18 @@ class TransparencyAnalyzer:
             # --- EuropePMC (full text / abstract, COI, data availability) ---
             epmc = self._fetch_europepmc(client, pmid, doi)
             if epmc:
-                coi_disclosed, data_level, score, indicators, full_text_analyzed = (
-                    self._check_europepmc(client, epmc, score, indicators)
-                )
+                (
+                    coi_disclosed,
+                    data_level,
+                    score,
+                    indicators,
+                    full_text_analyzed,
+                    industry_coi,
+                ) = self._check_europepmc(client, epmc, score, indicators)
+                if industry_coi:
+                    industry_funding = True
+                    industry_confidence = max(industry_confidence, TEXT_INDUSTRY_CONFIDENCE)
+                    indicators.append("Industry ties disclosed in COI statement")
 
             # --- OpenAlex (additional metadata) ---
             if doi:
@@ -309,7 +368,7 @@ class TransparencyAnalyzer:
         epmc: dict,
         score: int,
         indicators: list[str],
-    ) -> tuple[bool | None, str, int, list[str], bool]:
+    ) -> tuple[bool | None, str, int, list[str], bool, bool]:
         """Extract COI and data-availability signals from EuropePMC.
 
         COI and data-availability statements live in a paper's full text, not
@@ -318,18 +377,21 @@ class TransparencyAnalyzer:
         abstract only when full text cannot be retrieved.
 
         Returns ``(coi_disclosed, data_level, score, indicators,
-        full_text_analyzed)`` where ``coi_disclosed`` is tri-state:
-        ``True`` (statement found), ``False`` (full text scanned, none found),
-        or ``None`` (undeterminable — full text unavailable and no abstract
-        signal).
+        full_text_analyzed, industry_coi)`` where ``coi_disclosed`` is
+        tri-state: ``True`` (statement found), ``False`` (full text scanned,
+        none found), or ``None`` (undeterminable — full text unavailable and
+        no abstract signal). ``industry_coi`` is ``True`` when the full-text
+        COI/disclosure statement discloses industry ties (consultancies,
+        speaker fees, …); it is only ever set when full text was analyzed.
         """
         coi_disclosed: bool | None = None
         data_level = "unknown"
         full_text_analyzed = False
+        industry_coi = False
 
         result_list = epmc.get("resultList", {}).get("result", [])
         if not result_list:
-            return coi_disclosed, data_level, score, indicators, full_text_analyzed
+            return coi_disclosed, data_level, score, indicators, full_text_analyzed, industry_coi
 
         record = result_list[0]
         abstract_text = (record.get("abstractText") or "").lower()
@@ -360,6 +422,15 @@ class TransparencyAnalyzer:
             # Could not inspect full text; status is genuinely unknown.
             indicators.append("COI disclosure status unknown (full text unavailable)")
 
+        # Industry ties disclosed in the COI statement itself ("consultant
+        # for X", "speaker fees from Y"). Scanned only in full text — an
+        # abstract rarely carries a real disclosure statement — and only
+        # within the COI/disclosure region to avoid false positives from
+        # references or affiliations.
+        if full_text_analyzed:
+            coi_text = _extract_coi_text(search_text)
+            industry_coi = any(kw in coi_text for kw in _INDUSTRY_COI_KEYWORDS)
+
         # Data availability
         for pattern, level in _DATA_PATTERNS.items():
             if pattern in search_text:
@@ -372,7 +443,7 @@ class TransparencyAnalyzer:
         elif data_level == "not_available":
             indicators.append("Data explicitly not available")
 
-        return coi_disclosed, data_level, score, indicators, full_text_analyzed
+        return coi_disclosed, data_level, score, indicators, full_text_analyzed, industry_coi
 
     def _fetch_europepmc_fulltext(
         self,

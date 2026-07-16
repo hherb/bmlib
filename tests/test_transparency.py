@@ -153,7 +153,7 @@ class TestCheckEuropePMC:
         client = _FakeFullTextClient(
             "<article>The authors declare no conflict of interest.</article>"
         )
-        coi, _level, score, _ind, ft = analyzer._check_europepmc(
+        coi, _level, score, _ind, ft, _ind_coi = analyzer._check_europepmc(
             client, self._epmc(), score=0, indicators=[]
         )
         assert coi is True
@@ -163,7 +163,7 @@ class TestCheckEuropePMC:
     def test_coi_absent_in_full_text(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient("<article>No disclosure section here.</article>")
-        coi, _level, _score, _ind, ft = analyzer._check_europepmc(
+        coi, _level, _score, _ind, ft, _ind_coi = analyzer._check_europepmc(
             client, self._epmc(), score=0, indicators=[]
         )
         assert coi is False  # full text scanned, explicitly absent
@@ -173,11 +173,136 @@ class TestCheckEuropePMC:
         analyzer = TransparencyAnalyzer()
         # inEPMC == "N" so no full text is fetched, abstract has no COI signal.
         client = _FakeFullTextClient(None)
-        coi, _level, _score, _ind, ft = analyzer._check_europepmc(
+        coi, _level, _score, _ind, ft, _ind_coi = analyzer._check_europepmc(
             client, self._epmc(in_epmc="N"), score=0, indicators=[]
         )
         assert coi is None  # undeterminable, not "absent"
         assert ft is False
+
+
+class TestIndustryCOIDetection:
+    """Industry ties disclosed in a paper's COI statement must be detected.
+
+    The CrossRef funder check only sees structured funder names; a paper whose
+    only industry signal is a full-text COI disclosure ("consultant for X",
+    "speaker fees from Y") must still set industry_funding_detected.
+    """
+
+    def _epmc(self, in_epmc="Y", abstract=""):
+        return {
+            "resultList": {
+                "result": [
+                    {
+                        "abstractText": abstract,
+                        "inEPMC": in_epmc,
+                        "source": "PMC",
+                        "pmcid": "PMC123",
+                    }
+                ]
+            }
+        }
+
+    _TAGGED_COI_XML = (
+        "<article><body><sec><title>Methods</title>"
+        "<p>Participants were recruited via the hospital.</p></sec></body>"
+        '<back><fn-group><fn fn-type="COI-statement"><p>Dr X has served as a '
+        "consultant for Pfizer and received speaker fees from Novartis.</p></fn>"
+        "</fn-group></back></article>"
+    )
+
+    def test_industry_coi_in_tagged_statement_detected(self):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(self._TAGGED_COI_XML)
+        coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
+            client, self._epmc(), score=0, indicators=[]
+        )
+        assert ft is True
+        assert industry is True
+
+    def test_untagged_prose_coi_statement_detected(self):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><p>Competing interests: Dr Y is an employee of AcmePharma "
+            "and serves on the advisory board of BioCorp.</p></article>"
+        )
+        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
+            client, self._epmc(), score=0, indicators=[]
+        )
+        assert ft is True
+        assert industry is True
+
+    def test_neutral_coi_statement_not_flagged(self):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article>The authors declare no conflict of interest.</article>"
+        )
+        coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
+            client, self._epmc(), score=0, indicators=[]
+        )
+        assert coi is True
+        assert ft is True
+        assert industry is False
+
+    def test_keywords_outside_coi_section_not_flagged(self):
+        # "advisory board" in the methods of a community-engagement study must
+        # not read as an industry tie when the tagged COI statement is clean.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><sec><title>Methods</title>"
+            "<p>A community advisory board reviewed the study design.</p></sec></body>"
+            '<back><fn-group><fn fn-type="COI-statement"><p>The authors declare no '
+            "competing interests.</p></fn></fn-group></back></article>"
+        )
+        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
+            client, self._epmc(), score=0, indicators=[]
+        )
+        assert ft is True
+        assert industry is False
+
+    def test_no_full_text_means_no_industry_signal(self):
+        # Text-derived industry detection requires the full text; an abstract
+        # alone (rarely carrying a real COI statement) must not trigger it.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(None)
+        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
+            client,
+            self._epmc(in_epmc="N", abstract="Conflict of interest: consultant for Pfizer."),
+            score=0,
+            indicators=[],
+        )
+        assert ft is False
+        assert industry is False
+
+    def test_analyze_ors_fulltext_signal_into_result(self, monkeypatch):
+        import httpx
+
+        epmc_record = self._epmc()
+        full_text = self._TAGGED_COI_XML
+
+        class _Client:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def get(self, url, **kwargs):
+                if "crossref" in url:
+                    return _FakeResponse(status_code=200, json_data={"message": {}})
+                if "fullTextXML" in url:
+                    return _FakeResponse(status_code=200, text=full_text)
+                if "europepmc" in url:
+                    return _FakeResponse(status_code=200, json_data=epmc_record)
+                if "openalex" in url:
+                    return _FakeResponse(status_code=200, json_data={})
+                return _FakeResponse(status_code=404)
+
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: _Client())
+        analyzer = TransparencyAnalyzer()
+        result = analyzer.analyze("doc1", doi="10.1234/x")
+        assert result.industry_funding_detected is True
+        assert 0.0 < result.industry_funding_confidence < 0.8  # moderate, below CrossRef's
+        assert any("COI" in ind for ind in result.risk_indicators)
 
 
 class TestCheckTrialResults:
@@ -334,7 +459,7 @@ class TestDataAvailabilityPatterns:
     def test_not_available_upon_request_is_not_available(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(None)
-        _coi, level, score, _ind, _ft = analyzer._check_europepmc(
+        _coi, level, score, _ind, _ft, _ind_coi = analyzer._check_europepmc(
             client,
             self._epmc("The data are not available upon reasonable request."),
             score=0,
@@ -346,7 +471,7 @@ class TestDataAvailabilityPatterns:
     def test_available_upon_request_still_credited(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(None)
-        _coi, level, score, _ind, _ft = analyzer._check_europepmc(
+        _coi, level, score, _ind, _ft, _ind_coi = analyzer._check_europepmc(
             client,
             self._epmc("Data are available from the authors upon reasonable request."),
             score=0,
@@ -361,7 +486,7 @@ class TestDataAvailabilityPatterns:
         # negation-first ordering of _DATA_PATTERNS wins.
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(None)
-        _coi, level, score, _ind, _ft = analyzer._check_europepmc(
+        _coi, level, score, _ind, _ft, _ind_coi = analyzer._check_europepmc(
             client,
             self._epmc(
                 "Analysis code is available on GitHub; individual patient data are not available."
