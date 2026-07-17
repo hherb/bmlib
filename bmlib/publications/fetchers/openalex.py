@@ -266,7 +266,7 @@ def fetch_openalex(
                 )
             )
 
-        cursor = data.get("meta", {}).get("next_cursor")
+        cursor = (data.get("meta") or {}).get("next_cursor")
 
         # Respect rate limit between paginated requests
         if cursor is not None:

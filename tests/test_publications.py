@@ -463,6 +463,48 @@ class TestStorage:
         assert get_publication_by_doi(conn, "10.9999/nonexistent") is None
         assert get_publication_by_pmid(conn, "00000000") is None
 
+    def test_store_publication_commits_once(self):
+        # Bulk ingestion performance: one record (including its full-text
+        # sources) must cost one commit, not one commit per statement.
+        conn = _schema_conn()
+        pub = Publication(
+            title="Batch Paper",
+            sources=["pubmed"],
+            first_seen_source="pubmed",
+            doi="10.1234/batch",
+        )
+        sources = [
+            FullTextSource(0, "pmc", "https://pmc.example.com/b.xml", "xml"),
+            FullTextSource(0, "publisher", "https://pub.example.com/b.pdf", "pdf"),
+        ]
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        try:
+            assert store_publication(conn, pub, fulltext_sources=sources) == "added"
+        finally:
+            conn.set_trace_callback(None)
+
+        commits = [s for s in statements if s.strip().upper().startswith("COMMIT")]
+        assert len(commits) == 1
+        assert not conn.in_transaction  # standalone call still persists
+
+    def test_store_publication_joins_caller_transaction(self):
+        # Inside a caller-managed transaction (the sync batcher), a store
+        # must not commit — the caller owns the batch boundary.
+        from bmlib.db import transaction
+
+        conn = _schema_conn()
+        pub = Publication(
+            title="Batched Paper",
+            sources=["pubmed"],
+            first_seen_source="pubmed",
+            doi="10.1234/batched",
+        )
+        with transaction(conn):
+            store_publication(conn, pub)
+            assert conn.in_transaction  # still uncommitted inside the batch
+        assert get_publication_by_doi(conn, "10.1234/batched") is not None
+
     def test_add_fulltext_source_works(self):
         conn = _schema_conn()
         pub = Publication(

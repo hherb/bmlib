@@ -182,3 +182,82 @@ class TestModelStringParsing:
         provider, model = client._parse_model_string("Anthropic:claude-x")
         assert provider == "anthropic"
         assert model == "claude-x"
+
+
+class TestLLMClientSingletonThreadSafety:
+    """get_llm_client must create exactly one client under concurrent first use."""
+
+    def test_concurrent_first_use_creates_single_client(self, monkeypatch):
+        import threading
+        import time
+
+        import bmlib.llm.client as client_mod
+
+        client_mod.reset_llm_client()
+
+        init_calls = []
+        orig_init = client_mod.LLMClient.__init__
+
+        def slow_init(self, *args, **kwargs):
+            init_calls.append(1)
+            time.sleep(0.02)  # widen the check-then-create race window
+            orig_init(self, *args, **kwargs)
+
+        monkeypatch.setattr(client_mod.LLMClient, "__init__", slow_init)
+
+        n_threads = 8
+        barrier = threading.Barrier(n_threads)
+        results: list[object] = []
+
+        def worker():
+            barrier.wait()
+            results.append(client_mod.get_llm_client())
+
+        threads = [threading.Thread(target=worker) for _ in range(n_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        client_mod.reset_llm_client()
+
+        assert len(init_calls) == 1
+        assert len({id(r) for r in results}) == 1
+
+
+class TestAnthropicFallbackPricingWarning:
+    """Estimated pricing for unknown models must be visible, not silent."""
+
+    def test_unknown_model_pricing_warns(self, caplog):
+        import logging
+
+        from bmlib.llm.providers.anthropic import AnthropicProvider
+
+        provider = AnthropicProvider(api_key="test-key")
+        with caplog.at_level(logging.WARNING, logger="bmlib.llm.providers.anthropic"):
+            pricing = provider.get_model_pricing("claude-future-99")
+        assert pricing == provider._FALLBACK_PRICING
+        assert any("claude-future-99" in rec.message for rec in caplog.records)
+
+    def test_unknown_model_warns_only_once(self, caplog):
+        import logging
+
+        from bmlib.llm.providers.anthropic import AnthropicProvider
+
+        provider = AnthropicProvider(api_key="test-key")
+        with caplog.at_level(logging.WARNING, logger="bmlib.llm.providers.anthropic"):
+            provider.get_model_pricing("claude-future-99")
+            provider.get_model_pricing("claude-future-99")
+        warnings = [r for r in caplog.records if "claude-future-99" in r.message]
+        assert len(warnings) == 1
+
+    def test_known_model_does_not_warn(self, caplog):
+        import logging
+
+        from bmlib.llm.providers.anthropic import AnthropicProvider
+
+        provider = AnthropicProvider(api_key="test-key")
+        known = next(iter(provider.MODEL_PRICING))
+        with caplog.at_level(logging.WARNING, logger="bmlib.llm.providers.anthropic"):
+            provider.get_model_pricing(known)
+        assert not caplog.records

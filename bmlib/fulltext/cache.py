@@ -27,13 +27,47 @@ location follows the XDG convention:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import platform
+import re
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 PDF_MAGIC_BYTES = b"%PDF"
+
+# Identifiers made up solely of these characters are used as filenames
+# verbatim; anything else (a raw DOI contains "/") is sanitized first.
+_SAFE_IDENTIFIER_RE = re.compile(r"[\w.\-]+")
+
+
+def sanitize_identifier(raw: str) -> str:
+    """Turn a DOI or other identifier into a safe, collision-free filename.
+
+    A readable prefix is kept for debuggability, but because many distinct
+    identifiers sanitise to the same string (every character outside
+    ``[\\w.\\-]`` maps to ``_``), a short hash of the *raw* identifier is
+    appended so two different identifiers can never share a cache file.
+    """
+    safe = re.sub(r"[^\w.\-]", "_", raw)
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
+    return f"{safe}_{digest}"
+
+
+def _safe_filename(identifier: str) -> str:
+    """Return *identifier* if it is already filename-safe, else sanitize it.
+
+    Already-safe identifiers (e.g. those pre-sanitized by
+    :class:`~bmlib.fulltext.service.FullTextService`) pass through unchanged
+    so existing cache files remain addressable; raw identifiers containing
+    path separators or other unsafe characters are sanitized here as a
+    defense in depth, so a direct caller passing a raw DOI cannot write
+    outside the cache directory.
+    """
+    if _SAFE_IDENTIFIER_RE.fullmatch(identifier):
+        return identifier
+    return sanitize_identifier(identifier)
 
 
 def _default_cache_dir() -> Path:
@@ -91,14 +125,14 @@ class FullTextCache:
         if len(data) < len(PDF_MAGIC_BYTES) or data[: len(PDF_MAGIC_BYTES)] != PDF_MAGIC_BYTES:
             logger.warning("Rejected non-PDF data for %s", identifier)
             return None
-        path = self._pdf_dir / f"{identifier}.pdf"
+        path = self._pdf_dir / f"{_safe_filename(identifier)}.pdf"
         path.write_bytes(data)
         logger.info("Cached PDF for %s (%d bytes)", identifier, len(data))
         return str(path)
 
     def get_pdf(self, identifier: str) -> str | None:
         """Return the cached PDF file path, or ``None`` if not cached."""
-        path = self._pdf_dir / f"{identifier}.pdf"
+        path = self._pdf_dir / f"{_safe_filename(identifier)}.pdf"
         return str(path) if path.exists() else None
 
     # --- HTML operations ----------------------------------------------------
@@ -108,14 +142,14 @@ class FullTextCache:
 
         Returns the file path.
         """
-        path = self._html_dir / f"{identifier}.html"
+        path = self._html_dir / f"{_safe_filename(identifier)}.html"
         path.write_text(html, encoding="utf-8")
         logger.info("Cached HTML for %s (%d chars)", identifier, len(html))
         return str(path)
 
     def get_html(self, identifier: str) -> str | None:
         """Return the cached HTML content, or ``None`` if not cached."""
-        path = self._html_dir / f"{identifier}.html"
+        path = self._html_dir / f"{_safe_filename(identifier)}.html"
         if not path.exists():
             return None
         return path.read_text(encoding="utf-8")
@@ -124,8 +158,9 @@ class FullTextCache:
 
     def delete(self, identifier: str) -> None:
         """Delete all cached files for *identifier* (PDF and HTML)."""
+        name = _safe_filename(identifier)
         for ext, directory in [(".pdf", self._pdf_dir), (".html", self._html_dir)]:
-            path = directory / f"{identifier}{ext}"
+            path = directory / f"{name}{ext}"
             path.unlink(missing_ok=True)
 
     def clear(self) -> None:

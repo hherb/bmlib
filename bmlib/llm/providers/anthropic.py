@@ -83,6 +83,8 @@ class AnthropicProvider(BaseProvider):
         super().__init__(api_key=resolved_api_key, base_url=base_url, **kwargs)
         self._models_cache: list[ModelMetadata] | None = None
         self._cache_timestamp: float = 0.0
+        # Model ids already warned about for estimated pricing (warn once each).
+        self._pricing_warned: set[str] = set()
 
     # --- Properties ---
 
@@ -305,8 +307,27 @@ class AnthropicProvider(BaseProvider):
             return len(text) // CHARS_PER_TOKEN_ESTIMATE
 
     def get_model_pricing(self, model: str) -> ModelPricing:
-        """Return pricing for *model*, falling back to default rates."""
-        return self.MODEL_PRICING.get(model, self._FALLBACK_PRICING)
+        """Return pricing for *model*, falling back to default rates.
+
+        Unknown model ids (typically models newer than the pricing table)
+        are billed at the fallback (Sonnet) rates; a warning is logged once
+        per model per provider instance so estimated cost accounting is
+        visible rather than silent. The warned-set is not lock-guarded: a
+        concurrent first call may log the warning twice, which is harmless.
+        """
+        pricing = self.MODEL_PRICING.get(model)
+        if pricing is None:
+            if model not in self._pricing_warned:
+                self._pricing_warned.add(model)
+                logger.warning(
+                    "No pricing entry for Anthropic model %s; cost estimates use "
+                    "fallback rates ($%.2f/$%.2f per Mtok)",
+                    model,
+                    self._FALLBACK_PRICING.input_cost,
+                    self._FALLBACK_PRICING.output_cost,
+                )
+            return self._FALLBACK_PRICING
+        return pricing
 
 
 # ---------------------------------------------------------------------------

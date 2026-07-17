@@ -99,3 +99,45 @@ class TestCacheSubdirectories:
         path = cache.get_html("PMC123")
         # HTML is stored as files too
         assert path is None or True  # get_html returns content, not path
+
+
+class TestIdentifierSanitization:
+    """Raw identifiers (e.g. DOIs with slashes) must not escape the cache dir."""
+
+    def test_raw_doi_stays_inside_cache(self, tmp_path):
+        from pathlib import Path
+
+        cache = FullTextCache(cache_dir=tmp_path)
+        path = cache.save_html("<p>body</p>", "10.1234/sub/dir")
+        p = Path(path)
+        assert p.parent == tmp_path / "html"
+        assert cache.get_html("10.1234/sub/dir") == "<p>body</p>"
+
+    def test_path_traversal_cannot_escape(self, tmp_path):
+        from pathlib import Path
+
+        root = tmp_path / "cache"
+        cache = FullTextCache(cache_dir=root)
+        path = cache.save_pdf(b"%PDF-1.4 fake", "../../evil")
+        assert path is not None
+        assert Path(path).is_relative_to(root)
+        assert (tmp_path / "evil.pdf").exists() is False
+        assert cache.get_pdf("../../evil") == path
+        cache.delete("../../evil")
+        assert cache.get_pdf("../../evil") is None
+
+    def test_distinct_raw_identifiers_do_not_collide(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_html("first", "10.1/a/b")
+        cache.save_html("second", "10.1/a_b")
+        assert cache.get_html("10.1/a/b") == "first"
+        assert cache.get_html("10.1/a_b") == "second"
+
+    def test_already_safe_identifier_keeps_exact_filename(self, tmp_path):
+        # Identifiers pre-sanitized by FullTextService must map to the same
+        # file as before, so existing caches stay valid.
+        from pathlib import Path
+
+        cache = FullTextCache(cache_dir=tmp_path)
+        path = cache.save_html("x", "10.1234_x.y-z_ab12cd34ef")
+        assert Path(path).name == "10.1234_x.y-z_ab12cd34ef.html"

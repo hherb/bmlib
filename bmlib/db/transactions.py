@@ -47,18 +47,22 @@ def transaction(conn: Any) -> Generator[Any, None, None]:
     is entered (issuing ``BEGIN`` then would raise "cannot start a transaction
     within a transaction"). In that case the block runs inside a ``SAVEPOINT``:
     on exception only the block's own writes are rolled back — the caller's
-    pre-existing pending writes survive, still uncommitted. On success,
-    however, ``conn.commit()`` is connection-wide (a DB-API limitation), so it
-    necessarily commits those pending writes along with the block's. The same
-    connection-wide commit/rollback applies to the PostgreSQL path, which is
-    always inside a transaction once a statement has run.
+    pre-existing pending writes survive, still uncommitted. On success the
+    savepoint is released and **no commit is issued** — whoever opened the
+    enclosing transaction owns the commit. This is what makes nesting
+    composable: a batch loop can wrap many ``transaction()``-using calls in
+    one outer ``transaction()`` and pay a single commit, and an outer failure
+    rolls back the inner blocks' writes too. The PostgreSQL path commits
+    connection-wide on success (it is always inside a transaction once a
+    statement has run, with no savepoint nesting implemented).
     """
     module_name = type(conn).__module__
     is_sqlite = "sqlite3" in module_name
 
     if is_sqlite and conn.in_transaction:
         # Join the already-open transaction via a savepoint so an exception
-        # rolls back only the block's writes (see docstring).
+        # rolls back only the block's writes; the enclosing transaction's
+        # owner commits (see docstring).
         conn.execute("SAVEPOINT bmlib_transaction")
         try:
             yield conn
@@ -67,7 +71,6 @@ def transaction(conn: Any) -> Generator[Any, None, None]:
             conn.execute("RELEASE SAVEPOINT bmlib_transaction")
             raise
         conn.execute("RELEASE SAVEPOINT bmlib_transaction")
-        conn.commit()
         return
 
     if is_sqlite:

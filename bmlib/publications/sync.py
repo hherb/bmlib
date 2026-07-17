@@ -27,7 +27,7 @@ from collections.abc import Callable
 from datetime import date, timedelta
 from typing import Any
 
-from bmlib.db import execute, fetch_all
+from bmlib.db import execute, fetch_all, transaction
 from bmlib.publications.fetchers.registry import get_fetcher, source_names
 from bmlib.publications.models import (
     FetchedRecord,
@@ -196,23 +196,28 @@ def _upsert_download_day(
     status: str,
     record_count: int,
 ) -> None:
-    """Atomically insert or update a download_days row."""
+    """Insert or update a download_days row.
+
+    Runs inside the caller's per-day transaction (see :func:`sync`), so the
+    day's status commits atomically with the day's records; commits itself
+    only when called with no transaction open.
+    """
     day_str = day.isoformat()
     from datetime import UTC, datetime
 
     now = datetime.now(tz=UTC).isoformat()
-    execute(
-        conn,
-        "INSERT INTO download_days (source, date, status, record_count, downloaded_at,"
-        " last_verified_at) VALUES (?, ?, ?, ?, ?, ?)"
-        " ON CONFLICT (source, date) DO UPDATE SET"
-        "   status = excluded.status,"
-        "   record_count = excluded.record_count,"
-        "   downloaded_at = excluded.downloaded_at,"
-        "   last_verified_at = excluded.last_verified_at",
-        (source, day_str, status, record_count, now, now),
-    )
-    conn.commit()
+    with transaction(conn):
+        execute(
+            conn,
+            "INSERT INTO download_days (source, date, status, record_count, downloaded_at,"
+            " last_verified_at) VALUES (?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (source, date) DO UPDATE SET"
+            "   status = excluded.status,"
+            "   record_count = excluded.record_count,"
+            "   downloaded_at = excluded.downloaded_at,"
+            "   last_verified_at = excluded.last_verified_at",
+            (source, day_str, status, record_count, now, now),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +278,10 @@ def sync(
         unpacked as ``**kwargs`` when calling the fetcher.  Supersedes
         *email* and *api_keys* when provided.
     on_record:
-        Optional callback invoked with each :class:`FetchedRecord`.
+        Optional callback invoked with each :class:`FetchedRecord` as the
+        fetcher streams it — *before* the record is stored, so the callback
+        must not expect to read the record back from the database. Records
+        are stored in one batch per day after the fetch completes.
     on_progress:
         Optional callback invoked with progress updates.
     recheck_days:
@@ -345,21 +353,15 @@ def sync(
                 day_added = 0
                 day_merged = 0
                 day_failed = 0
+                day_records: list[FetchedRecord] = []
 
                 def handle_record(record: FetchedRecord) -> None:
-                    nonlocal day_added, day_merged, day_failed
-                    try:
-                        pub = _record_to_publication(record)
-                        fts = _record_to_fulltext_sources(record)
-                        result = store_publication(conn, pub, fulltext_sources=fts)
-                        if result == "added":
-                            day_added += 1
-                        elif result == "merged":
-                            day_merged += 1
-                    except Exception as exc:
-                        day_failed += 1
-                        logger.error("Failed to store record from %s: %s", source, exc)
-
+                    # Buffer only — the store happens after the fetch so the
+                    # day's write transaction never spans network I/O. The
+                    # whole day is held in memory (typically a few thousand
+                    # records, tens of MB with abstracts); if a source ever
+                    # delivers far larger days, flush in chunks here.
+                    day_records.append(record)
                     if on_record is not None:
                         on_record(record)
 
@@ -380,16 +382,41 @@ def sync(
                     fetch_result = FetchResult(
                         source=source,
                         date=day.isoformat(),
-                        record_count=day_added + day_merged,
+                        record_count=len(day_records),
                         status="failed",
                         error=str(exc),
                     )
 
-                # All fetchers use "completed" or "failed" as status strings
-                status = fetch_result.status if fetch_result.status == "failed" else "completed"
-                record_count = day_added + day_merged
+                # One transaction per day: each store_publication call joins
+                # it (savepoint) instead of committing, so a day of thousands
+                # of records costs a single commit/fsync rather than one per
+                # statement — and because records were buffered during the
+                # fetch, SQLite's write lock is held only for the store loop,
+                # not for the network-bound fetch. A record that fails to
+                # store rolls back to its own savepoint without losing the
+                # batch, and the day-status row commits atomically with the
+                # records. Should writing the day-status row itself fail, the
+                # whole day rolls back and the error propagates — the day is
+                # left unrecorded and simply retried on the next run.
+                with transaction(conn):
+                    for record in day_records:
+                        try:
+                            pub = _record_to_publication(record)
+                            fts = _record_to_fulltext_sources(record)
+                            result = store_publication(conn, pub, fulltext_sources=fts)
+                            if result == "added":
+                                day_added += 1
+                            elif result == "merged":
+                                day_merged += 1
+                        except Exception as exc:
+                            day_failed += 1
+                            logger.error("Failed to store record from %s: %s", source, exc)
 
-                _upsert_download_day(conn, source, day, status, record_count)
+                    # All fetchers use "completed" or "failed" as status strings
+                    status = fetch_result.status if fetch_result.status == "failed" else "completed"
+                    record_count = day_added + day_merged
+
+                    _upsert_download_day(conn, source, day, status, record_count)
 
                 total_added += day_added
                 total_merged += day_merged

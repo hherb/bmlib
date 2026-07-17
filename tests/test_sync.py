@@ -226,6 +226,107 @@ class TestSync:
         assert row["status"] == "completed"
         assert row["record_count"] == 2
 
+    def test_sync_commits_once_per_day(self):
+        """A day's records must be written in one batch commit, not one per record."""
+        conn = _fresh_conn()
+        yesterday = date.today() - timedelta(days=1)
+
+        records = [_sample_raw_record(doi=f"10.1234/batch.{i:03d}") for i in range(5)]
+        fake_fetcher = _make_fake_fetcher(records)
+
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        try:
+            report = sync(
+                conn,
+                sources=["test_source"],
+                date_from=yesterday,
+                date_to=yesterday,
+                email="test@example.com",
+                _fetcher_override={"test_source": fake_fetcher},
+            )
+        finally:
+            conn.set_trace_callback(None)
+
+        assert report.records_added == 5
+        commits = [s for s in statements if s.strip().upper().startswith("COMMIT")]
+        assert len(commits) == 1  # records + download_days row, one commit per day
+
+    def test_sync_holds_no_transaction_during_fetch(self):
+        """The day's write transaction must not span the network-bound fetch.
+
+        Records are buffered while the fetcher streams and stored afterwards
+        in one short transaction, so SQLite's write lock is never held across
+        network I/O and rate-limit sleeps.
+        """
+        conn = _fresh_conn()
+        yesterday = date.today() - timedelta(days=1)
+        records = [_sample_raw_record(doi=f"10.1234/lock.{i:03d}") for i in range(3)]
+
+        in_txn_during_fetch: list[bool] = []
+
+        def probing_fetcher(client, target_date, *, on_record, on_progress=None, **kwargs):
+            for rec in records:
+                on_record(rec)
+                in_txn_during_fetch.append(conn.in_transaction)
+            return FetchResult(
+                source="test_source",
+                date=target_date.isoformat(),
+                record_count=len(records),
+                status="completed",
+            )
+
+        report = sync(
+            conn,
+            sources=["test_source"],
+            date_from=yesterday,
+            date_to=yesterday,
+            email="test@example.com",
+            _fetcher_override={"test_source": probing_fetcher},
+        )
+
+        assert report.records_added == 3
+        assert not any(in_txn_during_fetch)
+
+    def test_sync_failing_record_does_not_corrupt_batch(self):
+        """A record that fails to store must not take the rest of the day with it."""
+        conn = _fresh_conn()
+        yesterday = date.today() - timedelta(days=1)
+
+        bad = _sample_raw_record(doi="10.1234/fail.bad")
+        bad.title = None  # violates publications.title NOT NULL
+        records = [
+            _sample_raw_record(doi="10.1234/fail.001"),
+            bad,
+            _sample_raw_record(doi="10.1234/fail.002"),
+        ]
+        fake_fetcher = _make_fake_fetcher(records)
+
+        report = sync(
+            conn,
+            sources=["test_source"],
+            date_from=yesterday,
+            date_to=yesterday,
+            email="test@example.com",
+            _fetcher_override={"test_source": fake_fetcher},
+        )
+
+        assert report.records_added == 2
+        assert report.records_failed == 1
+        assert get_publication_by_doi(conn, "10.1234/fail.001") is not None
+        assert get_publication_by_doi(conn, "10.1234/fail.002") is not None
+        assert get_publication_by_doi(conn, "10.1234/fail.bad") is None
+
+        from bmlib.db import fetch_one
+
+        row = fetch_one(
+            conn,
+            "SELECT * FROM download_days WHERE source = ? AND date = ?",
+            ("test_source", yesterday.isoformat()),
+        )
+        assert row is not None
+        assert row["record_count"] == 2
+
     def test_sync_skips_completed_days(self):
         """sync should skip completed days that are not today."""
         conn = _fresh_conn()
