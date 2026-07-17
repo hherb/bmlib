@@ -29,9 +29,17 @@ from bmlib.fulltext.models import (
     JATSReferenceInfo,
     JATSTableInfo,
 )
+from bmlib.fulltext.pdf_converter import (
+    ConversionResult,
+    PDFConverter,
+    PyMuPDFConverter,
+    get_converter,
+    list_converters,
+)
 from bmlib.fulltext.service import FullTextError, FullTextService
 
 __all__ = [
+    "ConversionResult",
     "FullTextCache",
     "FullTextError",
     "FullTextResult",
@@ -45,4 +53,8 @@ __all__ = [
     "JATSParser",
     "JATSReferenceInfo",
     "JATSTableInfo",
+    "PDFConverter",
+    "PyMuPDFConverter",
+    "get_converter",
+    "list_converters",
 ]

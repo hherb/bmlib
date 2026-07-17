@@ -45,6 +45,7 @@ import time
 from typing import Any
 
 from bmlib.llm import LLMClient, LLMMessage, LLMResponse
+from bmlib.llm.json_repair import extract_and_repair_json
 from bmlib.llm.utils import extract_json
 from bmlib.templates import TemplateEngine
 
@@ -256,5 +257,13 @@ class BaseAgent:
                 return json.loads(candidate)
             except json.JSONDecodeError:
                 pass
+
+        # Last resort: repair common LLM JSON defects (single quotes, trailing
+        # commas, truncation, unquoted keys) after extracting the JSON span.
+        try:
+            repaired, _ = extract_and_repair_json(text)
+            return json.loads(repaired)
+        except (ValueError, json.JSONDecodeError):
+            pass
 
         raise ValueError(f"Could not parse JSON from LLM response: {text[:200]!r}")
