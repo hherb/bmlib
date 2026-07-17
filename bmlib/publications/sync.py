@@ -278,7 +278,10 @@ def sync(
         unpacked as ``**kwargs`` when calling the fetcher.  Supersedes
         *email* and *api_keys* when provided.
     on_record:
-        Optional callback invoked with each :class:`FetchedRecord`.
+        Optional callback invoked with each :class:`FetchedRecord` as the
+        fetcher streams it — *before* the record is stored, so the callback
+        must not expect to read the record back from the database. Records
+        are stored in one batch per day after the fetch completes.
     on_progress:
         Optional callback invoked with progress updates.
     recheck_days:
@@ -354,7 +357,10 @@ def sync(
 
                 def handle_record(record: FetchedRecord) -> None:
                     # Buffer only — the store happens after the fetch so the
-                    # day's write transaction never spans network I/O.
+                    # day's write transaction never spans network I/O. The
+                    # whole day is held in memory (typically a few thousand
+                    # records, tens of MB with abstracts); if a source ever
+                    # delivers far larger days, flush in chunks here.
                     day_records.append(record)
                     if on_record is not None:
                         on_record(record)
@@ -389,7 +395,9 @@ def sync(
                 # not for the network-bound fetch. A record that fails to
                 # store rolls back to its own savepoint without losing the
                 # batch, and the day-status row commits atomically with the
-                # records.
+                # records. Should writing the day-status row itself fail, the
+                # whole day rolls back and the error propagates — the day is
+                # left unrecorded and simply retried on the next run.
                 with transaction(conn):
                     for record in day_records:
                         try:

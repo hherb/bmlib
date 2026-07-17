@@ -276,6 +276,79 @@ class TestIndustryCOIDetection:
         assert ft is True
         assert industry is True
 
+    def test_non_industry_employee_not_flagged(self):
+        # "Employee of" a government body is a genuine disclosure but not an
+        # industry tie.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            '<article><back><fn-group><fn fn-type="COI-statement"><p>JW is an '
+            "employee of the National Institutes of Health.</p></fn>"
+            "</fn-group></back></article>"
+        )
+        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
+            client, _epmc_record(), score=0, indicators=[]
+        )
+        assert ft is True
+        assert industry is False
+
+    def test_academic_employee_not_flagged(self):
+        # University employment disclosed in a COI statement is not industry.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            '<article><back><fn-group><fn fn-type="COI-statement"><p>MK is an '
+            "employee of the University of Melbourne.</p></fn>"
+            "</fn-group></back></article>"
+        )
+        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
+            client, _epmc_record(), score=0, indicators=[]
+        )
+        assert ft is True
+        assert industry is False
+
+    def test_editorial_advisory_board_not_flagged(self):
+        # Journal editorial advisory board membership is not an industry tie.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            '<article><back><fn-group><fn fn-type="COI-statement"><p>AB serves on '
+            "the editorial advisory board of the Journal of Cardiology.</p></fn>"
+            "</fn-group></back></article>"
+        )
+        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
+            client, _epmc_record(), score=0, indicators=[]
+        )
+        assert ft is True
+        assert industry is False
+
+    def test_industry_tie_alongside_non_industry_employment_still_flagged(self):
+        # The non-industry guard must not swallow a genuine industry tie in
+        # the same statement.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            '<article><back><fn-group><fn fn-type="COI-statement"><p>JW is an '
+            "employee of the National Institutes of Health. TR has served on the "
+            "advisory board of AcmePharma.</p></fn></fn-group></back></article>"
+        )
+        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
+            client, _epmc_record(), score=0, indicators=[]
+        )
+        assert ft is True
+        assert industry is True
+
+    def test_single_quoted_jats_attribute_detected(self):
+        # JATS attributes may be single-quoted; the tagged-section route must
+        # still find the COI container. (This statement carries no COI cue
+        # phrase, so the fallback-window route would never scan it.)
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><back><fn-group><fn fn-type='COI-statement'><p>Dr X has "
+            "served as a consultant for Pfizer.</p></fn></fn-group></back></article>"
+        )
+        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
+            client, _epmc_record(), score=0, indicators=[]
+        )
+        assert ft is True
+        assert industry is True
+
     def test_no_full_text_means_no_industry_signal(self):
         # Text-derived industry detection requires the full text; an abstract
         # alone (rarely carrying a real COI statement) must not trigger it.

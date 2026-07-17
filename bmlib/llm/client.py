@@ -361,6 +361,8 @@ def _provider_supports_tools(provider: BaseProvider) -> bool:
 # ---------------------------------------------------------------------------
 
 _global_client: LLMClient | None = None
+# Non-reentrant lock, held while LLMClient() is constructed — nothing reached
+# from LLMClient.__init__ may call get_llm_client(), or first use deadlocks.
 _client_lock = threading.Lock()
 
 

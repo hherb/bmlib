@@ -121,9 +121,11 @@ _COI_PATTERNS = [
 
 # ---- COI section extraction ----
 # JATS containers that hold the COI/disclosure statement: <fn fn-type="COI-statement">,
-# <sec sec-type="conflict">, <notes notes-type="COI-statement">, and case variants.
+# <sec sec-type="conflict">, <notes notes-type="COI-statement">, case variants, and
+# either attribute quoting style (\2 pins the closing quote to the opening one).
 _COI_SECTION_RE = re.compile(
-    r"<(fn|sec|notes)\b[^>]*-type=\"[^\"]*(?:coi|conflict|competing)[^\"]*\"[^>]*>(.*?)</\1>",
+    r"<(fn|sec|notes)\b[^>]*-type=([\"'])[^\"']*(?:coi|conflict|competing)[^\"']*\2"
+    r"[^>]*>(.*?)</\1>",
     re.IGNORECASE | re.DOTALL,
 )
 # Sections whose <title> names conflicts/competing interests but carry no typed attribute.
@@ -145,6 +147,21 @@ _COI_CUE_RE = re.compile("|".join(re.escape(p) for p in _COI_PATTERNS))
 _NEGATION_RE = re.compile(r"\b(?:no|none|not|neither|nor|never|without|den(?:y|ies|ied))\b")
 _SENTENCE_SPLIT_RE = re.compile(r"[.;]")
 
+# Otherwise-industry phrases in a clearly non-industry context: being an
+# employee of a university, hospital, or government body, or sitting on an
+# editorial/community/safety advisory board, is a genuine disclosure but not
+# an industry tie. Matched spans are blanked before keyword matching, so the
+# rest of the sentence can still disclose a real industry relationship.
+# Curated employer nouns only — a generic word like "institute" would excuse
+# industry bodies such as the Novartis Institutes for BioMedical Research.
+_NON_INDUSTRY_CONTEXT_RE = re.compile(
+    r"employees? of (?:the |a |an )?(?:\w+ )?"
+    r"(?:universit\w*|hospitals?|colleges?|schools?|governments?|ministr\w*"
+    r"|national institutes of health|public health)"
+    r"|(?:editorial|community|data safety|safety) advisory board"
+    r"|advisory board of (?:the |this )?journal"
+)
+
 
 def _extract_coi_text(full_text: str) -> str:
     """Return the COI/disclosure portion of *full_text*, tag-stripped and lowercased.
@@ -153,8 +170,13 @@ def _extract_coi_text(full_text: str) -> str:
     following each COI cue phrase (see :data:`_COI_PATTERNS`) when the text
     carries no tagged section. Returns an empty string when no COI-like
     region is found.
+
+    Known limitation: a fallback window is a fixed span, so it can bleed past
+    the end of a short disclosure into whatever follows (acknowledgements,
+    references). Accepted trade-off, matched by the moderate
+    :data:`TEXT_INDUSTRY_CONFIDENCE` given to text-derived signals.
     """
-    sections = [m.group(2) for m in _COI_SECTION_RE.finditer(full_text)]
+    sections = [m.group(3) for m in _COI_SECTION_RE.finditer(full_text)]
     sections += [m.group(1) for m in _COI_TITLED_SEC_RE.finditer(full_text)]
     if sections:
         return _TAG_RE.sub(" ", " ".join(sections)).lower()
@@ -172,8 +194,18 @@ def _discloses_industry_ties(coi_text: str) -> bool:
     enumerated denial ("none of the authors served as a consultant for …")
     is not misread as a disclosure. A genuine disclosure alongside a denial
     sentence still counts, since sentences are scored independently.
+    Clearly non-industry contexts (see :data:`_NON_INDUSTRY_CONTEXT_RE` —
+    university/government employment, editorial boards) are blanked out
+    before matching, so they neither trigger a sentence nor mask an industry
+    tie disclosed alongside them.
+
+    This is keyword matching, not entity recognition: an unlisted
+    non-industry employer ("employee of the World Bank") still flags. That
+    residual fuzziness is why text-derived signals carry only
+    :data:`TEXT_INDUSTRY_CONFIDENCE`.
     """
     for sentence in _SENTENCE_SPLIT_RE.split(coi_text):
+        sentence = _NON_INDUSTRY_CONTEXT_RE.sub(" ", sentence)
         if any(kw in sentence for kw in _INDUSTRY_COI_KEYWORDS) and not _NEGATION_RE.search(
             sentence
         ):

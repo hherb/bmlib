@@ -311,7 +311,9 @@ class AnthropicProvider(BaseProvider):
 
         Unknown model ids (typically models newer than the pricing table)
         are billed at the fallback (Sonnet) rates; a warning is logged once
-        per model so estimated cost accounting is visible rather than silent.
+        per model per provider instance so estimated cost accounting is
+        visible rather than silent. The warned-set is not lock-guarded: a
+        concurrent first call may log the warning twice, which is harmless.
         """
         pricing = self.MODEL_PRICING.get(model)
         if pricing is None:
