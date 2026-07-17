@@ -265,14 +265,20 @@ class OpenAICompatibleProvider(BaseProvider):
                         ),
                     )
                 )
-            if models:
-                self._models_cache = models
-                self._cache_timestamp = time.time()
-                return models
         except Exception as e:
+            # Transient failure: serve the fallback list WITHOUT caching it,
+            # so the next call retries the API.
             logger.warning("Failed to fetch models from %s API: %s", self.DISPLAY_NAME, e)
+            return list(self.FALLBACK_MODELS)
 
-        return list(self.FALLBACK_MODELS)
+        # The API answered. An empty list is a valid (if unhelpful) answer —
+        # cache the fallback for the TTL rather than re-hitting the API on
+        # every call.
+        if not models:
+            models = list(self.FALLBACK_MODELS)
+        self._models_cache = models
+        self._cache_timestamp = time.time()
+        return models
 
     # --- Connection test ---
 

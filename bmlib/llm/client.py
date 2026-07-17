@@ -35,6 +35,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+import threading
 
 from bmlib.llm.data_types import (
     EmbeddingResponse,
@@ -360,17 +361,23 @@ def _provider_supports_tools(provider: BaseProvider) -> bool:
 # ---------------------------------------------------------------------------
 
 _global_client: LLMClient | None = None
+_client_lock = threading.Lock()
 
 
 def get_llm_client() -> LLMClient:
-    """Return the global :class:`LLMClient` singleton (created on first call)."""
+    """Return the global :class:`LLMClient` singleton (created on first call).
+
+    Thread-safe: concurrent first calls create exactly one client.
+    """
     global _global_client
-    if _global_client is None:
-        _global_client = LLMClient()
-    return _global_client
+    with _client_lock:
+        if _global_client is None:
+            _global_client = LLMClient()
+        return _global_client
 
 
 def reset_llm_client() -> None:
     """Discard the global :class:`LLMClient` singleton so it is re-created on next use."""
     global _global_client
-    _global_client = None
+    with _client_lock:
+        _global_client = None

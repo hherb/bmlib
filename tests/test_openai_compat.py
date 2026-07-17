@@ -214,3 +214,52 @@ class TestConnectionTest:
         ok, msg = p.test_connection()
         assert ok is False
         assert "Connection refused" in msg
+
+
+class TestEmptyModelListCaching:
+    """A successful-but-empty API model list must not be re-queried every call."""
+
+    def _empty_client(self):
+        calls = {"n": 0}
+        mock_client = MagicMock()
+
+        def _list():
+            calls["n"] += 1
+            resp = MagicMock()
+            resp.data = []
+            return resp
+
+        mock_client.models.list.side_effect = lambda: _list()
+        return mock_client, calls
+
+    def test_empty_list_result_is_cached(self, StubProvider):
+        p = StubProvider(api_key="k")
+        mock_client, calls = self._empty_client()
+        p._client = mock_client
+
+        first = p.list_models()
+        second = p.list_models()
+
+        assert first == list(p.FALLBACK_MODELS)
+        assert second == first
+        assert calls["n"] == 1  # second call served from cache
+
+    def test_force_refresh_bypasses_cached_empty_result(self, StubProvider):
+        p = StubProvider(api_key="k")
+        mock_client, calls = self._empty_client()
+        p._client = mock_client
+
+        p.list_models()
+        p.list_models(force_refresh=True)
+        assert calls["n"] == 2
+
+    def test_api_error_is_not_cached(self, StubProvider):
+        # A transient failure must be retried on the next call, not cached.
+        p = StubProvider(api_key="k")
+        mock_client = MagicMock()
+        mock_client.models.list.side_effect = Exception("API down")
+        p._client = mock_client
+
+        assert p.list_models() == list(p.FALLBACK_MODELS)
+        assert p.list_models() == list(p.FALLBACK_MODELS)
+        assert mock_client.models.list.call_count == 2

@@ -573,3 +573,24 @@ class TestFetchOpenAlex:
         assert result.record_count == 1  # one record from first page
         assert "429" in result.error
         assert len(records) == 1
+
+
+class TestMetaNullGuard:
+    """A "meta": null page must end pagination, not crash the fetch."""
+
+    def test_null_meta_completes_fetch(self):
+        raw = _make_raw_work()
+        response = {"meta": None, "results": [raw]}
+        client = _mock_client([response])
+        records = []
+
+        result = fetch_openalex(
+            client,
+            date(2024, 6, 15),
+            on_record=records.append,
+            email="test@example.com",
+        )
+
+        assert result.status == "completed"
+        assert result.record_count == 1
+        assert len(records) == 1

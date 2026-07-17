@@ -94,7 +94,7 @@ bmlib/
 - **`agents/`** — `BaseAgent` class for LLM-driven tasks. Provides `chat()`, `chat_json()` (with retry), `render_template()`, and message helpers.
 - **`quality/`** — 3-tier quality assessment: (1) free metadata classification, (2) cheap LLM classifier, (3) deep LLM assessment. Uses CEBM evidence hierarchy for quality tiers.
 - **`transparency/`** — Queries multiple APIs to compute a transparency score (0-100) covering funding, COI, data availability, trial registration, and outcome switching.
-- **`publications/`** — Publication ingestion from multiple sources (PubMed, bioRxiv, medRxiv, OpenAlex) with deduplication by DOI/PMID, merge-on-upsert, and date-range sync tracking.
+- **`publications/`** — Publication ingestion from multiple sources (PubMed, bioRxiv, medRxiv, OpenAlex) with deduplication by DOI/PMID, merge-on-upsert, and date-range sync tracking. Note: the storage layer is currently SQLite-specific (`?` placeholders, `ON CONFLICT`, `cur.lastrowid`) even though `db/` also supports PostgreSQL.
 - **`fulltext/`** — 3-tier full-text retrieval (Europe PMC XML → Unpaywall → DOI resolution) with JATS XML parsing and disk-based caching.
 
 ## Coding Conventions

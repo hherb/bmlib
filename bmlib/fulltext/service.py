@@ -25,14 +25,12 @@ Tier 3:  DOI resolution -> publisher website URL
 
 from __future__ import annotations
 
-import hashlib
 import logging
-import re
 from urllib.parse import quote
 
 import httpx
 
-from bmlib.fulltext.cache import FullTextCache
+from bmlib.fulltext.cache import FullTextCache, sanitize_identifier
 from bmlib.fulltext.jats_parser import JATSParser
 from bmlib.fulltext.models import FullTextResult, FullTextSourceEntry
 
@@ -49,17 +47,9 @@ class FullTextError(Exception):
     """Error during full-text retrieval."""
 
 
-def _sanitize_identifier(raw: str) -> str:
-    """Turn a DOI or other identifier into a safe, collision-free filename.
-
-    A readable prefix is kept for debuggability, but because many distinct
-    identifiers sanitise to the same string (every character outside
-    ``[\\w.\\-]`` maps to ``_``), a short hash of the *raw* identifier is
-    appended so two different identifiers can never share a cache file.
-    """
-    safe = re.sub(r"[^\w.\-]", "_", raw)
-    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
-    return f"{safe}_{digest}"
+# Canonical implementation lives in bmlib.fulltext.cache so the cache can
+# apply the same scheme as a defense in depth for direct callers.
+_sanitize_identifier = sanitize_identifier
 
 
 def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
