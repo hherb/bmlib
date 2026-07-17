@@ -16,6 +16,7 @@ hold the full story.
 | ✅ Done | Seven providers | Anthropic, OpenAI, Ollama, OpenAI-compatible servers, DeepSeek, Mistral, Gemini |
 | ✅ Done | Thread-safe token tracking | `TokenTracker` singleton with `threading.Lock()`, `reset_*()` for tests |
 | ⬜ Planned | Defensive `list_models()` cache | Issue #12 — cached model list returned by reference; caller mutation corrupts the cache. Return a copy or store a tuple |
+| ⬜ Planned | Consolidate JSON extraction | Issue #17 — `llm/utils.py::extract_json` and `llm/json_repair.py::extract_and_repair_json` duplicate span-location logic; unify behind one locator (fold into the Phase 1 BaseAgent work) |
 | **Agents (`bmlib.agents`)** | | |
 | ✅ Done | `BaseAgent` | `chat()`, `chat_json()` with retry and truncation fail-fast, template rendering, message helpers |
 | **Templates (`bmlib.templates`)** | | |
@@ -35,7 +36,7 @@ hold the full story.
 | ✅ Done | 3-tier retrieval | Europe PMC XML → Unpaywall → DOI resolution, with disk-based caching |
 | ✅ Done | JATS XML parser | JATS → structured `JATSArticle` data |
 | **Quality & maintenance** | | |
-| ✅ Done | Test suite | 408 tests; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services |
+| ✅ Done | Test suite | 540 tests; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services |
 | ✅ Done | Reference manual | `docs/manual/` — one page per module |
 | ⬜ Planned | Documentation refresh for 0.3.0 | README version string, `transaction()` semantics, sync buffering, industry-COI — see HANDOVER.md, first task |
 | ⬜ Planned | Release 0.3.0 | Cut the release once the CHANGELOG `Unreleased` section and documentation are in sync |

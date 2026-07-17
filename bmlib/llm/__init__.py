@@ -35,18 +35,44 @@ from bmlib.llm.data_types import (
     LLMToolCall,
     LLMToolDefinition,
 )
+from bmlib.llm.json_repair import (
+    JSONRepairError,
+    extract_and_repair_json,
+    repair_json,
+    safe_json_loads,
+)
+from bmlib.llm.text_utils import (
+    TextChunk,
+    TextChunker,
+    chunk_text,
+    combine_title_and_text,
+    get_text_with_priority,
+    process_with_map_reduce,
+    process_with_rolling_summary,
+)
 from bmlib.llm.token_tracker import TokenTracker, get_token_tracker, reset_token_tracker
 
 __all__ = [
     "EmbeddingResponse",
+    "JSONRepairError",
     "LLMClient",
     "LLMMessage",
     "LLMResponse",
     "LLMToolCall",
     "LLMToolDefinition",
+    "TextChunk",
+    "TextChunker",
     "TokenTracker",
+    "chunk_text",
+    "combine_title_and_text",
+    "extract_and_repair_json",
     "get_llm_client",
+    "get_text_with_priority",
     "get_token_tracker",
+    "process_with_map_reduce",
+    "process_with_rolling_summary",
+    "repair_json",
     "reset_llm_client",
     "reset_token_tracker",
+    "safe_json_loads",
 ]

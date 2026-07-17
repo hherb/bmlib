@@ -40,6 +40,27 @@ All notable changes to bmlib are documented here. The format is based on
   `EmbeddingResponse`).
 - db: nested `transaction()` blocks on SQLite are now composable (savepoint
   join; the outer block owns the commit).
+- llm: `bmlib.llm.json_repair` — repairs malformed LLM JSON (single quotes,
+  trailing/missing commas, unescaped control chars, truncation, unquoted
+  keys) via `repair_json()`, `safe_json_loads()`, `extract_and_repair_json()`.
+  `BaseAgent.parse_json()` now uses it as a last-resort fallback. Ported from
+  bmlibrarian.
+- llm: `bmlib.llm.text_utils` — boundary-aware text chunking (`TextChunk`,
+  `TextChunker`, `chunk_text`) that never drops text, plus map-reduce /
+  rolling-summary long-document processing and document-text helpers. Ported
+  and consolidated from bmlibrarian's two chunkers.
+- quality: `bmlib.quality.cochrane_models` and `cochrane_formatter` —
+  Cochrane-aligned nine-domain Risk-of-Bias models with judgement + rationale,
+  the full study-characteristics table, and Markdown/HTML renderers. A strict
+  superset of `BiasRisk`. Ported from bmlibrarian.
+- quality: `bmlib.quality.extractors` and `scoring_models` — rule-based
+  (LLM-free) study-type detection with exclusion-context guarding and
+  sample-size scoring, producing `DimensionScore` audit trails. Ported from
+  bmlibrarian's paper_weight.
+- fulltext: `bmlib.fulltext.pdf_converter` — pluggable PDF→text conversion
+  (`ConversionResult`, `PDFConverter`, `get_converter`, `list_converters`)
+  with a PyMuPDF backend behind the new optional `bmlib[pdf]` extra. Ported
+  from bmlibrarian.
 
 ### Fixed
 

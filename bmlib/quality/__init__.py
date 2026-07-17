@@ -23,6 +23,19 @@ Three-tier pipeline (cheapest first, escalating on demand):
 - **Tier 3**: Deep methodological assessment (capable model)
 """
 
+from bmlib.quality.cochrane_models import (
+    CochraneInterventions,
+    CochraneNotes,
+    CochraneOutcomes,
+    CochraneParticipants,
+    CochraneRiskOfBias,
+    CochraneStudyAssessment,
+    CochraneStudyCharacteristics,
+    RiskOfBiasItem,
+    RiskOfBiasJudgement,
+    create_default_cochrane_risk_of_bias,
+    create_default_risk_of_bias_item,
+)
 from bmlib.quality.data_models import (
     DESIGN_TO_SCORE,
     DESIGN_TO_TIER,
@@ -32,7 +45,12 @@ from bmlib.quality.data_models import (
     QualityTier,
     StudyDesign,
 )
+from bmlib.quality.extractors import (
+    extract_sample_size_dimension,
+    extract_study_type,
+)
 from bmlib.quality.manager import QualityManager
+from bmlib.quality.scoring_models import AssessmentDetail, DimensionScore
 
 __all__ = [
     "BiasRisk",
@@ -43,4 +61,21 @@ __all__ = [
     "StudyDesign",
     "DESIGN_TO_TIER",
     "DESIGN_TO_SCORE",
+    # Cochrane-aligned models
+    "CochraneInterventions",
+    "CochraneNotes",
+    "CochraneOutcomes",
+    "CochraneParticipants",
+    "CochraneRiskOfBias",
+    "CochraneStudyAssessment",
+    "CochraneStudyCharacteristics",
+    "RiskOfBiasItem",
+    "RiskOfBiasJudgement",
+    "create_default_cochrane_risk_of_bias",
+    "create_default_risk_of_bias_item",
+    # Rule-based extractors + audit-trail scoring models
+    "AssessmentDetail",
+    "DimensionScore",
+    "extract_sample_size_dimension",
+    "extract_study_type",
 ]

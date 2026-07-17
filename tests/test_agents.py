@@ -63,6 +63,22 @@ class TestParseJson:
         result = BaseAgent.parse_json(text)
         assert result == {"good": 1}
 
+    def test_repairs_trailing_comma(self):
+        # Trailing commas are invalid JSON; the repair fallback must recover.
+        result = BaseAgent.parse_json('{"a": 1, "b": 2,}')
+        assert result == {"a": 1, "b": 2}
+
+    def test_repairs_single_quotes_in_code_block(self):
+        # Single-quoted keys/values inside a code block must be repaired.
+        text = "```json\n{'design': 'rct', 'n': 120}\n```"
+        result = BaseAgent.parse_json(text)
+        assert result == {"design": "rct", "n": 120}
+
+    def test_repairs_truncated_response(self):
+        # A response cut off mid-object must be closed and parsed.
+        result = BaseAgent.parse_json('{"design": "rct", "scores": [1, 2')
+        assert result == {"design": "rct", "scores": [1, 2]}
+
     def test_message_helpers(self):
         sys = BaseAgent.system_msg("sys")
         usr = BaseAgent.user_msg("usr")
