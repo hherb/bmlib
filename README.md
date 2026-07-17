@@ -1,5 +1,7 @@
 # bmlib
 
+[![CI](https://github.com/hherb/bmlib/actions/workflows/ci.yml/badge.svg)](https://github.com/hherb/bmlib/actions/workflows/ci.yml)
+
 Shared Python library for biomedical literature tools — LLM abstraction, quality assessment, transparency analysis, full-text retrieval, publication ingestion, and database utilities.
 
 **Version:** 0.2.1 | **License:** AGPL-3.0-or-later | **Python:** >=3.11
