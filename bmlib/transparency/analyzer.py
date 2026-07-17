@@ -136,6 +136,14 @@ _TAG_RE = re.compile(r"<[^>]+>")
 # each COI cue phrase instead of the whole document, so industry phrases in
 # references or author affiliations are not misread as disclosures.
 _COI_FALLBACK_WINDOW = 1000
+_COI_CUE_RE = re.compile("|".join(re.escape(p) for p in _COI_PATTERNS))
+
+# Negation cues that turn an industry phrase into a denial ("none of the
+# authors served as a consultant for ... any company"). Scoped per sentence:
+# ICMJE-style disclosures routinely enumerate the relationship types they
+# deny, which would otherwise substring-match the disclosure keywords.
+_NEGATION_RE = re.compile(r"\b(?:no|none|not|neither|nor|never|without|den(?:y|ies|ied))\b")
+_SENTENCE_SPLIT_RE = re.compile(r"[.;]")
 
 
 def _extract_coi_text(full_text: str) -> str:
@@ -152,9 +160,25 @@ def _extract_coi_text(full_text: str) -> str:
         return _TAG_RE.sub(" ", " ".join(sections)).lower()
 
     text = _TAG_RE.sub(" ", full_text).lower()
-    cue_re = re.compile("|".join(re.escape(p) for p in _COI_PATTERNS))
-    windows = [text[m.start() : m.end() + _COI_FALLBACK_WINDOW] for m in cue_re.finditer(text)]
+    windows = [text[m.start() : m.end() + _COI_FALLBACK_WINDOW] for m in _COI_CUE_RE.finditer(text)]
     return " ".join(windows)
+
+
+def _discloses_industry_ties(coi_text: str) -> bool:
+    """Return True when a COI sentence discloses (not denies) industry ties.
+
+    A sentence counts only when it contains an industry disclosure phrase
+    (see :data:`_INDUSTRY_COI_KEYWORDS`) and no negation cue, so an
+    enumerated denial ("none of the authors served as a consultant for …")
+    is not misread as a disclosure. A genuine disclosure alongside a denial
+    sentence still counts, since sentences are scored independently.
+    """
+    for sentence in _SENTENCE_SPLIT_RE.split(coi_text):
+        if any(kw in sentence for kw in _INDUSTRY_COI_KEYWORDS) and not _NEGATION_RE.search(
+            sentence
+        ):
+            return True
+    return False
 
 
 # ---- Data availability patterns ----
@@ -428,8 +452,7 @@ class TransparencyAnalyzer:
         # within the COI/disclosure region to avoid false positives from
         # references or affiliations.
         if full_text_analyzed:
-            coi_text = _extract_coi_text(search_text)
-            industry_coi = any(kw in coi_text for kw in _INDUSTRY_COI_KEYWORDS)
+            industry_coi = _discloses_industry_ties(_extract_coi_text(search_text))
 
         # Data availability
         for pattern, level in _DATA_PATTERNS.items():
@@ -597,7 +620,7 @@ class TransparencyAnalyzer:
             return []
 
         # Strip XML/HTML markup so cue detection is not thrown off by tags.
-        abstract = re.sub(r"<[^>]+>", " ", results[0].get("abstractText") or "")
+        abstract = _TAG_RE.sub(" ", results[0].get("abstractText") or "")
 
         # Deduplicate while preserving order, normalizing to the canonical
         # upper-case form ClinicalTrials.gov uses.

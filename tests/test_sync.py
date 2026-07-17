@@ -252,6 +252,42 @@ class TestSync:
         commits = [s for s in statements if s.strip().upper().startswith("COMMIT")]
         assert len(commits) == 1  # records + download_days row, one commit per day
 
+    def test_sync_holds_no_transaction_during_fetch(self):
+        """The day's write transaction must not span the network-bound fetch.
+
+        Records are buffered while the fetcher streams and stored afterwards
+        in one short transaction, so SQLite's write lock is never held across
+        network I/O and rate-limit sleeps.
+        """
+        conn = _fresh_conn()
+        yesterday = date.today() - timedelta(days=1)
+        records = [_sample_raw_record(doi=f"10.1234/lock.{i:03d}") for i in range(3)]
+
+        in_txn_during_fetch: list[bool] = []
+
+        def probing_fetcher(client, target_date, *, on_record, on_progress=None, **kwargs):
+            for rec in records:
+                on_record(rec)
+                in_txn_during_fetch.append(conn.in_transaction)
+            return FetchResult(
+                source="test_source",
+                date=target_date.isoformat(),
+                record_count=len(records),
+                status="completed",
+            )
+
+        report = sync(
+            conn,
+            sources=["test_source"],
+            date_from=yesterday,
+            date_to=yesterday,
+            email="test@example.com",
+            _fetcher_override={"test_source": probing_fetcher},
+        )
+
+        assert report.records_added == 3
+        assert not any(in_txn_during_fetch)
+
     def test_sync_failing_record_does_not_corrupt_batch(self):
         """A record that fails to store must not take the rest of the day with it."""
         conn = _fresh_conn()

@@ -131,22 +131,24 @@ class TestTransparencyRisk:
         assert risk == TransparencyRisk.LOW
 
 
+def _epmc_record(abstract="", in_epmc="Y"):
+    """Build a minimal EuropePMC search-result envelope for _check_europepmc."""
+    return {
+        "resultList": {
+            "result": [
+                {
+                    "abstractText": abstract,
+                    "inEPMC": in_epmc,
+                    "source": "PMC",
+                    "pmcid": "PMC123",
+                }
+            ]
+        }
+    }
+
+
 class TestCheckEuropePMC:
     """Tests that COI/data-availability are read from full text, not abstract."""
-
-    def _epmc(self, in_epmc="Y", abstract=""):
-        return {
-            "resultList": {
-                "result": [
-                    {
-                        "abstractText": abstract,
-                        "inEPMC": in_epmc,
-                        "source": "PMC",
-                        "pmcid": "PMC123",
-                    }
-                ]
-            }
-        }
 
     def test_coi_detected_in_full_text(self):
         analyzer = TransparencyAnalyzer()
@@ -154,7 +156,7 @@ class TestCheckEuropePMC:
             "<article>The authors declare no conflict of interest.</article>"
         )
         coi, _level, score, _ind, ft, _ind_coi = analyzer._check_europepmc(
-            client, self._epmc(), score=0, indicators=[]
+            client, _epmc_record(), score=0, indicators=[]
         )
         assert coi is True
         assert ft is True
@@ -164,7 +166,7 @@ class TestCheckEuropePMC:
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient("<article>No disclosure section here.</article>")
         coi, _level, _score, _ind, ft, _ind_coi = analyzer._check_europepmc(
-            client, self._epmc(), score=0, indicators=[]
+            client, _epmc_record(), score=0, indicators=[]
         )
         assert coi is False  # full text scanned, explicitly absent
         assert ft is True
@@ -174,7 +176,7 @@ class TestCheckEuropePMC:
         # inEPMC == "N" so no full text is fetched, abstract has no COI signal.
         client = _FakeFullTextClient(None)
         coi, _level, _score, _ind, ft, _ind_coi = analyzer._check_europepmc(
-            client, self._epmc(in_epmc="N"), score=0, indicators=[]
+            client, _epmc_record(in_epmc="N"), score=0, indicators=[]
         )
         assert coi is None  # undeterminable, not "absent"
         assert ft is False
@@ -188,20 +190,6 @@ class TestIndustryCOIDetection:
     "speaker fees from Y") must still set industry_funding_detected.
     """
 
-    def _epmc(self, in_epmc="Y", abstract=""):
-        return {
-            "resultList": {
-                "result": [
-                    {
-                        "abstractText": abstract,
-                        "inEPMC": in_epmc,
-                        "source": "PMC",
-                        "pmcid": "PMC123",
-                    }
-                ]
-            }
-        }
-
     _TAGGED_COI_XML = (
         "<article><body><sec><title>Methods</title>"
         "<p>Participants were recruited via the hospital.</p></sec></body>"
@@ -214,7 +202,7 @@ class TestIndustryCOIDetection:
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(self._TAGGED_COI_XML)
         coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, self._epmc(), score=0, indicators=[]
+            client, _epmc_record(), score=0, indicators=[]
         )
         assert ft is True
         assert industry is True
@@ -226,7 +214,7 @@ class TestIndustryCOIDetection:
             "and serves on the advisory board of BioCorp.</p></article>"
         )
         _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, self._epmc(), score=0, indicators=[]
+            client, _epmc_record(), score=0, indicators=[]
         )
         assert ft is True
         assert industry is True
@@ -237,7 +225,7 @@ class TestIndustryCOIDetection:
             "<article>The authors declare no conflict of interest.</article>"
         )
         coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, self._epmc(), score=0, indicators=[]
+            client, _epmc_record(), score=0, indicators=[]
         )
         assert coi is True
         assert ft is True
@@ -254,10 +242,39 @@ class TestIndustryCOIDetection:
             "competing interests.</p></fn></fn-group></back></article>"
         )
         _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, self._epmc(), score=0, indicators=[]
+            client, _epmc_record(), score=0, indicators=[]
         )
         assert ft is True
         assert industry is False
+
+    def test_enumerated_denial_not_flagged(self):
+        # ICMJE-style disclosures often enumerate the relationship types they
+        # deny; the keywords appear but inside a negated sentence.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            '<article><back><fn-group><fn fn-type="COI-statement"><p>None of the '
+            "authors served as a consultant for, received speaker fees from, or "
+            "sat on the advisory board of any company.</p></fn></fn-group></back></article>"
+        )
+        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
+            client, _epmc_record(), score=0, indicators=[]
+        )
+        assert ft is True
+        assert industry is False
+
+    def test_mixed_disclosure_still_flagged(self):
+        # A denial sentence next to a genuine disclosure sentence must still flag.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            '<article><back><fn-group><fn fn-type="COI-statement"><p>Dr X is a '
+            "consultant for Pfizer. The remaining authors declare no competing "
+            "interests.</p></fn></fn-group></back></article>"
+        )
+        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
+            client, _epmc_record(), score=0, indicators=[]
+        )
+        assert ft is True
+        assert industry is True
 
     def test_no_full_text_means_no_industry_signal(self):
         # Text-derived industry detection requires the full text; an abstract
@@ -266,7 +283,7 @@ class TestIndustryCOIDetection:
         client = _FakeFullTextClient(None)
         _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
             client,
-            self._epmc(in_epmc="N", abstract="Conflict of interest: consultant for Pfizer."),
+            _epmc_record(in_epmc="N", abstract="Conflict of interest: consultant for Pfizer."),
             score=0,
             indicators=[],
         )
@@ -276,7 +293,7 @@ class TestIndustryCOIDetection:
     def test_analyze_ors_fulltext_signal_into_result(self, monkeypatch):
         import httpx
 
-        epmc_record = self._epmc()
+        epmc_record = _epmc_record()
         full_text = self._TAGGED_COI_XML
 
         class _Client:
@@ -341,12 +358,9 @@ class TestFindTrialIds:
     a review or pooled analysis merely cites (phrasings taken from real
     EuropePMC abstracts)."""
 
-    def _epmc(self, abstract):
-        return {"resultList": {"result": [{"abstractText": abstract}]}}
-
     def test_registered_rct_clinicaltrials_gov_phrasing_credited(self):
         analyzer = TransparencyAnalyzer()
-        epmc = self._epmc(
+        epmc = _epmc_record(
             "Funded by the National Institutes of Health; ClinicalTrials.gov number, NCT01206062."
         )
         assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == ["NCT01206062"]
@@ -354,7 +368,7 @@ class TestFindTrialIds:
     def test_registered_rct_label_form_credited(self):
         # "NCT number: NCT..." / "(NCT) Identified Number: NCT..." label forms.
         analyzer = TransparencyAnalyzer()
-        epmc = self._epmc(
+        epmc = _epmc_record(
             "Trial registration National Clinical Trial (NCT) Identified Number: NCT04088331."
         )
         assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == ["NCT04088331"]
@@ -362,7 +376,7 @@ class TestFindTrialIds:
     def test_two_linked_own_trials_credited(self):
         # A paper reporting its own two linked registrations (e.g. ROMANA 1/2).
         analyzer = TransparencyAnalyzer()
-        epmc = self._epmc(
+        epmc = _epmc_record(
             "Trial registration NCT identifiers: ROMANA 1: NCT01387269; ROMANA 2: NCT01387282."
         )
         result = analyzer._find_trial_ids(None, None, None, epmc=epmc)
@@ -371,7 +385,7 @@ class TestFindTrialIds:
     def test_review_listing_many_trials_not_credited(self):
         # A pooled analysis / review enumerating its constituent trials.
         analyzer = TransparencyAnalyzer()
-        epmc = self._epmc(
+        epmc = _epmc_record(
             "Trial registry name and numbers: ASCEND (NCT01416181), "
             "ADVANCE (NCT00906399), DECIDE (NCT01064401)."
         )
@@ -379,7 +393,7 @@ class TestFindTrialIds:
 
     def test_review_prose_listing_included_trials_not_credited(self):
         analyzer = TransparencyAnalyzer()
-        epmc = self._epmc(
+        epmc = _epmc_record(
             "We included five randomized controlled trials (NCT01111111, "
             "NCT02222222, NCT03333333, NCT04444444, NCT05555555) in the analysis."
         )
@@ -389,13 +403,13 @@ class TestFindTrialIds:
         # A single NCT mentioned with no registration cue is ambiguous; the
         # conservative choice is not to credit it as the paper's registration.
         analyzer = TransparencyAnalyzer()
-        epmc = self._epmc("Outcomes were compared across 20 high-volume centers (NCT03461341).")
+        epmc = _epmc_record("Outcomes were compared across 20 high-volume centers (NCT03461341).")
         assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == []
 
     def test_registration_cue_after_id_credited(self):
         # The cue may follow the id: "NCT…; registered at ClinicalTrials.gov".
         analyzer = TransparencyAnalyzer()
-        epmc = self._epmc(
+        epmc = _epmc_record(
             "This study (NCT01234567, registered at ClinicalTrials.gov) enrolled 400 patients."
         )
         assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == ["NCT01234567"]
@@ -404,20 +418,18 @@ class TestFindTrialIds:
         # NCT ids are conventionally upper-case but must match regardless of
         # case, and be returned in the canonical upper-case form.
         analyzer = TransparencyAnalyzer()
-        epmc = self._epmc("Trial registration: nct01206062.")
+        epmc = _epmc_record("Trial registration: nct01206062.")
         assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == ["NCT01206062"]
 
     def test_no_nct_returns_empty(self):
         analyzer = TransparencyAnalyzer()
-        assert analyzer._find_trial_ids(None, None, None, epmc=self._epmc("No trials here.")) == []
+        epmc = _epmc_record("No trials here.")
+        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == []
 
 
 class TestCheckTrialRegistration:
     """The registration credit (and downstream results check) must follow the
     own-vs-cited distinction."""
-
-    def _epmc(self, abstract):
-        return {"resultList": {"result": [{"abstractText": abstract}]}}
 
     def test_review_not_credited_registration_score(self):
         analyzer = TransparencyAnalyzer()
@@ -427,7 +439,7 @@ class TestCheckTrialRegistration:
                 # ClinicalTrials.gov results endpoint should never be reached.
                 raise AssertionError("results endpoint must not be queried for a review")
 
-        epmc = self._epmc("We included three trials (NCT01111111, NCT02222222, NCT03333333).")
+        epmc = _epmc_record("We included three trials (NCT01111111, NCT02222222, NCT03333333).")
         registered, compliant, score, indicators = analyzer._check_trial_registration(
             _Client(), pmid="123", doi=None, score=0, indicators=[], epmc=epmc
         )
@@ -442,7 +454,7 @@ class TestCheckTrialRegistration:
             def get(self, url, **kwargs):
                 return _FakeResponse(status_code=200, json_data={"hasResults": False})
 
-        epmc = self._epmc("ClinicalTrials.gov number, NCT01206062.")
+        epmc = _epmc_record("ClinicalTrials.gov number, NCT01206062.")
         registered, _compliant, score, _indicators = analyzer._check_trial_registration(
             _Client(), pmid="123", doi=None, score=0, indicators=[], epmc=epmc
         )
@@ -453,15 +465,12 @@ class TestCheckTrialRegistration:
 class TestDataAvailabilityPatterns:
     """Negated data-availability phrasing must not read as data sharing."""
 
-    def _epmc(self, abstract):
-        return {"resultList": {"result": [{"abstractText": abstract, "inEPMC": "N"}]}}
-
     def test_not_available_upon_request_is_not_available(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(None)
         _coi, level, score, _ind, _ft, _ind_coi = analyzer._check_europepmc(
             client,
-            self._epmc("The data are not available upon reasonable request."),
+            _epmc_record("The data are not available upon reasonable request.", in_epmc="N"),
             score=0,
             indicators=[],
         )
@@ -473,7 +482,9 @@ class TestDataAvailabilityPatterns:
         client = _FakeFullTextClient(None)
         _coi, level, score, _ind, _ft, _ind_coi = analyzer._check_europepmc(
             client,
-            self._epmc("Data are available from the authors upon reasonable request."),
+            _epmc_record(
+                "Data are available from the authors upon reasonable request.", in_epmc="N"
+            ),
             score=0,
             indicators=[],
         )
@@ -488,8 +499,9 @@ class TestDataAvailabilityPatterns:
         client = _FakeFullTextClient(None)
         _coi, level, score, _ind, _ft, _ind_coi = analyzer._check_europepmc(
             client,
-            self._epmc(
-                "Analysis code is available on GitHub; individual patient data are not available."
+            _epmc_record(
+                "Analysis code is available on GitHub; individual patient data are not available.",
+                in_epmc="N",
             ),
             score=0,
             indicators=[],

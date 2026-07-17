@@ -350,52 +350,59 @@ def sync(
                 day_added = 0
                 day_merged = 0
                 day_failed = 0
+                day_records: list[FetchedRecord] = []
 
                 def handle_record(record: FetchedRecord) -> None:
-                    nonlocal day_added, day_merged, day_failed
-                    try:
-                        pub = _record_to_publication(record)
-                        fts = _record_to_fulltext_sources(record)
-                        result = store_publication(conn, pub, fulltext_sources=fts)
-                        if result == "added":
-                            day_added += 1
-                        elif result == "merged":
-                            day_merged += 1
-                    except Exception as exc:
-                        day_failed += 1
-                        logger.error("Failed to store record from %s: %s", source, exc)
-
+                    # Buffer only — the store happens after the fetch so the
+                    # day's write transaction never spans network I/O.
+                    day_records.append(record)
                     if on_record is not None:
                         on_record(record)
+
+                try:
+                    fetch_result = fetcher(
+                        client,
+                        day,
+                        on_record=handle_record,
+                        on_progress=on_progress,
+                        **src_config,
+                    )
+                except Exception as exc:
+                    # A misconfigured source (e.g. a required kwarg like
+                    # OpenAlex's ``email`` not supplied) or a bug inside a
+                    # fetcher must not abort the whole multi-source run and
+                    # discard the report. Record it as a failed day and move on.
+                    logger.error("Fetcher for %s/%s raised: %s", source, day.isoformat(), exc)
+                    fetch_result = FetchResult(
+                        source=source,
+                        date=day.isoformat(),
+                        record_count=len(day_records),
+                        status="failed",
+                        error=str(exc),
+                    )
 
                 # One transaction per day: each store_publication call joins
                 # it (savepoint) instead of committing, so a day of thousands
                 # of records costs a single commit/fsync rather than one per
-                # statement. A record that fails to store rolls back to its
-                # own savepoint (see handle_record) without losing the batch,
-                # and the day-status row commits atomically with the records.
+                # statement — and because records were buffered during the
+                # fetch, SQLite's write lock is held only for the store loop,
+                # not for the network-bound fetch. A record that fails to
+                # store rolls back to its own savepoint without losing the
+                # batch, and the day-status row commits atomically with the
+                # records.
                 with transaction(conn):
-                    try:
-                        fetch_result = fetcher(
-                            client,
-                            day,
-                            on_record=handle_record,
-                            on_progress=on_progress,
-                            **src_config,
-                        )
-                    except Exception as exc:
-                        # A misconfigured source (e.g. a required kwarg like
-                        # OpenAlex's ``email`` not supplied) or a bug inside a
-                        # fetcher must not abort the whole multi-source run and
-                        # discard the report. Record it as a failed day and move on.
-                        logger.error("Fetcher for %s/%s raised: %s", source, day.isoformat(), exc)
-                        fetch_result = FetchResult(
-                            source=source,
-                            date=day.isoformat(),
-                            record_count=day_added + day_merged,
-                            status="failed",
-                            error=str(exc),
-                        )
+                    for record in day_records:
+                        try:
+                            pub = _record_to_publication(record)
+                            fts = _record_to_fulltext_sources(record)
+                            result = store_publication(conn, pub, fulltext_sources=fts)
+                            if result == "added":
+                                day_added += 1
+                            elif result == "merged":
+                                day_merged += 1
+                        except Exception as exc:
+                            day_failed += 1
+                            logger.error("Failed to store record from %s: %s", source, exc)
 
                     # All fetchers use "completed" or "failed" as status strings
                     status = fetch_result.status if fetch_result.status == "failed" else "completed"

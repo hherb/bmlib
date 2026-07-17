@@ -30,7 +30,10 @@ from urllib.parse import quote
 
 import httpx
 
-from bmlib.fulltext.cache import FullTextCache, sanitize_identifier
+# The sanitizer's canonical implementation lives in bmlib.fulltext.cache so
+# the cache can apply the same scheme as a defense in depth for direct callers.
+from bmlib.fulltext.cache import FullTextCache
+from bmlib.fulltext.cache import sanitize_identifier as _sanitize_identifier
 from bmlib.fulltext.jats_parser import JATSParser
 from bmlib.fulltext.models import FullTextResult, FullTextSourceEntry
 
@@ -45,11 +48,6 @@ TIMEOUT = 30.0
 
 class FullTextError(Exception):
     """Error during full-text retrieval."""
-
-
-# Canonical implementation lives in bmlib.fulltext.cache so the cache can
-# apply the same scheme as a defense in depth for direct callers.
-_sanitize_identifier = sanitize_identifier
 
 
 def _extract_free_pdf_url(result: dict[str, object]) -> str | None:

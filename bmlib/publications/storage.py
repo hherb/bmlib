@@ -26,11 +26,12 @@ supports PostgreSQL.
 
 Commit semantics: the public write functions (:func:`store_publication`,
 :func:`add_fulltext_source`) each run inside a :func:`bmlib.db.transaction`
-block. Called standalone they commit exactly once; called inside a
-caller-managed ``transaction(conn)`` they join it, leaving the commit — and
-the batch boundary — to the caller. Bulk ingestion (see
-:mod:`bmlib.publications.sync`) relies on this to batch a whole day of
-records into a single commit.
+block. Called with no transaction open on the connection they commit exactly
+once; when the connection is already inside a transaction — a caller-managed
+``transaction(conn)`` block, or pending auto-begun writes from an earlier
+bare ``execute()`` — they join it, leaving the commit (and the batch
+boundary) to the caller. Bulk ingestion (see :mod:`bmlib.publications.sync`)
+relies on this to batch a whole day of records into a single commit.
 """
 
 from __future__ import annotations
