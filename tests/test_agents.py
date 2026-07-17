@@ -74,6 +74,11 @@ class TestParseJson:
         result = BaseAgent.parse_json(text)
         assert result == {"design": "rct", "n": 120}
 
+    def test_repairs_truncated_response(self):
+        # A response cut off mid-object must be closed and parsed.
+        result = BaseAgent.parse_json('{"design": "rct", "scores": [1, 2')
+        assert result == {"design": "rct", "scores": [1, 2]}
+
     def test_message_helpers(self):
         sys = BaseAgent.system_msg("sys")
         usr = BaseAgent.user_msg("usr")

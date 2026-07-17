@@ -67,6 +67,22 @@ class TestRepairJson:
         repaired = repair_json('{key: "value", other: 5}')
         assert json.loads(repaired) == {"key": "value", "other": 5}
 
+    def test_missing_comma_between_object_properties(self):
+        repaired = repair_json('{"a": 1 "b": 2}')
+        assert json.loads(repaired) == {"a": 1, "b": 2}
+
+    def test_missing_comma_between_array_strings(self):
+        repaired = repair_json('["a" "b"]')
+        assert json.loads(repaired) == ["a", "b"]
+
+    def test_missing_comma_between_adjacent_objects(self):
+        repaired = repair_json('[{"x": 1} {"x": 2}]')
+        assert json.loads(repaired) == [{"x": 1}, {"x": 2}]
+
+    def test_control_char_in_string_escaped(self):
+        repaired = repair_json('{"a": "b\x01c"}')
+        assert json.loads(repaired) == {"a": "b\x01c"}
+
     def test_empty_string_raises_value_error(self):
         with pytest.raises(ValueError):
             repair_json("")
@@ -123,6 +139,26 @@ class TestExtractAndRepairJson:
         extracted, _ = extract_and_repair_json(response)
         assert json.loads(extracted) == {"score": 5}
 
+    def test_extracts_and_repairs_from_bare_fence(self):
+        response = '```\n{"a": 1,}\n```'
+        extracted, repaired = extract_and_repair_json(response)
+        assert json.loads(extracted) == {"a": 1}
+        assert repaired is True
+
+    def test_repairs_truncated_json_in_prose(self):
+        # Truncated output never balances; the extractor must still hand the
+        # span to the repairer, which closes it.
+        response = 'Result: {"a": 1, "b": [2'
+        extracted, repaired = extract_and_repair_json(response)
+        assert json.loads(extracted) == {"a": 1, "b": [2]}
+        assert repaired is True
+
     def test_no_json_raises_value_error(self):
         with pytest.raises(ValueError):
             extract_and_repair_json("no json here")
+
+    def test_exported_from_package(self):
+        # The public names must be importable from bmlib.llm directly.
+        from bmlib.llm import repair_json as pkg_repair_json
+
+        assert pkg_repair_json is repair_json

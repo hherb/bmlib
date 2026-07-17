@@ -26,6 +26,7 @@ giving a fully reproducible per-component audit trail.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 # Dimension names (the multi-dimensional evidence-weight vocabulary).
 DIMENSION_STUDY_DESIGN = "study_design"
@@ -63,7 +64,7 @@ class AssessmentDetail:
     evidence_text: str | None = None
     reasoning: str | None = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialise to a dict."""
         return {
             "dimension": self.dimension,
@@ -73,6 +74,18 @@ class AssessmentDetail:
             "evidence_text": self.evidence_text,
             "reasoning": self.reasoning,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AssessmentDetail:
+        """Build an :class:`AssessmentDetail` from a dict."""
+        return cls(
+            dimension=data["dimension"],
+            component=data["component"],
+            extracted_value=data.get("extracted_value"),
+            score_contribution=data["score_contribution"],
+            evidence_text=data.get("evidence_text"),
+            reasoning=data.get("reasoning"),
+        )
 
 
 @dataclass
@@ -109,10 +122,19 @@ class DimensionScore:
             )
         )
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialise to a dict, including all detail entries."""
         return {
             "dimension_name": self.dimension_name,
             "score": self.score,
             "details": [d.to_dict() for d in self.details],
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DimensionScore:
+        """Build a :class:`DimensionScore` from a dict produced by :meth:`to_dict`."""
+        return cls(
+            dimension_name=data["dimension_name"],
+            score=data["score"],
+            details=[AssessmentDetail.from_dict(d) for d in data.get("details", [])],
+        )

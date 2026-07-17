@@ -69,6 +69,24 @@ class TestScoringModels:
         assert d["dimension_name"] == "sample_size"
         assert len(d["details"]) == 1
 
+    def test_assessment_detail_round_trip(self):
+        detail = AssessmentDetail(
+            dimension="study_design",
+            component="study_type",
+            extracted_value="rct",
+            score_contribution=8.0,
+            evidence_text="randomized",
+            reasoning="matched",
+        )
+        assert AssessmentDetail.from_dict(detail.to_dict()) == detail
+
+    def test_dimension_score_round_trip(self):
+        dim = DimensionScore(dimension_name="sample_size", score=5.0)
+        dim.add_detail(component="extracted_n", value="450", contribution=5.0)
+        restored = DimensionScore.from_dict(dim.to_dict())
+        assert restored == dim
+        assert restored.details[0].extracted_value == "450"
+
 
 class TestSampleSize:
     def test_finds_n_equals(self):
@@ -109,6 +127,17 @@ class TestSignals:
 
     def test_ci_reporting_absent(self):
         assert has_ci_reporting("plain text without intervals") is False
+
+    def test_ci_reporting_decimal_range_detected(self):
+        assert has_ci_reporting("the hazard ratio was 0.81 (0.71-0.93)") is True
+        assert has_ci_reporting("effect size [1.10, 2.34]") is True
+
+    def test_citation_brackets_not_ci(self):
+        # Integer citation markers must not count as CI reporting.
+        assert has_ci_reporting("as shown previously [12, 15] the effect persists") is False
+
+    def test_year_range_not_ci(self):
+        assert has_ci_reporting("records from the registry (2010-2015) were included") is False
 
 
 class TestExclusionAndContext:
@@ -161,6 +190,31 @@ class TestExtractStudyType:
         result = extract_study_type(doc)
         assert get_extracted_study_type(result) == "unknown"
         assert result.score == 5.0
+
+    def test_infarction_not_classified_as_rct(self):
+        # "rct" must match whole words only — not the substring in "infarction".
+        doc = {"abstract": "Outcomes after myocardial infarction in a community registry."}
+        result = extract_study_type(doc)
+        assert get_extracted_study_type(result) == "unknown"
+
+    def test_rct_acronym_and_plural_match(self):
+        assert get_extracted_study_type(extract_study_type({"abstract": "An RCT of drug X"})) == (
+            "rct"
+        )
+        doc = {"abstract": "Twelve RCTs were pooled"}  # plural acronym
+        assert get_extracted_study_type(extract_study_type(doc)) == "rct"
+
+    def test_later_clean_occurrence_survives_excluded_first_one(self):
+        # The first "randomized trial" mention sits next to an exclusion
+        # phrase; the later clean mention must still classify as RCT.
+        doc = {
+            "abstract": (
+                "An earlier study without randomization mimicked a randomized trial. "
+                "Our subsequent well-conducted randomized trial enrolled 200 patients."
+            )
+        }
+        result = extract_study_type(doc)
+        assert get_extracted_study_type(result) == "rct"
 
 
 class TestExtractSampleSizeDimension:

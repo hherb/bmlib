@@ -174,40 +174,40 @@ class PyMuPDFConverter(PDFConverter):
         metadata: dict[str, Any] = {}
 
         try:
-            doc = self._fitz.open(str(pdf_path))
-            page_count = len(doc)
+            # Context manager guarantees the document is closed even when a
+            # non-fitz error escapes mid-extraction.
+            with self._fitz.open(str(pdf_path)) as doc:
+                page_count = len(doc)
 
-            try:
-                pdf_metadata = doc.metadata
-                metadata = {
-                    "title": pdf_metadata.get("title", ""),
-                    "author": pdf_metadata.get("author", ""),
-                    "subject": pdf_metadata.get("subject", ""),
-                    "keywords": pdf_metadata.get("keywords", ""),
-                    "creator": pdf_metadata.get("creator", ""),
-                    "producer": pdf_metadata.get("producer", ""),
-                    "creation_date": pdf_metadata.get("creationDate", ""),
-                    "modification_date": pdf_metadata.get("modDate", ""),
-                }
-            except Exception as e:  # noqa: BLE001 — metadata is best-effort
-                warnings.append(f"Failed to extract metadata: {e}")
-                logger.warning("Metadata extraction failed for %s: %s", pdf_path, e)
-
-            for page_num in range(page_count):
                 try:
-                    page_text = doc[page_num].get_text()
-                    if page_text.strip():
-                        text_parts.append(page_text)
-                        converted_pages += 1
-                    else:
-                        # Page processed but has no extractable text (image-only?).
-                        warnings.append(f"Page {page_num + 1}: No extractable text")
-                        converted_pages += 1
-                except Exception as e:  # noqa: BLE001 — one bad page must not abort the rest
-                    warnings.append(f"Page {page_num + 1}: Extraction failed - {e}")
-                    logger.warning("Page %d extraction failed: %s", page_num + 1, e)
+                    pdf_metadata = doc.metadata
+                    metadata = {
+                        "title": pdf_metadata.get("title", ""),
+                        "author": pdf_metadata.get("author", ""),
+                        "subject": pdf_metadata.get("subject", ""),
+                        "keywords": pdf_metadata.get("keywords", ""),
+                        "creator": pdf_metadata.get("creator", ""),
+                        "producer": pdf_metadata.get("producer", ""),
+                        "creation_date": pdf_metadata.get("creationDate", ""),
+                        "modification_date": pdf_metadata.get("modDate", ""),
+                    }
+                except Exception as e:  # noqa: BLE001 — metadata is best-effort
+                    warnings.append(f"Failed to extract metadata: {e}")
+                    logger.warning("Metadata extraction failed for %s: %s", pdf_path, e)
 
-            doc.close()
+                for page_num in range(page_count):
+                    try:
+                        page_text = doc[page_num].get_text()
+                        if page_text.strip():
+                            text_parts.append(page_text)
+                            converted_pages += 1
+                        else:
+                            # Page processed but has no extractable text (image-only?).
+                            warnings.append(f"Page {page_num + 1}: No extractable text")
+                            converted_pages += 1
+                    except Exception as e:  # noqa: BLE001 — one bad page must not abort the rest
+                        warnings.append(f"Page {page_num + 1}: Extraction failed - {e}")
+                        logger.warning("Page %d extraction failed: %s", page_num + 1, e)
 
             full_text = "\n\n".join(text_parts)
             return ConversionResult(

@@ -207,6 +207,13 @@ class TestMarkdownFormatters:
     def test_summary_empty(self):
         assert "No assessments" in format_risk_of_bias_summary_markdown([])
 
+    def test_summary_labels_derived_from_items(self):
+        md = format_risk_of_bias_summary_markdown([_sample_assessment()])
+        assert "Random sequence generation (selection bias)" in md
+        # Detection-bias domains already name the outcome type in the domain.
+        assert "Blinding of outcome assessment (subjective outcomes)" in md
+        assert "(subjective outcomes) (detection bias)" not in md
+
 
 class TestHtmlFormatters:
     def test_study_characteristics_html_escapes(self):
@@ -221,6 +228,18 @@ class TestHtmlFormatters:
         html = format_risk_of_bias_html(_sample_assessment().risk_of_bias)
         assert "judgement-low" in html
         assert "judgement-high" in html
+
+    def test_markdown_and_html_domain_labels_agree(self):
+        # Both renderers must label detection-bias domains identically:
+        # the domain text alone, without a redundant bias-type suffix.
+        rob = _sample_assessment().risk_of_bias
+        md = format_risk_of_bias_markdown(rob)
+        html = format_risk_of_bias_html(rob)
+        label = "Blinding of outcome assessment (subjective outcomes)"
+        assert label in md
+        assert label in html
+        assert f"{label} (detection bias)" not in md
+        assert f"{label} (detection bias)" not in html
 
     def test_css_returned(self):
         assert ".cochrane-risk-of-bias" in get_cochrane_css()

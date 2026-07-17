@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Iterator
 from typing import Any
 
 from bmlib.quality.scoring_models import (
@@ -162,10 +163,9 @@ DEFAULT_STUDY_TYPE_HIERARCHY = {
     "case_report": 1.0,
 }
 
-# Sample-size regex patterns.
+# Sample-size regex patterns (matched case-insensitively, so "n =" covers "N =").
 SAMPLE_SIZE_PATTERNS = [
     r"n\s*=\s*(\d+)",
-    r"N\s*=\s*(\d+)",
     r"(\d+)\s+participants",
     r"(\d+)\s+subjects",
     r"(\d+)\s+patients",
@@ -185,23 +185,40 @@ POWER_CALCULATION_KEYWORDS = [
     "power to detect",
 ]
 
-# Confidence-interval patterns.
+# Confidence-interval patterns. The bare-numeric bracket/range forms require
+# a decimal point in both numbers so integer citation markers like "[12, 15]"
+# and year ranges like "(2010-2015)" do not count as CI reporting.
 CI_PATTERNS = [
     r"confidence interval",
     r"\bCI\b",
     r"95%\s*CI",
-    r"\[\s*\d+\.?\d*\s*,\s*\d+\.?\d*\s*\]",
-    r"\(\s*\d+\.?\d*\s*-\s*\d+\.?\d*\s*\)",
+    r"\[\s*\d+\.\d+\s*,\s*\d+\.\d+\s*\]",
+    r"\(\s*\d+\.\d+\s*-\s*\d+\.\d+\s*\)",
 ]
 
 
-def extract_text_context(text: str, keyword: str, context_chars: int = 50) -> str:
-    """Return a snippet of *text* around the first occurrence of *keyword*.
+def _iter_keyword_positions(text: str, keyword: str) -> Iterator[int]:
+    """Yield start offsets of whole-word occurrences of *keyword* in *text*.
 
-    Adds ellipses where the snippet is truncated. Returns ``""`` if the
-    keyword is not present.
+    A match must start and end at a word boundary (an optional plural "s" is
+    tolerated), so the keyword "rct" matches "RCTs" but not "infarct".
     """
-    keyword_pos = text.find(keyword)
+    pattern = rf"(?<!\w){re.escape(keyword)}s?(?!\w)"
+    for match in re.finditer(pattern, text):
+        yield match.start()
+
+
+def extract_text_context(
+    text: str, keyword: str, context_chars: int = 50, keyword_pos: int | None = None
+) -> str:
+    """Return a snippet of *text* around an occurrence of *keyword*.
+
+    Uses the first occurrence unless *keyword_pos* gives the offset of a
+    specific one. Adds ellipses where the snippet is truncated. Returns ``""``
+    if the keyword is not present.
+    """
+    if keyword_pos is None:
+        keyword_pos = text.find(keyword)
     if keyword_pos == -1:
         return ""
 
@@ -291,19 +308,23 @@ def has_exclusion_pattern(
     keyword: str,
     exclusion_patterns: list[str],
     context_window: int = EXCLUSION_CONTEXT_WINDOW,
+    keyword_pos: int | None = None,
 ) -> bool:
     """Return whether an exclusion pattern appears just before *keyword*.
 
     Prevents false positives such as "non-randomized trial" matching as RCT
-    when searching for "randomized trial".
+    when searching for "randomized trial". Checks the first occurrence unless
+    *keyword_pos* gives the offset of a specific one.
 
     Args:
         text: Full (lowercase) text being searched.
         keyword: The matched (lowercase) keyword.
         exclusion_patterns: Patterns that should invalidate the match.
         context_window: Characters before the keyword to inspect.
+        keyword_pos: Offset of the occurrence to check (default: first).
     """
-    keyword_pos = text.find(keyword)
+    if keyword_pos is None:
+        keyword_pos = text.find(keyword)
     if keyword_pos == -1:
         return False
 
@@ -324,9 +345,12 @@ def extract_study_type(
 
     Searches ``full_text`` when available (else abstract + methods), tries each
     type in priority order (systematic review > quasi-experimental > RCT > …),
-    and rejects matches whose exclusion patterns fire. Returns a
-    :class:`DimensionScore` for the study-design dimension with an audit trail;
-    defaults to "unknown" at a neutral score when nothing matches.
+    and rejects matches whose exclusion patterns fire. Keywords match whole
+    words only (with an optional plural "s"), so "RCT" matches "RCTs" but not
+    "infarct"; every occurrence of a keyword is tried, so one excluded mention
+    does not suppress a later clean one. Returns a :class:`DimensionScore` for
+    the study-design dimension with an audit trail; defaults to "unknown" at a
+    neutral score when nothing matches.
     """
     if keywords_config is None:
         keywords_config = DEFAULT_STUDY_TYPE_KEYWORDS
@@ -345,8 +369,10 @@ def extract_study_type(
 
         for keyword in keywords:
             keyword_lower = keyword.lower()
-            if keyword_lower in search_text:
-                if exclusions and has_exclusion_pattern(search_text, keyword_lower, exclusions):
+            for keyword_pos in _iter_keyword_positions(search_text, keyword_lower):
+                if exclusions and has_exclusion_pattern(
+                    search_text, keyword_lower, exclusions, keyword_pos=keyword_pos
+                ):
                     continue
 
                 score = hierarchy_config.get(study_type, 5.0)
@@ -358,7 +384,9 @@ def extract_study_type(
                     component="study_type",
                     value=study_type,
                     contribution=score,
-                    evidence=extract_text_context(search_text, keyword_lower),
+                    evidence=extract_text_context(
+                        search_text, keyword_lower, keyword_pos=keyword_pos
+                    ),
                     reasoning=(
                         f"Matched keyword '{keyword}' indicating {study_type.replace('_', ' ')}"
                     ),

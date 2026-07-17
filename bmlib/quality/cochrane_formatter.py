@@ -29,6 +29,7 @@ from bmlib.quality.cochrane_models import (
     CochraneRiskOfBias,
     CochraneStudyAssessment,
     CochraneStudyCharacteristics,
+    RiskOfBiasItem,
 )
 
 # Markdown formatting tokens.
@@ -36,6 +37,18 @@ MD_BOLD_START = "**"
 MD_BOLD_END = "**"
 MD_ITALIC_START = "*"
 MD_ITALIC_END = "*"
+
+
+def _format_domain_label(item: RiskOfBiasItem) -> str:
+    """Return the table label for a RoB domain.
+
+    Detection-bias domains split by outcome type already name the outcome in
+    the domain text, so the bias-type suffix is omitted for them. Shared by
+    the Markdown and HTML renderers so both produce identical labels.
+    """
+    if item.outcome_type:
+        return item.domain
+    return f"{item.domain} ({item.bias_type})"
 
 
 # ---------------------------------------------------------------------------
@@ -102,10 +115,8 @@ def format_risk_of_bias_markdown(rob: CochraneRiskOfBias) -> str:
     lines.append("|---|---|---|")
 
     for item in rob.to_list():
-        domain_with_type = f"{item.domain} ({item.bias_type})"
-        if item.outcome_type:
-            domain_with_type = f"{item.domain}"
-        lines.append(f"| {domain_with_type} | {item.judgement} | {item.support_for_judgement} |")
+        domain_label = _format_domain_label(item)
+        lines.append(f"| {domain_label} | {item.judgement} | {item.support_for_judgement} |")
 
     lines.append("")
     return "\n".join(lines)
@@ -171,39 +182,16 @@ def format_risk_of_bias_summary_markdown(assessments: list[CochraneStudyAssessme
     lines.append("## Risk of Bias Summary")
     lines.append("")
 
-    domains = [
-        "Random sequence generation (selection bias)",
-        "Allocation concealment (selection bias)",
-        "Baseline outcome measurements (selection bias)",
-        "Baseline characteristics (selection bias)",
-        "Blinding of participants and personnel (performance bias)",
-        "Blinding of outcome assessment - subjective (detection bias)",
-        "Blinding of outcome assessment - objective (detection bias)",
-        "Incomplete outcome data (attrition bias)",
-        "Selective reporting (reporting bias)",
-    ]
-
     study_ids = [a.study_id for a in assessments]
     lines.append("| Domain | " + " | ".join(study_ids) + " |")
     lines.append("|---" + "|---" * len(study_ids) + "|")
 
-    domain_attrs = [
-        "random_sequence_generation",
-        "allocation_concealment",
-        "baseline_outcome_measurements",
-        "baseline_characteristics",
-        "blinding_participants_personnel",
-        "blinding_outcome_assessment_subjective",
-        "blinding_outcome_assessment_objective",
-        "incomplete_outcome_data",
-        "selective_reporting",
-    ]
-
-    for domain, attr in zip(domains, domain_attrs):
-        judgements = [
-            _format_judgement_symbol(getattr(a.risk_of_bias, attr).judgement) for a in assessments
-        ]
-        lines.append(f"| {domain} | " + " | ".join(judgements) + " |")
+    # to_list() yields the nine domains in canonical Cochrane order for every
+    # assessment, so transposing it gives one matrix row per domain.
+    for row_items in zip(*(a.risk_of_bias.to_list() for a in assessments), strict=True):
+        domain_label = _format_domain_label(row_items[0])
+        judgements = [_format_judgement_symbol(item.judgement) for item in row_items]
+        lines.append(f"| {domain_label} | " + " | ".join(judgements) + " |")
 
     lines.append("")
     lines.append("**Legend:** + Low risk | - High risk | ? Unclear risk")
@@ -282,7 +270,7 @@ def format_risk_of_bias_html(rob: CochraneRiskOfBias) -> str:
 
     for item in rob.to_list():
         judgement_class = _get_judgement_css_class(item.judgement)
-        domain_text = f"{item.domain} ({item.bias_type})"
+        domain_text = _format_domain_label(item)
         html_parts.append(
             "<tr>"
             f"<td>{_escape_html(domain_text)}</td>"

@@ -171,3 +171,12 @@ class TestPyMuPDFConversion:
         assert result.success is True
         assert result.page_count == 1
         assert "Hello bmlib PDF" in result.text
+
+    def test_corrupt_pdf_returns_failure(self, tmp_path):
+        pdf_path = tmp_path / "corrupt.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 this is not a valid pdf body")
+
+        result = get_converter("pymupdf").convert(pdf_path)
+        assert result.success is False
+        assert result.text == ""
+        assert result.error_message

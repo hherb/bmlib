@@ -140,6 +140,9 @@ def _fix_single_quotes(json_str: str) -> str:
     result: list[str] = []
     in_double_string = False
     in_single_string = False
+    # Last non-whitespace character of the input seen so far — tracked
+    # incrementally so the opener check below stays O(1) per character.
+    prev_nonspace = ""
     i = 0
 
     while i < len(json_str):
@@ -149,6 +152,8 @@ def _fix_single_quotes(json_str: str) -> str:
         # Pass escape sequences straight through.
         if prev_char == "\\" and not (i >= 2 and json_str[i - 2] == "\\"):
             result.append(char)
+            if not char.isspace():
+                prev_nonspace = char
             i += 1
             continue
 
@@ -164,8 +169,7 @@ def _fix_single_quotes(json_str: str) -> str:
                 # Treat as a string opener only in a value/key position
                 # (after : [ , { or a preceding quote), otherwise it is an
                 # apostrophe.
-                preceding = json_str[:i].rstrip()
-                if preceding and preceding[-1] in ":,[{'\"":
+                if prev_nonspace and prev_nonspace in ":,[{'\"":
                     result.append('"')
                     in_single_string = True
                 else:
@@ -173,6 +177,8 @@ def _fix_single_quotes(json_str: str) -> str:
         else:
             result.append(char)
 
+        if not char.isspace():
+            prev_nonspace = char
         i += 1
 
     return "".join(result)
@@ -290,6 +296,9 @@ def _fix_missing_commas(json_str: str) -> str:
     """
     result: list[str] = []
     in_string = False
+    # Last non-whitespace character appended so far — tracked incrementally
+    # so the value-boundary checks below stay O(1) per character.
+    prev_nonspace = ""
     i = 0
 
     while i < len(json_str):
@@ -298,32 +307,31 @@ def _fix_missing_commas(json_str: str) -> str:
         is_escaped = prev_char == "\\" and not (i >= 2 and json_str[i - 2] == "\\")
 
         if char == '"' and not is_escaped:
-            if not in_string:
-                preceding = "".join(result).rstrip()
-                if preceding and preceding[-1] in '"}]0123456789':
-                    rest = json_str[i:]
-                    close_quote = _find_closing_quote(rest, 0)
-                    if close_quote > 0:
-                        after_close = rest[close_quote + 1 :].lstrip()
-                        # Whether this quoted token is a key or a value, a
-                        # separator is missing before it.
-                        if after_close and after_close[0] != ":":
-                            result.append(",")
-                        elif after_close and after_close[0] == ":":
-                            result.append(",")
+            if not in_string and prev_nonspace and prev_nonspace in '"}]0123456789':
+                close_quote = _find_closing_quote(json_str, i)
+                if close_quote > i:
+                    # Whether this quoted token is a key or a value, a
+                    # separator is missing before it as long as anything
+                    # follows its closing quote.
+                    j = close_quote + 1
+                    while j < len(json_str) and json_str[j].isspace():
+                        j += 1
+                    if j < len(json_str):
+                        result.append(",")
 
             in_string = not in_string
             result.append(char)
 
         elif char in "{[" and not in_string:
-            preceding = "".join(result).rstrip()
-            if preceding and preceding[-1] in '"}]0123456789':
+            if prev_nonspace and prev_nonspace in '"}]0123456789':
                 result.append(",")
             result.append(char)
 
         else:
             result.append(char)
 
+        if not char.isspace():
+            prev_nonspace = char
         i += 1
 
     return "".join(result)
@@ -516,6 +524,11 @@ def extract_and_repair_json(response: str, repair: bool = True) -> tuple[str, bo
                         if count == 0:
                             json_str = response[start_idx : i + 1]
                             break
+
+            if not json_str and repair:
+                # Never balanced — likely truncated output. Take everything
+                # from the opener and let repair_json() close it.
+                json_str = response[start_idx:]
 
     if not json_str:
         raise ValueError("No JSON found in response")

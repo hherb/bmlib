@@ -1,8 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-07-17 (bmlibrarian porting kicked off; branch
-`claude/bmlibrarian-module-porting-0e396d` has Phase 0 ports done at 521 tests
-passing + 1 skipped, PR open. Main still at 408 tests, v0.3.0 unreleased)._
+_Last updated: 2026-07-18 (bmlibrarian porting kicked off; branch
+`claude/bmlibrarian-module-porting-0e396d` has Phase 0 ports done plus
+code-review fixes, at 540 tests passing + 1 skipped, PR open. Main still at
+408 tests, v0.3.0 unreleased)._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -46,6 +47,14 @@ recorded in `CHANGELOG.md` under `0.3.0 — Unreleased`:
   / sample-size scoring with `DimensionScore` audit trail.
 - `bmlib/fulltext/pdf_converter.py` — pluggable PDF→text, PyMuPDF backend
   behind the new optional `bmlib[pdf]` extra.
+
+Code-review hardening landed on the same branch: whole-word study-type
+keyword matching (an "RCT" keyword no longer matches "infarct"), decimal-only
+CI patterns, O(n) JSON repair, truncated-JSON extraction in
+`extract_and_repair_json`, consistent RoB domain labels across MD/HTML, and
+`bmlib.llm` package exports. One refactor was deferred to issue #17:
+consolidating the duplicated JSON-extraction logic in `llm/utils.py` vs
+`llm/json_repair.py` — fold it into the Phase 1 BaseAgent work.
 
 ### Phase 1 — NEXT (do these two, in order)
 

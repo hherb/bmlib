@@ -182,7 +182,7 @@ class TextChunker:
         return end
 
     def get_chunk_info(self, text: str) -> dict[str, Any]:
-        """Report how *text* would be chunked, without building the chunks."""
+        """Chunk *text* and summarise the result (count, sizes) as a dict."""
         chunks = self.chunk_text(text)
         if not chunks:
             return {
