@@ -8,3 +8,6 @@ build/
 *.egg
 .ruff_cache/
 uv.lock
+.coverage
+htmlcov/
+coverage.xml
