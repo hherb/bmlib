@@ -296,7 +296,7 @@ def fetch_pubmed(
     client: Any,
     target_date: date,
     *,
-    on_record: Callable[[dict], None],
+    on_record: Callable[[FetchedRecord], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
     api_key: str | None = None,
 ) -> FetchResult:
@@ -309,7 +309,7 @@ def fetch_pubmed(
     target_date:
         The publication date to query for.
     on_record:
-        Callback invoked with each parsed article dict.
+        Callback invoked with each parsed :class:`FetchedRecord`.
     on_progress:
         Optional callback invoked after each page with a :class:`SyncProgress`.
     api_key:

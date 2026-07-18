@@ -84,7 +84,7 @@ class TransparencyResult:
     industry_funding_detected: bool = False
     industry_funding_confidence: float = 0.0
     data_availability_level: str = "unknown"
-    coi_disclosed: bool = True
+    coi_disclosed: bool | None = True
     trial_registered: bool = False
     trial_results_compliant: bool = False
     outcome_switching_detected: bool = False
@@ -105,7 +105,7 @@ class TransparencyResult:
 | `industry_funding_detected` | `bool` | Whether industry/pharma funding was found. |
 | `industry_funding_confidence` | `float` | Confidence in the industry funding detection (0–1). |
 | `data_availability_level` | `str` | One of: `"full_open"`, `"on_request"`, `"not_available"`, `"not_stated"`, `"unknown"`. |
-| `coi_disclosed` | `bool` | Whether a conflict-of-interest statement was found. |
+| `coi_disclosed` | `bool \| None` | Tri-state: `True` (statement found), `False` (full text scanned, none found), `None` (undeterminable — full text unavailable and no abstract signal). |
 | `trial_registered` | `bool` | Whether a linked clinical trial registration was found. |
 | `trial_results_compliant` | `bool` | Whether the registered trial has posted results. |
 | `outcome_switching_detected` | `bool` | Whether outcome switching was detected. |
@@ -113,6 +113,7 @@ class TransparencyResult:
 | `tier_downgrade_applied` | `int` | Number of quality tiers downgraded (0 if no downgrade). |
 | `analyzed_at` | `datetime` | Timestamp of the analysis (UTC). |
 | `analyzer_version` | `str` | Version of the analyzer. |
+| `full_text_analyzed` | `bool` | Whether open-access full text (rather than just the abstract) was scanned for COI and data-availability signals. |
 
 #### Serialisation
 
@@ -140,7 +141,7 @@ class TransparencyAnalyzer:
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `email` | `str` | `"user@example.com"` | Contact email for API politeness headers (required by CrossRef, OpenAlex). |
-| `pubmed_api_key` | `str \| None` | `None` | Optional NCBI API key for higher PubMed rate limits. |
+| `pubmed_api_key` | `str \| None` | `None` | Accepted but currently unused — the analyzer does not query NCBI E-utilities (see issue #18). |
 | `settings` | `TransparencySettings \| None` | `None` | Transparency settings. Defaults to `TransparencySettings()`. |
 
 ---
@@ -201,11 +202,36 @@ Queries `api.crossref.org/works/{doi}` to extract funder information. Industry f
 
 **Scoring:** +15 points if funder information is present.
 
-### 2. EuropePMC (Abstract, COI, Data Availability)
+### 2. EuropePMC (Full Text / Abstract, COI, Data Availability)
 
-Queries the EuropePMC search API for abstract text, then scans for:
+Queries the EuropePMC search API for the paper record. COI and
+data-availability statements live in a paper's full text, not its abstract —
+so for open-access records (`inEPMC == "Y"`) the analyzer fetches the
+full-text XML and scans that, falling back to the abstract only when full
+text cannot be retrieved (`full_text_analyzed` records which happened).
 
-- **COI disclosure:** Looks for patterns like "conflict of interest", "competing interest", "no conflict", "nothing to disclose", "financial disclosure".
+- **COI disclosure** (tri-state, see `coi_disclosed`):
+  - A non-blank JATS-tagged COI container (`<fn fn-type="COI-statement">`,
+    `<sec sec-type="conflict">`, a `<sec>` titled "Conflicts of interest", …)
+    counts as a disclosure regardless of its wording — the tag is structural
+    proof that a statement exists.
+  - Fallback for untagged text: cue phrases like "conflict of interest",
+    "competing interest", "no conflict", "nothing to disclose", "declare no",
+    "financial disclosure". A statement that there is nothing to declare
+    still counts as *disclosed*.
+  - If full text was scanned and neither is found, `coi_disclosed` is
+    `False`; if only the abstract was available and it carries no signal,
+    it is `None` (unknown).
+- **Industry ties in the COI statement:** the COI/disclosure region (tagged
+  section, or bounded windows after each cue phrase) is scanned for industry
+  relationship phrases ("consultant for", "speaker fees from", "employee
+  of", advisory boards, …). Detection is negation-aware (an ICMJE-style
+  enumerated denial does not flag) and blanks clearly non-industry contexts
+  (university/government employment, editorial boards) before matching. A
+  hit sets `industry_funding_detected=True` at moderate confidence (0.5,
+  vs 0.8 for a structured CrossRef funder match) and adds the indicator
+  "Industry ties disclosed in COI statement". Scanned only when full text
+  was analyzed.
 - **Data availability:** Detects repository mentions (Zenodo, Figshare, Dryad, GitHub → `full_open`), "upon request" language → `on_request`, or "not available" → `not_available`.
 
 **Scoring:** +10 for COI disclosure, +20 for full open data, +10 for data on request.

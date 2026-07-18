@@ -26,6 +26,8 @@ from bmlib.db import (
     table_exists,
     create_tables,
     transaction,
+    Migration,
+    run_migrations,
 )
 ```
 
@@ -340,6 +342,100 @@ with transaction(conn):
 # If either raises, both are rolled back.
 ```
 
+#### Joining an already-open transaction (SQLite) — changed in 0.3.0
+
+sqlite3 auto-begins a transaction before DML, so the connection may already
+hold uncommitted writes when a `transaction()` block is entered. In that case
+the block **joins** the open transaction via a `SAVEPOINT` instead of issuing
+`BEGIN`:
+
+- On exception, only the block's own writes are rolled back — the caller's
+  pre-existing pending writes survive, still uncommitted.
+- On success, the savepoint is released and **no commit is issued** — whoever
+  opened the enclosing transaction owns the commit.
+
+This makes nesting composable: a batch loop can wrap many
+`transaction()`-using calls in one outer `transaction()` and pay a single
+commit, and an outer failure rolls back the inner blocks' writes too.
+
+```python
+with transaction(conn):                  # outer block owns the commit
+    for pub in publications:
+        with transaction(conn):          # joins via savepoint, does NOT commit
+            store_publication(conn, pub)
+# Everything commits here, once.
+```
+
+**Breaking change (0.3.0):** previously a `transaction()` block entered while
+the connection already held uncommitted writes committed on success — taking
+the caller's pending writes with it. Code that relied on `transaction()` as a
+durability checkpoint after bare `execute()` writes must now commit
+explicitly (or wrap the whole batch in an outer `transaction()`). The same
+applies to `run_migrations()` when called with a transaction already open —
+it uses `transaction()` internally, so the caller's enclosing transaction
+owns the commit. On PostgreSQL the old connection-wide commit behaviour is
+unchanged (no savepoint nesting is implemented there).
+
+---
+
+## Migrations
+
+### `Migration`
+
+```python
+@dataclass
+class Migration:
+    version: int                  # sequential integer (1, 2, 3, ...), unique
+    name: str                     # short descriptive name, e.g. "initial_schema"
+    up: Callable[[Any], None]     # takes a DB-API connection, applies the DDL
+```
+
+A single database migration.
+
+---
+
+### `run_migrations`
+
+```python
+def run_migrations(conn: Any, migrations: list[Migration]) -> int
+```
+
+Apply all pending migrations in version order. Applied versions are tracked
+in a `schema_version` table (created on first run). Each migration runs
+inside `transaction()`, so a failed migration is rolled back atomically and
+re-running is safe — already-applied versions are skipped.
+
+**Returns:** Number of migrations applied.
+
+**Example:**
+
+```python
+from bmlib.db import Migration, connect_sqlite, create_tables, run_migrations
+
+def _m001_initial(conn):
+    create_tables(conn, "CREATE TABLE IF NOT EXISTS papers (id INTEGER PRIMARY KEY, doi TEXT);")
+
+def _m002_add_title(conn):
+    execute(conn, "ALTER TABLE papers ADD COLUMN title TEXT")
+
+MIGRATIONS = [
+    Migration(1, "initial_schema", _m001_initial),
+    Migration(2, "add_title", _m002_add_title),
+]
+
+conn = connect_sqlite("~/.myapp/data.db")
+applied = run_migrations(conn, MIGRATIONS)
+```
+
+Because each migration runs inside `transaction()`, calling
+`run_migrations()` while the connection already holds an open SQLite
+transaction joins it via a savepoint — the caller's enclosing transaction
+then owns the commit (see [`transaction`](#transaction), changed in 0.3.0).
+
+The module also provides `get_applied_versions(conn) -> set[int]`
+(importable from `bmlib.db.migrations`) to inspect which versions have been
+applied.
+
 ---
 
 ## Backend Differences
@@ -351,3 +447,4 @@ with transaction(conn):
 | Connection factory | `connect_sqlite()` | `connect_postgresql()` |
 | Schema execution | `executescript()` | `cursor.execute()` + `commit()` |
 | Transaction begin | Explicit `BEGIN` | Implicit (autocommit off) |
+| Nested `transaction()` | Joins via `SAVEPOINT`; outer block owns the commit | Not implemented — inner block commits connection-wide |

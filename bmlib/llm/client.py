@@ -134,9 +134,7 @@ class LLMClient:
         * ``"none"`` — disable tool calling for this turn
 
         Providers that do not support tool calling will raise
-        :class:`NotImplementedError` if *tools* is not ``None``. Check
-        ``client.get_provider_info(name)["capabilities"]`` if you need to
-        detect support without raising.
+        :class:`NotImplementedError` if *tools* is not ``None``.
 
         Args:
             messages: Conversation messages.

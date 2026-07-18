@@ -182,6 +182,57 @@ class TestCheckEuropePMC:
         assert ft is False
 
 
+class TestStructuralCOIDetection:
+    """A tagged COI section counts as disclosure even without a cue phrase (issue #13).
+
+    The JATS tag itself is structural proof that a COI statement exists; the
+    cue-phrase scan remains the fallback for untagged text.
+    """
+
+    _TAGGED_CUELESS_XML = (
+        '<article><back><fn-group><fn fn-type="COI-statement"><p>Dr X has '
+        "served as a consultant for Pfizer.</p></fn></fn-group></back></article>"
+    )
+
+    def test_tagged_section_without_cue_phrase_counts_as_disclosed(self):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(self._TAGGED_CUELESS_XML)
+        coi, _level, score, _ind, ft, industry = analyzer._check_europepmc(
+            client, _epmc_record(), score=0, indicators=[]
+        )
+        assert ft is True
+        assert coi is True  # the tag is structural proof of a disclosure
+        assert industry is True  # and its content discloses industry ties
+        assert score == 10  # SCORE_COI_DISCLOSED credited exactly once
+
+    def test_tagged_section_with_cue_phrase_scores_exactly_once(self):
+        # Structural and cue-phrase evidence together must not double-credit.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            '<article><back><fn-group><fn fn-type="COI-statement"><p>The authors '
+            "declare no competing interests.</p></fn></fn-group></back></article>"
+        )
+        coi, _level, score, _ind, ft, _industry = analyzer._check_europepmc(
+            client, _epmc_record(), score=0, indicators=[]
+        )
+        assert coi is True
+        assert score == 10  # SCORE_COI_DISCLOSED, once
+
+    def test_empty_tagged_section_is_not_a_disclosure(self):
+        # A COI container with no statement text proves nothing.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            '<article><back><fn-group><fn fn-type="COI-statement"><p> </p></fn>'
+            "</fn-group></back></article>"
+        )
+        coi, _level, score, _ind, ft, _industry = analyzer._check_europepmc(
+            client, _epmc_record(), score=0, indicators=[]
+        )
+        assert ft is True
+        assert coi is False
+        assert score == 0
+
+
 class TestIndustryCOIDetection:
     """Industry ties disclosed in a paper's COI statement must be detected.
 

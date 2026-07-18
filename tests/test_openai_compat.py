@@ -263,3 +263,37 @@ class TestEmptyModelListCaching:
         assert p.list_models() == list(p.FALLBACK_MODELS)
         assert p.list_models() == list(p.FALLBACK_MODELS)
         assert mock_client.models.list.call_count == 2
+
+
+class TestListModelsCacheIsolation:
+    """Mutating a returned model list must not corrupt the cache (issue #12)."""
+
+    def _stub_api_client(self):
+        mock_model = MagicMock()
+        mock_model.id = "stub-model"
+        mock_client = MagicMock()
+        mock_client.models.list.return_value.data = [mock_model]
+        return mock_client
+
+    def test_mutating_first_result_does_not_corrupt_cache(self, StubProvider):
+        # The list returned at the cache-store point must not alias the cache.
+        p = StubProvider(api_key="k")
+        p._client = self._stub_api_client()
+
+        first = p.list_models()
+        first.clear()
+
+        second = p.list_models()  # served from cache
+        assert [m.model_id for m in second] == ["stub-model"]
+
+    def test_mutating_cache_hit_result_does_not_corrupt_cache(self, StubProvider):
+        # The list returned at the cache-hit point must not alias the cache either.
+        p = StubProvider(api_key="k")
+        p._client = self._stub_api_client()
+
+        p.list_models()
+        second = p.list_models()  # cache hit
+        second.append("bogus")
+
+        third = p.list_models()  # cache hit again
+        assert [m.model_id for m in third] == ["stub-model"]

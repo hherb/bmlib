@@ -14,9 +14,10 @@ uv pip install -e ".[all]"
 
 - **Python:** >=3.11
 - **Packaging:** pyproject.toml with setuptools
-- **Testing:** pytest (`pytest tests/ -v`)
-- **Linting/Formatting:** ruff (`ruff check .` / `ruff format .`)
+- **Testing:** pytest (`uv run pytest tests/ -v`)
+- **Linting/Formatting:** ruff (`uv run ruff check .` / `uv run ruff format .`)
 - **Core dependency:** jinja2 only. Everything else is optional.
+- **Use `uv`, never bare pip.**
 
 ### Optional dependency groups
 
@@ -28,6 +29,7 @@ uv pip install -e ".[all]"
 | postgresql     | psycopg2-binary>=2.9  | PostgreSQL database backend            |
 | transparency   | httpx>=0.25           | Transparency analysis API calls        |
 | publications   | httpx>=0.25           | Publication fetcher API calls           |
+| pdf            | pymupdf>=1.23         | PDF→text conversion backend            |
 | dev            | pytest>=7.0, pytest-cov, ruff | Development and testing tools  |
 | all            | All of the above      | Full installation                      |
 
@@ -48,10 +50,13 @@ bmlib/
 │   ├── cache.py             # Disk-based FullTextCache
 │   ├── jats_parser.py       # JATS XML → structured data
 │   ├── models.py            # FullTextResult, JATSArticle, etc.
+│   ├── pdf_converter.py     # Pluggable PDF→text conversion (PyMuPDF backend, bmlib[pdf])
 │   └── service.py           # 3-tier FullTextService (EuropePMC → Unpaywall → DOI)
 ├── llm/                     # Unified LLM client with pluggable providers
 │   ├── client.py            # LLMClient router, get_llm_client() singleton
 │   ├── data_types.py        # LLMMessage, LLMResponse dataclasses
+│   ├── json_repair.py       # Malformed-JSON repair: repair_json(), extract_and_repair_json()
+│   ├── text_utils.py        # Boundary-aware chunking, map-reduce / rolling-summary helpers
 │   ├── token_tracker.py     # Thread-safe TokenTracker
 │   ├── utils.py             # Utility functions
 │   └── providers/           # Provider implementations
@@ -75,27 +80,31 @@ bmlib/
 │       ├── biorxiv.py       # bioRxiv / medRxiv
 │       └── openalex.py      # OpenAlex
 ├── quality/                 # 3-tier quality assessment pipeline
+│   ├── cochrane_formatter.py # Markdown/HTML renderers for Cochrane RoB assessments
+│   ├── cochrane_models.py   # Nine-domain Risk-of-Bias models + study characteristics
 │   ├── data_models.py       # StudyDesign enum, QualityTier, BiasRisk, QualityAssessment
+│   ├── extractors.py        # Rule-based (LLM-free) study-type / sample-size extraction
 │   ├── manager.py           # QualityManager orchestrator
 │   ├── metadata_filter.py   # Tier 1: PubMed metadata → StudyDesign (free)
+│   ├── scoring_models.py    # DimensionScore audit-trail models
 │   ├── study_classifier.py  # Tier 2: LLM study-design classifier (cheap)
 │   └── quality_agent.py     # Tier 3: deep assessment agent (capable model)
 ├── templates/engine.py      # Jinja2 TemplateEngine with user/default dir fallback
 └── transparency/            # Multi-API transparency analysis
-    ├── analyzer.py          # TransparencyAnalyzer (PubMed, CrossRef, EuropePMC, OpenAlex, ClinicalTrials.gov)
+    ├── analyzer.py          # TransparencyAnalyzer (CrossRef, EuropePMC, OpenAlex, ClinicalTrials.gov)
     └── models.py            # TransparencyResult, TransparencyRisk enum, TransparencySettings
 ```
 
 ### Module descriptions
 
 - **`db/`** — Thin database abstraction via pure functions over DB-API connections. Supports SQLite (built-in) and PostgreSQL (optional). No ORM; all SQL is explicit.
-- **`llm/`** — Unified LLM client with a pluggable provider registry. Built-in providers: Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini. Model strings use `"provider:model_name"` format (e.g. `"anthropic:claude-sonnet-4-20250514"`). Providers are lazily registered on first access.
+- **`llm/`** — Unified LLM client with a pluggable provider registry. Built-in providers: Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini. Model strings use `"provider:model_name"` format (e.g. `"anthropic:claude-sonnet-4-20250514"`). Providers are lazily registered on first access. Also: embeddings (`LLMClient.embed()`), tool calling, malformed-JSON repair (`json_repair`), and boundary-aware text chunking (`text_utils`).
 - **`templates/`** — Jinja2-based prompt template engine with user directory override and default directory fallback.
-- **`agents/`** — `BaseAgent` class for LLM-driven tasks. Provides `chat()`, `chat_json()` (with retry), `render_template()`, and message helpers.
-- **`quality/`** — 3-tier quality assessment: (1) free metadata classification, (2) cheap LLM classifier, (3) deep LLM assessment. Uses CEBM evidence hierarchy for quality tiers.
-- **`transparency/`** — Queries multiple APIs to compute a transparency score (0-100) covering funding, COI, data availability, trial registration, and outcome switching.
+- **`agents/`** — `BaseAgent` class for LLM-driven tasks. Provides `chat()`, `chat_json()` (with retry), `render_template()`, and message helpers. `parse_json()` falls back to `llm.json_repair` for malformed output.
+- **`quality/`** — 3-tier quality assessment: (1) free metadata classification, (2) cheap LLM classifier, (3) deep LLM assessment. Uses CEBM evidence hierarchy for quality tiers. Plus Cochrane-style nine-domain Risk-of-Bias models with MD/HTML renderers (`cochrane_*`), and rule-based study-type/sample-size scoring with `DimensionScore` audit trails (`extractors`, `scoring_models`).
+- **`transparency/`** — Queries CrossRef, EuropePMC, OpenAlex, and ClinicalTrials.gov to compute a transparency score (0-100) covering funding, COI, data availability, trial registration, and outcome switching. Scans EuropePMC full text (when open access) for COI and industry-tie disclosures.
 - **`publications/`** — Publication ingestion from multiple sources (PubMed, bioRxiv, medRxiv, OpenAlex) with deduplication by DOI/PMID, merge-on-upsert, and date-range sync tracking. Note: the storage layer is currently SQLite-specific (`?` placeholders, `ON CONFLICT`, `cur.lastrowid`) even though `db/` also supports PostgreSQL.
-- **`fulltext/`** — 3-tier full-text retrieval (Europe PMC XML → Unpaywall → DOI resolution) with JATS XML parsing and disk-based caching.
+- **`fulltext/`** — 3-tier full-text retrieval (Europe PMC XML → Unpaywall → DOI resolution) with JATS XML parsing, pluggable PDF→text conversion, and disk-based caching.
 
 ## Coding Conventions
 
@@ -138,9 +147,9 @@ All database functions take a connection as the first argument. The `transaction
 ## Running Tests
 
 ```bash
-pytest tests/ -v
-ruff check .
-ruff format --check .
+uv run pytest tests/ -v
+uv run ruff check .
+uv run ruff format --check .
 ```
 
 All tests use in-memory SQLite (`connect_sqlite(":memory:")`) for database tests and mocked HTTP responses for API tests. No external services are required.
@@ -150,10 +159,10 @@ All tests use in-memory SQLite (`connect_sqlite(":memory:")`) for database tests
 | Module               | Test file(s)                                               |
 |----------------------|------------------------------------------------------------|
 | `db/`                | `test_db.py`, `test_migrations.py`                         |
-| `llm/`               | `test_llm.py`, `test_openai_compat.py`                     |
+| `llm/`               | `test_llm.py`, `test_llm_tools.py`, `test_openai_compat.py`, `test_json_repair.py`, `test_text_utils.py` |
 | `agents/`            | `test_agents.py`                                           |
-| `quality/`           | `test_quality.py`                                          |
+| `quality/`           | `test_quality.py`, `test_cochrane.py`, `test_extractors.py` |
 | `templates/`         | `test_templates.py`                                        |
 | `transparency/`      | `test_transparency.py`                                     |
 | `publications/`      | `test_publications.py`, `test_sync.py`, `test_pubmed_fetcher.py`, `test_openalex_fetcher.py`, `test_registry.py` |
-| `fulltext/`          | `test_fulltext_cache.py`, `test_fulltext_models.py`, `test_fulltext_service.py`, `test_jats_parser.py` |
+| `fulltext/`          | `test_fulltext_cache.py`, `test_fulltext_models.py`, `test_fulltext_service.py`, `test_jats_parser.py`, `test_pdf_converter.py` |

@@ -4,7 +4,7 @@
 
 Shared Python library for biomedical literature tools — LLM abstraction, quality assessment, transparency analysis, full-text retrieval, publication ingestion, and database utilities.
 
-**Version:** 0.2.1 | **License:** AGPL-3.0-or-later | **Python:** >=3.11
+**Version:** 0.3.0 | **License:** AGPL-3.0-or-later | **Python:** >=3.11
 
 ## Installation
 
@@ -26,6 +26,7 @@ uv pip install -e ".[all]"
 | `postgresql` | `pip install bmlib[postgresql]` | PostgreSQL database backend |
 | `transparency` | `pip install bmlib[transparency]` | Transparency analysis (httpx) |
 | `publications` | `pip install bmlib[publications]` | Publication ingestion and sync (httpx) |
+| `pdf` | `pip install bmlib[pdf]` | PDF→text conversion (PyMuPDF) |
 | `dev` | `pip install bmlib[dev]` | pytest, pytest-cov, ruff |
 | `all` | `pip install bmlib[all]` | All of the above |
 
@@ -34,13 +35,13 @@ uv pip install -e ".[all]"
 | Module | Description |
 |--------|-------------|
 | **bmlib.db** | Thin database abstraction (SQLite + PostgreSQL) with pure functions over DB-API connections |
-| **bmlib.llm** | Unified LLM client with pluggable providers (Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini) |
+| **bmlib.llm** | Unified LLM client with pluggable providers (Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini), embeddings, JSON repair, and boundary-aware text chunking |
 | **bmlib.templates** | Jinja2-based prompt template engine with user-override directory fallback |
 | **bmlib.agents** | Base agent class for LLM-driven tasks with template rendering and JSON parsing |
-| **bmlib.quality** | 3-tier quality assessment pipeline for biomedical publications (metadata → LLM classifier → deep assessment) |
-| **bmlib.transparency** | Multi-API transparency and bias analysis (PubMed, CrossRef, EuropePMC, OpenAlex, ClinicalTrials.gov) |
+| **bmlib.quality** | 3-tier quality assessment pipeline (metadata → LLM classifier → deep assessment), Cochrane-style Risk-of-Bias models, and rule-based study-type/sample-size scoring |
+| **bmlib.transparency** | Multi-API transparency and bias analysis (CrossRef, EuropePMC, OpenAlex, ClinicalTrials.gov) |
 | **bmlib.publications** | Publication ingestion from PubMed, bioRxiv, medRxiv, and OpenAlex with deduplication and sync |
-| **bmlib.fulltext** | Full-text retrieval (Europe PMC → Unpaywall → DOI), JATS XML parsing, and disk-based caching |
+| **bmlib.fulltext** | Full-text retrieval (Europe PMC → Unpaywall → DOI), JATS XML parsing, PDF→text conversion, and disk-based caching |
 
 ## Quick Start
 
@@ -100,14 +101,17 @@ print(f"Added: {report.records_added}, Merged: {report.records_merged}")
 ### Full-Text Retrieval
 
 ```python
-from bmlib.fulltext import FullTextService, FullTextCache
+from bmlib.fulltext import FullTextService
 
 service = FullTextService(email="researcher@example.com")
-result = service.fetch_fulltext(pmc_id="PMC7614751", doi="10.1234/example")
 
-if result.source == "europepmc" and result.html:
-    cache = FullTextCache()  # uses platform default directory
-    cache.save_html(result.html, "PMC7614751")
+# Passing identifier= enables the built-in disk cache (platform default dir).
+result = service.fetch_fulltext(
+    pmc_id="PMC7614751", doi="10.1234/example", identifier="PMC7614751"
+)
+
+if result.html:
+    print(result.html[:200])
 ```
 
 ### Quality Assessment
@@ -148,11 +152,11 @@ print(result.transparency_score, result.risk_level)
 uv pip install -e ".[all]"
 
 # Run tests
-pytest tests/ -v
+uv run pytest tests/ -v
 
 # Lint and format
-ruff check .
-ruff format --check .
+uv run ruff check .
+uv run ruff format --check .
 ```
 
 ## Documentation

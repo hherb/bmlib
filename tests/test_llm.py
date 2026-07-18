@@ -261,3 +261,40 @@ class TestAnthropicFallbackPricingWarning:
         with caplog.at_level(logging.WARNING, logger="bmlib.llm.providers.anthropic"):
             provider.get_model_pricing(known)
         assert not caplog.records
+
+
+class TestAnthropicListModelsCacheIsolation:
+    """Mutating a returned model list must not corrupt the cache (issue #12)."""
+
+    def _provider_with_stub_client(self):
+        from unittest.mock import MagicMock
+
+        from bmlib.llm.providers.anthropic import AnthropicProvider
+
+        provider = AnthropicProvider(api_key="test-key")
+        mock_model = MagicMock()
+        mock_model.id = "claude-test-1"
+        mock_model.display_name = "Claude Test 1"
+        mock_client = MagicMock()
+        mock_client.models.list.return_value = [mock_model]
+        provider._client = mock_client
+        return provider
+
+    def test_mutating_first_result_does_not_corrupt_cache(self):
+        provider = self._provider_with_stub_client()
+
+        first = provider.list_models()
+        first.clear()
+
+        second = provider.list_models()  # served from cache
+        assert [m.model_id for m in second] == ["claude-test-1"]
+
+    def test_mutating_cache_hit_result_does_not_corrupt_cache(self):
+        provider = self._provider_with_stub_client()
+
+        provider.list_models()
+        second = provider.list_models()  # cache hit
+        second.append("bogus")
+
+        third = provider.list_models()  # cache hit again
+        assert [m.model_id for m in third] == ["claude-test-1"]
