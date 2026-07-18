@@ -1,6 +1,6 @@
 # bmlib API Manual
 
-**Version 0.2.1** | **License: AGPL-3.0-or-later** | **Python >=3.11**
+**Version 0.3.0** | **License: AGPL-3.0-or-later** | **Python >=3.11**
 
 bmlib is a shared Python library for biomedical literature tools. It provides LLM abstraction, quality assessment, transparency analysis, full-text retrieval, database utilities, and publication ingestion/sync.
 
@@ -24,6 +24,7 @@ pip install -e ".[all]"
 | `postgresql`     | `pip install bmlib[postgresql]`    | PostgreSQL database backend                |
 | `transparency`   | `pip install bmlib[transparency]`  | Transparency analysis (httpx)              |
 | `publications`   | `pip install bmlib[publications]`  | Publication ingestion and sync (httpx)     |
+| `pdf`            | `pip install bmlib[pdf]`           | PDF→text conversion (PyMuPDF)              |
 | `dev`            | `pip install bmlib[dev]`           | pytest, pytest-cov, ruff                   |
 | `all`            | `pip install bmlib[all]`           | All of the above                           |
 
@@ -34,13 +35,13 @@ bmlib is organised into eight modules, each with a focused responsibility:
 | Module | Description | Documentation |
 |--------|-------------|---------------|
 | [`bmlib.db`](database.md) | Thin database abstraction over DB-API connections (SQLite + PostgreSQL) | [database.md](database.md) |
-| [`bmlib.llm`](llm.md) | Unified LLM client with pluggable providers (Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini) | [llm.md](llm.md) |
+| [`bmlib.llm`](llm.md) | Unified LLM client with pluggable providers (Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini), tool calling, embeddings, JSON repair, and text chunking | [llm.md](llm.md) |
 | [`bmlib.templates`](templates.md) | Jinja2-based prompt template engine with directory fallback | [templates.md](templates.md) |
 | [`bmlib.agents`](agents.md) | Base class for LLM-driven tasks | [agents.md](agents.md) |
-| [`bmlib.quality`](quality.md) | 3-tier quality assessment pipeline for biomedical publications | [quality.md](quality.md) |
+| [`bmlib.quality`](quality.md) | 3-tier quality assessment pipeline, Cochrane-style Risk-of-Bias models, and rule-based scoring | [quality.md](quality.md) |
 | [`bmlib.transparency`](transparency.md) | Multi-API transparency analysis (CrossRef, EuropePMC, OpenAlex, ClinicalTrials.gov) | [transparency.md](transparency.md) |
 | [`bmlib.publications`](publications.md) | Publication ingestion, deduplication, storage, and multi-source sync | [publications.md](publications.md) |
-| [`bmlib.fulltext`](fulltext.md) | Full-text retrieval (Europe PMC, Unpaywall, DOI), JATS XML parsing, disk caching | [fulltext.md](fulltext.md) |
+| [`bmlib.fulltext`](fulltext.md) | Full-text retrieval (Europe PMC, Unpaywall, DOI), JATS XML parsing, PDF→text conversion, disk caching | [fulltext.md](fulltext.md) |
 
 ## Architecture Principles
 
@@ -119,14 +120,16 @@ print(f"Added: {report.records_added}, Merged: {report.records_merged}")
 ### Full-Text Retrieval
 
 ```python
-from bmlib.fulltext import FullTextService, FullTextCache
+from bmlib.fulltext import FullTextService
 
 service = FullTextService(email="researcher@example.com")
-result = service.fetch_fulltext(pmc_id="PMC7614751", doi="10.1234/example")
 
-if result.source == "europepmc" and result.html:
-    cache = FullTextCache()  # uses platform default directory
-    cache.save_html(result.html, "PMC7614751")
+# Passing identifier= enables the built-in disk cache (platform default dir).
+result = service.fetch_fulltext(
+    pmc_id="PMC7614751", doi="10.1234/example", identifier="PMC7614751"
+)
+
+if result.html:
     print(result.html[:200])
 ```
 

@@ -111,6 +111,41 @@ Send a chat request through the LLM client using the agent's configured model an
 
 ---
 
+### `BaseAgent.chat_json`
+
+```python
+def chat_json(
+    self,
+    messages: list[LLMMessage],
+    *,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    max_retries: int = 3,
+    **kwargs: object,
+) -> dict
+```
+
+Chat with JSON mode and retry on empty or unparseable responses. Combines
+`chat()` with `parse_json()` and exponential backoff (1s, 2s, 4s, …).
+
+- **Empty responses** are treated as transport/model errors and retried
+  (logged at WARNING).
+- **Unparseable responses** are retried and logged at ERROR with the full
+  model output for diagnosis.
+- **Truncation** (the response stopped at the `max_tokens` ceiling) is
+  reported as truncation, not "unparseable". If the JSON happens to be
+  complete despite hitting the ceiling it is used as-is. At
+  `temperature == 0` a retry is provably futile (greedy sampling reproduces
+  the identical truncation), so it raises immediately; at
+  `temperature > 0` it retries, and the final error names the real cause.
+
+**Returns:** the parsed `dict`.
+
+**Raises:** `ValueError` on truncation at temperature 0 or after all
+retries are exhausted.
+
+---
+
 ### `BaseAgent.render_template`
 
 ```python
@@ -130,11 +165,14 @@ Render a prompt template using the configured template engine.
 def parse_json(text: str) -> dict
 ```
 
-Extract and parse JSON from LLM response text. Handles three cases:
+Extract and parse JSON from LLM response text. Tries, in order:
 
 1. Direct JSON parse
-2. JSON embedded in markdown code blocks (` ```json ... ``` `)
-3. Bare `{...}` object within surrounding text
+2. JSON embedded in markdown code blocks (` ```json ... ``` `) or a bare
+   `{...}` object within surrounding text (via `bmlib.llm.utils.extract_json`)
+3. As a last resort, repair of common LLM JSON defects — single quotes,
+   trailing/missing commas, truncation, unquoted keys — via
+   `bmlib.llm.json_repair.extract_and_repair_json`
 
 **Raises:** `ValueError` if no valid JSON can be extracted.
 
@@ -145,6 +183,7 @@ Extract and parse JSON from LLM response text. Handles three cases:
 BaseAgent.parse_json('{"score": 8}')
 BaseAgent.parse_json('```json\n{"score": 8}\n```')
 BaseAgent.parse_json('The result is {"score": 8}.')
+BaseAgent.parse_json("{'score': 8,}")  # repaired
 ```
 
 ---

@@ -242,7 +242,8 @@ class OpenAICompatibleProvider(BaseProvider):
             and self._models_cache is not None
             and time.time() - self._cache_timestamp < CACHE_TTL_SECONDS
         ):
-            return self._models_cache
+            # Copy so caller mutation cannot corrupt the cache (issue #12).
+            return list(self._models_cache)
 
         try:
             client = self._get_client()
@@ -278,7 +279,7 @@ class OpenAICompatibleProvider(BaseProvider):
             models = list(self.FALLBACK_MODELS)
         self._models_cache = models
         self._cache_timestamp = time.time()
-        return models
+        return list(models)
 
     # --- Connection test ---
 

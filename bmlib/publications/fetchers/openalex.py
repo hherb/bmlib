@@ -188,7 +188,7 @@ def fetch_openalex(
     client: Any,
     target_date: date,
     *,
-    on_record: Callable[[dict], None],
+    on_record: Callable[[FetchedRecord], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
     email: str,
     api_key: str | None = None,
@@ -202,7 +202,7 @@ def fetch_openalex(
     target_date:
         The publication date to query.
     on_record:
-        Called once per normalised record dict.
+        Called once per normalised :class:`FetchedRecord`.
     on_progress:
         Optional callback receiving :class:`SyncProgress` updates.
     email:

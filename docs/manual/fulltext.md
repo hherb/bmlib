@@ -1,14 +1,15 @@
 # bmlib.fulltext — Full-Text Retrieval & JATS Parsing
 
-Full-text retrieval service with JATS XML parsing for biomedical literature. Provides a 3-tier retrieval chain (Europe PMC → Unpaywall → DOI), a SAX-based JATS parser that converts PubMed Central XML to structured data or HTML, and a disk cache for downloaded content.
+Full-text retrieval service with JATS XML parsing for biomedical literature. Provides a multi-tier retrieval chain (cache → fetcher-provided sources → Europe PMC → Unpaywall → DOI), a SAX-based JATS parser that converts PubMed Central XML to structured data or HTML, a disk cache for downloaded content, and pluggable PDF-to-text conversion.
 
 ## Installation
 
 ```bash
-pip install bmlib[publications]
+pip install bmlib[publications]   # HTTP retrieval (httpx)
+pip install bmlib[pdf]            # PDF-to-text conversion (PyMuPDF)
 ```
 
-Requires `httpx` for HTTP requests to external APIs (shared with the `publications` dependency group).
+Retrieval requires `httpx` for HTTP requests to external APIs (shared with the `publications` dependency group). PDF conversion requires `pymupdf`, provided by the optional `pdf` extra.
 
 ## Imports
 
@@ -21,8 +22,15 @@ from bmlib.fulltext import (
     JATSParser,
     # Cache
     FullTextCache,
+    # PDF conversion
+    ConversionResult,
+    PDFConverter,
+    PyMuPDFConverter,
+    get_converter,
+    list_converters,
     # Data models
     FullTextResult,
+    FullTextSourceEntry,
     JATSArticle,
     JATSAuthorInfo,
     JATSAbstractSection,
@@ -108,22 +116,30 @@ pdf_path = cache.get_pdf("34567890")
 
 ## FullTextService
 
-Retrieves full text using a 3-tier fallback chain:
+Retrieves full text using a multi-tier fallback chain:
 
-1. **Europe PMC** — fetches JATS XML, parses to HTML via `JATSParser`
+0. **Cache / known sources** — disk cache hit (when `identifier` is given), then fetcher-provided `FullTextSourceEntry` URLs in priority order JATS XML > PDF > HTML
+1. **Europe PMC** — fetches JATS XML (known or discovered PMC ID), parses to HTML via `JATSParser`; falls back to a free PDF render URL when XML is unavailable
 2. **Unpaywall** — queries for open-access PDF URL
-3. **DOI resolution** — falls back to publisher website URL
+3. **DOI resolution** — falls back to publisher website URL (or PubMed URL)
 
 ```python
 class FullTextService:
-    def __init__(self, email: str, timeout: float = 30.0) -> None: ...
+    def __init__(
+        self,
+        email: str,
+        timeout: float = 30.0,
+        cache: FullTextCache | None = None,
+    ) -> None: ...
 
     def fetch_fulltext(
         self,
         *,
+        fulltext_sources: list[FullTextSourceEntry] | None = None,
         pmc_id: str | None = None,
         doi: str | None = None,
         pmid: str = "",
+        identifier: str | None = None,
     ) -> FullTextResult: ...
 ```
 
@@ -131,25 +147,43 @@ class FullTextService:
 |-----------|------|-------------|
 | `email` | `str` | Contact email, required by Unpaywall API |
 | `timeout` | `float` | HTTP request timeout in seconds (default 30) |
+| `cache` | `FullTextCache \| None` | Disk cache used when `identifier` is passed to `fetch_fulltext()`; defaults to a new `FullTextCache()` |
 
 ### `fetch_fulltext()`
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
+| `fulltext_sources` | `list[FullTextSourceEntry] \| None` | Known source URLs from a publication fetcher — tried first (Tier 0) |
 | `pmc_id` | `str \| None` | PubMed Central ID (e.g. `"PMC7614751"`) — triggers Tier 1 |
-| `doi` | `str \| None` | Digital Object Identifier — triggers Tier 2 and 3 |
-| `pmid` | `str` | PubMed ID — used as final fallback URL |
+| `doi` | `str \| None` | Digital Object Identifier — triggers PMC ID discovery, Tier 2 and 3 |
+| `pmid` | `str` | PubMed ID — used for PMC ID discovery and as final fallback URL |
+| `identifier` | `str \| None` | Cache key (typically the DOI); when provided, enables disk caching of retrieved HTML and downloaded PDFs |
 
 **Returns:** `FullTextResult` with the source and content.
 
 **Raises:** `FullTextError` if no identifiers are provided at all.
 
+When a tier yields a PDF URL and `identifier` is given, the service also downloads the PDF into the cache and sets `FullTextResult.file_path` (leaving `pdf_url` usable as a fallback if the download fails).
+
 ### Fallback behaviour
 
 ```
-PMC ID provided? ──yes──▶ Europe PMC XML ──success──▶ return HTML
+identifier given? ──yes──▶ disk cache ──hit──▶ return cached HTML or PDF path
+                                │
+                              miss
+                                ▼
+fulltext_sources? ──yes─▶ known URLs (XML ▶ PDF ▶ HTML) ──success──▶ return
                                 │
                               fail
+                                ▼
+PMC ID known, or discovered via Europe PMC search (DOI/PMID)?
+                ──yes──▶ Europe PMC XML ──success──▶ return HTML
+                                │
+                              fail
+                                ▼
+Free PDF in Europe PMC search result? ──yes──▶ return PDF render URL
+                                │
+                               no
                                 ▼
 DOI provided? ───yes──▶ Unpaywall API ──success──▶ return PDF URL
                                 │
@@ -175,7 +209,9 @@ Result of a full-text retrieval attempt.
 ```python
 @dataclass
 class FullTextResult:
-    source: str                    # "europepmc", "unpaywall", "doi", "cached"
+    source: str                    # "europepmc", "europepmc_pdf", "unpaywall",
+                                   # "doi", "pubmed", "cached", or a fetcher
+                                   # source name (e.g. "biorxiv")
     html: str | None = None        # Parsed HTML (from JATS XML)
     pdf_url: str | None = None     # Open-access PDF URL
     web_url: str | None = None     # Publisher website URL
@@ -184,10 +220,31 @@ class FullTextResult:
 
 | Field | Populated when |
 |-------|---------------|
-| `html` | `source == "europepmc"` — full article HTML from parsed JATS XML |
-| `pdf_url` | `source == "unpaywall"` — direct link to open-access PDF |
-| `web_url` | `source == "doi"` — link to publisher page or PubMed |
-| `file_path` | `source == "cached"` — path to locally cached file |
+| `html` | `source == "europepmc"`, a cached HTML hit, or a known XML source — full article HTML from parsed JATS XML |
+| `pdf_url` | `source == "europepmc_pdf"`, `"unpaywall"`, or a known PDF source — direct link to open-access PDF |
+| `web_url` | `source == "doi"`, `"pubmed"`, or a known HTML source — link to publisher page or PubMed |
+| `file_path` | `source == "cached"` (PDF cache hit), or set alongside `pdf_url` after a successful download into the cache |
+
+---
+
+## FullTextSourceEntry
+
+A known full-text source URL discovered by a publication fetcher. Produced by `bmlib.publications` fetchers, consumed by `FullTextService.fetch_fulltext(fulltext_sources=...)` as Tier 0.
+
+```python
+@dataclass
+class FullTextSourceEntry:
+    url: str
+    format: str                 # "pdf", "xml", "html"
+    source: str                 # e.g. "biorxiv", "medrxiv", "pmc", "publisher"
+    open_access: bool = True
+    version: str | None = None  # e.g. "preprint", "accepted", "published"
+
+    def to_dict(self) -> dict[str, Any]: ...
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> FullTextSourceEntry: ...
+```
 
 ---
 
@@ -399,6 +456,99 @@ fulltext_cache/
 
 PDF validation uses magic-byte checking (`%PDF` header). Non-PDF data is rejected with a warning log.
 
+Identifiers that are not filename-safe (e.g. raw DOIs containing `/`) are sanitized into `<safe>_<hash>` filenames, where `<hash>` is a short SHA-1 prefix of the raw identifier, so distinct identifiers can never collide. Already-safe identifiers (PMIDs, PMC IDs) are used verbatim.
+
+---
+
+## PDF Conversion
+
+Pluggable PDF-to-text conversion behind a small registry, prioritising completeness of extracted text over formatting. The only built-in backend is `PyMuPDFConverter`, which requires the optional `pymupdf` dependency (`pip install bmlib[pdf]`); it is loaded lazily, so importing `bmlib.fulltext` never requires PyMuPDF.
+
+### Registry
+
+```python
+def get_converter(name: str = "pymupdf") -> PDFConverter: ...
+def list_converters() -> list[str]: ...
+```
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `get_converter(name)` | `PDFConverter` | Initialised converter by name (default `"pymupdf"`) |
+| `list_converters()` | `list[str]` | Names of all registered converters |
+
+**Raises:** `get_converter()` raises `ValueError` for an unknown name, and `ImportError` if the converter's optional dependency is missing (`Install with: pip install bmlib[pdf]`).
+
+### PDFConverter
+
+Abstract base class for PDF converters.
+
+```python
+class PDFConverter(ABC):
+    @property
+    def name(self) -> str: ...      # abstract — converter name identifier
+    @property
+    def version(self) -> str: ...   # abstract — converter version string
+
+    def convert(self, pdf_path: Path) -> ConversionResult: ...  # abstract
+    def validate_pdf_path(self, pdf_path: Path) -> None: ...
+```
+
+| Method | Description |
+|--------|-------------|
+| `convert(pdf_path)` | Convert a PDF to text; raises `FileNotFoundError` if the file does not exist, `ValueError` if the path is not a PDF file |
+| `validate_pdf_path(pdf_path)` | Check the path exists, is a file, and has a `.pdf` suffix (same exceptions as above) |
+
+### ConversionResult
+
+Result of a PDF-to-text conversion — a stable interface across backends.
+
+```python
+@dataclass
+class ConversionResult:
+    success: bool
+    text: str
+    format: str                    # "plaintext" or "markdown"
+    page_count: int
+    converted_pages: int
+    char_count: int
+    warnings: list[str] = field(default_factory=list)
+    converter_name: str = ""
+    converter_version: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    error_message: str | None = None
+
+    @property
+    def is_complete(self) -> bool: ...        # all pages converted and some text extracted
+    @property
+    def completion_ratio(self) -> float: ...  # converted_pages / page_count (0.0 when no pages)
+```
+
+### PyMuPDFConverter
+
+Built-in backend backed by PyMuPDF (`fitz`); registered as `"pymupdf"`. The constructor raises `ImportError` if `pymupdf` is not installed.
+
+- Extracts plaintext from every page; pages with no extractable text (e.g. image-only) are still counted as converted, with a warning.
+- A single failing page does not abort the rest — a warning is recorded instead.
+- PDF metadata (title, author, subject, keywords, creator, producer, creation/modification dates) is collected best-effort into `metadata`.
+- Invalid or corrupted PDFs return `success=False` with `error_message` set rather than raising.
+
+### Example
+
+```python
+from pathlib import Path
+from bmlib.fulltext import get_converter, list_converters
+
+print(list_converters())        # ["pymupdf"]
+
+converter = get_converter()     # default: "pymupdf"
+result = converter.convert(Path("paper.pdf"))
+
+if result.success and result.is_complete:
+    print(result.text[:200])
+else:
+    print(result.error_message or result.warnings)
+```
+
 ---
 
 ## FullTextError
@@ -414,34 +564,36 @@ Raised when `fetch_fulltext()` cannot produce any result — typically when no i
 
 ## Integration Example
 
-Combining the service, parser, and cache for a complete workflow:
+Combining the service, cache, and PDF conversion for a complete workflow:
 
 ```python
-from bmlib.fulltext import FullTextService, FullTextCache, FullTextError
+from pathlib import Path
+from bmlib.fulltext import FullTextService, FullTextCache, FullTextError, get_converter
 
 cache = FullTextCache(cache_dir="/data/papers/cache")
-service = FullTextService(email="lab@university.edu")
+service = FullTextService(email="lab@university.edu", cache=cache)
 
 def get_fulltext(pmc_id: str, doi: str, pmid: str) -> str | None:
-    """Get full text HTML, using cache when available."""
-    # Check cache first
-    cached = cache.get_html(pmc_id or pmid)
-    if cached:
-        return cached
-
+    """Get full text as HTML or plaintext, caching on disk."""
     try:
         result = service.fetch_fulltext(
             pmc_id=pmc_id or None,
             doi=doi or None,
             pmid=pmid,
+            identifier=doi or pmc_id or pmid,  # enables disk caching
         )
     except FullTextError:
         return None
 
-    if result.source == "europepmc" and result.html:
-        # Cache the parsed HTML for future use
-        cache.save_html(result.html, pmc_id or pmid)
+    if result.html:
+        # Parsed JATS HTML (fresh or cached)
         return result.html
+
+    if result.file_path:
+        # Downloaded (or cached) PDF — convert to plaintext
+        conversion = get_converter().convert(Path(result.file_path))
+        if conversion.success:
+            return conversion.text
 
     return None
 ```

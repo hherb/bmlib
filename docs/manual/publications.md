@@ -24,6 +24,16 @@ from bmlib.publications import (
     Publication,
     FullTextSource,
     DownloadDay,
+    FetchedRecord,
+
+    # Source registry
+    register_source,
+    get_source,
+    get_fetcher,
+    list_sources,
+    source_names,
+    SourceDescriptor,
+    SourceParam,
 
     # Storage operations
     store_publication,
@@ -246,16 +256,27 @@ def store_publication(
 Store a publication, de-duplicating by DOI then PMID.
 
 **Deduplication logic:**
-1. Look up existing record by DOI (if present).
-2. If not found, look up by PMID (if present).
-3. If found, **merge** the incoming record into the existing one.
-4. If not found, **insert** as a new record.
+1. DOI and PMID are normalised before lookup and storage (lowercased DOI,
+   `https://doi.org/`-prefix and `PMID:`-prefix stripping), so the same work
+   fetched from different sources resolves to a single row. `pub` is mutated
+   in place to hold the canonical forms.
+2. Look up existing records by DOI and PMID independently. If both match but
+   point at *two different rows* (a split identity), the rows are
+   consolidated into one (the DOI row is kept).
+3. If a match is found, **merge** the incoming record into the existing one;
+   otherwise **insert** as a new record.
 
 **Merge behaviour:**
 - Appends new sources to the existing sources list.
 - Fills `NULL` fields from the incoming record (COALESCE logic).
 - Never overwrites existing non-NULL fields.
 - Authors, publication_types, and keywords: keeps existing if non-empty, otherwise takes incoming.
+
+**Transactions:** the whole store (row consolidation, insert/merge, and
+full-text sources) is one atomic transaction. Standalone calls commit on
+return; calls made inside a caller's `transaction(conn)` block join it via a
+savepoint, deferring the commit to the caller (this is how `sync()` batches a
+whole day into one commit — see `bmlib.db.transaction`).
 
 **Parameters:**
 
@@ -348,9 +369,10 @@ def sync(
     sources: list[str] | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
-    email: str,
+    email: str = "",
     api_keys: dict[str, str] | None = None,
-    on_record: Callable[[dict], None] | None = None,
+    source_configs: dict[str, dict[str, Any]] | None = None,
+    on_record: Callable[[FetchedRecord], None] | None = None,
     on_progress: Callable[[SyncProgress], None] | None = None,
     recheck_days: int = 0,
 ) -> SyncReport
@@ -363,12 +385,13 @@ Orchestrate syncing publications from multiple sources. Automatically creates th
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `conn` | `Any` | *(required)* | A DB-API connection. |
-| `sources` | `list[str] \| None` | `None` | Source names to sync. Defaults to all: `["pubmed", "biorxiv", "medrxiv", "openalex"]`. |
+| `sources` | `list[str] \| None` | `None` | Source names to sync. Defaults to all registered sources (`["pubmed", "biorxiv", "medrxiv", "openalex"]`). |
 | `date_from` | `date \| None` | `None` | Start date (inclusive). Defaults to yesterday. |
 | `date_to` | `date \| None` | `None` | End date (inclusive). Defaults to today. |
-| `email` | `str` | *(required)* | Contact email for polite API access (required by OpenAlex and CrossRef). |
-| `api_keys` | `dict[str, str] \| None` | `None` | Optional dict mapping source names to API keys (e.g. `{"pubmed": "your_ncbi_key"}`). |
-| `on_record` | `Callable \| None` | `None` | Optional callback invoked with each raw record dict. |
+| `email` | `str` | `""` | Contact email for polite API access (legacy; prefer `source_configs`). |
+| `api_keys` | `dict[str, str] \| None` | `None` | Optional dict mapping source names to API keys, e.g. `{"pubmed": "your_ncbi_key"}` (legacy; prefer `source_configs`). |
+| `source_configs` | `dict[str, dict] \| None` | `None` | Dict mapping source names to config dicts, unpacked as `**kwargs` when calling the fetcher. Supersedes `email` and `api_keys` when provided. |
+| `on_record` | `Callable \| None` | `None` | Optional callback invoked with each `FetchedRecord` as the fetcher streams it — **before** the record is stored (see write batching below). |
 | `on_progress` | `Callable \| None` | `None` | Optional callback invoked with `SyncProgress` updates. |
 | `recheck_days` | `int` | `0` | If > 0, re-fetch completed days older than this many days. |
 
@@ -379,6 +402,22 @@ Orchestrate syncing publications from multiple sources. Automatically creates th
 - Days with `status="completed"` are skipped unless `recheck_days` triggers a re-check.
 - Days with `status="failed"` are always retried.
 - Days with no download record are fetched.
+
+**Write batching — changed in 0.3.0:**
+
+Each day's records are buffered in memory during the fetch and stored in one
+batch afterwards, inside a single per-day transaction. Consequences:
+
+- Writes cost one commit per synced day instead of one per statement, and
+  SQLite's write lock is never held across network I/O.
+- `on_record` fires while the fetcher streams, **before** the record is
+  stored — the callback must not expect to read the record back from the
+  database. Use it for progress display, filtering statistics, or side
+  channels, not for read-after-write.
+- A day's records are held in memory for the duration of that day's fetch.
+- The day's `download_days` status row commits atomically with the day's
+  records: a crash mid-day leaves the day marked incomplete and it is
+  re-fetched next run.
 
 **Example:**
 
@@ -435,6 +474,18 @@ report = sync(
 
 Each source has a dedicated fetcher module. Fetchers are used internally by `sync()` but can be called directly for advanced use cases.
 
+### Source Registry
+
+Sources live in a module-level registry with lazy built-in registration:
+
+| Function | Description |
+|----------|-------------|
+| `register_source(descriptor, fetcher)` | Register a fetcher under a source name (`SourceDescriptor` carries name, display name, description, and `SourceParam` config metadata). Use to plug in custom sources at runtime. |
+| `source_names() -> list[str]` | Names of all registered sources. |
+| `list_sources() -> list[SourceDescriptor]` | Descriptors for all registered sources. |
+| `get_source(name) -> tuple[SourceDescriptor, Callable]` | The (descriptor, fetcher) pair for a source. |
+| `get_fetcher(name) -> Callable` | Just the fetcher callable. |
+
 ### Available Sources
 
 | Source | Module | API |
@@ -451,7 +502,7 @@ def fetch_pubmed(
     client: Any,
     target_date: date,
     *,
-    on_record: Callable[[dict], None],
+    on_record: Callable[[FetchedRecord], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
     api_key: str | None = None,
 ) -> FetchResult
@@ -472,7 +523,7 @@ def fetch_biorxiv(
     client: Any,
     target_date: date,
     *,
-    on_record: Callable[[dict], None],
+    on_record: Callable[[FetchedRecord], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
     server: str = "biorxiv",
     api_key: str | None = None,
@@ -493,7 +544,7 @@ def fetch_openalex(
     client: Any,
     target_date: date,
     *,
-    on_record: Callable[[dict], None],
+    on_record: Callable[[FetchedRecord], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
     email: str,
     api_key: str | None = None,
@@ -509,27 +560,40 @@ Fetch all OpenAlex works published on `target_date`.
 
 ---
 
-## Record Dict Format
+## Fetched Record Format
 
-All fetchers produce normalised record dicts with these common keys:
+All fetchers produce normalised `FetchedRecord` dataclass instances (this is
+also what `sync()`'s `on_record` callback receives):
 
 ```python
-{
-    "title": str,
-    "doi": str | None,
-    "pmid": str | None,
-    "abstract": str | None,
-    "authors": list[str],
-    "journal": str | None,
-    "publication_date": str | None,
-    "publication_types": list[str],
-    "keywords": list[str],
-    "is_open_access": bool,
-    "license": str | None,
-    "fulltext_sources": list[dict],  # [{"url": ..., "source": ..., "format": ...}]
-    "source": str,                    # "pubmed", "biorxiv", "medrxiv", "openalex"
-}
+@dataclass
+class FetchedRecord:
+    # -- Identifiers --
+    title: str
+    source: str                       # "pubmed", "biorxiv", "medrxiv", "openalex"
+    doi: str | None = None
+    pmid: str | None = None
+    pmc_id: str | None = None
+
+    # -- Content --
+    abstract: str | None = None
+    authors: list[str] = ...
+    journal: str | None = None
+    publication_date: str | None = None
+    keywords: list[str] = ...
+    publication_types: list[str] = ...
+
+    # -- Access --
+    is_open_access: bool = False
+    license: str | None = None
+    fulltext_sources: list[FullTextSourceEntry] = ...
+
+    # -- Source-specific extras --
+    extras: dict[str, Any] = ...
 ```
+
+Core fields are guaranteed present (possibly `None`/empty); source-specific
+data goes in `extras`.
 
 ---
 
