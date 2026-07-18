@@ -16,7 +16,7 @@
 
 """Multi-API transparency analyzer.
 
-Queries PubMed, CrossRef, EuropePMC, ClinicalTrials.gov, and OpenAlex
+Queries CrossRef, EuropePMC, ClinicalTrials.gov, and OpenAlex
 to assess transparency of biomedical publications.
 
 Requires ``httpx`` (install with ``pip install bmlib[transparency]``).
@@ -177,21 +177,25 @@ def _extract_tagged_coi_text(full_text: str) -> str:
     return _TAG_RE.sub(" ", " ".join(sections)).lower()
 
 
-def _extract_coi_text(full_text: str) -> str:
+def _extract_coi_text(full_text: str, tagged: str | None = None) -> str:
     """Return the COI/disclosure portion of *full_text*, tag-stripped and lowercased.
 
     Prefers JATS-tagged COI containers (see :func:`_extract_tagged_coi_text`);
     falls back to fixed-size windows following each COI cue phrase (see
-    :data:`_COI_PATTERNS`) when the text carries no tagged section. Returns an
-    empty string when no COI-like region is found.
+    :data:`_COI_PATTERNS`) when the tagged text is blank — a whitespace-only
+    tagged section proves nothing, so an untagged disclosure elsewhere in the
+    text must still be found. Returns an empty string when no COI-like region
+    is found. Pass *tagged* to reuse an already-computed
+    :func:`_extract_tagged_coi_text` result instead of rescanning.
 
     Known limitation: a fallback window is a fixed span, so it can bleed past
     the end of a short disclosure into whatever follows (acknowledgements,
     references). Accepted trade-off, matched by the moderate
     :data:`TEXT_INDUSTRY_CONFIDENCE` given to text-derived signals.
     """
-    tagged = _extract_tagged_coi_text(full_text)
-    if tagged:
+    if tagged is None:
+        tagged = _extract_tagged_coi_text(full_text)
+    if tagged.strip():
         return tagged
 
     text = _TAG_RE.sub(" ", full_text).lower()
@@ -483,9 +487,8 @@ class TransparencyAnalyzer:
         # JATS-tagged COI section is structural proof of a disclosure even
         # when its wording contains no cue phrase (issue #13); the cue-phrase
         # scan remains the fallback for untagged text.
-        if _extract_tagged_coi_text(search_text).strip() or any(
-            pat in search_text for pat in _COI_PATTERNS
-        ):
+        tagged_coi = _extract_tagged_coi_text(search_text)
+        if tagged_coi.strip() or any(pat in search_text for pat in _COI_PATTERNS):
             coi_disclosed = True
             score += SCORE_COI_DISCLOSED
         elif full_text_analyzed:
@@ -502,7 +505,9 @@ class TransparencyAnalyzer:
         # within the COI/disclosure region to avoid false positives from
         # references or affiliations.
         if full_text_analyzed:
-            industry_coi = _discloses_industry_ties(_extract_coi_text(search_text))
+            industry_coi = _discloses_industry_ties(
+                _extract_coi_text(search_text, tagged=tagged_coi)
+            )
 
         # Data availability
         for pattern, level in _DATA_PATTERNS.items():

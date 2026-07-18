@@ -1,7 +1,7 @@
 # HANDOVER — bmlib development
 
 _Last updated: 2026-07-18 (0.3.0 documentation refresh done; issues #12 and
-#13 fixed; 547 tests passing + 1 skipped on this branch, PR pending)._
+#13 fixed; 548 tests passing + 1 skipped on this branch, PR pending)._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -29,7 +29,7 @@ re-narrate it here.
   runnable doc examples were executed against the code.
 - Issues **#12** (`list_models()` cache aliasing) and **#13** (tagged COI
   section without cue phrase) are fixed with regression tests (this branch).
-- **547 tests passing + 1 skipped** (`uv run pytest tests/ -q`).
+- **548 tests passing + 1 skipped** (`uv run pytest tests/ -q`).
 
 ## bmlibrarian → bmlib porting (active effort)
 

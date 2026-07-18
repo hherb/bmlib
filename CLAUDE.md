@@ -51,7 +51,7 @@ bmlib/
 │   ├── jats_parser.py       # JATS XML → structured data
 │   ├── models.py            # FullTextResult, JATSArticle, etc.
 │   ├── pdf_converter.py     # Pluggable PDF→text conversion (PyMuPDF backend, bmlib[pdf])
-│   └── service.py           # 3-tier FullTextService (EuropePMC → Unpaywall → DOI)
+│   └── service.py           # Multi-tier FullTextService (cache → known sources → EuropePMC → Unpaywall → DOI)
 ├── llm/                     # Unified LLM client with pluggable providers
 │   ├── client.py            # LLMClient router, get_llm_client() singleton
 │   ├── data_types.py        # LLMMessage, LLMResponse dataclasses
@@ -104,7 +104,7 @@ bmlib/
 - **`quality/`** — 3-tier quality assessment: (1) free metadata classification, (2) cheap LLM classifier, (3) deep LLM assessment. Uses CEBM evidence hierarchy for quality tiers. Plus Cochrane-style nine-domain Risk-of-Bias models with MD/HTML renderers (`cochrane_*`), and rule-based study-type/sample-size scoring with `DimensionScore` audit trails (`extractors`, `scoring_models`).
 - **`transparency/`** — Queries CrossRef, EuropePMC, OpenAlex, and ClinicalTrials.gov to compute a transparency score (0-100) covering funding, COI, data availability, trial registration, and outcome switching. Scans EuropePMC full text (when open access) for COI and industry-tie disclosures.
 - **`publications/`** — Publication ingestion from multiple sources (PubMed, bioRxiv, medRxiv, OpenAlex) with deduplication by DOI/PMID, merge-on-upsert, and date-range sync tracking. Note: the storage layer is currently SQLite-specific (`?` placeholders, `ON CONFLICT`, `cur.lastrowid`) even though `db/` also supports PostgreSQL.
-- **`fulltext/`** — 3-tier full-text retrieval (Europe PMC XML → Unpaywall → DOI resolution) with JATS XML parsing, pluggable PDF→text conversion, and disk-based caching.
+- **`fulltext/`** — Multi-tier full-text retrieval (disk cache → fetcher-provided sources → Europe PMC XML → Unpaywall → DOI resolution) with JATS XML parsing and pluggable PDF→text conversion.
 
 ## Coding Conventions
 

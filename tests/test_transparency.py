@@ -232,6 +232,24 @@ class TestStructuralCOIDetection:
         assert coi is False
         assert score == 0
 
+    def test_empty_tagged_section_does_not_mask_untagged_disclosure(self):
+        # A whitespace-only COI container must not stop the cue-phrase
+        # fallback from finding an untagged disclosure elsewhere — for the
+        # disclosure itself AND for the industry ties it declares.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            '<article><back><fn-group><fn fn-type="COI-statement"><p> </p></fn>'
+            "</fn-group><p>Conflict of interest: Dr X received speaker fees "
+            "from Pfizer.</p></back></article>"
+        )
+        coi, _level, score, _ind, ft, industry = analyzer._check_europepmc(
+            client, _epmc_record(), score=0, indicators=[]
+        )
+        assert ft is True
+        assert coi is True
+        assert industry is True
+        assert score == 10
+
 
 class TestIndustryCOIDetection:
     """Industry ties disclosed in a paper's COI statement must be detected.

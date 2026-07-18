@@ -24,7 +24,7 @@ hold the full story.
 | **Quality (`bmlib.quality`)** | | |
 | ✅ Done | 3-tier assessment pipeline | Free metadata filter → cheap LLM study classifier → deep assessment agent; CEBM evidence hierarchy |
 | **Transparency (`bmlib.transparency`)** | | |
-| ✅ Done | Multi-API analyzer | PubMed, CrossRef, EuropePMC, OpenAlex, ClinicalTrials.gov → 0–100 score over funding, COI, data availability, trial registration, outcome switching |
+| ✅ Done | Multi-API analyzer | CrossRef, EuropePMC, OpenAlex, ClinicalTrials.gov → 0–100 score over funding, COI, data availability, trial registration, outcome switching |
 | ✅ Done | Industry-COI detection in full text | `_check_europepmc()` returns `industry_coi`; industry ties surfaced from COI statements |
 | ✅ Done | Structural COI detection | Issue #13 — a non-blank JATS-tagged COI section counts as `coi_disclosed=True`; the cue-phrase scan is the fallback for untagged text |
 | ⬜ Planned | Use or remove `pubmed_api_key` | Issue #18 — `TransparencyAnalyzer` accepts the parameter but never queries NCBI; remove (breaking) or wire it up when a PubMed check is added |
@@ -34,10 +34,10 @@ hold the full story.
 | ✅ Done | Batched sync commits | One commit per synced day; SQLite write lock no longer held across network I/O (0.3.0) |
 | ⬜ Planned | PostgreSQL support for the storage layer | `storage.py` is SQLite-specific (`?` placeholders, `ON CONFLICT`, `cur.lastrowid`); port when a PostgreSQL consumer needs it |
 | **Full text (`bmlib.fulltext`)** | | |
-| ✅ Done | 3-tier retrieval | Europe PMC XML → Unpaywall → DOI resolution, with disk-based caching |
+| ✅ Done | Multi-tier retrieval | Disk cache → fetcher-provided sources → Europe PMC XML → Unpaywall → DOI resolution |
 | ✅ Done | JATS XML parser | JATS → structured `JATSArticle` data |
 | **Quality & maintenance** | | |
-| ✅ Done | Test suite | 547 tests; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services |
+| ✅ Done | Test suite | 548 tests; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services |
 | ✅ Done | Reference manual | `docs/manual/` — one page per module |
 | ✅ Done | Documentation refresh for 0.3.0 | README/manual version strings, `transaction()` + migrations, sync write-batching, full-text COI pipeline, new Phase 0 module sections, CLAUDE.md sweep; doc examples executed against the code |
 | ⬜ Planned | Release 0.3.0 | CHANGELOG `Unreleased` and documentation are now in sync — tag and package once the docs/fixes PR lands |
