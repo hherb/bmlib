@@ -21,6 +21,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Nothing here pushes back to the repo; don't leave the token in
+          # .git/config for later steps to read.
+          persist-credentials: false
 
       - uses: actions/setup-python@v6
         with:
@@ -86,7 +90,10 @@ jobs:
         with:
           name: dist
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      # Pinned to a commit, not the mutable release/v1 tag: this step runs
+      # with id-token: write, so a hijacked tag could mint attestations in
+      # bmlib's name. Bump the SHA deliberately when updating.
+      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
         with:
           repository-url: https://test.pypi.org/legacy/
           # TestPyPI accumulates rehearsal uploads; don't fail a rerun.
@@ -110,4 +117,5 @@ jobs:
         with:
           name: dist
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      # Same SHA as the TestPyPI job above — keep the two in lockstep.
+      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0

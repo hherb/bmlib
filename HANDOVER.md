@@ -2,7 +2,7 @@
 
 _Last updated: 2026-07-19 (v0.4.0 released; Phase 0 ports merged to `main`;
 full documentation refresh done — CHANGELOG, README, CLAUDE.md and all eight
-`docs/manual/` pages rewritten against the current APIs. 552 tests passing +
+`docs/manual/` pages rewritten against the current APIs. 562 tests passing +
 2 skipped on `main`)._
 
 This file briefs the next session on what is done, what is still open, and
@@ -25,10 +25,11 @@ re-narrate it here.
   actual source, with every signature verified and code examples executed.
   Assume they are accurate; if you find drift, that is a regression worth
   fixing rather than expected staleness.
-- Merged since the last handover: Phase 0 bmlibrarian ports (PR #16), CI
-  hardening (PR #15), plus the earlier code-review fix batches, the
+- Merged since the last handover: the 0.3.0 documentation refresh with the
+  fixes for issues #12 and #13 (PR #19), Phase 0 bmlibrarian ports (PR #16),
+  CI hardening (PR #15), plus the earlier code-review fix batches, the
   one-commit-per-synced-day perf work, and industry-COI detection.
-- **552 tests passing + 2 skipped** (`uv run pytest tests/ -q`) on `main`.
+- **562 tests passing + 2 skipped** (`uv run pytest tests/ -q`) on `main`.
 
 ## bmlibrarian → bmlib porting (active effort)
 
@@ -158,16 +159,19 @@ Two were closed as documentation rather than code, deliberately:
 
 ### 2. Open GitHub issues
 
-- **#13 — transparency: tagged COI section without a cue phrase yields
-  `coi_disclosed=False`.** A non-empty tagged-section result from
-  `_extract_coi_text()` should count as structural proof of disclosure,
-  with the cue-phrase scan kept as fallback for untagged text. Add tests
-  for the tagged-but-cue-less case, including that `SCORE_COI_DISCLOSED`
-  is credited exactly once.
-- **#12 — llm: `list_models()` returns the cached list by reference.**
-  `openai_compat.py` and `anthropic.py` both return the same mutable list
-  object; caller mutation corrupts the cache. Return a copy (or store a
-  tuple) and add a regression test.
+Issues #12 (`list_models()` cache aliasing) and #13 (tagged COI section
+without a cue phrase) were fixed in PR #19 and are closed — do not reopen
+them. Still open:
+
+- **#17 — consolidate duplicated JSON extraction** (`llm/utils.py` vs
+  `llm/json_repair.py`): folded into the Phase 1 BaseAgent work above.
+- **#18 — `TransparencyAnalyzer` accepts `pubmed_api_key` but never uses
+  it**: remove (breaking) or wire it up when a real NCBI check is added.
+  The manual documents it as accepted-but-unused for now.
+- **#21 — transparency: `UNKNOWN` results distinguishable only by
+  `risk_indicators` string matching**: add a structured `unknown_reason`
+  enum when a consumer needs to branch on disabled vs unreachable.
+  Deferred from the 0.4.0 release review.
 
 ### Known limitations (no issue filed)
 

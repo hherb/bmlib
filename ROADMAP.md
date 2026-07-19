@@ -19,8 +19,8 @@ hold the full story.
 | ✅ Done | Embeddings | `LLMClient.embed()` → `EmbeddingResponse`; Ollama only — every other provider raises `NotImplementedError` |
 | ✅ Done | JSON repair | `json_repair.py` — single quotes, trailing/missing commas, control chars, truncation, unquoted keys; wired into `BaseAgent.parse_json()` |
 | ✅ Done | Text chunking | `text_utils.py` — boundary-aware `TextChunker` plus map-reduce and rolling-summary helpers |
+| ✅ Done | Defensive `list_models()` cache | Issue #12 — Anthropic and OpenAI-compatible providers return a copy of the cached model list; caller mutation can no longer corrupt the cache |
 | ⬜ Planned | Embeddings beyond Ollama | Only Ollama implements `embed()`; add OpenAI and Gemini backends when a consumer needs them |
-| ⬜ Planned | Defensive `list_models()` cache | Issue #12 — cached model list returned by reference; caller mutation corrupts the cache. Return a copy or store a tuple |
 | ⬜ Planned | Consolidate JSON extraction | Issue #17 — `llm/utils.py::extract_json` and `llm/json_repair.py::extract_and_repair_json` duplicate span-location logic; unify behind one locator (fold into the Phase 1 BaseAgent work) |
 | **Agents (`bmlib.agents`)** | | |
 | ✅ Done | `BaseAgent` | `chat()`, `chat_json()` with retry and truncation fail-fast, template rendering, message helpers |
@@ -37,8 +37,10 @@ hold the full story.
 | ✅ Done | Unreachable-API guard | No API reachable → `UNKNOWN` at score 0, so a dead network no longer reads as a HIGH-risk paper (0.4.0) |
 | ✅ Done | Thread-safe analyzer | Mutex-guarded rate limiting (shared, throttles a shared API) and thread-local reachability (per-analysis), so one instance can be shared across workers (0.4.0) |
 | ✅ Done | Settings ownership made explicit | `enabled` is now honoured (short-circuits before the `httpx` import); `filtering_enabled`, `max_concurrent_analyses` and `cache_results` are documented as caller-owned orchestration hints (0.4.0) |
+| ✅ Done | Structural COI detection | Issue #13 — a non-blank JATS-tagged COI section counts as `coi_disclosed=True` even without a cue phrase; the cue-phrase scan is the fallback for untagged text |
 | ⬜ Planned | Outcome-switching detection | `outcome_switching_detected` is reserved and always `False`. Requires comparing a trial's pre-registered primary outcomes against those reported |
-| ⬜ Planned | Structural COI detection | Issue #13 — a tagged COI section without a cue phrase must count as `coi_disclosed=True`; cue-phrase scan becomes the fallback |
+| ⬜ Planned | Use or remove `pubmed_api_key` | Issue #18 — `TransparencyAnalyzer` accepts the parameter but never queries NCBI; remove (breaking) or wire it up when a PubMed check is added. The manual documents it as accepted-but-unused |
+| ⬜ Planned | Structured `UNKNOWN` reason | Issue #21 — disabled / no-identifier / unreachable are only distinguishable by `risk_indicators` string matching; add an `unknown_reason` enum when a consumer needs to branch on the cause |
 | **Publications (`bmlib.publications`)** | | |
 | ✅ Done | Multi-source sync | PubMed, bioRxiv/medRxiv, OpenAlex fetcher plugins with source registry; date-range sync tracking. `register_source()` can override a built-in name (0.4.0) |
 | ✅ Done | Dedup + merge-on-upsert | Deduplication by DOI/PMID with field-merge logic |
@@ -52,7 +54,7 @@ hold the full story.
 | ⬜ Planned | Wire PDF conversion into `FullTextService` | The converter is standalone; the service downloads and caches PDF bytes but never converts them |
 | ⬜ Planned | Rate limiting | The package throttles nothing — bulk callers must self-throttle against Europe PMC and Unpaywall |
 | **Quality & maintenance** | | |
-| ✅ Done | Test suite | 552 tests + 2 skipped; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services |
+| ✅ Done | Test suite | 562 tests + 2 skipped; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services |
 | ✅ Done | Reference manual | `docs/manual/` — one page per module |
 | ✅ Done | Documentation refresh for 0.4.0 | CHANGELOG, README, CLAUDE.md and all eight manual pages rewritten against the real source, signatures verified and examples executed |
 | ✅ Done | Release 0.4.0 | Cut 2026-07-19; 0.3.0 was bumped in-tree but never released, so its changes ship inside 0.4.0 |

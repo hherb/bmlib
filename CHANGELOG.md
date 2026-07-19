@@ -47,6 +47,9 @@ All notable changes to bmlib are documented here. The format is based on
   `tools` to a provider that does not support them raises
   `NotImplementedError` before any network call. Ollama accepts but ignores
   `tool_choice` — its native API has no equivalent.
+- llm: `supports_tools()` — public probe for the tool-calling allowlist, so
+  callers can test support for a provider name or `"provider:model"` string
+  without catching `NotImplementedError`.
 - db: nested `transaction()` blocks on SQLite are now composable (savepoint
   join; the outer block owns the commit).
 - llm: `bmlib.llm.json_repair` — repairs malformed LLM JSON (single quotes,

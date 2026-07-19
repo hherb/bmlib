@@ -593,15 +593,15 @@ Passing `tools` to any other provider raises `NotImplementedError` at the client
 
 ### Detecting tool support
 
-Support is gated by a provider-name allowlist in `bmlib.llm.client` (`anthropic`, `openai`, `deepseek`, `mistral`, `gemini`, `ollama`) — **not** by `ProviderCapabilities.supports_function_calling`, which is populated per model and unreliable for this purpose. To probe without raising:
+Support is gated by a provider-name allowlist in `bmlib.llm.client` (`anthropic`, `openai`, `deepseek`, `mistral`, `gemini`, `ollama`) — **not** by `ProviderCapabilities.supports_function_calling`, which is populated per model and unreliable for this purpose. To probe without raising, use the public `supports_tools()` helper, which checks the same allowlist that gates `chat()`:
 
 ```python
-from bmlib.llm.client import _TOOL_CAPABLE_PROVIDERS  # module-private
+from bmlib.llm import supports_tools
 
-supported = "ollama" in _TOOL_CAPABLE_PROVIDERS
+supports_tools("ollama")                              # True
+supports_tools("anthropic:claude-sonnet-4-20250514")  # full model strings work too
+supports_tools("some_custom_provider")                # False
 ```
-
-Prefer catching `NotImplementedError` in library code, since the allowlist is private and may change.
 
 ### Single-turn example
 
