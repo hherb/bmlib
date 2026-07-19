@@ -1,0 +1,10 @@
+# README and LICENSE are included automatically via `readme` and
+# `license-files` in pyproject.toml. The changelog is not, and a source
+# distribution should carry the release history it corresponds to.
+include CHANGELOG.md
+
+# Never ship caches or build leftovers that happen to be in the tree.
+global-exclude *.py[cod]
+global-exclude __pycache__
+prune .github
+prune .claude

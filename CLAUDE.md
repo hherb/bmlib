@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Setup
 
 ```bash
-uv pip install -e ".[all]"
+uv pip install -e ".[all,dev]"
 ```
 
 - **Python:** >=3.11
@@ -30,7 +30,7 @@ uv pip install -e ".[all]"
 | publications   | httpx>=0.25           | Publication fetcher API calls           |
 | pdf            | pymupdf>=1.23         | PDF → text conversion in `fulltext/`   |
 | dev            | pytest>=7.0, pytest-cov, ruff | Development and testing tools  |
-| all            | All of the above      | Full installation                      |
+| all            | All runtime extras    | Everything except `dev`                |
 
 ## Architecture
 

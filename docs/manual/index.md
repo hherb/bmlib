@@ -11,7 +11,7 @@ bmlib is a shared Python library for biomedical literature tools. It provides LL
 pip install bmlib
 
 # Editable install with all extras
-pip install -e ".[all]"
+pip install -e ".[all,dev]"
 ```
 
 ### Optional dependency groups
@@ -26,7 +26,7 @@ pip install -e ".[all]"
 | `publications`   | `pip install bmlib[publications]`  | Publication ingestion and sync (httpx)     |
 | `pdf`            | `pip install bmlib[pdf]`           | PDF → text conversion (pymupdf)            |
 | `dev`            | `pip install bmlib[dev]`           | pytest, pytest-cov, ruff                   |
-| `all`            | `pip install bmlib[all]`           | All of the above                           |
+| `all`            | `pip install bmlib[all]`           | Every runtime extra above (**not** `dev`)  |
 
 ## Module Overview
 

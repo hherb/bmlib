@@ -13,7 +13,7 @@ Shared Python library for biomedical literature tools — LLM abstraction, quali
 pip install bmlib
 
 # Editable install with all extras
-uv pip install -e ".[all]"
+uv pip install -e ".[all,dev]"
 ```
 
 ### Optional dependency groups
@@ -28,7 +28,7 @@ uv pip install -e ".[all]"
 | `publications` | `pip install bmlib[publications]` | Publication ingestion and sync (httpx) |
 | `pdf` | `pip install bmlib[pdf]` | PDF → text conversion (pymupdf) |
 | `dev` | `pip install bmlib[dev]` | pytest, pytest-cov, ruff |
-| `all` | `pip install bmlib[all]` | All of the above |
+| `all` | `pip install bmlib[all]` | Every runtime extra above (**not** `dev`) |
 
 ## Modules
 
@@ -191,7 +191,7 @@ print(result.transparency_score, result.risk_level)
 
 ```bash
 # Install with dev dependencies
-uv pip install -e ".[all]"
+uv pip install -e ".[all,dev]"
 
 # Run tests
 pytest tests/ -v
