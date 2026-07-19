@@ -44,12 +44,27 @@ _REGISTRY: dict[str, tuple[SourceDescriptor, Callable[..., Any]]] = {}
 _builtins_registered: bool = False
 
 
+def _put(descriptor: SourceDescriptor, fetcher: Callable[..., Any]) -> None:
+    """Write an entry to the registry without triggering lazy registration.
+
+    Used by :func:`_register_builtins`, which runs *inside* the lazy-load
+    path and would recurse if it went through :func:`register_source`.
+    """
+    _REGISTRY[descriptor.name] = (descriptor, fetcher)
+
+
 def register_source(
     descriptor: SourceDescriptor,
     fetcher: Callable[..., Any],
 ) -> None:
-    """Register a fetcher function under a source name."""
-    _REGISTRY[descriptor.name] = (descriptor, fetcher)
+    """Register a fetcher function under a source name.
+
+    Built-ins are registered first, so registering under a built-in name
+    overrides it. Without this the override would be silently reverted the
+    first time a lookup triggered lazy built-in registration.
+    """
+    _ensure_builtins()
+    _put(descriptor, fetcher)
 
 
 def list_sources() -> list[SourceDescriptor]:
@@ -108,7 +123,7 @@ def _register_builtins() -> None:
     from bmlib.publications.fetchers.openalex import fetch_openalex
     from bmlib.publications.fetchers.pubmed import fetch_pubmed
 
-    register_source(
+    _put(
         SourceDescriptor(
             name="pubmed",
             display_name="PubMed",
@@ -120,7 +135,7 @@ def _register_builtins() -> None:
         fetch_pubmed,
     )
 
-    register_source(
+    _put(
         SourceDescriptor(
             name="biorxiv",
             display_name="bioRxiv",
@@ -139,7 +154,7 @@ def _register_builtins() -> None:
         ),
     )
 
-    register_source(
+    _put(
         SourceDescriptor(
             name="medrxiv",
             display_name="medRxiv",
@@ -158,7 +173,7 @@ def _register_builtins() -> None:
         ),
     )
 
-    register_source(
+    _put(
         SourceDescriptor(
             name="openalex",
             display_name="OpenAlex",

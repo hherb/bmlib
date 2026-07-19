@@ -27,7 +27,7 @@ Usage::
     )
 """
 
-from bmlib.llm.client import LLMClient, get_llm_client, reset_llm_client
+from bmlib.llm.client import LLMClient, get_llm_client, reset_llm_client, supports_tools
 from bmlib.llm.data_types import (
     EmbeddingResponse,
     LLMMessage,
@@ -75,4 +75,5 @@ __all__ = [
     "reset_llm_client",
     "reset_token_tracker",
     "safe_json_loads",
+    "supports_tools",
 ]

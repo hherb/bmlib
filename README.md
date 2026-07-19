@@ -4,7 +4,7 @@
 
 Shared Python library for biomedical literature tools — LLM abstraction, quality assessment, transparency analysis, full-text retrieval, publication ingestion, and database utilities.
 
-**Version:** 0.3.0 | **License:** AGPL-3.0-or-later | **Python:** >=3.11
+**Version:** 0.4.0 | **License:** AGPL-3.0-or-later | **Python:** >=3.11
 
 ## Installation
 
@@ -13,7 +13,7 @@ Shared Python library for biomedical literature tools — LLM abstraction, quali
 pip install bmlib
 
 # Editable install with all extras
-uv pip install -e ".[all]"
+uv pip install -e ".[all,dev]"
 ```
 
 ### Optional dependency groups
@@ -26,22 +26,22 @@ uv pip install -e ".[all]"
 | `postgresql` | `pip install bmlib[postgresql]` | PostgreSQL database backend |
 | `transparency` | `pip install bmlib[transparency]` | Transparency analysis (httpx) |
 | `publications` | `pip install bmlib[publications]` | Publication ingestion and sync (httpx) |
-| `pdf` | `pip install bmlib[pdf]` | PDF→text conversion (PyMuPDF) |
+| `pdf` | `pip install bmlib[pdf]` | PDF → text conversion (pymupdf) |
 | `dev` | `pip install bmlib[dev]` | pytest, pytest-cov, ruff |
-| `all` | `pip install bmlib[all]` | All of the above |
+| `all` | `pip install bmlib[all]` | Every runtime extra above (**not** `dev`) |
 
 ## Modules
 
 | Module | Description |
 |--------|-------------|
 | **bmlib.db** | Thin database abstraction (SQLite + PostgreSQL) with pure functions over DB-API connections |
-| **bmlib.llm** | Unified LLM client with pluggable providers (Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini), embeddings, JSON repair, and boundary-aware text chunking |
+| **bmlib.llm** | Unified LLM client with pluggable providers (Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini) — chat, tool calling, embeddings, JSON repair, and text chunking |
 | **bmlib.templates** | Jinja2-based prompt template engine with user-override directory fallback |
 | **bmlib.agents** | Base agent class for LLM-driven tasks with template rendering and JSON parsing |
-| **bmlib.quality** | 3-tier quality assessment pipeline (metadata → LLM classifier → deep assessment), Cochrane-style Risk-of-Bias models, and rule-based study-type/sample-size scoring |
-| **bmlib.transparency** | Multi-API transparency and bias analysis (CrossRef, EuropePMC, OpenAlex, ClinicalTrials.gov) |
+| **bmlib.quality** | 3-tier quality assessment pipeline for biomedical publications (metadata → LLM classifier → deep assessment), plus Cochrane risk-of-bias models and rule-based extractors |
+| **bmlib.transparency** | Multi-API transparency and bias analysis (CrossRef, Europe PMC, OpenAlex, ClinicalTrials.gov) |
 | **bmlib.publications** | Publication ingestion from PubMed, bioRxiv, medRxiv, and OpenAlex with deduplication and sync |
-| **bmlib.fulltext** | Full-text retrieval (Europe PMC → Unpaywall → DOI), JATS XML parsing, PDF→text conversion, and disk-based caching |
+| **bmlib.fulltext** | Full-text retrieval (Europe PMC → Unpaywall → DOI), JATS XML parsing, PDF → text conversion, and disk-based caching |
 
 ## Quick Start
 
@@ -78,6 +78,51 @@ Model strings use the format `"provider:model_name"`:
 "deepseek:deepseek-chat"
 "mistral:mistral-large-latest"
 "gemini:gemini-2.0-flash"
+```
+
+### Tool Calling
+
+```python
+from bmlib.llm import LLMClient, LLMMessage, LLMToolDefinition
+
+search = LLMToolDefinition(
+    name="search_pubmed",
+    description="Search PubMed for articles matching a query.",
+    parameters={
+        "type": "object",
+        "properties": {"query": {"type": "string"}},
+        "required": ["query"],
+    },
+)
+
+client = LLMClient()
+response = client.chat(
+    messages=[LLMMessage(role="user", content="Find recent trials on statins.")],
+    model="anthropic:claude-sonnet-4-20250514",
+    tools=[search],
+)
+
+for call in response.tool_calls or []:
+    print(call.name, call.arguments)  # arguments is already a parsed dict
+```
+
+To continue the conversation, append the assistant message (carrying
+`tool_calls`) and one `role="tool"` message per call, each with the matching
+`tool_call_id`, then send the whole list again.
+
+### Long Documents
+
+```python
+from bmlib.llm import chunk_text, process_with_map_reduce
+
+for chunk in chunk_text(paper_text, chunk_size=8000, overlap=200):
+    print(chunk.chunk_index, chunk.size)
+
+summary = process_with_map_reduce(
+    paper_text,
+    map_fn=lambda part: summarise(part),
+    reduce_fn=lambda parts: summarise("\n".join(parts)),
+)
 ```
 
 ### Publication Sync
@@ -149,7 +194,7 @@ print(result.transparency_score, result.risk_level)
 
 ```bash
 # Install with dev dependencies
-uv pip install -e ".[all]"
+uv pip install -e ".[all,dev]"
 
 # Run tests
 uv run pytest tests/ -v

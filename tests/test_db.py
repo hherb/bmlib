@@ -176,3 +176,69 @@ class TestTransaction:
         # The pending write is still the caller's to commit.
         conn.commit()
         assert fetch_scalar(conn, "SELECT v FROM t") == "pending"
+
+
+class TestCreateTablesTriggers:
+    """create_tables must not split inside a compound (trigger) body."""
+
+    def test_trigger_with_body_is_one_statement(self):
+        # Regression: _split_sql_statements split on every semicolon, so the
+        # semicolons inside BEGIN ... END arrived as fragments and SQLite
+        # raised "incomplete input".
+        conn = _mem_conn()
+        create_tables(
+            conn,
+            """
+            CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT, updated TEXT);
+            CREATE TABLE audit (id INTEGER PRIMARY KEY, note TEXT);
+            CREATE TRIGGER t_after_insert AFTER INSERT ON t
+            BEGIN
+                UPDATE t SET updated = 'yes' WHERE id = NEW.id;
+                INSERT INTO audit (note) VALUES ('inserted');
+            END;
+            """,
+        )
+        execute(conn, "INSERT INTO t (v) VALUES (?)", ("x",))
+        assert fetch_scalar(conn, "SELECT updated FROM t") == "yes"
+        assert fetch_scalar(conn, "SELECT note FROM audit") == "inserted"
+
+    def test_case_expression_inside_trigger_body(self):
+        # CASE ... END nests inside BEGIN ... END; depth tracking must not
+        # treat the CASE's END as closing the trigger body.
+        conn = _mem_conn()
+        create_tables(
+            conn,
+            """
+            CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER, label TEXT);
+            CREATE TRIGGER t_label AFTER INSERT ON t
+            BEGIN
+                UPDATE t
+                SET label = CASE WHEN NEW.n > 10 THEN 'big' ELSE 'small' END
+                WHERE id = NEW.id;
+            END;
+            """,
+        )
+        execute(conn, "INSERT INTO t (n) VALUES (?)", (42,))
+        assert fetch_scalar(conn, "SELECT label FROM t") == "big"
+
+    def test_plain_schema_still_splits(self):
+        # The common path must be unaffected: multiple plain statements.
+        conn = _mem_conn()
+        create_tables(
+            conn,
+            """
+            CREATE TABLE a (id INTEGER PRIMARY KEY);
+            CREATE TABLE b (id INTEGER PRIMARY KEY);
+            CREATE INDEX idx_b ON b (id);
+            """,
+        )
+        assert table_exists(conn, "a")
+        assert table_exists(conn, "b")
+
+    def test_bare_begin_outside_trigger_is_not_treated_as_a_body(self):
+        # A statement literally named BEGIN must not open a compound body,
+        # or everything after it would be swallowed into one statement.
+        from bmlib.db.operations import _split_sql_statements
+
+        stmts = _split_sql_statements("CREATE TABLE a (id INT); BEGIN; CREATE TABLE b (id INT);")
+        assert len(stmts) == 3

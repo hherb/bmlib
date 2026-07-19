@@ -134,7 +134,12 @@ class LLMClient:
         * ``"none"`` — disable tool calling for this turn
 
         Providers that do not support tool calling will raise
-        :class:`NotImplementedError` if *tools* is not ``None``.
+        :class:`NotImplementedError` if *tools* is not ``None``. Support is
+        gated on a provider-name allowlist, not on the provider's declared
+        :class:`~bmlib.llm.providers.base.ProviderCapabilities` — that
+        metadata is descriptive only. To detect support without raising,
+        call :func:`bmlib.llm.supports_tools` with the provider name or
+        model string.
 
         Args:
             messages: Conversation messages.
@@ -149,7 +154,7 @@ class LLMClient:
 
         Raises:
             NotImplementedError: If *tools* is provided but the resolved
-                provider does not declare ``supports_function_calling``.
+                provider is not in the tool-capable allowlist.
         """
         provider_name, model_name = self._parse_model_string(model)
 
@@ -336,18 +341,27 @@ _TOOL_CAPABLE_PROVIDERS = {
 }
 
 
-def _provider_supports_tools(provider: BaseProvider) -> bool:
-    """Return True if *provider* is in the tool-calling allowlist.
+def supports_tools(provider_name: str) -> bool:
+    """Return True if the named provider supports tool calling.
+
+    Probes the same allowlist that gates :meth:`LLMClient.chat`, so a True
+    result means passing *tools* to that provider will not raise
+    :class:`NotImplementedError`. Accepts a bare provider name
+    (``"anthropic"``) or a full ``"provider:model"`` string
+    (``"anthropic:claude-sonnet-4-20250514"``), case-insensitively.
 
     A static allowlist rather than a per-model capability query: some
     providers (e.g. Ollama) report capabilities per model, and querying
     every model just to answer "does this provider support tools?" is
-    wasteful. Providers in :data:`_TOOL_CAPABLE_PROVIDERS` have been
-    verified to support OpenAI-style tool calling on at least one
-    current model.
+    wasteful. Allowlisted providers have been verified to support
+    OpenAI-style tool calling on at least one current model.
     """
-    name = getattr(provider, "PROVIDER_NAME", "").lower()
-    return name in _TOOL_CAPABLE_PROVIDERS
+    return provider_name.split(":", 1)[0].strip().lower() in _TOOL_CAPABLE_PROVIDERS
+
+
+def _provider_supports_tools(provider: BaseProvider) -> bool:
+    """Return True if *provider*'s name is in the tool-calling allowlist."""
+    return supports_tools(getattr(provider, "PROVIDER_NAME", ""))
 
 
 # ---------------------------------------------------------------------------

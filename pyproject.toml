@@ -1,29 +1,55 @@
 [build-system]
-requires = ["setuptools>=68.0"]
+# >=77 is required for PEP 639: the SPDX `license` string and `license-files`
+# below are silently mishandled by older setuptools.
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "bmlib"
-version = "0.3.0"
+version = "0.4.0"
 description = "Shared library for biomedical literature tools — LLM abstraction, quality assessment, transparency analysis, and database utilities"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [
     { name = "Horst Herb", email = "my.list.subscriptions@gmail.com" },
 ]
-keywords = ["biomedical", "llm", "quality-assessment", "literature"]
+keywords = [
+    "biomedical",
+    "llm",
+    "quality-assessment",
+    "literature",
+    "systematic-review",
+    "pubmed",
+    "evidence-based-medicine",
+]
+# No "License ::" classifier: PEP 639 supersedes it with the SPDX `license`
+# field above, and setuptools rejects declaring both.
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
 ]
 dependencies = [
     "jinja2>=3.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/hherb/bmlib"
+Repository = "https://github.com/hherb/bmlib"
+Documentation = "https://github.com/hherb/bmlib/blob/main/docs/manual/index.md"
+Changelog = "https://github.com/hherb/bmlib/blob/main/CHANGELOG.md"
+Issues = "https://github.com/hherb/bmlib/issues"
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.30"]
@@ -34,7 +60,22 @@ transparency = ["httpx>=0.25"]
 publications = ["httpx>=0.25"]
 pdf = ["pymupdf>=1.23"]
 dev = ["pytest>=7.0", "pytest-cov", "ruff"]
-all = ["bmlib[anthropic,ollama,openai,postgresql,transparency,publications,pdf,dev]"]
+# `all` deliberately excludes `dev`: it is what a consumer installs to get
+# every runtime feature, and it should not drag pytest and ruff into their
+# environment. For a full development install use `.[all,dev]`.
+all = ["bmlib[anthropic,ollama,openai,postgresql,transparency,publications,pdf]"]
+
+# Explicit discovery. Auto-discovery works today but is order-dependent in a
+# flat layout with tests/, docs/ and scripts/ beside the package; naming the
+# package keeps a stray top-level directory from being picked up or the build
+# from failing outright.
+[tool.setuptools.packages.find]
+include = ["bmlib*"]
+
+# Ship the PEP 561 marker so type checkers in consuming projects actually use
+# bmlib's annotations instead of treating the package as untyped.
+[tool.setuptools.package-data]
+bmlib = ["py.typed"]
 
 [tool.ruff]
 target-version = "py311"

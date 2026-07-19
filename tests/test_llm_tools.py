@@ -881,6 +881,24 @@ class TestCapabilityCheck:
         mock_provider.PROVIDER_NAME = "imaginary"
         assert not _provider_supports_tools(mock_provider)
 
+    def test_supports_tools_is_public_and_exported(self):
+        # The documented way to probe tool support without raising; must be
+        # importable from the package, not just the client module.
+        from bmlib.llm import supports_tools
+
+        for name in ("anthropic", "openai", "deepseek", "mistral", "gemini", "ollama"):
+            assert supports_tools(name), name
+        assert not supports_tools("imaginary")
+
+    def test_supports_tools_accepts_model_strings_and_ignores_case(self):
+        from bmlib.llm import supports_tools
+
+        assert supports_tools("anthropic:claude-sonnet-4-20250514")
+        assert supports_tools("Anthropic")
+        assert supports_tools(" OLLAMA ")
+        assert not supports_tools("imaginary:some-model")
+        assert not supports_tools("")
+
     def test_chat_raises_for_unsupported_provider_when_tools_passed(self):
         """If a future provider gets registered without tool support,
         passing tools= should raise NotImplementedError before any

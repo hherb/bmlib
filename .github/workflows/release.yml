@@ -1,0 +1,121 @@
+name: Release
+
+# Publishing is driven by a published GitHub Release, so cutting a release is
+# a deliberate act in the UI (or `gh release create`) rather than a side
+# effect of pushing a tag. `workflow_dispatch` builds and uploads to TestPyPI
+# only, so the whole path can be rehearsed without burning a version number —
+# PyPI refuses to overwrite an existing version, so a bad publish is
+# permanent.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Nothing here pushes back to the repo; don't leave the token in
+          # .git/config for later steps to read.
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: python -m pip install --upgrade pip build twine
+
+      - name: Verify the tag matches the packaged version
+        # Guards the one mistake this workflow cannot undo: tagging v0.4.1
+        # while pyproject still says 0.4.0 would publish 0.4.0 a second time
+        # and fail, or publish the wrong version entirely.
+        if: github.event_name == 'release'
+        run: |
+          python -m pip install -e . --no-deps
+          PACKAGED="$(python -c 'import bmlib; print(bmlib.__version__)')"
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "tag=$TAG packaged=$PACKAGED"
+          if [ "$TAG" != "$PACKAGED" ]; then
+            echo "::error::Tag '$TAG' does not match bmlib.__version__ '$PACKAGED'."
+            exit 1
+          fi
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Validate distribution metadata
+        run: twine check --strict dist/*
+
+      - name: Smoke-test the wheel in a clean environment
+        run: |
+          python -m venv /tmp/relvenv
+          /tmp/relvenv/bin/pip install dist/*.whl
+          /tmp/relvenv/bin/python -c "import bmlib; print('imported', bmlib.__version__)"
+          # The PEP 561 marker must survive packaging, or consumers silently
+          # lose every type hint in the library.
+          /tmp/relvenv/bin/python -c "
+          import importlib.resources as r
+          assert (r.files('bmlib') / 'py.typed').is_file(), 'py.typed missing from wheel'
+          print('py.typed present')
+          "
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    # Manual runs only — a rehearsal target that never touches real PyPI.
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/bmlib
+    permissions:
+      # Required for Trusted Publishing (OIDC). No API token is stored.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      # Pinned to a commit, not the mutable release/v1 tag: this step runs
+      # with id-token: write, so a hijacked tag could mint attestations in
+      # bmlib's name. Bump the SHA deliberately when updating.
+      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          # TestPyPI accumulates rehearsal uploads; don't fail a rerun.
+          skip-existing: true
+
+  publish-pypi:
+    name: Publish to PyPI
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      # Point a GitHub environment protection rule at this name to require a
+      # manual approval before anything reaches PyPI.
+      name: pypi
+      url: https://pypi.org/p/bmlib
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      # Same SHA as the TestPyPI job above — keep the two in lockstep.
+      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0

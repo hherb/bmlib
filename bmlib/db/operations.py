@@ -99,17 +99,43 @@ def table_exists(conn: Any, name: str) -> bool:
 def _split_sql_statements(script: str) -> list[str]:
     """Split a multi-statement SQL script into individual statements.
 
-    Splits on semicolons that are outside string literals and comments.
-    Handles single/double-quoted strings (with SQL ``''`` escaping), ``--``
-    line comments, and ``/* */`` block comments. This is sufficient for the
-    plain ``CREATE TABLE``/``CREATE INDEX`` schemas used in this project; it
-    does not attempt to parse trigger bodies (``BEGIN ... END;``).
+    Splits on semicolons that are outside string literals, comments, and
+    compound statement bodies. Handles single/double-quoted strings (with SQL
+    ``''`` escaping), ``--`` line comments, and ``/* */`` block comments.
+
+    Trigger bodies are handled: a ``CREATE TRIGGER ... BEGIN ... END;`` block
+    contains semicolons that terminate the body's statements, not the
+    ``CREATE TRIGGER`` itself, so splitting on them would hand SQLite a
+    fragment and raise "incomplete input". Nesting is tracked by counting
+    ``BEGIN``/``CASE`` against ``END``; counting ``CASE`` matters because a
+    ``CASE ... END`` expression inside a body would otherwise close it early.
+    A bare ``BEGIN`` (transaction control) does not open a body — the counter
+    only engages once ``TRIGGER`` has been seen in the current statement.
     """
     statements: list[str] = []
     buf: list[str] = []
     i = 0
     n = len(script)
     quote: str | None = None
+    depth = 0  # BEGIN/CASE nesting within a compound statement
+    in_trigger = False  # current statement is a CREATE TRIGGER
+    word: list[str] = []
+
+    def flush_word() -> None:
+        """Consume the just-scanned word and update nesting state."""
+        nonlocal depth, in_trigger
+        if not word:
+            return
+        w = "".join(word).upper()
+        word.clear()
+        if w == "TRIGGER" and depth == 0:
+            in_trigger = True
+        elif w in ("BEGIN", "CASE"):
+            if in_trigger:
+                depth += 1
+        elif w == "END" and depth > 0:
+            depth -= 1
+
     while i < n:
         ch = script[i]
         if quote:
@@ -124,6 +150,13 @@ def _split_sql_statements(script: str) -> list[str]:
             i += 1
             continue
         # Not inside a string literal.
+        if ch.isalnum() or ch == "_":
+            word.append(ch)
+            buf.append(ch)
+            i += 1
+            continue
+        # Any other character ends the word currently being scanned.
+        flush_word()
         if ch in ("'", '"'):
             quote = ch
             buf.append(ch)
@@ -136,15 +169,17 @@ def _split_sql_statements(script: str) -> list[str]:
             # Block comment: skip to closing */.
             j = script.find("*/", i + 2)
             i = n if j == -1 else j + 2
-        elif ch == ";":
+        elif ch == ";" and depth == 0:
             stmt = "".join(buf).strip()
             if stmt:
                 statements.append(stmt)
             buf = []
+            in_trigger = False
             i += 1
         else:
             buf.append(ch)
             i += 1
+    flush_word()
     tail = "".join(buf).strip()
     if tail:
         statements.append(tail)

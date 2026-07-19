@@ -485,14 +485,29 @@ class TestCheckTrialResults:
 
         assert analyzer._check_trial_results(_Client(), "NCT12345678") is False
 
-    def test_results_section_fallback(self):
+    def test_missing_has_results_is_false(self):
+        # The request is narrowed to `fields=hasResults`, so no other key can
+        # come back. An absent key means unanswered, which is reported as
+        # "no posted results" rather than inferred from an unrequested payload.
         analyzer = TransparencyAnalyzer()
 
         class _Client:
             def get(self, url, **kwargs):
-                return _FakeResponse(status_code=200, json_data={"resultsSection": {"x": 1}})
+                return _FakeResponse(status_code=200, json_data={})
 
-        assert analyzer._check_trial_results(_Client(), "NCT12345678") is True
+        assert analyzer._check_trial_results(_Client(), "NCT12345678") is False
+
+    def test_request_is_narrowed_to_has_results(self):
+        analyzer = TransparencyAnalyzer()
+        seen: dict = {}
+
+        class _Client:
+            def get(self, url, **kwargs):
+                seen.update(kwargs.get("params") or {})
+                return _FakeResponse(status_code=200, json_data={"hasResults": True})
+
+        analyzer._check_trial_results(_Client(), "NCT12345678")
+        assert seen == {"fields": "hasResults"}
 
 
 class TestFindTrialIds:
@@ -706,6 +721,73 @@ class TestAnalyzeApiReachability:
         assert result.risk_level != TransparencyRisk.UNKNOWN
         assert result.risk_level == TransparencyRisk.HIGH  # score 0 but measured
 
+    def test_concurrent_analyze_does_not_cross_contaminate_reachability(self, monkeypatch):
+        """One analyzer shared across threads must not leak reachability.
+
+        ``TransparencySettings.max_concurrent_analyses`` invites callers to
+        run several analyses at once. Reachability is per-analysis state: a
+        thread whose APIs answered must not be reported UNKNOWN because a
+        concurrent thread reset the flag, and a thread whose APIs were all
+        down must not be scored because a concurrent thread succeeded.
+        """
+        import threading
+
+        import httpx
+
+        from bmlib.transparency import analyzer as analyzer_mod
+
+        # Reachability, not throttling, is under test here; the real 0.35 s
+        # interval would otherwise dominate the runtime.
+        monkeypatch.setattr(analyzer_mod, "_MIN_REQUEST_INTERVAL_SECONDS", 0.0)
+
+        # Both analyses run concurrently through one patched factory that
+        # dispatches on thread name, so the two threads never race to install
+        # a mock. The barrier guarantees they are genuinely interleaved
+        # inside analyze() rather than running back to back.
+        barrier = threading.Barrier(2, timeout=5)
+        synced = threading.local()
+
+        class _SplitClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def get(self, url, **kwargs):
+                # Rendezvous once per thread. The two analyses issue
+                # different numbers of requests, so waiting on every call
+                # would desynchronise and stall on the timeout.
+                if not getattr(synced, "done", False):
+                    synced.done = True
+                    barrier.wait()
+                if threading.current_thread().name == "dead":
+                    raise RuntimeError("network down")
+                if "crossref" in url:
+                    return _FakeResponse(status_code=200, json_data={"message": {}})
+                return _FakeResponse(status_code=404)
+
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: _SplitClient())
+
+        analyzer = TransparencyAnalyzer()  # one instance, shared
+        results: dict[str, TransparencyRisk] = {}
+
+        def run() -> None:
+            name = threading.current_thread().name
+            results[name] = analyzer.analyze(name, doi="10.1234/x").risk_level
+
+        threads = [
+            threading.Thread(target=run, name="live"),
+            threading.Thread(target=run, name="dead"),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert results["dead"] == TransparencyRisk.UNKNOWN
+        assert results["live"] != TransparencyRisk.UNKNOWN
+
 
 class TestTransparencyResult:
     def test_roundtrip(self):
@@ -725,3 +807,63 @@ class TestTransparencyResult:
         assert r2.risk_level == TransparencyRisk.LOW
         assert r2.trial_registered is True
         assert len(r2.risk_indicators) == 1
+
+
+class TestTransparencyResultRoundTrip:
+    """to_dict/from_dict must not silently drop analysis provenance."""
+
+    def test_full_text_analyzed_survives_round_trip(self):
+        # Regression: full_text_analyzed was in neither to_dict nor from_dict,
+        # so a persisted result came back claiming the full text was never
+        # read. That matters because `coi_disclosed is False` only means
+        # "scanned and absent" when the full text really was analysed.
+        original = TransparencyResult(
+            document_id="doc1",
+            transparency_score=55,
+            risk_level=TransparencyRisk.MEDIUM,
+            coi_disclosed=False,
+            full_text_analyzed=True,
+        )
+        restored = TransparencyResult.from_dict(original.to_dict())
+        assert restored.full_text_analyzed is True
+        assert restored.coi_disclosed is False
+
+    def test_round_trip_preserves_every_field(self):
+        original = TransparencyResult(
+            document_id="doc2",
+            transparency_score=80,
+            risk_level=TransparencyRisk.LOW,
+            industry_funding_detected=True,
+            industry_funding_confidence=0.8,
+            data_availability_level="full_open",
+            coi_disclosed=True,
+            trial_registered=True,
+            trial_results_compliant=True,
+            risk_indicators=["a", "b"],
+            tier_downgrade_applied=1,
+            analyzer_version="1.0",
+            full_text_analyzed=True,
+        )
+        assert TransparencyResult.from_dict(original.to_dict()) == original
+
+
+class TestSettingsEnabled:
+    """`enabled=False` must actually disable analysis."""
+
+    def test_disabled_settings_short_circuits_analysis(self, monkeypatch):
+        import httpx
+
+        def _boom(*a, **k):
+            raise AssertionError("no HTTP client may be created when disabled")
+
+        monkeypatch.setattr(httpx, "Client", _boom)
+
+        analyzer = TransparencyAnalyzer(settings=TransparencySettings(enabled=False))
+        result = analyzer.analyze("doc1", doi="10.1234/x")
+
+        assert result.risk_level == TransparencyRisk.UNKNOWN
+        assert result.transparency_score == 0
+        assert result.risk_indicators == ["Transparency analysis disabled in settings"]
+
+    def test_enabled_by_default(self):
+        assert TransparencySettings().enabled is True
