@@ -1,6 +1,23 @@
 # bmlib.transparency — Transparency Analysis
 
-Multi-API transparency analyzer for biomedical publications. Queries external APIs to assess funding sources, data availability, conflict-of-interest disclosure, and clinical trial registration compliance.
+Multi-API transparency analyzer for biomedical publications. Queries external APIs to assess funding sources, data availability, conflict-of-interest disclosure, and clinical trial registration compliance, returning a 0–100 score and a [`TransparencyRisk`](#transparencyrisk) level.
+
+> **A score of `0` no longer means "opaque".**
+> Since 0.4.0, [`analyze()`](#transparencyanalyzeranalyze) checks whether *any* external API answered. If none did, it returns `transparency_score=0` with `risk_level=TransparencyRisk.UNKNOWN` and the single indicator `"Transparency APIs unreachable — score not determinable"`. Previously a network outage produced an all-zero score, which fell below `score_threshold` and was reported as **HIGH** risk — indistinguishable from a genuinely opaque paper, and enough to trigger a quality-tier downgrade. **Callers must branch on `risk_level == TransparencyRisk.UNKNOWN` before acting on a score.** See [Unreachable-API guard](#unreachable-api-guard).
+
+## Module layout
+
+| Submodule | Contents | Public? |
+|-----------|----------|---------|
+| `analyzer` | `TransparencyAnalyzer`, scoring-weight constants | `TransparencyAnalyzer` only |
+| `models` | `TransparencyRisk`, `TransparencySettings`, `TransparencyResult`, `calculate_risk_level()` | Yes — all four |
+
+The list of five names below is the complete `bmlib.transparency.__all__`. Everything else in `analyzer` — the scoring weights, the detection patterns, and all analysis sub-steps — is either a module-level constant or underscore-private; import constants from the submodule if you need them:
+
+```python
+from bmlib.transparency.analyzer import MAX_TRANSPARENCY_SCORE, SCORE_TRIAL_REGISTERED
+from bmlib.transparency.models import MEDIUM_RISK_SCORE_THRESHOLD
+```
 
 ## Installation
 
@@ -8,7 +25,7 @@ Multi-API transparency analyzer for biomedical publications. Queries external AP
 pip install bmlib[transparency]
 ```
 
-Requires `httpx` for HTTP requests to external APIs.
+Requires `httpx` for HTTP requests to external APIs. The import is **lazy**: `httpx` is imported inside `analyze()`, so constructing a `TransparencyAnalyzer` never fails. A missing `httpx` raises `ImportError("httpx is required for transparency analysis. Install with: pip install bmlib[transparency]")` on the first `analyze()` call.
 
 ## Imports
 
@@ -36,6 +53,8 @@ class TransparencyRisk(Enum):
     UNKNOWN = "unknown"
 ```
 
+`UNKNOWN` is returned in exactly two cases: neither `pmid` nor `doi` was supplied, and no external API was reachable. It is never produced by [`calculate_risk_level()`](#calculate_risk_level).
+
 ---
 
 ## Data Models
@@ -62,11 +81,14 @@ class TransparencySettings:
 | `enabled` | `bool` | `True` | Whether transparency analysis is enabled. |
 | `score_threshold` | `int` | `40` | Scores below this are classified as HIGH risk. |
 | `industry_funding_triggers_downgrade` | `bool` | `True` | Whether industry funding combined with restricted data triggers HIGH risk. |
-| `missing_coi_triggers_downgrade` | `bool` | `True` | Whether missing COI disclosure triggers HIGH risk. |
-| `tier_downgrade_amount` | `int` | `1` | Number of quality tiers to downgrade for HIGH-risk papers. |
+| `missing_coi_triggers_downgrade` | `bool` | `True` | Whether an *explicitly absent* COI disclosure triggers HIGH risk. |
+| `tier_downgrade_amount` | `int` | `1` | Number of quality tiers to downgrade for HIGH-risk papers. Written to `TransparencyResult.tier_downgrade_applied`. |
 | `filtering_enabled` | `bool` | `False` | Whether to exclude HIGH-risk papers from results. |
 | `max_concurrent_analyses` | `int` | `3` | Maximum concurrent analyses. |
 | `cache_results` | `bool` | `True` | Whether to cache analysis results. |
+
+> **`enabled`, `filtering_enabled`, `max_concurrent_analyses`, and `cache_results` are advisory.**
+> Nothing in `bmlib.transparency` reads them — `TransparencyAnalyzer` consults only `score_threshold`, `industry_funding_triggers_downgrade`, `missing_coi_triggers_downgrade`, and `tier_downgrade_amount`. The other four are declared for the calling application to honour: gate the analysis, filter the result set, size your own thread pool, and cache `to_dict()` output yourself.
 
 ---
 
@@ -84,7 +106,7 @@ class TransparencyResult:
     industry_funding_detected: bool = False
     industry_funding_confidence: float = 0.0
     data_availability_level: str = "unknown"
-    coi_disclosed: bool = True
+    coi_disclosed: bool | None = True
     trial_registered: bool = False
     trial_results_compliant: bool = False
     outcome_switching_detected: bool = False
@@ -92,38 +114,62 @@ class TransparencyResult:
     risk_indicators: list[str] = field(default_factory=list)
     tier_downgrade_applied: int = 0
 
-    analyzed_at: datetime = field(default_factory=...)
+    analyzed_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
     analyzer_version: str = "1.0"
     full_text_analyzed: bool = False
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `document_id` | `str` | Identifier for the document. |
-| `transparency_score` | `int` | Overall transparency score (0–100). |
+| `document_id` | `str` | Identifier for the document (echoed from the `analyze()` argument). |
+| `transparency_score` | `int` | Overall transparency score, capped at `MAX_TRANSPARENCY_SCORE` (100). |
 | `risk_level` | `TransparencyRisk` | Computed risk level. |
-| `industry_funding_detected` | `bool` | Whether industry/pharma funding was found. |
-| `industry_funding_confidence` | `float` | Confidence in the industry funding detection (0–1). |
-| `data_availability_level` | `str` | One of: `"full_open"`, `"on_request"`, `"not_available"`, `"not_stated"`, `"unknown"`. |
-| `coi_disclosed` | `bool` | Whether a conflict-of-interest statement was found. |
-| `trial_registered` | `bool` | Whether a linked clinical trial registration was found. |
+| `industry_funding_detected` | `bool` | Industry involvement found — via a CrossRef funder name **or** the full-text COI statement. |
+| `industry_funding_confidence` | `float` | `0.8` for a structured CrossRef funder match, `0.5` when inferred from COI text, `0.0` when nothing was found. The larger of the two when both fire. |
+| `data_availability_level` | `str` | One of `"full_open"`, `"on_request"`, `"not_available"`, `"unknown"`. |
+| `coi_disclosed` | `bool \| None` | **Tri-state** — see below. |
+| `trial_registered` | `bool` | Whether *this paper's own* trial registration was found. |
 | `trial_results_compliant` | `bool` | Whether the registered trial has posted results. |
-| `outcome_switching_detected` | `bool` | Whether outcome switching was detected. |
+| `outcome_switching_detected` | `bool` | Always `False` — no detection is implemented; the field is reserved. |
 | `risk_indicators` | `list[str]` | Human-readable list of risk factors found. |
-| `tier_downgrade_applied` | `int` | Number of quality tiers downgraded (0 if no downgrade). |
+| `tier_downgrade_applied` | `int` | `settings.tier_downgrade_amount` when `risk_level` is HIGH, otherwise `0`. |
 | `analyzed_at` | `datetime` | Timestamp of the analysis (UTC). |
-| `analyzer_version` | `str` | Version of the analyzer. |
+| `analyzer_version` | `str` | Version of the analyzer heuristics (`"1.0"`), **not** the bmlib version. |
+| `full_text_analyzed` | `bool` | Whether Europe PMC full text was retrieved and scanned, rather than only the abstract. |
+
+#### Tri-state `coi_disclosed`
+
+`coi_disclosed` distinguishes *absent* from *unknown*, because only the first is evidence of anything:
+
+| Value | Meaning | Accompanying indicator |
+|-------|---------|------------------------|
+| `True` | A COI/disclosure statement was found. A statement that there is nothing to declare counts as disclosed. | *(none)* |
+| `False` | Full text **was** retrieved and scanned, and it contains no COI statement. | `"No COI disclosure found in full text"` |
+| `None` | Undeterminable — full text was unavailable and the abstract carried no COI signal. | `"COI disclosure status unknown (full text unavailable)"` |
+
+Only an explicit `False` triggers the missing-COI HIGH-risk rule. `None` does not, so a paper is never penalised merely because Europe PMC had no open-access full text for it. `coi_disclosed is False` therefore always implies `full_text_analyzed is True`.
+
+Note that the dataclass **default** is `True`, as is the `from_dict()` fallback for a missing key — a hand-constructed `TransparencyResult` is optimistic unless you say otherwise. `analyze()` always sets the field explicitly.
 
 #### Serialisation
 
 | Method | Description |
 |--------|-------------|
-| `to_dict() -> dict[str, Any]` | Serialise to a JSON-safe dictionary. |
-| `from_dict(data: dict) -> TransparencyResult` | Deserialise from a dictionary. |
+| `to_dict() -> dict[str, Any]` | Serialise to a JSON-safe dictionary. `risk_level` becomes its `.value` string; `analyzed_at` becomes an ISO 8601 string. |
+| `from_dict(data: dict) -> TransparencyResult` | Deserialise. `document_id`, `transparency_score`, and `risk_level` are required keys; a missing or empty `analyzed_at` defaults to now. |
+
+`to_dict()` is **lossy**: it omits `full_text_analyzed`. A `from_dict(to_dict(x))` round-trip therefore resets that flag to `False`, so a cached result cannot tell you whether the original analysis saw full text or only an abstract. Since `coi_disclosed is False` is only ever produced from full text, persist `full_text_analyzed` alongside the dict if that provenance matters to you.
+
+```python
+restored = TransparencyResult.from_dict(result.to_dict())
+assert restored.full_text_analyzed is False   # even when result.full_text_analyzed was True
+```
 
 ---
 
 ## TransparencyAnalyzer
+
+`TransparencyAnalyzer` has exactly one public method, [`analyze()`](#transparencyanalyzeranalyze). Every other member is underscore-private.
 
 ### Constructor
 
@@ -139,9 +185,14 @@ class TransparencyAnalyzer:
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `email` | `str` | `"user@example.com"` | Contact email for API politeness headers (required by CrossRef, OpenAlex). |
-| `pubmed_api_key` | `str \| None` | `None` | Optional NCBI API key for higher PubMed rate limits. |
+| `email` | `str` | `"user@example.com"` | Contact email for the `User-Agent` politeness header sent to every API. |
+| `pubmed_api_key` | `str \| None` | `None` | **Unused.** Stored on the instance and never read. |
 | `settings` | `TransparencySettings \| None` | `None` | Transparency settings. Defaults to `TransparencySettings()`. |
+
+> **`pubmed_api_key` does nothing, and PubMed is not queried.**
+> The module docstring lists PubMed among the analyzer's sources, but no E-utilities endpoint is called anywhere in `analyzer.py`. Publication metadata comes from Europe PMC, which indexes PubMed records and needs no key. Pass the argument if you like — it is accepted for signature stability — but it has no effect and no rate-limit benefit.
+
+Instances carry mutable per-run state (the rate-limit clock and the API-reachability flag), so **do not share one analyzer across threads**. Give each worker its own instance.
 
 ---
 
@@ -163,66 +214,205 @@ Run transparency analysis for a single document. At least one of `pmid` or `doi`
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `document_id` | `str` | *(required)* | An identifier for the document (used in the result). |
+| `document_id` | `str` | *(required)* | An identifier for the document (echoed into the result). |
 | `pmid` | `str \| None` | `None` | PubMed ID. |
 | `doi` | `str \| None` | `None` | Digital Object Identifier. |
 
 **Returns:** `TransparencyResult`
 
+**Raises:** `ImportError` if `httpx` is not installed.
+
+A DOI unlocks strictly more than a PMID: CrossRef and OpenAlex are queried **only** when `doi` is set, so a PMID-only analysis forgoes up to 35 points (funder info, open access, citations) and can never detect a structured industry funder. Supply both where you have both.
+
+Every network failure is swallowed and logged at `DEBUG` — a non-200 response, a timeout, or a connection error degrades the score rather than raising. Enable `logging.getLogger("bmlib.transparency.analyzer").setLevel(logging.DEBUG)` to see which calls failed.
+
 **Example:**
 
 ```python
+from bmlib.transparency import TransparencyAnalyzer, TransparencyRisk
+
 analyzer = TransparencyAnalyzer(email="researcher@example.com")
 
-# Analyze by DOI
-result = analyzer.analyze("doc-001", doi="10.1038/s41586-024-00001-0")
-print(f"Score: {result.transparency_score}/100")
-print(f"Risk: {result.risk_level.value}")
-print(f"Industry funding: {result.industry_funding_detected}")
-print(f"Data availability: {result.data_availability_level}")
-print(f"Risk indicators: {result.risk_indicators}")
+result = analyzer.analyze("doc-001", pmid="39142365", doi="10.1038/s41586-024-00001-0")
 
-# Analyze by PMID
-result = analyzer.analyze("doc-002", pmid="39142365")
+if result.risk_level is TransparencyRisk.UNKNOWN:
+    print("Not determinable:", result.risk_indicators)
+else:
+    print(f"Score: {result.transparency_score}/100  Risk: {result.risk_level.value}")
+    print(f"Industry: {result.industry_funding_detected} "
+          f"(confidence {result.industry_funding_confidence})")
+    print(f"Data: {result.data_availability_level}  COI: {result.coi_disclosed}")
+    print(f"Full text scanned: {result.full_text_analyzed}")
+    for indicator in result.risk_indicators:
+        print(" -", indicator)
 
-# Analyze by both (more complete analysis)
-result = analyzer.analyze("doc-003", pmid="39142365", doi="10.1038/s41586-024-00001-0")
+# DOI-only and PMID-only both work; PMID-only skips CrossRef and OpenAlex.
+result = analyzer.analyze("doc-002", doi="10.1038/s41586-024-00001-0")
+result = analyzer.analyze("doc-003", pmid="39142365")
+
+# Neither identifier: immediate UNKNOWN, no HTTP traffic.
+empty = analyzer.analyze("doc-004")
+assert empty.risk_level is TransparencyRisk.UNKNOWN
+assert empty.risk_indicators == ["No PMID or DOI provided"]
 ```
 
 ---
 
 ## Analysis Pipeline
 
-The analyzer queries four external APIs in sequence:
+All requests go through one `httpx.Client` with a 15-second timeout and the header `User-Agent: bmlib/{version} (mailto:{email})`, where `{version}` is `bmlib.__version__`. Four endpoint families are queried, in this order:
 
-### 1. CrossRef (Funder Information)
+| Step | API | Endpoint | Requires | Used for |
+|------|-----|----------|----------|----------|
+| 1 | CrossRef | `https://api.crossref.org/works/{doi}` | `doi` | Funder records; structured industry-funder detection. |
+| 2 | Europe PMC search | `https://www.ebi.ac.uk/europepmc/webservices/rest/search` | `doi` or `pmid` | Record lookup by `DOI:"{doi}"` (preferred) or `EXT_ID:{pmid}`; abstract text. |
+| 3 | Europe PMC full text | `https://www.ebi.ac.uk/europepmc/webservices/rest/{source}/{ext_id}/fullTextXML` | step 2 record with `inEPMC == "Y"` | COI statement, industry-COI detection, data-availability statement. |
+| 4 | OpenAlex | `https://api.openalex.org/works/doi:{doi}` | `doi` | Open-access status, citation count. |
+| 5 | ClinicalTrials.gov v2 | `https://clinicaltrials.gov/api/v2/studies/{nct_id}` (`fields=hasResults`) | an NCT id credited in step 2's abstract | Posted-results check. |
 
-Queries `api.crossref.org/works/{doi}` to extract funder information. Industry funders are detected via keyword matching against known patterns (pharma, biotech, therapeutics, inc., corp., etc.).
+The step-2 search is issued **once** per document: the record is threaded into the trial-registration step rather than re-queried, halving Europe PMC traffic compared to earlier releases.
 
-**Scoring:** +15 points if funder information is present.
+Step 3 is the difference between a real COI/data-availability reading and a guess. COI and data-availability statements live in a paper's full text, never its abstract, so when `inEPMC != "Y"` (no open-access full text at Europe PMC) the analyzer falls back to scanning the abstract, `full_text_analyzed` stays `False`, `coi_disclosed` can only be `True` or `None`, and industry-COI detection does not run at all.
 
-### 2. EuropePMC (Abstract, COI, Data Availability)
+### Scoring components
 
-Queries the EuropePMC search API for abstract text, then scans for:
+Weights are module-level constants in `bmlib.transparency.analyzer`:
 
-- **COI disclosure:** Looks for patterns like "conflict of interest", "competing interest", "no conflict", "nothing to disclose", "financial disclosure".
-- **Data availability:** Detects repository mentions (Zenodo, Figshare, Dryad, GitHub → `full_open`), "upon request" language → `on_request`, or "not available" → `not_available`.
+| Constant | Points | Awarded when |
+|----------|--------|--------------|
+| `SCORE_FUNDER_INFO` | 15 | CrossRef returned at least one funder record. |
+| `SCORE_COI_DISCLOSED` | 10 | A COI/disclosure statement was found. |
+| `SCORE_DATA_FULL_OPEN` | 20 | `data_availability_level == "full_open"`. |
+| `SCORE_DATA_ON_REQUEST` | 10 | `data_availability_level == "on_request"`. |
+| `SCORE_OPEN_ACCESS` | 15 | OpenAlex reports `open_access.is_oa`. |
+| `SCORE_CITED` | 5 | OpenAlex reports `cited_by_count > 0`. |
+| `SCORE_TRIAL_REGISTERED` | 20 | This paper's own NCT registration was credited. |
+| `SCORE_RESULTS_POSTED` | 15 | One of the registered trials has posted results. |
+| **Maximum** | **100** | `MAX_TRANSPARENCY_SCORE`, applied as `min(score, 100)`. |
 
-**Scoring:** +10 for COI disclosure, +20 for full open data, +10 for data on request.
+The two data-availability awards are mutually exclusive, so the best attainable total is exactly 100: `15 + 10 + 20 + 15 + 5 + 20 + 15`. The `min()` cap is therefore defensive rather than load-bearing — but it is applied, so a future weight change cannot overflow the documented range.
 
-### 3. OpenAlex (Open Access, Citations)
+Note that the score is a *transparency* measure, not a quality measure, and it is heavily influenced by article type: a non-trial paper can never earn the 35 trial-related points, and a paywalled paper forfeits the 15 open-access points and (via step 3) most of the COI and data points. Compare scores within an article class, not across.
 
-Queries `api.openalex.org/works/doi:{doi}` for open access status and citation count.
+**Other constants:**
 
-**Scoring:** +15 for open access, +5 if cited.
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `MAX_TRIAL_IDS_TO_CHECK` | `3` | Registered trials queried for posted results before giving up. |
+| `DEFAULT_INDUSTRY_CONFIDENCE` | `0.8` | Confidence for a structured CrossRef funder match. |
+| `TEXT_INDUSTRY_CONFIDENCE` | `0.5` | Confidence for industry ties inferred from COI text. |
+| `_MIN_REQUEST_INTERVAL_SECONDS` | `0.35` | Minimum gap between outgoing requests. |
+| `_HTTP_TIMEOUT_SECONDS` | `15.0` | Per-request timeout. |
+| `_REGISTRATION_CUE_WINDOW` | `60` | Characters either side of an NCT id scanned for registration language. |
+| `_MAX_OWN_TRIAL_IDS` | `2` | More distinct NCT ids than this means a citation list, not a registration. |
+| `_COI_FALLBACK_WINDOW` | `1000` | Characters after a COI cue scanned when no tagged COI section exists. |
 
-### 4. ClinicalTrials.gov (Trial Registration)
+---
 
-Searches for NCT IDs in the abstract, then queries `clinicaltrials.gov/api/v2/studies/{nct_id}` to check if results have been posted.
+## Industry Involvement Detection
 
-**Scoring:** +20 for trial registration, +15 for results posted.
+`industry_funding_detected` is the OR of two independent signals, deliberately kept on separate vocabularies.
 
-### Maximum Score: 100
+### Signal 1 — structured CrossRef funders (confidence 0.8)
+
+Each CrossRef funder `name` is lowercased and tested against `_INDUSTRY_KEYWORDS`:
+
+```python
+["pharma", "biotech", "therapeutics", "inc.", "corp.", "ltd.", "gmbh", "laboratories"]
+```
+
+A hit appends the indicator `f"Industry funder: {name}"` and sets `industry_funding_confidence` to `DEFAULT_INDUSTRY_CONFIDENCE` (0.8). These keywords are matched **only** against funder names — short, curated org strings where a suffix like `"inc."` is strong evidence.
+
+### Signal 2 — industry ties in the COI statement (confidence 0.5) — *new in 0.4.0*
+
+A paper can be industry-entangled without an industry funder record: the relationships are disclosed in the COI statement instead. When (and only when) full text was retrieved, the analyzer extracts the COI region and looks for disclosed relationships, using a separate keyword list:
+
+```python
+_INDUSTRY_COI_KEYWORDS = ["employee of", "speaker fee", "consultant for", "advisory board"]
+```
+
+A hit sets `industry_funding_detected = True`, raises `industry_funding_confidence` to at least `TEXT_INDUSTRY_CONFIDENCE` (0.5), and appends the indicator `"Industry ties disclosed in COI statement"`. The two lists are **not** interchangeable: the generic org suffixes of signal 1 match far too freely in running prose, while these phrases never occur in a funder name.
+
+The lower confidence is the honest label on a text heuristic. Where both signals fire, the higher (0.8) is kept.
+
+Three guards keep the false-positive rate down.
+
+**1. Scope — only the COI region is read.** `_extract_coi_text()` prefers JATS containers that hold the disclosure: `<fn fn-type="COI-statement">`, `<sec sec-type="conflict">`, `<notes notes-type="COI-statement">` (case- and quote-style-insensitive), plus untyped `<sec>` elements whose `<title>` names conflicts, competing interests, or disclosure. Only when the document carries no such section does it fall back to a 1000-character window after each cue phrase in `_COI_PATTERNS`. Either way, an author affiliation or a reference list mentioning a company is never read as a disclosure.
+
+The fallback window is a fixed span, so on a short disclosure it can bleed into the acknowledgements or references that follow. That is a known, accepted trade-off — and another reason text-derived signals carry only 0.5.
+
+**2. Negation — per sentence.** `_discloses_industry_ties()` splits the COI text on `.` and `;` and scores each sentence independently. A sentence counts only if it contains an industry phrase **and** no negation cue (`no`, `none`, `not`, `neither`, `nor`, `never`, `without`, `deny/denies/denied`). ICMJE-style disclosures routinely enumerate the relationship types they deny — "none of the authors served as a consultant for or received speaker fees from any company" — which whole-text substring matching read as four disclosures. Per-sentence scoring also means a genuine disclosure sitting next to a denial still counts.
+
+**3. Non-industry context — blanked before matching.** Being an employee of a university, hospital, college, school, government, ministry, the NIH, or a public health body is a genuine disclosure but not an industry tie; likewise an *editorial*, *community*, *data safety*, or *safety* advisory board, or the advisory board of the journal. `_NON_INDUSTRY_CONTEXT_RE` replaces those spans with whitespace **before** keyword matching, so they neither trigger a sentence nor mask a real industry relationship disclosed in the same sentence.
+
+The employer nouns are curated rather than generic on purpose: a catch-all like "institute" would excuse industry bodies such as the Novartis Institutes for BioMedical Research.
+
+> **This is keyword matching, not entity recognition.**
+> An unlisted non-industry employer — "employee of the World Bank" — still flags. Treat `industry_funding_detected` at confidence 0.5 as a prompt to look, not as a finding.
+
+---
+
+## Data Availability Detection
+
+`_DATA_PATTERNS` is an **ordered** dict scanned against the search text; the first hit wins and scanning stops.
+
+| Pattern | Level | Points |
+|---------|-------|--------|
+| `"not available"` | `not_available` | 0 (adds the indicator `"Data explicitly not available"`) |
+| `"zenodo"`, `"figshare"`, `"dryad"`, `"github"` | `full_open` | 20 |
+| `"available upon request"`, `"upon reasonable request"` | `on_request` | 10 |
+| *(no match)* | `unknown` | 0 |
+
+**The order is load-bearing.** The negated form is tested first so that a statement like *"data are not available upon reasonable request"* resolves to `not_available` rather than matching `"upon reasonable request"` and being scored as if data sharing were offered. Preserve this ordering if you fork the dict — Python dicts iterate in insertion order, which is what the first-hit-wins loop relies on.
+
+Two further levels, `"restricted"` and `"not_stated"`, are recognised by [`calculate_risk_level()`](#calculate_risk_level) but are **never produced** by the analyzer. They exist for callers who compute `data_availability` themselves from a richer source and then call the risk function directly.
+
+---
+
+## Trial Registration Detection
+
+An NCT accession number in an abstract does not mean the paper *is* that trial — a systematic review enumerates the trials it pooled. `_find_trial_ids()` therefore credits a registration only under two conditions:
+
+1. **Registration language nearby.** At least one NCT id must have a registration cue within ±60 characters (`_REGISTRATION_CUE_WINDOW`) on either side: `clinicaltrials.gov` (tolerating a missing dot), any `regist*` stem (register / registered / registration / registry), or a bare `NCT` used as a label rather than as part of an id. The cue may precede the id ("registered under NCT…") or follow it ("NCT…; registered at ClinicalTrials.gov").
+2. **At most two distinct ids.** A paper's own registration cites one, occasionally two linked, trial numbers. Three or more distinct ids (`_MAX_OWN_TRIAL_IDS = 2`) is a citation list, and the function returns nothing.
+
+Markup is stripped before scanning so tags cannot break the ±60-character window, and ids are deduplicated and upper-cased to ClinicalTrials.gov's canonical form. The patterns were calibrated against real Europe PMC abstracts: they credit ~97% of genuinely registered single-trial abstracts while rejecting citation lists of three or more distinct trials.
+
+When ids are credited, `trial_registered` is `True` and 20 points are awarded. Up to `MAX_TRIAL_IDS_TO_CHECK` (3) of them are then queried for posted results; the first success awards 15 more and stops the loop. If none has results, the indicator `"Registered trial without posted results"` is appended.
+
+`_check_trial_results()` reads the v2 API's top-level `hasResults` boolean, falling back to `bool(data.get("resultsSection"))` when that key is absent. **This was a bug fix in 0.4.0:** the previous implementation requested a `ResultsSection` field but read a `resultsSection` key, so it systematically under-detected posted results and under-scored compliant trials by 15 points.
+
+---
+
+## Unreachable-API Guard
+
+`analyze()` tracks whether any external API returned HTTP 200 during the run. The flag is set by the three search helpers — CrossRef, the Europe PMC search, and OpenAlex — and is reset at the start of every `analyze()` call.
+
+If nothing answered, the analyzer returns early, **before** scoring and before `calculate_risk_level()` is consulted:
+
+```python
+TransparencyResult(
+    document_id=document_id,
+    transparency_score=0,
+    risk_level=TransparencyRisk.UNKNOWN,
+    risk_indicators=["Transparency APIs unreachable — score not determinable"],
+)
+```
+
+Every other field keeps its dataclass default, so `coi_disclosed` reads `True` and `tier_downgrade_applied` reads `0`. Branch on `risk_level` — do not read the other fields of an `UNKNOWN` result.
+
+```python
+result = analyzer.analyze("doc-001", doi="10.1038/...")
+
+if result.risk_level is TransparencyRisk.UNKNOWN:
+    retry_later(result.document_id)      # measured nothing; do not downgrade
+elif result.risk_level is TransparencyRisk.HIGH:
+    downgrade(result.document_id, result.tier_downgrade_applied)
+```
+
+**The guard is all-or-nothing, not per-API.** *Partial* reachability still scores: if CrossRef answers but Europe PMC is down, the run proceeds with whatever it measured, and the missing signals simply score zero. A DOI-only paper whose Europe PMC lookup fails can still land below `score_threshold` and be reported HIGH. The guard rules out the total-outage case — it does not certify that the score is complete. Use `full_text_analyzed` and the `risk_indicators` list to judge how much evidence a given score actually rests on.
+
+The full-text fetch and the ClinicalTrials.gov query do not set the flag, which is harmless: neither is reached without a prior Europe PMC 200.
 
 ---
 
@@ -235,49 +425,103 @@ def calculate_risk_level(
     score: int,
     industry_funding: bool,
     data_availability: str,
-    coi_disclosed: bool,
+    coi_disclosed: bool | None,
     settings: TransparencySettings,
 ) -> TransparencyRisk
 ```
 
-Determine risk level from transparency metrics.
+Determine risk level from transparency metrics. Rules are evaluated in order; the first match wins.
 
-**Risk classification rules:**
+| # | Condition | Gated by | Risk Level |
+|---|-----------|----------|-----------|
+| 1 | `score < settings.score_threshold` (default 40) | — | **HIGH** |
+| 2 | Industry funding **and** `data_availability in ("restricted", "not_available", "not_stated")` | `industry_funding_triggers_downgrade` | **HIGH** |
+| 3 | `coi_disclosed is False` | `missing_coi_triggers_downgrade` | **HIGH** |
+| 4 | `score <= 70` (`MEDIUM_RISK_SCORE_THRESHOLD`) | — | **MEDIUM** |
+| 5 | Industry funding present | — | **MEDIUM** |
+| 6 | *(otherwise)* | — | **LOW** |
 
-| Condition | Risk Level |
-|-----------|-----------|
-| `score < settings.score_threshold` (default 40) | **HIGH** |
-| Industry funding + restricted/unavailable data | **HIGH** |
-| Missing COI disclosure | **HIGH** |
-| `score <= 70` | **MEDIUM** |
-| Industry funding present (but data available) | **MEDIUM** |
-| `score > 70` and transparent | **LOW** |
+Two subtleties:
+
+- **Rule 3 requires an explicit `False`.** `coi_disclosed is None` — full text unavailable, status undeterminable — does **not** downgrade. `is False` is an identity test, so `None` cannot slip through a truthiness check. This is the whole point of the tri-state: a paywalled paper is not punished for a COI statement nobody could read.
+- **Rule 2's restricted set excludes `"unknown"`.** An industry-funded paper whose data-availability statement was never found is not HIGH on that rule; it will usually land MEDIUM via rule 5.
+
+`calculate_risk_level()` never returns `UNKNOWN` — that value comes only from `analyze()`'s two early returns.
+
+```python
+from bmlib.transparency import TransparencySettings, TransparencyRisk, calculate_risk_level
+
+settings = TransparencySettings()
+
+# Undeterminable COI does not downgrade; absent COI does.
+assert calculate_risk_level(85, False, "full_open", None, settings) is TransparencyRisk.LOW
+assert calculate_risk_level(85, False, "full_open", False, settings) is TransparencyRisk.HIGH
+
+# Industry funding caps an otherwise-transparent paper at MEDIUM.
+assert calculate_risk_level(85, True, "full_open", True, settings) is TransparencyRisk.MEDIUM
+
+# ...and makes it HIGH when the data are withheld.
+assert calculate_risk_level(85, True, "not_available", True, settings) is TransparencyRisk.HIGH
+
+# Opt out of the COI rule.
+lenient = TransparencySettings(missing_coi_triggers_downgrade=False)
+assert calculate_risk_level(85, False, "full_open", False, lenient) is TransparencyRisk.LOW
+```
 
 ---
 
-## Rate Limiting
+## Rate Limiting and Concurrency
 
-The analyzer enforces a minimum interval of 350ms between HTTP requests to external APIs, ensuring polite access to public services.
+The analyzer enforces a minimum interval of 350 ms (`_MIN_REQUEST_INTERVAL_SECONDS`) between outgoing HTTP requests by sleeping on the calling thread, ensuring polite access to public services. The clock is shared across all five endpoints, so a full DOI + PMID analysis costs roughly 1.5–2 s of enforced delay on top of network time.
+
+The interval is tracked in unsynchronised instance state (`self._last_request`), as is the reachability flag (`self._api_reachable`). **`TransparencyAnalyzer` is not thread-safe.** To honour `settings.max_concurrent_analyses`, construct one analyzer per worker:
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+from bmlib.transparency import TransparencyAnalyzer, TransparencySettings
+
+settings = TransparencySettings()
+
+def analyze_one(job: tuple[str, str]) -> object:
+    doc_id, doi = job
+    return TransparencyAnalyzer(email="researcher@example.com", settings=settings).analyze(
+        doc_id, doi=doi
+    )
+
+with ThreadPoolExecutor(max_workers=settings.max_concurrent_analyses) as pool:
+    results = list(pool.map(analyze_one, jobs))
+```
+
+Note that per-instance rate limiting means N workers issue up to N times the request rate. Keep `max_concurrent_analyses` modest (the default is 3) and set a real `email` so the services can contact you rather than block you.
+
+---
 
 ## Integration with Quality Assessment
 
-`TransparencyResult` can be attached to a `QualityAssessment` via its `transparency_result` field. When `risk_level` is HIGH, the quality tier can be downgraded by `settings.tier_downgrade_amount` (default: 1 tier).
+`TransparencyResult` can be attached to a `QualityAssessment` via its `transparency_result` field (typed `Any`, so no import cycle). When `risk_level` is HIGH, the quality tier can be downgraded by `tier_downgrade_applied`, which the analyzer has already populated from `settings.tier_downgrade_amount`.
 
 ```python
-from bmlib.quality import QualityAssessment
+from bmlib.quality import QualityAssessment, QualityTier
 from bmlib.transparency import TransparencyAnalyzer, TransparencyRisk
 
-# Perform quality assessment
 assessment = manager.assess(title="...", abstract="...")
 
-# Perform transparency analysis
 analyzer = TransparencyAnalyzer(email="researcher@example.com")
 transparency = analyzer.analyze("doc-001", doi="10.1038/...")
 
-# Integrate results
 assessment.transparency_result = transparency
-if transparency.risk_level == TransparencyRisk.HIGH:
+
+# UNKNOWN means "not measured" — never downgrade on it.
+if transparency.risk_level is TransparencyRisk.HIGH:
     assessment.original_quality_tier = assessment.quality_tier
     assessment.transparency_adjusted = True
-    # Downgrade tier...
+    assessment.quality_tier = QualityTier(
+        max(0, assessment.quality_tier.value - transparency.tier_downgrade_applied)
+    )
 ```
+
+Applying the downgrade is the caller's job — nothing in `bmlib.quality` reads `transparency_result`, and `QualityAssessment.to_dict()` omits both `transparency_result` and `original_quality_tier`. Persist the transparency result separately via `TransparencyResult.to_dict()` if you need it after a round-trip.
+
+> **Guard the downgrade on `risk_level`, not on `transparency_score`.**
+> Before 0.4.0, an unreachable API produced score 0 → HIGH → an automatic tier downgrade on evidence that was never gathered. The [unreachable-API guard](#unreachable-api-guard) now returns `UNKNOWN` in that case; code that tests `transparency_score < 40` instead of the risk level still has the old bug.

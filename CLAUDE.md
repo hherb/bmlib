@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**bmlib** (v0.3.0) is a shared Python library for biomedical literature tools, licensed under AGPL-3.0-or-later. It provides LLM abstraction, quality assessment, transparency analysis, full-text retrieval, database utilities, and publication ingestion/sync.
+**bmlib** (v0.4.0) is a shared Python library for biomedical literature tools, licensed under AGPL-3.0-or-later. It provides LLM abstraction, quality assessment, transparency analysis, full-text retrieval, database utilities, and publication ingestion/sync.
 
 ## Development Setup
 
@@ -28,6 +28,7 @@ uv pip install -e ".[all]"
 | postgresql     | psycopg2-binary>=2.9  | PostgreSQL database backend            |
 | transparency   | httpx>=0.25           | Transparency analysis API calls        |
 | publications   | httpx>=0.25           | Publication fetcher API calls           |
+| pdf            | pymupdf>=1.23         | PDF → text conversion in `fulltext/`   |
 | dev            | pytest>=7.0, pytest-cov, ruff | Development and testing tools  |
 | all            | All of the above      | Full installation                      |
 
@@ -44,16 +45,19 @@ bmlib/
 │   ├── operations.py        # execute, fetch_one, fetch_all, fetch_scalar, table_exists, create_tables
 │   ├── transactions.py      # transaction() context manager
 │   └── migrations.py        # Migration dataclass, run_migrations()
-├── fulltext/                # Full-text retrieval and JATS XML parsing
-│   ├── cache.py             # Disk-based FullTextCache
+├── fulltext/                # Full-text retrieval, JATS XML parsing, PDF conversion
+│   ├── cache.py             # Disk-based FullTextCache, sanitize_identifier()
 │   ├── jats_parser.py       # JATS XML → structured data
-│   ├── models.py            # FullTextResult, JATSArticle, etc.
-│   └── service.py           # 3-tier FullTextService (EuropePMC → Unpaywall → DOI)
+│   ├── models.py            # FullTextResult, FullTextSourceEntry, JATSArticle, etc.
+│   ├── pdf_converter.py     # Pluggable PDF → text (PDFConverter ABC, PyMuPDF backend)
+│   └── service.py           # Tiered FullTextService (known sources → EuropePMC → Unpaywall → DOI)
 ├── llm/                     # Unified LLM client with pluggable providers
 │   ├── client.py            # LLMClient router, get_llm_client() singleton
-│   ├── data_types.py        # LLMMessage, LLMResponse dataclasses
+│   ├── data_types.py        # LLMMessage, LLMResponse, LLMToolDefinition, LLMToolCall, EmbeddingResponse
+│   ├── json_repair.py       # Repair malformed LLM JSON (repair_json, safe_json_loads, ...)
+│   ├── text_utils.py        # TextChunker, map-reduce / rolling-summary long-document helpers
 │   ├── token_tracker.py     # Thread-safe TokenTracker
-│   ├── utils.py             # Utility functions
+│   ├── utils.py             # extract_json()
 │   └── providers/           # Provider implementations
 │       ├── __init__.py      # Registry: register_provider, get_provider, list_providers
 │       ├── base.py          # BaseProvider ABC, ModelMetadata, ModelPricing
@@ -74,28 +78,32 @@ bmlib/
 │       ├── pubmed.py        # PubMed E-utilities (esearch + efetch)
 │       ├── biorxiv.py       # bioRxiv / medRxiv
 │       └── openalex.py      # OpenAlex
-├── quality/                 # 3-tier quality assessment pipeline
-│   ├── data_models.py       # StudyDesign enum, QualityTier, BiasRisk, QualityAssessment
+├── quality/                 # 3-tier quality assessment pipeline + standalone assessment tools
+│   ├── data_models.py       # StudyDesign enum, QualityTier, BiasRisk, QualityAssessment, QualityFilter
 │   ├── manager.py           # QualityManager orchestrator
 │   ├── metadata_filter.py   # Tier 1: PubMed metadata → StudyDesign (free)
 │   ├── study_classifier.py  # Tier 2: LLM study-design classifier (cheap)
-│   └── quality_agent.py     # Tier 3: deep assessment agent (capable model)
+│   ├── quality_agent.py     # Tier 3: deep assessment agent (capable model)
+│   ├── cochrane_models.py   # Cochrane 9-domain Risk-of-Bias + study-characteristics models
+│   ├── cochrane_formatter.py # Markdown / HTML renderers for the Cochrane tables
+│   ├── extractors.py        # Rule-based (LLM-free) study-type and sample-size extraction
+│   └── scoring_models.py    # DimensionScore / AssessmentDetail audit-trail models
 ├── templates/engine.py      # Jinja2 TemplateEngine with user/default dir fallback
 └── transparency/            # Multi-API transparency analysis
-    ├── analyzer.py          # TransparencyAnalyzer (PubMed, CrossRef, EuropePMC, OpenAlex, ClinicalTrials.gov)
+    ├── analyzer.py          # TransparencyAnalyzer (CrossRef, EuropePMC, OpenAlex, ClinicalTrials.gov)
     └── models.py            # TransparencyResult, TransparencyRisk enum, TransparencySettings
 ```
 
 ### Module descriptions
 
 - **`db/`** — Thin database abstraction via pure functions over DB-API connections. Supports SQLite (built-in) and PostgreSQL (optional). No ORM; all SQL is explicit.
-- **`llm/`** — Unified LLM client with a pluggable provider registry. Built-in providers: Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini. Model strings use `"provider:model_name"` format (e.g. `"anthropic:claude-sonnet-4-20250514"`). Providers are lazily registered on first access.
+- **`llm/`** — Unified LLM client with a pluggable provider registry. Built-in providers: Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini. Model strings use `"provider:model_name"` format (e.g. `"anthropic:claude-sonnet-4-20250514"`). Providers are lazily registered on first access, and a provider whose SDK is not installed is silently skipped — so `list_providers()` reflects what is installed, not what exists. Beyond chat, the package covers embeddings (`LLMClient.embed()`, Ollama only), tool calling (`tools`/`tool_choice` on `chat()`), JSON repair, and text chunking.
 - **`templates/`** — Jinja2-based prompt template engine with user directory override and default directory fallback.
-- **`agents/`** — `BaseAgent` class for LLM-driven tasks. Provides `chat()`, `chat_json()` (with retry), `render_template()`, and message helpers.
-- **`quality/`** — 3-tier quality assessment: (1) free metadata classification, (2) cheap LLM classifier, (3) deep LLM assessment. Uses CEBM evidence hierarchy for quality tiers.
-- **`transparency/`** — Queries multiple APIs to compute a transparency score (0-100) covering funding, COI, data availability, trial registration, and outcome switching.
+- **`agents/`** — `BaseAgent` class for LLM-driven tasks. Provides `chat()`, `chat_json()` (retry with backoff, truncation-aware), `render_template()`, `parse_json()`, and message helpers.
+- **`quality/`** — 3-tier quality assessment: (1) free metadata classification, (2) cheap LLM classifier, (3) deep LLM assessment. Uses CEBM evidence hierarchy for quality tiers. The Cochrane models/formatter and the rule-based extractors are **standalone**: nothing in the tiered pipeline imports them, and there is no conversion between `BiasRisk` and `CochraneRiskOfBias`, or between `DimensionScore` and `QualityAssessment`. Wiring them together is open work — see ROADMAP.md.
+- **`transparency/`** — Queries CrossRef, Europe PMC (search + full text), OpenAlex, and ClinicalTrials.gov to compute a transparency score (0-100) covering funding, COI, data availability, trial registration, and open access. `pubmed_api_key` is accepted but no PubMed endpoint is currently called. When no API is reachable the result is `UNKNOWN` at score 0, so an unreachable network does not masquerade as a HIGH-risk paper.
 - **`publications/`** — Publication ingestion from multiple sources (PubMed, bioRxiv, medRxiv, OpenAlex) with deduplication by DOI/PMID, merge-on-upsert, and date-range sync tracking. Note: the storage layer is currently SQLite-specific (`?` placeholders, `ON CONFLICT`, `cur.lastrowid`) even though `db/` also supports PostgreSQL.
-- **`fulltext/`** — 3-tier full-text retrieval (Europe PMC XML → Unpaywall → DOI resolution) with JATS XML parsing and disk-based caching.
+- **`fulltext/`** — Tiered full-text retrieval (caller-supplied sources → Europe PMC XML → Europe PMC PDF → Unpaywall → DOI/PubMed URL) with JATS XML parsing and disk-based caching. PDF→text conversion lives here too but is **standalone** — `FullTextService` downloads and caches PDF bytes and never calls the converter.
 
 ## Coding Conventions
 
@@ -132,6 +140,12 @@ Both LLM providers and publication fetchers use a module-level `_REGISTRY` dict 
 ### DB-API connection threading
 All database functions take a connection as the first argument. The `transaction(conn)` context manager handles commit/rollback. No hidden state.
 
+### Composable transactions via savepoints
+On SQLite, `transaction(conn)` entered while a transaction is already open joins it with a `SAVEPOINT` instead of committing — the outermost block owns the commit, and an inner failure rolls back to its own savepoint without losing the batch. This is what lets a bulk loop wrap many `transaction()`-using calls in one outer block and pay a single commit; `publications.sync()` depends on it for its one-commit-per-day batching. PostgreSQL has no savepoint nesting: `transaction()` there still commits connection-wide.
+
+### Optional dependencies guarded at the call site
+Optional imports are deferred to the constructor or function that needs them, not the module top level, so importing a module never drags in an extra. `PyMuPDFConverter.__init__` and `TransparencyAnalyzer.analyze()` both follow this pattern.
+
 ### Thread-safe token tracking
 `TokenTracker` uses `threading.Lock()` for safe concurrent LLM usage accounting.
 
@@ -150,10 +164,12 @@ All tests use in-memory SQLite (`connect_sqlite(":memory:")`) for database tests
 | Module               | Test file(s)                                               |
 |----------------------|------------------------------------------------------------|
 | `db/`                | `test_db.py`, `test_migrations.py`                         |
-| `llm/`               | `test_llm.py`, `test_openai_compat.py`                     |
+| `llm/`               | `test_llm.py`, `test_openai_compat.py`, `test_llm_tools.py`, `test_json_repair.py`, `test_text_utils.py` |
 | `agents/`            | `test_agents.py`                                           |
-| `quality/`           | `test_quality.py`                                          |
+| `quality/`           | `test_quality.py`, `test_cochrane.py`, `test_extractors.py` |
 | `templates/`         | `test_templates.py`                                        |
 | `transparency/`      | `test_transparency.py`                                     |
 | `publications/`      | `test_publications.py`, `test_sync.py`, `test_pubmed_fetcher.py`, `test_openalex_fetcher.py`, `test_registry.py` |
-| `fulltext/`          | `test_fulltext_cache.py`, `test_fulltext_models.py`, `test_fulltext_service.py`, `test_jats_parser.py` |
+| `fulltext/`          | `test_fulltext_cache.py`, `test_fulltext_models.py`, `test_fulltext_service.py`, `test_jats_parser.py`, `test_pdf_converter.py` |
+
+`scripts/smoke_test_tool_calling.py` is an end-to-end integration runner for tool calling. It hits live providers, so it is not part of the pytest suite — run it manually when changing provider tool-call code.

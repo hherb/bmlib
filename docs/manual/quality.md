@@ -6,6 +6,25 @@ Three-tier quality assessment pipeline for biomedical publications, inspired by 
 - **Tier 2:** LLM study-design classification (cheap model, ~$0.001/doc)
 - **Tier 3:** Deep methodological assessment (capable model, ~$0.003/doc)
 
+Alongside the pipeline, the module ships three **standalone** toolkits: Cochrane-aligned assessment models, Cochrane table formatters, and rule-based (LLM-free) extractors with an audit-trail scoring model.
+
+> **The standalone toolkits are not wired into the tiered pipeline.**
+> `QualityManager` imports only `data_models`, `metadata_filter`, `study_classifier`, and `quality_agent`. Tier 3 (`QualityAgent`) produces the five-domain [`BiasRisk`](#biasrisk) — never a [`CochraneRiskOfBias`](#cochraneriskofbias). There is **no** conversion function between `BiasRisk` and `CochraneRiskOfBias`, and none between [`DimensionScore`](#dimensionscore) and [`QualityAssessment`](#qualityassessment). The Cochrane models are documented as "a strict superset of `BiasRisk`" and the extractors as "a cheap pre-filter or fallback for the LLM-based tiers", but that is a statement of intent: no code connects them. Populate the Cochrane models and call the extractors yourself.
+
+## Module layout
+
+| Submodule | Contents | Wired into the pipeline? |
+|-----------|----------|--------------------------|
+| `data_models` | `StudyDesign`, `QualityTier`, `BiasRisk`, `QualityAssessment`, `QualityFilter`, design mappings | Yes |
+| `metadata_filter` | Tier 1 — `classify_from_metadata()` | Yes |
+| `study_classifier` | Tier 2 — `StudyClassifier` | Yes |
+| `quality_agent` | Tier 3 — `QualityAgent` | Yes |
+| `manager` | `QualityManager` orchestrator | Yes |
+| `cochrane_models` | Nine-domain RoB + study-characteristics dataclasses | **No — standalone** |
+| `cochrane_formatter` | Markdown / HTML Cochrane table renderers | **No — standalone** |
+| `extractors` | Rule-based, LLM-free extraction functions | **No — standalone** |
+| `scoring_models` | `AssessmentDetail`, `DimensionScore` audit trail | **No — standalone** |
+
 ## Imports
 
 ```python
@@ -18,8 +37,40 @@ from bmlib.quality import (
     BiasRisk,
     DESIGN_TO_TIER,
     DESIGN_TO_SCORE,
+    # Cochrane-aligned models
+    CochraneStudyAssessment,
+    CochraneStudyCharacteristics,
+    CochraneRiskOfBias,
+    CochraneParticipants,
+    CochraneInterventions,
+    CochraneOutcomes,
+    CochraneNotes,
+    RiskOfBiasItem,
+    RiskOfBiasJudgement,
+    create_default_cochrane_risk_of_bias,
+    create_default_risk_of_bias_item,
+    # Rule-based extractors + audit-trail scoring models
+    AssessmentDetail,
+    DimensionScore,
+    extract_study_type,
+    extract_sample_size_dimension,
 )
 ```
+
+The list above is the complete `bmlib.quality.__all__`. Everything else must be imported from its submodule:
+
+```python
+from bmlib.quality.cochrane_formatter import format_complete_assessment_markdown
+from bmlib.quality.cochrane_models import ROB_JUDGEMENT_LOW, VALID_ROB_JUDGEMENTS
+from bmlib.quality.data_models import DESIGN_TO_RANDOMIZED, STUDY_DESIGN_MAPPING
+from bmlib.quality.extractors import find_sample_size, get_extracted_study_type
+from bmlib.quality.metadata_filter import classify_from_metadata
+from bmlib.quality.quality_agent import QualityAgent
+from bmlib.quality.scoring_models import ALL_DIMENSIONS, DIMENSION_SAMPLE_SIZE
+from bmlib.quality.study_classifier import StudyClassifier
+```
+
+In particular, **none** of the `cochrane_formatter` functions and **none** of the `DIMENSION_*` constants are re-exported at package level.
 
 ---
 
@@ -107,6 +158,31 @@ Maps `StudyDesign` to default numeric scores (0–10):
 | Comment | 1.0 |
 | Other / Unknown | 0.0 |
 
+### `DESIGN_TO_RANDOMIZED`
+
+Maps `StudyDesign` to randomization status (`dict[StudyDesign, bool | None]`). Not exported at package level — import from `bmlib.quality.data_models`.
+
+| Study Design | `is_randomized` |
+|-------------|-----------------|
+| `RCT` | `True` |
+| `COHORT_PROSPECTIVE`, `COHORT_RETROSPECTIVE`, `CASE_CONTROL`, `CROSS_SECTIONAL`, `CASE_SERIES`, `CASE_REPORT`, `EDITORIAL`, `LETTER`, `COMMENT` | `False` |
+| Any other design (absent key → `.get()` returns `None`) | `None` |
+
+`SYSTEMATIC_REVIEW`, `META_ANALYSIS`, `GUIDELINE`, `OTHER`, and `UNKNOWN` are deliberately absent: the design alone does not determine randomization (a systematic review may synthesise RCTs or observational studies).
+
+Both `QualityAssessment.from_metadata()` and `QualityAssessment.from_classification()` populate `is_randomized` from this mapping, so `QualityFilter(require_randomization=True)` now recognises an RCT identified at Tier 1 or Tier 2 instead of rejecting it for a missing flag.
+
+```python
+from bmlib.quality import QualityAssessment, QualityFilter, StudyDesign
+
+rct = QualityAssessment.from_metadata(StudyDesign.RCT)
+assert rct.is_randomized is True
+assert rct.passes_filter(QualityFilter(require_randomization=True))
+
+review = QualityAssessment.from_metadata(StudyDesign.SYSTEMATIC_REVIEW)
+assert review.is_randomized is None
+```
+
 ---
 
 ## Data Models
@@ -165,9 +241,9 @@ class QualityAssessment:
 
 | Method | Description |
 |--------|-------------|
-| `QualityAssessment.unclassified()` | Create an empty/unclassified assessment. |
-| `QualityAssessment.from_metadata(design, confidence=0.9)` | Create a Tier 1 assessment from PubMed metadata. |
-| `QualityAssessment.from_classification(study_design, confidence=0.7, sample_size=None, is_blinded=None)` | Create a Tier 2 assessment from LLM classification. |
+| `QualityAssessment.unclassified()` | Create an empty/unclassified assessment (all defaults). |
+| `QualityAssessment.from_metadata(design, confidence=0.9)` | Create a Tier 1 assessment from PubMed metadata. Sets `extraction_method="pubmed_metadata"` and derives `quality_tier`, `quality_score`, and `is_randomized` from the design mappings. |
+| `QualityAssessment.from_classification(study_design, confidence=0.7, sample_size=None, is_blinded=None)` | Create a Tier 2 assessment from LLM classification. Sets `extraction_method="llm_classifier"` and derives the same three fields. |
 
 #### Instance Methods
 
@@ -176,6 +252,10 @@ class QualityAssessment:
 | `passes_filter(qfilter: QualityFilter) -> bool` | Check if this assessment passes the given filter criteria. |
 | `to_dict() -> dict[str, Any]` | Serialise to a JSON-safe dictionary. |
 | `from_dict(data: dict) -> QualityAssessment` | Deserialise from a dictionary. |
+
+`to_dict()` is **lossy**: it omits `extraction_details`, `transparency_result`, and `original_quality_tier`, and includes `"bias_risk"` only when `bias_risk` is set. A `from_dict(to_dict(x))` round-trip therefore drops those three fields.
+
+`passes_filter()` skips the `min_sample_size` check when `sample_size` is `None` — an assessment with an unknown sample size passes a size filter rather than failing it.
 
 ---
 
@@ -267,9 +347,14 @@ Run the tiered assessment pipeline for a single paper.
 
 **Assessment flow:**
 
-1. **Tier 1 (metadata):** If `publication_types` are provided and match a known PubMed type, classify immediately. Free and instant.
-2. **Tier 2 (classifier):** If metadata is inconclusive or low-confidence, use a cheap LLM to classify the study design from title + abstract.
-3. **Tier 3 (deep assessment):** If `filter_settings.use_detailed_assessment` is `True`, perform comprehensive methodological assessment including bias risk, strengths, and limitations.
+1. **Tier 1 (metadata)** always runs first, via `classify_from_metadata(publication_types)`. Free and instant.
+2. If `use_metadata_only` is `True`, the Tier 1 result is returned immediately — no LLM call.
+3. The Tier 1 result is *confident* when its `confidence >= 0.9` (`METADATA_ACCEPTANCE_THRESHOLD`) **and** its `quality_tier` is not `UNCLASSIFIED`. A confident result is returned as-is unless `use_detailed_assessment` is `True`.
+4. **Tier 3 (deep assessment):** if `use_detailed_assessment` is `True`, `QualityAgent.assess()` runs and its result is returned. **Tier 2 is skipped entirely** — the detailed assessment supersedes the classifier, so the cheap-but-not-free call is never made.
+5. **Tier 2 (classifier):** otherwise, if `use_llm_classification` is `True` (the default), `StudyClassifier.classify()` runs and its result is returned.
+6. Otherwise the Tier 1 result is returned as a fallback.
+
+Note that Tier 2 and Tier 3 never run together, and that a tier's result *replaces* the previous tier's rather than merging with it.
 
 **Parameters:**
 
@@ -374,6 +459,10 @@ print(result.quality_tier)  # QualityTier.TIER_4_EXPERIMENTAL
 print(result.confidence)    # 0.9
 ```
 
+Matching is case-insensitive and normalises hyphens and underscores, so `"systematic review"`, `"Systematic Review"`, and `"systematic-review"` all match.
+
+**Confidence:** a type found in the priority list scores `METADATA_HIGH_CONFIDENCE` (0.9). A known type *not* in the priority list scores `0.9 * 0.8 = 0.72` — below the manager's acceptance threshold, so such a record falls through to LLM classification. No match at all returns `QualityAssessment.unclassified()`.
+
 ### Supported PubMed Publication Types
 
 The following PubMed publication types are mapped to study designs (resolved in priority order):
@@ -382,22 +471,34 @@ The following PubMed publication types are mapped to study designs (resolved in 
 |------------------------|--------------|
 | Systematic Review | `SYSTEMATIC_REVIEW` |
 | Meta-Analysis | `META_ANALYSIS` |
-| Randomized Controlled Trial, Clinical Trial (Phase I–IV), Controlled Clinical Trial, Pragmatic Clinical Trial | `RCT` |
-| Observational Study, Cohort Study, Longitudinal Study, Prospective Study | `COHORT_PROSPECTIVE` |
+| Randomized Controlled Trial, Controlled Clinical Trial, Clinical Trial, Clinical Trial (Phase I–IV), Pragmatic Clinical Trial, Equivalence Trial | `RCT` |
+| Cohort Study, Longitudinal Study, Prospective Study | `COHORT_PROSPECTIVE` |
 | Retrospective Study | `COHORT_RETROSPECTIVE` |
 | Case-Control Study | `CASE_CONTROL` |
-| Cross-Sectional Study, Twin Study, Validation Study, Comparative Study | `CROSS_SECTIONAL` |
+| Cross-Sectional Study, Twin Study, Validation Study | `CROSS_SECTIONAL` |
 | Case Reports | `CASE_REPORT` |
 | Practice Guideline, Guideline, Consensus Development Conference | `GUIDELINE` |
 | Editorial | `EDITORIAL` |
 | Letter | `LETTER` |
 | Comment | `COMMENT` |
+| Review, Published Erratum, Retracted Publication | `OTHER` |
+
+Cohort designs precede case-control in the priority list, so a paper tagged with both resolves to the stronger (cohort) design.
+
+**Deliberately unmapped:** `"Multicenter Study"`, `"Comparative Study"`, and `"Observational Study"`. The first two are organisational or generic attributes rather than designs. `"Observational Study"` is PubMed's catch-all for non-experimental studies whose specific subtype was not indexed, so mapping it to prospective cohort asserted a tier and a prospectivity the evidence did not support, at high confidence. Records carrying only such tags fall through to LLM classification.
 
 ---
 
 ## Tier 2: Study Classifier
 
-The `StudyClassifier` (subclass of `BaseAgent`) uses a cheap/fast LLM to classify study design from title + abstract. It returns structured JSON with:
+```python
+class StudyClassifier(BaseAgent):
+    def classify(self, title: str, abstract: str) -> QualityAssessment
+```
+
+The `StudyClassifier` (subclass of `BaseAgent`) uses a cheap/fast LLM to classify study design from title + abstract. The abstract is truncated to `MAX_ABSTRACT_CHARS` (3000); the call uses `temperature=0.1`, `max_tokens=256`. Any exception — including JSON-repair failure after retries — is logged and yields `QualityAssessment.unclassified()` rather than propagating.
+
+It returns structured JSON with:
 
 - `study_design`: One of the `StudyDesign` enum values
 - `confidence`: 0.0–1.0
@@ -410,6 +511,11 @@ The classifier focuses on the paper's own methodology (e.g. "we conducted", "thi
 
 ## Tier 3: Deep Assessment
 
+```python
+class QualityAgent(BaseAgent):
+    def assess(self, title: str, abstract: str) -> QualityAssessment
+```
+
 The `QualityAgent` (subclass of `BaseAgent`) uses a capable LLM for comprehensive assessment including:
 
 - Study design classification
@@ -417,8 +523,520 @@ The `QualityAgent` (subclass of `BaseAgent`) uses a capable LLM for comprehensiv
 - Oxford CEBM evidence level
 - Design characteristics (randomized, controlled, blinded, prospective, multicenter)
 - Sample size
-- Cochrane Risk-of-Bias across 5 domains
+- Cochrane Risk-of-Bias across 5 domains — a populated [`BiasRisk`](#biasrisk), **not** a [`CochraneRiskOfBias`](#cochraneriskofbias)
 - Methodological strengths and limitations
 - Confidence score
 
+The abstract is truncated to `MAX_ABSTRACT_CHARS` (4000); the call uses `temperature=0.2`, `max_tokens=1024`. The result carries `assessment_tier=3` and `extraction_method="llm_deep_assessment"`. As with Tier 2, any exception yields `QualityAssessment.unclassified()`.
+
 This tier is the most expensive and should be used selectively.
+
+Both agents inherit `BaseAgent.__init__(llm, model, template_engine=None, temperature=0.3, max_tokens=4096)`; `QualityManager` overrides the temperature and token limits shown above when constructing them.
+
+---
+
+## Cochrane-Aligned Models
+
+`bmlib.quality.cochrane_models` provides dataclasses matching the Cochrane Handbook's *Characteristics of included studies* and *Risk of bias* tables. These are the **classic RoB 1 / Cochrane Handbook domains** — selection, performance, detection, attrition, and reporting bias. They are **not** RoB 2 signalling questions, **not** ROBINS-I, and **not** GRADE.
+
+> **Standalone.** Nothing in the tiered pipeline produces or consumes these types, and no conversion to or from [`BiasRisk`](#biasrisk) exists. Build them yourself (typically from your own extraction step) and render them with the [formatters](#cochrane-formatters).
+
+### Judgement Constants
+
+```python
+ROB_JUDGEMENT_LOW = "Low risk"
+ROB_JUDGEMENT_HIGH = "High risk"
+ROB_JUDGEMENT_UNCLEAR = "Unclear risk"
+
+VALID_ROB_JUDGEMENTS = {ROB_JUDGEMENT_LOW, ROB_JUDGEMENT_HIGH, ROB_JUDGEMENT_UNCLEAR}
+```
+
+Note the capitalisation and the `" risk"` suffix: these are **not** the same vocabulary as `BiasRisk`, which uses bare lowercase `"low"` / `"unclear"` / `"high"`.
+
+### `RiskOfBiasJudgement`
+
+```python
+class RiskOfBiasJudgement(Enum):
+    LOW = "Low risk"
+    HIGH = "High risk"
+    UNCLEAR = "Unclear risk"
+
+    @classmethod
+    def from_string(cls, value: str) -> RiskOfBiasJudgement
+```
+
+`from_string()` is tolerant of case and common variants (`"low"`, `"low risk"`, `"low_risk"`; `"unclear"`, `"unknown"`, …). An unrecognised value logs a warning and falls back to `UNCLEAR`.
+
+**This enum is not used by any other model in the module** — `RiskOfBiasItem.judgement` is a plain `str`. Treat `RiskOfBiasJudgement` as a normalisation helper for untrusted input, then store `.value`:
+
+```python
+from bmlib.quality import RiskOfBiasJudgement
+
+judgement = RiskOfBiasJudgement.from_string("LOW RISK").value  # "Low risk"
+```
+
+### `RiskOfBiasItem`
+
+A single risk-of-bias domain assessment.
+
+```python
+@dataclass
+class RiskOfBiasItem:
+    domain: str                     # e.g. "Random sequence generation"
+    bias_type: str                  # e.g. "selection bias"
+    judgement: str                  # one of VALID_ROB_JUDGEMENTS
+    support_for_judgement: str      # text explaining the basis
+    outcome_type: str | None = None # for detection bias: "subjective" | "objective"
+```
+
+`__post_init__` **warns** on a judgement outside `VALID_ROB_JUDGEMENTS` — it does not raise, and the invalid value is kept.
+
+| Method | Description |
+|--------|-------------|
+| `to_dict() -> dict[str, Any]` | Serialise. `outcome_type` is omitted when falsy. |
+| `from_dict(data: dict) -> RiskOfBiasItem` | Deserialise. `domain`, `bias_type`, `judgement`, and `support_for_judgement` are required keys. |
+
+### `CochraneRiskOfBias`
+
+Nine required `RiskOfBiasItem` fields, in declaration order:
+
+| Field | Bias type | Notes |
+|-------|-----------|-------|
+| `random_sequence_generation` | selection bias | |
+| `allocation_concealment` | selection bias | |
+| `baseline_outcome_measurements` | selection bias | |
+| `baseline_characteristics` | selection bias | |
+| `blinding_participants_personnel` | performance bias | |
+| `blinding_outcome_assessment_subjective` | detection bias | `outcome_type="subjective"` |
+| `blinding_outcome_assessment_objective` | detection bias | `outcome_type="objective"` |
+| `incomplete_outcome_data` | attrition bias | |
+| `selective_reporting` | reporting bias | |
+
+Four selection-bias domains, one performance, two detection (split by outcome type), one attrition, one reporting.
+
+| Method | Description |
+|--------|-------------|
+| `to_dict() -> dict[str, Any]` | Serialise all nine domains. |
+| `to_list() -> list[RiskOfBiasItem]` | The nine domains in canonical Cochrane table order. |
+| `from_dict(data: dict) -> CochraneRiskOfBias` | Deserialise. All nine keys are required. |
+| `get_summary_counts() -> dict[str, int]` | Domain counts keyed by the three judgement constants. |
+
+### Study Characteristics Sections
+
+```python
+@dataclass
+class CochraneParticipants:
+    setting: str
+    population: str
+    inclusion_criteria: list[str] | None = None
+    exclusion_criteria: list[str] | None = None
+    total_participants: int | None = None
+    group_sizes: dict[str, int] | None = None
+    baseline_characteristics_reported: bool = False
+
+@dataclass
+class CochraneInterventions:
+    description: str
+    intervention_groups: list[str] | None = None
+    control_description: str | None = None
+    duration: str | None = None
+    setting: str | None = None
+
+@dataclass
+class CochraneOutcomes:
+    description: str
+    primary_outcomes: list[str] | None = None
+    secondary_outcomes: list[str] | None = None
+    outcome_timepoints: list[str] | None = None
+    outcome_assessment_methods: list[str] | None = None
+
+@dataclass
+class CochraneNotes:
+    follow_up_periods: list[str] | None = None
+    funding_source: str | None = None
+    conflicts_of_interest: str | None = None
+    ethical_approval: str | None = None
+    trial_registration: str | None = None
+    publication_status: str | None = None
+    additional_notes: list[str] | None = None
+```
+
+All four have `to_dict()` and `from_dict()`. `from_dict()` defaults missing required text to `"Not reported"` (`setting` and `population` on `CochraneParticipants`; `description` on `CochraneInterventions` and `CochraneOutcomes`).
+
+| Method | Description |
+|--------|-------------|
+| `CochraneParticipants.format_for_table() -> str` | Renders `Setting: …`, a blank line, the population, and an `N=…` line (with per-group breakdown when `group_sizes` is set). |
+| `CochraneNotes.format_for_table() -> str` | Renders the populated fields as blank-line-separated blocks, or `"No additional notes"` when all are empty. |
+
+### `CochraneStudyCharacteristics`
+
+```python
+@dataclass
+class CochraneStudyCharacteristics:
+    study_id: str
+    methods: str
+    participants: CochraneParticipants
+    interventions: CochraneInterventions
+    outcomes: CochraneOutcomes
+    notes: CochraneNotes
+    document_id: int | None = None
+    document_title: str | None = None
+    pmid: str | None = None
+    doi: str | None = None
+    created_at: datetime | None = None
+```
+
+`__post_init__` stamps `datetime.now(UTC)` when `created_at` is `None`. `to_dict()` writes `created_at` as an ISO 8601 string; `from_dict()` parses it back with `datetime.fromisoformat()`.
+
+### `CochraneStudyAssessment`
+
+```python
+@dataclass
+class CochraneStudyAssessment:
+    study_characteristics: CochraneStudyCharacteristics
+    risk_of_bias: CochraneRiskOfBias
+    overall_quality_score: float | None = None   # 0–10
+    overall_confidence: float | None = None      # 0–1
+    evidence_level: str | None = None            # e.g. "Level 2 (moderate-high)"
+    assessment_notes: list[str] | None = None
+    assessment_version: str = "2.0.0"
+```
+
+| Member | Description |
+|--------|-------------|
+| `to_dict() -> dict[str, Any]` | Serialise the whole assessment. |
+| `from_dict(data: dict) -> CochraneStudyAssessment` | Deserialise; `assessment_version` defaults to `"2.0.0"`. |
+| `study_id` *(property)* | Delegates to `study_characteristics.study_id`. |
+| `document_id` *(property)* | Delegates to `study_characteristics.document_id`. |
+
+### Factory Functions
+
+| Function | Description |
+|----------|-------------|
+| `create_default_risk_of_bias_item(domain, bias_type, outcome_type=None) -> RiskOfBiasItem` | An `"Unclear risk"` item with `support_for_judgement="Not reported or insufficient information to assess"`. |
+| `create_default_cochrane_risk_of_bias() -> CochraneRiskOfBias` | All nine domains `"Unclear risk"`, with the canonical domain names and bias types. |
+
+Start from `create_default_cochrane_risk_of_bias()` and overwrite the domains you can actually judge — this guarantees the nine required fields are present and correctly labelled.
+
+---
+
+## Cochrane Formatters
+
+`bmlib.quality.cochrane_formatter` renders `cochrane_models` objects as Cochrane Handbook tables. Module-level functions only, no classes. **None are re-exported from `bmlib.quality`** — import from the submodule.
+
+| Function | Returns |
+|----------|---------|
+| `format_study_characteristics_markdown(study_chars: CochraneStudyCharacteristics) -> str` | The two-column *Study characteristics* table, headed by `### {study_id}`. |
+| `format_risk_of_bias_markdown(rob: CochraneRiskOfBias) -> str` | The three-column *Risk of bias* table (Bias / Authors' judgement / Support for judgement). |
+| `format_complete_assessment_markdown(assessment: CochraneStudyAssessment) -> str` | Characteristics + risk of bias, plus an *Assessment Summary* block when a score or evidence level is set, and a *Notes* block when `assessment_notes` is non-empty. |
+| `format_multiple_assessments_markdown(assessments: list[CochraneStudyAssessment], title: str = "Characteristics of included studies") -> str` | One `## {title}` document, each assessment separated by a `---` rule. |
+| `format_risk_of_bias_summary_markdown(assessments: list[CochraneStudyAssessment]) -> str` | A cross-study matrix (domains × studies) using `+` (low), `-` (high), `?` (unclear), with a legend. Returns `"No assessments to summarize."` for an empty list. |
+| `format_study_characteristics_html(study_chars) -> str` | The same table as HTML. Values are HTML-escaped and newlines become `<br>`. |
+| `format_risk_of_bias_html(rob) -> str` | The RoB table as HTML, with per-cell classes `judgement-low` / `judgement-high` / `judgement-unclear`. |
+| `get_cochrane_css() -> str` | The `COCHRANE_CSS` stylesheet (a complete `<style>` element) for the HTML output. |
+
+Markdown formatting tokens are exposed as `MD_BOLD_START`, `MD_BOLD_END`, `MD_ITALIC_START`, `MD_ITALIC_END`.
+
+`format_risk_of_bias_summary_markdown()` transposes `to_list()` across assessments with `zip(..., strict=True)`, so every assessment must carry all nine domains — which `CochraneRiskOfBias` guarantees by construction.
+
+**Example — build an assessment and render it:**
+
+```python
+from bmlib.quality import (
+    CochraneInterventions,
+    CochraneNotes,
+    CochraneOutcomes,
+    CochraneParticipants,
+    CochraneStudyAssessment,
+    CochraneStudyCharacteristics,
+    RiskOfBiasItem,
+    create_default_cochrane_risk_of_bias,
+)
+from bmlib.quality.cochrane_formatter import (
+    format_complete_assessment_markdown,
+    format_risk_of_bias_summary_markdown,
+)
+from bmlib.quality.cochrane_models import ROB_JUDGEMENT_LOW
+
+characteristics = CochraneStudyCharacteristics(
+    study_id="Andrei 2011",
+    methods="Randomised controlled trial, parallel groups, 12-month follow-up",
+    participants=CochraneParticipants(
+        setting="Three university hospitals, Romania",
+        population="Adults aged 65+ admitted with acute heart failure",
+        total_participants=240,
+        group_sizes={"intervention": 120, "control": 120},
+        baseline_characteristics_reported=True,
+    ),
+    interventions=CochraneInterventions(
+        description="Nurse-led hospital-at-home programme versus usual inpatient care",
+        duration="30 days",
+    ),
+    outcomes=CochraneOutcomes(
+        description="All-cause mortality, readmission, cost per patient",
+        primary_outcomes=["All-cause mortality at 12 months"],
+    ),
+    notes=CochraneNotes(
+        follow_up_periods=["6 months", "12 months"],
+        funding_source="University research grant",
+        trial_registration="NCT01234567",
+    ),
+    pmid="21234567",
+)
+
+# Start from all-unclear, then overwrite the domains you can judge.
+rob = create_default_cochrane_risk_of_bias()
+rob.random_sequence_generation = RiskOfBiasItem(
+    domain="Random sequence generation",
+    bias_type="selection bias",
+    judgement=ROB_JUDGEMENT_LOW,
+    support_for_judgement="Computer-generated randomisation sequence.",
+)
+
+assessment = CochraneStudyAssessment(
+    study_characteristics=characteristics,
+    risk_of_bias=rob,
+    overall_quality_score=7.5,
+    overall_confidence=0.8,
+    evidence_level="Level 2 (moderate-high)",
+    assessment_notes=["Allocation concealment not described."],
+)
+
+print(format_complete_assessment_markdown(assessment))
+print(rob.get_summary_counts())          # {'Low risk': 1, 'High risk': 0, 'Unclear risk': 8}
+print(format_risk_of_bias_summary_markdown([assessment]))
+```
+
+The `format_complete_assessment_markdown()` output begins:
+
+```markdown
+### Andrei 2011
+
+*Study characteristics*
+
+| **Characteristic** | **Description** |
+|---|---|
+| Methods | Randomised controlled trial, parallel groups, 12-month follow-up |
+| Participants | Setting: Three university hospitals, Romania |
+| | Adults aged 65+ admitted with acute heart failure |
+| | N=240 (intervention: 120, control: 120) |
+| Interventions | Nurse-led hospital-at-home programme versus usual inpatient care |
+| Outcomes | All-cause mortality, readmission, cost per patient |
+| Notes | Follow-up at 6 months, 12 months |
+| | Funding: University research grant |
+| | Trial registration: NCT01234567 |
+```
+
+For HTML output, emit `get_cochrane_css()` once per page and then the table fragments:
+
+```python
+from bmlib.quality.cochrane_formatter import (
+    format_risk_of_bias_html,
+    format_study_characteristics_html,
+    get_cochrane_css,
+)
+
+page = "\n".join([
+    get_cochrane_css(),
+    format_study_characteristics_html(assessment.study_characteristics),
+    format_risk_of_bias_html(assessment.risk_of_bias),
+])
+```
+
+---
+
+## Rule-Based Extractors
+
+`bmlib.quality.extractors` provides stateless, **LLM-free** pure functions that estimate study characteristics with keyword and regex heuristics. They cost nothing and need no network access.
+
+> **Standalone.** No tier calls these, and their output is a [`DimensionScore`](#dimensionscore), not a `QualityAssessment` — there is no conversion between the two. Use them as your own pre-filter or offline fallback.
+
+### Input Shape
+
+Every extractor takes a `document` dict. Three keys are recognised — `full_text`, `abstract`, `methods_text` — and all are optional.
+
+```python
+def prepare_extractor_search_text(document: dict[str, Any]) -> str
+```
+
+Returns `full_text` when it is present and longer than the abstract; otherwise `f"{abstract} {methods_text}"`.
+
+### Study Type Detection
+
+```python
+def extract_study_type(
+    document: dict[str, Any],
+    keywords_config: dict[str, list[str]] | None = None,
+    hierarchy_config: dict[str, float] | None = None,
+    priority_order: list[str] | None = None,
+    exclusions_config: dict[str, list[str]] | None = None,
+) -> DimensionScore
+```
+
+Tries each study type in `STUDY_TYPE_PRIORITY` order and returns on the first keyword match that survives exclusion checking. Keywords match whole words with an optional trailing plural `"s"`, so `"RCT"` matches `"RCTs"` but not `"infarct"`. Every occurrence of a keyword is tried, so one excluded mention does not suppress a later clean one.
+
+`quasi_experimental` is checked **before** `rct` so that "non-randomized trial" is not captured by the RCT keyword "randomized trial". `STUDY_TYPE_EXCLUSIONS` provides a second guard: for `rct`, patterns such as `"non-randomized"`, `"not randomised"`, and `"quasi-experimental"` appearing within `EXCLUSION_CONTEXT_WINDOW` (50) characters before the keyword reject the match.
+
+When nothing matches, the result is a `DimensionScore` of `5.0` with a detail whose `extracted_value` is `"unknown"`.
+
+> **The extracted study type is not a `StudyDesign`.** `extract_study_type()` returns raw strings from its own vocabulary, three of which — `"quasi_experimental"`, `"pilot_feasibility"`, `"interventional_single_arm"` — have **no** corresponding `StudyDesign` member. There is no 1:1 mapping, and `STUDY_DESIGN_MAPPING` will resolve those three to `StudyDesign.UNKNOWN`. Handle them explicitly if you need to bridge to the tiered pipeline's vocabulary.
+
+**Configuration constants** (all overridable via the keyword arguments):
+
+| Constant | Description |
+|----------|-------------|
+| `STUDY_TYPE_PRIORITY` | 12 study types in resolution order, highest evidence first. |
+| `DEFAULT_STUDY_TYPE_KEYWORDS` | `dict[str, list[str]]` of trigger phrases per study type. |
+| `STUDY_TYPE_EXCLUSIONS` | Patterns that invalidate a match (currently only for `rct`). |
+| `EXCLUSION_CONTEXT_WINDOW` | `50` — characters before a keyword searched for exclusions. |
+| `DEFAULT_STUDY_TYPE_HIERARCHY` | 15 study types → scores 0–10. Includes `scoping_review`, `narrative_review`, and `expert_opinion`, which have no keywords and so are only reachable via a custom `keywords_config`. |
+
+### Sample Size Extraction
+
+```python
+def extract_sample_size_dimension(
+    document: dict[str, Any],
+    scoring_config: dict[str, float] | None = None,
+) -> DimensionScore
+```
+
+Default `scoring_config`:
+
+```python
+{"log_multiplier": 2.0, "power_calculation_bonus": 2.0, "ci_reported_bonus": 0.5}
+```
+
+Scores `log10(n) * log_multiplier`, then adds the power-calculation and confidence-interval bonuses where those signals are present. The running score is capped at `10.0` after each bonus. When no sample size is found, the score is `0.0` and the single detail has `extracted_value="not_found"`.
+
+### Helper Functions
+
+| Function | Description |
+|----------|-------------|
+| `find_sample_size(text, min_n=5, max_n=1_000_000) -> int \| None` | Runs the eight `SAMPLE_SIZE_PATTERNS` case-insensitively and returns the **largest** match within bounds, or `None`. |
+| `calculate_sample_size_score(n, log_multiplier=2.0) -> float` | `log10(n) * log_multiplier`, clamped to 0–10. Returns `0.0` for `n <= 0`. |
+| `has_power_calculation(text) -> bool` | Case-insensitive substring test against `POWER_CALCULATION_KEYWORDS`. |
+| `find_power_calc_context(text) -> str` | Snippet around the first of the three leading power-calculation keywords, or `""`. |
+| `has_ci_reporting(text) -> bool` | Tests `CI_PATTERNS`. The bare bracket/range forms require decimal points, so citation markers like `[12, 15]` and year ranges like `(2010-2015)` do not count. |
+| `has_exclusion_pattern(text, keyword, exclusion_patterns, context_window=EXCLUSION_CONTEXT_WINDOW, keyword_pos=None) -> bool` | Whether an exclusion pattern appears just before `keyword`. Checks the first occurrence unless `keyword_pos` is given. |
+| `extract_text_context(text, keyword, context_chars=50, keyword_pos=None) -> str` | Snippet around an occurrence, with ellipses where truncated. Returns `""` if absent. |
+| `get_extracted_sample_size(dimension_score) -> int \| None` | Reads the numeric `n` back out of a sample-size `DimensionScore` (first detail only). |
+| `get_extracted_study_type(dimension_score) -> str \| None` | Reads the study-type string back out of a study-design `DimensionScore` (first detail only). |
+
+**Example — extract both dimensions with the audit trail:**
+
+```python
+from bmlib.quality import extract_sample_size_dimension, extract_study_type
+from bmlib.quality.extractors import get_extracted_sample_size, get_extracted_study_type
+
+document = {
+    "abstract": (
+        "In this randomized controlled trial we enrolled 450 patients with "
+        "type 2 diabetes. A power calculation indicated 400 participants were "
+        "required. The hazard ratio was 0.72 (95% CI 0.55-0.94)."
+    ),
+}
+
+design = extract_study_type(document)
+print(design.dimension_name, design.score)      # study_design 8.0
+print(get_extracted_study_type(design))         # rct
+
+size = extract_sample_size_dimension(document)
+print(size.dimension_name, round(size.score, 2))  # sample_size 7.81
+print(get_extracted_sample_size(size))            # 450
+
+for detail in size.details:
+    print(f"{detail.component}: {detail.extracted_value} "
+          f"(+{detail.score_contribution}) — {detail.reasoning}")
+# extracted_n: 450 (+5.306425027550687) — Log10(450) * 2.0 = 5.31
+# power_calculation: yes (+2.0) — Power calculation mentioned, bonus +2.0
+# ci_reporting: yes (+0.5) — Confidence intervals reported, bonus +0.5
+```
+
+Exclusion guarding in action:
+
+```python
+>>> get_extracted_study_type(extract_study_type({"abstract": "A non-randomized trial of X"}))
+'quasi_experimental'
+```
+
+---
+
+## Scoring Models
+
+`bmlib.quality.scoring_models` holds the audit-trail dataclasses that the extractors populate. There are no enums — the dimension vocabulary is a set of string constants.
+
+> **Standalone.** `QualityAssessment` does not carry `DimensionScore` objects, and nothing converts between them.
+
+### Dimension Constants
+
+```python
+DIMENSION_STUDY_DESIGN = "study_design"
+DIMENSION_SAMPLE_SIZE = "sample_size"
+DIMENSION_METHODOLOGICAL_QUALITY = "methodological_quality"
+DIMENSION_RISK_OF_BIAS = "risk_of_bias"
+DIMENSION_REPLICATION_STATUS = "replication_status"
+
+ALL_DIMENSIONS = [...]  # the five above, in that order
+```
+
+Only the first two are produced by the shipped extractors; the other three are reserved for callers implementing their own dimensions. None of these constants are re-exported from `bmlib.quality`.
+
+### `AssessmentDetail`
+
+One audit-trail entry for a scored component.
+
+```python
+@dataclass
+class AssessmentDetail:
+    dimension: str                    # e.g. "sample_size"
+    component: str                    # e.g. "power_calculation"
+    extracted_value: str | None       # e.g. "450"
+    score_contribution: float         # points contributed
+    evidence_text: str | None = None  # excerpt from the paper
+    reasoning: str | None = None      # explanation for the score
+```
+
+| Method | Description |
+|--------|-------------|
+| `to_dict() -> dict[str, Any]` | Serialise all six fields. |
+| `from_dict(data: dict) -> AssessmentDetail` | Deserialise. `dimension`, `component`, and `score_contribution` are required keys. |
+
+Note that `extracted_value` is a `str | None`: numeric values are stored as strings (hence `get_extracted_sample_size()` converting back with `.isdigit()`).
+
+### `DimensionScore`
+
+One dimension's score plus its contributing entries.
+
+```python
+@dataclass
+class DimensionScore:
+    dimension_name: str
+    score: float                                    # typically 0–10
+    details: list[AssessmentDetail] = field(default_factory=list)
+```
+
+| Method | Description |
+|--------|-------------|
+| `add_detail(component, value, contribution, evidence=None, reasoning=None) -> None` | Append an `AssessmentDetail`, stamping `dimension` from `dimension_name`. Does **not** modify `score` — adjust it yourself. |
+| `to_dict() -> dict[str, Any]` | Serialise, including all details. |
+| `from_dict(data: dict) -> DimensionScore` | Deserialise; `details` defaults to `[]` when absent. |
+
+**Example — a custom dimension with a round-trip:**
+
+```python
+from bmlib.quality import DimensionScore
+from bmlib.quality.scoring_models import DIMENSION_RISK_OF_BIAS
+
+dimension = DimensionScore(dimension_name=DIMENSION_RISK_OF_BIAS, score=0.0)
+dimension.add_detail(
+    component="allocation_concealment",
+    value="described",
+    contribution=3.0,
+    evidence="sealed opaque envelopes were used",
+    reasoning="Adequate concealment described",
+)
+dimension.score += 3.0
+
+restored = DimensionScore.from_dict(dimension.to_dict())
+assert restored == dimension
+```

@@ -1,6 +1,6 @@
 # bmlib API Manual
 
-**Version 0.2.1** | **License: AGPL-3.0-or-later** | **Python >=3.11**
+**Version 0.4.0** | **License: AGPL-3.0-or-later** | **Python >=3.11**
 
 bmlib is a shared Python library for biomedical literature tools. It provides LLM abstraction, quality assessment, transparency analysis, full-text retrieval, database utilities, and publication ingestion/sync.
 
@@ -24,6 +24,7 @@ pip install -e ".[all]"
 | `postgresql`     | `pip install bmlib[postgresql]`    | PostgreSQL database backend                |
 | `transparency`   | `pip install bmlib[transparency]`  | Transparency analysis (httpx)              |
 | `publications`   | `pip install bmlib[publications]`  | Publication ingestion and sync (httpx)     |
+| `pdf`            | `pip install bmlib[pdf]`           | PDF → text conversion (pymupdf)            |
 | `dev`            | `pip install bmlib[dev]`           | pytest, pytest-cov, ruff                   |
 | `all`            | `pip install bmlib[all]`           | All of the above                           |
 
@@ -34,13 +35,13 @@ bmlib is organised into eight modules, each with a focused responsibility:
 | Module | Description | Documentation |
 |--------|-------------|---------------|
 | [`bmlib.db`](database.md) | Thin database abstraction over DB-API connections (SQLite + PostgreSQL) | [database.md](database.md) |
-| [`bmlib.llm`](llm.md) | Unified LLM client with pluggable providers (Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini) | [llm.md](llm.md) |
+| [`bmlib.llm`](llm.md) | Unified LLM client with pluggable providers — chat, tool calling, embeddings, JSON repair, text chunking | [llm.md](llm.md) |
 | [`bmlib.templates`](templates.md) | Jinja2-based prompt template engine with directory fallback | [templates.md](templates.md) |
 | [`bmlib.agents`](agents.md) | Base class for LLM-driven tasks | [agents.md](agents.md) |
-| [`bmlib.quality`](quality.md) | 3-tier quality assessment pipeline for biomedical publications | [quality.md](quality.md) |
-| [`bmlib.transparency`](transparency.md) | Multi-API transparency analysis (CrossRef, EuropePMC, OpenAlex, ClinicalTrials.gov) | [transparency.md](transparency.md) |
+| [`bmlib.quality`](quality.md) | 3-tier quality assessment pipeline, Cochrane risk-of-bias models, rule-based extractors | [quality.md](quality.md) |
+| [`bmlib.transparency`](transparency.md) | Multi-API transparency analysis (CrossRef, Europe PMC, OpenAlex, ClinicalTrials.gov) | [transparency.md](transparency.md) |
 | [`bmlib.publications`](publications.md) | Publication ingestion, deduplication, storage, and multi-source sync | [publications.md](publications.md) |
-| [`bmlib.fulltext`](fulltext.md) | Full-text retrieval (Europe PMC, Unpaywall, DOI), JATS XML parsing, disk caching | [fulltext.md](fulltext.md) |
+| [`bmlib.fulltext`](fulltext.md) | Full-text retrieval (Europe PMC, Unpaywall, DOI), JATS XML parsing, PDF conversion, disk caching | [fulltext.md](fulltext.md) |
 
 ## Architecture Principles
 

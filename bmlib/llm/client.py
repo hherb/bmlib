@@ -134,9 +134,12 @@ class LLMClient:
         * ``"none"`` — disable tool calling for this turn
 
         Providers that do not support tool calling will raise
-        :class:`NotImplementedError` if *tools* is not ``None``. Check
-        ``client.get_provider_info(name)["capabilities"]`` if you need to
-        detect support without raising.
+        :class:`NotImplementedError` if *tools* is not ``None``. Support is
+        gated on a provider-name allowlist, not on the provider's declared
+        :class:`~bmlib.llm.providers.base.ProviderCapabilities` — that
+        metadata is descriptive only. To detect support without raising,
+        test membership of the provider name in
+        :data:`bmlib.llm.client._TOOL_CAPABLE_PROVIDERS`.
 
         Args:
             messages: Conversation messages.
@@ -151,7 +154,7 @@ class LLMClient:
 
         Raises:
             NotImplementedError: If *tools* is provided but the resolved
-                provider does not declare ``supports_function_calling``.
+                provider is not in the tool-capable allowlist.
         """
         provider_name, model_name = self._parse_model_string(model)
 

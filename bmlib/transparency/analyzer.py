@@ -16,8 +16,11 @@
 
 """Multi-API transparency analyzer.
 
-Queries PubMed, CrossRef, EuropePMC, ClinicalTrials.gov, and OpenAlex
-to assess transparency of biomedical publications.
+Queries CrossRef, Europe PMC (search and full text), OpenAlex, and
+ClinicalTrials.gov to assess transparency of biomedical publications.
+
+No PubMed endpoint is currently called; ``pubmed_api_key`` is accepted for
+forward compatibility but unused.
 
 Requires ``httpx`` (install with ``pip install bmlib[transparency]``).
 """
@@ -29,6 +32,7 @@ import re
 import time
 from typing import Any
 
+from bmlib import __version__
 from bmlib.transparency.models import (
     TransparencyResult,
     TransparencyRisk,
@@ -293,7 +297,7 @@ class TransparencyAnalyzer:
 
         with httpx.Client(
             timeout=_HTTP_TIMEOUT_SECONDS,
-            headers={"User-Agent": f"bmlib/0.1 (mailto:{self.email})"},
+            headers={"User-Agent": f"bmlib/{__version__} (mailto:{self.email})"},
         ) as client:
             # --- CrossRef (funder info) ---
             if doi:

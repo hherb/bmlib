@@ -27,6 +27,7 @@ from collections.abc import Callable
 from datetime import date, timedelta
 from typing import Any
 
+from bmlib import __version__
 from bmlib.db import execute, fetch_all, transaction
 from bmlib.publications.fetchers.registry import get_fetcher, source_names
 from bmlib.publications.models import (
@@ -314,7 +315,7 @@ def sync(
         user_agent_email = resolved_configs.get("openalex", {}).get("email", email) or "unknown"
         client = httpx.Client(
             timeout=_HTTP_TIMEOUT_SECONDS,
-            headers={"User-Agent": f"bmlib/0.1 (mailto:{user_agent_email})"},
+            headers={"User-Agent": f"bmlib/{__version__} (mailto:{user_agent_email})"},
         )
 
     total_added = 0
