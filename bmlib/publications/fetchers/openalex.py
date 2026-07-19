@@ -202,7 +202,7 @@ def fetch_openalex(
     target_date:
         The publication date to query.
     on_record:
-        Called once per normalised record dict.
+        Called once per normalised :class:`FetchedRecord`.
     on_progress:
         Optional callback receiving :class:`SyncProgress` updates.
     email:

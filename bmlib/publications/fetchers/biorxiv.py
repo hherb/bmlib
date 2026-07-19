@@ -125,7 +125,7 @@ def fetch_biorxiv(
     target_date:
         The date to fetch records for.
     on_record:
-        Callback invoked with each normalised record dict.
+        Callback invoked with each normalised :class:`FetchedRecord`.
     on_progress:
         Optional callback invoked after each page to report progress.
     server:

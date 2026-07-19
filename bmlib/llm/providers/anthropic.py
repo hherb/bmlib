@@ -239,7 +239,8 @@ class AnthropicProvider(BaseProvider):
             and self._models_cache is not None
             and time.time() - self._cache_timestamp < CACHE_TTL_SECONDS
         ):
-            return self._models_cache
+            # Copy so caller mutation cannot corrupt the cache (issue #12).
+            return list(self._models_cache)
 
         try:
             client = self._get_client()
@@ -265,7 +266,7 @@ class AnthropicProvider(BaseProvider):
                 )
             self._models_cache = models
             self._cache_timestamp = time.time()
-            return models
+            return list(models)
         except Exception as e:
             logger.warning("Failed to fetch models from Anthropic API: %s", e)
             return [

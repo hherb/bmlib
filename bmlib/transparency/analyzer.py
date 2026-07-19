@@ -168,23 +168,40 @@ _NON_INDUSTRY_CONTEXT_RE = re.compile(
 )
 
 
-def _extract_coi_text(full_text: str) -> str:
+def _extract_tagged_coi_text(full_text: str) -> str:
+    """Return the text of JATS-tagged COI containers, tag-stripped and lowercased.
+
+    Returns an empty string when the text carries no tagged COI section. A
+    non-blank result is structural proof that the paper has a COI/disclosure
+    statement, regardless of its wording (issue #13).
+    """
+    sections = [m.group(3) for m in _COI_SECTION_RE.finditer(full_text)]
+    sections += [m.group(1) for m in _COI_TITLED_SEC_RE.finditer(full_text)]
+    if not sections:
+        return ""
+    return _TAG_RE.sub(" ", " ".join(sections)).lower()
+
+
+def _extract_coi_text(full_text: str, tagged: str | None = None) -> str:
     """Return the COI/disclosure portion of *full_text*, tag-stripped and lowercased.
 
-    Prefers JATS-tagged COI containers; falls back to fixed-size windows
-    following each COI cue phrase (see :data:`_COI_PATTERNS`) when the text
-    carries no tagged section. Returns an empty string when no COI-like
-    region is found.
+    Prefers JATS-tagged COI containers (see :func:`_extract_tagged_coi_text`);
+    falls back to fixed-size windows following each COI cue phrase (see
+    :data:`_COI_PATTERNS`) when the tagged text is blank — a whitespace-only
+    tagged section proves nothing, so an untagged disclosure elsewhere in the
+    text must still be found. Returns an empty string when no COI-like region
+    is found. Pass *tagged* to reuse an already-computed
+    :func:`_extract_tagged_coi_text` result instead of rescanning.
 
     Known limitation: a fallback window is a fixed span, so it can bleed past
     the end of a short disclosure into whatever follows (acknowledgements,
     references). Accepted trade-off, matched by the moderate
     :data:`TEXT_INDUSTRY_CONFIDENCE` given to text-derived signals.
     """
-    sections = [m.group(3) for m in _COI_SECTION_RE.finditer(full_text)]
-    sections += [m.group(1) for m in _COI_TITLED_SEC_RE.finditer(full_text)]
-    if sections:
-        return _TAG_RE.sub(" ", " ".join(sections)).lower()
+    if tagged is None:
+        tagged = _extract_tagged_coi_text(full_text)
+    if tagged.strip():
+        return tagged
 
     text = _TAG_RE.sub(" ", full_text).lower()
     windows = [text[m.start() : m.end() + _COI_FALLBACK_WINDOW] for m in _COI_CUE_RE.finditer(text)]
@@ -508,8 +525,12 @@ class TransparencyAnalyzer:
                 full_text_analyzed = True
 
         # COI detection (a COI/disclosure statement counts as "disclosed",
-        # including a statement that there is nothing to declare).
-        if any(pat in search_text for pat in _COI_PATTERNS):
+        # including a statement that there is nothing to declare). A non-blank
+        # JATS-tagged COI section is structural proof of a disclosure even
+        # when its wording contains no cue phrase (issue #13); the cue-phrase
+        # scan remains the fallback for untagged text.
+        tagged_coi = _extract_tagged_coi_text(search_text)
+        if tagged_coi.strip() or any(pat in search_text for pat in _COI_PATTERNS):
             coi_disclosed = True
             score += SCORE_COI_DISCLOSED
         elif full_text_analyzed:
@@ -526,7 +547,9 @@ class TransparencyAnalyzer:
         # within the COI/disclosure region to avoid false positives from
         # references or affiliations.
         if full_text_analyzed:
-            industry_coi = _discloses_industry_ties(_extract_coi_text(search_text))
+            industry_coi = _discloses_industry_ties(
+                _extract_coi_text(search_text, tagged=tagged_coi)
+            )
 
         # Data availability
         for pattern, level in _DATA_PATTERNS.items():

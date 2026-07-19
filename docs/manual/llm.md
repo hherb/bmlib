@@ -30,6 +30,10 @@ from bmlib.llm import (
     EmbeddingResponse,
     JSONRepairError,
     LLMClient,
+    get_llm_client,
+    reset_llm_client,
+    # Data types
+    EmbeddingResponse,
     LLMMessage,
     LLMResponse,
     LLMToolCall,
@@ -294,6 +298,8 @@ Send a chat request, routing to the appropriate provider. Token usage is automat
 
 **Raises:** `NotImplementedError` if `tools` is not `None` and the resolved provider is not tool-capable. The check happens before any network call.
 
+**Raises:** `NotImplementedError` if `tools` is provided but the resolved provider does not support tool calling.
+
 **Example:**
 
 ```python
@@ -381,6 +387,99 @@ Generate an embedding vector for *text*, routing on the *model* string. See [Emb
 
 ---
 
+### Tool Calling
+
+Pass `tools=` to `chat()` to let the model invoke functions you define. When the model decides to call a tool, `LLMResponse.tool_calls` contains parsed `LLMToolCall` objects (and `stop_reason` is `"tool_use"` / `"tool_calls"` depending on provider). To continue the conversation, append the assistant turn (with its `tool_calls`) and a `role="tool"` message carrying the JSON-encoded result, then re-send the message list.
+
+Supported by the built-in providers `anthropic`, `openai`, `deepseek`, `mistral`, `gemini`, and `ollama` (via an internal allowlist). Passing `tools` to any other provider — including custom OpenAI-compatible providers registered under other names — raises `NotImplementedError` before any network call.
+
+**Example:**
+
+```python
+import json
+
+tools = [
+    LLMToolDefinition(
+        name="add",
+        description="Add two integers and return the sum",
+        parameters={
+            "type": "object",
+            "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
+            "required": ["a", "b"],
+        },
+    )
+]
+
+messages = [LLMMessage(role="user", content="What is 2 + 3?")]
+response = client.chat(messages=messages, model="openai:gpt-4o", tools=tools)
+
+if response.tool_calls:
+    call = response.tool_calls[0]
+    result = call.arguments["a"] + call.arguments["b"]
+    messages.append(
+        LLMMessage(role="assistant", content=response.content, tool_calls=response.tool_calls)
+    )
+    messages.append(
+        LLMMessage(role="tool", content=json.dumps({"sum": result}), tool_call_id=call.id)
+    )
+    final = client.chat(messages=messages, model="openai:gpt-4o", tools=tools)
+    print(final.content)
+```
+
+---
+
+### `LLMClient.generate`
+
+```python
+def generate(
+    self,
+    prompt: str,
+    model: str | None = None,
+    temperature: float = 0.7,
+    max_tokens: int = 4096,
+    **kwargs: object,
+) -> LLMResponse
+```
+
+Convenience wrapper: wraps `prompt` as a single user message and delegates to `chat()`.
+
+---
+
+### `LLMClient.embed`
+
+```python
+def embed(
+    self,
+    text: str,
+    model: str | None = None,
+    **kwargs: object,
+) -> EmbeddingResponse
+```
+
+Generate an embedding vector for `text`, routing to the appropriate provider based on the model string.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `text` | `str` | *(required)* | The text to embed. |
+| `model` | `str \| None` | `None` | Model string (`"provider:model_name"` format). Defaults to the default provider's default model — pass an embedding-specific model explicitly. |
+| `**kwargs` | `object` | | Extra provider-specific arguments. |
+
+**Returns:** `EmbeddingResponse` with the vector, model, dimensions, and input token count.
+
+**Raises:** `NotImplementedError` for providers without embedding support. Of the built-in providers, only Ollama implements `embed()`.
+
+**Example:**
+
+```python
+client = LLMClient(default_provider="ollama")
+resp = client.embed("Myocardial infarction", model="ollama:nomic-embed-text")
+print(resp.dimensions, resp.embedding[:3])
+```
+
+---
+
 ### `LLMClient.test_connection`
 
 ```python
@@ -435,6 +534,8 @@ List available models for one or all providers.
 **Returns:**
 - If `provider` is given: `list[str]` of model IDs.
 - If `provider` is `None`: `list[ModelMetadata]` with full metadata.
+
+Provider `list_models()` results are cached with a TTL, and the Anthropic and OpenAI-compatible providers return a **copy** of the cached list at both the cache-hit and cache-store paths. Mutating what you get back cannot corrupt the cache for later callers, so sorting or filtering the result in place is safe.
 
 ---
 
@@ -1222,6 +1323,7 @@ Reasoning models (`o1`, `o1-mini`, `o3-mini`) are sent `max_completion_tokens` i
 | Tool calling | Yes (`tool_choice` ignored) |
 | Embeddings | Yes (the only provider that implements them) |
 | Extra kwargs | `think=True` for thinking mode |
+| Embeddings | Yes — the only built-in provider implementing `embed()` |
 
 ---
 
@@ -1431,6 +1533,13 @@ class EchoProvider(BaseProvider):
 
 register_provider("echo", EchoProvider)
 ```
+
+Optional overrides (non-abstract, with base implementations):
+
+| Method | Type | Description |
+|--------|------|-------------|
+| `embed(text, model, **kwargs)` | `method -> EmbeddingResponse` | Generate an embedding. The base implementation raises `NotImplementedError`. |
+| `get_model_pricing(model)` | `method -> ModelPricing` | Pricing lookup used by `calculate_cost()`. Base returns zero cost. |
 
 ### `ModelMetadata`
 

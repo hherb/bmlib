@@ -73,6 +73,13 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- transparency: a JATS-tagged COI section now counts as `coi_disclosed=True`
+  even when its wording contains no cue phrase — the tag is structural proof
+  of a disclosure; the cue-phrase scan remains the fallback for untagged text
+  (#13).
+- llm: `list_models()` on the Anthropic and OpenAI-compatible providers now
+  returns a copy of the cached model list; mutating a returned list no longer
+  corrupts the cache for subsequent callers (#12).
 - publications: batched database commits — one commit per stored publication
   and one per synced day instead of one per statement (#8).
 - llm: `get_llm_client()` singleton creation is now thread-safe; the

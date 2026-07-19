@@ -149,6 +149,13 @@ class TransparencyResult:
 | `False` | Full text **was** retrieved and scanned, and it contains no COI statement. | `"No COI disclosure found in full text"` |
 | `None` | Undeterminable — full text was unavailable and the abstract carried no COI signal. | `"COI disclosure status unknown (full text unavailable)"` |
 
+A statement is found by either of two routes, and the structural one wins:
+
+1. **Structural** — a non-blank JATS-tagged COI container (`<fn fn-type="COI-statement">`, `<sec sec-type="conflict">`, a `<sec>` whose `<title>` names conflicts or competing interests) counts as a disclosure *regardless of its wording*. The tag is proof a statement exists, so a disclosure phrased in a way no cue phrase matches is still credited.
+2. **Cue phrase** — the fallback for untagged text, scanning for `"conflict of interest"`, `"competing interest"`, `"no conflict"`, `"nothing to disclose"`, `"declare no"`, `"financial disclosure"`.
+
+A whitespace-only tagged section proves nothing and does not suppress the fallback, so an untagged disclosure elsewhere in the document is still found. `SCORE_COI_DISCLOSED` is credited exactly once no matter how many routes fire.
+
 Only an explicit `False` triggers the missing-COI HIGH-risk rule. `None` does not, so a paper is never penalised merely because Europe PMC had no open-access full text for it. `coi_disclosed is False` therefore always implies `full_text_analyzed is True`.
 
 Note that the dataclass **default** is `True`, as is the `from_dict()` fallback for a missing key — a hand-constructed `TransparencyResult` is optimistic unless you say otherwise. `analyze()` always sets the field explicitly.
@@ -341,7 +348,9 @@ The lower confidence is the honest label on a text heuristic. Where both signals
 
 Three guards keep the false-positive rate down.
 
-**1. Scope — only the COI region is read.** `_extract_coi_text()` prefers JATS containers that hold the disclosure: `<fn fn-type="COI-statement">`, `<sec sec-type="conflict">`, `<notes notes-type="COI-statement">` (case- and quote-style-insensitive), plus untyped `<sec>` elements whose `<title>` names conflicts, competing interests, or disclosure. Only when the document carries no such section does it fall back to a 1000-character window after each cue phrase in `_COI_PATTERNS`. Either way, an author affiliation or a reference list mentioning a company is never read as a disclosure.
+**1. Scope — only the COI region is read.** `_extract_coi_text()` prefers JATS containers that hold the disclosure: `<fn fn-type="COI-statement">`, `<sec sec-type="conflict">`, `<notes notes-type="COI-statement">` (case- and quote-style-insensitive), plus untyped `<sec>` elements whose `<title>` names conflicts, competing interests, or disclosure. Only when that tagged text is blank does it fall back to a 1000-character window after each cue phrase in `_COI_PATTERNS` — a whitespace-only tagged section proves nothing, so an untagged disclosure elsewhere must still be findable. Either way, an author affiliation or a reference list mentioning a company is never read as a disclosure.
+
+A known limitation of the fallback: a window is a fixed span, so it can bleed past the end of a short disclosure into whatever follows (acknowledgements, references). That is the accepted trade-off behind the moderate `TEXT_INDUSTRY_CONFIDENCE` given to text-derived signals.
 
 The fallback window is a fixed span, so on a short disclosure it can bleed into the acknowledgements or references that follow. That is a known, accepted trade-off — and another reason text-derived signals carry only 0.5.
 

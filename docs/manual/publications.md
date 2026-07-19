@@ -42,6 +42,16 @@ from bmlib.publications import (
     FetchedRecord,
     FullTextSource,
     DownloadDay,
+    FetchedRecord,
+
+    # Source registry
+    register_source,
+    get_source,
+    get_fetcher,
+    list_sources,
+    source_names,
+    SourceDescriptor,
+    SourceParam,
 
     # Source registry
     SourceDescriptor,
@@ -453,6 +463,12 @@ Store a publication, de-duplicating by DOI then PMID.
 - `is_open_access`: can only be upgraded from `0` to the incoming value, never downgraded.
 - `updated_at` is set to now.
 
+**Transactions:** the whole store (row consolidation, insert/merge, and
+full-text sources) is one atomic transaction. Standalone calls commit on
+return; calls made inside a caller's `transaction(conn)` block join it via a
+savepoint, deferring the commit to the caller (this is how `sync()` batches a
+whole day into one commit — see `bmlib.db.transaction`).
+
 **Parameters:**
 
 | Parameter | Type | Default | Description |
@@ -626,6 +642,22 @@ What a callback **must not** assume:
 - That raising is safe. An exception from `on_record` escapes into the fetcher's record loop and aborts the rest of that day's fetch — `fetch_biorxiv` converts it into a failed `FetchResult`, while `fetch_pubmed` and `fetch_openalex` let it propagate to `sync()`'s per-day handler. Either way the day is marked `"failed"` (and retried next run), though whatever was buffered before the throw is still stored. Catch your own exceptions.
 
 To act on records **after** they are durably stored, do the work between `sync()` calls (for example one call per day, then query the database), rather than in `on_record`.
+
+**Write batching — changed in 0.3.0:**
+
+Each day's records are buffered in memory during the fetch and stored in one
+batch afterwards, inside a single per-day transaction. Consequences:
+
+- Writes cost one commit per synced day instead of one per statement, and
+  SQLite's write lock is never held across network I/O.
+- `on_record` fires while the fetcher streams, **before** the record is
+  stored — the callback must not expect to read the record back from the
+  database. Use it for progress display, filtering statistics, or side
+  channels, not for read-after-write.
+- A day's records are held in memory for the duration of that day's fetch.
+- The day's `download_days` status row commits atomically with the day's
+  records: a crash mid-day leaves the day marked incomplete and it is
+  re-fetched next run.
 
 **Example:**
 
@@ -939,6 +971,9 @@ Fetch all OpenAlex works published on `target_date`.
 - Reconstructs abstracts from OpenAlex's inverted-index format.
 - Strips the `https://doi.org/` and `https://pubmed.ncbi.nlm.nih.gov/` prefixes from identifiers.
 - Extracts: DOI, PMID, title, authors, journal, abstract, publication date, keywords (primary topic), open-access status, license, and full-text source URLs with versions.
+
+Core fields are guaranteed present (possibly `None`/empty); source-specific
+data goes in `extras`.
 
 ---
 

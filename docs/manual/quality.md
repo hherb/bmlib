@@ -189,7 +189,7 @@ assert review.is_randomized is None
 
 ### `BiasRisk`
 
-Cochrane Risk-of-Bias assessment across five domains.
+Cochrane Risk-of-Bias assessment across five domains. For the nine-domain variant with per-domain judgement and rationale, see [`CochraneRiskOfBias`](#cochraneriskofbias) below — a strict superset of this model.
 
 ```python
 @dataclass
@@ -394,7 +394,7 @@ result = manager.assess(
     abstract="...",
 )
 
-# Full pipeline (Tier 1 + 2 + 3)
+# Tier 3 deep assessment (supersedes Tier 2 — the classifier is skipped)
 result = manager.assess(
     title="...",
     abstract="...",

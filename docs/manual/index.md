@@ -120,14 +120,16 @@ print(f"Added: {report.records_added}, Merged: {report.records_merged}")
 ### Full-Text Retrieval
 
 ```python
-from bmlib.fulltext import FullTextService, FullTextCache
+from bmlib.fulltext import FullTextService
 
 service = FullTextService(email="researcher@example.com")
-result = service.fetch_fulltext(pmc_id="PMC7614751", doi="10.1234/example")
 
-if result.source == "europepmc" and result.html:
-    cache = FullTextCache()  # uses platform default directory
-    cache.save_html(result.html, "PMC7614751")
+# Passing identifier= enables the built-in disk cache (platform default dir).
+result = service.fetch_fulltext(
+    pmc_id="PMC7614751", doi="10.1234/example", identifier="PMC7614751"
+)
+
+if result.html:
     print(result.html[:200])
 ```
 

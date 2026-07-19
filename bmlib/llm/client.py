@@ -342,18 +342,14 @@ _TOOL_CAPABLE_PROVIDERS = {
 
 
 def _provider_supports_tools(provider: BaseProvider) -> bool:
-    """Return True if *provider* declares tool-calling capability.
+    """Return True if *provider* is in the tool-calling allowlist.
 
-    Looks at the provider's default-model capability flag where
-    available, and falls back to a per-provider allowlist for providers
-    whose ``list_models()`` does not populate
-    ``capabilities.supports_function_calling`` reliably.
-
-    The allowlist exists because some providers (e.g. Ollama) report
-    capabilities per model rather than per provider, and querying every
-    model just to answer "does this provider support tools?" is
-    wasteful. Providers in the allowlist have been verified to support
-    OpenAI-style tool calling on at least one current model.
+    A static allowlist rather than a per-model capability query: some
+    providers (e.g. Ollama) report capabilities per model, and querying
+    every model just to answer "does this provider support tools?" is
+    wasteful. Providers in :data:`_TOOL_CAPABLE_PROVIDERS` have been
+    verified to support OpenAI-style tool calling on at least one
+    current model.
     """
     name = getattr(provider, "PROVIDER_NAME", "").lower()
     return name in _TOOL_CAPABLE_PROVIDERS

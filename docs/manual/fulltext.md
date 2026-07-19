@@ -35,6 +35,12 @@ from bmlib.fulltext import (
     JATSParser,
     # Cache
     FullTextCache,
+    # PDF conversion
+    ConversionResult,
+    PDFConverter,
+    PyMuPDFConverter,
+    get_converter,
+    list_converters,
     # Data models
     FullTextResult,
     FullTextSourceEntry,
@@ -688,6 +694,99 @@ try:
     converter = get_converter("pymupdf")
 except ImportError:
     converter = None   # pip install bmlib[pdf] to enable
+```
+
+Identifiers that are not filename-safe (e.g. raw DOIs containing `/`) are sanitized into `<safe>_<hash>` filenames, where `<hash>` is a short SHA-1 prefix of the raw identifier, so distinct identifiers can never collide. Already-safe identifiers (PMIDs, PMC IDs) are used verbatim.
+
+---
+
+## PDF Conversion
+
+Pluggable PDF-to-text conversion behind a small registry, prioritising completeness of extracted text over formatting. The only built-in backend is `PyMuPDFConverter`, which requires the optional `pymupdf` dependency (`pip install bmlib[pdf]`); it is loaded lazily, so importing `bmlib.fulltext` never requires PyMuPDF.
+
+### Registry
+
+```python
+def get_converter(name: str = "pymupdf") -> PDFConverter: ...
+def list_converters() -> list[str]: ...
+```
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `get_converter(name)` | `PDFConverter` | Initialised converter by name (default `"pymupdf"`) |
+| `list_converters()` | `list[str]` | Names of all registered converters |
+
+**Raises:** `get_converter()` raises `ValueError` for an unknown name, and `ImportError` if the converter's optional dependency is missing (`Install with: pip install bmlib[pdf]`).
+
+### PDFConverter
+
+Abstract base class for PDF converters.
+
+```python
+class PDFConverter(ABC):
+    @property
+    def name(self) -> str: ...      # abstract — converter name identifier
+    @property
+    def version(self) -> str: ...   # abstract — converter version string
+
+    def convert(self, pdf_path: Path) -> ConversionResult: ...  # abstract
+    def validate_pdf_path(self, pdf_path: Path) -> None: ...
+```
+
+| Method | Description |
+|--------|-------------|
+| `convert(pdf_path)` | Convert a PDF to text; raises `FileNotFoundError` if the file does not exist, `ValueError` if the path is not a PDF file |
+| `validate_pdf_path(pdf_path)` | Check the path exists, is a file, and has a `.pdf` suffix (same exceptions as above) |
+
+### ConversionResult
+
+Result of a PDF-to-text conversion — a stable interface across backends.
+
+```python
+@dataclass
+class ConversionResult:
+    success: bool
+    text: str
+    format: str                    # "plaintext" or "markdown"
+    page_count: int
+    converted_pages: int
+    char_count: int
+    warnings: list[str] = field(default_factory=list)
+    converter_name: str = ""
+    converter_version: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    error_message: str | None = None
+
+    @property
+    def is_complete(self) -> bool: ...        # all pages converted and some text extracted
+    @property
+    def completion_ratio(self) -> float: ...  # converted_pages / page_count (0.0 when no pages)
+```
+
+### PyMuPDFConverter
+
+Built-in backend backed by PyMuPDF (`fitz`); registered as `"pymupdf"`. The constructor raises `ImportError` if `pymupdf` is not installed.
+
+- Extracts plaintext from every page; pages with no extractable text (e.g. image-only) are still counted as converted, with a warning.
+- A single failing page does not abort the rest — a warning is recorded instead.
+- PDF metadata (title, author, subject, keywords, creator, producer, creation/modification dates) is collected best-effort into `metadata`.
+- Invalid or corrupted PDFs return `success=False` with `error_message` set rather than raising.
+
+### Example
+
+```python
+from pathlib import Path
+from bmlib.fulltext import get_converter, list_converters
+
+print(list_converters())        # ["pymupdf"]
+
+converter = get_converter()     # default: "pymupdf"
+result = converter.convert(Path("paper.pdf"))
+
+if result.success and result.is_complete:
+    print(result.text[:200])
+else:
+    print(result.error_message or result.warnings)
 ```
 
 ---

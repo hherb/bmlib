@@ -14,9 +14,10 @@ uv pip install -e ".[all,dev]"
 
 - **Python:** >=3.11
 - **Packaging:** pyproject.toml with setuptools
-- **Testing:** pytest (`pytest tests/ -v`)
-- **Linting/Formatting:** ruff (`ruff check .` / `ruff format .`)
+- **Testing:** pytest (`uv run pytest tests/ -v`)
+- **Linting/Formatting:** ruff (`uv run ruff check .` / `uv run ruff format .`)
 - **Core dependency:** jinja2 only. Everything else is optional.
+- **Use `uv`, never bare pip.**
 
 ### Optional dependency groups
 
@@ -82,6 +83,7 @@ bmlib/
 │   ├── data_models.py       # StudyDesign enum, QualityTier, BiasRisk, QualityAssessment, QualityFilter
 │   ├── manager.py           # QualityManager orchestrator
 │   ├── metadata_filter.py   # Tier 1: PubMed metadata → StudyDesign (free)
+│   ├── scoring_models.py    # DimensionScore audit-trail models
 │   ├── study_classifier.py  # Tier 2: LLM study-design classifier (cheap)
 │   ├── quality_agent.py     # Tier 3: deep assessment agent (capable model)
 │   ├── cochrane_models.py   # Cochrane 9-domain Risk-of-Bias + study-characteristics models
@@ -152,9 +154,9 @@ Optional imports are deferred to the constructor or function that needs them, no
 ## Running Tests
 
 ```bash
-pytest tests/ -v
-ruff check .
-ruff format --check .
+uv run pytest tests/ -v
+uv run ruff check .
+uv run ruff format --check .
 ```
 
 All tests use in-memory SQLite (`connect_sqlite(":memory:")`) for database tests and mocked HTTP responses for API tests. No external services are required.

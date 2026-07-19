@@ -83,6 +83,10 @@ below for each.
    - **Drop** all queue/orchestrator hooks (`submit_task`, queue_manager
      coupling) and any `bmlibrarian.config` reads — bmlib's base stays
      injection-only.
+   - While in there, do **issue #17**: consolidate the duplicated
+     JSON-extraction logic in `llm/utils.py::extract_json` vs
+     `llm/json_repair.py::extract_and_repair_json` behind one shared span
+     locator (see the issue for the suggested split).
 2. **`context_processor`.** Source:
    `~/src/bmlibrarian/src/bmlibrarian/agents/context_processor/` (base.py ABC
    + data_types.py + semantic_chunk_processor.py, ~840 lines, already
@@ -117,7 +121,7 @@ below for each.
 Later phases (2–4: citations, discovery, pubmed_search, MeSH, the
 prompt-driven agent family, paper_weight) are laid out in the analysis doc.
 
-## Open work
+## Other open work
 
 ### 1. Defects from the 0.4.0 documentation sweep — ALL FIXED
 
@@ -180,7 +184,7 @@ Two were closed as documentation rather than code, deliberately:
   guarded with a helpful `ImportError`.
 - `uv` only (never pip). Tests: `uv run pytest tests/ -v`. Lint:
   `ruff check .` and `ruff format --check .` (CI pins ruff — match the
-  pinned version, see `.github/`).
+  pinned version, see `.github/workflows/ci.yml`; `uvx ruff@<pinned>` works).
 - Tests use in-memory SQLite (`connect_sqlite(":memory:")`) and mocked
   HTTP; no external services. New functionality needs unit tests.
 - Session workflow lives in the `nextsession` skill
