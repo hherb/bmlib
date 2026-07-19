@@ -121,6 +121,37 @@ class TestCustomRegistration:
             reg._REGISTRY.update(saved_registry)
             reg._builtins_registered = saved_flag
 
+    def test_custom_source_can_override_a_builtin_name(self):
+        # Regression: register_source did not trigger lazy built-in
+        # registration, so overriding a built-in name before any lookup was
+        # silently reverted the first time _ensure_builtins ran.
+        import bmlib.publications.fetchers.registry as reg
+
+        saved_registry = dict(reg._REGISTRY)
+        saved_flag = reg._builtins_registered
+        try:
+            reg._REGISTRY.clear()
+            reg._builtins_registered = False
+
+            def custom_pubmed(client, target_date, *, on_record, on_progress=None, **config):
+                return "custom"
+
+            register_source(
+                SourceDescriptor(name="pubmed", display_name="Custom", description="d"),
+                custom_pubmed,
+            )
+
+            # The override must survive lazy built-in registration.
+            desc, fetcher = get_source("pubmed")
+            assert fetcher is custom_pubmed
+            assert desc.display_name == "Custom"
+            # Other built-ins are still registered.
+            assert "biorxiv" in source_names()
+        finally:
+            reg._REGISTRY.clear()
+            reg._REGISTRY.update(saved_registry)
+            reg._builtins_registered = saved_flag
+
     def test_builtin_registration_failure_is_retried(self, monkeypatch):
         # A non-ImportError failure during built-in registration must not latch
         # the registered flag — the next lookup retries instead of silently

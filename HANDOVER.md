@@ -2,7 +2,7 @@
 
 _Last updated: 2026-07-19 (v0.4.0 released; Phase 0 ports merged to `main`;
 full documentation refresh done — CHANGELOG, README, CLAUDE.md and all eight
-`docs/manual/` pages rewritten against the current APIs. 539 tests passing +
+`docs/manual/` pages rewritten against the current APIs. 552 tests passing +
 2 skipped on `main`)._
 
 This file briefs the next session on what is done, what is still open, and
@@ -28,7 +28,7 @@ re-narrate it here.
 - Merged since the last handover: Phase 0 bmlibrarian ports (PR #16), CI
   hardening (PR #15), plus the earlier code-review fix batches, the
   one-commit-per-synced-day perf work, and industry-COI detection.
-- **539 tests passing + 2 skipped** (`uv run pytest tests/ -q`) on `main`.
+- **552 tests passing + 2 skipped** (`uv run pytest tests/ -q`) on `main`.
 
 ## bmlibrarian → bmlib porting (active effort)
 
@@ -119,48 +119,38 @@ prompt-driven agent family, paper_weight) are laid out in the analysis doc.
 
 ## Open work
 
-### 1. Defects found during the 0.4.0 documentation sweep (no issues filed)
+### 1. Defects from the 0.4.0 documentation sweep — ALL FIXED
 
-Writing the manual against the real source surfaced these. None is fixed;
-each was verified against the code, and the manual documents the *actual*
-behaviour in every case. Ordered by how much they matter.
+Writing the manual against the real source surfaced eight defects. Every one
+is now fixed, each with a regression test that was watched fail first, and
+the manual passages that documented the old behaviour were rewritten. See
+`CHANGELOG.md` under `[0.4.0] → Fixed` for the full list. In short:
 
-- **`fetch_pubmed` never populates `publication_types`.**
-  `_parse_article_xml` (`bmlib/publications/fetchers/pubmed.py:122-228`)
-  extracts MeSH keywords but no publication types; only the OpenAlex fetcher
-  sets the field. This bites directly: `bmlib.quality`'s Tier 1 metadata
-  filter classifies *from* `publication_types`, so synced PubMed records
-  arrive without the one field the free tier needs and fall straight through
-  to the paid LLM tier. Probably the highest-value fix on this list.
-- **Overriding a built-in source name is racy.** `register_source()` does
-  not call `_ensure_builtins()`, so registering a custom fetcher under
-  `"pubmed"` before any lookup is silently overwritten when the first
-  `get_fetcher()` / `source_names()` call triggers lazy registration. The
-  `_builtins_registered` flag protects the built-ins, not custom overrides.
-  Workaround documented in the manual: call `source_names()` first.
-- **`TransparencyAnalyzer` is not thread-safe** — `_last_request` and
-  `_api_reachable` are unsynchronised instance state, yet
-  `TransparencySettings.max_concurrent_analyses` (default 3) invites
-  concurrency. The manual documents a per-worker-instance pattern as the
-  workaround; either synchronise the state or drop the setting.
-- **Four `TransparencySettings` fields are read by nothing**: `enabled`,
-  `filtering_enabled`, `max_concurrent_analyses`, `cache_results`. Either
-  implement or remove them; as-is they read as configuration that works.
-- **`outcome_switching_detected` is never assigned** — always `False`.
-  The module intro previously implied outcome switching was analysed; it is
-  a reserved field. Implement or document as reserved (the manual now does
-  the latter).
-- **`create_tables()` cannot parse trigger bodies.**
-  `_split_sql_statements` splits on `;`, so a `CREATE TRIGGER ... BEGIN ...
-  END;` script raises `sqlite3.OperationalError: incomplete input`
-  (confirmed empirically). Workaround: create triggers via a separate
-  `execute()`. Worth fixing if any consumer needs triggers.
-- **`_check_trial_results`'s fallback is unreachable.** It requests
-  `params={"fields": "hasResults"}`, so `resultsSection` can never be in the
-  payload and `bool(data.get("resultsSection"))` is dead code. Harmless.
-- **Stale type annotations**: all three built-in fetchers annotate
-  `on_record` as `Callable[[dict], None]` though they pass a
-  `FetchedRecord`. `sync()` has it right. Cosmetic but misleading.
+- `fetch_pubmed` now populates `publication_types`, so PubMed records reach
+  the free Tier 1 quality filter instead of falling through to the paid LLM
+  classifier. This was the costly one.
+- `register_source()` can override a built-in name.
+- `TransparencyAnalyzer` is thread-safe: mutex-guarded rate limiting (shared,
+  because it throttles a shared API), thread-local reachability (per-analysis).
+- `settings.enabled` is honoured, short-circuiting before the `httpx` import.
+- `TransparencyResult.to_dict()` round-trips `full_text_analyzed`.
+- `create_tables()` parses `CREATE TRIGGER ... BEGIN ... END;`.
+- Removed the unreachable `resultsSection` fallback; corrected the three
+  stale `on_record` annotations.
+
+Two were closed as documentation rather than code, deliberately:
+
+- **`filtering_enabled`, `max_concurrent_analyses`, `cache_results`** are not
+  dead — they are orchestration hints for the *calling* application. The
+  library analyses one document per call and does no filtering, threading, or
+  caching of its own. `TransparencySettings`' docstring now says which fields
+  the analyzer honours and which the caller owns. Removing them would break a
+  public dataclass to no benefit.
+- **`outcome_switching_detected`** stays reserved and always `False`.
+  Deciding it means comparing a trial's pre-registered primary outcomes
+  against those actually reported — a real feature with real false-positive
+  risk, not a fix. It stays in the schema so persisted results need no
+  migration when detection lands. Tracked in ROADMAP.md.
 
 ### 2. Open GitHub issues
 

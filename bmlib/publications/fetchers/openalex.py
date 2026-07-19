@@ -188,7 +188,7 @@ def fetch_openalex(
     client: Any,
     target_date: date,
     *,
-    on_record: Callable[[dict], None],
+    on_record: Callable[[FetchedRecord], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
     email: str,
     api_key: str | None = None,

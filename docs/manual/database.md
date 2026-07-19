@@ -355,8 +355,21 @@ except RuntimeError:
 table_exists(conn, "papers")         # False — the DDL rolled back with the block
 ```
 
-> **Caveat: the statement splitter does not parse trigger bodies.**
-> Splitting happens on semicolons outside string literals and comments. It understands single- and double-quoted strings (including SQL `''` escaping), `--` line comments, and `/* */` block comments — which covers the plain `CREATE TABLE` / `CREATE INDEX` schemas used across bmlib. It does **not** understand `CREATE TRIGGER ... BEGIN ... END;`, whose body contains semicolons: such a script will be split mid-trigger and the fragments will fail. Create triggers with a separate `execute()` call rather than through `create_tables()`. The PostgreSQL path is unaffected — it hands the whole script to the server in one call.
+**What the statement splitter understands.** Splitting happens on semicolons outside string literals, comments, and compound statement bodies. It handles single- and double-quoted strings (including SQL `''` escaping), `--` line comments, `/* */` block comments, and — since 0.4.0 — `CREATE TRIGGER ... BEGIN ... END;`:
+
+```python
+create_tables(conn, """
+    CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT, updated TEXT);
+    CREATE TRIGGER t_after_insert AFTER INSERT ON t
+    BEGIN
+        UPDATE t SET updated = 'yes' WHERE id = NEW.id;
+    END;
+""")
+```
+
+A trigger body's semicolons terminate the statements *inside* it, not the `CREATE TRIGGER` itself; splitting on them handed SQLite a fragment and raised `sqlite3.OperationalError: incomplete input`. Nesting is tracked by counting `BEGIN`/`CASE` against `END`, so a `CASE ... END` expression inside a body does not close it early, and a bare `BEGIN;` (transaction control) is not mistaken for a body — the counter only engages once `TRIGGER` has been seen in the current statement.
+
+The PostgreSQL path never split at all; it hands the whole script to the server in one call.
 
 ---
 

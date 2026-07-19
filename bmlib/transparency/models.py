@@ -38,13 +38,31 @@ class TransparencyRisk(Enum):
 
 @dataclass
 class TransparencySettings:
-    """User-configurable transparency thresholds."""
+    """User-configurable transparency thresholds and orchestration hints.
 
+    Two groups of fields, with different owners:
+
+    *Honoured by the analyzer* — ``enabled`` short-circuits
+    :meth:`~bmlib.transparency.analyzer.TransparencyAnalyzer.analyze`, and
+    ``score_threshold``, ``industry_funding_triggers_downgrade``,
+    ``missing_coi_triggers_downgrade`` and ``tier_downgrade_amount`` feed
+    :func:`calculate_risk_level` and the tier downgrade.
+
+    *Honoured by the caller* — ``filtering_enabled``, ``max_concurrent_analyses``
+    and ``cache_results`` describe how a consuming application should
+    orchestrate analyses. The library analyses one document per call and does
+    no filtering, threading, or caching of its own; it carries these so an
+    application has a single place to configure transparency behaviour.
+    """
+
+    # --- Honoured by the analyzer ---
     enabled: bool = True
     score_threshold: int = 40  # Below this -> HIGH risk
     industry_funding_triggers_downgrade: bool = True
     missing_coi_triggers_downgrade: bool = True
     tier_downgrade_amount: int = 1
+
+    # --- Honoured by the caller (see class docstring) ---
     filtering_enabled: bool = False  # Whether to exclude high-risk papers
     max_concurrent_analyses: int = 3
     cache_results: bool = True
@@ -64,6 +82,10 @@ class TransparencyResult:
     coi_disclosed: bool | None = True
     trial_registered: bool = False
     trial_results_compliant: bool = False
+    # Reserved: no detection is implemented, so this is always False.
+    # Deciding it would mean comparing a trial's pre-registered primary
+    # outcomes against those actually reported — see ROADMAP.md. Kept in the
+    # schema so persisted results do not need migrating when it lands.
     outcome_switching_detected: bool = False
 
     risk_indicators: list[str] = field(default_factory=list)
@@ -90,6 +112,11 @@ class TransparencyResult:
             "tier_downgrade_applied": self.tier_downgrade_applied,
             "analyzed_at": self.analyzed_at.isoformat(),
             "analyzer_version": self.analyzer_version,
+            # Provenance, not a finding — but it qualifies `coi_disclosed`:
+            # only when the full text was read does `False` mean "scanned and
+            # absent" rather than "undeterminable". Dropping it on the way to
+            # storage made a persisted `coi_disclosed=False` uninterpretable.
+            "full_text_analyzed": self.full_text_analyzed,
         }
 
     @classmethod
@@ -116,6 +143,7 @@ class TransparencyResult:
             tier_downgrade_applied=data.get("tier_downgrade_applied", 0),
             analyzed_at=analyzed_at,
             analyzer_version=data.get("analyzer_version", "1.0"),
+            full_text_analyzed=data.get("full_text_analyzed", False),
         )
 
 

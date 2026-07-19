@@ -109,7 +109,7 @@ def fetch_biorxiv(
     client: Any,
     target_date: date,
     *,
-    on_record: Callable[[dict], None],
+    on_record: Callable[[FetchedRecord], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
     server: str = "biorxiv",
     api_key: str | None = None,

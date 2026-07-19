@@ -65,6 +65,10 @@ FULL_ARTICLE_XML = """\
           </PubDate>
         </JournalIssue>
       </Journal>
+      <PublicationTypeList>
+        <PublicationType UI="D016428">Journal Article</PublicationType>
+        <PublicationType UI="D016449">Randomized Controlled Trial</PublicationType>
+      </PublicationTypeList>
     </Article>
     <MeshHeadingList>
       <MeshHeading>
@@ -151,6 +155,7 @@ class TestParseArticleXml:
         assert result.doi == "10.1016/S0140-6736(24)00001-1"
         assert result.pmc_id == "PMC9999999"
         assert result.keywords == ["Aspirin", "Cardiovascular Diseases"]
+        assert result.publication_types == ["Journal Article", "Randomized Controlled Trial"]
         assert result.source == "pubmed"
 
         # Fulltext sources
@@ -179,8 +184,45 @@ class TestParseArticleXml:
         assert result.doi is None
         assert result.pmc_id is None
         assert result.keywords == []
+        assert result.publication_types == []
         assert result.fulltext_sources == []
         assert result.source == "pubmed"
+
+    def test_publication_types_feed_the_quality_metadata_filter(self):
+        """Parsed publication types classify via the free Tier 1 metadata filter.
+
+        The filter keys off ``publication_types``; a record fetched without
+        them falls through to the paid LLM tiers, so this guards the whole
+        free path rather than just the parser.
+        """
+        from bmlib.quality import StudyDesign
+        from bmlib.quality.metadata_filter import classify_from_metadata
+
+        el = ET.fromstring(FULL_ARTICLE_XML)
+        result = _parse_article_xml(el)
+
+        assessment = classify_from_metadata(result.publication_types)
+        assert assessment.study_design is StudyDesign.RCT
+        assert assessment.is_randomized is True
+
+    def test_publication_type_without_text_is_skipped(self):
+        """An empty PublicationType element does not yield a blank entry."""
+        xml = """\
+<PubmedArticle>
+  <MedlineCitation>
+    <PMID>1</PMID>
+    <Article>
+      <ArticleTitle>T</ArticleTitle>
+      <PublicationTypeList>
+        <PublicationType/>
+        <PublicationType>Review</PublicationType>
+      </PublicationTypeList>
+    </Article>
+  </MedlineCitation>
+</PubmedArticle>
+"""
+        result = _parse_article_xml(ET.fromstring(xml))
+        assert result.publication_types == ["Review"]
 
     def test_numeric_month(self):
         """Numeric month values are zero-padded correctly."""

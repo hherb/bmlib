@@ -190,6 +190,16 @@ def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
             if text:
                 keywords.append(text)
 
+    # Publication types — the free Tier 1 quality filter classifies study
+    # design from these, so a record without them skips straight to the paid
+    # LLM tiers (see bmlib.quality.metadata_filter).
+    publication_types: list[str] = []
+    if article is not None:
+        for ptype in article.findall("PublicationTypeList/PublicationType"):
+            text = ptype.text
+            if text and text.strip():
+                publication_types.append(text.strip())
+
     # Fulltext sources
     fulltext_sources: list[FullTextSourceEntry] = []
     if pmc_id:
@@ -222,6 +232,7 @@ def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
         journal=journal,
         publication_date=publication_date,
         keywords=keywords,
+        publication_types=publication_types,
         fulltext_sources=fulltext_sources,
     )
 
@@ -296,7 +307,7 @@ def fetch_pubmed(
     client: Any,
     target_date: date,
     *,
-    on_record: Callable[[dict], None],
+    on_record: Callable[[FetchedRecord], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
     api_key: str | None = None,
 ) -> FetchResult:

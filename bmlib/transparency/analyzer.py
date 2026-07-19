@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import time
 from typing import Any
 
@@ -252,10 +253,31 @@ class TransparencyAnalyzer:
         self.pubmed_api_key = pubmed_api_key
         self.settings = settings or TransparencySettings()
         self._last_request: float = 0.0
-        # Set True by any query helper that receives a 200 response, so a run
-        # in which every external API was unreachable can be reported as
-        # UNKNOWN rather than scored 0 (which would read as HIGH risk).
-        self._api_reachable: bool = False
+        # Rate limiting throttles a shared remote API, so the interval is
+        # enforced across all threads using this analyzer — hence a lock
+        # rather than per-thread state.
+        self._rate_limit_lock = threading.Lock()
+        # Reachability, by contrast, describes a single analysis. It is held
+        # per-thread so that concurrent analyze() calls (which
+        # TransparencySettings.max_concurrent_analyses invites) cannot
+        # contaminate each other: without this, a thread whose APIs were all
+        # down inherits a concurrent thread's success and gets scored 0 /
+        # HIGH instead of UNKNOWN, wrongly triggering a tier downgrade.
+        self._local = threading.local()
+
+    @property
+    def _api_reachable(self) -> bool:
+        """Whether any external API answered during *this thread's* analysis.
+
+        Set True by any query helper that receives a 200 response, so a run
+        in which every external API was unreachable can be reported as
+        UNKNOWN rather than scored 0 (which would read as HIGH risk).
+        """
+        return getattr(self._local, "api_reachable", False)
+
+    @_api_reachable.setter
+    def _api_reachable(self, value: bool) -> None:
+        self._local.api_reachable = value
 
     def analyze(
         self,
@@ -267,7 +289,23 @@ class TransparencyAnalyzer:
         """Run transparency analysis for a single document.
 
         At least one of *pmid* or *doi* must be provided.
+
+        Returns an ``UNKNOWN`` result without contacting any API when
+        ``settings.enabled`` is False, when neither identifier is given, or
+        when every external API was unreachable — three distinct cases, each
+        named in ``risk_indicators``. ``UNKNOWN`` never triggers a quality
+        tier downgrade, so a paper we learned nothing about is not penalised.
         """
+        # Checked before the httpx import: a disabled analyzer does no HTTP,
+        # so it must not demand the optional dependency either.
+        if not self.settings.enabled:
+            return TransparencyResult(
+                document_id=document_id,
+                transparency_score=0,
+                risk_level=TransparencyRisk.UNKNOWN,
+                risk_indicators=["Transparency analysis disabled in settings"],
+            )
+
         try:
             import httpx
         except ImportError:
@@ -571,11 +609,17 @@ class TransparencyAnalyzer:
     # --- API query helpers ---
 
     def _rate_limit(self) -> None:
-        """Enforce minimum interval between outgoing HTTP requests."""
-        elapsed = time.time() - self._last_request
-        if elapsed < _MIN_REQUEST_INTERVAL_SECONDS:
-            time.sleep(_MIN_REQUEST_INTERVAL_SECONDS - elapsed)
-        self._last_request = time.time()
+        """Enforce minimum interval between outgoing HTTP requests.
+
+        The lock is held across the sleep so concurrent callers queue rather
+        than all observing the same stale ``_last_request`` and firing
+        simultaneously — serialising here is the point of a rate limiter.
+        """
+        with self._rate_limit_lock:
+            elapsed = time.time() - self._last_request
+            if elapsed < _MIN_REQUEST_INTERVAL_SECONDS:
+                time.sleep(_MIN_REQUEST_INTERVAL_SECONDS - elapsed)
+            self._last_request = time.time()
 
     def _query_crossref(self, client: Any, doi: str) -> dict | None:
         """Query the CrossRef API for a DOI."""
@@ -677,9 +721,14 @@ class TransparencyAnalyzer:
     def _check_trial_results(self, client: Any, nct_id: str) -> bool:
         """Check if a ClinicalTrials.gov trial has posted results.
 
-        Uses the v2 API's top-level ``hasResults`` boolean. The previous
+        Uses the v2 API's top-level ``hasResults`` boolean. An earlier
         implementation requested a ``ResultsSection`` field but read a
         ``resultsSection`` key, so it under-detected posted results.
+
+        The request is narrowed to ``hasResults``, so that is the only key
+        the response can carry; a missing key means the API did not answer
+        the question and is reported as "no posted results" rather than
+        guessed at from a payload that was never requested.
         """
         self._rate_limit()
         try:
@@ -688,12 +737,7 @@ class TransparencyAnalyzer:
                 params={"fields": "hasResults"},
             )
             if resp.status_code == 200:
-                data = resp.json()
-                has_results = data.get("hasResults")
-                if has_results is None:
-                    # Fall back to presence of a results section in the payload.
-                    has_results = bool(data.get("resultsSection"))
-                return bool(has_results)
+                return bool(resp.json().get("hasResults"))
         except Exception as e:
             logger.debug("ClinicalTrials.gov query failed for %s: %s", nct_id, e)
         return False

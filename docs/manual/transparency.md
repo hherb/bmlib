@@ -25,7 +25,7 @@ from bmlib.transparency.models import MEDIUM_RISK_SCORE_THRESHOLD
 pip install bmlib[transparency]
 ```
 
-Requires `httpx` for HTTP requests to external APIs. The import is **lazy**: `httpx` is imported inside `analyze()`, so constructing a `TransparencyAnalyzer` never fails. A missing `httpx` raises `ImportError("httpx is required for transparency analysis. Install with: pip install bmlib[transparency]")` on the first `analyze()` call.
+Requires `httpx` for HTTP requests to external APIs. The import is **lazy**: `httpx` is imported inside `analyze()`, so constructing a `TransparencyAnalyzer` never fails. A missing `httpx` raises `ImportError("httpx is required for transparency analysis. Install with: pip install bmlib[transparency]")` on the first `analyze()` call — unless `settings.enabled` is `False`, which short-circuits before the import, so a disabled analyzer runs without the extra installed.
 
 ## Imports
 
@@ -53,7 +53,7 @@ class TransparencyRisk(Enum):
     UNKNOWN = "unknown"
 ```
 
-`UNKNOWN` is returned in exactly two cases: neither `pmid` nor `doi` was supplied, and no external API was reachable. It is never produced by [`calculate_risk_level()`](#calculate_risk_level).
+`UNKNOWN` is returned in exactly three cases, each naming itself in `risk_indicators`: `settings.enabled` is `False`, neither `pmid` nor `doi` was supplied, and no external API was reachable. It is never produced by [`calculate_risk_level()`](#calculate_risk_level), and it never triggers a quality-tier downgrade — a paper nothing was learned about is not penalised.
 
 ---
 
@@ -87,8 +87,10 @@ class TransparencySettings:
 | `max_concurrent_analyses` | `int` | `3` | Maximum concurrent analyses. |
 | `cache_results` | `bool` | `True` | Whether to cache analysis results. |
 
-> **`enabled`, `filtering_enabled`, `max_concurrent_analyses`, and `cache_results` are advisory.**
-> Nothing in `bmlib.transparency` reads them — `TransparencyAnalyzer` consults only `score_threshold`, `industry_funding_triggers_downgrade`, `missing_coi_triggers_downgrade`, and `tier_downgrade_amount`. The other four are declared for the calling application to honour: gate the analysis, filter the result set, size your own thread pool, and cache `to_dict()` output yourself.
+> **Two groups, with different owners.**
+> `TransparencyAnalyzer` honours `enabled`, `score_threshold`, `industry_funding_triggers_downgrade`, `missing_coi_triggers_downgrade`, and `tier_downgrade_amount`. `enabled=False` short-circuits `analyze()` before any HTTP — it returns `UNKNOWN` at score 0 with the indicator `"Transparency analysis disabled in settings"`, and does not even require `httpx` to be installed. (Before 0.4.0 `enabled` was ignored and analysis ran regardless.)
+>
+> `filtering_enabled`, `max_concurrent_analyses`, and `cache_results` are orchestration hints for the **calling application**: the library analyses one document per call and does no filtering, threading, or caching of its own. They live here so an application has one place to configure transparency behaviour.
 
 ---
 
@@ -158,12 +160,14 @@ Note that the dataclass **default** is `True`, as is the `from_dict()` fallback 
 | `to_dict() -> dict[str, Any]` | Serialise to a JSON-safe dictionary. `risk_level` becomes its `.value` string; `analyzed_at` becomes an ISO 8601 string. |
 | `from_dict(data: dict) -> TransparencyResult` | Deserialise. `document_id`, `transparency_score`, and `risk_level` are required keys; a missing or empty `analyzed_at` defaults to now. |
 
-`to_dict()` is **lossy**: it omits `full_text_analyzed`. A `from_dict(to_dict(x))` round-trip therefore resets that flag to `False`, so a cached result cannot tell you whether the original analysis saw full text or only an abstract. Since `coi_disclosed is False` is only ever produced from full text, persist `full_text_analyzed` alongside the dict if that provenance matters to you.
+The round trip is lossless — every field, including `full_text_analyzed`, survives:
 
 ```python
 restored = TransparencyResult.from_dict(result.to_dict())
-assert restored.full_text_analyzed is False   # even when result.full_text_analyzed was True
+assert restored == result
 ```
+
+This matters because `full_text_analyzed` qualifies `coi_disclosed`: only when the full text was read does `coi_disclosed is False` mean "scanned and absent" rather than "undeterminable". Before 0.4.0 `to_dict()` dropped the flag, so a persisted `coi_disclosed=False` could not be interpreted.
 
 ---
 
@@ -380,7 +384,9 @@ Markup is stripped before scanning so tags cannot break the ±60-character windo
 
 When ids are credited, `trial_registered` is `True` and 20 points are awarded. Up to `MAX_TRIAL_IDS_TO_CHECK` (3) of them are then queried for posted results; the first success awards 15 more and stops the loop. If none has results, the indicator `"Registered trial without posted results"` is appended.
 
-`_check_trial_results()` reads the v2 API's top-level `hasResults` boolean, falling back to `bool(data.get("resultsSection"))` when that key is absent. **This was a bug fix in 0.4.0:** the previous implementation requested a `ResultsSection` field but read a `resultsSection` key, so it systematically under-detected posted results and under-scored compliant trials by 15 points.
+`_check_trial_results()` requests `fields=hasResults` and reads the v2 API's top-level `hasResults` boolean. **This was a bug fix in 0.4.0:** the previous implementation requested a `ResultsSection` field but read a `resultsSection` key, so it systematically under-detected posted results and under-scored compliant trials by 15 points.
+
+Because the request is narrowed to that one field, `hasResults` is the only key the response can carry. A missing key means the API did not answer the question and is reported as "no posted results". (A `resultsSection` fallback existed until 0.4.0 but was unreachable for exactly this reason, and was removed rather than left implying a robustness it did not provide.)
 
 ---
 
@@ -474,7 +480,14 @@ assert calculate_risk_level(85, False, "full_open", False, lenient) is Transpare
 
 The analyzer enforces a minimum interval of 350 ms (`_MIN_REQUEST_INTERVAL_SECONDS`) between outgoing HTTP requests by sleeping on the calling thread, ensuring polite access to public services. The clock is shared across all five endpoints, so a full DOI + PMID analysis costs roughly 1.5–2 s of enforced delay on top of network time.
 
-The interval is tracked in unsynchronised instance state (`self._last_request`), as is the reachability flag (`self._api_reachable`). **`TransparencyAnalyzer` is not thread-safe.** To honour `settings.max_concurrent_analyses`, construct one analyzer per worker:
+**`TransparencyAnalyzer` is safe to share across threads** (since 0.4.0), which is what makes `settings.max_concurrent_analyses` usable. Its two pieces of mutable state are handled differently, by design:
+
+| State | Scope | Why |
+|-------|-------|-----|
+| `_last_request` (rate limiter) | Shared, mutex-guarded | The interval throttles a *shared remote API*, so it must apply across all threads. The lock is held across the sleep, so concurrent callers queue rather than all reading the same stale timestamp and firing at once. |
+| reachability | Per-thread | It describes a *single analysis*. Held in `threading.local()` so one thread's success cannot make another thread's total outage look measured. |
+
+Sharing one analyzer is therefore the recommended pattern, and it gives you a single global rate limit rather than N independent ones:
 
 ```python
 from concurrent.futures import ThreadPoolExecutor
@@ -482,18 +495,15 @@ from concurrent.futures import ThreadPoolExecutor
 from bmlib.transparency import TransparencyAnalyzer, TransparencySettings
 
 settings = TransparencySettings()
-
-def analyze_one(job: tuple[str, str]) -> object:
-    doc_id, doi = job
-    return TransparencyAnalyzer(email="researcher@example.com", settings=settings).analyze(
-        doc_id, doi=doi
-    )
+analyzer = TransparencyAnalyzer(email="researcher@example.com", settings=settings)
 
 with ThreadPoolExecutor(max_workers=settings.max_concurrent_analyses) as pool:
-    results = list(pool.map(analyze_one, jobs))
+    results = list(pool.map(lambda j: analyzer.analyze(j[0], doi=j[1]), jobs))
 ```
 
-Note that per-instance rate limiting means N workers issue up to N times the request rate. Keep `max_concurrent_analyses` modest (the default is 3) and set a real `email` so the services can contact you rather than block you.
+Because the rate limiter is shared, adding workers does **not** multiply your request rate — it overlaps network waits within one 350 ms budget. Set a real `email` so the services can contact you rather than block you.
+
+> Before 0.4.0 both pieces of state were unsynchronised and the guidance here was to build one analyzer per worker. If you followed that, sharing a single instance is now both correct and better-behaved; per-worker instances still work but give each worker its own rate limit.
 
 ---
 

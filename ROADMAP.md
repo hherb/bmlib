@@ -31,17 +31,18 @@ hold the full story.
 | ✅ Done | Cochrane risk-of-bias models | 9-domain RoB + study-characteristics table + Markdown/HTML renderers (0.4.0) |
 | ✅ Done | Rule-based extractors | LLM-free study-type and sample-size scoring with `DimensionScore` audit trails (0.4.0) |
 | ⬜ Planned | Wire the new quality tools into the pipeline | The Cochrane models and extractors are standalone — nothing in the tiered pipeline imports them, and no `BiasRisk` ↔ `CochraneRiskOfBias` or `DimensionScore` ↔ `QualityAssessment` conversion exists. Decide whether extractors become a free pre-filter ahead of Tier 1 and whether Tier 3 emits Cochrane domains |
-| ⬜ Planned | PubMed fetcher must populate `publication_types` | Tier 1 classifies from that field, but `fetch_pubmed` never sets it, so synced PubMed records skip the free tier entirely — see HANDOVER.md |
 | **Transparency (`bmlib.transparency`)** | | |
 | ✅ Done | Multi-API analyzer | CrossRef, Europe PMC, OpenAlex, ClinicalTrials.gov → 0–100 score over funding, COI, data availability, trial registration, open access |
 | ✅ Done | Industry-COI detection in full text | `_check_europepmc()` returns `industry_coi`; industry ties surfaced from COI statements |
 | ✅ Done | Unreachable-API guard | No API reachable → `UNKNOWN` at score 0, so a dead network no longer reads as a HIGH-risk paper (0.4.0) |
-| ⬜ Planned | Thread-safe analyzer | `_last_request` / `_api_reachable` are unsynchronised while `max_concurrent_analyses` invites concurrency — see HANDOVER.md |
-| ⬜ Planned | Implement or drop the advisory settings | `enabled`, `filtering_enabled`, `max_concurrent_analyses`, `cache_results` are read by nothing; `outcome_switching_detected` is never assigned |
+| ✅ Done | Thread-safe analyzer | Mutex-guarded rate limiting (shared, throttles a shared API) and thread-local reachability (per-analysis), so one instance can be shared across workers (0.4.0) |
+| ✅ Done | Settings ownership made explicit | `enabled` is now honoured (short-circuits before the `httpx` import); `filtering_enabled`, `max_concurrent_analyses` and `cache_results` are documented as caller-owned orchestration hints (0.4.0) |
+| ⬜ Planned | Outcome-switching detection | `outcome_switching_detected` is reserved and always `False`. Requires comparing a trial's pre-registered primary outcomes against those reported |
 | ⬜ Planned | Structural COI detection | Issue #13 — a tagged COI section without a cue phrase must count as `coi_disclosed=True`; cue-phrase scan becomes the fallback |
 | **Publications (`bmlib.publications`)** | | |
-| ✅ Done | Multi-source sync | PubMed, bioRxiv/medRxiv, OpenAlex fetcher plugins with source registry; date-range sync tracking |
+| ✅ Done | Multi-source sync | PubMed, bioRxiv/medRxiv, OpenAlex fetcher plugins with source registry; date-range sync tracking. `register_source()` can override a built-in name (0.4.0) |
 | ✅ Done | Dedup + merge-on-upsert | Deduplication by DOI/PMID with field-merge logic |
+| ✅ Done | PubMed fetcher populates `publication_types` | Parsed from `PublicationTypeList`, so synced PubMed records reach the free Tier 1 filter instead of falling through to the paid LLM classifier (0.4.0) |
 | ✅ Done | Batched sync commits | One commit per synced day; SQLite write lock no longer held across network I/O (0.4.0) |
 | ⬜ Planned | PostgreSQL support for the storage layer | `storage.py` is SQLite-specific (`?` placeholders, `ON CONFLICT`, `cur.lastrowid`); port when a PostgreSQL consumer needs it |
 | **Full text (`bmlib.fulltext`)** | | |
@@ -51,7 +52,7 @@ hold the full story.
 | ⬜ Planned | Wire PDF conversion into `FullTextService` | The converter is standalone; the service downloads and caches PDF bytes but never converts them |
 | ⬜ Planned | Rate limiting | The package throttles nothing — bulk callers must self-throttle against Europe PMC and Unpaywall |
 | **Quality & maintenance** | | |
-| ✅ Done | Test suite | 539 tests + 2 skipped; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services |
+| ✅ Done | Test suite | 552 tests + 2 skipped; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services |
 | ✅ Done | Reference manual | `docs/manual/` — one page per module |
 | ✅ Done | Documentation refresh for 0.4.0 | CHANGELOG, README, CLAUDE.md and all eight manual pages rewritten against the real source, signatures verified and examples executed |
 | ✅ Done | Release 0.4.0 | Cut 2026-07-19; 0.3.0 was bumped in-tree but never released, so its changes ship inside 0.4.0 |

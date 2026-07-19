@@ -126,6 +126,54 @@ All notable changes to bmlib are documented here. The format is based on
 - publications: full-text sources are no longer silently dropped during sync.
 - publications: the bioRxiv fetcher records the correct PDF version, and the
   PubMed fetcher handles non-numeric month names in publication dates.
+- publications: `fetch_pubmed()` now populates `publication_types` from
+  `PublicationTypeList`. It never did, yet the free Tier 1 quality filter
+  classifies study design from exactly that field — so every synced PubMed
+  record skipped the free tier and fell through to the paid LLM classifier.
+- publications: `register_source()` now registers the built-ins before
+  writing its entry, so registering under a built-in name actually overrides
+  it. Previously an override installed before the first lookup was silently
+  reverted the moment lazy registration ran.
+- publications: the three built-in fetchers annotated `on_record` as
+  `Callable[[dict], None]` while passing a `FetchedRecord`; the annotations
+  now match the behaviour, which is unchanged.
+- transparency: `TransparencyAnalyzer` is now safe to share across threads,
+  which is what makes `settings.max_concurrent_analyses` usable. Rate-limit
+  state is mutex-guarded (the interval throttles a shared remote API, so it
+  must apply across threads); reachability is held per-thread, since it
+  describes a single analysis. Previously two concurrent `analyze()` calls
+  contaminated each other: a thread whose APIs were all down inherited a
+  concurrent thread's success and was scored 0 / HIGH instead of UNKNOWN,
+  wrongly triggering a tier downgrade.
+- transparency: `settings.enabled` is now honoured. `enabled=False`
+  short-circuits `analyze()` before any HTTP — and before the `httpx` import,
+  so a disabled analyzer does not require the optional extra. It was
+  previously ignored and analysis ran regardless.
+- transparency: `TransparencyResult.to_dict()` now round-trips
+  `full_text_analyzed`. Dropping it made a persisted `coi_disclosed=False`
+  uninterpretable, since that value only means "scanned and absent" when the
+  full text really was read.
+- transparency: removed the unreachable `resultsSection` fallback in
+  `_check_trial_results()`. The request is narrowed to `fields=hasResults`,
+  so no other key can come back; the fallback implied a robustness it could
+  not provide.
+- db: `create_tables()` now parses `CREATE TRIGGER ... BEGIN ... END;`.
+  Splitting on the semicolons inside a trigger body handed SQLite a fragment
+  and raised `OperationalError: incomplete input`. Nesting counts
+  `BEGIN`/`CASE` against `END`, so a `CASE ... END` inside a body does not
+  close it early and a bare `BEGIN;` is not mistaken for one.
+
+### Documented
+
+- transparency: `TransparencySettings` now states which fields the analyzer
+  honours and which are orchestration hints for the calling application
+  (`filtering_enabled`, `max_concurrent_analyses`, `cache_results` — the
+  library analyses one document per call and does no filtering, threading,
+  or caching of its own).
+- transparency: `outcome_switching_detected` is documented as reserved and
+  always `False`. Deciding it means comparing a trial's pre-registered
+  primary outcomes against those reported; it is kept in the schema so
+  persisted results need no migration when detection lands.
 
 ## [0.3.0]
 

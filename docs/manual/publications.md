@@ -856,16 +856,16 @@ report = sync(
 )
 ```
 
-Registering under an existing name replaces that source's fetcher — useful for swapping in an instrumented or cached variant. To override a **built-in** name, force lazy registration first, or the built-in will overwrite yours on the next lookup:
+Registering under an existing name replaces that source's fetcher — useful for swapping in an instrumented or cached variant. Overriding a **built-in** name works directly, in any order:
 
 ```python
-from bmlib.publications import register_source, source_names
+from bmlib.publications import register_source, get_fetcher
 
-source_names()                              # forces built-in registration
-register_source(pubmed_descriptor, my_fetcher)   # now this one wins
+register_source(pubmed_descriptor, my_fetcher)
+get_fetcher("pubmed") is my_fetcher   # True
 ```
 
-`register_source()` itself does not trigger `_ensure_builtins()`; the first call to `source_names()`, `list_sources()`, `get_source()`, or `get_fetcher()` does.
+`register_source()` registers the built-ins first, then writes your entry, so your override always wins. Before 0.4.0 it did not, and an override installed before the first lookup was silently reverted the moment lazy registration ran.
 
 ---
 
@@ -873,8 +873,7 @@ register_source(pubmed_descriptor, my_fetcher)   # now this one wins
 
 Fetchers are used internally by `sync()` but can be called directly for advanced use cases. Each takes an HTTP client and one date.
 
-> **A note on the `on_record` type annotation.**
-> All three built-in fetchers annotate `on_record` as `Callable[[dict], None]`, but they actually pass a `FetchedRecord` — their internal `_normalize` functions return `FetchedRecord` instances. `sync()` correctly annotates its own `on_record` as `Callable[[FetchedRecord], None]`. Write callbacks against `FetchedRecord`; the fetcher annotations are stale.
+All fetchers pass a `FetchedRecord` to `on_record`, matching `sync()`. (Before 0.4.0 the three built-ins annotated the parameter as `Callable[[dict], None]` while passing a `FetchedRecord`; the annotations were corrected, the behaviour never changed.)
 
 ### `fetch_pubmed`
 
@@ -883,7 +882,7 @@ def fetch_pubmed(
     client: Any,
     target_date: date,
     *,
-    on_record: Callable[[dict], None],
+    on_record: Callable[[FetchedRecord], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
     api_key: str | None = None,
 ) -> FetchResult
@@ -894,7 +893,7 @@ Fetch all PubMed articles published on `target_date` using NCBI E-utilities.
 - ESearch (with `usehistory=y`) to count and stage PMIDs, then paged EFetch to retrieve XML.
 - Pages through results in batches of 500 (`EFETCH_PAGE_SIZE`).
 - Rate limits: `0.1 s` with an API key, `0.34 s` without — selected purely by whether `api_key` is truthy.
-- Extracts: PMID, title, abstract (multi-part), authors, journal, DOI, PMC ID, MeSH keywords, and full-text source URLs (PMC article page, DOI resolver). It does **not** populate `publication_types` — only OpenAlex does.
+- Extracts: PMID, title, abstract (multi-part), authors, journal, DOI, PMC ID, MeSH keywords, and full-text source URLs (PMC article page, DOI resolver). It also populates `publication_types` from `PublicationTypeList`, which is what the free Tier 1 quality filter classifies study design from (see [quality.md](quality.md)). Before 0.4.0 this field was left empty, so synced PubMed records skipped the free tier entirely.
 - Takes **no** `email` parameter.
 
 ### `fetch_biorxiv`
@@ -904,7 +903,7 @@ def fetch_biorxiv(
     client: Any,
     target_date: date,
     *,
-    on_record: Callable[[dict], None],
+    on_record: Callable[[FetchedRecord], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
     server: str = "biorxiv",
     api_key: str | None = None,
@@ -926,7 +925,7 @@ def fetch_openalex(
     client: Any,
     target_date: date,
     *,
-    on_record: Callable[[dict], None],
+    on_record: Callable[[FetchedRecord], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
     email: str,
     api_key: str | None = None,
