@@ -159,6 +159,11 @@ memoised `show()` call only when read. `__repr__` on those subclasses renders
 `<unresolved>` rather than fetching, so logging a model list stays free.
 This is the only place in bmlib where attribute access performs I/O. The
 returned objects degrade to plain `ModelMetadata` when copied or pickled.
+The capability flags (`supports_function_calling`, `supports_vision`) on
+`list_models()` results come from `/api/tags` and are a lower bound —
+`/api/show`, reached via `get_model_metadata()`, reports strictly more.
+Code filtering models by capability should use `get_model_metadata()` when
+completeness matters.
 
 ### Thread-safe token tracking
 `TokenTracker` uses `threading.Lock()` for safe concurrent LLM usage accounting.

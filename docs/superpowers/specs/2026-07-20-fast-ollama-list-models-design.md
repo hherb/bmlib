@@ -105,6 +105,14 @@ which removes the `show()` call entirely for the models that report it.
 The array may be absent on older Ollama servers; treat a missing or null
 `capabilities` key as an empty list, which yields today's `False` defaults.
 
+**Second correction:** `/api/tags` under-reports capabilities relative to
+`/api/show`. Measured across 139 local models: tags reported 77
+tool-capable against show's 102, and 32 vision-capable against 44, with
+the two arrays differing on 49 models. The flags on `list_models()`
+results are therefore a lower bound, and `get_model_metadata()` is the
+authoritative per-model answer. This is a property of the Ollama API, not
+of bmlib.
+
 ### 2. Lazy context window
 
 Only `context_window` genuinely requires `show()`. It is deferred behind a

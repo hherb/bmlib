@@ -702,6 +702,15 @@ class OllamaProvider(BaseProvider):
             One :class:`_LazyOllamaModelMetadata` per installed model, or
             an empty list if the server is unreachable.  A copy is
             returned, so caller mutation cannot corrupt the cache.
+
+        Note:
+            ``capabilities.supports_function_calling`` and
+            ``supports_vision`` are derived from the ``/api/tags``
+            ``capabilities`` array, which under-reports relative to
+            ``/api/show``: a model may support a capability that this
+            listing does not report.  These flags are a lower bound, not
+            a definitive answer.  Call :meth:`get_model_metadata` for the
+            authoritative, per-model answer.
         """
         if (
             not force_refresh
@@ -744,10 +753,15 @@ class OllamaProvider(BaseProvider):
             parameter_size = _safe_get(details, "parameter_size", "")
             display_name = f"{model_name} ({parameter_size})" if parameter_size else model_name
 
-            # ShowResponse carries the same capabilities array /api/tags
-            # does; derive the flags from it exactly as
-            # _metadata_from_tags_entry does, so list_models() and
-            # get_model_metadata() cannot disagree about the same model.
+            # Derived from ShowResponse.capabilities, the same way
+            # _metadata_from_tags_entry derives them from the /api/tags array.
+            # The two paths can still disagree, because the two endpoints do:
+            # /api/show is authoritative and reports strictly more than
+            # /api/tags. Measured across 139 local models, tags reported 77
+            # tool-capable where show reported 102, and 32 vision-capable
+            # where show reported 44 — the two arrays differed on 49 models.
+            # So list_models()' flags are a LOWER BOUND; this method is the
+            # authoritative answer for a single model.
             raw_capabilities = _safe_get(info, "capabilities") or []
             capability_names = {str(c).lower() for c in raw_capabilities}
 

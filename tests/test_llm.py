@@ -1065,33 +1065,54 @@ class TestOllamaTagsAuth:
         assert seen["auth"] is None
 
 
-class TestOllamaMetadataPathsAgree:
-    """list_models() and get_model_metadata() must not disagree.
+class TestOllamaMetadataPathConsistency:
+    """Characterises how list_models() and get_model_metadata() relate.
 
     _get_model_info used to hardcode supports_function_calling and
     supports_vision to False no matter what show() reported, so the two
     public methods could give contradictory answers for the very same
     model. It now derives the flags from ShowResponse.capabilities, the
-    same source /api/tags exposes.
+    same source /api/tags exposes -- but the two Ollama endpoints
+    themselves do not always agree on that array. Measured across 139
+    local models, /api/tags reported 77 tool-capable where /api/show
+    reported 102, and 32 vision-capable where /api/show reported 44; the
+    two arrays differed on 49 of the 139 models. /api/show is
+    authoritative; /api/tags is a lower bound.
+
+    The tests below cover both regimes: the matching-arrays case, where
+    the two paths necessarily agree because the fixture feeds them
+    identical data, and the differing-arrays case, which is what actually
+    happens in production and is the behaviour worth asserting on.
     """
 
     class _FakeShowClient:
-        """show() carrying capabilities and a resolvable context length."""
+        """show() carrying a configurable capabilities array.
 
-        def __init__(self):
+        Also carries a resolvable context length so tests covering the
+        context_window invariant don't need a second fixture.
+        """
+
+        def __init__(self, capabilities=("completion", "tools", "thinking")):
             self.show_calls = 0
+            self._capabilities = list(capabilities)
 
         def show(self, model_name):
             self.show_calls += 1
             return {
-                "capabilities": ["completion", "tools", "thinking"],
+                "capabilities": self._capabilities,
                 "model_info": {"qwen3.context_length": 262144},
             }
 
-    def test_capabilities_and_context_window_agree(self, monkeypatch):
-        # context_length and capabilities are both omitted from the tags
-        # entry so list_models() must lazily resolve them the same way
-        # get_model_metadata() does, via the shared show()-backed path.
+    def test_context_window_agrees_between_paths(self, monkeypatch):
+        """context_window genuinely must agree: both paths share _get_model_info.
+
+        Unlike the capability flags, list_models() has no independent
+        /api/tags-derived context_window once the tags entry omits
+        details.context_length -- both list_models() and
+        get_model_metadata() resolve it through the same memoised
+        show()-backed call, so this invariant is real and worth keeping
+        as a regression guard.
+        """
         _install_fake_tags(
             monkeypatch,
             [
@@ -1108,12 +1129,65 @@ class TestOllamaMetadataPathsAgree:
         listed = provider.list_models()[0]
         fetched = provider.get_model_metadata("m")
 
+        assert listed.context_window == fetched.context_window == 262144
+
+    def test_capabilities_agree_when_tags_and_show_arrays_match(self, monkeypatch):
+        """Matching-arrays case only: both paths report the same flags.
+
+        This fixture feeds /api/tags and /api/show the identical
+        capabilities array, so agreement here is guaranteed by
+        construction -- it does not demonstrate that the two paths always
+        agree. See test_capabilities_diverge_when_tags_and_show_arrays_differ
+        below for the case that actually occurs on real servers.
+        """
+        _install_fake_tags(
+            monkeypatch,
+            [
+                _ollama_entry(
+                    "m",
+                    capabilities=("completion", "tools", "thinking"),
+                    context_length=None,
+                )
+            ],
+        )
+        client = self._FakeShowClient(capabilities=("completion", "tools", "thinking"))
+        provider = _ollama_provider_with(client)
+
+        listed = provider.list_models()[0]
+        fetched = provider.get_model_metadata("m")
+
         assert listed.capabilities.supports_function_calling is True
         assert (
             listed.capabilities.supports_function_calling
             == fetched.capabilities.supports_function_calling
         )
-        assert listed.context_window == fetched.context_window == 262144
+
+    def test_capabilities_diverge_when_tags_and_show_arrays_differ(self, monkeypatch):
+        """/api/tags under-reports capabilities relative to /api/show.
+
+        This is the real, measured behaviour (see class docstring), fed
+        directly rather than accidentally: /api/tags reports only
+        "completion" while /api/show additionally reports "tools" and
+        "vision" for the same model. list_models()'s flags are a lower
+        bound; get_model_metadata() is authoritative.
+        """
+        _install_fake_tags(
+            monkeypatch,
+            [_ollama_entry("m", capabilities=("completion",), context_length=None)],
+        )
+        client = self._FakeShowClient(capabilities=("completion", "tools", "vision"))
+        provider = _ollama_provider_with(client)
+
+        listed = provider.list_models()[0]
+        fetched = provider.get_model_metadata("m")
+
+        # Lower bound: /api/tags reported neither tools nor vision.
+        assert listed.capabilities.supports_function_calling is False
+        assert listed.capabilities.supports_vision is False
+
+        # Authoritative: /api/show reported both.
+        assert fetched.capabilities.supports_function_calling is True
+        assert fetched.capabilities.supports_vision is True
 
 
 class TestOllamaMetadataIsPortable:
