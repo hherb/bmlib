@@ -173,6 +173,17 @@ to defaults *weaker* than the listing: every capability flag `False` and
 an 8192 context window, versus e.g. `qwen3-next:80b-cloud`'s real
 `ctx=262144, tools=True` from `list_models()`.
 
+Bypassing the SDK means the raw path owes back the safety defaults `httpx`
+supplied for free, so `_fetch_tags_payload()` builds its own opener rather
+than calling `urlopen()`: `urllib` re-sends every header across a redirect,
+including the `OLLAMA_API_KEY` bearer token, to any host. `_normalise_base_url()`
+likewise restricts the scheme to HTTP(S) — `urlopen` would honour `file://`
+and hand the bytes to `json.loads` — and treats `"<word>:<digits>"` as
+host:port, since `OLLAMA_HOST` is conventionally scheme-less but `urlsplit`
+reads `localhost:11434` as scheme `localhost`. Simplifying any of these back
+to the obvious one-liner reintroduces a real defect; each has a regression
+test naming it.
+
 ### Thread-safe token tracking
 `TokenTracker` uses `threading.Lock()` for safe concurrent LLM usage accounting.
 

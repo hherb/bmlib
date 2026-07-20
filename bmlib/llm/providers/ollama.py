@@ -81,6 +81,24 @@ CACHE_TTL_SECONDS = 60
 # Timeout for the raw /api/tags fetch, in seconds.
 TAGS_REQUEST_TIMEOUT = 30
 
+# Schemes ``_fetch_tags_payload`` is willing to open.  ``urlopen`` honours
+# whatever scheme it is handed — ``file://`` would read a local path and
+# hand the bytes to ``json.loads`` — whereas ``httpx``, which backs the
+# SDK path, rejects anything that is not HTTP(S).  Restricting here keeps
+# the two paths equivalent rather than making the raw one more permissive.
+_ALLOWED_SCHEMES = ("http", "https")
+
+# Port each allowed scheme implies when the URL does not spell one out.
+# Used to compare origins across a redirect the way ``httpx`` does.
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+# Detects a leading URL scheme, treating "<word>:<digits>" as host:port
+# instead.  That ambiguity is real: ``urlsplit("localhost:11434")`` reports
+# scheme ``"localhost"``, yet OLLAMA_HOST is conventionally written exactly
+# that way.  Testing for "://" alone would resolve it the other way and let
+# opaque schemes ("data:...", "javascript:...") through unrecognised.
+_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:(?!\d+$)")
+
 # Pricing for local models (always free)
 _FREE_PRICING = ModelPricing(0.0, 0.0)
 
@@ -155,16 +173,23 @@ class _LazyOllamaCapabilities(ProviderCapabilities):
         which holds an unpicklable lock.  Resolving now and handing back a
         plain object keeps these values portable, which they were before
         the lazy subclasses existed.
+
+        Fields are bound by keyword through a :func:`~functools.partial`
+        rather than positionally: a positional tuple silently reorders if
+        a field is ever inserted into :class:`ProviderCapabilities`, and
+        the resulting mix-up (a context window landing in a bool flag)
+        would survive every existing test.
         """
         return (
-            ProviderCapabilities,
-            (
-                self.supports_streaming,
-                self.supports_function_calling,
-                self.supports_vision,
-                self.supports_system_messages,
-                self.max_context_window,
+            partial(
+                ProviderCapabilities,
+                supports_streaming=self.supports_streaming,
+                supports_function_calling=self.supports_function_calling,
+                supports_vision=self.supports_vision,
+                supports_system_messages=self.supports_system_messages,
+                max_context_window=self.max_context_window,
             ),
+            (),
         )
 
 
@@ -178,8 +203,18 @@ class _LazyOllamaModelMetadata(ModelMetadata):
 
     ``__repr__`` deliberately does **not** resolve — otherwise logging a
     model list would silently fire one HTTP request per model, which is
-    the exact cost this class exists to avoid.  ``__eq__`` is the
-    dataclass default, which short-circuits on
+    the exact cost this class exists to avoid.
+
+    Reading ``context_window`` is not the only trigger.  Anything that
+    reads every field resolves too: :func:`copy.copy`,
+    :func:`copy.deepcopy`, :func:`pickle.dumps`,
+    :func:`dataclasses.replace` and :func:`dataclasses.asdict` all fetch
+    if the value is not already known.  ``copy.copy()`` performing a
+    blocking HTTP request is the most surprising of those, so treat an
+    unresolved instance as something to keep off any hot or
+    latency-sensitive path, not merely as something not to log.
+
+    ``__eq__`` is the dataclass default, which short-circuits on
     ``other.__class__ is self.__class__``.  Two instances of this class
     compare by value (resolving both context windows to do so), but an
     instance never compares equal to a plain :class:`ModelMetadata`, even
@@ -228,20 +263,21 @@ class _LazyOllamaModelMetadata(ModelMetadata):
     def __reduce__(self) -> tuple[Any, ...]:
         """Degrade to a plain ModelMetadata on copy/pickle.
 
-        See :meth:`_LazyOllamaCapabilities.__reduce__`.  Both lazy fields
-        resolve here, so the result carries real values rather than the
-        sentinel.
+        See :meth:`_LazyOllamaCapabilities.__reduce__`, including why the
+        fields are bound by keyword.  Both lazy fields resolve here, so
+        the result carries real values rather than the sentinel.
         """
         return (
-            ModelMetadata,
-            (
-                self.model_id,
-                self.display_name,
-                self.context_window,
-                self.pricing,
-                self.capabilities,
-                self.is_deprecated,
+            partial(
+                ModelMetadata,
+                model_id=self.model_id,
+                display_name=self.display_name,
+                context_window=self.context_window,
+                pricing=self.pricing,
+                capabilities=self.capabilities,
+                is_deprecated=self.is_deprecated,
             ),
+            (),
         )
 
 
@@ -597,10 +633,14 @@ class OllamaProvider(BaseProvider):
         context lengths are exactly what makes a ``show()`` call
         unnecessary for 88% of models.
 
-        Bypassing the SDK means reproducing the little client
-        configuration it derives: :envvar:`OLLAMA_API_KEY` is forwarded as
-        a bearer token below, matching ``ollama.Client``.  The host itself
-        is normalised in :func:`_normalise_base_url` for the same reason.
+        Bypassing the SDK means reproducing the client configuration it
+        derives, and its safety defaults:
+        :envvar:`OLLAMA_API_KEY` is forwarded as a bearer token below,
+        matching ``ollama.Client``; the host is normalised and its scheme
+        restricted to HTTP(S) in :func:`_normalise_base_url`; and the
+        opener strips that bearer token across a cross-origin redirect,
+        which ``urllib`` does not do by default but ``httpx`` does.  See
+        :class:`_StripAuthOnCrossOriginRedirect`.
 
         Returns:
             The ``models`` list from the payload.  An empty list if the
@@ -621,7 +661,12 @@ class OllamaProvider(BaseProvider):
         if api_key:
             request.add_header("Authorization", f"Bearer {api_key}")
 
-        with urllib.request.urlopen(request, timeout=TAGS_REQUEST_TIMEOUT) as response:
+        # Not urlopen(): its global opener would carry the bearer token
+        # across a cross-host redirect. See _StripAuthOnCrossOriginRedirect.
+        # Built per call rather than once at import so the ProxyHandler it
+        # installs reflects the current environment.
+        opener = urllib.request.build_opener(_StripAuthOnCrossOriginRedirect)
+        with opener.open(request, timeout=TAGS_REQUEST_TIMEOUT) as response:
             payload = json.loads(response.read())
         if not isinstance(payload, dict):
             return []
@@ -700,8 +745,12 @@ class OllamaProvider(BaseProvider):
 
         Returns:
             One :class:`_LazyOllamaModelMetadata` per installed model, or
-            an empty list if the server is unreachable.  A copy is
-            returned, so caller mutation cannot corrupt the cache.
+            an empty list if the server is unreachable.  A new list is
+            returned each call, so appending to or clearing the result
+            cannot corrupt the cache — but the elements are shared with
+            it, so mutating a returned model (assigning
+            ``context_window``, say) does change what the next caller
+            sees.
 
         Note:
             ``capabilities.supports_function_calling`` and
@@ -725,15 +774,19 @@ class OllamaProvider(BaseProvider):
             # Copy so caller mutation cannot corrupt the cache (issue #12).
             return list(self._models_cache)
 
-        if force_refresh:
-            self._model_info_cache.clear()
-
         try:
             entries = self._fetch_tags_payload()
         except Exception as e:
             # Transient failure: do not cache, so the next call retries.
             logger.warning("Failed to list Ollama models: %s", e)
             return []
+
+        # Cleared only now that the fetch has succeeded. Clearing before it
+        # would let one refused connection throw away every accumulated
+        # show() result — the expensive cache, and the one this TTL is
+        # deliberately built not to disturb.
+        if force_refresh:
+            self._model_info_cache.clear()
 
         models: list[ModelMetadata] = []
         for entry in entries:
@@ -958,6 +1011,61 @@ def _convert_messages_to_ollama(messages: list[LLMMessage]) -> list[dict[str, An
 # ---------------------------------------------------------------------------
 
 
+def _context_from_model_info(model_info: Any) -> int | None:
+    """Pick the context window out of a ``show()`` ``model_info`` mapping.
+
+    GGUF metadata routinely carries two keys that a loose ``"context" in
+    key`` search both match: the architecture's real window
+    (``mistral3.context_length``) and the pre-RoPE-scaling one
+    (``mistral3.rope.scaling.original_context_length``), which can be
+    smaller by two orders of magnitude — 262144 against 4096 for
+    ``mistral-medium-3.5``.  Measured across a 139-model server, 9 models
+    carry both.
+
+    Returning whichever key came first made correctness depend on the
+    order GGUF happens to emit its metadata.  So the exact
+    ``*.context_length`` spelling wins outright, a loose match is used
+    only when no exact one exists, and an ``original_`` key is consulted
+    last — it is a valid lower bound, but never the right answer when a
+    real window is also present.
+
+    Args:
+        model_info: The ``model_info``/``modelinfo`` mapping from a
+            ``show()`` response — a dict, or a Pydantic model exposing
+            ``items()``.
+
+    Returns:
+        The context window in tokens, or ``None`` if the mapping holds no
+        integer context key at all.
+    """
+    if isinstance(model_info, dict):
+        pairs = list(model_info.items())
+    else:
+        # Pydantic model — iterate via items if available
+        items = getattr(model_info, "items", None)
+        pairs = list(items()) if callable(items) else []
+
+    loose: int | None = None
+    original: int | None = None
+
+    for key, value in pairs:
+        if not isinstance(value, int):
+            continue
+        name = str(key).lower()
+        if "context" not in name:
+            continue
+        if "original" in name:
+            if original is None:
+                original = value
+            continue
+        if name.endswith(".context_length"):
+            return value
+        if loose is None:
+            loose = value
+
+    return loose if loose is not None else original
+
+
 def _extract_context_window(info: Any) -> int:
     """Extract context window size from an ``ollama.show()`` response.
 
@@ -974,17 +1082,9 @@ def _extract_context_window(info: Any) -> int:
         model_info = _safe_get(info, "modelinfo")
     model_info = model_info or {}
 
-    if isinstance(model_info, dict):
-        for key, value in model_info.items():
-            if "context" in key.lower() and isinstance(value, int):
-                return value
-    else:
-        # Pydantic model — iterate via items if available
-        items = getattr(model_info, "items", None)
-        if callable(items):
-            for key, value in items():
-                if "context" in str(key).lower() and isinstance(value, int):
-                    return value
+    from_model_info = _context_from_model_info(model_info)
+    if from_model_info is not None:
+        return from_model_info
 
     parameters = _safe_get(info, "parameters")
     if isinstance(parameters, dict) and "num_ctx" in parameters:
@@ -1005,7 +1105,64 @@ def _extract_context_window(info: Any) -> int:
     return FALLBACK_CONTEXT_WINDOW
 
 
-def _normalise_base_url(host: str) -> str:
+def _origin(url: str) -> tuple[str, str, int | None]:
+    """Return the ``(scheme, host, port)`` origin of *url*.
+
+    Default ports are filled in from the scheme so that ``http://h`` and
+    ``http://h:80`` compare equal, matching how ``httpx`` decides whether
+    a redirect is cross-origin.
+
+    Args:
+        url: An absolute URL.
+
+    Returns:
+        A comparable origin tuple.  A malformed port yields ``None`` for
+        the port, which makes the origin compare unequal to any well-formed
+        one — the safe direction for a security check.
+    """
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    try:
+        port = parts.port or _DEFAULT_PORTS.get(scheme)
+    except ValueError:
+        port = None
+    return (scheme, (parts.hostname or "").lower(), port)
+
+
+class _StripAuthOnCrossOriginRedirect(urllib.request.HTTPRedirectHandler):
+    """Redirect handler that drops ``Authorization`` across origins.
+
+    ``urllib``'s stock handler copies every header except
+    ``Content-Length`` and ``Content-Type`` onto the redirected request,
+    so a gateway answering ``/api/tags`` with a 302 to another host would
+    be handed the caller's :envvar:`OLLAMA_API_KEY`.  ``httpx``, which
+    backs every SDK-mediated call in this provider, strips the header on
+    a cross-origin redirect; this restores that parity for the one path
+    that bypasses the SDK.
+    """
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        """Build the redirected request, without the bearer token if the
+        target is a different origin."""
+        new_request = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_request is None:
+            return None
+        if _origin(req.full_url) != _origin(new_request.full_url):
+            # add_header stores keys capitalised; remove_header matches
+            # the same way, so this finds the header we set.
+            new_request.remove_header("Authorization")
+        return new_request
+
+
+def _normalise_base_url(host: str | None) -> str:
     """Normalise an Ollama host string into a full URL, mirroring
     ``ollama._client._parse_host`` for the forms a user would plausibly set.
 
@@ -1018,29 +1175,46 @@ def _normalise_base_url(host: str) -> str:
     would fail while ``chat()`` on the same provider kept working.
 
     The ``:11434`` default is only applied when the scheme itself was
-    inferred (no ``://`` in the input).  When the caller supplies an
-    explicit scheme, its port is left alone so ``urlopen``/``httpx`` apply
-    the scheme's own default (443 for ``https``, 80 for ``http``) — forcing
-    11434 onto an explicit-scheme URL would break Ollama served behind a
-    TLS reverse proxy (e.g. ``https://ollama.example.com``), a mainstream
-    deployment.
+    inferred (no scheme in the input, per :data:`_SCHEME_RE`).  When the
+    caller supplies an explicit scheme, its port is left alone so
+    ``urlopen``/``httpx`` apply the scheme's own default (443 for
+    ``https``, 80 for ``http``) — forcing 11434 onto an explicit-scheme URL
+    would break Ollama served behind a TLS reverse proxy (e.g.
+    ``https://ollama.example.com``), a mainstream deployment.
+
+    Any query string or fragment is dropped: the discovery path builds its
+    URL as ``f"{base_url}/api/tags"``, so a retained query would land in
+    the middle of the result (``http://h/x?t=1/api/tags``) rather than at
+    the end.  A gateway that expects a query-string token therefore cannot
+    be configured through ``OLLAMA_HOST``; use :envvar:`OLLAMA_API_KEY`,
+    which is sent as a bearer token on both paths.
 
     Args:
         host: A host string or URL, with or without scheme and port.
+            ``None`` or blank yields the default localhost URL.
 
     Returns:
-        An absolute URL, no trailing slash.  Carries an explicit ``:11434``
-        port only when both scheme and port were inferred.
+        An absolute URL, no trailing slash, no query or fragment.  Carries
+        an explicit ``:11434`` port only when both scheme and port were
+        inferred.
+
+    Raises:
+        ValueError: If the URL carries a scheme other than ``http`` or
+            ``https``.  ``urlopen`` would otherwise honour it — ``file://``
+            reads a local path and feeds the bytes to ``json.loads`` —
+            while the SDK's ``httpx`` client rejects it.
     """
     host = (host or "").strip().rstrip("/")
     if not host:
         return "http://localhost:11434"
 
-    had_scheme = "://" in host
+    had_scheme = bool(_SCHEME_RE.match(host))
     if not had_scheme:
         host = f"http://{host}"
 
     parts = urlsplit(host)
+    if parts.scheme not in _ALLOWED_SCHEMES:
+        raise ValueError(f"Ollama host must use http or https, got {parts.scheme!r}: {host!r}")
     try:
         has_port = parts.port is not None
     except ValueError:

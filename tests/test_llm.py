@@ -477,6 +477,63 @@ class TestOllamaExtractContextWindowRealShowResponse:
         )
         assert _extract_context_window(info) == 131072
 
+    def test_real_context_length_wins_over_rope_original(self):
+        """The two keys both match a loose "context" search.
+
+        Measured on a 139-model server, 9 models carry both
+        ``<arch>.context_length`` and
+        ``<arch>.rope.scaling.original_context_length``, the latter
+        smaller by up to two orders of magnitude. Picking whichever came
+        first made the answer depend on GGUF key emission order.
+        """
+        from bmlib.llm.providers.ollama import _extract_context_window
+
+        info = {
+            "model_info": {
+                "mistral3.rope.scaling.original_context_length": 4096,
+                "mistral3.context_length": 262144,
+            }
+        }
+        assert _extract_context_window(info) == 262144
+
+    def test_real_context_length_wins_regardless_of_key_order(self):
+        from bmlib.llm.providers.ollama import _extract_context_window
+
+        info = {
+            "model_info": {
+                "gptoss.context_length": 131072,
+                "gptoss.rope.scaling.original_context_length": 4096,
+            }
+        }
+        assert _extract_context_window(info) == 131072
+
+    def test_rope_original_used_only_when_nothing_else_exists(self):
+        """A lower bound still beats the hardcoded 8192 fallback."""
+        from bmlib.llm.providers.ollama import _extract_context_window
+
+        info = {"model_info": {"x.rope.scaling.original_context_length": 4096}}
+        assert _extract_context_window(info) == 4096
+
+    def test_loose_context_key_still_matches(self):
+        """Architectures spelling it differently must keep working."""
+        from bmlib.llm.providers.ollama import _extract_context_window
+
+        assert _extract_context_window({"model_info": {"max_context": 16384}}) == 16384
+
+    def test_context_preference_holds_on_real_show_response(self):
+        ollama = pytest.importorskip("ollama")
+        from bmlib.llm.providers.ollama import _extract_context_window
+
+        info = ollama._types.ShowResponse.model_validate(
+            {
+                "model_info": {
+                    "mistral3.rope.scaling.original_context_length": 8192,
+                    "mistral3.context_length": 393216,
+                }
+            }
+        )
+        assert _extract_context_window(info) == 393216
+
     def test_extract_context_window_handles_string_parameters(self):
         ollama = pytest.importorskip("ollama")
         from bmlib.llm.providers.ollama import _extract_context_window
@@ -674,6 +731,28 @@ class TestOllamaListModelsCache:
         assert provider.list_models(force_refresh=True)[0].context_window == 8192
         assert client.show_calls == 2
 
+    def test_failed_force_refresh_keeps_the_show_cache(self, monkeypatch):
+        """A refused connection must not discard accumulated show() results.
+
+        Clearing _model_info_cache before the fetch meant one transient
+        failure threw away the expensive cache — the one the short TTL
+        exists specifically not to disturb — and returned [] as well.
+        """
+        _install_fake_tags(monkeypatch, [_ollama_entry("m")])
+        client = _FakeOllamaClient(context_length=4096)
+        provider = _ollama_provider_with(client)
+
+        assert provider.list_models()[0].context_window == 4096
+        assert client.show_calls == 1
+
+        _install_fake_tags(monkeypatch, [], error=OSError("refused"))
+        assert provider.list_models(force_refresh=True) == []
+
+        # The show() result survived, so resolving the same model again
+        # costs nothing.
+        assert provider.get_model_metadata("m").context_window == 4096
+        assert client.show_calls == 1
+
     def test_expired_ttl_refetches(self, monkeypatch):
         import bmlib.llm.providers.ollama as ollama_mod
 
@@ -717,6 +796,138 @@ class TestOllamaListModelsCache:
         from bmlib.llm.providers.ollama import CACHE_TTL_SECONDS as LOCAL_TTL
 
         assert LOCAL_TTL < REMOTE_TTL
+
+
+class TestOllamaBaseUrlSchemeGuard:
+    """Only http(s) may reach urlopen.
+
+    urlopen honours whatever scheme it is handed — file:// reads a local
+    path and feeds the bytes straight to json.loads — whereas httpx, which
+    backs every SDK-mediated call, rejects anything else. Without this
+    guard the SDK-bypassing path was the more permissive of the two.
+    """
+
+    @pytest.mark.parametrize(
+        "bad_url",
+        [
+            "file:///etc/passwd",
+            "ftp://example.com",
+            "gopher://example.com",
+            # Opaque schemes carry no "://" — a "://" test would miss them,
+            # and urlopen has a DataHandler installed by default.
+            "data:text/plain,{}",
+            "javascript:alert(1)",
+        ],
+    )
+    def test_non_http_scheme_is_rejected(self, bad_url):
+        from bmlib.llm.providers.ollama import _normalise_base_url
+
+        with pytest.raises(ValueError, match="http or https"):
+            _normalise_base_url(bad_url)
+
+    def test_provider_construction_rejects_bad_scheme(self):
+        from bmlib.llm.providers.ollama import OllamaProvider
+
+        with pytest.raises(ValueError, match="http or https"):
+            OllamaProvider(base_url="file:///etc/passwd")
+
+    def test_bad_scheme_from_env_is_rejected(self, monkeypatch):
+        from bmlib.llm.providers.ollama import OllamaProvider
+
+        monkeypatch.setenv("OLLAMA_HOST", "file:///etc/passwd")
+        with pytest.raises(ValueError, match="http or https"):
+            OllamaProvider()
+
+    def test_query_and_fragment_are_dropped(self):
+        """They would otherwise land mid-URL: http://h/x?t=1/api/tags."""
+        from bmlib.llm.providers.ollama import _normalise_base_url
+
+        assert _normalise_base_url("http://h/x?token=1#frag") == "http://h/x"
+
+    def test_none_yields_the_default(self):
+        from bmlib.llm.providers.ollama import _normalise_base_url
+
+        assert _normalise_base_url(None) == "http://localhost:11434"
+
+    @pytest.mark.parametrize(
+        "host,expected",
+        [
+            # "<word>:<digits>" is host:port, not a scheme — even though
+            # urlsplit reports scheme="localhost" for the first of these.
+            ("localhost:11434", "http://localhost:11434"),
+            ("myserver:8080", "http://myserver:8080"),
+            ("127.0.0.1:11434", "http://127.0.0.1:11434"),
+            ("[::1]:11434", "http://[::1]:11434"),
+        ],
+    )
+    def test_host_port_is_not_mistaken_for_a_scheme(self, host, expected):
+        from bmlib.llm.providers.ollama import _normalise_base_url
+
+        assert _normalise_base_url(host) == expected
+
+    def test_non_numeric_port_is_read_as_a_scheme_and_rejected(self):
+        """The flip side of the host:port rule, stated so it is deliberate."""
+        from bmlib.llm.providers.ollama import _normalise_base_url
+
+        with pytest.raises(ValueError, match="http or https"):
+            _normalise_base_url("myhost:notaport")
+
+
+class TestOllamaRedirectAuthStripping:
+    """The bearer token must not survive a cross-origin redirect.
+
+    urllib's stock HTTPRedirectHandler copies every header except
+    Content-Length/Content-Type onto the redirected request, so a gateway
+    answering /api/tags with a 302 elsewhere would be handed the caller's
+    OLLAMA_API_KEY. httpx strips it; this restores parity for the one path
+    that bypasses the SDK.
+    """
+
+    def _redirect(self, from_url, to_url):
+        import urllib.request
+
+        from bmlib.llm.providers.ollama import _StripAuthOnCrossOriginRedirect
+
+        request = urllib.request.Request(from_url)
+        request.add_header("Authorization", "Bearer secret-token-123")
+        return _StripAuthOnCrossOriginRedirect().redirect_request(
+            request, None, 302, "Found", {}, to_url
+        )
+
+    def test_cross_host_redirect_drops_the_token(self):
+        new = self._redirect("http://localhost:11434/api/tags", "http://evil.example.com/api/tags")
+
+        assert new.get_header("Authorization") is None
+
+    def test_cross_scheme_redirect_drops_the_token(self):
+        new = self._redirect("https://gw.example.com/api/tags", "http://gw.example.com/api/tags")
+
+        assert new.get_header("Authorization") is None
+
+    def test_cross_port_redirect_drops_the_token(self):
+        new = self._redirect("http://gw.example.com:11434/api/tags", "http://gw.example.com:9999/x")
+
+        assert new.get_header("Authorization") is None
+
+    def test_same_origin_redirect_keeps_the_token(self):
+        new = self._redirect("http://gw.example.com/api/tags", "http://gw.example.com/v1/api/tags")
+
+        assert new.get_header("Authorization") == "Bearer secret-token-123"
+
+    def test_implicit_default_port_is_same_origin(self):
+        """http://h and http://h:80 are one origin, as httpx treats them."""
+        new = self._redirect("http://gw.example.com/api/tags", "http://gw.example.com:80/other")
+
+        assert new.get_header("Authorization") == "Bearer secret-token-123"
+
+    def test_fetch_installs_the_stripping_handler(self, monkeypatch):
+        """Guard: the handler is wired in, not merely defined."""
+        from bmlib.llm.providers.ollama import _StripAuthOnCrossOriginRedirect
+
+        counter = _install_fake_tags(monkeypatch, [])
+        _ollama_provider_with(_FakeOllamaClient()).list_models()
+
+        assert _StripAuthOnCrossOriginRedirect in counter["handlers"]
 
 
 class TestOllamaBaseUrlNormalisation:
@@ -816,19 +1027,52 @@ class _FakeTagsResponse:
         return False
 
 
+class _FakeOpener:
+    """Stand-in for the ``OpenerDirector`` ``build_opener`` returns."""
+
+    def __init__(self, on_open):
+        self._on_open = on_open
+
+    def open(self, request, timeout=None):
+        return self._on_open(request, timeout)
+
+
+def _install_raw_opener(monkeypatch, on_open):
+    """Patch ``build_opener`` with a bare handler, bypassing the counter.
+
+    For tests that need to control the response body directly rather than
+    describe it as a list of tags entries.
+    """
+    import bmlib.llm.providers.ollama as ollama_mod
+
+    monkeypatch.setattr(
+        ollama_mod.urllib.request,
+        "build_opener",
+        lambda *handlers: _FakeOpener(on_open),
+    )
+
+
 def _install_fake_tags(monkeypatch, entries, error=None):
-    """Patch ``urllib.request.urlopen`` for the duration of the test.
+    """Patch ``urllib.request.build_opener`` for the duration of the test.
 
     ``bmlib.llm.providers.ollama`` does ``import urllib.request`` rather
     than importing its own copy, so ``ollama_mod.urllib`` **is** the
-    global ``urllib`` module — this patches ``urlopen`` process-wide for
-    as long as the test runs, not just within the ollama module.  That is
-    harmless here because ``monkeypatch`` restores the original
-    afterwards, but it does mean any other code exercised by the same
-    test would see the fake too.
+    global ``urllib`` module — this patches ``build_opener`` process-wide
+    for as long as the test runs, not just within the ollama module.  That
+    is harmless here because ``monkeypatch`` restores the original
+    afterwards, but it does mean any other code exercised by the same test
+    would see the fake too.
 
-    Returns a call counter dict with ``n`` (call count), ``url`` (last
-    URL requested) and ``timeout`` (last ``timeout`` kwarg received).
+    ``_fetch_tags_payload`` builds its own opener rather than calling
+    ``urlopen`` so that the bearer token is stripped across a cross-origin
+    redirect, so this intercepts one level lower than the URL itself.  The
+    handler classes it was asked to install are recorded in ``handlers``,
+    which is what proves the redirect guard is actually wired in.
+
+    Returns a call counter dict with ``n`` (call count), ``url`` (last URL
+    requested), ``timeout`` (last ``timeout`` kwarg received), ``headers``
+    (last request's headers) and ``handlers`` (classes passed to
+    ``build_opener``).
 
     The first argument received is a ``urllib.request.Request`` object
     (not a plain string) since ``_fetch_tags_payload`` builds one to
@@ -837,17 +1081,22 @@ def _install_fake_tags(monkeypatch, entries, error=None):
     """
     import bmlib.llm.providers.ollama as ollama_mod
 
-    counter = {"n": 0, "url": None, "timeout": None}
+    counter = {"n": 0, "url": None, "timeout": None, "headers": None, "handlers": ()}
 
-    def fake_urlopen(request, timeout=None):
+    def fake_open(request, timeout=None):
         counter["n"] += 1
         counter["url"] = request.full_url
         counter["timeout"] = timeout
+        counter["headers"] = dict(request.headers)
         if error is not None:
             raise error
         return _FakeTagsResponse({"models": entries})
 
-    monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
+    def fake_build_opener(*handlers):
+        counter["handlers"] = handlers
+        return _FakeOpener(fake_open)
+
+    monkeypatch.setattr(ollama_mod.urllib.request, "build_opener", fake_build_opener)
     return counter
 
 
@@ -969,12 +1218,7 @@ class TestOllamaRawTagsPayload:
         # list_models() wraps the fetch in a broad except Exception, which
         # would also swallow an AttributeError from a missing isinstance
         # guard and mask whether this branch actually did anything.
-        import bmlib.llm.providers.ollama as ollama_mod
-
-        def fake_urlopen(url, timeout=None):
-            return _FakeTagsResponse(["not", "a", "dict"])
-
-        monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
+        _install_raw_opener(monkeypatch, lambda req, timeout=None: _FakeTagsResponse(["a", "b"]))
         provider = _ollama_provider_with(_FakeOllamaClient())
 
         assert provider._fetch_tags_payload() == []
@@ -1007,12 +1251,9 @@ class TestOllamaRawTagsPayload:
         assert counter["n"] == 2
 
     def test_malformed_payload_is_tolerated(self, monkeypatch):
-        import bmlib.llm.providers.ollama as ollama_mod
-
-        def fake_urlopen(url, timeout=None):
-            return _FakeTagsResponse({"unexpected": "shape"})
-
-        monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
+        _install_raw_opener(
+            monkeypatch, lambda req, timeout=None: _FakeTagsResponse({"unexpected": "shape"})
+        )
         provider = _ollama_provider_with(_FakeOllamaClient())
 
         assert provider.list_models() == []
@@ -1020,49 +1261,28 @@ class TestOllamaRawTagsPayload:
 
 class TestOllamaTagsAuth:
     def test_api_key_is_forwarded_as_bearer(self, monkeypatch):
-        import bmlib.llm.providers.ollama as ollama_mod
-
         monkeypatch.setenv("OLLAMA_API_KEY", "secret-token-123")
-        seen = {}
+        counter = _install_fake_tags(monkeypatch, [])
 
-        def fake_urlopen(request, timeout=None):
-            seen["auth"] = request.get_header("Authorization")
-            return _FakeTagsResponse({"models": []})
-
-        monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
         _ollama_provider_with(_FakeOllamaClient()).list_models()
 
-        assert seen["auth"] == "Bearer secret-token-123"
+        assert counter["headers"].get("Authorization") == "Bearer secret-token-123"
 
     def test_no_auth_header_without_api_key(self, monkeypatch):
-        import bmlib.llm.providers.ollama as ollama_mod
-
         monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
-        seen = {}
+        counter = _install_fake_tags(monkeypatch, [])
 
-        def fake_urlopen(request, timeout=None):
-            seen["auth"] = request.get_header("Authorization")
-            return _FakeTagsResponse({"models": []})
-
-        monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
         _ollama_provider_with(_FakeOllamaClient()).list_models()
 
-        assert seen["auth"] is None
+        assert counter["headers"].get("Authorization") is None
 
     def test_blank_api_key_sends_no_header(self, monkeypatch):
-        import bmlib.llm.providers.ollama as ollama_mod
-
         monkeypatch.setenv("OLLAMA_API_KEY", "   ")
-        seen = {}
+        counter = _install_fake_tags(monkeypatch, [])
 
-        def fake_urlopen(request, timeout=None):
-            seen["auth"] = request.get_header("Authorization")
-            return _FakeTagsResponse({"models": []})
-
-        monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
         _ollama_provider_with(_FakeOllamaClient()).list_models()
 
-        assert seen["auth"] is None
+        assert counter["headers"].get("Authorization") is None
 
 
 class TestOllamaMetadataPathConsistency:
@@ -1206,6 +1426,25 @@ class TestOllamaMetadataIsPortable:
         # actually exercises the resolver.
         _install_fake_tags(monkeypatch, [_ollama_entry("m", context_length=context_length)])
         return _ollama_provider_with(_FakeOllamaClient()).list_models()[0]
+
+    def test_reduce_binds_fields_by_keyword(self, monkeypatch):
+        """Positional binding silently reorders if a field is ever inserted.
+
+        A context window landing in a bool flag would still pickle, still
+        round-trip, and still pass every equality test that compares a
+        reconstructed object against another reconstructed object.
+        """
+        model = self._model(monkeypatch)
+
+        factory, args = model.__reduce__()
+        caps_factory, caps_args = model.capabilities.__reduce__()
+
+        assert args == ()
+        assert caps_args == ()
+        assert factory.keywords["model_id"] == "m"
+        assert factory.keywords["context_window"] == 40960
+        assert caps_factory.keywords["max_context_window"] == 40960
+        assert caps_factory.keywords["supports_system_messages"] is True
 
     def _unresolved_model(self, monkeypatch, resolved_context_length=131072):
         """Build a model whose tags entry omits context_length.
