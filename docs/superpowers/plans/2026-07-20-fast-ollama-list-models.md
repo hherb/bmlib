@@ -993,8 +993,10 @@ In `CLAUDE.md`, under "Key Design Patterns", insert after the "Optional dependen
 ```markdown
 ### Lazy model metadata (Ollama)
 `OllamaProvider.list_models()` costs one HTTP request regardless of how many
-models are installed. Ollama's `/api/tags` returns every field except the
-context window, so `list_models()` returns `ModelMetadata` subclasses whose
+models are installed. Ollama's `/api/tags` carries everything the metadata
+actually needs from the server — names, parameter sizes, and per-model
+capability flags — leaving only the context window to fetch, so
+`list_models()` returns `ModelMetadata` subclasses whose
 `context_window` — and `capabilities.max_context_window` — fetch via a
 memoised `show()` call only when read. A caller that reads `context_window`
 for every model pays the old cost; one that only needs names pays nothing.
@@ -1008,9 +1010,10 @@ attribute access performs I/O.
 In `CLAUDE.md`, in the "Module descriptions" list, append this sentence to the end of the `llm/` bullet (which currently ends with "...JSON repair, and text chunking."):
 
 ```
-Model listing is single-request for every provider: Anthropic and the
-OpenAI-compatible providers each make one API call, and Ollama defers its
-per-model context-window lookup (see "Lazy model metadata" below).
+Model listing never fans out per model: the Anthropic and
+OpenAI-compatible providers each issue a single `models.list()` call, and
+Ollama defers its per-model context-window lookup (see "Lazy model
+metadata" below).
 ```
 
 - [ ] **Step 3: Verify no code changed**
