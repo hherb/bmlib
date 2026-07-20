@@ -710,7 +710,12 @@ class OllamaProvider(BaseProvider):
             ``/api/show``: a model may support a capability that this
             listing does not report.  These flags are a lower bound, not
             a definitive answer.  Call :meth:`get_model_metadata` for the
-            authoritative, per-model answer.
+            authoritative, per-model answer — but only when its
+            ``show()`` call succeeds.  For a cloud model on a server with
+            cloud disabled, ``show()`` returns a 403 that is swallowed,
+            and :meth:`get_model_metadata` falls back to defaults weaker
+            than this listing: every capability flag ``False`` and the
+            fallback context window of 8192.
         """
         if (
             not force_refresh
@@ -756,12 +761,16 @@ class OllamaProvider(BaseProvider):
             # Derived from ShowResponse.capabilities, the same way
             # _metadata_from_tags_entry derives them from the /api/tags array.
             # The two paths can still disagree, because the two endpoints do:
-            # /api/show is authoritative and reports strictly more than
-            # /api/tags. Measured across 139 local models, tags reported 77
-            # tool-capable where show reported 102, and 32 vision-capable
-            # where show reported 44 — the two arrays differed on 49 models.
-            # So list_models()' flags are a LOWER BOUND; this method is the
-            # authoritative answer for a single model.
+            # for the tools and vision flags mapped here, /api/show reports a
+            # superset of /api/tags. Measured across 137 comparable local
+            # models (2 cloud models excluded — their show() call 403s, see
+            # the except branch below), tags reported 77 tool-capable where
+            # show reported 102, and 32 vision-capable where show reported
+            # 44 — the two arrays differed on 49 of those 137 models. So
+            # list_models()' flags are a LOWER BOUND for tools/vision; this
+            # method is the authoritative answer for a single model, but
+            # only when show() succeeds — see the except branch below for
+            # what happens when it does not.
             raw_capabilities = _safe_get(info, "capabilities") or []
             capability_names = {str(c).lower() for c in raw_capabilities}
 

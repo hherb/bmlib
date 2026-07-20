@@ -160,10 +160,18 @@ memoised `show()` call only when read. `__repr__` on those subclasses renders
 This is the only place in bmlib where attribute access performs I/O. The
 returned objects degrade to plain `ModelMetadata` when copied or pickled.
 The capability flags (`supports_function_calling`, `supports_vision`) on
-`list_models()` results come from `/api/tags` and are a lower bound —
-`/api/show`, reached via `get_model_metadata()`, reports strictly more.
-Code filtering models by capability should use `get_model_metadata()` when
-completeness matters.
+`list_models()` results come from `/api/tags` and are a lower bound for
+those two flags — `/api/show`, reached via `get_model_metadata()`, reports
+a superset (zero violations across 137 comparable models; this is not a
+claim about capabilities in general — e.g. `nemotron3:33b-q8` reports
+`audio` in `/api/tags` and not in `/api/show`). Code filtering models by
+capability should use `get_model_metadata()` when completeness matters —
+but `get_model_metadata()` is authoritative only when its `show()` call
+succeeds. For a cloud model on a server with cloud disabled, `show()`
+returns 403, the error is swallowed, and `get_model_metadata()` falls back
+to defaults *weaker* than the listing: every capability flag `False` and
+an 8192 context window, versus e.g. `qwen3-next:80b-cloud`'s real
+`ctx=262144, tools=True` from `list_models()`.
 
 ### Thread-safe token tracking
 `TokenTracker` uses `threading.Lock()` for safe concurrent LLM usage accounting.

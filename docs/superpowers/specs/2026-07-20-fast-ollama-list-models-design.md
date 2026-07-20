@@ -105,13 +105,15 @@ which removes the `show()` call entirely for the models that report it.
 The array may be absent on older Ollama servers; treat a missing or null
 `capabilities` key as an empty list, which yields today's `False` defaults.
 
-**Second correction:** `/api/tags` under-reports capabilities relative to
-`/api/show`. Measured across 139 local models: tags reported 77
-tool-capable against show's 102, and 32 vision-capable against 44, with
-the two arrays differing on 49 models. The flags on `list_models()`
-results are therefore a lower bound, and `get_model_metadata()` is the
-authoritative per-model answer. This is a property of the Ollama API, not
-of bmlib.
+**Second correction:** for the `tools` and `vision` flags bmlib maps,
+`/api/tags` under-reports relative to `/api/show`. Measured across 137
+comparable local models (the other 2 are cloud models whose `show()` call
+fails): tags reported 77 tool-capable against show's 102, and 32
+vision-capable against 44, with the two arrays differing on 49 of those
+137 models. The flags on `list_models()` results are therefore a lower
+bound for `tools`/`vision`, and `get_model_metadata()` is the
+authoritative per-model answer for those flags when its `show()` call
+succeeds. This is a property of the Ollama API, not of bmlib.
 
 ### 2. Lazy context window
 
