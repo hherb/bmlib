@@ -34,6 +34,7 @@ import urllib.request
 from collections.abc import Callable
 from functools import partial
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from bmlib.llm.data_types import (
     BatchEmbeddingResponse,
@@ -213,7 +214,9 @@ class OllamaProvider(BaseProvider):
         base_url: str | None = None,
         **kwargs: object,
     ) -> None:
-        resolved_base_url = base_url or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        resolved_base_url = _normalise_base_url(
+            base_url or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        )
         super().__init__(api_key=None, base_url=resolved_base_url, **kwargs)
         self._model_info_cache: dict[str, ModelMetadata] = {}
         self._models_cache: list[ModelMetadata] | None = None
@@ -897,3 +900,38 @@ def _extract_context_window(info: Any) -> int:
             return int(match.group(1))
 
     return FALLBACK_CONTEXT_WINDOW
+
+
+def _normalise_base_url(host: str) -> str:
+    """Normalise an Ollama host string into a full URL with a port.
+
+    ``OLLAMA_HOST`` is conventionally written scheme-less
+    (``localhost:11434``, ``127.0.0.1``), which ``ollama.Client`` accepts
+    — its ``_parse_host`` fills in scheme and default port — but
+    ``urllib.request.urlopen`` rejects outright.  Since
+    :meth:`OllamaProvider._fetch_tags_payload` bypasses the SDK, the URL
+    has to be normalised here or the two paths disagree: model discovery
+    would fail while ``chat()`` on the same provider kept working.
+
+    Args:
+        host: A host string or URL, with or without scheme and port.
+
+    Returns:
+        An absolute URL with scheme and port, no trailing slash.
+    """
+    host = (host or "").strip().rstrip("/")
+    if not host:
+        return "http://localhost:11434"
+    if "://" not in host:
+        host = f"http://{host}"
+
+    parts = urlsplit(host)
+    try:
+        has_port = parts.port is not None
+    except ValueError:
+        # Malformed port — leave it alone and let the request fail loudly
+        # rather than silently rewriting a URL we do not understand.
+        return host
+
+    netloc = parts.netloc if has_port else f"{parts.netloc}:11434"
+    return urlunsplit((parts.scheme, netloc, parts.path.rstrip("/"), "", ""))
