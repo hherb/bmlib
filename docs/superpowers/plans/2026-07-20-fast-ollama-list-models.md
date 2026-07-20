@@ -1036,6 +1036,638 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
+### Task 6: Read the raw `/api/tags` payload
+
+Added after the final whole-branch review found that Tasks 1-3 shipped a
+capability-derivation feature which never executes in production.
+
+**The defect.** `ollama.Client.list()` parses into `ListResponse.Model`, a
+Pydantic model declaring only `model`, `modified_at`, `digest`, `size`,
+`details`. Its config leaves Pydantic's default `extra="ignore"` in place,
+so two fields the server *does* send are silently dropped: the per-model
+`capabilities` array, and `details.context_length`. Measured against the
+live 139-model server:
+
+| | On the wire | Through the SDK |
+|---|---|---|
+| models with `capabilities` | 139 / 139 | 0 |
+| models with `details.context_length` | 122 / 139 | 0 |
+| tool-capable models flagged | 79 | 0 |
+| vision-capable models flagged | 32 | 0 |
+
+The tests did not catch it because every fixture is a plain `dict`, which
+takes `_safe_get`'s `isinstance(obj, dict)` branch. Production takes the
+`getattr` branch and gets `None`.
+
+Reading the payload directly fixes the capability flags **and** removes the
+need for any `show()` call on the 122 models that report their context
+length — the lazy machinery becomes the fallback for the remaining 17
+rather than the primary path.
+
+**Files:**
+- Modify: `bmlib/llm/providers/ollama.py` (imports; new `TAGS_REQUEST_TIMEOUT`; new `_fetch_tags_payload()`; `_metadata_from_tags_entry()`; `list_models()`)
+- Test: `tests/test_llm.py`
+
+**Interfaces:**
+- Consumes: `_UNRESOLVED`, `_LazyOllamaModelMetadata`, `_LazyOllamaCapabilities`, `_resolve_context_window`, `_safe_get`, `_FREE_PRICING`
+- Produces: `TAGS_REQUEST_TIMEOUT: int`; `OllamaProvider._fetch_tags_payload(self) -> list[Any]`
+
+---
+
+- [ ] **Step 1: Write the failing tests**
+
+Replace the existing `_FakeOllamaClient`-based tags plumbing. `list_models()`
+will no longer call `client.list()`, so the fixtures must intercept the HTTP
+fetch instead. `_FakeOllamaClient` is still needed for `show()` counting.
+
+Append to `tests/test_llm.py`:
+
+```python
+class _FakeTagsResponse:
+    """Context-manager stand-in for urlopen's return value."""
+
+    def __init__(self, payload):
+        self._body = json.dumps(payload).encode()
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _install_fake_tags(monkeypatch, entries, error=None):
+    """Patch urlopen in the ollama module. Returns a call counter."""
+    import bmlib.llm.providers.ollama as ollama_mod
+
+    counter = {"n": 0, "url": None}
+
+    def fake_urlopen(url, timeout=None):
+        counter["n"] += 1
+        counter["url"] = url
+        if error is not None:
+            raise error
+        return _FakeTagsResponse({"models": entries})
+
+    monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
+    return counter
+
+
+def _ollama_entry(name, parameter_size="8.2B", capabilities=("completion",),
+                  context_length=None):
+    """One entry as the SERVER sends it (not as the SDK parses it)."""
+    details = {"parameter_size": parameter_size}
+    if context_length is not None:
+        details["context_length"] = context_length
+    entry = {"model": name, "details": details}
+    if capabilities is not None:
+        entry["capabilities"] = list(capabilities)
+    return entry
+
+
+class TestOllamaRawTagsPayload:
+    def test_sdk_list_response_drops_the_fields_we_need(self):
+        """Guard: this is WHY list_models() bypasses client.list().
+
+        If this test ever fails, the ollama SDK has started carrying
+        capabilities/context_length and _fetch_tags_payload could be
+        reconsidered. Until then, switching back to client.list()
+        silently disables capability flags for every model.
+        """
+        ollama = pytest.importorskip("ollama")
+
+        entry = ollama._types.ListResponse.Model.model_validate(
+            {
+                "model": "m",
+                "digest": "d",
+                "size": 1,
+                "details": {
+                    "parameter_size": "8B",
+                    "family": "llama",
+                    "format": "gguf",
+                    "families": ["llama"],
+                    "quantization_level": "Q8_0",
+                    "parent_model": "",
+                    "context_length": 40960,
+                },
+                "capabilities": ["tools", "vision"],
+            }
+        )
+        assert getattr(entry, "capabilities", None) is None
+        assert getattr(entry.details, "context_length", None) is None
+
+    def test_capability_flags_work_on_real_payload_shape(self, monkeypatch):
+        _install_fake_tags(
+            monkeypatch, [_ollama_entry("m", capabilities=("completion", "tools", "vision"))]
+        )
+        provider = _ollama_provider_with(_FakeOllamaClient([]))
+
+        caps = provider.list_models()[0].capabilities
+        assert caps.supports_function_calling is True
+        assert caps.supports_vision is True
+
+    def test_known_context_length_needs_no_show_call(self, monkeypatch):
+        _install_fake_tags(monkeypatch, [_ollama_entry("m", context_length=40960)])
+        client = _FakeOllamaClient([])
+        provider = _ollama_provider_with(client)
+
+        model = provider.list_models()[0]
+        assert model.context_window == 40960
+        assert model.capabilities.max_context_window == 40960
+        assert client.show_calls == 0
+
+    def test_missing_context_length_still_resolves_lazily(self, monkeypatch):
+        _install_fake_tags(monkeypatch, [_ollama_entry("m", context_length=None)])
+        client = _FakeOllamaClient([], context_length=8192)
+        provider = _ollama_provider_with(client)
+
+        model = provider.list_models()[0]
+        assert client.show_calls == 0
+        assert model.context_window == 8192
+        assert client.show_calls == 1
+
+    def test_mixed_payload_only_fetches_the_unknown_ones(self, monkeypatch):
+        _install_fake_tags(
+            monkeypatch,
+            [
+                _ollama_entry("known", context_length=40960),
+                _ollama_entry("unknown", context_length=None),
+            ],
+        )
+        client = _FakeOllamaClient([], context_length=8192)
+        provider = _ollama_provider_with(client)
+
+        models = provider.list_models()
+        assert [m.context_window for m in models] == [40960, 8192]
+        assert client.show_calls == 1
+
+    def test_fetch_targets_the_configured_base_url(self, monkeypatch):
+        counter = _install_fake_tags(monkeypatch, [])
+        provider = _ollama_provider_with(_FakeOllamaClient([]))
+        provider._base_url = "http://example.invalid:9999/"
+
+        provider.list_models()
+        assert counter["url"] == "http://example.invalid:9999/api/tags"
+
+    def test_fetch_failure_returns_empty_uncached(self, monkeypatch):
+        counter = _install_fake_tags(monkeypatch, [], error=OSError("refused"))
+        provider = _ollama_provider_with(_FakeOllamaClient([]))
+
+        assert provider.list_models() == []
+        assert provider.list_models() == []
+        assert counter["n"] == 2
+
+    def test_malformed_payload_is_tolerated(self, monkeypatch):
+        import bmlib.llm.providers.ollama as ollama_mod
+
+        def fake_urlopen(url, timeout=None):
+            return _FakeTagsResponse({"unexpected": "shape"})
+
+        monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
+        provider = _ollama_provider_with(_FakeOllamaClient([]))
+
+        assert provider.list_models() == []
+```
+
+Add `import json` and `import pytest` to the top of `tests/test_llm.py` if
+not already present.
+
+**You must also update the pre-existing tests** in
+`TestOllamaListModelsIsSingleRequest` and `TestOllamaListModelsCache`, which
+assert on `client.list_calls`. Convert each to `_install_fake_tags` +
+the returned counter, keeping every assertion's intent identical — the
+`show_calls` assertions stay exactly as they are, and `list_calls == N`
+becomes `counter["n"] == N`. `_ollama_tags_entry` is superseded by
+`_ollama_entry`; delete it and update its call sites. Do not weaken or
+delete any existing assertion.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `uv run pytest tests/test_llm.py::TestOllamaRawTagsPayload -v`
+
+Expected: FAIL — `test_capability_flags_work_on_real_payload_shape` and the
+context-length tests fail because `list_models()` still calls `client.list()`
+and never issues an HTTP GET. `test_sdk_list_response_drops_the_fields_we_need`
+should PASS immediately; it documents SDK behaviour, not ours.
+
+- [ ] **Step 3: Add imports and the timeout constant**
+
+The import block becomes:
+
+```python
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import time
+import urllib.request
+from collections.abc import Callable
+from functools import partial
+from typing import Any
+```
+
+Add after `CACHE_TTL_SECONDS`:
+
+```python
+# Timeout for the raw /api/tags fetch, in seconds.
+TAGS_REQUEST_TIMEOUT = 30
+```
+
+- [ ] **Step 4: Add `_fetch_tags_payload()`**
+
+Insert directly above `_metadata_from_tags_entry()`:
+
+```python
+    def _fetch_tags_payload(self) -> list[Any]:
+        """Fetch ``/api/tags`` as raw JSON, bypassing the ollama SDK.
+
+        The SDK's ``client.list()`` parses into ``ListResponse.Model``, a
+        Pydantic model declaring only ``model``, ``modified_at``,
+        ``digest``, ``size`` and ``details``.  Its config leaves Pydantic's
+        default ``extra="ignore"`` in place, so two fields the server does
+        send are dropped silently: the per-model ``capabilities`` array,
+        and ``details.context_length``.  On a 139-model installation that
+        discards 139 capability arrays and 122 context lengths — and those
+        context lengths are exactly what makes a ``show()`` call
+        unnecessary for 88% of models.
+
+        Bypassing the SDK costs nothing here: :meth:`_get_client`
+        constructs ``ollama.Client(host=...)`` with no custom headers or
+        auth, so there is no client configuration to inherit.  The SDK is
+        still used for ``show()``.
+
+        Returns:
+            The ``models`` list from the payload.  An empty list if the
+            payload is missing or malformed.
+
+        Raises:
+            OSError: If the request fails.  :meth:`list_models` handles it.
+            ValueError: If the response is not valid JSON.
+        """
+        url = f"{self._base_url.rstrip('/')}/api/tags"
+        with urllib.request.urlopen(url, timeout=TAGS_REQUEST_TIMEOUT) as response:
+            payload = json.loads(response.read())
+        if not isinstance(payload, dict):
+            return []
+        models = payload.get("models")
+        return models if isinstance(models, list) else []
+```
+
+- [ ] **Step 5: Seed the context window when the payload carries it**
+
+In `_metadata_from_tags_entry()`, replace the body from the
+`raw_capabilities` line through the `return` with:
+
+```python
+        raw_capabilities = _safe_get(entry, "capabilities") or []
+        capability_names = {str(c).lower() for c in raw_capabilities}
+
+        # Most models report details.context_length. When present there is
+        # nothing left to fetch, so seed both lazy fields and this model
+        # never triggers a show() call at all. _UNRESOLVED leaves them lazy.
+        raw_context = _safe_get(details, "context_length")
+        known_context = (
+            raw_context if isinstance(raw_context, int) and raw_context > 0 else _UNRESOLVED
+        )
+
+        resolver = partial(self._resolve_context_window, name)
+
+        return _LazyOllamaModelMetadata(
+            resolver,
+            model_id=name,
+            display_name=display_name,
+            pricing=_FREE_PRICING,
+            context_window=known_context,
+            capabilities=_LazyOllamaCapabilities(
+                resolver,
+                supports_system_messages=True,
+                supports_function_calling="tools" in capability_names,
+                supports_vision="vision" in capability_names,
+                max_context_window=known_context,
+            ),
+        )
+```
+
+Also update the method's docstring to note that `context_length`, when
+present, is used directly and no `show()` call occurs for that model.
+
+- [ ] **Step 6: Switch `list_models()` to the raw payload**
+
+Replace the fetch block inside `list_models()`:
+
+```python
+        try:
+            entries = self._fetch_tags_payload()
+        except Exception as e:
+            # Transient failure: do not cache, so the next call retries.
+            logger.warning("Failed to list Ollama models: %s", e)
+            return []
+
+        models: list[ModelMetadata] = []
+        for entry in entries:
+            name = _safe_get(entry, "model", "") or ""
+            if name:
+                models.append(self._metadata_from_tags_entry(name, entry))
+```
+
+Update the method docstring: most models now resolve their context window
+with no extra request; only those whose entry omits `context_length` fall
+back to a lazy `show()`.
+
+- [ ] **Step 7: Run the tests to verify they pass**
+
+Run: `uv run pytest tests/test_llm.py -k Ollama -v`
+
+Expected: PASS — the new class plus every converted pre-existing test.
+
+- [ ] **Step 8: Run the full suite and linters**
+
+Run: `uv run pytest tests/ -q && uv run ruff check . && uv run ruff format --check .`
+
+- [ ] **Step 9: Verify against the live server**
+
+```bash
+uv run python -c "
+import time
+from bmlib.llm.providers.ollama import OllamaProvider
+p = OllamaProvider()
+t = time.time(); models = p.list_models(); dt = time.time() - t
+print(f'{len(models)} models in {dt*1000:.0f} ms')
+tools = sum(1 for m in models if m.capabilities.supports_function_calling)
+vis = sum(1 for m in models if m.capabilities.supports_vision)
+print(f'tools={tools} vision={vis}  (expect ~79 / ~32, NOT 0/0)')
+t = time.time(); ctx = [m.context_window for m in models]; dt = time.time() - t
+print(f'all {len(ctx)} context windows in {dt*1000:.0f} ms')
+"
+```
+
+Expected: non-zero tools/vision counts, and reading every context window
+costs far less than the ~3.6s baseline because most need no `show()`.
+Report the real numbers.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add bmlib/llm/providers/ollama.py tests/test_llm.py
+git commit -m "fix(ollama): read raw /api/tags so capability flags actually work
+
+The ollama SDK parses /api/tags into ListResponse.Model, which declares
+only model/modified_at/digest/size/details and leaves Pydantic's default
+extra='ignore' in place. Two fields the server sends were dropped
+silently: the per-model capabilities array, and details.context_length.
+On a 139-model server that is 139 capability arrays and 122 context
+lengths discarded — every tool-capable and vision-capable model was
+reported as incapable.
+
+The tests missed it because every fixture was a plain dict, which takes
+_safe_get's dict branch; production takes the getattr branch.
+
+list_models() now reads the payload directly. Capability flags work, and
+the 122 models reporting context_length need no show() call at all — the
+lazy path is now the fallback for the remaining 17. Added a regression
+test built on a genuine ollama ListResponse.Model.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
+### Task 7: Restore copy/pickle/replace, and correct the remaining claims
+
+The final review found three regressions and one wrong docstring.
+
+**Files:**
+- Modify: `bmlib/llm/providers/ollama.py` (both lazy classes)
+- Modify: `CLAUDE.md`, `docs/superpowers/specs/2026-07-20-fast-ollama-list-models-design.md`
+- Test: `tests/test_llm.py`
+
+---
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `tests/test_llm.py`:
+
+```python
+class TestOllamaMetadataIsPortable:
+    """list_models() results must stay copyable, picklable, replaceable.
+
+    All three worked before the lazy subclasses existed. The resolver
+    closes over the live ollama client (an httpx client holding an
+    RLock), so the lazy objects must degrade to plain ones on the way out.
+    """
+
+    def _model(self, monkeypatch, context_length=40960):
+        _install_fake_tags(monkeypatch, [_ollama_entry("m", context_length=context_length)])
+        return _ollama_provider_with(_FakeOllamaClient([])).list_models()[0]
+
+    def test_deepcopy_yields_plain_metadata(self, monkeypatch):
+        import copy
+
+        from bmlib.llm.providers.base import ModelMetadata
+
+        clone = copy.deepcopy(self._model(monkeypatch))
+        assert type(clone) is ModelMetadata
+        assert clone.model_id == "m"
+        assert clone.context_window == 40960
+
+    def test_pickle_roundtrip(self, monkeypatch):
+        import pickle
+
+        from bmlib.llm.providers.base import ModelMetadata
+
+        restored = pickle.loads(pickle.dumps(self._model(monkeypatch)))
+        assert type(restored) is ModelMetadata
+        assert restored.context_window == 40960
+        assert restored.capabilities.max_context_window == 40960
+
+    def test_dataclasses_replace(self, monkeypatch):
+        import dataclasses
+
+        updated = dataclasses.replace(self._model(monkeypatch), display_name="renamed")
+        assert updated.display_name == "renamed"
+        assert updated.context_window == 40960
+
+    def test_capabilities_pickle_to_plain(self, monkeypatch):
+        import pickle
+
+        from bmlib.llm.providers.base import ProviderCapabilities
+
+        caps = pickle.loads(pickle.dumps(self._model(monkeypatch).capabilities))
+        assert type(caps) is ProviderCapabilities
+        assert caps.max_context_window == 40960
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `uv run pytest tests/test_llm.py::TestOllamaMetadataIsPortable -v`
+
+Expected: FAIL. `deepcopy`/`pickle` fail with `TypeError: cannot pickle
+'_thread.RLock' object` when a real client is attached, or produce a lazy
+subclass rather than a plain one; `dataclasses.replace` fails with
+`TypeError: ... missing 1 required positional argument: 'resolver'`.
+
+- [ ] **Step 3: Give `resolver` a default and add `__reduce__`**
+
+In BOTH lazy classes, change the `__init__` signature so `resolver` is
+optional — this is what makes `dataclasses.replace()` work, since it
+reconstructs via `cls(**field_values)` with no `resolver` among them:
+
+```python
+    def __init__(self, resolver: Callable[[], int] | None = None, **kwargs: Any) -> None:
+```
+
+In BOTH getters, guard the `None` case (attribute access must never raise):
+
+```python
+        if self._resolved is None:
+            if self._resolver is None:
+                return FALLBACK_CONTEXT_WINDOW
+            self._resolved = self._resolver()
+        return self._resolved
+```
+
+`replace()` reads every current field value first, so it passes the already
+-resolved `context_window` through and the reconstructed object never needs
+a resolver.
+
+Add `__reduce__` to `_LazyOllamaCapabilities`:
+
+```python
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Degrade to a plain ProviderCapabilities on copy/pickle.
+
+        The resolver closes over the provider's live ``ollama.Client``,
+        which holds an unpicklable lock.  Resolving now and handing back a
+        plain object keeps these values portable, which they were before
+        the lazy subclasses existed.
+        """
+        return (
+            ProviderCapabilities,
+            (
+                self.supports_streaming,
+                self.supports_function_calling,
+                self.supports_vision,
+                self.supports_system_messages,
+                self.max_context_window,
+            ),
+        )
+```
+
+And to `_LazyOllamaModelMetadata`:
+
+```python
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Degrade to a plain ModelMetadata on copy/pickle.
+
+        See :meth:`_LazyOllamaCapabilities.__reduce__`.  Both lazy fields
+        resolve here, so the result carries real values rather than the
+        sentinel.
+        """
+        return (
+            ModelMetadata,
+            (
+                self.model_id,
+                self.display_name,
+                self.context_window,
+                self.pricing,
+                self.capabilities,
+                self.is_deprecated,
+            ),
+        )
+```
+
+`self.capabilities` is itself a `_LazyOllamaCapabilities`; pickle applies
+its `__reduce__` recursively, so the nested object degrades too.
+
+- [ ] **Step 4: Fix the `__eq__` docstring (finding M2)**
+
+In `_LazyOllamaModelMetadata`'s class docstring, replace the sentence
+claiming `__eq__` "is left as the dataclass default and *does* resolve"
+with:
+
+```
+    ``__eq__`` is the dataclass default, which short-circuits on
+    ``other.__class__ is self.__class__``.  Two instances of this class
+    compare by value (resolving both context windows to do so), but an
+    instance never compares equal to a plain :class:`ModelMetadata`, even
+    with identical fields — worth knowing when writing a test that builds
+    an expected value by hand.
+```
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `uv run pytest tests/test_llm.py -k Ollama -v`
+
+- [ ] **Step 6: Correct the remaining documentation claims**
+
+In `CLAUDE.md`, in the "Lazy model metadata (Ollama)" subsection, the text
+now understates what the implementation does. Replace the body with:
+
+```markdown
+`OllamaProvider.list_models()` costs one HTTP request regardless of how many
+models are installed. It reads `/api/tags` as raw JSON rather than through
+the `ollama` SDK, whose Pydantic model silently drops the per-model
+`capabilities` array and `details.context_length`. Most models report their
+context length there, so their metadata is complete immediately. For the
+rest, `context_window` — and `capabilities.max_context_window` — fetch via a
+memoised `show()` call only when read. `__repr__` on those subclasses renders
+`<unresolved>` rather than fetching, so logging a model list stays free.
+This is the only place in bmlib where attribute access performs I/O. The
+returned objects degrade to plain `ModelMetadata` when copied or pickled.
+```
+
+Also in `CLAUDE.md`, change "each issue a single `models.list()` call" to
+"each issue a single source-level `models.list()` call (the SDK may
+paginate underneath)" — closing the round-trip ambiguity the final review
+flagged.
+
+In the design spec `docs/superpowers/specs/2026-07-20-fast-ollama-list-models-design.md`,
+§1 claims mapping the capabilities array is "a net accuracy **improvement**".
+That was true in intent but false as first implemented. Append to that
+paragraph:
+
+```markdown
+**Correction (found in final review):** the `ollama` SDK's
+`ListResponse.Model` leaves Pydantic's `extra="ignore"` in place and
+declares neither `capabilities` nor `details.context_length`, so reading
+them through `client.list()` yields nothing. `list_models()` therefore reads
+the raw `/api/tags` JSON. This also makes `details.context_length` available,
+which removes the `show()` call entirely for the models that report it.
+```
+
+- [ ] **Step 7: Run the full suite and linters**
+
+Run: `uv run pytest tests/ -q && uv run ruff check . && uv run ruff format --check .`
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add bmlib/llm/providers/ollama.py tests/test_llm.py CLAUDE.md docs/superpowers/specs/2026-07-20-fast-ollama-list-models-design.md
+git commit -m "fix(ollama): keep lazy metadata copyable, picklable, replaceable
+
+The resolver closes over the provider's live ollama.Client, which holds
+an httpx RLock, so deepcopy and pickle raised TypeError and
+dataclasses.replace() failed on the required positional resolver. All
+three worked before the lazy subclasses landed.
+
+__reduce__ now degrades both classes to their plain counterparts,
+resolving the context window on the way out, and resolver defaults to
+None so replace() can reconstruct from field values alone.
+
+Also corrects the __eq__ docstring, which claimed equality always
+resolves — the dataclass default short-circuits on a class check, so a
+lazy instance never equals a plain ModelMetadata.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
 ### Task 5: Open the pull request
 
 **Files:** none
