@@ -744,6 +744,13 @@ class OllamaProvider(BaseProvider):
             parameter_size = _safe_get(details, "parameter_size", "")
             display_name = f"{model_name} ({parameter_size})" if parameter_size else model_name
 
+            # ShowResponse carries the same capabilities array /api/tags
+            # does; derive the flags from it exactly as
+            # _metadata_from_tags_entry does, so list_models() and
+            # get_model_metadata() cannot disagree about the same model.
+            raw_capabilities = _safe_get(info, "capabilities") or []
+            capability_names = {str(c).lower() for c in raw_capabilities}
+
             metadata = ModelMetadata(
                 model_id=model_name,
                 display_name=display_name,
@@ -751,6 +758,8 @@ class OllamaProvider(BaseProvider):
                 pricing=_FREE_PRICING,
                 capabilities=ProviderCapabilities(
                     supports_system_messages=True,
+                    supports_function_calling="tools" in capability_names,
+                    supports_vision="vision" in capability_names,
                     max_context_window=context_window,
                 ),
             )
@@ -932,7 +941,16 @@ def _extract_context_window(info: Any) -> int:
     Checks (in order): ``model_info`` keys, ``parameters.num_ctx``,
     and ``modelfile`` text.  Falls back to :data:`FALLBACK_CONTEXT_WINDOW`.
     """
-    model_info = _safe_get(info, "model_info") or {}
+    # ollama._types.ShowResponse declares this field as `modelinfo` with
+    # alias `model_info`. Pydantic exposes the attribute under the
+    # declared name, so the alias spelling only matches dict-shaped
+    # responses (older SDKs, and test fixtures) — a real ShowResponse
+    # object needs the declared name instead. Accept both.
+    model_info = _safe_get(info, "model_info")
+    if not model_info:
+        model_info = _safe_get(info, "modelinfo")
+    model_info = model_info or {}
+
     if isinstance(model_info, dict):
         for key, value in model_info.items():
             if "context" in key.lower() and isinstance(value, int):
@@ -945,9 +963,15 @@ def _extract_context_window(info: Any) -> int:
                 if "context" in str(key).lower() and isinstance(value, int):
                     return value
 
-    parameters = _safe_get(info, "parameters") or {}
+    parameters = _safe_get(info, "parameters")
     if isinstance(parameters, dict) and "num_ctx" in parameters:
         return int(parameters["num_ctx"])
+    if isinstance(parameters, str):
+        # Real ShowResponse.parameters is a newline-separated string,
+        # e.g. "num_ctx                 4096\nstop \"<|im_end|>\"".
+        match = re.search(r"num_ctx\s+(\d+)", parameters)
+        if match:
+            return int(match.group(1))
 
     modelfile = _safe_get(info, "modelfile", "")
     if modelfile and "num_ctx" in modelfile:

@@ -449,6 +449,47 @@ class TestOllamaContextWindowResolver:
         assert provider._resolve_context_window("missing") == FALLBACK_CONTEXT_WINDOW
 
 
+class TestOllamaExtractContextWindowRealShowResponse:
+    """_extract_context_window against genuine ollama SDK objects.
+
+    ollama._types.ShowResponse declares its model-info field as
+    ``modelinfo``, with ``model_info`` only as a Pydantic alias. Pydantic
+    exposes the attribute under the declared name, so
+    ``getattr(info, "model_info", None)`` — the branch _safe_get takes for
+    non-dict input — returns None on a real response. A dict fixture hits
+    _safe_get's dict branch instead and passes regardless, which is
+    exactly how this bug survived: tests used dicts, production received
+    Pydantic objects.
+    """
+
+    def test_extract_context_window_handles_real_show_response(self):
+        """Guard: ShowResponse declares `modelinfo`, aliased `model_info`.
+
+        A dict fixture hits _safe_get's dict branch and passes even when
+        the production getattr branch returns None. This test builds the
+        genuine SDK object so the two cannot diverge again.
+        """
+        ollama = pytest.importorskip("ollama")
+        from bmlib.llm.providers.ollama import _extract_context_window
+
+        info = ollama._types.ShowResponse.model_validate(
+            {"model_info": {"qwen3.context_length": 131072}}
+        )
+        assert _extract_context_window(info) == 131072
+
+    def test_extract_context_window_handles_string_parameters(self):
+        ollama = pytest.importorskip("ollama")
+        from bmlib.llm.providers.ollama import _extract_context_window
+
+        info = ollama._types.ShowResponse.model_validate(
+            {
+                "model_info": {},
+                "parameters": 'num_ctx                 4096\nstop "<|im_end|>"',
+            }
+        )
+        assert _extract_context_window(info) == 4096
+
+
 class _FakeOllamaClient:
     """Counting stand-in for ollama.Client covering show().
 
@@ -1024,6 +1065,57 @@ class TestOllamaTagsAuth:
         assert seen["auth"] is None
 
 
+class TestOllamaMetadataPathsAgree:
+    """list_models() and get_model_metadata() must not disagree.
+
+    _get_model_info used to hardcode supports_function_calling and
+    supports_vision to False no matter what show() reported, so the two
+    public methods could give contradictory answers for the very same
+    model. It now derives the flags from ShowResponse.capabilities, the
+    same source /api/tags exposes.
+    """
+
+    class _FakeShowClient:
+        """show() carrying capabilities and a resolvable context length."""
+
+        def __init__(self):
+            self.show_calls = 0
+
+        def show(self, model_name):
+            self.show_calls += 1
+            return {
+                "capabilities": ["completion", "tools", "thinking"],
+                "model_info": {"qwen3.context_length": 262144},
+            }
+
+    def test_capabilities_and_context_window_agree(self, monkeypatch):
+        # context_length and capabilities are both omitted from the tags
+        # entry so list_models() must lazily resolve them the same way
+        # get_model_metadata() does, via the shared show()-backed path.
+        _install_fake_tags(
+            monkeypatch,
+            [
+                _ollama_entry(
+                    "m",
+                    capabilities=("completion", "tools", "thinking"),
+                    context_length=None,
+                )
+            ],
+        )
+        client = self._FakeShowClient()
+        provider = _ollama_provider_with(client)
+
+        listed = provider.list_models()[0]
+        fetched = provider.get_model_metadata("m")
+
+        assert listed.capabilities.supports_function_calling is True
+        assert (
+            listed.capabilities.supports_function_calling
+            == fetched.capabilities.supports_function_calling
+        )
+        assert listed.context_window == fetched.context_window == 262144
+
+
 class TestOllamaMetadataIsPortable:
     """list_models() results must stay copyable, picklable, replaceable.
 
@@ -1033,8 +1125,27 @@ class TestOllamaMetadataIsPortable:
     """
 
     def _model(self, monkeypatch, context_length=40960):
+        # NOTE: context_length is always seeded here, so the tags entry
+        # already carries a known context window and the lazy resolver
+        # (hence _FakeOllamaClient.show()) is never invoked by these
+        # tests. See _unresolved_model below for the variant that
+        # actually exercises the resolver.
         _install_fake_tags(monkeypatch, [_ollama_entry("m", context_length=context_length)])
-        return _ollama_provider_with(_FakeOllamaClient([])).list_models()[0]
+        return _ollama_provider_with(_FakeOllamaClient()).list_models()[0]
+
+    def _unresolved_model(self, monkeypatch, resolved_context_length=131072):
+        """Build a model whose tags entry omits context_length.
+
+        Reading ``context_window`` (directly, or indirectly via pickle/
+        deepcopy's ``__reduce__``) must therefore actually invoke the
+        show()-backed resolver rather than reading a pre-seeded value.
+        Returns ``(model, client)`` so callers can assert on
+        ``client.show_calls``.
+        """
+        _install_fake_tags(monkeypatch, [_ollama_entry("m", context_length=None)])
+        client = _FakeOllamaClient(context_length=resolved_context_length)
+        model = _ollama_provider_with(client).list_models()[0]
+        return model, client
 
     def test_deepcopy_yields_plain_metadata(self, monkeypatch):
         import copy
@@ -1071,3 +1182,41 @@ class TestOllamaMetadataIsPortable:
         caps = pickle.loads(pickle.dumps(self._model(monkeypatch).capabilities))
         assert type(caps) is ProviderCapabilities
         assert caps.max_context_window == 40960
+
+    def test_pickle_roundtrip_resolves_unseeded_context_window(self, monkeypatch):
+        """The docstring's "both lazy fields resolve here" claim, tested.
+
+        A seeded context_length never invokes the resolver, so a fixture
+        that always seeds it cannot tell "resolver ran and returned the
+        right value" from "resolver never ran, sentinel/fallback leaked
+        through". This variant's tags entry omits context_length, so
+        __reduce__ must actually call show() to produce a real value.
+        """
+        import pickle
+
+        from bmlib.llm.providers.base import ModelMetadata
+
+        model, client = self._unresolved_model(monkeypatch, resolved_context_length=131072)
+        assert client.show_calls == 0
+
+        restored = pickle.loads(pickle.dumps(model))
+
+        assert client.show_calls == 1
+        assert type(restored) is ModelMetadata
+        assert restored.context_window == 131072
+        assert restored.capabilities.max_context_window == 131072
+
+    def test_deepcopy_resolves_unseeded_context_window(self, monkeypatch):
+        import copy
+
+        from bmlib.llm.providers.base import ModelMetadata
+
+        model, client = self._unresolved_model(monkeypatch, resolved_context_length=128000)
+        assert client.show_calls == 0
+
+        clone = copy.deepcopy(model)
+
+        assert client.show_calls == 1
+        assert type(clone) is ModelMetadata
+        assert clone.context_window == 128000
+        assert clone.capabilities.max_context_window == 128000
