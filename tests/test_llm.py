@@ -443,3 +443,157 @@ class TestOllamaContextWindowResolver:
         provider, _ = self._provider(show_error=RuntimeError("server down"))
 
         assert provider._resolve_context_window("missing") == FALLBACK_CONTEXT_WINDOW
+
+
+def _ollama_tags_entry(name, parameter_size="8.2B", capabilities=("completion",)):
+    """One entry as returned by Ollama's /api/tags."""
+    entry = {"model": name, "details": {"parameter_size": parameter_size}}
+    if capabilities is not None:
+        entry["capabilities"] = list(capabilities)
+    return entry
+
+
+class _FakeOllamaClient:
+    """Counting stand-in for ollama.Client covering list() and show()."""
+
+    def __init__(self, entries, list_error=None, show_error=None, context_length=40960):
+        self._entries = entries
+        self._list_error = list_error
+        self._show_error = show_error
+        self._context_length = context_length
+        self.list_calls = 0
+        self.show_calls = 0
+
+    def list(self):
+        from types import SimpleNamespace
+
+        self.list_calls += 1
+        if self._list_error is not None:
+            raise self._list_error
+        return SimpleNamespace(models=self._entries)
+
+    def show(self, model_name):
+        self.show_calls += 1
+        if self._show_error is not None:
+            raise self._show_error
+        return {"model_info": {"qwen3.context_length": self._context_length}}
+
+
+def _ollama_provider_with(client):
+    from bmlib.llm.providers.ollama import OllamaProvider
+
+    provider = OllamaProvider()
+    provider._client = client
+    return provider
+
+
+class TestOllamaListModelsIsSingleRequest:
+    def test_list_models_issues_no_show_calls(self):
+        client = _FakeOllamaClient([_ollama_tags_entry(f"model-{i}") for i in range(50)])
+        provider = _ollama_provider_with(client)
+
+        models = provider.list_models()
+
+        assert len(models) == 50
+        assert client.list_calls == 1
+        assert client.show_calls == 0
+
+    def test_reading_model_ids_stays_free(self):
+        client = _FakeOllamaClient([_ollama_tags_entry(f"model-{i}") for i in range(50)])
+        provider = _ollama_provider_with(client)
+
+        ids = [m.model_id for m in provider.list_models()]
+
+        assert ids[0] == "model-0"
+        assert client.show_calls == 0
+
+    def test_display_name_includes_parameter_size(self):
+        client = _FakeOllamaClient([_ollama_tags_entry("qwen3:8b", "8.2B")])
+        provider = _ollama_provider_with(client)
+
+        assert provider.list_models()[0].display_name == "qwen3:8b (8.2B)"
+        assert client.show_calls == 0
+
+    def test_display_name_without_parameter_size(self):
+        client = _FakeOllamaClient([_ollama_tags_entry("bare", parameter_size="")])
+        provider = _ollama_provider_with(client)
+
+        assert provider.list_models()[0].display_name == "bare"
+
+    def test_capability_flags_derived_from_tags(self):
+        client = _FakeOllamaClient(
+            [_ollama_tags_entry("m", capabilities=("completion", "tools", "vision"))]
+        )
+        provider = _ollama_provider_with(client)
+
+        caps = provider.list_models()[0].capabilities
+        assert caps.supports_function_calling is True
+        assert caps.supports_vision is True
+        assert caps.supports_system_messages is True
+        assert client.show_calls == 0
+
+    def test_capability_flags_false_when_absent(self):
+        client = _FakeOllamaClient([_ollama_tags_entry("m", capabilities=("completion",))])
+        provider = _ollama_provider_with(client)
+
+        caps = provider.list_models()[0].capabilities
+        assert caps.supports_function_calling is False
+        assert caps.supports_vision is False
+
+    def test_missing_capabilities_key_is_tolerated(self):
+        client = _FakeOllamaClient([_ollama_tags_entry("m", capabilities=None)])
+        provider = _ollama_provider_with(client)
+
+        caps = provider.list_models()[0].capabilities
+        assert caps.supports_function_calling is False
+        assert caps.supports_vision is False
+
+    def test_context_window_resolves_lazily_per_model(self):
+        client = _FakeOllamaClient(
+            [_ollama_tags_entry("a"), _ollama_tags_entry("b")], context_length=40960
+        )
+        provider = _ollama_provider_with(client)
+
+        models = provider.list_models()
+        assert client.show_calls == 0
+
+        assert models[0].context_window == 40960
+        assert client.show_calls == 1
+
+        assert models[0].context_window == 40960
+        assert client.show_calls == 1
+
+        assert models[1].context_window == 40960
+        assert client.show_calls == 2
+
+    def test_both_lazy_fields_share_one_show_call(self):
+        # The metadata object and its capabilities object hold separate
+        # memos, so each calls the resolver once. Only one HTTP request
+        # may result: the second call must hit _model_info_cache.
+        client = _FakeOllamaClient([_ollama_tags_entry("a")], context_length=40960)
+        provider = _ollama_provider_with(client)
+
+        model = provider.list_models()[0]
+        assert model.context_window == 40960
+        assert model.capabilities.max_context_window == 40960
+        assert client.show_calls == 1
+
+    def test_entries_without_a_name_are_skipped(self):
+        client = _FakeOllamaClient([_ollama_tags_entry("real"), {"model": "", "details": {}}])
+        provider = _ollama_provider_with(client)
+
+        assert [m.model_id for m in provider.list_models()] == ["real"]
+
+    def test_list_failure_returns_empty(self):
+        client = _FakeOllamaClient([], list_error=RuntimeError("connection refused"))
+        provider = _ollama_provider_with(client)
+
+        assert provider.list_models() == []
+
+    def test_list_failure_is_not_cached(self):
+        client = _FakeOllamaClient([], list_error=RuntimeError("connection refused"))
+        provider = _ollama_provider_with(client)
+
+        provider.list_models()
+        provider.list_models()
+        assert client.list_calls == 2

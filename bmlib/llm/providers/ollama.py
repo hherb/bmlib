@@ -29,6 +29,7 @@ import logging
 import os
 import re
 from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 from bmlib.llm.data_types import (
@@ -514,22 +515,76 @@ class OllamaProvider(BaseProvider):
 
     # --- Model discovery (native API) ---
 
+    def _metadata_from_tags_entry(self, name: str, entry: Any) -> ModelMetadata:
+        """Build lazy metadata for one ``/api/tags`` entry.
+
+        Every field except the context window is available in the tags
+        payload, so only that field defers to a ``show()`` call.
+
+        Ollama servers older than the capabilities feature omit the
+        ``capabilities`` key entirely; a missing or null value is treated
+        as an empty list, which yields the same ``False`` flags this
+        provider reported before capabilities existed.
+
+        Args:
+            name: Model identifier from the entry's ``model`` field.
+            entry: One element of the ``models`` list, either a dict or a
+                Pydantic model depending on the ``ollama`` SDK version.
+
+        Returns:
+            A :class:`_LazyOllamaModelMetadata` instance.
+        """
+        details = _safe_get(entry, "details") or {}
+        parameter_size = _safe_get(details, "parameter_size", "") or ""
+        display_name = f"{name} ({parameter_size})" if parameter_size else name
+
+        raw_capabilities = _safe_get(entry, "capabilities") or []
+        capabilities = {str(c).lower() for c in raw_capabilities}
+
+        resolver = partial(self._resolve_context_window, name)
+
+        return _LazyOllamaModelMetadata(
+            resolver,
+            model_id=name,
+            display_name=display_name,
+            pricing=_FREE_PRICING,
+            capabilities=_LazyOllamaCapabilities(
+                resolver,
+                supports_system_messages=True,
+                supports_function_calling="tools" in capabilities,
+                supports_vision="vision" in capabilities,
+            ),
+        )
+
     def list_models(self, force_refresh: bool = False) -> list[ModelMetadata]:
-        """List models currently available on the Ollama server."""
+        """List models currently available on the Ollama server.
+
+        Costs exactly one HTTP request.  Every field except the context
+        window comes from ``/api/tags``; ``context_window`` and
+        ``capabilities.max_context_window`` resolve via a memoised
+        ``show()`` call the first time they are read, so callers that only
+        need names or display labels never pay for them.
+
+        Args:
+            force_refresh: Currently unused; wired up in the next commit.
+
+        Returns:
+            One :class:`_LazyOllamaModelMetadata` per installed model, or
+            an empty list if the server is unreachable.
+        """
         try:
             client = self._get_client()
             response = client.list()
-            models = []
-            model_list = getattr(response, "models", []) or []
-            for model_info in model_list:
-                name = getattr(model_info, "model", "") or ""
-                if name:
-                    metadata = self._get_model_info(name)
-                    models.append(metadata)
-            return models
         except Exception as e:
             logger.warning("Failed to list Ollama models: %s", e)
             return []
+
+        models: list[ModelMetadata] = []
+        for entry in getattr(response, "models", []) or []:
+            name = _safe_get(entry, "model", "") or ""
+            if name:
+                models.append(self._metadata_from_tags_entry(name, entry))
+        return models
 
     def _get_model_info(self, model_name: str) -> ModelMetadata:
         """Fetch model metadata using ``ollama.show()`` (cached)."""
