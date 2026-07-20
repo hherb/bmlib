@@ -708,8 +708,38 @@ class TestOllamaBaseUrlNormalisation:
 
         assert (
             OllamaProvider(base_url="https://example.com/ollama")._base_url
-            == "https://example.com:11434/ollama"
+            == "https://example.com/ollama"
         )
+
+    def test_explicit_https_keeps_scheme_default_port(self):
+        from bmlib.llm.providers.ollama import OllamaProvider
+
+        assert (
+            OllamaProvider(base_url="https://ollama.example.com")._base_url
+            == "https://ollama.example.com"
+        )
+
+    def test_explicit_http_keeps_scheme_default_port(self):
+        from bmlib.llm.providers.ollama import OllamaProvider
+
+        assert (
+            OllamaProvider(base_url="http://ollama.example.com")._base_url
+            == "http://ollama.example.com"
+        )
+
+    def test_explicit_port_is_always_respected(self):
+        from bmlib.llm.providers.ollama import OllamaProvider
+
+        assert (
+            OllamaProvider(base_url="https://ollama.example.com:8443")._base_url
+            == "https://ollama.example.com:8443"
+        )
+
+    def test_bracketed_ipv6_is_preserved(self):
+        from bmlib.llm.providers.ollama import OllamaProvider
+
+        assert OllamaProvider(base_url="[::1]:11434")._base_url == "http://[::1]:11434"
+        assert OllamaProvider(base_url="[::1]")._base_url == "http://[::1]:11434"
 
     def test_env_var_is_normalised(self, monkeypatch):
         from bmlib.llm.providers.ollama import OllamaProvider
@@ -903,7 +933,7 @@ class TestOllamaRawTagsPayload:
 
         assert provider._fetch_tags_payload() == []
 
-    @pytest.mark.parametrize("bad_context_length", [0, -1, "8192", None])
+    @pytest.mark.parametrize("bad_context_length", [0, -4096, "8192", None])
     def test_context_length_boundary_values_fall_back_to_lazy_path(
         self, monkeypatch, bad_context_length
     ):

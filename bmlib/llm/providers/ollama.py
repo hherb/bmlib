@@ -903,7 +903,8 @@ def _extract_context_window(info: Any) -> int:
 
 
 def _normalise_base_url(host: str) -> str:
-    """Normalise an Ollama host string into a full URL with a port.
+    """Normalise an Ollama host string into a full URL, mirroring
+    ``ollama._client._parse_host`` for the forms a user would plausibly set.
 
     ``OLLAMA_HOST`` is conventionally written scheme-less
     (``localhost:11434``, ``127.0.0.1``), which ``ollama.Client`` accepts
@@ -913,16 +914,27 @@ def _normalise_base_url(host: str) -> str:
     has to be normalised here or the two paths disagree: model discovery
     would fail while ``chat()`` on the same provider kept working.
 
+    The ``:11434`` default is only applied when the scheme itself was
+    inferred (no ``://`` in the input).  When the caller supplies an
+    explicit scheme, its port is left alone so ``urlopen``/``httpx`` apply
+    the scheme's own default (443 for ``https``, 80 for ``http``) — forcing
+    11434 onto an explicit-scheme URL would break Ollama served behind a
+    TLS reverse proxy (e.g. ``https://ollama.example.com``), a mainstream
+    deployment.
+
     Args:
         host: A host string or URL, with or without scheme and port.
 
     Returns:
-        An absolute URL with scheme and port, no trailing slash.
+        An absolute URL, no trailing slash.  Carries an explicit ``:11434``
+        port only when both scheme and port were inferred.
     """
     host = (host or "").strip().rstrip("/")
     if not host:
         return "http://localhost:11434"
-    if "://" not in host:
+
+    had_scheme = "://" in host
+    if not had_scheme:
         host = f"http://{host}"
 
     parts = urlsplit(host)
@@ -933,5 +945,10 @@ def _normalise_base_url(host: str) -> str:
         # rather than silently rewriting a URL we do not understand.
         return host
 
-    netloc = parts.netloc if has_port else f"{parts.netloc}:11434"
+    # Only default the port when we inferred the scheme. An explicit
+    # scheme carries its own default (443 for https, 80 for http), which
+    # urlopen and httpx already apply correctly — forcing 11434 there
+    # breaks Ollama behind a TLS reverse proxy, which is a mainstream
+    # deployment and one that worked before this helper existed.
+    netloc = parts.netloc if (has_port or had_scheme) else f"{parts.netloc}:11434"
     return urlunsplit((parts.scheme, netloc, parts.path.rstrip("/"), "", ""))
