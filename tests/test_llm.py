@@ -597,3 +597,75 @@ class TestOllamaListModelsIsSingleRequest:
         provider.list_models()
         provider.list_models()
         assert client.list_calls == 2
+
+
+class TestOllamaListModelsCache:
+    def test_second_call_is_served_from_cache(self):
+        client = _FakeOllamaClient([_ollama_tags_entry("m")])
+        provider = _ollama_provider_with(client)
+
+        provider.list_models()
+        provider.list_models()
+        assert client.list_calls == 1
+
+    def test_force_refresh_refetches(self):
+        client = _FakeOllamaClient([_ollama_tags_entry("m")])
+        provider = _ollama_provider_with(client)
+
+        provider.list_models()
+        provider.list_models(force_refresh=True)
+        assert client.list_calls == 2
+
+    def test_force_refresh_clears_model_info_cache(self):
+        client = _FakeOllamaClient([_ollama_tags_entry("m")], context_length=4096)
+        provider = _ollama_provider_with(client)
+
+        assert provider.list_models()[0].context_window == 4096
+        assert client.show_calls == 1
+
+        # A re-pulled model can carry a different context window; the
+        # per-model cache must not survive an explicit refresh.
+        client._context_length = 8192
+        assert provider.list_models(force_refresh=True)[0].context_window == 8192
+        assert client.show_calls == 2
+
+    def test_expired_ttl_refetches(self, monkeypatch):
+        import bmlib.llm.providers.ollama as ollama_mod
+
+        client = _FakeOllamaClient([_ollama_tags_entry("m")])
+        provider = _ollama_provider_with(client)
+
+        clock = {"t": 1000.0}
+        monkeypatch.setattr(ollama_mod.time, "time", lambda: clock["t"])
+
+        provider.list_models()
+        clock["t"] += ollama_mod.CACHE_TTL_SECONDS + 1
+        provider.list_models()
+        assert client.list_calls == 2
+
+    def test_mutating_first_result_does_not_corrupt_cache(self):
+        client = _FakeOllamaClient([_ollama_tags_entry("m")])
+        provider = _ollama_provider_with(client)
+
+        first = provider.list_models()
+        first.clear()
+
+        second = provider.list_models()
+        assert [m.model_id for m in second] == ["m"]
+
+    def test_mutating_cache_hit_result_does_not_corrupt_cache(self):
+        client = _FakeOllamaClient([_ollama_tags_entry("m")])
+        provider = _ollama_provider_with(client)
+
+        provider.list_models()
+        second = provider.list_models()
+        second.append("bogus")
+
+        third = provider.list_models()
+        assert [m.model_id for m in third] == ["m"]
+
+    def test_ttl_is_shorter_than_the_remote_providers(self):
+        from bmlib.llm.providers.anthropic import CACHE_TTL_SECONDS as REMOTE_TTL
+        from bmlib.llm.providers.ollama import CACHE_TTL_SECONDS as LOCAL_TTL
+
+        assert LOCAL_TTL < REMOTE_TTL

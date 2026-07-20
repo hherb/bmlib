@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 from collections.abc import Callable
 from functools import partial
 from typing import Any
@@ -61,6 +62,18 @@ FALLBACK_CONTEXT_WINDOW = 8192
 # cannot tell "caller supplied nothing" from "caller supplied a real value"
 # without a sentinel distinct from any legitimate context window.
 _UNRESOLVED = -1
+
+# Seconds a cached model list stays fresh.
+#
+# Deliberately far shorter than the 3600 used by anthropic.py and
+# openai_compat.py (each module declares its own; the constant is not
+# shared).  The expensive call was never ``list()`` — that is ~47ms
+# against localhost — it was ``show()``, and those results live in
+# ``_model_info_cache``, which survives this TTL entirely.  So this cache
+# exists only to absorb bursts of repeated calls, and buying that with an
+# hour of staleness is a bad trade for a local server: an ``ollama pull``
+# would leave the new model invisible for an hour.
+CACHE_TTL_SECONDS = 60
 
 # Pricing for local models (always free)
 _FREE_PRICING = ModelPricing(0.0, 0.0)
@@ -198,6 +211,8 @@ class OllamaProvider(BaseProvider):
         resolved_base_url = base_url or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
         super().__init__(api_key=None, base_url=resolved_base_url, **kwargs)
         self._model_info_cache: dict[str, ModelMetadata] = {}
+        self._models_cache: list[ModelMetadata] | None = None
+        self._cache_timestamp: float = 0.0
 
     # --- Properties ---
 
@@ -559,23 +574,39 @@ class OllamaProvider(BaseProvider):
     def list_models(self, force_refresh: bool = False) -> list[ModelMetadata]:
         """List models currently available on the Ollama server.
 
-        Costs exactly one HTTP request.  Every field except the context
-        window comes from ``/api/tags``; ``context_window`` and
+        Costs exactly one HTTP request on a cache miss, and none on a
+        hit.  Every field except the context window comes from
+        ``/api/tags``; ``context_window`` and
         ``capabilities.max_context_window`` resolve via a memoised
         ``show()`` call the first time they are read, so callers that only
         need names or display labels never pay for them.
 
         Args:
-            force_refresh: Currently unused; wired up in the next commit.
+            force_refresh: Bypass the cache and re-query the server.  Also
+                clears the per-model ``show()`` cache, so a model re-pulled
+                with a different ``num_ctx`` reports its new value.
 
         Returns:
             One :class:`_LazyOllamaModelMetadata` per installed model, or
-            an empty list if the server is unreachable.
+            an empty list if the server is unreachable.  A copy is
+            returned, so caller mutation cannot corrupt the cache.
         """
+        if (
+            not force_refresh
+            and self._models_cache is not None
+            and time.time() - self._cache_timestamp < CACHE_TTL_SECONDS
+        ):
+            # Copy so caller mutation cannot corrupt the cache (issue #12).
+            return list(self._models_cache)
+
+        if force_refresh:
+            self._model_info_cache.clear()
+
         try:
             client = self._get_client()
             response = client.list()
         except Exception as e:
+            # Transient failure: do not cache, so the next call retries.
             logger.warning("Failed to list Ollama models: %s", e)
             return []
 
@@ -584,7 +615,10 @@ class OllamaProvider(BaseProvider):
             name = _safe_get(entry, "model", "") or ""
             if name:
                 models.append(self._metadata_from_tags_entry(name, entry))
-        return models
+
+        self._models_cache = models
+        self._cache_timestamp = time.time()
+        return list(models)
 
     def _get_model_info(self, model_name: str) -> ModelMetadata:
         """Fetch model metadata using ``ollama.show()`` (cached)."""
