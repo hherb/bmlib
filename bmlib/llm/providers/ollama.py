@@ -25,10 +25,16 @@ exposed through the OpenAI compatibility layer.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
+import time
+import urllib.request
+from collections.abc import Callable
+from functools import partial
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from bmlib.llm.data_types import (
     BatchEmbeddingResponse,
@@ -53,6 +59,46 @@ CHARS_PER_TOKEN_ESTIMATE = 4
 # Default context window when model metadata is unavailable (tokens)
 FALLBACK_CONTEXT_WINDOW = 8192
 
+# Sentinel written into the lazy context-window fields at construction time.
+# ``ModelMetadata`` and ``ProviderCapabilities`` are dataclasses, so their
+# generated ``__init__`` always assigns these fields — the lazy subclasses
+# cannot tell "caller supplied nothing" from "caller supplied a real value"
+# without a sentinel distinct from any legitimate context window.
+_UNRESOLVED = -1
+
+# Seconds a cached model list stays fresh.
+#
+# Deliberately far shorter than the 3600 used by anthropic.py and
+# openai_compat.py (each module declares its own; the constant is not
+# shared).  The expensive call was never ``list()`` — that is ~47ms
+# against localhost — it was ``show()``, and those results live in
+# ``_model_info_cache``, which survives this TTL entirely.  So this cache
+# exists only to absorb bursts of repeated calls, and buying that with an
+# hour of staleness is a bad trade for a local server: an ``ollama pull``
+# would leave the new model invisible for an hour.
+CACHE_TTL_SECONDS = 60
+
+# Timeout for the raw /api/tags fetch, in seconds.
+TAGS_REQUEST_TIMEOUT = 30
+
+# Schemes ``_fetch_tags_payload`` is willing to open.  ``urlopen`` honours
+# whatever scheme it is handed — ``file://`` would read a local path and
+# hand the bytes to ``json.loads`` — whereas ``httpx``, which backs the
+# SDK path, rejects anything that is not HTTP(S).  Restricting here keeps
+# the two paths equivalent rather than making the raw one more permissive.
+_ALLOWED_SCHEMES = ("http", "https")
+
+# Port each allowed scheme implies when the URL does not spell one out.
+# Used to compare origins across a redirect the way ``httpx`` does.
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+# Detects a leading URL scheme, treating "<word>:<digits>" as host:port
+# instead.  That ambiguity is real: ``urlsplit("localhost:11434")`` reports
+# scheme ``"localhost"``, yet OLLAMA_HOST is conventionally written exactly
+# that way.  Testing for "://" alone would resolve it the other way and let
+# opaque schemes ("data:...", "javascript:...") through unrecognised.
+_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:(?!\d+$)")
+
 # Pricing for local models (always free)
 _FREE_PRICING = ModelPricing(0.0, 0.0)
 
@@ -74,6 +120,167 @@ def _safe_get(obj: Any, key: str, default: Any = None) -> Any:
     return getattr(obj, key, default)
 
 
+class _LazyOllamaCapabilities(ProviderCapabilities):
+    """:class:`ProviderCapabilities` whose ``max_context_window`` is lazy.
+
+    Every other capability flag is derived from Ollama's ``/api/tags``
+    payload and stays eager, so reading ``supports_vision`` or
+    ``supports_function_calling`` costs nothing.  Only the context window
+    requires a per-model ``show()`` call, and only that field defers.
+
+    Args:
+        resolver: Zero-argument callable returning the context window.
+            Called at most once; the result is memoised.
+        **kwargs: Forwarded to :class:`ProviderCapabilities`.  Passing
+            ``max_context_window`` seeds the memo and prevents any fetch.
+    """
+
+    def __init__(self, resolver: Callable[[], int] | None = None, **kwargs: Any) -> None:
+        self._resolver = resolver
+        self._resolved: int | None = None
+        kwargs.setdefault("max_context_window", _UNRESOLVED)
+        super().__init__(**kwargs)
+
+    @property
+    def max_context_window(self) -> int:
+        """Context window in tokens, fetched on first read."""
+        if self._resolved is None:
+            if self._resolver is None:
+                return FALLBACK_CONTEXT_WINDOW
+            self._resolved = self._resolver()
+        return self._resolved
+
+    @max_context_window.setter
+    def max_context_window(self, value: int) -> None:
+        self._resolved = None if value == _UNRESOLVED else value
+
+    def __repr__(self) -> str:
+        """Render without triggering a fetch (see class docstring)."""
+        ctx = "<unresolved>" if self._resolved is None else self._resolved
+        return (
+            f"{type(self).__name__}("
+            f"supports_streaming={self.supports_streaming!r}, "
+            f"supports_function_calling={self.supports_function_calling!r}, "
+            f"supports_vision={self.supports_vision!r}, "
+            f"supports_system_messages={self.supports_system_messages!r}, "
+            f"max_context_window={ctx})"
+        )
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Degrade to a plain ProviderCapabilities on copy/pickle.
+
+        The resolver closes over the provider's live ``ollama.Client``,
+        which holds an unpicklable lock.  Resolving now and handing back a
+        plain object keeps these values portable, which they were before
+        the lazy subclasses existed.
+
+        Fields are bound by keyword through a :func:`~functools.partial`
+        rather than positionally: a positional tuple silently reorders if
+        a field is ever inserted into :class:`ProviderCapabilities`, and
+        the resulting mix-up (a context window landing in a bool flag)
+        would survive every existing test.
+        """
+        return (
+            partial(
+                ProviderCapabilities,
+                supports_streaming=self.supports_streaming,
+                supports_function_calling=self.supports_function_calling,
+                supports_vision=self.supports_vision,
+                supports_system_messages=self.supports_system_messages,
+                max_context_window=self.max_context_window,
+            ),
+            (),
+        )
+
+
+class _LazyOllamaModelMetadata(ModelMetadata):
+    """:class:`ModelMetadata` whose ``context_window`` is lazy.
+
+    Returned by :meth:`OllamaProvider.list_models`.  ``model_id``,
+    ``display_name``, ``pricing`` and the capability flags all come from
+    ``/api/tags`` and are eager; ``context_window`` triggers one
+    ``show()`` call on first read and memoises the result.
+
+    ``__repr__`` deliberately does **not** resolve — otherwise logging a
+    model list would silently fire one HTTP request per model, which is
+    the exact cost this class exists to avoid.
+
+    Reading ``context_window`` is not the only trigger.  Anything that
+    reads every field resolves too: :func:`copy.copy`,
+    :func:`copy.deepcopy`, :func:`pickle.dumps`,
+    :func:`dataclasses.replace` and :func:`dataclasses.asdict` all fetch
+    if the value is not already known.  ``copy.copy()`` performing a
+    blocking HTTP request is the most surprising of those, so treat an
+    unresolved instance as something to keep off any hot or
+    latency-sensitive path, not merely as something not to log.
+
+    ``__eq__`` is the dataclass default, which short-circuits on
+    ``other.__class__ is self.__class__``.  Two instances of this class
+    compare by value (resolving both context windows to do so), but an
+    instance never compares equal to a plain :class:`ModelMetadata`, even
+    with identical fields — worth knowing when writing a test that builds
+    an expected value by hand.
+
+    Args:
+        resolver: Zero-argument callable returning the context window.
+            Called at most once; the result is memoised.
+        **kwargs: Forwarded to :class:`ModelMetadata`.  Passing
+            ``context_window`` seeds the memo and prevents any fetch.
+    """
+
+    def __init__(self, resolver: Callable[[], int] | None = None, **kwargs: Any) -> None:
+        self._resolver = resolver
+        self._resolved: int | None = None
+        kwargs.setdefault("context_window", _UNRESOLVED)
+        super().__init__(**kwargs)
+
+    @property
+    def context_window(self) -> int:
+        """Context window in tokens, fetched on first read."""
+        if self._resolved is None:
+            if self._resolver is None:
+                return FALLBACK_CONTEXT_WINDOW
+            self._resolved = self._resolver()
+        return self._resolved
+
+    @context_window.setter
+    def context_window(self, value: int) -> None:
+        self._resolved = None if value == _UNRESOLVED else value
+
+    def __repr__(self) -> str:
+        """Render without triggering a fetch (see class docstring)."""
+        ctx = "<unresolved>" if self._resolved is None else self._resolved
+        return (
+            f"{type(self).__name__}("
+            f"model_id={self.model_id!r}, "
+            f"display_name={self.display_name!r}, "
+            f"context_window={ctx}, "
+            f"pricing={self.pricing!r}, "
+            f"capabilities={self.capabilities!r}, "
+            f"is_deprecated={self.is_deprecated!r})"
+        )
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Degrade to a plain ModelMetadata on copy/pickle.
+
+        See :meth:`_LazyOllamaCapabilities.__reduce__`, including why the
+        fields are bound by keyword.  Both lazy fields resolve here, so
+        the result carries real values rather than the sentinel.
+        """
+        return (
+            partial(
+                ModelMetadata,
+                model_id=self.model_id,
+                display_name=self.display_name,
+                context_window=self.context_window,
+                pricing=self.pricing,
+                capabilities=self.capabilities,
+                is_deprecated=self.is_deprecated,
+            ),
+            (),
+        )
+
+
 class OllamaProvider(BaseProvider):
     """Ollama local model provider (native API)."""
 
@@ -89,9 +296,13 @@ class OllamaProvider(BaseProvider):
         base_url: str | None = None,
         **kwargs: object,
     ) -> None:
-        resolved_base_url = base_url or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        resolved_base_url = _normalise_base_url(
+            base_url or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        )
         super().__init__(api_key=None, base_url=resolved_base_url, **kwargs)
         self._model_info_cache: dict[str, ModelMetadata] = {}
+        self._models_cache: list[ModelMetadata] | None = None
+        self._cache_timestamp: float = 0.0
 
     # --- Properties ---
 
@@ -409,22 +620,183 @@ class OllamaProvider(BaseProvider):
 
     # --- Model discovery (native API) ---
 
+    def _fetch_tags_payload(self) -> list[Any]:
+        """Fetch ``/api/tags`` as raw JSON, bypassing the ollama SDK.
+
+        The SDK's ``client.list()`` parses into ``ListResponse.Model``, a
+        Pydantic model declaring only ``model``, ``modified_at``,
+        ``digest``, ``size`` and ``details``.  Its config leaves Pydantic's
+        default ``extra="ignore"`` in place, so two fields the server does
+        send are dropped silently: the per-model ``capabilities`` array,
+        and ``details.context_length``.  On a 139-model installation that
+        discards 139 capability arrays and 122 context lengths — and those
+        context lengths are exactly what makes a ``show()`` call
+        unnecessary for 88% of models.
+
+        Bypassing the SDK means reproducing the client configuration it
+        derives, and its safety defaults:
+        :envvar:`OLLAMA_API_KEY` is forwarded as a bearer token below,
+        matching ``ollama.Client``; the host is normalised and its scheme
+        restricted to HTTP(S) in :func:`_normalise_base_url`; and the
+        opener strips that bearer token across a cross-origin redirect,
+        which ``urllib`` does not do by default but ``httpx`` does.  See
+        :class:`_StripAuthOnCrossOriginRedirect`.
+
+        Returns:
+            The ``models`` list from the payload.  An empty list if the
+            payload is missing or malformed.
+
+        Raises:
+            OSError: If the request fails.  :meth:`list_models` handles it.
+            ValueError: If the response is not valid JSON.
+        """
+        url = f"{self._base_url.rstrip('/')}/api/tags"
+        request = urllib.request.Request(url)
+
+        # Mirror ollama.Client, which reads OLLAMA_API_KEY from the
+        # environment and sends it as a bearer token. Without this the
+        # SDK-backed calls (chat, show, embed) would authenticate against
+        # a gateway while model discovery silently 401'd to an empty list.
+        api_key = os.environ.get("OLLAMA_API_KEY", "").strip()
+        if api_key:
+            request.add_header("Authorization", f"Bearer {api_key}")
+
+        # Not urlopen(): its global opener would carry the bearer token
+        # across a cross-host redirect. See _StripAuthOnCrossOriginRedirect.
+        # Built per call rather than once at import so the ProxyHandler it
+        # installs reflects the current environment.
+        opener = urllib.request.build_opener(_StripAuthOnCrossOriginRedirect)
+        with opener.open(request, timeout=TAGS_REQUEST_TIMEOUT) as response:
+            payload = json.loads(response.read())
+        if not isinstance(payload, dict):
+            return []
+        models = payload.get("models")
+        return models if isinstance(models, list) else []
+
+    def _metadata_from_tags_entry(self, name: str, entry: Any) -> ModelMetadata:
+        """Build lazy metadata for one ``/api/tags`` entry.
+
+        Most entries also carry ``details.context_length``, in which case
+        the context window is known outright and no ``show()`` call is
+        ever made for that model; only entries omitting it defer to the
+        lazy ``show()`` resolver.
+
+        Ollama servers older than the capabilities feature omit the
+        ``capabilities`` key entirely; a missing or null value is treated
+        as an empty list, which yields the same ``False`` flags this
+        provider reported before capabilities existed.
+
+        Args:
+            name: Model identifier from the entry's ``model`` field.
+            entry: One element of the ``models`` list, either a dict or a
+                Pydantic model depending on the ``ollama`` SDK version.
+
+        Returns:
+            A :class:`_LazyOllamaModelMetadata` instance.
+        """
+        details = _safe_get(entry, "details") or {}
+        parameter_size = _safe_get(details, "parameter_size", "") or ""
+        display_name = f"{name} ({parameter_size})" if parameter_size else name
+
+        raw_capabilities = _safe_get(entry, "capabilities") or []
+        capability_names = {str(c).lower() for c in raw_capabilities}
+
+        # Most models report details.context_length. When present there is
+        # nothing left to fetch, so seed both lazy fields and this model
+        # never triggers a show() call at all. _UNRESOLVED leaves them lazy.
+        raw_context = _safe_get(details, "context_length")
+        known_context = (
+            raw_context if isinstance(raw_context, int) and raw_context > 0 else _UNRESOLVED
+        )
+
+        resolver = partial(self._resolve_context_window, name)
+
+        return _LazyOllamaModelMetadata(
+            resolver,
+            model_id=name,
+            display_name=display_name,
+            pricing=_FREE_PRICING,
+            context_window=known_context,
+            capabilities=_LazyOllamaCapabilities(
+                resolver,
+                supports_system_messages=True,
+                supports_function_calling="tools" in capability_names,
+                supports_vision="vision" in capability_names,
+                max_context_window=known_context,
+            ),
+        )
+
     def list_models(self, force_refresh: bool = False) -> list[ModelMetadata]:
-        """List models currently available on the Ollama server."""
+        """List models currently available on the Ollama server.
+
+        Costs exactly one HTTP request on a cache miss, and none on a
+        hit.  Every field comes straight from ``/api/tags``, including
+        ``context_window`` for the models whose entry reports
+        ``details.context_length`` — the majority on a typical server.
+        Only entries that omit it fall back to a memoised ``show()`` call
+        the first time ``context_window`` or
+        ``capabilities.max_context_window`` is read, so callers that only
+        need names or display labels never pay for it.
+
+        Args:
+            force_refresh: Bypass the cache and re-query the server.  Also
+                clears the per-model ``show()`` cache, so a model re-pulled
+                with a different ``num_ctx`` reports its new value.
+
+        Returns:
+            One :class:`_LazyOllamaModelMetadata` per installed model, or
+            an empty list if the server is unreachable.  A new list is
+            returned each call, so appending to or clearing the result
+            cannot corrupt the cache — but the elements are shared with
+            it, so mutating a returned model (assigning
+            ``context_window``, say) does change what the next caller
+            sees.
+
+        Note:
+            ``capabilities.supports_function_calling`` and
+            ``supports_vision`` are derived from the ``/api/tags``
+            ``capabilities`` array, which under-reports relative to
+            ``/api/show``: a model may support a capability that this
+            listing does not report.  These flags are a lower bound, not
+            a definitive answer.  Call :meth:`get_model_metadata` for the
+            authoritative, per-model answer — but only when its
+            ``show()`` call succeeds.  For a cloud model on a server with
+            cloud disabled, ``show()`` returns a 403 that is swallowed,
+            and :meth:`get_model_metadata` falls back to defaults weaker
+            than this listing: every capability flag ``False`` and the
+            fallback context window of 8192.
+        """
+        if (
+            not force_refresh
+            and self._models_cache is not None
+            and time.time() - self._cache_timestamp < CACHE_TTL_SECONDS
+        ):
+            # Copy so caller mutation cannot corrupt the cache (issue #12).
+            return list(self._models_cache)
+
         try:
-            client = self._get_client()
-            response = client.list()
-            models = []
-            model_list = getattr(response, "models", []) or []
-            for model_info in model_list:
-                name = getattr(model_info, "model", "") or ""
-                if name:
-                    metadata = self._get_model_info(name)
-                    models.append(metadata)
-            return models
+            entries = self._fetch_tags_payload()
         except Exception as e:
+            # Transient failure: do not cache, so the next call retries.
             logger.warning("Failed to list Ollama models: %s", e)
             return []
+
+        # Cleared only now that the fetch has succeeded. Clearing before it
+        # would let one refused connection throw away every accumulated
+        # show() result — the expensive cache, and the one this TTL is
+        # deliberately built not to disturb.
+        if force_refresh:
+            self._model_info_cache.clear()
+
+        models: list[ModelMetadata] = []
+        for entry in entries:
+            name = _safe_get(entry, "model", "") or ""
+            if name:
+                models.append(self._metadata_from_tags_entry(name, entry))
+
+        self._models_cache = models
+        self._cache_timestamp = time.time()
+        return list(models)
 
     def _get_model_info(self, model_name: str) -> ModelMetadata:
         """Fetch model metadata using ``ollama.show()`` (cached)."""
@@ -439,6 +811,22 @@ class OllamaProvider(BaseProvider):
             parameter_size = _safe_get(details, "parameter_size", "")
             display_name = f"{model_name} ({parameter_size})" if parameter_size else model_name
 
+            # Derived from ShowResponse.capabilities, the same way
+            # _metadata_from_tags_entry derives them from the /api/tags array.
+            # The two paths can still disagree, because the two endpoints do:
+            # for the tools and vision flags mapped here, /api/show reports a
+            # superset of /api/tags. Measured across 137 comparable local
+            # models (2 cloud models excluded — their show() call 403s, see
+            # the except branch below), tags reported 77 tool-capable where
+            # show reported 102, and 32 vision-capable where show reported
+            # 44 — the two arrays differed on 49 of those 137 models. So
+            # list_models()' flags are a LOWER BOUND for tools/vision; this
+            # method is the authoritative answer for a single model, but
+            # only when show() succeeds — see the except branch below for
+            # what happens when it does not.
+            raw_capabilities = _safe_get(info, "capabilities") or []
+            capability_names = {str(c).lower() for c in raw_capabilities}
+
             metadata = ModelMetadata(
                 model_id=model_name,
                 display_name=display_name,
@@ -446,6 +834,8 @@ class OllamaProvider(BaseProvider):
                 pricing=_FREE_PRICING,
                 capabilities=ProviderCapabilities(
                     supports_system_messages=True,
+                    supports_function_calling="tools" in capability_names,
+                    supports_vision="vision" in capability_names,
                     max_context_window=context_window,
                 ),
             )
@@ -460,6 +850,33 @@ class OllamaProvider(BaseProvider):
                 context_window=FALLBACK_CONTEXT_WINDOW,
                 pricing=_FREE_PRICING,
             )
+
+    def _resolve_context_window(self, model_name: str) -> int:
+        """Return the context window for *model_name*, fetching if needed.
+
+        Delegates to :meth:`_get_model_info`, which performs one
+        ``show()`` call and memoises the result in ``_model_info_cache``.
+        Sharing that cache means a lazy read and a
+        :meth:`get_model_metadata` call never fetch the same model twice.
+
+        Never raises.  :meth:`_get_model_info` already swallows every
+        failure and returns metadata carrying
+        :data:`FALLBACK_CONTEXT_WINDOW`, which matters here because this
+        runs behind attribute access — an exception from reading
+        ``.context_window`` would be badly surprising.
+
+        Thread safety: concurrent first-touch of the same model may issue
+        duplicate ``show()`` calls.  Both write the same value and dict
+        assignment is atomic under the GIL, so this is left unlocked,
+        consistent with the rest of ``_model_info_cache``.
+
+        Args:
+            model_name: Ollama model identifier, e.g. ``"qwen3:8b"``.
+
+        Returns:
+            Context window in tokens.
+        """
+        return self._get_model_info(model_name).context_window
 
     # --- Connection test ---
 
@@ -594,28 +1011,90 @@ def _convert_messages_to_ollama(messages: list[LLMMessage]) -> list[dict[str, An
 # ---------------------------------------------------------------------------
 
 
+def _context_from_model_info(model_info: Any) -> int | None:
+    """Pick the context window out of a ``show()`` ``model_info`` mapping.
+
+    GGUF metadata routinely carries two keys that a loose ``"context" in
+    key`` search both match: the architecture's real window
+    (``mistral3.context_length``) and the pre-RoPE-scaling one
+    (``mistral3.rope.scaling.original_context_length``), which can be
+    smaller by two orders of magnitude — 262144 against 4096 for
+    ``mistral-medium-3.5``.  Measured across a 139-model server, 9 models
+    carry both.
+
+    Returning whichever key came first made correctness depend on the
+    order GGUF happens to emit its metadata.  So the exact
+    ``*.context_length`` spelling wins outright, a loose match is used
+    only when no exact one exists, and an ``original_`` key is consulted
+    last — it is a valid lower bound, but never the right answer when a
+    real window is also present.
+
+    Args:
+        model_info: The ``model_info``/``modelinfo`` mapping from a
+            ``show()`` response — a dict, or a Pydantic model exposing
+            ``items()``.
+
+    Returns:
+        The context window in tokens, or ``None`` if the mapping holds no
+        integer context key at all.
+    """
+    if isinstance(model_info, dict):
+        pairs = list(model_info.items())
+    else:
+        # Pydantic model — iterate via items if available
+        items = getattr(model_info, "items", None)
+        pairs = list(items()) if callable(items) else []
+
+    loose: int | None = None
+    original: int | None = None
+
+    for key, value in pairs:
+        if not isinstance(value, int):
+            continue
+        name = str(key).lower()
+        if "context" not in name:
+            continue
+        if "original" in name:
+            if original is None:
+                original = value
+            continue
+        if name.endswith(".context_length"):
+            return value
+        if loose is None:
+            loose = value
+
+    return loose if loose is not None else original
+
+
 def _extract_context_window(info: Any) -> int:
     """Extract context window size from an ``ollama.show()`` response.
 
     Checks (in order): ``model_info`` keys, ``parameters.num_ctx``,
     and ``modelfile`` text.  Falls back to :data:`FALLBACK_CONTEXT_WINDOW`.
     """
-    model_info = _safe_get(info, "model_info") or {}
-    if isinstance(model_info, dict):
-        for key, value in model_info.items():
-            if "context" in key.lower() and isinstance(value, int):
-                return value
-    else:
-        # Pydantic model — iterate via items if available
-        items = getattr(model_info, "items", None)
-        if callable(items):
-            for key, value in items():
-                if "context" in str(key).lower() and isinstance(value, int):
-                    return value
+    # ollama._types.ShowResponse declares this field as `modelinfo` with
+    # alias `model_info`. Pydantic exposes the attribute under the
+    # declared name, so the alias spelling only matches dict-shaped
+    # responses (older SDKs, and test fixtures) — a real ShowResponse
+    # object needs the declared name instead. Accept both.
+    model_info = _safe_get(info, "model_info")
+    if not model_info:
+        model_info = _safe_get(info, "modelinfo")
+    model_info = model_info or {}
 
-    parameters = _safe_get(info, "parameters") or {}
+    from_model_info = _context_from_model_info(model_info)
+    if from_model_info is not None:
+        return from_model_info
+
+    parameters = _safe_get(info, "parameters")
     if isinstance(parameters, dict) and "num_ctx" in parameters:
         return int(parameters["num_ctx"])
+    if isinstance(parameters, str):
+        # Real ShowResponse.parameters is a newline-separated string,
+        # e.g. "num_ctx                 4096\nstop \"<|im_end|>\"".
+        match = re.search(r"num_ctx\s+(\d+)", parameters)
+        if match:
+            return int(match.group(1))
 
     modelfile = _safe_get(info, "modelfile", "")
     if modelfile and "num_ctx" in modelfile:
@@ -624,3 +1103,129 @@ def _extract_context_window(info: Any) -> int:
             return int(match.group(1))
 
     return FALLBACK_CONTEXT_WINDOW
+
+
+def _origin(url: str) -> tuple[str, str, int | None]:
+    """Return the ``(scheme, host, port)`` origin of *url*.
+
+    Default ports are filled in from the scheme so that ``http://h`` and
+    ``http://h:80`` compare equal, matching how ``httpx`` decides whether
+    a redirect is cross-origin.
+
+    Args:
+        url: An absolute URL.
+
+    Returns:
+        A comparable origin tuple.  A malformed port yields ``None`` for
+        the port, which makes the origin compare unequal to any well-formed
+        one — the safe direction for a security check.
+    """
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    try:
+        port = parts.port or _DEFAULT_PORTS.get(scheme)
+    except ValueError:
+        port = None
+    return (scheme, (parts.hostname or "").lower(), port)
+
+
+class _StripAuthOnCrossOriginRedirect(urllib.request.HTTPRedirectHandler):
+    """Redirect handler that drops ``Authorization`` across origins.
+
+    ``urllib``'s stock handler copies every header except
+    ``Content-Length`` and ``Content-Type`` onto the redirected request,
+    so a gateway answering ``/api/tags`` with a 302 to another host would
+    be handed the caller's :envvar:`OLLAMA_API_KEY`.  ``httpx``, which
+    backs every SDK-mediated call in this provider, strips the header on
+    a cross-origin redirect; this restores that parity for the one path
+    that bypasses the SDK.
+    """
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        """Build the redirected request, without the bearer token if the
+        target is a different origin."""
+        new_request = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_request is None:
+            return None
+        if _origin(req.full_url) != _origin(new_request.full_url):
+            # add_header stores keys capitalised; remove_header matches
+            # the same way, so this finds the header we set.
+            new_request.remove_header("Authorization")
+        return new_request
+
+
+def _normalise_base_url(host: str | None) -> str:
+    """Normalise an Ollama host string into a full URL, mirroring
+    ``ollama._client._parse_host`` for the forms a user would plausibly set.
+
+    ``OLLAMA_HOST`` is conventionally written scheme-less
+    (``localhost:11434``, ``127.0.0.1``), which ``ollama.Client`` accepts
+    — its ``_parse_host`` fills in scheme and default port — but
+    ``urllib.request.urlopen`` rejects outright.  Since
+    :meth:`OllamaProvider._fetch_tags_payload` bypasses the SDK, the URL
+    has to be normalised here or the two paths disagree: model discovery
+    would fail while ``chat()`` on the same provider kept working.
+
+    The ``:11434`` default is only applied when the scheme itself was
+    inferred (no scheme in the input, per :data:`_SCHEME_RE`).  When the
+    caller supplies an explicit scheme, its port is left alone so
+    ``urlopen``/``httpx`` apply the scheme's own default (443 for
+    ``https``, 80 for ``http``) — forcing 11434 onto an explicit-scheme URL
+    would break Ollama served behind a TLS reverse proxy (e.g.
+    ``https://ollama.example.com``), a mainstream deployment.
+
+    Any query string or fragment is dropped: the discovery path builds its
+    URL as ``f"{base_url}/api/tags"``, so a retained query would land in
+    the middle of the result (``http://h/x?t=1/api/tags``) rather than at
+    the end.  A gateway that expects a query-string token therefore cannot
+    be configured through ``OLLAMA_HOST``; use :envvar:`OLLAMA_API_KEY`,
+    which is sent as a bearer token on both paths.
+
+    Args:
+        host: A host string or URL, with or without scheme and port.
+            ``None`` or blank yields the default localhost URL.
+
+    Returns:
+        An absolute URL, no trailing slash, no query or fragment.  Carries
+        an explicit ``:11434`` port only when both scheme and port were
+        inferred.
+
+    Raises:
+        ValueError: If the URL carries a scheme other than ``http`` or
+            ``https``.  ``urlopen`` would otherwise honour it — ``file://``
+            reads a local path and feeds the bytes to ``json.loads`` —
+            while the SDK's ``httpx`` client rejects it.
+    """
+    host = (host or "").strip().rstrip("/")
+    if not host:
+        return "http://localhost:11434"
+
+    had_scheme = bool(_SCHEME_RE.match(host))
+    if not had_scheme:
+        host = f"http://{host}"
+
+    parts = urlsplit(host)
+    if parts.scheme not in _ALLOWED_SCHEMES:
+        raise ValueError(f"Ollama host must use http or https, got {parts.scheme!r}: {host!r}")
+    try:
+        has_port = parts.port is not None
+    except ValueError:
+        # Malformed port — leave it alone and let the request fail loudly
+        # rather than silently rewriting a URL we do not understand.
+        return host
+
+    # Only default the port when we inferred the scheme. An explicit
+    # scheme carries its own default (443 for https, 80 for http), which
+    # urlopen and httpx already apply correctly — forcing 11434 there
+    # breaks Ollama behind a TLS reverse proxy, which is a mainstream
+    # deployment and one that worked before this helper existed.
+    netloc = parts.netloc if (has_port or had_scheme) else f"{parts.netloc}:11434"
+    return urlunsplit((parts.scheme, netloc, parts.path.rstrip("/"), "", ""))
