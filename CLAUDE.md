@@ -99,7 +99,7 @@ bmlib/
 ### Module descriptions
 
 - **`db/`** — Thin database abstraction via pure functions over DB-API connections. Supports SQLite (built-in) and PostgreSQL (optional). No ORM; all SQL is explicit.
-- **`llm/`** — Unified LLM client with a pluggable provider registry. Built-in providers: Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini. Model strings use `"provider:model_name"` format (e.g. `"anthropic:claude-sonnet-4-20250514"`). Providers are lazily registered on first access, and a provider whose SDK is not installed is silently skipped — so `list_providers()` reflects what is installed, not what exists. Beyond chat, the package covers embeddings (`LLMClient.embed()` / batch `embed_batch()`, Ollama only, both via `/api/embed`), tool calling (`tools`/`tool_choice` on `chat()`), thinking/reasoning (`think=` kwarg on `chat()` → `LLMResponse.thinking`), JSON repair, and text chunking. Model listing never fans out per model: the Anthropic and OpenAI-compatible providers each issue a single `models.list()` call, and Ollama defers its per-model context-window lookup (see "Lazy model metadata" below).
+- **`llm/`** — Unified LLM client with a pluggable provider registry. Built-in providers: Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini. Model strings use `"provider:model_name"` format (e.g. `"anthropic:claude-sonnet-4-20250514"`). Providers are lazily registered on first access, and a provider whose SDK is not installed is silently skipped — so `list_providers()` reflects what is installed, not what exists. Beyond chat, the package covers embeddings (`LLMClient.embed()` / batch `embed_batch()`, Ollama only, both via `/api/embed`), tool calling (`tools`/`tool_choice` on `chat()`), thinking/reasoning (`think=` kwarg on `chat()` → `LLMResponse.thinking`), JSON repair, and text chunking. Model listing never fans out per model: the Anthropic and OpenAI-compatible providers each issue a single source-level `models.list()` call (the SDK may paginate underneath), and Ollama defers its per-model context-window lookup (see "Lazy model metadata" below).
 - **`templates/`** — Jinja2-based prompt template engine with user directory override and default directory fallback.
 - **`agents/`** — `BaseAgent` class for LLM-driven tasks. Provides `chat()`, `chat_json()` (retry with backoff, truncation-aware), `render_template()`, `parse_json()`, and message helpers.
 - **`quality/`** — 3-tier quality assessment: (1) free metadata classification, (2) cheap LLM classifier, (3) deep LLM assessment. Uses CEBM evidence hierarchy for quality tiers. The Cochrane models/formatter and the rule-based extractors are **standalone**: nothing in the tiered pipeline imports them, and there is no conversion between `BiasRisk` and `CochraneRiskOfBias`, or between `DimensionScore` and `QualityAssessment`. Wiring them together is open work — see ROADMAP.md.
@@ -150,16 +150,15 @@ Optional imports are deferred to the constructor or function that needs them, no
 
 ### Lazy model metadata (Ollama)
 `OllamaProvider.list_models()` costs one HTTP request regardless of how many
-models are installed. Ollama's `/api/tags` carries everything the metadata
-actually needs from the server — names, parameter sizes, and per-model
-capability flags — leaving only the context window to fetch, so
-`list_models()` returns `ModelMetadata` subclasses whose
-`context_window` — and `capabilities.max_context_window` — fetch via a
-memoised `show()` call only when read. A caller that reads `context_window`
-for every model pays the old cost; one that only needs names pays nothing.
-`__repr__` on those subclasses renders `<unresolved>` rather than fetching,
-so logging a model list stays free. This is the only place in bmlib where
-attribute access performs I/O.
+models are installed. It reads `/api/tags` as raw JSON rather than through
+the `ollama` SDK, whose Pydantic model silently drops the per-model
+`capabilities` array and `details.context_length`. Most models report their
+context length there, so their metadata is complete immediately. For the
+rest, `context_window` — and `capabilities.max_context_window` — fetch via a
+memoised `show()` call only when read. `__repr__` on those subclasses renders
+`<unresolved>` rather than fetching, so logging a model list stays free.
+This is the only place in bmlib where attribute access performs I/O. The
+returned objects degrade to plain `ModelMetadata` when copied or pickled.
 
 ### Thread-safe token tracking
 `TokenTracker` uses `threading.Lock()` for safe concurrent LLM usage accounting.

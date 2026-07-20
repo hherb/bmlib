@@ -117,7 +117,7 @@ class _LazyOllamaCapabilities(ProviderCapabilities):
             ``max_context_window`` seeds the memo and prevents any fetch.
     """
 
-    def __init__(self, resolver: Callable[[], int], **kwargs: Any) -> None:
+    def __init__(self, resolver: Callable[[], int] | None = None, **kwargs: Any) -> None:
         self._resolver = resolver
         self._resolved: int | None = None
         kwargs.setdefault("max_context_window", _UNRESOLVED)
@@ -127,6 +127,8 @@ class _LazyOllamaCapabilities(ProviderCapabilities):
     def max_context_window(self) -> int:
         """Context window in tokens, fetched on first read."""
         if self._resolved is None:
+            if self._resolver is None:
+                return FALLBACK_CONTEXT_WINDOW
             self._resolved = self._resolver()
         return self._resolved
 
@@ -146,6 +148,25 @@ class _LazyOllamaCapabilities(ProviderCapabilities):
             f"max_context_window={ctx})"
         )
 
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Degrade to a plain ProviderCapabilities on copy/pickle.
+
+        The resolver closes over the provider's live ``ollama.Client``,
+        which holds an unpicklable lock.  Resolving now and handing back a
+        plain object keeps these values portable, which they were before
+        the lazy subclasses existed.
+        """
+        return (
+            ProviderCapabilities,
+            (
+                self.supports_streaming,
+                self.supports_function_calling,
+                self.supports_vision,
+                self.supports_system_messages,
+                self.max_context_window,
+            ),
+        )
+
 
 class _LazyOllamaModelMetadata(ModelMetadata):
     """:class:`ModelMetadata` whose ``context_window`` is lazy.
@@ -157,9 +178,13 @@ class _LazyOllamaModelMetadata(ModelMetadata):
 
     ``__repr__`` deliberately does **not** resolve — otherwise logging a
     model list would silently fire one HTTP request per model, which is
-    the exact cost this class exists to avoid.  ``__eq__`` is left as the
-    dataclass default and *does* resolve, on the grounds that comparing
-    two metadata objects means wanting their real values.
+    the exact cost this class exists to avoid.  ``__eq__`` is the
+    dataclass default, which short-circuits on
+    ``other.__class__ is self.__class__``.  Two instances of this class
+    compare by value (resolving both context windows to do so), but an
+    instance never compares equal to a plain :class:`ModelMetadata`, even
+    with identical fields — worth knowing when writing a test that builds
+    an expected value by hand.
 
     Args:
         resolver: Zero-argument callable returning the context window.
@@ -168,7 +193,7 @@ class _LazyOllamaModelMetadata(ModelMetadata):
             ``context_window`` seeds the memo and prevents any fetch.
     """
 
-    def __init__(self, resolver: Callable[[], int], **kwargs: Any) -> None:
+    def __init__(self, resolver: Callable[[], int] | None = None, **kwargs: Any) -> None:
         self._resolver = resolver
         self._resolved: int | None = None
         kwargs.setdefault("context_window", _UNRESOLVED)
@@ -178,6 +203,8 @@ class _LazyOllamaModelMetadata(ModelMetadata):
     def context_window(self) -> int:
         """Context window in tokens, fetched on first read."""
         if self._resolved is None:
+            if self._resolver is None:
+                return FALLBACK_CONTEXT_WINDOW
             self._resolved = self._resolver()
         return self._resolved
 
@@ -196,6 +223,25 @@ class _LazyOllamaModelMetadata(ModelMetadata):
             f"pricing={self.pricing!r}, "
             f"capabilities={self.capabilities!r}, "
             f"is_deprecated={self.is_deprecated!r})"
+        )
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        """Degrade to a plain ModelMetadata on copy/pickle.
+
+        See :meth:`_LazyOllamaCapabilities.__reduce__`.  Both lazy fields
+        resolve here, so the result carries real values rather than the
+        sentinel.
+        """
+        return (
+            ModelMetadata,
+            (
+                self.model_id,
+                self.display_name,
+                self.context_window,
+                self.pricing,
+                self.capabilities,
+                self.is_deprecated,
+            ),
         )
 
 
@@ -551,10 +597,10 @@ class OllamaProvider(BaseProvider):
         context lengths are exactly what makes a ``show()`` call
         unnecessary for 88% of models.
 
-        Bypassing the SDK costs nothing here: :meth:`_get_client`
-        constructs ``ollama.Client(host=...)`` with no custom headers or
-        auth, so there is no client configuration to inherit.  The SDK is
-        still used for ``show()``.
+        Bypassing the SDK means reproducing the little client
+        configuration it derives: :envvar:`OLLAMA_API_KEY` is forwarded as
+        a bearer token below, matching ``ollama.Client``.  The host itself
+        is normalised in :func:`_normalise_base_url` for the same reason.
 
         Returns:
             The ``models`` list from the payload.  An empty list if the
@@ -565,7 +611,17 @@ class OllamaProvider(BaseProvider):
             ValueError: If the response is not valid JSON.
         """
         url = f"{self._base_url.rstrip('/')}/api/tags"
-        with urllib.request.urlopen(url, timeout=TAGS_REQUEST_TIMEOUT) as response:
+        request = urllib.request.Request(url)
+
+        # Mirror ollama.Client, which reads OLLAMA_API_KEY from the
+        # environment and sends it as a bearer token. Without this the
+        # SDK-backed calls (chat, show, embed) would authenticate against
+        # a gateway while model discovery silently 401'd to an empty list.
+        api_key = os.environ.get("OLLAMA_API_KEY", "").strip()
+        if api_key:
+            request.add_header("Authorization", f"Bearer {api_key}")
+
+        with urllib.request.urlopen(request, timeout=TAGS_REQUEST_TIMEOUT) as response:
             payload = json.loads(response.read())
         if not isinstance(payload, dict):
             return []

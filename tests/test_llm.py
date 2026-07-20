@@ -788,14 +788,19 @@ def _install_fake_tags(monkeypatch, entries, error=None):
 
     Returns a call counter dict with ``n`` (call count), ``url`` (last
     URL requested) and ``timeout`` (last ``timeout`` kwarg received).
+
+    The first argument received is a ``urllib.request.Request`` object
+    (not a plain string) since ``_fetch_tags_payload`` builds one to
+    attach an optional bearer-token header. ``request.full_url`` recovers
+    the URL string so the existing assertions keep working unchanged.
     """
     import bmlib.llm.providers.ollama as ollama_mod
 
     counter = {"n": 0, "url": None, "timeout": None}
 
-    def fake_urlopen(url, timeout=None):
+    def fake_urlopen(request, timeout=None):
         counter["n"] += 1
-        counter["url"] = url
+        counter["url"] = request.full_url
         counter["timeout"] = timeout
         if error is not None:
             raise error
@@ -970,3 +975,99 @@ class TestOllamaRawTagsPayload:
         provider = _ollama_provider_with(_FakeOllamaClient())
 
         assert provider.list_models() == []
+
+
+class TestOllamaTagsAuth:
+    def test_api_key_is_forwarded_as_bearer(self, monkeypatch):
+        import bmlib.llm.providers.ollama as ollama_mod
+
+        monkeypatch.setenv("OLLAMA_API_KEY", "secret-token-123")
+        seen = {}
+
+        def fake_urlopen(request, timeout=None):
+            seen["auth"] = request.get_header("Authorization")
+            return _FakeTagsResponse({"models": []})
+
+        monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
+        _ollama_provider_with(_FakeOllamaClient()).list_models()
+
+        assert seen["auth"] == "Bearer secret-token-123"
+
+    def test_no_auth_header_without_api_key(self, monkeypatch):
+        import bmlib.llm.providers.ollama as ollama_mod
+
+        monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
+        seen = {}
+
+        def fake_urlopen(request, timeout=None):
+            seen["auth"] = request.get_header("Authorization")
+            return _FakeTagsResponse({"models": []})
+
+        monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
+        _ollama_provider_with(_FakeOllamaClient()).list_models()
+
+        assert seen["auth"] is None
+
+    def test_blank_api_key_sends_no_header(self, monkeypatch):
+        import bmlib.llm.providers.ollama as ollama_mod
+
+        monkeypatch.setenv("OLLAMA_API_KEY", "   ")
+        seen = {}
+
+        def fake_urlopen(request, timeout=None):
+            seen["auth"] = request.get_header("Authorization")
+            return _FakeTagsResponse({"models": []})
+
+        monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
+        _ollama_provider_with(_FakeOllamaClient()).list_models()
+
+        assert seen["auth"] is None
+
+
+class TestOllamaMetadataIsPortable:
+    """list_models() results must stay copyable, picklable, replaceable.
+
+    All three worked before the lazy subclasses existed. The resolver
+    closes over the live ollama client (an httpx client holding an
+    RLock), so the lazy objects must degrade to plain ones on the way out.
+    """
+
+    def _model(self, monkeypatch, context_length=40960):
+        _install_fake_tags(monkeypatch, [_ollama_entry("m", context_length=context_length)])
+        return _ollama_provider_with(_FakeOllamaClient([])).list_models()[0]
+
+    def test_deepcopy_yields_plain_metadata(self, monkeypatch):
+        import copy
+
+        from bmlib.llm.providers.base import ModelMetadata
+
+        clone = copy.deepcopy(self._model(monkeypatch))
+        assert type(clone) is ModelMetadata
+        assert clone.model_id == "m"
+        assert clone.context_window == 40960
+
+    def test_pickle_roundtrip(self, monkeypatch):
+        import pickle
+
+        from bmlib.llm.providers.base import ModelMetadata
+
+        restored = pickle.loads(pickle.dumps(self._model(monkeypatch)))
+        assert type(restored) is ModelMetadata
+        assert restored.context_window == 40960
+        assert restored.capabilities.max_context_window == 40960
+
+    def test_dataclasses_replace(self, monkeypatch):
+        import dataclasses
+
+        updated = dataclasses.replace(self._model(monkeypatch), display_name="renamed")
+        assert updated.display_name == "renamed"
+        assert updated.context_window == 40960
+
+    def test_capabilities_pickle_to_plain(self, monkeypatch):
+        import pickle
+
+        from bmlib.llm.providers.base import ProviderCapabilities
+
+        caps = pickle.loads(pickle.dumps(self._model(monkeypatch).capabilities))
+        assert type(caps) is ProviderCapabilities
+        assert caps.max_context_window == 40960

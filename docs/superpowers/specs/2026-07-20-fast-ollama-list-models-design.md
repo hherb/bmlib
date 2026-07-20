@@ -95,6 +95,13 @@ The `capabilities` array observed in practice contains: `audio`,
 Mapping `tools` and `vision` onto `ProviderCapabilities` is a net accuracy
 **improvement** — Ollama currently leaves both at their `False` defaults.
 
+**Correction (found in final review):** the `ollama` SDK's
+`ListResponse.Model` leaves Pydantic's `extra="ignore"` in place and
+declares neither `capabilities` nor `details.context_length`, so reading
+them through `client.list()` yields nothing. `list_models()` therefore reads
+the raw `/api/tags` JSON. This also makes `details.context_length` available,
+which removes the `show()` call entirely for the models that report it.
+
 The array may be absent on older Ollama servers; treat a missing or null
 `capabilities` key as an empty list, which yields today's `False` defaults.
 
