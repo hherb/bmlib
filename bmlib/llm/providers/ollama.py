@@ -31,6 +31,7 @@ import re
 from typing import Any
 
 from bmlib.llm.data_types import (
+    BatchEmbeddingResponse,
     EmbeddingResponse,
     LLMMessage,
     LLMResponse,
@@ -278,6 +279,14 @@ class OllamaProvider(BaseProvider):
     ) -> EmbeddingResponse:
         """Generate an embedding vector for *text*.
 
+        Delegates to :meth:`embed_batch` with a single-element batch, so
+        single and batch embedding share one code path and one endpoint
+        (``/api/embed``). That endpoint returns L2-normalised vectors —
+        unlike the deprecated ``/api/embeddings`` endpoint this method
+        used before, which returned raw vectors. Cosine similarity is
+        unaffected; unnormalised dot-product or L2 comparisons against
+        vectors stored from the old endpoint will differ in scale.
+
         Args:
             text: The text to embed.
             model: Embedding model identifier.  Defaults to
@@ -288,22 +297,68 @@ class OllamaProvider(BaseProvider):
         Returns:
             An :class:`EmbeddingResponse` with the embedding vector.
         """
+        batch = self.embed_batch([text], model=model, **kwargs)
+        embedding = batch.embeddings[0]
+        return EmbeddingResponse(
+            embedding=embedding,
+            model=batch.model,
+            dimensions=len(embedding),
+            input_tokens=batch.input_tokens,
+        )
+
+    def embed_batch(
+        self,
+        texts: list[str],
+        model: str | None = None,
+        **kwargs: object,
+    ) -> BatchEmbeddingResponse:
+        """Generate embedding vectors for *texts* in a single API call.
+
+        Sends the whole batch to Ollama's ``/api/embed`` endpoint in one
+        round-trip — for bulk workloads this is several times faster than
+        looping :meth:`embed` (one HTTP request and one model load per
+        batch instead of per text).
+
+        Args:
+            texts: The texts to embed. An empty list returns an empty
+                response without contacting the server.
+            model: Embedding model identifier.  Defaults to
+                :pyattr:`default_model` (not ideal for embeddings — callers
+                should pass an embedding-specific model).
+            **kwargs: Reserved for future use.
+
+        Returns:
+            A :class:`BatchEmbeddingResponse` with one vector per input
+            text, in input order.
+
+        Raises:
+            ConnectionError: If the request to the Ollama server fails.
+            ValueError: If the server returns a different number of
+                vectors than texts sent (protocol violation).
+        """
         model = model or self.default_model
+        if not texts:
+            return BatchEmbeddingResponse(embeddings=[], model=model)
+
         client = self._get_client()
 
         try:
-            response = client.embeddings(model=model, prompt=text)
+            response = client.embed(model=model, input=texts)
         except Exception as e:
             logger.error("Ollama embedding error: %s", e)
             raise ConnectionError(f"Ollama embedding failed: {e}") from e
 
-        embedding: list[float] = _safe_get(response, "embedding", [])
+        embeddings: list[list[float]] = _safe_get(response, "embeddings", []) or []
+        if len(embeddings) != len(texts):
+            raise ValueError(
+                f"Ollama returned {len(embeddings)} embeddings for {len(texts)} input texts"
+            )
         input_tokens: int = _safe_get(response, "prompt_eval_count", 0) or 0
 
-        return EmbeddingResponse(
-            embedding=embedding,
+        return BatchEmbeddingResponse(
+            embeddings=embeddings,
             model=model,
-            dimensions=len(embedding),
+            dimensions=len(embeddings[0]) if embeddings else 0,
             input_tokens=input_tokens,
         )
 

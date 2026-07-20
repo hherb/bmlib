@@ -205,3 +205,23 @@ class EmbeddingResponse:
     model: str = ""
     dimensions: int = 0
     input_tokens: int = 0
+
+
+@dataclass
+class BatchEmbeddingResponse:
+    """Response from a batch embedding request.
+
+    Returned by :meth:`~bmlib.llm.client.LLMClient.embed_batch`, which
+    embeds many texts in a single provider round-trip.
+
+    Attributes:
+        embeddings: One embedding vector per input text, in input order.
+        model: The model that generated the embeddings.
+        dimensions: Number of dimensions per vector (0 for an empty batch).
+        input_tokens: Total input tokens processed across the whole batch.
+    """
+
+    embeddings: list[list[float]]
+    model: str = ""
+    dimensions: int = 0
+    input_tokens: int = 0

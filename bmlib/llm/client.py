@@ -38,6 +38,7 @@ import logging
 import threading
 
 from bmlib.llm.data_types import (
+    BatchEmbeddingResponse,
     EmbeddingResponse,
     LLMMessage,
     LLMResponse,
@@ -265,6 +266,35 @@ class LLMClient:
         provider_name, model_name = self._parse_model_string(model)
         provider = self._get_provider(provider_name)
         return provider.embed(text=text, model=model_name, **kwargs)
+
+    def embed_batch(
+        self,
+        texts: list[str],
+        model: str | None = None,
+        **kwargs: object,
+    ) -> BatchEmbeddingResponse:
+        """Generate embedding vectors for *texts* in a single request.
+
+        Sends the whole batch to the provider in one API round-trip —
+        for bulk workloads this is several times faster than looping
+        :meth:`embed` per text. Routes on the *model* string like
+        :meth:`embed` and raises :class:`NotImplementedError` for
+        providers without embedding support.
+
+        Args:
+            texts: The texts to embed. An empty list returns an empty
+                response without contacting the provider.
+            model: Model string (``"provider:model_name"`` format).
+                   Defaults to the default provider's default model.
+            **kwargs: Extra provider-specific arguments.
+
+        Returns:
+            A :class:`~bmlib.llm.data_types.BatchEmbeddingResponse` with
+            one vector per input text, in input order.
+        """
+        provider_name, model_name = self._parse_model_string(model)
+        provider = self._get_provider(provider_name)
+        return provider.embed_batch(texts=texts, model=model_name, **kwargs)
 
     def test_connection(
         self,

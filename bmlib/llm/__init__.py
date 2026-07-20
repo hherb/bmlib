@@ -29,6 +29,7 @@ Usage::
 
 from bmlib.llm.client import LLMClient, get_llm_client, reset_llm_client, supports_tools
 from bmlib.llm.data_types import (
+    BatchEmbeddingResponse,
     EmbeddingResponse,
     LLMMessage,
     LLMResponse,
@@ -53,6 +54,7 @@ from bmlib.llm.text_utils import (
 from bmlib.llm.token_tracker import TokenTracker, get_token_tracker, reset_token_tracker
 
 __all__ = [
+    "BatchEmbeddingResponse",
     "EmbeddingResponse",
     "JSONRepairError",
     "LLMClient",
