@@ -1437,16 +1437,128 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
-### Task 7: Restore copy/pickle/replace, and correct the remaining claims
+### Task 7: Restore copy/pickle/replace, forward auth, and correct the remaining claims
 
-The final review found three regressions and one wrong docstring.
+The final review found three regressions and one wrong docstring. A later
+review round found a fourth: `_fetch_tags_payload()` drops `OLLAMA_API_KEY`.
 
 **Files:**
-- Modify: `bmlib/llm/providers/ollama.py` (both lazy classes)
+- Modify: `bmlib/llm/providers/ollama.py` (both lazy classes; `_fetch_tags_payload`)
 - Modify: `CLAUDE.md`, `docs/superpowers/specs/2026-07-20-fast-ollama-list-models-design.md`
 - Test: `tests/test_llm.py`
 
 ---
+
+- [ ] **Step 0: Forward `OLLAMA_API_KEY` on the raw tags fetch**
+
+`_fetch_tags_payload()` calls `urllib.request.urlopen(url, ...)` with no
+headers. Its docstring justifies bypassing the SDK by claiming
+`_get_client` "constructs `ollama.Client(host=...)` with no custom headers
+or auth, so there is no client configuration to inherit." **That claim is
+false.** `ollama/_client.py` reads `OLLAMA_API_KEY` from the environment and
+injects an `authorization: Bearer …` header. Verified:
+
+```
+OLLAMA_API_KEY=secret-token-123
+  SDK client headers -> {'authorization': 'Bearer secret-token-123'}
+  _fetch_tags_payload -> urlopen(url, timeout=...), no headers at all
+```
+
+Failure scenario: a user pointing at Ollama Cloud or a self-hosted
+authenticating gateway gets working `chat()`, `show()` and `embed()`, but
+`list_models()` returns `[]` after a silent 401 logged only at WARNING.
+This is the same two-paths-disagree defect as the `OLLAMA_HOST` bug, one
+layer up.
+
+Write the test first:
+
+```python
+class TestOllamaTagsAuth:
+    def test_api_key_is_forwarded_as_bearer(self, monkeypatch):
+        import bmlib.llm.providers.ollama as ollama_mod
+
+        monkeypatch.setenv("OLLAMA_API_KEY", "secret-token-123")
+        seen = {}
+
+        def fake_urlopen(request, timeout=None):
+            seen["auth"] = request.get_header("Authorization")
+            return _FakeTagsResponse({"models": []})
+
+        monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
+        _ollama_provider_with(_FakeOllamaClient()).list_models()
+
+        assert seen["auth"] == "Bearer secret-token-123"
+
+    def test_no_auth_header_without_api_key(self, monkeypatch):
+        import bmlib.llm.providers.ollama as ollama_mod
+
+        monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
+        seen = {}
+
+        def fake_urlopen(request, timeout=None):
+            seen["auth"] = request.get_header("Authorization")
+            return _FakeTagsResponse({"models": []})
+
+        monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
+        _ollama_provider_with(_FakeOllamaClient()).list_models()
+
+        assert seen["auth"] is None
+
+    def test_blank_api_key_sends_no_header(self, monkeypatch):
+        import bmlib.llm.providers.ollama as ollama_mod
+
+        monkeypatch.setenv("OLLAMA_API_KEY", "   ")
+        seen = {}
+
+        def fake_urlopen(request, timeout=None):
+            seen["auth"] = request.get_header("Authorization")
+            return _FakeTagsResponse({"models": []})
+
+        monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
+        _ollama_provider_with(_FakeOllamaClient()).list_models()
+
+        assert seen["auth"] is None
+```
+
+**Note:** the existing `_install_fake_tags` helper defines
+`fake_urlopen(url, timeout=None)` and stores the first argument as
+`counter["url"]`. That first argument is now a `Request` object, not a
+string. Update the helper to record `request.full_url` so the existing
+URL assertions keep working, and keep its signature compatible.
+
+Then implement, in `_fetch_tags_payload()`:
+
+```python
+        url = f"{self._base_url.rstrip('/')}/api/tags"
+        request = urllib.request.Request(url)
+
+        # Mirror ollama.Client, which reads OLLAMA_API_KEY from the
+        # environment and sends it as a bearer token. Without this the
+        # SDK-backed calls (chat, show, embed) would authenticate against
+        # a gateway while model discovery silently 401'd to an empty list.
+        api_key = os.environ.get("OLLAMA_API_KEY", "").strip()
+        if api_key:
+            request.add_header("Authorization", f"Bearer {api_key}")
+
+        with urllib.request.urlopen(request, timeout=TAGS_REQUEST_TIMEOUT) as response:
+            payload = json.loads(response.read())
+```
+
+And **correct the false claim** in that method's docstring. Replace the
+"Bypassing the SDK costs nothing here…" paragraph with:
+
+```
+        Bypassing the SDK means reproducing the little client
+        configuration it derives: :envvar:`OLLAMA_API_KEY` is forwarded as
+        a bearer token below, matching ``ollama.Client``.  The host itself
+        is normalised in :func:`_normalise_base_url` for the same reason.
+```
+
+Note the provider deliberately discards a constructor-passed `api_key`
+(`super().__init__(api_key=None, ...)`), and `ollama.Client` reads only the
+environment — so environment-only is the behaviour that matches the SDK.
+Do not add constructor-key support here; that would reintroduce a
+divergence in the opposite direction.
 
 - [ ] **Step 1: Write the failing tests**
 
