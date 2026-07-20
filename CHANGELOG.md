@@ -22,7 +22,9 @@ All notable changes to bmlib are documented here. The format is based on
   `reasoning_content` / `reasoning` response fields, with an opt-in
   `<think>…</think>` content split for local servers that emit reasoning
   inline. Callers that never pass `think` see identical requests and
-  untouched `content`.
+  untouched `content`. Known limitation: Anthropic thinking does not compose
+  with multi-turn tool loops (thinking blocks are not round-tripped into
+  follow-up requests) — see `docs/manual/llm.md` and ROADMAP.md.
 - OpenAI-compatible providers accept an `extra_body` kwarg forwarded verbatim
   to the SDK, as the escape hatch for server-specific parameters (e.g. vLLM's
   `chat_template_kwargs`).

@@ -184,11 +184,11 @@ class OllamaProvider(BaseProvider):
             # Ollama accepts a bool or an effort-level string ("low"/
             # "medium"/"high", gpt-oss models). An int is the cross-provider
             # token-budget form (Anthropic) — Ollama has no budget concept,
-            # so it degrades to "on".
-            if isinstance(think, bool) or isinstance(think, str):
+            # so it degrades to on/off by truthiness (0 stays off).
+            if isinstance(think, (bool, str)):
                 request_kwargs["think"] = think
             else:
-                request_kwargs["think"] = True
+                request_kwargs["think"] = bool(think)
 
         # Tool calling: ollama-python (>=0.3) accepts an OpenAI-style
         # tools list directly. Convert our LLMToolDefinition into the

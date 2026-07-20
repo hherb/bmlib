@@ -134,7 +134,7 @@ class AnthropicProvider(BaseProvider):
             try:
                 import anthropic
 
-                kwargs: dict[str, object] = {"api_key": self._api_key}
+                kwargs: dict[str, Any] = {"api_key": self._api_key}
                 if self._base_url and self._base_url != self.default_base_url:
                     kwargs["base_url"] = self._base_url
                 self._client = anthropic.Anthropic(**kwargs)
@@ -174,8 +174,9 @@ class AnthropicProvider(BaseProvider):
 
         Raises:
             ValueError: If *think* is truthy but *max_tokens* leaves no
-                room for the minimum thinking budget, or *think* is an
-                unrecognised effort-level string.
+                room for the minimum thinking budget, *think* is a
+                negative token budget, or *think* is an unrecognised
+                effort-level string.
         """
         model = model or self.default_model
         client = self._get_client()
@@ -386,7 +387,8 @@ def _resolve_thinking_budget(think: bool | str | int, max_tokens: int) -> int:
 
     Raises:
         ValueError: If *max_tokens* leaves no room for the minimum
-            budget, or the effort-level string is unrecognised.
+            budget, the token budget is negative, or the effort-level
+            string is unrecognised.
     """
     if max_tokens <= THINKING_BUDGET_MIN:
         raise ValueError(
@@ -397,6 +399,8 @@ def _resolve_thinking_budget(think: bool | str | int, max_tokens: int) -> int:
     if isinstance(think, bool):
         budget = DEFAULT_THINKING_BUDGET
     elif isinstance(think, int):
+        if think < 0:
+            raise ValueError(f"Negative thinking budget {think}; expected a positive token count.")
         budget = think
     elif isinstance(think, str):
         try:

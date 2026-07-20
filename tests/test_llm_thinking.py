@@ -131,10 +131,17 @@ class TestOllamaThinking:
         assert provider._client.last_kwargs["think"] == "high"
 
     def test_think_int_budget_coerced_to_true(self):
-        # Ollama has no token-budget concept; an int means "on".
+        # Ollama has no token-budget concept; a positive int means "on".
         provider = _ollama_provider({"message": {"content": "x"}})
         provider.chat([LLMMessage(role="user", content="q")], think=4096)
         assert provider._client.last_kwargs["think"] is True
+
+    def test_think_zero_budget_coerced_to_false(self):
+        # A falsy int must not switch thinking ON — it degrades by
+        # truthiness, consistent with the other providers.
+        provider = _ollama_provider({"message": {"content": "x"}})
+        provider.chat([LLMMessage(role="user", content="q")], think=0)
+        assert provider._client.last_kwargs["think"] is False
 
     def test_absent_think_not_sent(self):
         provider = _ollama_provider({"message": {"content": "x"}})
@@ -201,6 +208,13 @@ class TestAnthropicThinkingRequest:
         provider = _anthropic_provider()
         with pytest.raises(ValueError, match="think"):
             provider.chat([LLMMessage(role="user", content="q")], max_tokens=8000, think="turbo")
+
+    def test_negative_budget_raises(self):
+        # A negative budget is a caller bug — fail loudly instead of
+        # silently clamping it up to the API minimum.
+        provider = _anthropic_provider()
+        with pytest.raises(ValueError, match="egative"):
+            provider.chat([LLMMessage(role="user", content="q")], max_tokens=8000, think=-100)
 
     def test_temperature_and_top_p_omitted_when_thinking(self):
         # The API rejects non-default sampling params with thinking enabled.
@@ -354,6 +368,15 @@ class TestOpenAICompatThinkingResponse:
         assert resp.content == raw
         assert resp.thinking is None
 
+    def test_empty_think_block_yields_none_thinking(self):
+        # An empty <think></think> block is stripped from content but
+        # must not produce an empty-string thinking value.
+        message = SimpleNamespace(content="<think></think>answer")
+        provider = _compat_provider(message)
+        resp = provider.chat([LLMMessage(role="user", content="q")], think=True)
+        assert resp.thinking is None
+        assert resp.content == "answer"
+
     def test_explicit_reasoning_field_wins_over_think_tags(self):
         message = SimpleNamespace(
             content="<think>inline</think>answer",
@@ -386,6 +409,14 @@ class TestOpenAICompatThinkingRequest:
         provider.chat([LLMMessage(role="user", content="q")], think=True)
         req = _compat_request(provider)
         assert "reasoning_effort" not in req
+
+    def test_effort_string_not_sent_for_non_reasoning_model(self):
+        # reasoning_effort is gated on the model, not just the value type.
+        provider = _compat_provider(reasoning_model=False)
+        provider.chat([LLMMessage(role="user", content="q")], think="high")
+        req = _compat_request(provider)
+        assert "reasoning_effort" not in req
+        assert "think" not in req
 
     def test_extra_body_forwarded(self):
         provider = _compat_provider()

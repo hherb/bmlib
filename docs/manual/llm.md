@@ -724,13 +724,29 @@ print(response.content)   # the final answer, clean
 
 | Provider | Request side | Response side (`LLMResponse.thinking`) |
 |----------|--------------|------------------------------------------|
-| Ollama | `think` forwarded natively (`bool` or effort string; `int` degrades to `True`). `think=False` reaches the server, for models that think by default. | `message.thinking` |
-| Anthropic | Truthy `think` enables extended thinking with `budget_tokens`: `int` sets the budget, effort levels map to 2048/8192/16384, `True` = 8192. The budget is clamped to `[1024, max_tokens - 1]`; `max_tokens <= 1024` raises `ValueError`. `temperature` / `top_p` are omitted from the request (the API requires default sampling with thinking). | `thinking` content blocks (`redacted_thinking` blocks are skipped) |
+| Ollama | `think` forwarded natively (`bool` or effort string; `int` degrades to on/off by truthiness). `think=False` reaches the server, for models that think by default. | `message.thinking` |
+| Anthropic | Truthy `think` enables extended thinking with `budget_tokens`: `int` sets the budget, effort levels map to 2048/8192/16384, `True` = 8192. The budget is clamped to `[1024, max_tokens - 1]`; `max_tokens <= 1024` or a negative budget raises `ValueError`. `temperature` / `top_p` are omitted from the request (the API requires default sampling with thinking). | `thinking` content blocks (`redacted_thinking` blocks are skipped) |
 | OpenAI / DeepSeek / Mistral / Gemini (OpenAI-compatible) | An effort **string** on a reasoning model (e.g. OpenAI o-series) is sent as `reasoning_effort`. Other values are not forwarded (unknown parameters make many servers return 400) — use `extra_body` for server-specific knobs, e.g. `extra_body={"chat_template_kwargs": {"enable_thinking": True}}` for vLLM. | `message.reasoning_content` (DeepSeek, vLLM, SGLang) or `message.reasoning` (OpenRouter-style). Fallback: a leading `<think>…</think>` block is split out of `content` — only when the caller passed a truthy `think`. |
 
 Whether a given model actually thinks — or rejects the parameter — is between
 the provider and the model; bmlib does not pre-validate it. Ollama, for
 example, errors when `think=True` is sent to a model without thinking support.
+
+Two provider-specific caveats:
+
+- **Effort strings are only validated by Anthropic.** Anthropic raises
+  `ValueError` for an effort level outside `"low"`/`"medium"`/`"high"`;
+  Ollama and the OpenAI-compatible providers forward the string verbatim.
+  That lets you use server-specific levels (e.g. OpenAI's `"minimal"`), but
+  an invalid value surfaces as a server-side error rather than a local one.
+- **Anthropic: thinking does not compose with multi-turn tool loops.** When
+  returning tool results, the Anthropic API requires the original `thinking`
+  blocks (with their signatures) to be re-sent in the preceding assistant
+  turn. `LLMResponse.thinking` is a plain string and the message converter
+  does not round-trip thinking blocks, so the follow-up request of a
+  `think=` + `tools` conversation is rejected by the API. Use thinking or
+  tool loops with Anthropic, not both in the same conversation (a single
+  request that merely *defines* tools is fine). Tracked in ROADMAP.md.
 
 Backwards compatibility: callers that never pass `think` get byte-identical
 requests and untouched `content`; `thinking` is simply `None`.

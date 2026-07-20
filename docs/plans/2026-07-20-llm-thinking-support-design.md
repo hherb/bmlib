@@ -46,8 +46,8 @@ Per-provider mapping:
 
 | Provider | Request mapping | Response extraction |
 |---|---|---|
-| Ollama | `bool`/`str` forwarded natively (unchanged); `int` coerced to `True` (Ollama has no budget concept) | `message.thinking` |
-| Anthropic | truthy → `thinking={"type": "enabled", "budget_tokens": N}`; `int` → that budget, `"low"`=2048 / `"medium"`=8192 / `"high"`=16384, `True`=8192; budget clamped to `[1024, max_tokens-1]`; `ValueError` if `max_tokens <= 1024`; `temperature`/`top_p` omitted (API requires defaults with thinking) | `thinking` content blocks (`redacted_thinking` skipped) |
+| Ollama | `bool`/`str` forwarded natively (unchanged); `int` coerced to on/off by truthiness (Ollama has no budget concept; `0` stays off) | `message.thinking` |
+| Anthropic | truthy → `thinking={"type": "enabled", "budget_tokens": N}`; `int` → that budget, `"low"`=2048 / `"medium"`=8192 / `"high"`=16384, `True`=8192; budget clamped to `[1024, max_tokens-1]`; `ValueError` if `max_tokens <= 1024` or the budget is negative; `temperature`/`top_p` omitted (API requires defaults with thinking) | `thinking` content blocks (`redacted_thinking` skipped) |
 | OpenAI-compat base | `str` + reasoning model → `reasoning_effort`; otherwise logged at debug and not sent (avoids 400s from servers that reject unknown params). New: `extra_body` kwarg forwarded verbatim as the escape hatch for server-specific knobs (vLLM `chat_template_kwargs`, etc.) | `message.reasoning_content` (DeepSeek, vLLM, SGLang) or `message.reasoning` (OpenRouter-style); fallback: leading `<think>…</think>` block split out of `content`, **only when the caller passed a truthy `think`** |
 
 ### Backwards compatibility
@@ -61,6 +61,16 @@ Per-provider mapping:
   `think` was previously ignored by those providers.
 - Extraction guards require `isinstance(..., str)`, so SDK objects that lack
   the fields (or mocks) never leak non-strings into `thinking`.
+
+### Known limitation
+
+Anthropic extended thinking does not compose with multi-turn tool loops: the
+API requires the original `thinking` blocks (with their signatures) to be
+re-sent in the assistant turn that carried the `tool_use` blocks, but
+`LLMResponse.thinking` is a plain joined string and
+`_convert_messages_to_anthropic` does not round-trip thinking blocks, so the
+follow-up request is rejected. Fixing this needs signature-preserving block
+storage — tracked in ROADMAP.md.
 
 ### Testing
 
