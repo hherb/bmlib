@@ -298,3 +298,148 @@ class TestAnthropicListModelsCacheIsolation:
 
         third = provider.list_models()  # cache hit again
         assert [m.model_id for m in third] == ["claude-test-1"]
+
+
+class TestOllamaLazyMetadata:
+    """The lazy context-window mechanism, exercised without list_models()."""
+
+    def _lazy_pair(self, ctx=131072, error=None):
+        """Build a lazy metadata object over a counting resolver."""
+        from bmlib.llm.providers.ollama import (
+            _FREE_PRICING,
+            _LazyOllamaCapabilities,
+            _LazyOllamaModelMetadata,
+        )
+
+        calls = {"n": 0}
+
+        def resolver():
+            calls["n"] += 1
+            if error is not None:
+                raise error
+            return ctx
+
+        meta = _LazyOllamaModelMetadata(
+            resolver,
+            model_id="qwen3:8b",
+            display_name="qwen3:8b (8.2B)",
+            pricing=_FREE_PRICING,
+            capabilities=_LazyOllamaCapabilities(
+                resolver,
+                supports_system_messages=True,
+                supports_function_calling=True,
+                supports_vision=False,
+            ),
+        )
+        return meta, calls
+
+    def test_eager_fields_do_not_resolve(self):
+        meta, calls = self._lazy_pair()
+
+        assert meta.model_id == "qwen3:8b"
+        assert meta.display_name == "qwen3:8b (8.2B)"
+        assert meta.pricing.input_cost == 0.0
+        assert meta.capabilities.supports_function_calling is True
+        assert meta.capabilities.supports_vision is False
+        assert calls["n"] == 0
+
+    def test_context_window_resolves_on_read(self):
+        meta, calls = self._lazy_pair(ctx=131072)
+
+        assert meta.context_window == 131072
+        assert calls["n"] == 1
+
+    def test_context_window_is_memoised(self):
+        meta, calls = self._lazy_pair()
+
+        meta.context_window
+        meta.context_window
+        meta.context_window
+        assert calls["n"] == 1
+
+    def test_capabilities_max_context_window_resolves(self):
+        meta, calls = self._lazy_pair(ctx=131072)
+
+        assert meta.capabilities.max_context_window == 131072
+        assert calls["n"] == 1
+
+    def test_repr_does_not_resolve(self):
+        meta, calls = self._lazy_pair()
+
+        text = repr(meta)
+        assert calls["n"] == 0
+        assert "<unresolved>" in text
+        assert "qwen3:8b" in text
+
+    def test_repr_shows_value_once_resolved(self):
+        meta, _ = self._lazy_pair(ctx=4096)
+
+        # __repr__ nests capabilities!r, and the metadata and capabilities
+        # objects memoise independently — both must be resolved before the
+        # rendering is fully concrete.
+        meta.context_window
+        meta.capabilities.max_context_window
+        assert "4096" in repr(meta)
+        assert "<unresolved>" not in repr(meta)
+
+    def test_explicit_context_window_is_honoured(self):
+        from bmlib.llm.providers.ollama import _FREE_PRICING, _LazyOllamaModelMetadata
+
+        calls = {"n": 0}
+
+        def resolver():
+            calls["n"] += 1
+            return 999
+
+        meta = _LazyOllamaModelMetadata(
+            resolver,
+            model_id="m",
+            display_name="m",
+            pricing=_FREE_PRICING,
+            context_window=2048,
+        )
+        assert meta.context_window == 2048
+        assert calls["n"] == 0
+
+
+class TestOllamaContextWindowResolver:
+    """OllamaProvider._resolve_context_window must never raise."""
+
+    def _provider(self, show_result=None, show_error=None):
+        from types import SimpleNamespace
+
+        from bmlib.llm.providers.ollama import OllamaProvider
+
+        class FakeClient:
+            def __init__(self):
+                self.show_calls = 0
+
+            def show(self, model_name):
+                self.show_calls += 1
+                if show_error is not None:
+                    raise show_error
+                return show_result
+
+        provider = OllamaProvider()
+        provider._client = FakeClient()
+        return provider, SimpleNamespace(client=provider._client)
+
+    def test_resolves_from_show(self):
+        provider, h = self._provider(show_result={"model_info": {"qwen3.context_length": 40960}})
+
+        assert provider._resolve_context_window("qwen3:8b") == 40960
+        assert h.client.show_calls == 1
+
+    def test_result_is_cached(self):
+        provider, h = self._provider(show_result={"model_info": {"qwen3.context_length": 40960}})
+
+        provider._resolve_context_window("qwen3:8b")
+        provider._resolve_context_window("qwen3:8b")
+        assert h.client.show_calls == 1
+
+    def test_failure_falls_back_without_raising(self):
+        from bmlib.llm.providers.ollama import FALLBACK_CONTEXT_WINDOW
+
+        provider, _ = self._provider(show_error=RuntimeError("server down"))
+
+        assert provider._resolve_context_window("missing") == FALLBACK_CONTEXT_WINDOW

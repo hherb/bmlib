@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from collections.abc import Callable
 from typing import Any
 
 from bmlib.llm.data_types import (
@@ -53,6 +54,13 @@ CHARS_PER_TOKEN_ESTIMATE = 4
 # Default context window when model metadata is unavailable (tokens)
 FALLBACK_CONTEXT_WINDOW = 8192
 
+# Sentinel written into the lazy context-window fields at construction time.
+# ``ModelMetadata`` and ``ProviderCapabilities`` are dataclasses, so their
+# generated ``__init__`` always assigns these fields — the lazy subclasses
+# cannot tell "caller supplied nothing" from "caller supplied a real value"
+# without a sentinel distinct from any legitimate context window.
+_UNRESOLVED = -1
+
 # Pricing for local models (always free)
 _FREE_PRICING = ModelPricing(0.0, 0.0)
 
@@ -72,6 +80,103 @@ def _safe_get(obj: Any, key: str, default: Any = None) -> Any:
     if isinstance(obj, dict):
         return obj.get(key, default)
     return getattr(obj, key, default)
+
+
+class _LazyOllamaCapabilities(ProviderCapabilities):
+    """:class:`ProviderCapabilities` whose ``max_context_window`` is lazy.
+
+    Every other capability flag is derived from Ollama's ``/api/tags``
+    payload and stays eager, so reading ``supports_vision`` or
+    ``supports_function_calling`` costs nothing.  Only the context window
+    requires a per-model ``show()`` call, and only that field defers.
+
+    Args:
+        resolver: Zero-argument callable returning the context window.
+            Called at most once; the result is memoised.
+        **kwargs: Forwarded to :class:`ProviderCapabilities`.  Passing
+            ``max_context_window`` seeds the memo and prevents any fetch.
+    """
+
+    def __init__(self, resolver: Callable[[], int], **kwargs: Any) -> None:
+        self._resolver = resolver
+        self._resolved: int | None = None
+        kwargs.setdefault("max_context_window", _UNRESOLVED)
+        super().__init__(**kwargs)
+
+    @property
+    def max_context_window(self) -> int:
+        """Context window in tokens, fetched on first read."""
+        if self._resolved is None:
+            self._resolved = self._resolver()
+        return self._resolved
+
+    @max_context_window.setter
+    def max_context_window(self, value: int) -> None:
+        self._resolved = None if value == _UNRESOLVED else value
+
+    def __repr__(self) -> str:
+        """Render without triggering a fetch (see class docstring)."""
+        ctx = "<unresolved>" if self._resolved is None else self._resolved
+        return (
+            f"{type(self).__name__}("
+            f"supports_streaming={self.supports_streaming!r}, "
+            f"supports_function_calling={self.supports_function_calling!r}, "
+            f"supports_vision={self.supports_vision!r}, "
+            f"supports_system_messages={self.supports_system_messages!r}, "
+            f"max_context_window={ctx})"
+        )
+
+
+class _LazyOllamaModelMetadata(ModelMetadata):
+    """:class:`ModelMetadata` whose ``context_window`` is lazy.
+
+    Returned by :meth:`OllamaProvider.list_models`.  ``model_id``,
+    ``display_name``, ``pricing`` and the capability flags all come from
+    ``/api/tags`` and are eager; ``context_window`` triggers one
+    ``show()`` call on first read and memoises the result.
+
+    ``__repr__`` deliberately does **not** resolve — otherwise logging a
+    model list would silently fire one HTTP request per model, which is
+    the exact cost this class exists to avoid.  ``__eq__`` is left as the
+    dataclass default and *does* resolve, on the grounds that comparing
+    two metadata objects means wanting their real values.
+
+    Args:
+        resolver: Zero-argument callable returning the context window.
+            Called at most once; the result is memoised.
+        **kwargs: Forwarded to :class:`ModelMetadata`.  Passing
+            ``context_window`` seeds the memo and prevents any fetch.
+    """
+
+    def __init__(self, resolver: Callable[[], int], **kwargs: Any) -> None:
+        self._resolver = resolver
+        self._resolved: int | None = None
+        kwargs.setdefault("context_window", _UNRESOLVED)
+        super().__init__(**kwargs)
+
+    @property
+    def context_window(self) -> int:
+        """Context window in tokens, fetched on first read."""
+        if self._resolved is None:
+            self._resolved = self._resolver()
+        return self._resolved
+
+    @context_window.setter
+    def context_window(self, value: int) -> None:
+        self._resolved = None if value == _UNRESOLVED else value
+
+    def __repr__(self) -> str:
+        """Render without triggering a fetch (see class docstring)."""
+        ctx = "<unresolved>" if self._resolved is None else self._resolved
+        return (
+            f"{type(self).__name__}("
+            f"model_id={self.model_id!r}, "
+            f"display_name={self.display_name!r}, "
+            f"context_window={ctx}, "
+            f"pricing={self.pricing!r}, "
+            f"capabilities={self.capabilities!r}, "
+            f"is_deprecated={self.is_deprecated!r})"
+        )
 
 
 class OllamaProvider(BaseProvider):
@@ -460,6 +565,33 @@ class OllamaProvider(BaseProvider):
                 context_window=FALLBACK_CONTEXT_WINDOW,
                 pricing=_FREE_PRICING,
             )
+
+    def _resolve_context_window(self, model_name: str) -> int:
+        """Return the context window for *model_name*, fetching if needed.
+
+        Delegates to :meth:`_get_model_info`, which performs one
+        ``show()`` call and memoises the result in ``_model_info_cache``.
+        Sharing that cache means a lazy read and a
+        :meth:`get_model_metadata` call never fetch the same model twice.
+
+        Never raises.  :meth:`_get_model_info` already swallows every
+        failure and returns metadata carrying
+        :data:`FALLBACK_CONTEXT_WINDOW`, which matters here because this
+        runs behind attribute access — an exception from reading
+        ``.context_window`` would be badly surprising.
+
+        Thread safety: concurrent first-touch of the same model may issue
+        duplicate ``show()`` calls.  Both write the same value and dict
+        assignment is atomic under the GIL, so this is left unlocked,
+        consistent with the rest of ``_model_info_cache``.
+
+        Args:
+            model_name: Ollama model identifier, e.g. ``"qwen3:8b"``.
+
+        Returns:
+            Context window in tokens.
+        """
+        return self._get_model_info(model_name).context_window
 
     # --- Connection test ---
 
