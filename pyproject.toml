@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bmlib"
-version = "0.4.0"
+version = "0.5.0"
 description = "Shared library for biomedical literature tools — LLM abstraction, quality assessment, transparency analysis, and database utilities"
 readme = "README.md"
 license = "AGPL-3.0-or-later"

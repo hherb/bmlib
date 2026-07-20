@@ -6,6 +6,8 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-20
+
 ### Added
 
 - **Batch embedding.** `LLMClient.embed_batch(texts, model=..., max_batch_size=None)`
