@@ -130,7 +130,11 @@ class TestOllamaLazyMetadata:
     def test_repr_shows_value_once_resolved(self):
         meta, _ = self._lazy_pair(ctx=4096)
 
+        # __repr__ nests capabilities!r, and the metadata and capabilities
+        # objects memoise independently — both must be resolved before the
+        # rendering is fully concrete.
         meta.context_window
+        meta.capabilities.max_context_window
         assert "4096" in repr(meta)
         assert "<unresolved>" not in repr(meta)
 
@@ -217,10 +221,19 @@ from __future__ import annotations
 import logging
 import os
 import re
-import time
-from functools import partial
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 ```
+
+Two constraints on this block:
+
+- `Callable` must come from `collections.abc`, not `typing` — this project's
+  ruff config enables `UP`, and `UP035` rejects `from typing import Callable`
+  on Python 3.11+.
+- Add **only** `Callable` here. `time` and `partial` are needed by Tasks 3
+  and 2 respectively, and each task adds its own import when it first uses
+  it. Importing them now trips `F401` (unused import) and fails this task's
+  own ruff gate at Step 7.
 
 Then add the sentinel immediately after the `FALLBACK_CONTEXT_WINDOW` constant (currently line 54):
 
@@ -585,7 +598,21 @@ Expected: FAIL. `test_list_models_issues_no_show_calls` fails with `assert 50 ==
 
 - [ ] **Step 3: Add the tags→metadata builder**
 
-In `bmlib/llm/providers/ollama.py`, insert directly above `list_models()` (currently line 412), under the existing `# --- Model discovery (native API) ---` comment:
+First add the `partial` import — Task 1 deliberately left it out, since it
+would have been unused there and tripped `F401`. The import block becomes:
+
+```python
+from __future__ import annotations
+
+import logging
+import os
+import re
+from collections.abc import Callable
+from functools import partial
+from typing import Any
+```
+
+Then, in `bmlib/llm/providers/ollama.py`, insert directly above `list_models()` (currently line 412), under the existing `# --- Model discovery (native API) ---` comment:
 
 ```python
     def _metadata_from_tags_entry(self, name: str, entry: Any) -> ModelMetadata:
@@ -799,7 +826,22 @@ Expected: FAIL — `test_second_call_is_served_from_cache` fails with `assert 2 
 
 - [ ] **Step 3: Add the TTL constant**
 
-In `bmlib/llm/providers/ollama.py`, add after the `_UNRESOLVED` sentinel from Task 1:
+First add the `time` import — Tasks 1 and 2 deliberately left it out, since
+it would have been unused there and tripped `F401`. The import block becomes:
+
+```python
+from __future__ import annotations
+
+import logging
+import os
+import re
+import time
+from collections.abc import Callable
+from functools import partial
+from typing import Any
+```
+
+Then, in `bmlib/llm/providers/ollama.py`, add after the `_UNRESOLVED` sentinel from Task 1:
 
 ```python
 # Seconds a cached model list stays fresh.
