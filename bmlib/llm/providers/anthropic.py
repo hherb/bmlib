@@ -49,6 +49,14 @@ CACHE_TTL_SECONDS = 3600
 # Rough chars-per-token ratio for fallback estimation
 CHARS_PER_TOKEN_ESTIMATE = 4
 
+# Extended thinking: API-imposed minimum budget, and the budgets the
+# cross-provider ``think`` effort levels map to. ``think=True`` uses the
+# "medium" budget. Budgets are clamped to max_tokens - 1 because the API
+# requires budget_tokens < max_tokens.
+THINKING_BUDGET_MIN = 1024
+THINKING_EFFORT_BUDGETS = {"low": 2048, "medium": 8192, "high": 16384}
+DEFAULT_THINKING_BUDGET = THINKING_EFFORT_BUDGETS["medium"]
+
 
 class AnthropicProvider(BaseProvider):
     """Anthropic Claude API provider."""
@@ -126,7 +134,7 @@ class AnthropicProvider(BaseProvider):
             try:
                 import anthropic
 
-                kwargs: dict[str, object] = {"api_key": self._api_key}
+                kwargs: dict[str, Any] = {"api_key": self._api_key}
                 if self._base_url and self._base_url != self.default_base_url:
                     kwargs["base_url"] = self._base_url
                 self._client = anthropic.Anthropic(**kwargs)
@@ -156,7 +164,19 @@ class AnthropicProvider(BaseProvider):
             temperature: Sampling temperature.
             max_tokens: Maximum tokens to generate.
             **kwargs: Extra options (``top_p``, ``json_mode``,
-                ``tools``, ``tool_choice``).
+                ``tools``, ``tool_choice``, ``think``). A truthy
+                ``think`` enables extended thinking: ``True`` uses the
+                default budget, an ``int`` sets ``budget_tokens``, and
+                ``"low"``/``"medium"``/``"high"`` map to preset budgets.
+                With thinking enabled the API only accepts default
+                sampling parameters, so ``temperature`` and ``top_p``
+                are omitted from the request.
+
+        Raises:
+            ValueError: If *think* is truthy but *max_tokens* leaves no
+                room for the minimum thinking budget, *think* is a
+                negative token budget, or *think* is an unrecognised
+                effort-level string.
         """
         model = model or self.default_model
         client = self._get_client()
@@ -165,6 +185,7 @@ class AnthropicProvider(BaseProvider):
         json_mode: bool = kwargs.get("json_mode", False)  # type: ignore[assignment]
         tools: list[LLMToolDefinition] | None = kwargs.get("tools")  # type: ignore[assignment]
         tool_choice: str = kwargs.get("tool_choice", "auto")  # type: ignore[assignment]
+        think: bool | str | int | None = kwargs.get("think")  # type: ignore[assignment]
 
         # Separate the system message and convert the rest into Anthropic
         # message format. Anthropic uses content blocks for everything,
@@ -183,6 +204,16 @@ class AnthropicProvider(BaseProvider):
         if top_p is not None:
             request_kwargs["top_p"] = top_p
 
+        if think:
+            request_kwargs["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": _resolve_thinking_budget(think, max_tokens),
+            }
+            # The API rejects non-default sampling parameters while
+            # thinking is enabled — omit them rather than error out.
+            request_kwargs.pop("temperature", None)
+            request_kwargs.pop("top_p", None)
+
         # Tool calling: convert OpenAI-style tool defs to Anthropic format
         # and forward tool_choice if explicitly set.
         if tools is not None:
@@ -194,13 +225,21 @@ class AnthropicProvider(BaseProvider):
         response = client.messages.create(**request_kwargs)
 
         # Anthropic returns content blocks. Walk them and split into
-        # text content vs tool calls.
+        # text content, thinking, and tool calls.
         content = ""
+        thinking_parts: list[str] = []
         tool_calls: list[LLMToolCall] = []
         if response.content:
             for block in response.content:
                 btype = getattr(block, "type", None)
-                if btype == "text" or hasattr(block, "text"):
+                if btype == "thinking":
+                    part = getattr(block, "thinking", "")
+                    if isinstance(part, str) and part:
+                        thinking_parts.append(part)
+                elif btype == "redacted_thinking":
+                    # Encrypted reasoning — nothing human-readable to expose.
+                    continue
+                elif btype == "text" or hasattr(block, "text"):
                     content += getattr(block, "text", "") or ""
                 elif btype == "tool_use":
                     tool_calls.append(
@@ -224,6 +263,7 @@ class AnthropicProvider(BaseProvider):
             output_tokens=response.usage.output_tokens,
             stop_reason=response.stop_reason,
             tool_calls=tool_calls if tool_calls else None,
+            thinking="\n\n".join(thinking_parts) if thinking_parts else None,
         )
 
     # --- Model listing ---
@@ -329,6 +369,50 @@ class AnthropicProvider(BaseProvider):
                 )
             return self._FALLBACK_PRICING
         return pricing
+
+
+# ---------------------------------------------------------------------------
+# Extended-thinking helpers (pure functions, unit-testable)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_thinking_budget(think: bool | str | int, max_tokens: int) -> int:
+    """Resolve a truthy ``think`` value into an Anthropic ``budget_tokens``.
+
+    ``True`` → the default budget; an ``int`` → that budget; a string
+    effort level (``"low"``/``"medium"``/``"high"``) → its preset budget.
+    The result is clamped to ``[THINKING_BUDGET_MIN, max_tokens - 1]``
+    because the API requires ``budget_tokens >= 1024`` and
+    ``budget_tokens < max_tokens``.
+
+    Raises:
+        ValueError: If *max_tokens* leaves no room for the minimum
+            budget, the token budget is negative, or the effort-level
+            string is unrecognised.
+    """
+    if max_tokens <= THINKING_BUDGET_MIN:
+        raise ValueError(
+            f"Anthropic extended thinking requires max_tokens > {THINKING_BUDGET_MIN} "
+            f"(the API minimum thinking budget); got max_tokens={max_tokens}. "
+            f"Increase max_tokens or disable think."
+        )
+    if isinstance(think, bool):
+        budget = DEFAULT_THINKING_BUDGET
+    elif isinstance(think, int):
+        if think < 0:
+            raise ValueError(f"Negative thinking budget {think}; expected a positive token count.")
+        budget = think
+    elif isinstance(think, str):
+        try:
+            budget = THINKING_EFFORT_BUDGETS[think.lower()]
+        except KeyError:
+            raise ValueError(
+                f"Unknown think effort level {think!r}; expected one of "
+                f"{sorted(THINKING_EFFORT_BUDGETS)}, a token budget (int), or a bool."
+            ) from None
+    else:
+        raise ValueError(f"Unsupported think value {think!r}; expected bool, int, or str.")
+    return max(THINKING_BUDGET_MIN, min(budget, max_tokens - 1))
 
 
 # ---------------------------------------------------------------------------

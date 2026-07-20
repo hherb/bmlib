@@ -175,6 +175,7 @@ class LLMResponse:
     stop_reason: str | None = None
     duration_seconds: float = 0.0
     tool_calls: list[LLMToolCall] | None = None
+    thinking: str | None = None
 ```
 
 Response from an LLM request.
@@ -189,6 +190,7 @@ Response from an LLM request.
 | `stop_reason` | `str \| None` | `None` | Why the model stopped generating (e.g. `"stop"`, `"max_tokens"`). Tool-capable providers report `"tool_use"` (Anthropic) or `"tool_calls"` (OpenAI/Ollama) when a tool call caused the stop. |
 | `duration_seconds` | `float` | `0.0` | Wall-clock time spent in the request. |
 | `tool_calls` | `list[LLMToolCall] \| None` | `None` | Tool invocations the model emitted, or `None` if it called no tool. |
+| `thinking` | `str \| None` | `None` | The model's reasoning trace, separated from `content`, when the provider returns one. Request it with the `think` kwarg — see [Thinking / Reasoning](#thinking--reasoning). |
 
 ---
 
@@ -292,7 +294,7 @@ Send a chat request, routing to the appropriate provider. Token usage is automat
 | `json_mode` | `bool` | `False` | Request JSON output. For Anthropic, extracts JSON from code blocks if needed. For Ollama, uses native `format="json"`. For OpenAI-compatible providers, sets `response_format={"type": "json_object"}`. |
 | `tools` | `list[LLMToolDefinition] \| None` | `None` | Tool definitions the model may call. See [Tool Calling](#tool-calling). |
 | `tool_choice` | `str` | `"auto"` | Tool selection strategy. Ignored when `tools` is `None`. |
-| `**kwargs` | `object` | | Provider-specific options. Ollama supports `think=True` for thinking mode. |
+| `**kwargs` | `object` | | Provider-specific options, plus the cross-provider `think` kwarg — see [Thinking / Reasoning](#thinking--reasoning). |
 
 **Returns:** `LLMResponse` with the model's response content, any tool calls, and token usage.
 
@@ -690,6 +692,64 @@ while True:
 ```
 
 Guard the loop with an iteration cap in production code — a model can keep requesting tools indefinitely.
+
+---
+
+## Thinking / Reasoning
+
+Pass `think=` to `chat()` (or `generate()`) to request the model's reasoning
+trace. It travels to the provider via `**kwargs`, and the trace comes back in
+`LLMResponse.thinking` (`None` when the provider returned none — `content` is
+never mixed with reasoning output).
+
+```python
+response = client.chat(
+    messages=[LLMMessage(role="user", content="Complex reasoning task...")],
+    model="ollama:qwen3:8b",
+    think=True,
+)
+print(response.thinking)  # the reasoning trace (or None)
+print(response.content)   # the final answer, clean
+```
+
+### Accepted `think` values
+
+| Value | Meaning |
+|-------|---------|
+| `True` / `False` | Enable / explicitly disable thinking. |
+| `"low"` / `"medium"` / `"high"` | Effort level. |
+| `int` | Thinking token budget. |
+
+### Per-provider mapping
+
+| Provider | Request side | Response side (`LLMResponse.thinking`) |
+|----------|--------------|------------------------------------------|
+| Ollama | `think` forwarded natively (`bool` or effort string; `int` degrades to on/off by truthiness). `think=False` reaches the server, for models that think by default. | `message.thinking` |
+| Anthropic | Truthy `think` enables extended thinking with `budget_tokens`: `int` sets the budget, effort levels map to 2048/8192/16384, `True` = 8192. The budget is clamped to `[1024, max_tokens - 1]`; `max_tokens <= 1024` or a negative budget raises `ValueError`. `temperature` / `top_p` are omitted from the request (the API requires default sampling with thinking). | `thinking` content blocks (`redacted_thinking` blocks are skipped) |
+| OpenAI / DeepSeek / Mistral / Gemini (OpenAI-compatible) | An effort **string** on a reasoning model (e.g. OpenAI o-series) is sent as `reasoning_effort`. Other values are not forwarded (unknown parameters make many servers return 400) — use `extra_body` for server-specific knobs, e.g. `extra_body={"chat_template_kwargs": {"enable_thinking": True}}` for vLLM. | `message.reasoning_content` (DeepSeek, vLLM, SGLang) or `message.reasoning` (OpenRouter-style). Fallback: a leading `<think>…</think>` block is split out of `content` — only when the caller passed a truthy `think`. |
+
+Whether a given model actually thinks — or rejects the parameter — is between
+the provider and the model; bmlib does not pre-validate it. Ollama, for
+example, errors when `think=True` is sent to a model without thinking support.
+
+Two provider-specific caveats:
+
+- **Effort strings are only validated by Anthropic.** Anthropic raises
+  `ValueError` for an effort level outside `"low"`/`"medium"`/`"high"`;
+  Ollama and the OpenAI-compatible providers forward the string verbatim.
+  That lets you use server-specific levels (e.g. OpenAI's `"minimal"`), but
+  an invalid value surfaces as a server-side error rather than a local one.
+- **Anthropic: thinking does not compose with multi-turn tool loops.** When
+  returning tool results, the Anthropic API requires the original `thinking`
+  blocks (with their signatures) to be re-sent in the preceding assistant
+  turn. `LLMResponse.thinking` is a plain string and the message converter
+  does not round-trip thinking blocks, so the follow-up request of a
+  `think=` + `tools` conversation is rejected by the API. Use thinking or
+  tool loops with Anthropic, not both in the same conversation (a single
+  request that merely *defines* tools is fine). Tracked in ROADMAP.md.
+
+Backwards compatibility: callers that never pass `think` get byte-identical
+requests and untouched `content`; `thinking` is simply `None`.
 
 ---
 

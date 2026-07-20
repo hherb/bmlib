@@ -20,6 +20,8 @@ hold the full story.
 | ✅ Done | JSON repair | `json_repair.py` — single quotes, trailing/missing commas, control chars, truncation, unquoted keys; wired into `BaseAgent.parse_json()` |
 | ✅ Done | Text chunking | `text_utils.py` — boundary-aware `TextChunker` plus map-reduce and rolling-summary helpers |
 | ✅ Done | Defensive `list_models()` cache | Issue #12 — Anthropic and OpenAI-compatible providers return a copy of the cached model list; caller mutation can no longer corrupt the cache |
+| ✅ Done | Thinking/reasoning support | Cross-provider `think` kwarg on `chat()` (`bool` / effort string / `int` budget) mapped to each provider's native parameter; trace returned in `LLMResponse.thinking` (unreleased) |
+| ⬜ Planned | Round-trip Anthropic thinking blocks in tool loops | Extended thinking + multi-turn tool use fails on the follow-up request: the API requires the original `thinking` blocks (with signatures) re-sent in the assistant turn, but the message converter drops them and `LLMResponse.thinking` is a plain string. Needs signature-preserving block storage |
 | ⬜ Planned | Embeddings beyond Ollama | Only Ollama implements `embed()`; add OpenAI and Gemini backends when a consumer needs them |
 | ⬜ Planned | Consolidate JSON extraction | Issue #17 — `llm/utils.py::extract_json` and `llm/json_repair.py::extract_and_repair_json` duplicate span-location logic; unify behind one locator (fold into the Phase 1 BaseAgent work) |
 | **Agents (`bmlib.agents`)** | | |

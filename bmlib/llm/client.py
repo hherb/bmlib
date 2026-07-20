@@ -115,7 +115,24 @@ class LLMClient:
         """Send a chat request, routing to the appropriate provider.
 
         Extra *kwargs* are forwarded to the provider's ``chat()`` method.
-        Ollama-specific parameters (e.g. ``think=True``) are passed this way.
+
+        Thinking / reasoning
+        --------------------
+        Pass ``think=`` (via kwargs) to request the model's reasoning
+        trace; it comes back in :attr:`LLMResponse.thinking` (``None``
+        when the provider returned none). Accepted values: ``True``/
+        ``False``, an effort level (``"low"``/``"medium"``/``"high"``),
+        or an ``int`` token budget. Each provider maps the value to its
+        native parameter — Ollama forwards it natively (int degrades to
+        ``True``), Anthropic enables extended thinking with a token
+        budget (int sets it, effort levels use presets), and
+        OpenAI-compatible providers send ``reasoning_effort`` for
+        effort strings on reasoning models. Providers with no native
+        mapping ignore the request side but still extract reasoning
+        output from the response (e.g. DeepSeek's
+        ``reasoning_content``). Whether a given model actually thinks —
+        or errors on the parameter — is between the provider and the
+        model; bmlib does not pre-validate it.
 
         Tool calling
         ------------
