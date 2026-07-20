@@ -6,6 +6,72 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-07-21
+
+All changes are confined to `bmlib/llm/providers/ollama.py`. No public
+signature changed incompatibly; `list_models()` gained an optional keyword.
+
+### Changed
+
+- **`OllamaProvider.list_models()` now costs one HTTP request** regardless of
+  how many models are installed, instead of one `/api/show` per model. On a
+  server with 139 models the call went from minutes to 64 ms. It reads
+  `/api/tags` as raw JSON rather than through the `ollama` SDK, whose Pydantic
+  model silently drops the per-model `capabilities` array and
+  `details.context_length`.
+- `list_models()` results are cached for `CACHE_TTL_SECONDS` (60); pass the new
+  `force_refresh=True` to bypass the cache. The cache is cleared only on a
+  successful fetch, so a refused connection no longer discards accumulated
+  results.
+- Models whose `/api/tags` entry omits `context_length` return metadata whose
+  `context_window` — and `capabilities.max_context_window` — resolves via a
+  memoised `show()` call on first read, not at list time. `__repr__` renders
+  `<unresolved>` rather than fetching, so logging a model list stays free.
+  These objects degrade to plain `ModelMetadata` / `ProviderCapabilities` when
+  copied, pickled, or passed through `dataclasses.replace()`. This is the only
+  place in bmlib where attribute access performs I/O.
+
+### Fixed
+
+- **Capability flags from `list_models()` were always `False`.**
+  `supports_function_calling` and `supports_vision` are now derived from the
+  `/api/tags` capabilities array. They are a **lower bound**: `/api/show`,
+  reached via `get_model_metadata()`, reports a superset for these two flags
+  (across 139 local models, tags reported 77 tool-capable against show's 102,
+  and 32 vision-capable against 44). Filter by capability with
+  `get_model_metadata()` when completeness matters — but note it is
+  authoritative only when its `show()` call succeeds; for a cloud model on a
+  server with cloud disabled, `show()` returns 403 and the fallback is
+  *weaker* than the listing.
+- **Context windows resolved to the 8192 fallback for every model.**
+  `_extract_context_window` looked up `model_info`, which `ShowResponse`
+  declares as `modelinfo` with `model_info` only as an alias, so on a real SDK
+  response the lookup returned `None`. Real windows (131072, 128000, …) now
+  resolve. The string-valued `parameters` fallback was dead for the same
+  reason and now works.
+- `get_model_metadata()` hardcoded its capability flags to `False`, so it
+  contradicted `list_models()` for the same model. It now derives them from
+  `ShowResponse.capabilities`.
+- GGUF emits both `<arch>.context_length` and
+  `<arch>.rope.scaling.original_context_length` — 9 of 139 models carry both,
+  differing by up to two orders of magnitude. The exact key now wins outright
+  instead of the first loose "context" match, removing a dependence on key
+  emission order.
+
+### Security
+
+- `OLLAMA_API_KEY` is no longer leaked across a redirect. `urllib` re-sends
+  every header to any host on redirect, so a gateway answering `/api/tags`
+  with a 302 elsewhere received the bearer token in full. The raw fetch now
+  builds an opener that strips `Authorization` when the target origin differs,
+  matching the SDK path; same-origin redirects keep it.
+- `OLLAMA_HOST` is restricted to HTTP(S). `urlopen` honours whatever scheme it
+  is given, so `OLLAMA_HOST=file://…` read a local path straight into
+  `json.loads`.
+- Scheme-less `OLLAMA_HOST` values work again. `urlsplit` reads the
+  conventional `localhost:11434` as scheme `localhost`; a `<word>:<digits>`
+  form is now treated as host:port.
+
 ## [0.5.0] — 2026-07-20
 
 ### Added
