@@ -56,6 +56,11 @@ FALLBACK_CONTEXT_WINDOW = 8192
 # Pricing for local models (always free)
 _FREE_PRICING = ModelPricing(0.0, 0.0)
 
+# Texts per /api/embed request when the caller does not specify.  Bounds
+# request size and server-side memory for large corpora; callers wanting a
+# single round-trip regardless of size can pass ``max_batch_size=len(texts)``.
+DEFAULT_EMBED_BATCH_SIZE = 256
+
 
 def _safe_get(obj: Any, key: str, default: Any = None) -> Any:
     """Extract a field from a dict or Pydantic-model response.
@@ -275,7 +280,7 @@ class OllamaProvider(BaseProvider):
         self,
         text: str,
         model: str | None = None,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> EmbeddingResponse:
         """Generate an embedding vector for *text*.
 
@@ -292,11 +297,21 @@ class OllamaProvider(BaseProvider):
             model: Embedding model identifier.  Defaults to
                 :pyattr:`default_model` (not ideal for embeddings — callers
                 should pass an embedding-specific model).
-            **kwargs: Reserved for future use.
+            **kwargs: Extra arguments forwarded verbatim to the ollama
+                SDK's ``embed()`` (e.g. ``truncate``, ``options``,
+                ``keep_alive``).  ``max_batch_size`` is accepted and
+                ignored — a single text is always one request.
 
         Returns:
             An :class:`EmbeddingResponse` with the embedding vector.
+
+        Raises:
+            ConnectionError: If the request to the Ollama server fails.
+            ValueError: If the server returns no vector (protocol violation).
         """
+        # Dropped rather than forwarded: leaving it in **kwargs would
+        # collide with embed_batch's own parameter of that name.
+        kwargs.pop("max_batch_size", None)
         batch = self.embed_batch([text], model=model, **kwargs)
         embedding = batch.embeddings[0]
         return EmbeddingResponse(
@@ -310,14 +325,25 @@ class OllamaProvider(BaseProvider):
         self,
         texts: list[str],
         model: str | None = None,
+        max_batch_size: int | None = None,
         **kwargs: object,
     ) -> BatchEmbeddingResponse:
-        """Generate embedding vectors for *texts* in a single API call.
+        """Generate embedding vectors for *texts*, batched into few API calls.
 
-        Sends the whole batch to Ollama's ``/api/embed`` endpoint in one
-        round-trip — for bulk workloads this is several times faster than
-        looping :meth:`embed` (one HTTP request and one model load per
-        batch instead of per text).
+        Sends texts to Ollama's ``/api/embed`` endpoint in groups of at
+        most *max_batch_size* — for bulk workloads this is several times
+        faster than looping :meth:`embed` (one HTTP request and one model
+        load per group instead of per text).
+
+        Batching is bounded rather than unlimited so that a large corpus
+        does not become one enormous request: the default
+        :pydata:`DEFAULT_EMBED_BATCH_SIZE` caps request size and
+        server-side memory.  Pass ``max_batch_size=len(texts)`` to force a
+        single round-trip regardless of size.
+
+        This is **not** atomic across groups.  If a later group fails, the
+        vectors already computed for earlier groups are discarded along
+        with the raised exception; the caller must retry the whole batch.
 
         Args:
             texts: The texts to embed. An empty list returns an empty
@@ -325,40 +351,59 @@ class OllamaProvider(BaseProvider):
             model: Embedding model identifier.  Defaults to
                 :pyattr:`default_model` (not ideal for embeddings — callers
                 should pass an embedding-specific model).
-            **kwargs: Reserved for future use.
+            max_batch_size: Maximum texts per request.  Defaults to
+                :pydata:`DEFAULT_EMBED_BATCH_SIZE` when ``None``.
+            **kwargs: Extra arguments forwarded verbatim to the ollama
+                SDK's ``embed()`` (e.g. ``truncate``, ``options``,
+                ``keep_alive``).
 
         Returns:
             A :class:`BatchEmbeddingResponse` with one vector per input
-            text, in input order.
+            text, in input order.  ``input_tokens`` is summed across all
+            requests made.
 
         Raises:
-            ConnectionError: If the request to the Ollama server fails.
-            ValueError: If the server returns a different number of
-                vectors than texts sent (protocol violation).
+            ConnectionError: If a request to the Ollama server fails.
+            ValueError: If *max_batch_size* is less than 1, or if the
+                server returns a different number of vectors than texts
+                sent (protocol violation).
         """
         model = model or self.default_model
+        if max_batch_size is not None and max_batch_size < 1:
+            raise ValueError(f"max_batch_size must be >= 1, got {max_batch_size}")
         if not texts:
             return BatchEmbeddingResponse(embeddings=[], model=model)
 
+        batch_size = max_batch_size or DEFAULT_EMBED_BATCH_SIZE
         client = self._get_client()
 
-        try:
-            response = client.embed(model=model, input=texts)
-        except Exception as e:
-            logger.error("Ollama embedding error: %s", e)
-            raise ConnectionError(f"Ollama embedding failed: {e}") from e
+        embeddings: list[list[float]] = []
+        input_tokens: int = 0
 
-        embeddings: list[list[float]] = _safe_get(response, "embeddings", []) or []
-        if len(embeddings) != len(texts):
-            raise ValueError(
-                f"Ollama returned {len(embeddings)} embeddings for {len(texts)} input texts"
-            )
-        input_tokens: int = _safe_get(response, "prompt_eval_count", 0) or 0
+        for start in range(0, len(texts), batch_size):
+            group = texts[start : start + batch_size]
 
+            try:
+                response = client.embed(model=model, input=group, **kwargs)
+            except Exception as e:
+                logger.error("Ollama embedding error: %s", e)
+                raise ConnectionError(f"Ollama embedding failed: {e}") from e
+
+            group_embeddings: list[list[float]] = _safe_get(response, "embeddings", []) or []
+            if len(group_embeddings) != len(group):
+                raise ValueError(
+                    f"Ollama returned {len(group_embeddings)} embeddings "
+                    f"for {len(group)} input texts"
+                )
+            embeddings.extend(group_embeddings)
+            input_tokens += _safe_get(response, "prompt_eval_count", 0) or 0
+
+        # texts is non-empty and every group's count was validated above,
+        # so embeddings[0] is guaranteed to exist.
         return BatchEmbeddingResponse(
             embeddings=embeddings,
             model=model,
-            dimensions=len(embeddings[0]) if embeddings else 0,
+            dimensions=len(embeddings[0]),
             input_tokens=input_tokens,
         )
 

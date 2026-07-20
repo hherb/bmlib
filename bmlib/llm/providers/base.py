@@ -151,14 +151,17 @@ class BaseProvider(ABC):
         self,
         texts: list[str],
         model: str | None = None,
+        max_batch_size: int | None = None,
         **kwargs: object,
     ) -> BatchEmbeddingResponse:
-        """Generate embedding vectors for *texts* in a single request.
+        """Generate embedding vectors for *texts* in few API requests.
 
         Providers that support batch embedding (e.g. Ollama) override
-        this to send all texts in one API round-trip, which is far
-        faster than looping :meth:`embed` for bulk workloads.  The
-        default raises :class:`NotImplementedError`.
+        this to send texts in groups of at most *max_batch_size* per API
+        round-trip, which is far faster than looping :meth:`embed` for
+        bulk workloads.  *max_batch_size* of ``None`` lets the provider
+        choose its own default bound.  The default implementation raises
+        :class:`NotImplementedError`.
         """
         raise NotImplementedError(f"{self.PROVIDER_NAME} does not support embeddings")
 

@@ -17,6 +17,7 @@ hold the full story.
 | ✅ Done | Thread-safe token tracking | `TokenTracker` singleton with `threading.Lock()`, `reset_*()` for tests |
 | ✅ Done | Tool calling | `tools` / `tool_choice` on `chat()`; `LLMToolDefinition`, `LLMToolCall`, `LLMResponse.tool_calls`; Anthropic, Ollama, and OpenAI-compatible providers (0.4.0) |
 | ✅ Done | Embeddings | `LLMClient.embed()` → `EmbeddingResponse`; Ollama only — every other provider raises `NotImplementedError` |
+| ✅ Done | Batch embeddings | `LLMClient.embed_batch()` → `BatchEmbeddingResponse`; bounded batching (`max_batch_size`, Ollama default 256) for ~7.6× on bulk corpora. Moved Ollama embeddings onto `/api/embed`, which returns L2-normalised vectors — breaking for non-cosine distance metrics (unreleased) |
 | ✅ Done | JSON repair | `json_repair.py` — single quotes, trailing/missing commas, control chars, truncation, unquoted keys; wired into `BaseAgent.parse_json()` |
 | ✅ Done | Text chunking | `text_utils.py` — boundary-aware `TextChunker` plus map-reduce and rolling-summary helpers |
 | ✅ Done | Defensive `list_models()` cache | Issue #12 — Anthropic and OpenAI-compatible providers return a copy of the cached model list; caller mutation can no longer corrupt the cache |
