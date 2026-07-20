@@ -18,6 +18,10 @@
 
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from bmlib.llm.data_types import LLMMessage, LLMResponse
 from bmlib.llm.token_tracker import TokenTracker
 
@@ -445,32 +449,22 @@ class TestOllamaContextWindowResolver:
         assert provider._resolve_context_window("missing") == FALLBACK_CONTEXT_WINDOW
 
 
-def _ollama_tags_entry(name, parameter_size="8.2B", capabilities=("completion",)):
-    """One entry as returned by Ollama's /api/tags."""
-    entry = {"model": name, "details": {"parameter_size": parameter_size}}
-    if capabilities is not None:
-        entry["capabilities"] = list(capabilities)
-    return entry
-
-
 class _FakeOllamaClient:
-    """Counting stand-in for ollama.Client covering list() and show()."""
+    """Counting stand-in for ollama.Client covering show().
 
-    def __init__(self, entries, list_error=None, show_error=None, context_length=40960):
+    ``list_models()`` no longer calls ``client.list()`` — the tags payload
+    is intercepted separately via ``_install_fake_tags``. This fake only
+    needs to cover ``show()``, which is still used to resolve the context
+    window for models whose tags entry omits ``details.context_length``.
+    The ``entries`` argument is accepted for call-site symmetry with the
+    old fixture but is otherwise unused.
+    """
+
+    def __init__(self, entries, show_error=None, context_length=40960):
         self._entries = entries
-        self._list_error = list_error
         self._show_error = show_error
         self._context_length = context_length
-        self.list_calls = 0
         self.show_calls = 0
-
-    def list(self):
-        from types import SimpleNamespace
-
-        self.list_calls += 1
-        if self._list_error is not None:
-            raise self._list_error
-        return SimpleNamespace(models=self._entries)
 
     def show(self, model_name):
         self.show_calls += 1
@@ -488,18 +482,20 @@ def _ollama_provider_with(client):
 
 
 class TestOllamaListModelsIsSingleRequest:
-    def test_list_models_issues_no_show_calls(self):
-        client = _FakeOllamaClient([_ollama_tags_entry(f"model-{i}") for i in range(50)])
+    def test_list_models_issues_no_show_calls(self, monkeypatch):
+        counter = _install_fake_tags(monkeypatch, [_ollama_entry(f"model-{i}") for i in range(50)])
+        client = _FakeOllamaClient([])
         provider = _ollama_provider_with(client)
 
         models = provider.list_models()
 
         assert len(models) == 50
-        assert client.list_calls == 1
+        assert counter["n"] == 1
         assert client.show_calls == 0
 
-    def test_reading_model_ids_stays_free(self):
-        client = _FakeOllamaClient([_ollama_tags_entry(f"model-{i}") for i in range(50)])
+    def test_reading_model_ids_stays_free(self, monkeypatch):
+        _install_fake_tags(monkeypatch, [_ollama_entry(f"model-{i}") for i in range(50)])
+        client = _FakeOllamaClient([])
         provider = _ollama_provider_with(client)
 
         ids = [m.model_id for m in provider.list_models()]
@@ -507,23 +503,26 @@ class TestOllamaListModelsIsSingleRequest:
         assert ids[0] == "model-0"
         assert client.show_calls == 0
 
-    def test_display_name_includes_parameter_size(self):
-        client = _FakeOllamaClient([_ollama_tags_entry("qwen3:8b", "8.2B")])
+    def test_display_name_includes_parameter_size(self, monkeypatch):
+        _install_fake_tags(monkeypatch, [_ollama_entry("qwen3:8b", "8.2B")])
+        client = _FakeOllamaClient([])
         provider = _ollama_provider_with(client)
 
         assert provider.list_models()[0].display_name == "qwen3:8b (8.2B)"
         assert client.show_calls == 0
 
-    def test_display_name_without_parameter_size(self):
-        client = _FakeOllamaClient([_ollama_tags_entry("bare", parameter_size="")])
+    def test_display_name_without_parameter_size(self, monkeypatch):
+        _install_fake_tags(monkeypatch, [_ollama_entry("bare", parameter_size="")])
+        client = _FakeOllamaClient([])
         provider = _ollama_provider_with(client)
 
         assert provider.list_models()[0].display_name == "bare"
 
-    def test_capability_flags_derived_from_tags(self):
-        client = _FakeOllamaClient(
-            [_ollama_tags_entry("m", capabilities=("completion", "tools", "vision"))]
+    def test_capability_flags_derived_from_tags(self, monkeypatch):
+        _install_fake_tags(
+            monkeypatch, [_ollama_entry("m", capabilities=("completion", "tools", "vision"))]
         )
+        client = _FakeOllamaClient([])
         provider = _ollama_provider_with(client)
 
         caps = provider.list_models()[0].capabilities
@@ -532,26 +531,27 @@ class TestOllamaListModelsIsSingleRequest:
         assert caps.supports_system_messages is True
         assert client.show_calls == 0
 
-    def test_capability_flags_false_when_absent(self):
-        client = _FakeOllamaClient([_ollama_tags_entry("m", capabilities=("completion",))])
+    def test_capability_flags_false_when_absent(self, monkeypatch):
+        _install_fake_tags(monkeypatch, [_ollama_entry("m", capabilities=("completion",))])
+        client = _FakeOllamaClient([])
         provider = _ollama_provider_with(client)
 
         caps = provider.list_models()[0].capabilities
         assert caps.supports_function_calling is False
         assert caps.supports_vision is False
 
-    def test_missing_capabilities_key_is_tolerated(self):
-        client = _FakeOllamaClient([_ollama_tags_entry("m", capabilities=None)])
+    def test_missing_capabilities_key_is_tolerated(self, monkeypatch):
+        _install_fake_tags(monkeypatch, [_ollama_entry("m", capabilities=None)])
+        client = _FakeOllamaClient([])
         provider = _ollama_provider_with(client)
 
         caps = provider.list_models()[0].capabilities
         assert caps.supports_function_calling is False
         assert caps.supports_vision is False
 
-    def test_context_window_resolves_lazily_per_model(self):
-        client = _FakeOllamaClient(
-            [_ollama_tags_entry("a"), _ollama_tags_entry("b")], context_length=40960
-        )
+    def test_context_window_resolves_lazily_per_model(self, monkeypatch):
+        _install_fake_tags(monkeypatch, [_ollama_entry("a"), _ollama_entry("b")])
+        client = _FakeOllamaClient([], context_length=40960)
         provider = _ollama_provider_with(client)
 
         models = provider.list_models()
@@ -566,11 +566,12 @@ class TestOllamaListModelsIsSingleRequest:
         assert models[1].context_window == 40960
         assert client.show_calls == 2
 
-    def test_both_lazy_fields_share_one_show_call(self):
+    def test_both_lazy_fields_share_one_show_call(self, monkeypatch):
         # The metadata object and its capabilities object hold separate
         # memos, so each calls the resolver once. Only one HTTP request
         # may result: the second call must hit _model_info_cache.
-        client = _FakeOllamaClient([_ollama_tags_entry("a")], context_length=40960)
+        _install_fake_tags(monkeypatch, [_ollama_entry("a")])
+        client = _FakeOllamaClient([], context_length=40960)
         provider = _ollama_provider_with(client)
 
         model = provider.list_models()[0]
@@ -578,46 +579,52 @@ class TestOllamaListModelsIsSingleRequest:
         assert model.capabilities.max_context_window == 40960
         assert client.show_calls == 1
 
-    def test_entries_without_a_name_are_skipped(self):
-        client = _FakeOllamaClient([_ollama_tags_entry("real"), {"model": "", "details": {}}])
+    def test_entries_without_a_name_are_skipped(self, monkeypatch):
+        _install_fake_tags(monkeypatch, [_ollama_entry("real"), {"model": "", "details": {}}])
+        client = _FakeOllamaClient([])
         provider = _ollama_provider_with(client)
 
         assert [m.model_id for m in provider.list_models()] == ["real"]
 
-    def test_list_failure_returns_empty(self):
-        client = _FakeOllamaClient([], list_error=RuntimeError("connection refused"))
+    def test_list_failure_returns_empty(self, monkeypatch):
+        _install_fake_tags(monkeypatch, [], error=OSError("connection refused"))
+        client = _FakeOllamaClient([])
         provider = _ollama_provider_with(client)
 
         assert provider.list_models() == []
 
-    def test_list_failure_is_not_cached(self):
-        client = _FakeOllamaClient([], list_error=RuntimeError("connection refused"))
+    def test_list_failure_is_not_cached(self, monkeypatch):
+        counter = _install_fake_tags(monkeypatch, [], error=OSError("connection refused"))
+        client = _FakeOllamaClient([])
         provider = _ollama_provider_with(client)
 
         provider.list_models()
         provider.list_models()
-        assert client.list_calls == 2
+        assert counter["n"] == 2
 
 
 class TestOllamaListModelsCache:
-    def test_second_call_is_served_from_cache(self):
-        client = _FakeOllamaClient([_ollama_tags_entry("m")])
+    def test_second_call_is_served_from_cache(self, monkeypatch):
+        counter = _install_fake_tags(monkeypatch, [_ollama_entry("m")])
+        client = _FakeOllamaClient([])
         provider = _ollama_provider_with(client)
 
         provider.list_models()
         provider.list_models()
-        assert client.list_calls == 1
+        assert counter["n"] == 1
 
-    def test_force_refresh_refetches(self):
-        client = _FakeOllamaClient([_ollama_tags_entry("m")])
+    def test_force_refresh_refetches(self, monkeypatch):
+        counter = _install_fake_tags(monkeypatch, [_ollama_entry("m")])
+        client = _FakeOllamaClient([])
         provider = _ollama_provider_with(client)
 
         provider.list_models()
         provider.list_models(force_refresh=True)
-        assert client.list_calls == 2
+        assert counter["n"] == 2
 
-    def test_force_refresh_clears_model_info_cache(self):
-        client = _FakeOllamaClient([_ollama_tags_entry("m")], context_length=4096)
+    def test_force_refresh_clears_model_info_cache(self, monkeypatch):
+        _install_fake_tags(monkeypatch, [_ollama_entry("m")])
+        client = _FakeOllamaClient([], context_length=4096)
         provider = _ollama_provider_with(client)
 
         assert provider.list_models()[0].context_window == 4096
@@ -632,7 +639,8 @@ class TestOllamaListModelsCache:
     def test_expired_ttl_refetches(self, monkeypatch):
         import bmlib.llm.providers.ollama as ollama_mod
 
-        client = _FakeOllamaClient([_ollama_tags_entry("m")])
+        counter = _install_fake_tags(monkeypatch, [_ollama_entry("m")])
+        client = _FakeOllamaClient([])
         provider = _ollama_provider_with(client)
 
         clock = {"t": 1000.0}
@@ -641,10 +649,11 @@ class TestOllamaListModelsCache:
         provider.list_models()
         clock["t"] += ollama_mod.CACHE_TTL_SECONDS + 1
         provider.list_models()
-        assert client.list_calls == 2
+        assert counter["n"] == 2
 
-    def test_mutating_first_result_does_not_corrupt_cache(self):
-        client = _FakeOllamaClient([_ollama_tags_entry("m")])
+    def test_mutating_first_result_does_not_corrupt_cache(self, monkeypatch):
+        _install_fake_tags(monkeypatch, [_ollama_entry("m")])
+        client = _FakeOllamaClient([])
         provider = _ollama_provider_with(client)
 
         first = provider.list_models()
@@ -653,8 +662,9 @@ class TestOllamaListModelsCache:
         second = provider.list_models()
         assert [m.model_id for m in second] == ["m"]
 
-    def test_mutating_cache_hit_result_does_not_corrupt_cache(self):
-        client = _FakeOllamaClient([_ollama_tags_entry("m")])
+    def test_mutating_cache_hit_result_does_not_corrupt_cache(self, monkeypatch):
+        _install_fake_tags(monkeypatch, [_ollama_entry("m")])
+        client = _FakeOllamaClient([])
         provider = _ollama_provider_with(client)
 
         provider.list_models()
@@ -669,3 +679,151 @@ class TestOllamaListModelsCache:
         from bmlib.llm.providers.ollama import CACHE_TTL_SECONDS as LOCAL_TTL
 
         assert LOCAL_TTL < REMOTE_TTL
+
+
+class _FakeTagsResponse:
+    """Context-manager stand-in for urlopen's return value."""
+
+    def __init__(self, payload):
+        self._body = json.dumps(payload).encode()
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _install_fake_tags(monkeypatch, entries, error=None):
+    """Patch urlopen in the ollama module. Returns a call counter."""
+    import bmlib.llm.providers.ollama as ollama_mod
+
+    counter = {"n": 0, "url": None}
+
+    def fake_urlopen(url, timeout=None):
+        counter["n"] += 1
+        counter["url"] = url
+        if error is not None:
+            raise error
+        return _FakeTagsResponse({"models": entries})
+
+    monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
+    return counter
+
+
+def _ollama_entry(name, parameter_size="8.2B", capabilities=("completion",), context_length=None):
+    """One entry as the SERVER sends it (not as the SDK parses it)."""
+    details = {"parameter_size": parameter_size}
+    if context_length is not None:
+        details["context_length"] = context_length
+    entry = {"model": name, "details": details}
+    if capabilities is not None:
+        entry["capabilities"] = list(capabilities)
+    return entry
+
+
+class TestOllamaRawTagsPayload:
+    def test_sdk_list_response_drops_the_fields_we_need(self):
+        """Guard: this is WHY list_models() bypasses client.list().
+
+        If this test ever fails, the ollama SDK has started carrying
+        capabilities/context_length and _fetch_tags_payload could be
+        reconsidered. Until then, switching back to client.list()
+        silently disables capability flags for every model.
+        """
+        ollama = pytest.importorskip("ollama")
+
+        entry = ollama._types.ListResponse.Model.model_validate(
+            {
+                "model": "m",
+                "digest": "d",
+                "size": 1,
+                "details": {
+                    "parameter_size": "8B",
+                    "family": "llama",
+                    "format": "gguf",
+                    "families": ["llama"],
+                    "quantization_level": "Q8_0",
+                    "parent_model": "",
+                    "context_length": 40960,
+                },
+                "capabilities": ["tools", "vision"],
+            }
+        )
+        assert getattr(entry, "capabilities", None) is None
+        assert getattr(entry.details, "context_length", None) is None
+
+    def test_capability_flags_work_on_real_payload_shape(self, monkeypatch):
+        _install_fake_tags(
+            monkeypatch, [_ollama_entry("m", capabilities=("completion", "tools", "vision"))]
+        )
+        provider = _ollama_provider_with(_FakeOllamaClient([]))
+
+        caps = provider.list_models()[0].capabilities
+        assert caps.supports_function_calling is True
+        assert caps.supports_vision is True
+
+    def test_known_context_length_needs_no_show_call(self, monkeypatch):
+        _install_fake_tags(monkeypatch, [_ollama_entry("m", context_length=40960)])
+        client = _FakeOllamaClient([])
+        provider = _ollama_provider_with(client)
+
+        model = provider.list_models()[0]
+        assert model.context_window == 40960
+        assert model.capabilities.max_context_window == 40960
+        assert client.show_calls == 0
+
+    def test_missing_context_length_still_resolves_lazily(self, monkeypatch):
+        _install_fake_tags(monkeypatch, [_ollama_entry("m", context_length=None)])
+        client = _FakeOllamaClient([], context_length=8192)
+        provider = _ollama_provider_with(client)
+
+        model = provider.list_models()[0]
+        assert client.show_calls == 0
+        assert model.context_window == 8192
+        assert client.show_calls == 1
+
+    def test_mixed_payload_only_fetches_the_unknown_ones(self, monkeypatch):
+        _install_fake_tags(
+            monkeypatch,
+            [
+                _ollama_entry("known", context_length=40960),
+                _ollama_entry("unknown", context_length=None),
+            ],
+        )
+        client = _FakeOllamaClient([], context_length=8192)
+        provider = _ollama_provider_with(client)
+
+        models = provider.list_models()
+        assert [m.context_window for m in models] == [40960, 8192]
+        assert client.show_calls == 1
+
+    def test_fetch_targets_the_configured_base_url(self, monkeypatch):
+        counter = _install_fake_tags(monkeypatch, [])
+        provider = _ollama_provider_with(_FakeOllamaClient([]))
+        provider._base_url = "http://example.invalid:9999/"
+
+        provider.list_models()
+        assert counter["url"] == "http://example.invalid:9999/api/tags"
+
+    def test_fetch_failure_returns_empty_uncached(self, monkeypatch):
+        counter = _install_fake_tags(monkeypatch, [], error=OSError("refused"))
+        provider = _ollama_provider_with(_FakeOllamaClient([]))
+
+        assert provider.list_models() == []
+        assert provider.list_models() == []
+        assert counter["n"] == 2
+
+    def test_malformed_payload_is_tolerated(self, monkeypatch):
+        import bmlib.llm.providers.ollama as ollama_mod
+
+        def fake_urlopen(url, timeout=None):
+            return _FakeTagsResponse({"unexpected": "shape"})
+
+        monkeypatch.setattr(ollama_mod.urllib.request, "urlopen", fake_urlopen)
+        provider = _ollama_provider_with(_FakeOllamaClient([]))
+
+        assert provider.list_models() == []

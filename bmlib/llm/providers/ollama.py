@@ -25,10 +25,12 @@ exposed through the OpenAI compatibility layer.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
 import time
+import urllib.request
 from collections.abc import Callable
 from functools import partial
 from typing import Any
@@ -74,6 +76,9 @@ _UNRESOLVED = -1
 # hour of staleness is a bad trade for a local server: an ``ollama pull``
 # would leave the new model invisible for an hour.
 CACHE_TTL_SECONDS = 60
+
+# Timeout for the raw /api/tags fetch, in seconds.
+TAGS_REQUEST_TIMEOUT = 30
 
 # Pricing for local models (always free)
 _FREE_PRICING = ModelPricing(0.0, 0.0)
@@ -530,11 +535,47 @@ class OllamaProvider(BaseProvider):
 
     # --- Model discovery (native API) ---
 
+    def _fetch_tags_payload(self) -> list[Any]:
+        """Fetch ``/api/tags`` as raw JSON, bypassing the ollama SDK.
+
+        The SDK's ``client.list()`` parses into ``ListResponse.Model``, a
+        Pydantic model declaring only ``model``, ``modified_at``,
+        ``digest``, ``size`` and ``details``.  Its config leaves Pydantic's
+        default ``extra="ignore"`` in place, so two fields the server does
+        send are dropped silently: the per-model ``capabilities`` array,
+        and ``details.context_length``.  On a 139-model installation that
+        discards 139 capability arrays and 122 context lengths — and those
+        context lengths are exactly what makes a ``show()`` call
+        unnecessary for 88% of models.
+
+        Bypassing the SDK costs nothing here: :meth:`_get_client`
+        constructs ``ollama.Client(host=...)`` with no custom headers or
+        auth, so there is no client configuration to inherit.  The SDK is
+        still used for ``show()``.
+
+        Returns:
+            The ``models`` list from the payload.  An empty list if the
+            payload is missing or malformed.
+
+        Raises:
+            OSError: If the request fails.  :meth:`list_models` handles it.
+            ValueError: If the response is not valid JSON.
+        """
+        url = f"{self._base_url.rstrip('/')}/api/tags"
+        with urllib.request.urlopen(url, timeout=TAGS_REQUEST_TIMEOUT) as response:
+            payload = json.loads(response.read())
+        if not isinstance(payload, dict):
+            return []
+        models = payload.get("models")
+        return models if isinstance(models, list) else []
+
     def _metadata_from_tags_entry(self, name: str, entry: Any) -> ModelMetadata:
         """Build lazy metadata for one ``/api/tags`` entry.
 
-        Every field except the context window is available in the tags
-        payload, so only that field defers to a ``show()`` call.
+        Most entries also carry ``details.context_length``, in which case
+        the context window is known outright and no ``show()`` call is
+        ever made for that model; only entries omitting it defer to the
+        lazy ``show()`` resolver.
 
         Ollama servers older than the capabilities feature omit the
         ``capabilities`` key entirely; a missing or null value is treated
@@ -554,7 +595,15 @@ class OllamaProvider(BaseProvider):
         display_name = f"{name} ({parameter_size})" if parameter_size else name
 
         raw_capabilities = _safe_get(entry, "capabilities") or []
-        capabilities = {str(c).lower() for c in raw_capabilities}
+        capability_names = {str(c).lower() for c in raw_capabilities}
+
+        # Most models report details.context_length. When present there is
+        # nothing left to fetch, so seed both lazy fields and this model
+        # never triggers a show() call at all. _UNRESOLVED leaves them lazy.
+        raw_context = _safe_get(details, "context_length")
+        known_context = (
+            raw_context if isinstance(raw_context, int) and raw_context > 0 else _UNRESOLVED
+        )
 
         resolver = partial(self._resolve_context_window, name)
 
@@ -563,11 +612,13 @@ class OllamaProvider(BaseProvider):
             model_id=name,
             display_name=display_name,
             pricing=_FREE_PRICING,
+            context_window=known_context,
             capabilities=_LazyOllamaCapabilities(
                 resolver,
                 supports_system_messages=True,
-                supports_function_calling="tools" in capabilities,
-                supports_vision="vision" in capabilities,
+                supports_function_calling="tools" in capability_names,
+                supports_vision="vision" in capability_names,
+                max_context_window=known_context,
             ),
         )
 
@@ -575,11 +626,13 @@ class OllamaProvider(BaseProvider):
         """List models currently available on the Ollama server.
 
         Costs exactly one HTTP request on a cache miss, and none on a
-        hit.  Every field except the context window comes from
-        ``/api/tags``; ``context_window`` and
-        ``capabilities.max_context_window`` resolve via a memoised
-        ``show()`` call the first time they are read, so callers that only
-        need names or display labels never pay for them.
+        hit.  Every field comes straight from ``/api/tags``, including
+        ``context_window`` for the models whose entry reports
+        ``details.context_length`` — the majority on a typical server.
+        Only entries that omit it fall back to a memoised ``show()`` call
+        the first time ``context_window`` or
+        ``capabilities.max_context_window`` is read, so callers that only
+        need names or display labels never pay for it.
 
         Args:
             force_refresh: Bypass the cache and re-query the server.  Also
@@ -603,15 +656,14 @@ class OllamaProvider(BaseProvider):
             self._model_info_cache.clear()
 
         try:
-            client = self._get_client()
-            response = client.list()
+            entries = self._fetch_tags_payload()
         except Exception as e:
             # Transient failure: do not cache, so the next call retries.
             logger.warning("Failed to list Ollama models: %s", e)
             return []
 
         models: list[ModelMetadata] = []
-        for entry in getattr(response, "models", []) or []:
+        for entry in entries:
             name = _safe_get(entry, "model", "") or ""
             if name:
                 models.append(self._metadata_from_tags_entry(name, entry))
