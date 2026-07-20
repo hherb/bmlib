@@ -4,6 +4,29 @@ All notable changes to bmlib are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); bmlib follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Thinking/reasoning support across providers.** `LLMResponse` gained an
+  optional `thinking` field (appended after `tool_calls`, so positional
+  construction is unaffected) carrying the model's reasoning trace separated
+  from `content`. The `think` kwarg on `LLMClient.chat()` is now interpreted
+  by every built-in provider, not just Ollama: `bool` toggles thinking, a
+  `"low"`/`"medium"`/`"high"` string sets effort, an `int` sets a token
+  budget. Ollama forwards `think` natively and extracts `message.thinking`;
+  Anthropic enables extended thinking (`budget_tokens` clamped to
+  `[1024, max_tokens - 1]`, sampling params omitted as the API requires) and
+  extracts `thinking` content blocks; OpenAI-compatible providers send
+  `reasoning_effort` for effort strings on reasoning models and extract
+  `reasoning_content` / `reasoning` response fields, with an opt-in
+  `<think>…</think>` content split for local servers that emit reasoning
+  inline. Callers that never pass `think` see identical requests and
+  untouched `content`.
+- OpenAI-compatible providers accept an `extra_body` kwarg forwarded verbatim
+  to the SDK, as the escape hatch for server-specific parameters (e.g. vLLM's
+  `chat_template_kwargs`).
+
 ## [0.4.0] — 2026-07-19
 
 ### Changed — breaking

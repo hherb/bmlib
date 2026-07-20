@@ -165,6 +165,14 @@ class LLMResponse:
         tool_calls: Tool invocations the model emitted, or ``None``
             if the model did not call any tool. Populated only for
             providers that support tool calling.
+        thinking: The model's reasoning trace, separated from
+            ``content``, when the provider returns one (e.g. Ollama
+            ``message.thinking``, Anthropic ``thinking`` content
+            blocks, DeepSeek ``reasoning_content``). ``None`` when the
+            model produced no separated reasoning output. Request it
+            with the cross-provider ``think`` kwarg on
+            :meth:`~bmlib.llm.client.LLMClient.chat`. Appended after
+            ``tool_calls`` so positional constructors keep working.
     """
 
     content: str
@@ -175,6 +183,7 @@ class LLMResponse:
     stop_reason: str | None = None
     duration_seconds: float = 0.0
     tool_calls: list[LLMToolCall] | None = None
+    thinking: str | None = None
 
     def __post_init__(self) -> None:
         if self.total_tokens == 0:

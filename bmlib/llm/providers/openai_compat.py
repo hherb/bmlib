@@ -40,6 +40,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from typing import Any
 
@@ -153,6 +154,8 @@ class OpenAICompatibleProvider(BaseProvider):
         json_mode: bool = kwargs.get("json_mode", False)  # type: ignore[assignment]
         tools: list[LLMToolDefinition] | None = kwargs.get("tools")  # type: ignore[assignment]
         tool_choice: str = kwargs.get("tool_choice", "auto")  # type: ignore[assignment]
+        think: bool | str | int | None = kwargs.get("think")  # type: ignore[assignment]
+        extra_body: dict[str, Any] | None = kwargs.get("extra_body")  # type: ignore[assignment]
 
         openai_messages = _convert_messages_to_openai(messages)
 
@@ -182,10 +185,46 @@ class OpenAICompatibleProvider(BaseProvider):
             request_kwargs["tools"] = [_convert_tool_def_to_openai(t) for t in tools]
             request_kwargs["tool_choice"] = _convert_tool_choice_to_openai(tool_choice)
 
+        # Cross-provider ``think`` kwarg: an effort-level string maps to
+        # ``reasoning_effort`` on reasoning models. Anything else has no
+        # OpenAI-compatible request parameter — it is deliberately NOT
+        # forwarded (unknown parameters make many servers return 400).
+        # Server-specific knobs go through ``extra_body`` instead.
+        if think is not None:
+            if isinstance(think, str) and self._is_reasoning_model(model):
+                request_kwargs["reasoning_effort"] = think
+            elif think:
+                logger.debug(
+                    "%s: no native request mapping for think=%r; not forwarded "
+                    "(reasoning output is still extracted from the response; "
+                    "use extra_body for server-specific thinking parameters)",
+                    self.PROVIDER_NAME,
+                    think,
+                )
+
+        # Escape hatch for server-specific parameters (e.g. vLLM's
+        # chat_template_kwargs); the OpenAI SDK merges it into the JSON body.
+        if extra_body is not None:
+            request_kwargs["extra_body"] = extra_body
+
         response = client.chat.completions.create(**request_kwargs)
 
         choice = response.choices[0]
         content = choice.message.content or ""
+
+        # Separated reasoning output: DeepSeek / vLLM / SGLang use
+        # ``reasoning_content``; OpenRouter-style servers use ``reasoning``.
+        # Fall back to splitting a leading <think>…</think> block out of the
+        # content — but only when the caller opted in with a truthy ``think``,
+        # so existing callers see byte-identical content.
+        thinking: str | None = None
+        for attr in ("reasoning_content", "reasoning"):
+            value = getattr(choice.message, attr, None)
+            if isinstance(value, str) and value:
+                thinking = value
+                break
+        if thinking is None and think and content:
+            thinking, content = _split_think_tags(content)
 
         # Parse tool calls from the response. OpenAI returns them as
         # choice.message.tool_calls with .id, .function.name,
@@ -225,6 +264,7 @@ class OpenAICompatibleProvider(BaseProvider):
             output_tokens=response.usage.completion_tokens if response.usage else 0,
             stop_reason=choice.finish_reason,
             tool_calls=tool_calls if tool_calls else None,
+            thinking=thinking,
         )
 
     # --- Model listing ---
@@ -321,6 +361,25 @@ class OpenAICompatibleProvider(BaseProvider):
 #    the message dict.
 #  * tool_choice values: "auto" / "required" / "none" / {"type":"function","function":{"name":...}}.
 #    bmlib's "any" alias maps to "required".
+
+
+# Leading <think>…</think> block emitted inline by some local
+# OpenAI-compatible servers (llama.cpp, LM Studio) for reasoning models.
+_THINK_TAG_RE = re.compile(r"^\s*<think>(.*?)</think>\s*", re.DOTALL)
+
+
+def _split_think_tags(content: str) -> tuple[str | None, str]:
+    """Split a leading ``<think>…</think>`` block off *content*.
+
+    Returns ``(thinking, remainder)``. When *content* has no leading
+    think block, returns ``(None, content)`` unchanged. An empty think
+    block yields ``thinking=None``.
+    """
+    match = _THINK_TAG_RE.match(content)
+    if not match:
+        return None, content
+    thinking = match.group(1).strip()
+    return (thinking or None, content[match.end() :])
 
 
 def _convert_tool_def_to_openai(tool: LLMToolDefinition) -> dict[str, Any]:

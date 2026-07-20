@@ -154,7 +154,7 @@ class OllamaProvider(BaseProvider):
 
         top_p: float | None = kwargs.get("top_p")  # type: ignore[assignment]
         json_mode: bool = kwargs.get("json_mode", False)  # type: ignore[assignment]
-        think: bool | None = kwargs.get("think")  # type: ignore[assignment]
+        think: bool | str | int | None = kwargs.get("think")  # type: ignore[assignment]
         tools: list[LLMToolDefinition] | None = kwargs.get("tools")  # type: ignore[assignment]
         # Note: Ollama's native API does not yet expose a tool_choice
         # parameter the way OpenAI does. The model decides when to call
@@ -181,7 +181,14 @@ class OllamaProvider(BaseProvider):
             request_kwargs["format"] = "json"
 
         if think is not None:
-            request_kwargs["think"] = think
+            # Ollama accepts a bool or an effort-level string ("low"/
+            # "medium"/"high", gpt-oss models). An int is the cross-provider
+            # token-budget form (Anthropic) — Ollama has no budget concept,
+            # so it degrades to "on".
+            if isinstance(think, bool) or isinstance(think, str):
+                request_kwargs["think"] = think
+            else:
+                request_kwargs["think"] = True
 
         # Tool calling: ollama-python (>=0.3) accepts an OpenAI-style
         # tools list directly. Convert our LLMToolDefinition into the
@@ -194,6 +201,13 @@ class OllamaProvider(BaseProvider):
         # ollama >=0.4 returns Pydantic models; older versions return dicts.
         message = _safe_get(response, "message")
         content: str = _safe_get(message, "content", "") if message else ""
+
+        # When thinking is enabled Ollama separates the reasoning trace
+        # into message.thinking (content stays clean).
+        raw_thinking = _safe_get(message, "thinking") if message else None
+        thinking: str | None = (
+            raw_thinking if isinstance(raw_thinking, str) and raw_thinking else None
+        )
 
         # Parse tool calls from the response message. ollama-python
         # exposes them as message.tool_calls — a list of objects with
@@ -253,6 +267,7 @@ class OllamaProvider(BaseProvider):
             output_tokens=output_tokens,
             stop_reason=stop_reason,
             tool_calls=tool_calls if tool_calls else None,
+            thinking=thinking,
         )
 
     def embed(
