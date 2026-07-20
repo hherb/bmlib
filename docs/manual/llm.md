@@ -33,6 +33,7 @@ from bmlib.llm import (
     get_llm_client,
     reset_llm_client,
     # Data types
+    BatchEmbeddingResponse,
     EmbeddingResponse,
     LLMMessage,
     LLMResponse,
@@ -216,6 +217,28 @@ Response from an embedding request.
 
 ---
 
+### `BatchEmbeddingResponse`
+
+```python
+@dataclass
+class BatchEmbeddingResponse:
+    embeddings: list[list[float]]
+    model: str = ""
+    dimensions: int = 0
+    input_tokens: int = 0
+```
+
+Response from a batch embedding request ([`LLMClient.embed_batch`](#llmclientembed_batch)).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `embeddings` | `list[list[float]]` | *(required)* | One embedding vector per input text, in input order. |
+| `model` | `str` | `""` | The model that generated the embeddings. |
+| `dimensions` | `int` | `0` | Number of dimensions per vector (0 for an empty batch). |
+| `input_tokens` | `int` | `0` | Total input tokens processed across the whole batch. |
+
+---
+
 ## LLMClient
 
 The central class for all LLM interactions. Automatically routes requests to the correct provider based on the model string.
@@ -383,9 +406,11 @@ Generate an embedding vector for *text*, routing on the *model* string. See [Emb
 |-----------|------|---------|-------------|
 | `text` | `str` | *(required)* | The text to embed. |
 | `model` | `str \| None` | `None` | Model string (`"provider:model_name"`). Falls back to the default provider's **chat** default model — almost always wrong for embeddings, so pass an explicit model. |
-| `**kwargs` | `object` | | Extra provider-specific arguments. |
+| `**kwargs` | `object` | | Extra provider-specific arguments. Ollama forwards these verbatim to the SDK's `embed()` (`truncate`, `options`, `keep_alive`). |
 
 **Raises:** `NotImplementedError` for providers that do not implement embeddings (everything except Ollama).
+
+For bulk workloads, use [`LLMClient.embed_batch`](#llmclientembed_batch) — it embeds many texts per provider round-trip instead of one request per text.
 
 ---
 
@@ -466,7 +491,7 @@ Generate an embedding vector for `text`, routing to the appropriate provider bas
 |-----------|------|---------|-------------|
 | `text` | `str` | *(required)* | The text to embed. |
 | `model` | `str \| None` | `None` | Model string (`"provider:model_name"` format). Defaults to the default provider's default model — pass an embedding-specific model explicitly. |
-| `**kwargs` | `object` | | Extra provider-specific arguments. |
+| `**kwargs` | `object` | | Extra provider-specific arguments. Ollama forwards these verbatim to the SDK's `embed()` (`truncate`, `options`, `keep_alive`). |
 
 **Returns:** `EmbeddingResponse` with the vector, model, dimensions, and input token count.
 
@@ -478,6 +503,50 @@ Generate an embedding vector for `text`, routing to the appropriate provider bas
 client = LLMClient(default_provider="ollama")
 resp = client.embed("Myocardial infarction", model="ollama:nomic-embed-text")
 print(resp.dimensions, resp.embedding[:3])
+```
+
+---
+
+### `LLMClient.embed_batch`
+
+```python
+def embed_batch(
+    self,
+    texts: list[str],
+    model: str | None = None,
+    max_batch_size: int | None = None,
+    **kwargs: object,
+) -> BatchEmbeddingResponse
+```
+
+Generate embedding vectors for many texts, sent to the provider **in batches** rather than one request per text. On the bulk-corpus path this is several times faster than looping `embed()` — one HTTP request and one model load per batch instead of per text.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `texts` | `list[str]` | *(required)* | The texts to embed. An empty list returns an empty response without contacting the provider. |
+| `model` | `str \| None` | `None` | Model string (`"provider:model_name"` format). Defaults to the default provider's **chat** default model — pass an embedding-specific model explicitly. |
+| `max_batch_size` | `int \| None` | `None` | Maximum texts per provider request. `None` lets the provider choose its own bound (Ollama: `DEFAULT_EMBED_BATCH_SIZE`, 256). Pass `len(texts)` to force a single round-trip. Must be `>= 1`. |
+| `**kwargs` | `object` | | Extra provider-specific arguments. Ollama forwards these verbatim to the SDK's `embed()` (`truncate`, `options`, `keep_alive`). |
+
+**Returns:** `BatchEmbeddingResponse` with one vector per input text, in input order. `input_tokens` is summed across every request made.
+
+**Raises:** `NotImplementedError` for providers without embedding support (everything except Ollama); `ConnectionError` if a provider call fails; `ValueError` if `max_batch_size < 1`, or if the provider returns a different number of vectors than texts sent.
+
+> **Note — batching is bounded, and not atomic.** Texts are sent in groups of at most `max_batch_size` so that a large corpus does not become one enormous request. If a later group fails, the vectors already computed for earlier groups are **discarded** along with the raised exception — the caller must retry the whole batch. For very large corpora, chunk the work yourself if you need to checkpoint partial progress.
+
+**Example:**
+
+```python
+client = LLMClient(default_provider="ollama")
+chunks = ["first chunk ...", "second chunk ...", "third chunk ..."]
+resp = client.embed_batch(chunks, model="ollama:nomic-embed-text")
+assert len(resp.embeddings) == len(chunks)
+print(resp.dimensions, resp.input_tokens)
+
+# 10k chunks: sent as 40 requests of 256 rather than one huge one.
+resp = client.embed_batch(big_corpus, model="ollama:nomic-embed-text")
 ```
 
 ---
@@ -755,11 +824,13 @@ requests and untouched `content`; `thinking` is simply `None`.
 
 ## Embeddings
 
-`LLMClient.embed()` returns an `EmbeddingResponse` for a single string.
+`LLMClient.embed()` returns an `EmbeddingResponse` for a single string. `LLMClient.embed_batch()` returns a `BatchEmbeddingResponse` for a list of strings, embedded **in batches** rather than one request per text — always prefer it on bulk paths (measured on 32 chunks against a local Ollama server: one batch call 0.59 s vs a loop of single calls 4.48 s). Batch size is bounded (default 256 texts per request), so it is safe to hand it a whole corpus; see [`LLMClient.embed_batch`](#llmclientembed_batch) for the non-atomic failure caveat.
 
-> **Warning — provider support is narrow.** `BaseProvider.embed()` is a concrete method that raises `NotImplementedError(f"{PROVIDER_NAME} does not support embeddings")`. **Only Ollama overrides it.** Anthropic, OpenAI, DeepSeek, Mistral, and Gemini all raise.
+> **Warning — provider support is narrow.** `BaseProvider.embed()` and `BaseProvider.embed_batch()` are concrete methods that raise `NotImplementedError(f"{PROVIDER_NAME} does not support embeddings")`. **Only Ollama overrides them.** Anthropic, OpenAI, DeepSeek, Mistral, and Gemini all raise.
 
 > **Warning — pass an explicit model.** When `model` is omitted, the provider's *chat* default model is used. For Ollama that is `medgemma4B_it_q8`, a chat model, not an embedding model. Always name an embedding model explicitly.
+
+> **Note — endpoint migration (post-0.4.0).** Both methods now use Ollama's `/api/embed` endpoint (`client.embed(input=[...])`); previously `embed()` used the deprecated `/api/embeddings` endpoint. `/api/embed` returns **L2-normalised** vectors, the legacy endpoint returned raw vectors. Cosine similarity is scale-invariant and unaffected, but raw dot-product or Euclidean comparisons against vectors stored from the old endpoint will differ in scale — re-embed the corpus if you rely on those. `embed(t)` and `embed_batch([t]).embeddings[0]` are now guaranteed to agree.
 
 **Example:**
 
@@ -768,17 +839,24 @@ from bmlib.llm import LLMClient
 
 client = LLMClient(default_provider="ollama")
 
+# Single text
 result = client.embed(
     text="Metformin reduces HbA1c in type 2 diabetes.",
     model="ollama:nomic-embed-text",
 )
 print(result.dimensions, len(result.embedding))
-print(result.input_tokens)
+
+# Bulk corpus path — one API call for the whole batch
+batch = client.embed_batch(
+    ["chunk one ...", "chunk two ...", "chunk three ..."],
+    model="ollama:nomic-embed-text",
+)
+print(len(batch.embeddings), batch.input_tokens)
 ```
 
-Ollama raises `ConnectionError("Ollama embedding failed: ...")` if the server call fails.
+Ollama raises `ConnectionError("Ollama embedding failed: ...")` if the server call fails, and `ValueError` if the server returns a different number of vectors than texts sent.
 
-> **Note:** Unlike `chat()`, the `embed()` path does **not** record usage with the global `TokenTracker`, even though `EmbeddingResponse.input_tokens` is populated. Track embedding cost yourself if you need it.
+> **Note:** Unlike `chat()`, the embedding paths do **not** record usage with the global `TokenTracker`, even though `input_tokens` is populated. Track embedding cost yourself if you need it.
 
 ---
 
@@ -1381,9 +1459,8 @@ Reasoning models (`o1`, `o1-mini`, `o3-mini`) are sent `max_completion_tokens` i
 | Is local | Yes |
 | Is free | Yes |
 | Tool calling | Yes (`tool_choice` ignored) |
-| Embeddings | Yes (the only provider that implements them) |
+| Embeddings | Yes — the only built-in provider implementing `embed()` / `embed_batch()` (both via `/api/embed`) |
 | Extra kwargs | `think=True` for thinking mode |
-| Embeddings | Yes — the only built-in provider implementing `embed()` |
 
 ---
 
@@ -1508,6 +1585,7 @@ def __init__(
 |-------------------|------|-------------------|
 | `api_key_env_var` | `property -> str` | Returns `""`. |
 | `embed(text, model=None, **kwargs)` | `method -> EmbeddingResponse` | Raises `NotImplementedError`. |
+| `embed_batch(texts, model=None, max_batch_size=None, **kwargs)` | `method -> BatchEmbeddingResponse` | Raises `NotImplementedError`. |
 | `get_model_pricing(model)` | `method -> ModelPricing` | Returns zero-cost pricing. |
 | `calculate_cost(model, input_tokens, output_tokens)` | `method -> float` | Applies `get_model_pricing()` per million tokens. |
 | `get_model_metadata(model)` | `method -> ModelMetadata \| None` | Linear search over `list_models()`. |

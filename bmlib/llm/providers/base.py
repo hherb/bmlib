@@ -28,7 +28,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from bmlib.llm.data_types import EmbeddingResponse, LLMMessage, LLMResponse
+    from bmlib.llm.data_types import (
+        BatchEmbeddingResponse,
+        EmbeddingResponse,
+        LLMMessage,
+        LLMResponse,
+    )
 
 
 @dataclass
@@ -139,6 +144,24 @@ class BaseProvider(ABC):
         Not all providers support embeddings.  The default raises
         :class:`NotImplementedError`; providers that support embeddings
         (e.g. Ollama) override this method.
+        """
+        raise NotImplementedError(f"{self.PROVIDER_NAME} does not support embeddings")
+
+    def embed_batch(
+        self,
+        texts: list[str],
+        model: str | None = None,
+        max_batch_size: int | None = None,
+        **kwargs: object,
+    ) -> BatchEmbeddingResponse:
+        """Generate embedding vectors for *texts* in few API requests.
+
+        Providers that support batch embedding (e.g. Ollama) override
+        this to send texts in groups of at most *max_batch_size* per API
+        round-trip, which is far faster than looping :meth:`embed` for
+        bulk workloads.  *max_batch_size* of ``None`` lets the provider
+        choose its own default bound.  The default implementation raises
+        :class:`NotImplementedError`.
         """
         raise NotImplementedError(f"{self.PROVIDER_NAME} does not support embeddings")
 

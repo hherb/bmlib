@@ -8,6 +8,23 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **Batch embedding.** `LLMClient.embed_batch(texts, model=..., max_batch_size=None)`
+  embeds many texts per provider round-trip instead of one request per text,
+  returning a new `BatchEmbeddingResponse` (`embeddings` — one vector per input
+  in input order, `model`, `dimensions`, `input_tokens` summed across requests).
+  Measured on 32 chunks against a local Ollama server: 0.59 s batched vs 4.48 s
+  looped (7.6×). `BaseProvider.embed_batch()` is a concrete default raising
+  `NotImplementedError`, mirroring `embed()`, so third-party providers are
+  unaffected; only Ollama overrides it. Batching is bounded — texts are sent in
+  groups of at most `max_batch_size` (Ollama default:
+  `DEFAULT_EMBED_BATCH_SIZE = 256`) so a large corpus does not become one
+  enormous request; pass `max_batch_size=len(texts)` to force a single
+  round-trip. Not atomic: if a later group fails, vectors already computed for
+  earlier groups are discarded with the exception. A vector-count mismatch
+  raises `ValueError`; request failure raises `ConnectionError` as before.
+- Ollama `embed()` / `embed_batch()` now forward `**kwargs` verbatim to the
+  ollama SDK (`truncate`, `options`, `keep_alive`); previously they were
+  accepted and silently discarded, so `truncate=False` could not be set.
 - **Thinking/reasoning support across providers.** `LLMResponse` gained an
   optional `thinking` field (appended after `tool_calls`, so positional
   construction is unaffected) carrying the model's reasoning trace separated
@@ -28,6 +45,23 @@ All notable changes to bmlib are documented here. The format is based on
 - OpenAI-compatible providers accept an `extra_body` kwarg forwarded verbatim
   to the SDK, as the escape hatch for server-specific parameters (e.g. vLLM's
   `chat_template_kwargs`).
+
+### Changed — breaking
+
+- **Ollama embeddings moved to the `/api/embed` endpoint, changing vector
+  scale.** `OllamaProvider.embed()` previously called the deprecated
+  `/api/embeddings` endpoint, which returned **raw** vectors; it now delegates
+  to `embed_batch()` and so uses `/api/embed`, which returns **L2-normalised**
+  vectors. This keeps `embed(t)` and `embed_batch([t]).embeddings[0]` in
+  permanent agreement — keeping the old endpoint for single embeds would have
+  made them disagree in scale forever.
+
+  Cosine similarity is scale-invariant and is unaffected. **Raw dot-product or
+  Euclidean (L2) comparisons are affected**, and the failure is silent: mixing
+  vectors stored before this change with vectors produced after it degrades
+  retrieval quality with no exception and no warning. If your store uses a
+  non-cosine distance metric, **re-embed the corpus**. Callers on cosine
+  similarity need do nothing.
 
 ## [0.4.0] — 2026-07-19
 

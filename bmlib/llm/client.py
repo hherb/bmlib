@@ -38,6 +38,7 @@ import logging
 import threading
 
 from bmlib.llm.data_types import (
+    BatchEmbeddingResponse,
     EmbeddingResponse,
     LLMMessage,
     LLMResponse,
@@ -265,6 +266,45 @@ class LLMClient:
         provider_name, model_name = self._parse_model_string(model)
         provider = self._get_provider(provider_name)
         return provider.embed(text=text, model=model_name, **kwargs)
+
+    def embed_batch(
+        self,
+        texts: list[str],
+        model: str | None = None,
+        max_batch_size: int | None = None,
+        **kwargs: object,
+    ) -> BatchEmbeddingResponse:
+        """Generate embedding vectors for *texts* in few provider requests.
+
+        Sends texts to the provider in batches rather than one request
+        per text — for bulk workloads this is several times faster than
+        looping :meth:`embed`. Routes on the *model* string like
+        :meth:`embed` and raises :class:`NotImplementedError` for
+        providers without embedding support.
+
+        Not atomic: if a later batch fails, vectors already computed for
+        earlier batches are discarded with the exception.
+
+        Args:
+            texts: The texts to embed. An empty list returns an empty
+                response without contacting the provider.
+            model: Model string (``"provider:model_name"`` format).
+                   Defaults to the default provider's default model.
+            max_batch_size: Maximum texts per provider request.  ``None``
+                lets the provider choose its own default bound (Ollama:
+                :pydata:`~bmlib.llm.providers.ollama.DEFAULT_EMBED_BATCH_SIZE`).
+                Pass ``len(texts)`` to force a single round-trip.
+            **kwargs: Extra provider-specific arguments.
+
+        Returns:
+            A :class:`~bmlib.llm.data_types.BatchEmbeddingResponse` with
+            one vector per input text, in input order.
+        """
+        provider_name, model_name = self._parse_model_string(model)
+        provider = self._get_provider(provider_name)
+        if max_batch_size is not None:
+            kwargs["max_batch_size"] = max_batch_size
+        return provider.embed_batch(texts=texts, model=model_name, **kwargs)
 
     def test_connection(
         self,
