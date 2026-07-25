@@ -104,7 +104,7 @@ bmlib/
 - **`agents/`** — `BaseAgent` class for LLM-driven tasks. Provides `chat()`, `chat_json()` (retry with backoff, truncation-aware), `render_template()`, `parse_json()`, and message helpers.
 - **`quality/`** — 3-tier quality assessment: (1) free metadata classification, (2) cheap LLM classifier, (3) deep LLM assessment. Uses CEBM evidence hierarchy for quality tiers. The Cochrane models/formatter and the rule-based extractors are **standalone**: nothing in the tiered pipeline imports them, and there is no conversion between `BiasRisk` and `CochraneRiskOfBias`, or between `DimensionScore` and `QualityAssessment`. Wiring them together is open work — see ROADMAP.md.
 - **`transparency/`** — Queries CrossRef, Europe PMC (search + full text), OpenAlex, and ClinicalTrials.gov to compute a transparency score (0-100) covering funding, COI, data availability, trial registration, and open access. `pubmed_api_key` is accepted but no PubMed endpoint is currently called. When no API is reachable the result is `UNKNOWN` at score 0, so an unreachable network does not masquerade as a HIGH-risk paper.
-- **`publications/`** — Publication ingestion from multiple sources (PubMed, bioRxiv, medRxiv, OpenAlex) with deduplication by DOI/PMID, merge-on-upsert, and date-range sync tracking. Note: the storage layer is currently SQLite-specific (`?` placeholders, `ON CONFLICT`, `cur.lastrowid`) even though `db/` also supports PostgreSQL.
+- **`publications/`** — Publication ingestion from multiple sources (PubMed, bioRxiv, medRxiv, OpenAlex) with deduplication by DOI/PMID, merge-on-upsert, and date-range sync tracking. Runs on both backends `db/` supports: placeholders come from `db.placeholder()`, `ensure_schema()` picks the matching DDL, and the one irreducibly dialect-specific need — reading back an inserted row's id — is `cur.lastrowid` on SQLite and `RETURNING id` on PostgreSQL. Everything else is written in the intersection of the two dialects. `tests/test_backends.py` runs each test against both.
 - **`fulltext/`** — Tiered full-text retrieval (caller-supplied sources → Europe PMC XML → Europe PMC PDF → Unpaywall → DOI/PubMed URL) with JATS XML parsing and disk-based caching. PDF→text conversion lives here too but is **standalone** — `FullTextService` downloads and caches PDF bytes and never calls the converter.
 
 ## Coding Conventions
@@ -143,7 +143,9 @@ Both LLM providers and publication fetchers use a module-level `_REGISTRY` dict 
 All database functions take a connection as the first argument. The `transaction(conn)` context manager handles commit/rollback. No hidden state.
 
 ### Composable transactions via savepoints
-On SQLite, `transaction(conn)` entered while a transaction is already open joins it with a `SAVEPOINT` instead of committing — the outermost block owns the commit, and an inner failure rolls back to its own savepoint without losing the batch. This is what lets a bulk loop wrap many `transaction()`-using calls in one outer block and pay a single commit; `publications.sync()` depends on it for its one-commit-per-day batching. PostgreSQL has no savepoint nesting: `transaction()` there still commits connection-wide.
+`transaction(conn)` entered while another `transaction()` block is open joins it with a `SAVEPOINT` instead of committing — the outermost block owns the commit, and an inner failure rolls back to its own savepoint without losing the batch. This is what lets a bulk loop wrap many `transaction()`-using calls in one outer block and pay a single commit; `publications.sync()` depends on it for its one-commit-per-day batching.
+
+Both backends nest, but they must answer "is a block already open?" differently. SQLite auto-begins only before DML, so `conn.in_transaction` means what it says. psycopg2 begins a transaction on the first statement of *any* kind — a bare `SELECT` leaves the connection INTRANS — so reading the driver's status would classify an ordinary un-nested block as nested and silently skip its commit, breaking every write. PostgreSQL therefore counts bmlib's own open blocks (`transaction_depth()`), keyed by `id(conn)` because psycopg2's connection is a C type that rejects attribute assignment. Anything that commits conditionally (`create_tables()`) must ask `owns_commit()`, never the driver.
 
 ### Optional dependencies guarded at the call site
 Optional imports are deferred to the constructor or function that needs them, not the module top level, so importing a module never drags in an extra. `PyMuPDFConverter.__init__` and `TransparencyAnalyzer.analyze()` both follow this pattern.
@@ -197,17 +199,26 @@ uv run ruff format --check .
 
 All tests use in-memory SQLite (`connect_sqlite(":memory:")`) for database tests and mocked HTTP responses for API tests. No external services are required.
 
+`tests/test_backends.py` additionally runs every one of its tests against PostgreSQL when a server is configured — it is the guard against `publications/` drifting back to SQLite-only SQL:
+
+```bash
+BMLIB_TEST_POSTGRESQL_DSN="host=/tmp/pgrun port=5432 dbname=bmlib_test user=postgres" \
+    uv run pytest tests/test_backends.py
+```
+
+The DSN must point at a database the tests may drop every table in. Unset, the PostgreSQL half of each test skips.
+
 ## Test file mapping
 
 | Module               | Test file(s)                                               |
 |----------------------|------------------------------------------------------------|
-| `db/`                | `test_db.py`, `test_migrations.py`                         |
+| `db/`                | `test_db.py`, `test_migrations.py`, `test_backends.py`     |
 | `llm/`               | `test_llm.py`, `test_openai_compat.py`, `test_llm_tools.py`, `test_llm_thinking.py`, `test_llm_embeddings.py`, `test_json_repair.py`, `test_text_utils.py` |
 | `agents/`            | `test_agents.py`                                           |
 | `quality/`           | `test_quality.py`, `test_cochrane.py`, `test_extractors.py` |
 | `templates/`         | `test_templates.py`                                        |
 | `transparency/`      | `test_transparency.py`                                     |
-| `publications/`      | `test_publications.py`, `test_sync.py`, `test_pubmed_fetcher.py`, `test_openalex_fetcher.py`, `test_registry.py` |
+| `publications/`      | `test_publications.py`, `test_sync.py`, `test_backends.py`, `test_pubmed_fetcher.py`, `test_openalex_fetcher.py`, `test_registry.py` |
 | `fulltext/`          | `test_fulltext_cache.py`, `test_fulltext_models.py`, `test_fulltext_service.py`, `test_jats_parser.py`, `test_pdf_converter.py` |
 
 `scripts/smoke_test_tool_calling.py` is an end-to-end integration runner for tool calling. It hits live providers, so it is not part of the pytest suite — run it manually when changing provider tool-call code.

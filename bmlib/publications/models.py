@@ -59,6 +59,7 @@ class Publication:
 
     doi: str | None = None
     pmid: str | None = None
+    pmcid: str | None = None
     abstract: str | None = None
     authors: list[str] = field(default_factory=list)
     journal: str | None = None
@@ -78,6 +79,7 @@ class Publication:
             "title": self.title,
             "doi": self.doi,
             "pmid": self.pmid,
+            "pmcid": self.pmcid,
             "abstract": self.abstract,
             "authors": self.authors,
             "journal": self.journal,
@@ -100,6 +102,7 @@ class Publication:
             title=data["title"],
             doi=data.get("doi"),
             pmid=data.get("pmid"),
+            pmcid=data.get("pmcid"),
             abstract=data.get("abstract"),
             authors=data.get("authors", []),
             journal=data.get("journal"),

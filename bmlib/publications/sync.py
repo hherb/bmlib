@@ -28,7 +28,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from bmlib import __version__
-from bmlib.db import execute, fetch_all, transaction
+from bmlib.db import execute, fetch_all, placeholder, transaction
 from bmlib.publications.fetchers.registry import get_fetcher, source_names
 from bmlib.publications.models import (
     FetchedRecord,
@@ -97,12 +97,13 @@ def _days_needing_fetch(
         Dates that need fetching, sorted ascending.
     """
     today = date.today()
+    ph = placeholder(conn)
 
     # Query all completed download_days rows for this source in range
     rows = fetch_all(
         conn,
         "SELECT date, status, last_verified_at FROM download_days"
-        " WHERE source = ? AND date >= ? AND date <= ?",
+        f" WHERE source = {ph} AND date >= {ph} AND date <= {ph}",
         (source, date_from.isoformat(), date_to.isoformat()),
     )
 
@@ -145,6 +146,7 @@ def _record_to_publication(record: FetchedRecord) -> Publication:
         title=record.title,
         doi=record.doi,
         pmid=record.pmid,
+        pmcid=record.pmc_id,
         abstract=record.abstract,
         authors=record.authors,
         journal=record.journal,
@@ -207,11 +209,12 @@ def _upsert_download_day(
     from datetime import UTC, datetime
 
     now = datetime.now(tz=UTC).isoformat()
+    ph = placeholder(conn)
     with transaction(conn):
         execute(
             conn,
             "INSERT INTO download_days (source, date, status, record_count, downloaded_at,"
-            " last_verified_at) VALUES (?, ?, ?, ?, ?, ?)"
+            f" last_verified_at) VALUES ({', '.join([ph] * 6)})"
             " ON CONFLICT (source, date) DO UPDATE SET"
             "   status = excluded.status,"
             "   record_count = excluded.record_count,"

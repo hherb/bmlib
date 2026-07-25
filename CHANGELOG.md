@@ -6,6 +6,53 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`bmlib.publications` works on PostgreSQL.** `schema.py`, `storage.py` and
+  `sync.py` were SQLite-only (`?` placeholders, `cur.lastrowid`,
+  `UPDATE OR IGNORE`, `AUTOINCREMENT`) even though `bmlib.db` has supported
+  both backends all along. Every statement is now written for both, and
+  `ensure_schema()` picks the matching DDL. The behaviour is pinned by
+  `tests/test_backends.py`, which runs each test against both backends.
+- `bmlib.db.is_sqlite()`, `placeholder()` and `placeholders()` — the backend
+  detection every dual-dialect module needs, promoted out of the private
+  helpers in `db/migrations.py`.
+- `publications.pmcid` — a column, a `Publication` field, and the conversion
+  in `sync._record_to_publication()`. `FetchedRecord.pmc_id` was being dropped
+  on store, so full-text retrieval could not use the PMC id a fetcher had
+  already found. `ensure_schema()` adds the column to databases created by an
+  earlier bmlib.
+- `bmlib.db.transaction_depth()` / `owns_commit()` — how many `transaction()`
+  blocks are currently open on a connection.
+- Opt-in PostgreSQL test coverage: set `BMLIB_TEST_POSTGRESQL_DSN` to run the
+  two-backend suite against a live server. Unset, those parameterisations skip
+  and the suite is unchanged.
+
+### Fixed
+
+- **`fetch_scalar()` always returned `None` on PostgreSQL.** psycopg2's
+  `RealDictRow` is keyed by column name, so `row[0]` raised `KeyError` and was
+  swallowed by the fallback. It now reads the first value on dict-like rows.
+- **`transaction()` now nests on PostgreSQL**, via savepoints, as it already
+  did on SQLite. Previously an inner block committed connection-wide, so a
+  batch's partial writes could not be rolled back — `publications.sync()`'s
+  one-commit-per-day batching silently degraded to one commit per record.
+  Nesting is detected from bmlib's own open-block count, *not* psycopg2's
+  transaction status: psycopg2 opens a transaction on the first statement of
+  any kind, so a bare `SELECT` would have made every following block look
+  nested and stop committing. Un-nested blocks commit exactly as before.
+- `create_tables()` no longer commits mid-migration on PostgreSQL, so a
+  migration that fails part-way rolls back whole. It already behaved this way
+  on SQLite.
+
+### Compatibility
+
+No public signature changed and nothing was removed. SQLite behaviour is
+byte-for-byte unchanged — the full pre-existing suite passes untouched. On
+PostgreSQL the changes above are strictly fixes to paths that were broken or
+absent. Databases created by an earlier bmlib pick up the new `pmcid` column
+on the next `ensure_schema()` call, which `sync()` makes for you.
+
 ## [0.5.1] — 2026-07-21
 
 All changes are confined to `bmlib/llm/providers/ollama.py`. No public

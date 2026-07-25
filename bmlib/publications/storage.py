@@ -20,9 +20,12 @@ Provides de-duplicating insert, lookup by DOI/PMID, and full-text source
 management.  Merging fills NULL fields from incoming records and appends
 new sources, but never overwrites existing non-NULL values.
 
-This module is currently **SQLite-specific** (``?`` placeholders,
-``ON CONFLICT``, ``cur.lastrowid``) even though :mod:`bmlib.db` also
-supports PostgreSQL.
+Works on both backends :mod:`bmlib.db` supports.  Placeholders come from
+:func:`bmlib.db.placeholder`, and the one genuinely dialect-specific need —
+reading back the id of a freshly inserted row — is handled by
+:func:`_insert_publication` (``cur.lastrowid`` on SQLite, ``RETURNING id`` on
+PostgreSQL).  All other SQL here is written in the intersection of the two
+dialects.
 
 Commit semantics: the public write functions (:func:`store_publication`,
 :func:`add_fulltext_source`) each run inside a :func:`bmlib.db.transaction`
@@ -41,7 +44,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from bmlib.db import execute, fetch_one, transaction
+from bmlib.db import execute, fetch_one, is_sqlite, placeholder, transaction
 from bmlib.publications.models import FullTextSource, Publication
 
 
@@ -98,6 +101,20 @@ def _normalize_pmid(pmid: str | None) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def _optional_column(row: Any, name: str) -> Any:
+    """Read a column that may be absent, returning None if it is.
+
+    Columns added after a release only reach an existing database via
+    :func:`~bmlib.publications.schema.ensure_schema`. Reads should not fall
+    over on a database whose owner has upgraded bmlib but not yet re-run it —
+    sqlite3.Row raises IndexError for an unknown key, dicts raise KeyError.
+    """
+    try:
+        return row[name]
+    except (IndexError, KeyError):
+        return None
+
+
 def _row_to_publication(row: Any) -> Publication:
     """Convert a DB row (sqlite3.Row or dict-like) to a Publication."""
     return Publication(
@@ -105,6 +122,7 @@ def _row_to_publication(row: Any) -> Publication:
         title=row["title"],
         doi=row["doi"],
         pmid=row["pmid"],
+        pmcid=_optional_column(row, "pmcid"),
         abstract=row["abstract"],
         authors=json.loads(row["authors"]) if row["authors"] else [],
         journal=row["journal"],
@@ -121,17 +139,30 @@ def _row_to_publication(row: Any) -> Publication:
 
 
 def _insert_publication(conn: Any, pub: Publication, now: str) -> int:
-    """Insert a new publication and return the row id."""
-    cur = execute(
-        conn,
+    """Insert a new publication and return the row id.
+
+    SQLite reports the new id on the cursor; PostgreSQL has no ``lastrowid``,
+    so the id is asked for with ``RETURNING`` instead.
+    """
+    ph = placeholder(conn)
+    sqlite = is_sqlite(conn)
+    sql = (
         "INSERT INTO publications"
-        " (doi, pmid, title, abstract, authors, journal, publication_date,"
+        " (doi, pmid, pmcid, title, abstract, authors, journal, publication_date,"
         "  publication_types, keywords, is_open_access, license,"
         "  sources, first_seen_source, created_at, updated_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        f" VALUES ({', '.join([ph] * 16)})"
+    )
+    if not sqlite:
+        sql += " RETURNING id"
+
+    cur = execute(
+        conn,
+        sql,
         (
             pub.doi,
             pub.pmid,
+            pub.pmcid,
             pub.title,
             pub.abstract,
             json.dumps(pub.authors),
@@ -139,7 +170,7 @@ def _insert_publication(conn: Any, pub: Publication, now: str) -> int:
             pub.publication_date,
             json.dumps(pub.publication_types),
             json.dumps(pub.keywords),
-            int(pub.is_open_access),
+            bool(pub.is_open_access),
             pub.license,
             json.dumps(pub.sources),
             pub.first_seen_source,
@@ -147,7 +178,10 @@ def _insert_publication(conn: Any, pub: Publication, now: str) -> int:
             now,
         ),
     )
-    return cur.lastrowid
+    if sqlite:
+        return cur.lastrowid
+    row = cur.fetchone()
+    return row["id"] if isinstance(row, dict) else row[0]
 
 
 def _merge_publication(
@@ -162,6 +196,8 @@ def _merge_publication(
     - Fills NULL fields from incoming via COALESCE-style logic.
     - Never overwrites existing non-NULL fields.
     """
+    ph = placeholder(conn)
+
     # Merge sources lists
     existing_sources = json.loads(existing["sources"]) if existing["sources"] else []
     for src in incoming.sources:
@@ -193,29 +229,34 @@ def _merge_publication(
     execute(
         conn,
         "UPDATE publications SET"
-        "  doi = COALESCE(doi, ?),"
-        "  pmid = COALESCE(pmid, ?),"
-        "  abstract = COALESCE(abstract, ?),"
-        "  authors = ?,"
-        "  journal = COALESCE(journal, ?),"
-        "  publication_date = COALESCE(publication_date, ?),"
-        "  publication_types = ?,"
-        "  keywords = ?,"
-        "  is_open_access = CASE WHEN is_open_access = 0 THEN ? ELSE is_open_access END,"
-        "  license = COALESCE(license, ?),"
-        "  sources = ?,"
-        "  updated_at = ?"
-        " WHERE id = ?",
+        f"  doi = COALESCE(doi, {ph}),"
+        f"  pmid = COALESCE(pmid, {ph}),"
+        f"  pmcid = COALESCE(pmcid, {ph}),"
+        f"  abstract = COALESCE(abstract, {ph}),"
+        f"  authors = {ph},"
+        f"  journal = COALESCE(journal, {ph}),"
+        f"  publication_date = COALESCE(publication_date, {ph}),"
+        f"  publication_types = {ph},"
+        f"  keywords = {ph},"
+        # Open access is a one-way latch: once any source reports it, keep it.
+        # Written as OR rather than a CASE on ``= 0`` because PostgreSQL stores
+        # this as a real BOOLEAN, which does not compare against an integer.
+        f"  is_open_access = (is_open_access OR {ph}),"
+        f"  license = COALESCE(license, {ph}),"
+        f"  sources = {ph},"
+        f"  updated_at = {ph}"
+        f" WHERE id = {ph}",
         (
             incoming.doi,
             incoming.pmid,
+            incoming.pmcid,
             incoming.abstract,
             merged_authors,
             incoming.journal,
             incoming.publication_date,
             merged_pub_types,
             merged_keywords,
-            int(incoming.is_open_access),
+            bool(incoming.is_open_access),
             incoming.license,
             merged_sources,
             now,
@@ -240,29 +281,34 @@ def _consolidate_rows(conn: Any, keep: Any, drop: Any, now: str) -> None:
     aborting the write and leaving the duplicates stranded forever.
 
     Ordering matters: the drop row is deleted *before* its identifier is merged
-    onto the keep row, so the unique index is free when the merge runs (SQLite
-    enforces UNIQUE per statement, so no intermediate commit is needed). The
-    whole consolidation runs inside :func:`store_publication`'s transaction,
-    so a failure part-way through is fully rollback-able and cannot lose the
-    drop row's data.
+    onto the keep row, so the unique index is free when the merge runs (both
+    backends enforce UNIQUE per statement, so no intermediate commit is
+    needed). The whole consolidation runs inside :func:`store_publication`'s
+    transaction, so a failure part-way through is fully rollback-able and
+    cannot lose the drop row's data.
     """
+    ph = placeholder(conn)
     keep_id = keep["id"]
     drop_id = drop["id"]
 
-    # Move the drop row's full-text sources onto the keep row. UPDATE OR IGNORE
-    # skips any (publication_id, url) pair that already exists on the keep row;
-    # the leftover duplicates on the drop row are then removed.
+    # Move the drop row's full-text sources onto the keep row, skipping any URL
+    # the keep row already has — moving those would violate
+    # UNIQUE(publication_id, url). The leftovers on the drop row are then
+    # removed. (SQLite could say this as UPDATE OR IGNORE, but PostgreSQL has
+    # no such form and the explicit anti-join reads the same on both.)
     execute(
         conn,
-        "UPDATE OR IGNORE fulltext_sources SET publication_id = ? WHERE publication_id = ?",
-        (keep_id, drop_id),
+        f"UPDATE fulltext_sources SET publication_id = {ph}"
+        f" WHERE publication_id = {ph}"
+        f"   AND url NOT IN (SELECT url FROM fulltext_sources WHERE publication_id = {ph})",
+        (keep_id, drop_id, keep_id),
     )
-    execute(conn, "DELETE FROM fulltext_sources WHERE publication_id = ?", (drop_id,))
+    execute(conn, f"DELETE FROM fulltext_sources WHERE publication_id = {ph}", (drop_id,))
 
     # Snapshot the drop row's data, delete the row (freeing its unique
     # identifier), then fold its data into the keep row.
     drop_pub = _row_to_publication(drop)
-    execute(conn, "DELETE FROM publications WHERE id = ?", (drop_id,))
+    execute(conn, f"DELETE FROM publications WHERE id = {ph}", (drop_id,))
     _merge_publication(conn, keep, drop_pub, now)
 
 
@@ -287,6 +333,7 @@ def store_publication(
     record was found and updated.
     """
     now = _now_iso()
+    ph = placeholder(conn)
 
     pub.doi = _normalize_doi(pub.doi)
     pub.pmid = _normalize_pmid(pub.pmid)
@@ -295,12 +342,12 @@ def store_publication(
         # Look up by each identifier independently so we can detect a split
         # identity (DOI and PMID pointing at two different existing rows).
         row_by_doi = (
-            fetch_one(conn, "SELECT * FROM publications WHERE doi = ?", (pub.doi,))
+            fetch_one(conn, f"SELECT * FROM publications WHERE doi = {ph}", (pub.doi,))
             if pub.doi
             else None
         )
         row_by_pmid = (
-            fetch_one(conn, "SELECT * FROM publications WHERE pmid = ?", (pub.pmid,))
+            fetch_one(conn, f"SELECT * FROM publications WHERE pmid = {ph}", (pub.pmid,))
             if pub.pmid
             else None
         )
@@ -314,7 +361,7 @@ def store_publication(
             # row), then re-read it before merging the incoming record.
             _consolidate_rows(conn, row_by_doi, row_by_pmid, now)
             existing = fetch_one(
-                conn, "SELECT * FROM publications WHERE id = ?", (row_by_doi["id"],)
+                conn, f"SELECT * FROM publications WHERE id = {ph}", (row_by_doi["id"],)
             )
         else:
             existing = row_by_doi if row_by_doi is not None else row_by_pmid
@@ -341,7 +388,8 @@ def get_publication_by_doi(conn: Any, doi: str) -> Publication | None:
     The DOI is normalized before lookup so a query using any case or prefix
     variant matches the canonical stored form.
     """
-    row = fetch_one(conn, "SELECT * FROM publications WHERE doi = ?", (_normalize_doi(doi),))
+    ph = placeholder(conn)
+    row = fetch_one(conn, f"SELECT * FROM publications WHERE doi = {ph}", (_normalize_doi(doi),))
     if row is None:
         return None
     return _row_to_publication(row)
@@ -349,7 +397,8 @@ def get_publication_by_doi(conn: Any, doi: str) -> Publication | None:
 
 def get_publication_by_pmid(conn: Any, pmid: str) -> Publication | None:
     """Look up a publication by PMID, or return None."""
-    row = fetch_one(conn, "SELECT * FROM publications WHERE pmid = ?", (_normalize_pmid(pmid),))
+    ph = placeholder(conn)
+    row = fetch_one(conn, f"SELECT * FROM publications WHERE pmid = {ph}", (_normalize_pmid(pmid),))
     if row is None:
         return None
     return _row_to_publication(row)
@@ -372,12 +421,13 @@ def add_fulltext_source(
     (publication_id, url) pair already exists.
     """
     now = _now_iso()
+    ph = placeholder(conn)
     with transaction(conn):
         cur = execute(
             conn,
             "INSERT INTO fulltext_sources"
             " (publication_id, source, url, format, version, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?)"
+            f" VALUES ({', '.join([ph] * 6)})"
             " ON CONFLICT (publication_id, url) DO NOTHING",
             (publication_id, source, url, fmt, version, now),
         )

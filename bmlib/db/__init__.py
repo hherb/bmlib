@@ -28,6 +28,7 @@ Usage::
     rows = fetch_all(conn, "SELECT * FROM papers")
 """
 
+from bmlib.db.backend import is_sqlite, placeholder, placeholders
 from bmlib.db.connection import connect_postgresql, connect_sqlite
 from bmlib.db.migrations import Migration, run_migrations
 from bmlib.db.operations import (
@@ -44,6 +45,9 @@ from bmlib.db.transactions import transaction
 __all__ = [
     "connect_sqlite",
     "connect_postgresql",
+    "is_sqlite",
+    "placeholder",
+    "placeholders",
     "execute",
     "executemany",
     "fetch_one",
