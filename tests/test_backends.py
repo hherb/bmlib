@@ -102,6 +102,24 @@ class TestSchema:
         store_publication(backend_conn, _pub(doi="10.1234/a", pmcid="PMC1"))
         assert get_publication_by_doi(backend_conn, "10.1234/a").pmcid == "PMC1"
 
+    def test_reads_survive_a_database_that_has_not_been_upgraded_yet(self, backend_conn):
+        """Rows still load from a database missing a post-release column.
+
+        Someone can upgrade bmlib and read before calling ``ensure_schema()``.
+        Writes cannot survive that — the INSERT names every column — but reads
+        must, or the upgrade breaks the consumer at import-and-query time.
+        """
+        ensure_schema(backend_conn)
+        store_publication(backend_conn, _pub(doi="10.1234/a", pmcid="PMC1"))
+        with transaction(backend_conn):
+            execute(backend_conn, "ALTER TABLE publications DROP COLUMN pmcid")
+
+        pub = get_publication_by_doi(backend_conn, "10.1234/a")
+
+        assert pub is not None
+        assert pub.title == "A paper"
+        assert pub.pmcid is None
+
     def test_a_same_named_table_in_another_schema_is_not_mistaken_for_ours(self, backend_conn):
         """Regression guard: the column check must be schema-qualified.
 
