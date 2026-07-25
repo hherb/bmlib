@@ -30,6 +30,9 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
+from bmlib.db.backend import is_sqlite
+from bmlib.db.transactions import owns_commit
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,8 +72,13 @@ def fetch_scalar(conn: Any, sql: str, params: Sequence = ()) -> Any:
     row = fetch_one(conn, sql, params)
     if row is None:
         return None
-    # Both sqlite3.Row and psycopg2 RealDictRow support index access.
-    # sqlite3.Row has keys() but NOT values(), so index access is universal.
+    # psycopg2's RealDictRow is a dict subclass keyed by column name, so
+    # ``row[0]`` raises KeyError there and "first column" has to mean the first
+    # *value*. sqlite3.Row is not a dict (it has keys() but no values()), so it
+    # keeps the index path.
+    if isinstance(row, dict):
+        values = list(row.values())
+        return values[0] if values else None
     try:
         return row[0]
     except (IndexError, KeyError):
@@ -79,9 +87,7 @@ def fetch_scalar(conn: Any, sql: str, params: Sequence = ()) -> Any:
 
 def table_exists(conn: Any, name: str) -> bool:
     """Check whether a table exists (works on both SQLite and PostgreSQL)."""
-    # Detect backend
-    module_name = type(conn).__module__
-    if "sqlite3" in module_name:
+    if is_sqlite(conn):
         row = fetch_one(
             conn,
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
@@ -196,10 +202,14 @@ def create_tables(conn: Any, schema_sql: str) -> None:
     migrations). Executing statements one at a time keeps the DDL inside the
     active transaction — SQLite supports transactional DDL — so a failure
     rolls back cleanly.
+
+    Either backend skips the commit when called from inside a
+    :func:`~bmlib.db.transactions.transaction` block, leaving the DDL atomic
+    with the rest of that block (e.g. the migration runner's). PostgreSQL
+    supports transactional DDL too.
     """
-    module_name = type(conn).__module__
-    if "sqlite3" in module_name:
-        cur = conn.cursor()
+    cur = conn.cursor()
+    if is_sqlite(conn):
         for stmt in _split_sql_statements(schema_sql):
             cur.execute(stmt)
         # Persist when called standalone, but leave commit to the caller when
@@ -208,6 +218,9 @@ def create_tables(conn: Any, schema_sql: str) -> None:
         if not conn.in_transaction:
             conn.commit()
     else:
-        cur = conn.cursor()
         cur.execute(schema_sql)
-        conn.commit()
+        # psycopg2 counts a plain SELECT as opening a transaction, so the
+        # driver's status cannot answer "am I inside someone's block?" — ask
+        # bmlib's own nesting count instead.
+        if owns_commit(conn):
+            conn.commit()

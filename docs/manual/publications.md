@@ -110,7 +110,11 @@ class Publication:
     created_at: datetime = field(default_factory=_now_utc)
     updated_at: datetime = field(default_factory=_now_utc)
     id: int | None = None
+
+    pmcid: str | None = None      # declared last on purpose — see below
 ```
+
+> **`pmcid` is declared last, not next to `pmid` (unreleased).** New fields are appended so that positional construction keeps working: inserting one in the middle silently shifts every later argument, and a caller's `abstract` would land in `pmcid` with nothing raised at any layer. If you add a field to this dataclass, append it.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -119,6 +123,7 @@ class Publication:
 | `first_seen_source` | `str` | The first source to provide this record. *(required)* |
 | `doi` | `str \| None` | Digital Object Identifier. Normalised on store — see [Identifier normalisation](#identifier-normalisation). |
 | `pmid` | `str \| None` | PubMed ID. Whitespace-stripped on store. |
+| `pmcid` | `str \| None` | PubMed Central ID, e.g. `"PMC1234567"`. Populated from `FetchedRecord.pmc_id` during sync; useful for full-text retrieval. Not used for deduplication. *(new, unreleased)* |
 | `abstract` | `str \| None` | Paper abstract. |
 | `authors` | `list[str]` | List of author names. |
 | `journal` | `str \| None` | Journal name. |
@@ -366,15 +371,23 @@ Create all publications tables if they do not exist, delegating to `bmlib.db.cre
 - **`fulltext_sources`** — Full-text source URLs linked to publications. Unique on `(publication_id, url)`.
 - **`download_days`** — Tracks which source/date combinations have been fetched. Unique on `(source, date)`.
 
-Called automatically by `sync()`. Call manually if you need the schema before syncing. The raw DDL is available as `bmlib.publications.schema.SCHEMA_SQL`.
+Called automatically by `sync()`. Call manually if you need the schema before syncing. The raw DDL is available as `bmlib.publications.schema.SCHEMA_SQL` (SQLite) and `SCHEMA_SQL_POSTGRESQL`; `ensure_schema()` picks the matching one. The two differ only where the dialects do — surrogate keys and booleans. Everything the storage layer leans on exists in both.
+
+> **Call this once after upgrading bmlib (unreleased).** `CREATE TABLE IF NOT EXISTS` is a no-op against a database an earlier bmlib created, so a column added since then has to be applied explicitly. `ensure_schema()` reconciles against the live column list and adds what is missing — currently just `pmcid`.
+>
+> Reads tolerate a database that has not been through it: storage treats a post-release column as absent rather than raising. **Writes do not** — `store_publication()` names every column in its INSERT and will fail on one the database lacks. `sync()` calls `ensure_schema()` for you; code that goes straight to `store_publication()` must call it itself.
 
 **Example:**
 
 ```python
-from bmlib.db import connect_sqlite
+from bmlib.db import connect_postgresql, connect_sqlite
 from bmlib.publications import ensure_schema
 
 conn = connect_sqlite("publications.db")
+ensure_schema(conn)
+
+# Or against PostgreSQL — same call, matching DDL chosen for you.
+conn = connect_postgresql(dsn="host=localhost dbname=papers user=app")
 ensure_schema(conn)
 ```
 
@@ -384,8 +397,10 @@ ensure_schema(conn)
 
 All storage functions take a DB-API connection as the first argument and operate on the publications schema.
 
-> **The storage layer is SQLite-specific.**
-> It uses `?` placeholders, `ON CONFLICT`, `UPDATE OR IGNORE`, and `cur.lastrowid`, even though `bmlib.db` itself also supports PostgreSQL. Pass an SQLite connection.
+> **Both backends are supported (unreleased).**
+> `schema.py`, `storage.py` and `sync.py` were SQLite-only until recently — `?` placeholders, `UPDATE OR IGNORE`, `cur.lastrowid`, `AUTOINCREMENT` — even though `bmlib.db` supported PostgreSQL all along. Every statement is now written for both, `ensure_schema()` picks the matching DDL, and `tests/test_backends.py` runs each of its cases against both. Pass either connection type.
+>
+> The one irreducibly dialect-specific need is reading back an inserted row's id: `cur.lastrowid` on SQLite, `RETURNING id` on PostgreSQL. Everything else is written in the intersection of the two dialects.
 
 ### Commit semantics
 
@@ -979,28 +994,29 @@ data goes in `extras`.
 
 ## Database Schema
 
-The publications module creates three tables.
+The publications module creates three tables. Types are given for both backends where they differ; the constraints are identical.
 
 ### `publications`
 
-| Column | Type | Constraints |
-|--------|------|-------------|
-| `id` | `INTEGER` | `PRIMARY KEY AUTOINCREMENT` |
-| `doi` | `TEXT` | `UNIQUE` (partial index, `WHERE doi IS NOT NULL`) |
-| `pmid` | `TEXT` | `UNIQUE` (partial index, `WHERE pmid IS NOT NULL`) |
-| `title` | `TEXT` | `NOT NULL` |
-| `abstract` | `TEXT` | |
-| `authors` | `TEXT` | JSON array, default `'[]'` |
-| `journal` | `TEXT` | |
-| `publication_date` | `TEXT` | Indexed |
-| `publication_types` | `TEXT` | JSON array, default `'[]'` |
-| `keywords` | `TEXT` | JSON array, default `'[]'` |
-| `is_open_access` | `INTEGER` | Default `0` |
-| `license` | `TEXT` | |
-| `sources` | `TEXT` | JSON array, `NOT NULL`, default `'[]'` |
-| `first_seen_source` | `TEXT` | `NOT NULL` |
-| `created_at` | `TEXT` | `NOT NULL` |
-| `updated_at` | `TEXT` | `NOT NULL` |
+| Column | Type (SQLite) | Type (PostgreSQL) | Constraints |
+|--------|---------------|-------------------|-------------|
+| `id` | `INTEGER` | `SERIAL` | `PRIMARY KEY` (`AUTOINCREMENT` on SQLite) |
+| `doi` | `TEXT` | `TEXT` | `UNIQUE` (partial index, `WHERE doi IS NOT NULL`) |
+| `pmid` | `TEXT` | `TEXT` | `UNIQUE` (partial index, `WHERE pmid IS NOT NULL`) |
+| `pmcid` | `TEXT` | `TEXT` | *(new, unreleased — added to existing databases by `ensure_schema()`)* |
+| `title` | `TEXT` | `TEXT` | `NOT NULL` |
+| `abstract` | `TEXT` | `TEXT` | |
+| `authors` | `TEXT` | `TEXT` | JSON array, default `'[]'` |
+| `journal` | `TEXT` | `TEXT` | |
+| `publication_date` | `TEXT` | `TEXT` | Indexed |
+| `publication_types` | `TEXT` | `TEXT` | JSON array, default `'[]'` |
+| `keywords` | `TEXT` | `TEXT` | JSON array, default `'[]'` |
+| `is_open_access` | `INTEGER` | `BOOLEAN` | Default `0` / `FALSE`. A one-way latch: once any source reports open access, a later record cannot unset it. |
+| `license` | `TEXT` | `TEXT` | |
+| `sources` | `TEXT` | `TEXT` | JSON array, `NOT NULL`, default `'[]'` |
+| `first_seen_source` | `TEXT` | `TEXT` | `NOT NULL` |
+| `created_at` | `TEXT` | `TEXT` | `NOT NULL` |
+| `updated_at` | `TEXT` | `TEXT` | `NOT NULL` |
 
 Indexes: `idx_publications_doi` (unique, partial), `idx_publications_pmid` (unique, partial), `idx_publications_publication_date`.
 
