@@ -59,7 +59,6 @@ class Publication:
 
     doi: str | None = None
     pmid: str | None = None
-    pmcid: str | None = None
     abstract: str | None = None
     authors: list[str] = field(default_factory=list)
     journal: str | None = None
@@ -71,6 +70,13 @@ class Publication:
     created_at: datetime = field(default_factory=_now_utc)
     updated_at: datetime = field(default_factory=_now_utc)
     id: int | None = None
+
+    # New fields go last, never next to the field they read best beside.
+    # Downstream projects construct this positionally; inserting ``pmcid``
+    # after ``pmid`` — where it belongs on grounds of taste — silently shifts
+    # every later argument, so a caller's abstract lands in ``pmcid``. Appending
+    # cannot disturb an existing call.
+    pmcid: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dictionary."""

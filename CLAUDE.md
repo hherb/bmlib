@@ -42,9 +42,10 @@ bmlib/
 ├── __init__.py              # Package root, exports __version__
 ├── agents/base.py           # BaseAgent — LLM-driven task base class
 ├── db/                      # Database abstraction (SQLite + PostgreSQL)
+│   ├── backend.py           # is_sqlite(), placeholder(), placeholders() — dialect detection
 │   ├── connection.py        # connect_sqlite(), connect_postgresql()
 │   ├── operations.py        # execute, fetch_one, fetch_all, fetch_scalar, table_exists, create_tables
-│   ├── transactions.py      # transaction() context manager
+│   ├── transactions.py      # transaction() context manager, transaction_depth(), owns_commit()
 │   └── migrations.py        # Migration dataclass, run_migrations()
 ├── fulltext/                # Full-text retrieval, JATS XML parsing, PDF conversion
 │   ├── cache.py             # Disk-based FullTextCache, sanitize_identifier()
@@ -98,7 +99,7 @@ bmlib/
 
 ### Module descriptions
 
-- **`db/`** — Thin database abstraction via pure functions over DB-API connections. Supports SQLite (built-in) and PostgreSQL (optional). No ORM; all SQL is explicit.
+- **`db/`** — Thin database abstraction via pure functions over DB-API connections. Supports SQLite (built-in) and PostgreSQL (optional). No ORM; all SQL is explicit, so any module serving both backends gets its parameter placeholder from `placeholder(conn)` / `placeholders(conn, n)` rather than hard-coding `?`.
 - **`llm/`** — Unified LLM client with a pluggable provider registry. Built-in providers: Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini. Model strings use `"provider:model_name"` format (e.g. `"anthropic:claude-sonnet-4-20250514"`). Providers are lazily registered on first access, and a provider whose SDK is not installed is silently skipped — so `list_providers()` reflects what is installed, not what exists. Beyond chat, the package covers embeddings (`LLMClient.embed()` / batch `embed_batch()`, Ollama only, both via `/api/embed`), tool calling (`tools`/`tool_choice` on `chat()`), thinking/reasoning (`think=` kwarg on `chat()` → `LLMResponse.thinking`), JSON repair, and text chunking. Model listing never fans out per model: the Anthropic and OpenAI-compatible providers each issue a single source-level `models.list()` call (the SDK may paginate underneath), and Ollama defers its per-model context-window lookup (see "Lazy model metadata" below).
 - **`templates/`** — Jinja2-based prompt template engine with user directory override and default directory fallback.
 - **`agents/`** — `BaseAgent` class for LLM-driven tasks. Provides `chat()`, `chat_json()` (retry with backoff, truncation-aware), `render_template()`, `parse_json()`, and message helpers.
@@ -145,7 +146,9 @@ All database functions take a connection as the first argument. The `transaction
 ### Composable transactions via savepoints
 `transaction(conn)` entered while another `transaction()` block is open joins it with a `SAVEPOINT` instead of committing — the outermost block owns the commit, and an inner failure rolls back to its own savepoint without losing the batch. This is what lets a bulk loop wrap many `transaction()`-using calls in one outer block and pay a single commit; `publications.sync()` depends on it for its one-commit-per-day batching.
 
-Both backends nest, but they must answer "is a block already open?" differently. SQLite auto-begins only before DML, so `conn.in_transaction` means what it says. psycopg2 begins a transaction on the first statement of *any* kind — a bare `SELECT` leaves the connection INTRANS — so reading the driver's status would classify an ordinary un-nested block as nested and silently skip its commit, breaking every write. PostgreSQL therefore counts bmlib's own open blocks (`transaction_depth()`), keyed by `id(conn)` because psycopg2's connection is a C type that rejects attribute assignment. Anything that commits conditionally (`create_tables()`) must ask `owns_commit()`, never the driver.
+Both backends nest, but they must answer "is a block already open?" differently. SQLite auto-begins only before DML, so `conn.in_transaction` means what it says. psycopg2 begins a transaction on the first statement of *any* kind — a bare `SELECT` leaves the connection INTRANS — so reading the driver's status would classify an ordinary un-nested block as nested and silently skip its commit, breaking every write. PostgreSQL therefore counts bmlib's own open blocks (`transaction_depth()`). Anything that commits conditionally (`create_tables()`) must ask `owns_commit()`, never the driver.
+
+That count is keyed by *(thread, `id(conn)`)*. The thread is part of the key because nesting is a property of one call stack — keyed by connection alone, a block held open on one thread makes an unrelated outermost block on another thread look nested, so it opens a savepoint, never commits, and loses its write with nothing raised. `id(conn)` is used because psycopg2's connection is a C type that rejects attribute assignment and `sqlite3.Connection` supports neither weak references nor useful equality; the entry holds a strong reference to the connection, which is what stops the id being recycled onto a different one while the entry lives. `tests/test_backends.py::test_a_block_on_another_thread_does_not_look_like_nesting` is the regression guard.
 
 ### Optional dependencies guarded at the call site
 Optional imports are deferred to the constructor or function that needs them, not the module top level, so importing a module never drags in an extra. `PyMuPDFConverter.__init__` and `TransparencyAnalyzer.analyze()` both follow this pattern.
@@ -207,6 +210,8 @@ BMLIB_TEST_POSTGRESQL_DSN="host=/tmp/pgrun port=5432 dbname=bmlib_test user=post
 ```
 
 The DSN must point at a database the tests may drop every table in. Unset, the PostgreSQL half of each test skips.
+
+CI runs this against a `postgres:16` service on every matrix entry and also sets `BMLIB_REQUIRE_POSTGRESQL=1`, which turns that skip into a failure — a DSN that is missing or points at an unreachable server must not leave the PostgreSQL half unrun behind a green build.
 
 ## Test file mapping
 

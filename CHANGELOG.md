@@ -21,12 +21,18 @@ All notable changes to bmlib are documented here. The format is based on
   in `sync._record_to_publication()`. `FetchedRecord.pmc_id` was being dropped
   on store, so full-text retrieval could not use the PMC id a fetcher had
   already found. `ensure_schema()` adds the column to databases created by an
-  earlier bmlib.
+  earlier bmlib. The field is declared **last** on the dataclass, not beside
+  `pmid` where it reads best: `Publication` is constructed positionally by
+  downstream projects, so any other placement would shift every following
+  argument and land a caller's `abstract` in `pmcid` with no error anywhere.
+  Pinned by `test_positional_construction_is_stable_across_versions`.
 - `bmlib.db.transaction_depth()` / `owns_commit()` — how many `transaction()`
-  blocks are currently open on a connection.
+  blocks the calling thread has open on a connection.
 - Opt-in PostgreSQL test coverage: set `BMLIB_TEST_POSTGRESQL_DSN` to run the
   two-backend suite against a live server. Unset, those parameterisations skip
-  and the suite is unchanged.
+  and the suite is unchanged. CI runs it against a `postgres:16` service on
+  every matrix entry, with `BMLIB_REQUIRE_POSTGRESQL=1` so a missing or broken
+  DSN fails the build instead of skipping behind a green check.
 
 ### Fixed
 
@@ -41,9 +47,18 @@ All notable changes to bmlib are documented here. The format is based on
   transaction status: psycopg2 opens a transaction on the first statement of
   any kind, so a bare `SELECT` would have made every following block look
   nested and stop committing. Un-nested blocks commit exactly as before.
+  The count is kept per *(thread, connection)*: nesting describes one call
+  stack, and counting by connection alone let a block open on one thread make
+  an unrelated outermost block on another thread look nested — that block
+  opened a savepoint, never committed, and its write was lost silently.
 - `create_tables()` no longer commits mid-migration on PostgreSQL, so a
   migration that fails part-way rolls back whole. It already behaved this way
   on SQLite.
+- `ensure_schema()` looks for existing columns in `current_schema()` only.
+  `information_schema.columns` spans every schema the connected user can see,
+  so on a database shared with another consumer the check could answer about
+  *their* `publications` table — reporting `pmcid` present, skipping the
+  `ALTER`, and failing the next write on the missing column.
 
 ### Compatibility
 
@@ -52,6 +67,16 @@ byte-for-byte unchanged — the full pre-existing suite passes untouched. On
 PostgreSQL the changes above are strictly fixes to paths that were broken or
 absent. Databases created by an earlier bmlib pick up the new `pmcid` column
 on the next `ensure_schema()` call, which `sync()` makes for you.
+
+Two details worth knowing when upgrading:
+
+- **`ensure_schema()` is required after upgrading, not optional.** Reads
+  tolerate a database that has not been through it — `storage` treats a
+  post-release column as absent rather than raising — but writes name every
+  column and will fail on one the database lacks. `sync()` calls it for you;
+  code that goes straight to `store_publication()` must call it itself.
+- `Publication` gained a field. Positional construction and `from_dict()` on a
+  dict serialised by an older bmlib both behave exactly as before.
 
 ## [0.5.1] — 2026-07-21
 

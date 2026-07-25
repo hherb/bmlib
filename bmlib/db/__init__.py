@@ -40,7 +40,7 @@ from bmlib.db.operations import (
     fetch_scalar,
     table_exists,
 )
-from bmlib.db.transactions import transaction
+from bmlib.db.transactions import owns_commit, transaction, transaction_depth
 
 __all__ = [
     "connect_sqlite",
@@ -56,6 +56,8 @@ __all__ = [
     "table_exists",
     "create_tables",
     "transaction",
+    "transaction_depth",
+    "owns_commit",
     "Migration",
     "run_migrations",
 ]

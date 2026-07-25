@@ -44,7 +44,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from bmlib.db import execute, fetch_one, is_sqlite, placeholder, transaction
+from bmlib.db import execute, fetch_one, is_sqlite, placeholder, placeholders, transaction
 from bmlib.publications.models import FullTextSource, Publication
 
 
@@ -144,40 +144,34 @@ def _insert_publication(conn: Any, pub: Publication, now: str) -> int:
     SQLite reports the new id on the cursor; PostgreSQL has no ``lastrowid``,
     so the id is asked for with ``RETURNING`` instead.
     """
-    ph = placeholder(conn)
+    # One mapping, so the column list and the values cannot drift apart — a
+    # hand-counted placeholder run has to be edited in three places whenever a
+    # column is added, and only the database notices when it isn't.
+    values = {
+        "doi": pub.doi,
+        "pmid": pub.pmid,
+        "pmcid": pub.pmcid,
+        "title": pub.title,
+        "abstract": pub.abstract,
+        "authors": json.dumps(pub.authors),
+        "journal": pub.journal,
+        "publication_date": pub.publication_date,
+        "publication_types": json.dumps(pub.publication_types),
+        "keywords": json.dumps(pub.keywords),
+        "is_open_access": bool(pub.is_open_access),
+        "license": pub.license,
+        "sources": json.dumps(pub.sources),
+        "first_seen_source": pub.first_seen_source,
+        "created_at": now,
+        "updated_at": now,
+    }
     sqlite = is_sqlite(conn)
-    sql = (
-        "INSERT INTO publications"
-        " (doi, pmid, pmcid, title, abstract, authors, journal, publication_date,"
-        "  publication_types, keywords, is_open_access, license,"
-        "  sources, first_seen_source, created_at, updated_at)"
-        f" VALUES ({', '.join([ph] * 16)})"
-    )
+    columns = ", ".join(values)
+    sql = f"INSERT INTO publications ({columns}) VALUES ({placeholders(conn, len(values))})"
     if not sqlite:
         sql += " RETURNING id"
 
-    cur = execute(
-        conn,
-        sql,
-        (
-            pub.doi,
-            pub.pmid,
-            pub.pmcid,
-            pub.title,
-            pub.abstract,
-            json.dumps(pub.authors),
-            pub.journal,
-            pub.publication_date,
-            json.dumps(pub.publication_types),
-            json.dumps(pub.keywords),
-            bool(pub.is_open_access),
-            pub.license,
-            json.dumps(pub.sources),
-            pub.first_seen_source,
-            now,
-            now,
-        ),
-    )
+    cur = execute(conn, sql, tuple(values.values()))
     if sqlite:
         return cur.lastrowid
     row = cur.fetchone()
@@ -421,14 +415,14 @@ def add_fulltext_source(
     (publication_id, url) pair already exists.
     """
     now = _now_iso()
-    ph = placeholder(conn)
+    params = (publication_id, source, url, fmt, version, now)
     with transaction(conn):
         cur = execute(
             conn,
             "INSERT INTO fulltext_sources"
             " (publication_id, source, url, format, version, created_at)"
-            f" VALUES ({', '.join([ph] * 6)})"
+            f" VALUES ({placeholders(conn, len(params))})"
             " ON CONFLICT (publication_id, url) DO NOTHING",
-            (publication_id, source, url, fmt, version, now),
+            params,
         )
     return cur.rowcount > 0

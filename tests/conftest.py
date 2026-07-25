@@ -25,6 +25,10 @@ tests may freely drop tables in, e.g.::
 
 Without it the PostgreSQL parameterisation skips, so the suite stays green on
 a machine with no server.
+
+CI sets ``BMLIB_REQUIRE_POSTGRESQL=1`` alongside the DSN. That turns the skip
+into a failure, so a DSN that is missing or points at an unreachable server
+cannot leave the PostgreSQL half quietly unrun behind a green build.
 """
 
 from __future__ import annotations
@@ -37,11 +41,22 @@ import pytest
 from bmlib.db import connect_postgresql, connect_sqlite, execute, fetch_all, transaction
 
 POSTGRESQL_DSN_ENV = "BMLIB_TEST_POSTGRESQL_DSN"
+POSTGRESQL_REQUIRED_ENV = "BMLIB_REQUIRE_POSTGRESQL"
 
 
 def postgresql_dsn() -> str | None:
     """Return the configured PostgreSQL test DSN, or None if unset."""
     return os.environ.get(POSTGRESQL_DSN_ENV) or None
+
+
+def postgresql_required() -> bool:
+    """Return True if a missing PostgreSQL server must fail rather than skip."""
+    return os.environ.get(POSTGRESQL_REQUIRED_ENV, "").strip().lower() not in (
+        "",
+        "0",
+        "false",
+        "no",
+    )
 
 
 def _fresh_postgresql_conn() -> Any:
@@ -76,6 +91,11 @@ def backend_conn(request: pytest.FixtureRequest) -> Any:
         return
 
     if not postgresql_dsn():
+        if postgresql_required():
+            pytest.fail(
+                f"{POSTGRESQL_REQUIRED_ENV} is set but {POSTGRESQL_DSN_ENV} is empty — "
+                "the PostgreSQL backend would have been skipped silently"
+            )
         pytest.skip(f"{POSTGRESQL_DSN_ENV} not set — skipping PostgreSQL backend")
 
     conn = _fresh_postgresql_conn()

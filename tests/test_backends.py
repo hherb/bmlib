@@ -27,6 +27,7 @@ PostgreSQL runs only when ``BMLIB_TEST_POSTGRESQL_DSN`` is set (see
 
 from __future__ import annotations
 
+import threading
 from datetime import date
 
 import pytest
@@ -36,11 +37,13 @@ from bmlib.db import (
     execute,
     fetch_all,
     fetch_scalar,
+    is_sqlite,
+    owns_commit,
     placeholder,
     table_exists,
     transaction,
+    transaction_depth,
 )
-from bmlib.db.transactions import transaction_depth
 from bmlib.publications.models import FetchedRecord, FetchResult, FullTextSource, Publication
 from bmlib.publications.schema import ensure_schema
 from bmlib.publications.storage import (
@@ -98,6 +101,31 @@ class TestSchema:
         backend_conn.rollback()
         store_publication(backend_conn, _pub(doi="10.1234/a", pmcid="PMC1"))
         assert get_publication_by_doi(backend_conn, "10.1234/a").pmcid == "PMC1"
+
+    def test_a_same_named_table_in_another_schema_is_not_mistaken_for_ours(self, backend_conn):
+        """Regression guard: the column check must be schema-qualified.
+
+        ``information_schema.columns`` spans every schema the user can see, so
+        an unqualified lookup answers about another consumer's ``publications``
+        table. One that already has ``pmcid`` would make ours look up-to-date,
+        the ALTER would be skipped, and the next write would fail.
+        """
+        if is_sqlite(backend_conn):
+            pytest.skip("SQLite has no schemas; PRAGMA is scoped to the database")
+
+        ensure_schema(backend_conn)
+        with transaction(backend_conn):
+            execute(backend_conn, "ALTER TABLE publications DROP COLUMN pmcid")
+            execute(backend_conn, "CREATE SCHEMA decoy")
+            execute(backend_conn, "CREATE TABLE decoy.publications (id SERIAL, pmcid TEXT)")
+
+        try:
+            ensure_schema(backend_conn)
+            store_publication(backend_conn, _pub(doi="10.1234/a", pmcid="PMC1"))
+            assert get_publication_by_doi(backend_conn, "10.1234/a").pmcid == "PMC1"
+        finally:
+            with transaction(backend_conn):
+                execute(backend_conn, "DROP SCHEMA IF EXISTS decoy CASCADE")
 
 
 # ---------------------------------------------------------------------------
@@ -316,6 +344,46 @@ class TestTransactions:
                 raise RuntimeError("boom")
 
         assert transaction_depth(backend_conn) == 0
+
+    def test_a_block_on_another_thread_does_not_look_like_nesting(self, backend_conn):
+        """Regression guard: nesting is per call stack, not per connection.
+
+        Counting opens by connection alone let one thread's open block make an
+        unrelated outermost block on a second thread look nested — so the
+        second thread opened a savepoint, never committed, and its write was
+        lost with no error raised.
+        """
+        create_tables(backend_conn, "CREATE TABLE t (v TEXT)")
+        ph = placeholder(backend_conn)
+        started = threading.Event()
+        release = threading.Event()
+
+        def hold_a_block():
+            with transaction(backend_conn):
+                started.set()
+                release.wait(timeout=5)
+
+        holder = threading.Thread(target=hold_a_block)
+        holder.start()
+        try:
+            started.wait(timeout=5)
+            # This thread has no block of its own open, so it owns its commit.
+            assert transaction_depth(backend_conn) == 0
+            assert owns_commit(backend_conn) is True
+            with transaction(backend_conn):
+                execute(backend_conn, f"INSERT INTO t (v) VALUES ({ph})", ("committed",))
+        finally:
+            release.set()
+            holder.join(timeout=5)
+
+        backend_conn.rollback()
+        assert [r["v"] for r in fetch_all(backend_conn, "SELECT v FROM t")] == ["committed"]
+
+    def test_owns_commit_tracks_the_block_depth(self, backend_conn):
+        assert owns_commit(backend_conn) is True
+        with transaction(backend_conn):
+            assert owns_commit(backend_conn) is False
+        assert owns_commit(backend_conn) is True
 
     def test_fetch_scalar_returns_the_first_column(self, backend_conn):
         create_tables(backend_conn, "CREATE TABLE t (v TEXT)")

@@ -39,6 +39,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from bmlib.db.backend import is_sqlite, placeholder
 from bmlib.db.operations import create_tables, execute, fetch_all, table_exists
 from bmlib.db.transactions import transaction
 
@@ -60,14 +61,12 @@ class Migration:
     up: Callable[[Any], None]
 
 
-def _is_sqlite(conn: Any) -> bool:
-    """Return True if the connection is SQLite."""
-    return "sqlite3" in type(conn).__module__
-
-
-def _placeholder(conn: Any) -> str:
-    """Return the correct parameter placeholder for this connection."""
-    return "?" if _is_sqlite(conn) else "%s"
+# This module's own private helpers before :mod:`bmlib.db.backend` existed to
+# share them. Nothing here calls these any more — they are kept as aliases,
+# not deleted, because they are private by name only and a consumer that
+# reached for one would break on an upgrade for no gain.
+_is_sqlite = is_sqlite
+_placeholder = placeholder
 
 
 def _ensure_version_table(conn: Any) -> None:
@@ -75,7 +74,7 @@ def _ensure_version_table(conn: Any) -> None:
     if table_exists(conn, "schema_version"):
         return
 
-    if _is_sqlite(conn):
+    if is_sqlite(conn):
         ddl = """\
 CREATE TABLE schema_version (
     version INTEGER PRIMARY KEY,
@@ -119,7 +118,7 @@ def run_migrations(conn: Any, migrations: list[Migration]) -> int:
     """
     _ensure_version_table(conn)
     applied = get_applied_versions(conn)
-    ph = _placeholder(conn)
+    ph = placeholder(conn)
 
     count = 0
     for migration in sorted(migrations, key=lambda m: m.version):

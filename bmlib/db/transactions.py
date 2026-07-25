@@ -30,44 +30,64 @@ logger = logging.getLogger(__name__)
 
 _SAVEPOINT = "bmlib_transaction"
 
-# How many :func:`transaction` blocks are currently open on a connection,
-# keyed by ``id(conn)``. Only PostgreSQL needs this: psycopg2 opens a
-# transaction on the *first statement of any kind* — a bare ``SELECT`` leaves
-# the connection INTRANS — so the driver's own transaction status cannot tell
-# "someone called transaction() around me" from "someone ran a query". Getting
-# that wrong would silently stop committing. SQLite is not tracked here; its
+# How many :func:`transaction` blocks the calling thread currently has open on
+# a connection. Only PostgreSQL needs this: psycopg2 opens a transaction on the
+# *first statement of any kind* — a bare ``SELECT`` leaves the connection
+# INTRANS — so the driver's own transaction status cannot tell "someone called
+# transaction() around me" from "someone ran a query". Getting that wrong would
+# silently stop committing. SQLite is not consulted here; its
 # ``conn.in_transaction`` answers the same question directly.
 #
-# The counter is keyed by id() rather than stored on the connection because
-# psycopg2's connection is a C type that rejects attribute assignment. Entries
-# are removed as the outermost block exits, so an id is never left registered
-# for a connection that has been garbage collected.
-_depths: dict[int, int] = {}
+# Keyed by *(thread, connection)*, not by connection alone. Nesting is a
+# property of one call stack: "am I inside another transaction() block?" can
+# only be answered about the thread asking. Keying by connection alone would
+# let a block on thread A make an unrelated outermost block on thread B look
+# nested, so B would open a savepoint and never commit — losing B's writes
+# silently. Sharing one connection across threads is still not something either
+# backend makes safe (interleaved statements land in one server-side
+# transaction), but per-thread counting keeps each thread's commit behaviour
+# what it would be on its own connection.
+#
+# The connection cannot be keyed on directly — psycopg2's connection is a C
+# type that rejects attribute assignment, and ``sqlite3.Connection`` supports
+# neither weak references nor useful equality — so the key holds ``id(conn)``
+# and the *value* holds a strong reference to the connection. That reference is
+# what makes the id trustworthy: while an entry exists the connection cannot be
+# collected, so its id cannot be recycled onto a different connection. Entries
+# are dropped as the outermost block exits.
+_depths: dict[tuple[int, int], tuple[Any, int]] = {}
 _depths_lock = threading.Lock()
 
 
-def transaction_depth(conn: Any) -> int:
-    """Return how many :func:`transaction` blocks are open on *conn*.
+def _depth_key(conn: Any) -> tuple[int, int]:
+    """Return the ``_depths`` key for *conn* in the calling thread."""
+    return (threading.get_ident(), id(conn))
 
-    Zero means the next :func:`transaction` block owns the commit.
+
+def transaction_depth(conn: Any) -> int:
+    """Return how many :func:`transaction` blocks the calling thread has open.
+
+    Zero means the next :func:`transaction` block on this thread owns the
+    commit. Blocks opened by other threads are not counted — see
+    :func:`transaction`.
     """
     with _depths_lock:
-        return _depths.get(id(conn), 0)
+        return _depths.get(_depth_key(conn), (None, 0))[1]
 
 
 @contextmanager
 def _depth_tracked(conn: Any) -> Generator[None, None, None]:
-    """Count one open :func:`transaction` block for *conn*."""
-    key = id(conn)
+    """Count one open :func:`transaction` block for *conn* on this thread."""
+    key = _depth_key(conn)
     with _depths_lock:
-        _depths[key] = _depths.get(key, 0) + 1
+        _depths[key] = (conn, _depths.get(key, (conn, 0))[1] + 1)
     try:
         yield
     finally:
         with _depths_lock:
-            remaining = _depths.get(key, 1) - 1
+            remaining = _depths.get(key, (conn, 1))[1] - 1
             if remaining > 0:
-                _depths[key] = remaining
+                _depths[key] = (conn, remaining)
             else:
                 _depths.pop(key, None)
 
@@ -135,6 +155,14 @@ def transaction(conn: Any) -> Generator[Any, None, None]:
     "already open" for a connection nobody has wrapped, and every write would
     quietly stop committing. PostgreSQL therefore counts bmlib's own open
     blocks (see :func:`transaction_depth`) instead of asking the driver.
+
+    Threads: the count is per *(thread, connection)*, because nesting is a
+    property of one call stack. A block open on another thread therefore never
+    makes this block look nested, and each thread commits its own work as if it
+    held the connection alone. That is not a licence to share a connection
+    between threads — interleaved statements still land in one server-side
+    transaction, on either backend — but it keeps the failure mode from being
+    silently dropped writes.
 
     Reusing one savepoint name at every level is safe: ``ROLLBACK TO`` and
     ``RELEASE`` address the *most recent* savepoint of that name, which —

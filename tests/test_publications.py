@@ -50,6 +50,48 @@ from bmlib.publications.sync import _record_to_fulltext_sources
 
 
 class TestPublication:
+    def test_positional_construction_is_stable_across_versions(self):
+        """Regression guard: new fields go last, so old call sites keep working.
+
+        Downstream projects construct ``Publication`` positionally. Adding a
+        field anywhere but the end silently shifts every later argument — an
+        abstract passed in position six would land in the new field, with no
+        error at any layer. This pins the order every released bmlib has had.
+        """
+        pub = Publication(
+            "Title",
+            ["pubmed"],
+            "pubmed",
+            "10.1234/test",
+            "12345678",
+            "An abstract.",
+            ["Author A"],
+            "Test Journal",
+            "2024-01-15",
+        )
+
+        assert pub.title == "Title"
+        assert pub.sources == ["pubmed"]
+        assert pub.first_seen_source == "pubmed"
+        assert pub.doi == "10.1234/test"
+        assert pub.pmid == "12345678"
+        assert pub.abstract == "An abstract."
+        assert pub.authors == ["Author A"]
+        assert pub.journal == "Test Journal"
+        assert pub.publication_date == "2024-01-15"
+        assert pub.pmcid is None
+
+    def test_pmcid_is_optional_in_from_dict(self):
+        """A dict serialised by an older bmlib has no ``pmcid`` key."""
+        legacy = {
+            "title": "Title",
+            "sources": ["pubmed"],
+            "first_seen_source": "pubmed",
+            "doi": "10.1234/test",
+        }
+
+        assert Publication.from_dict(legacy).pmcid is None
+
     def test_roundtrip(self):
         pub = Publication(
             title="Test Publication",
