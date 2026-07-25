@@ -2,7 +2,12 @@
 
 Thin database abstraction layer providing pure functions over standard DB-API 2.0 connections. Supports SQLite (built-in) and PostgreSQL (optional, via psycopg2).
 
-All functions take a DB-API connection as their first argument. SQL is passed directly — callers are responsible for writing backend-appropriate SQL (`?` for SQLite, `%s` for PostgreSQL).
+All functions take a DB-API connection as their first argument. SQL is passed directly — callers are responsible for writing backend-appropriate SQL. Ask the connection for its placeholder rather than hard-coding one: [`placeholder(conn)`](#placeholder) returns `?` or `%s`, and [`placeholders(conn, n)`](#placeholders) builds a comma-separated run of them.
+
+> **Changed (unreleased) — `transaction()` now nests on PostgreSQL too.**
+> Savepoint nesting was previously implemented for SQLite only; on PostgreSQL an inner block committed connection-wide. Both backends now behave the same way, so a batch loop pays one commit on either. Un-nested blocks are unaffected. See [Nested transactions](#nested-transactions).
+>
+> Two PostgreSQL-only bugs were fixed alongside it: `fetch_scalar()` always returned `None`, and `create_tables()` committed even inside an open transaction. See the [changelog](../../CHANGELOG.md).
 
 > **Breaking change in 0.4.0 — `transaction()` now nests via savepoints.**
 > On SQLite, a `transaction(conn)` block entered while the connection already holds uncommitted writes no longer commits. It joins the open transaction through a `SAVEPOINT`, and the owner of the enclosing transaction commits. Code that relied on `transaction()` to flush earlier bare `execute()` writes must now commit explicitly. See [Nested transactions](#nested-transactions) and [Upgrading from 0.3.x](#upgrading-from-03x).
@@ -19,12 +24,13 @@ pip install bmlib[postgresql]
 
 | Submodule | Contents | Backend-aware? |
 |-----------|----------|----------------|
+| `backend` | `is_sqlite()`, `placeholder()`, `placeholders()` | Yes — this is where the detection lives |
 | `connection` | `connect_sqlite()`, `connect_postgresql()` | Separate factory per backend |
-| `operations` | `execute()`, `executemany()`, `fetch_one()`, `fetch_all()`, `fetch_scalar()`, `table_exists()`, `create_tables()` | Yes — `table_exists()` and `create_tables()` dispatch on `type(conn).__module__` |
-| `transactions` | `transaction()` | Yes — savepoint nesting on SQLite only |
+| `operations` | `execute()`, `executemany()`, `fetch_one()`, `fetch_all()`, `fetch_scalar()`, `table_exists()`, `create_tables()` | Yes — `fetch_scalar()`, `table_exists()` and `create_tables()` all dispatch on the backend |
+| `transactions` | `transaction()`, `transaction_depth()`, `owns_commit()` | Yes — savepoint nesting on both backends, but "is a block already open?" is answered differently |
 | `migrations` | `Migration`, `run_migrations()`, `get_applied_versions()` | Yes — placeholder style and `schema_version` DDL |
 
-Backend detection is by connection type, never by configuration: any connection whose `type(conn).__module__` contains `"sqlite3"` takes the SQLite path, everything else takes the PostgreSQL path.
+Backend detection is by connection type, never by configuration: any connection whose `type(conn).__module__` contains `"sqlite3"` takes the SQLite path, everything else takes the PostgreSQL path. That test is public as [`is_sqlite()`](#is_sqlite) — there is no ORM here, so any module serving both backends needs to ask.
 
 ## Imports
 
@@ -32,6 +38,9 @@ Backend detection is by connection type, never by configuration: any connection 
 from bmlib.db import (
     connect_sqlite,
     connect_postgresql,
+    is_sqlite,
+    placeholder,
+    placeholders,
     execute,
     executemany,
     fetch_one,
@@ -40,16 +49,64 @@ from bmlib.db import (
     table_exists,
     create_tables,
     transaction,
+    transaction_depth,
+    owns_commit,
     Migration,
     run_migrations,
 )
 ```
 
-The list above is the complete `bmlib.db.__all__` (12 names). One public symbol is **not** re-exported at package level and must be imported from its submodule:
+The list above is the complete `bmlib.db.__all__` (17 names). One public symbol is **not** re-exported at package level and must be imported from its submodule:
 
 ```python
 from bmlib.db.migrations import get_applied_versions
 ```
+
+---
+
+## Backend Helpers
+
+**New (unreleased).** Writing SQL for both backends means knowing which one you are holding. These three answer that; they were private helpers inside `db/migrations.py` before `bmlib.publications` needed them too.
+
+### `is_sqlite`
+
+```python
+def is_sqlite(conn: Any) -> bool
+```
+
+Return `True` if `conn` is a `sqlite3` connection. Anything else is treated as PostgreSQL — the only other backend `bmlib.db` opens connections for. Detection is on `type(conn).__module__`, the one thing both drivers agree on without importing the optional `psycopg2`.
+
+### `placeholder`
+
+```python
+def placeholder(conn: Any) -> str
+```
+
+Return the parameter placeholder this connection's driver expects: `"?"` for SQLite (qmark paramstyle), `"%s"` for psycopg2 (format paramstyle).
+
+```python
+ph = placeholder(conn)
+row = fetch_one(conn, f"SELECT * FROM papers WHERE doi = {ph}", (doi,))
+```
+
+### `placeholders`
+
+```python
+def placeholders(conn: Any, count: int) -> str
+```
+
+Return `count` comma-separated placeholders, for a `VALUES (...)` or `IN (...)` list. Prefer this over hand-counting: derive the count from the parameters themselves and the two cannot drift apart.
+
+```python
+params = (doi, title, journal)
+execute(
+    conn,
+    f"INSERT INTO papers (doi, title, journal) VALUES ({placeholders(conn, len(params))})",
+    params,
+)
+```
+
+Returns an **empty string** for `count <= 0`. Callers building an `IN (...)` list must skip the clause entirely in that case — neither backend accepts an empty list.
 
 ---
 
@@ -255,7 +312,9 @@ def fetch_scalar(conn: Any, sql: str, params: Sequence = ()) -> Any
 
 Execute a query and return the first column of the first row, or `None`. Convenient for `COUNT(*)`, `MAX()`, and similar single-value queries.
 
-The value is read by **index** (`row[0]`), which works for both `sqlite3.Row` and psycopg2's `RealDictRow`. If the row cannot be indexed, `None` is returned rather than raising.
+"First column" means the first *value* on a dict-like row and `row[0]` otherwise. psycopg2's `RealDictRow` is a dict subclass keyed by column name, so `row[0]` is a `KeyError` there; `sqlite3.Row` is not a dict, so it keeps the index path. If neither works, `None` is returned rather than raising.
+
+> **Fixed (unreleased).** This function previously read `row[0]` on every backend, so on PostgreSQL it raised `KeyError` into a silent fallback and returned `None` for *every* query. Code that worked around it by using `fetch_one()` instead is still correct and needs no change.
 
 **Parameters:**
 
@@ -319,7 +378,9 @@ Commit behaviour follows from that:
 | Backend | Execution | Commit |
 |---------|-----------|--------|
 | SQLite | Statements split and executed one at a time | Commits **only** when `conn.in_transaction` is `False` (i.e. a standalone call). Inside an open transaction the commit is left to its owner. |
-| PostgreSQL | Whole script passed to a single `cursor.execute()` | Always commits. |
+| PostgreSQL | Whole script passed to a single `cursor.execute()` | Commits **only** when [`owns_commit(conn)`](#owns_commit) is `True`. Inside an open transaction the commit is left to its owner. PostgreSQL supports transactional DDL too. |
+
+> **Changed (unreleased).** The PostgreSQL path used to commit unconditionally, which broke `run_migrations()` there: a migration that failed part-way left its DDL applied. It now matches SQLite. Note the condition is `owns_commit()`, **not** the driver's transaction status — psycopg2 counts a bare `SELECT` as opening a transaction, so its status cannot distinguish "someone wrapped me" from "someone ran a query".
 
 **Parameters:**
 
@@ -398,7 +459,10 @@ Behaviour depends on the backend and on whether a transaction is already open:
 |-----------|----------|------------|--------------|
 | SQLite, no transaction open | Explicit `BEGIN` | `conn.commit()` | `conn.rollback()`, then re-raise |
 | SQLite, `conn.in_transaction` is `True` | `SAVEPOINT bmlib_transaction` | `RELEASE SAVEPOINT` — **no commit** | `ROLLBACK TO SAVEPOINT`, `RELEASE SAVEPOINT`, then re-raise |
-| PostgreSQL | Nothing (psycopg2 has autocommit off) | `conn.commit()` — connection-wide | `conn.rollback()` — connection-wide, then re-raise |
+| PostgreSQL, no `transaction()` block open | Nothing (psycopg2 has autocommit off) | `conn.commit()` — connection-wide | `conn.rollback()` — connection-wide, then re-raise |
+| PostgreSQL, inside another `transaction()` block | `SAVEPOINT bmlib_transaction` | `RELEASE SAVEPOINT` — **no commit** | `ROLLBACK TO SAVEPOINT`, `RELEASE SAVEPOINT`, then re-raise |
+
+Note what the two "already open" tests are. SQLite auto-begins only before DML, so `conn.in_transaction` means what it says. psycopg2 begins a transaction on the first statement of **any** kind — a bare `SELECT` leaves the connection `INTRANS` — so its status would report "already open" for a connection nobody has wrapped, and every write would quietly stop committing. PostgreSQL therefore counts bmlib's own open blocks ([`transaction_depth()`](#transaction_depth)) rather than asking the driver.
 
 **Example:**
 
@@ -508,7 +572,7 @@ applied.
 
 ### Nested transactions
 
-**New in 0.4.0 (SQLite only).** `sqlite3` auto-begins a transaction before DML, so by the time a nested `transaction()` block is entered the connection may already hold uncommitted writes — issuing `BEGIN` there would raise *"cannot start a transaction within a transaction"*. Instead, the inner block runs inside a savepoint. This is what makes nesting composable:
+**New in 0.4.0 for SQLite; extended to PostgreSQL (unreleased).** `sqlite3` auto-begins a transaction before DML, so by the time a nested `transaction()` block is entered the connection may already hold uncommitted writes — issuing `BEGIN` there would raise *"cannot start a transaction within a transaction"*. Instead, the inner block runs inside a savepoint. This is what makes nesting composable:
 
 - On **inner failure**, only the inner block's writes are rolled back. The outer block's writes survive, still uncommitted, and the outer block can carry on.
 - On **inner success**, the savepoint is released and **no commit is issued** — whoever opened the enclosing transaction owns the commit.
@@ -568,10 +632,48 @@ except RuntimeError:
 print(fetch_scalar(conn, "SELECT COUNT(*) FROM papers"))   # still 4 — 'e' was discarded
 ```
 
-> **PostgreSQL does not nest.**
-> No savepoint path is implemented for psycopg2. A nested `transaction()` block on a PostgreSQL connection commits **connection-wide** on success and rolls back connection-wide on exception — so an inner failure discards the outer block's writes as well, and an inner success makes the outer block's work durable early. Do not rely on nesting semantics in code that must run against both backends; keep a single `transaction()` block at the outermost level instead.
+> **PostgreSQL nests the same way (unreleased).**
+> The examples above are written against SQLite for their `conn.in_transaction` assertions, but the commit semantics are now identical on psycopg2: an inner block opens a savepoint, releases it without committing, and the outermost block owns the commit. Code relying on nesting is portable across both backends.
+>
+> Previously psycopg2 had no savepoint path — a nested block committed connection-wide, so an inner success made the outer block's work durable early and an inner failure discarded it. If you worked around that by keeping a single outermost `transaction()` block, that code is still correct; it simply is no longer required.
+
+#### Threads
+
+The nesting count is kept per *(thread, connection)*, because "am I inside another `transaction()` block?" is a question about one call stack. A block open on another thread therefore never makes your block look nested, and each thread commits its own work as if it held the connection alone.
+
+That is a bound on the damage, not a licence to share connections. Statements from two threads on one connection still interleave into a single server-side transaction on either backend. Give each thread its own connection.
 
 [`bmlib.publications.sync()`](publications.md) is the reference consumer of this behaviour: it wraps a day's worth of `store_publication()` calls — each of which opens its own `transaction()` — in one outer block, paying a single commit per synced day rather than one per statement.
+
+---
+
+### `transaction_depth`
+
+```python
+def transaction_depth(conn: Any) -> int
+```
+
+**New (unreleased).** Return how many `transaction()` blocks the **calling thread** currently has open on `conn`. Zero means the next block on this thread owns the commit. Blocks opened by other threads are not counted.
+
+### `owns_commit`
+
+```python
+def owns_commit(conn: Any) -> bool
+```
+
+**New (unreleased).** Return `True` if a write on `conn` right now would need its own commit — equivalent to `transaction_depth(conn) == 0`. `False` means the caller is inside a `transaction()` block that will commit on its way out, so an inner helper must not commit on its own.
+
+This is what any helper that commits conditionally should ask. Do **not** consult psycopg2's transaction status for this: it reports `INTRANS` after any statement at all, including a bare `SELECT`.
+
+```python
+def store_thing(conn, thing):
+    execute(conn, ...)
+    if owns_commit(conn):       # standalone call — make it durable
+        conn.commit()
+    # otherwise the enclosing transaction() block will
+```
+
+In practice, prefer wrapping the work in `transaction(conn)` and letting nesting handle it; reach for `owns_commit()` only where a `transaction()` block is not appropriate, as in [`create_tables()`](#create_tables).
 
 ---
 
@@ -729,7 +831,14 @@ Created automatically on first use, with backend-appropriate DDL:
 | Row type | `sqlite3.Row` (index + name access) | `RealDictRow` (dict access) |
 | Connection factory | `connect_sqlite()` | `connect_postgresql()` |
 | Schema execution | Statements split and executed one at a time | Whole script via one `cursor.execute()` |
-| `create_tables()` commit | Only when no transaction is open | Always |
+| `create_tables()` commit | Only when no transaction is open | Only when no `transaction()` block is open |
 | Transaction begin | Explicit `BEGIN` | Implicit (autocommit off) |
-| Nested `transaction()` | `SAVEPOINT bmlib_transaction`; outer owner commits | Not implemented — commits connection-wide |
+| Nested `transaction()` | `SAVEPOINT bmlib_transaction`; outer owner commits | Same |
+| "Is a block already open?" | `conn.in_transaction` | `transaction_depth(conn)` — the driver's status would say yes after any statement |
+| `fetch_scalar()` first column | `row[0]` | First value of the dict row |
+| Auto-increment key | `INTEGER PRIMARY KEY AUTOINCREMENT` | `SERIAL PRIMARY KEY` |
+| Reading back an inserted id | `cur.lastrowid` | `RETURNING id` |
+| Booleans | Stored as `INTEGER` 0/1 | Real `BOOLEAN` — does not compare against an integer |
 | Migration timestamp default | `datetime('now')` | `NOW()` |
+
+Everything above is handled inside bmlib. The rows that matter when *you* write SQL are the placeholder style (use [`placeholder()`](#placeholder)), the boolean type (`x = 0` is not portable; `x OR ?` is), and the id read-back.
