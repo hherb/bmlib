@@ -190,3 +190,87 @@ class TestJATSParserHasBody:
         assert article.has_body is False
         assert html == JATSParser(data).to_html()
         assert "Why More Doctors" in html
+
+
+class TestJATSParserUnsectionedBody:
+    """``<sec>`` is optional inside ``<body>``.
+
+    A valid article may put its prose in bare ``<p>`` children of ``<body>``.
+    Such paragraphs must still reach ``body_sections`` and the rendered HTML —
+    and must count towards ``has_body``, or ``FullTextService`` reads the
+    article as abstract-only, declines to cache it, and re-fetches it forever.
+    """
+
+    UNSECTIONED = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Unsectioned</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <p>Introduction paragraph with real article prose.</p>
+    <p>A second substantial paragraph, also unsectioned.</p>
+  </body>
+</article>"""
+
+    MIXED = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Mixed</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <p>Opening prose before any section.</p>
+    <sec><title>Methods</title><p>We did the thing.</p></sec>
+    <p>Trailing prose after the section.</p>
+  </body>
+</article>"""
+
+    def test_unsectioned_paragraphs_are_kept(self):
+        article = JATSParser(self.UNSECTIONED).parse()
+        paragraphs = [p for s in article.body_sections for p in s.paragraphs]
+
+        assert "Introduction paragraph with real article prose." in paragraphs
+        assert "A second substantial paragraph, also unsectioned." in paragraphs
+
+    def test_unsectioned_body_counts_as_a_body(self):
+        article = JATSParser(self.UNSECTIONED).parse()
+        assert article.has_body is True
+
+    def test_unsectioned_prose_renders(self):
+        html = JATSParser(self.UNSECTIONED).to_html()
+        assert "Introduction paragraph with real article prose." in html
+        assert "A second substantial paragraph, also unsectioned." in html
+
+    def test_implicit_section_has_no_invented_title(self):
+        article = JATSParser(self.UNSECTIONED).parse()
+        assert len(article.body_sections) == 1
+        assert article.body_sections[0].title == ""
+
+    def test_sections_stay_top_level_alongside_loose_prose(self):
+        """The implicit section must not swallow a real <sec> as a subsection."""
+        article = JATSParser(self.MIXED).parse()
+        titles = [s.title for s in article.body_sections]
+
+        assert "Methods" in titles
+        methods = next(s for s in article.body_sections if s.title == "Methods")
+        assert methods.paragraphs == ["We did the thing."]
+        assert methods.subsections == []
+
+    def test_document_order_is_preserved(self):
+        article = JATSParser(self.MIXED).parse()
+        flattened = [(s.title, tuple(s.paragraphs)) for s in article.body_sections]
+
+        assert flattened == [
+            ("", ("Opening prose before any section.",)),
+            ("Methods", ("We did the thing.",)),
+            ("", ("Trailing prose after the section.",)),
+        ]
+
+    def test_back_matter_prose_still_does_not_count_as_body(self):
+        """Only <body> gets an implicit section; loose <back> prose must not
+        start counting as an article body."""
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Back only</article-title>
+  </title-group></article-meta></front>
+  <back><p>Loose acknowledgement text.</p></back>
+</article>"""
+        article = JATSParser(data).parse()
+        assert article.has_body is False

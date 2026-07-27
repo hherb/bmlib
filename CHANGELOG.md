@@ -58,6 +58,17 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **An unsectioned JATS `<body>` lost all its prose.** `<sec>` is optional
+  inside `<body>`, but the handler recorded a `<p>` only when a section was
+  open, so an article whose body is bare `<p>` children was parsed as having
+  no body at all — the paragraphs reached neither `body_sections` nor the
+  rendered HTML. Since `has_body` landed, that also cost a permanent cache
+  miss: `FullTextService` read such an article as abstract-only, declined to
+  cache it, and re-fetched it on every request. Loose prose now becomes a
+  `JATSBodySection` with an empty `title` — no heading is invented — flushed
+  at each `<sec>` boundary so document order survives and real sections stay
+  top-level instead of nesting inside it. Empty paragraphs are dropped, so a
+  whitespace-only `<body>` still reports no body.
 - **A body-less JATS document was mistaken for full text.** medRxiv's
   `jatsxml` URL serves, for some preprints, a document made of `<front>` and
   `<back>` alone. It returns HTTP 200 and parses cleanly, so the retrieval
@@ -120,6 +131,19 @@ All notable changes to bmlib are documented here. The format is based on
   so on a database shared with another consumer the check could answer about
   *their* `publications` table — reporting `pmcid` present, skipping the
   `ALTER`, and failing the next write on the missing column.
+
+### Documentation
+
+- `docs/manual/fulltext.md` carried the `## PDF Conversion` section **twice**,
+  with overlapping but non-identical content, so every converter API change
+  had to be made in two places or the page contradicted itself — which it
+  did: one copy called the converter a standalone module "nothing in the
+  retrieval chain calls", while the Module layout table above it correctly
+  said the service extracts a retrieved PDF's text. The two copies are merged
+  into one, keeping the fuller reference and folding in the `page_texts` and
+  `render_html()` material the other copy held alone. A stray cache-key
+  paragraph that had been duplicated into the same region, restating what
+  "Cache keys" already covers, is gone too.
 
 ### Compatibility
 

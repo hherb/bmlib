@@ -376,11 +376,21 @@ pass.
 | `front/article-meta` | Title, authors, journal, identifiers |
 | `abstract/sec/title/p` | Structured abstract sections |
 | `body/sec/title/p` | Body sections with nesting |
+| `body/p` (no enclosing `<sec>`) | A titleless body section — see below |
 | `fig/graphic/label/caption` | Figures with Europe PMC image URLs |
 | `table-wrap/thead/tbody/tr/th/td` | Tables (rendered as HTML `<table>`) |
 | `ref-list/ref/element-citation` | Structured references |
 | `bold/italic/sub/sup/monospace` | Inline formatting |
 | `xref` | Cross-reference anchor links |
+
+> **`<sec>` is optional inside `<body>`.** Prose in bare `<p>` children of
+> `<body>` is collected into a `JATSBodySection` with an empty `title` — no
+> heading is invented, so `to_html()` renders the paragraphs without one.
+> Loose prose is flushed at each `<sec>` boundary, so an article that mixes
+> the two keeps its document order and real sections stay top-level rather
+> than becoming subsections of the loose prose. Such paragraphs count towards
+> [`has_body`](#jatsarticle); empty ones are dropped, so a `<body>` holding
+> only whitespace still reports no body.
 
 ---
 
@@ -601,7 +611,7 @@ The hashed names come from `FullTextService`, which always sanitizes the `identi
 
 Pluggable PDF-to-text conversion behind a stable `ConversionResult`, prioritising completeness of extracted text over formatting.
 
-> **Standalone module.** Nothing in the retrieval chain calls it — see [Module layout](#module-layout). `get_converter()` is the entry point; you invoke it on a file path yourself.
+> **Also reachable through the retrieval chain.** `FullTextService` runs a cached PDF through `render_html()` and puts the prose in [`FullTextResult.html`](#fulltextresult) — see [Module layout](#module-layout) for the conditions. This section documents the direct API: `get_converter()` is the entry point, and you invoke it on a file path yourself.
 
 The only built-in backend is `PyMuPDFConverter`, which needs the optional `pymupdf` dependency. **Importing `bmlib.fulltext` or `bmlib.fulltext.pdf_converter` never requires PyMuPDF** — the import is deferred to `PyMuPDFConverter.__init__`, so the cost is only paid when a converter is actually constructed.
 
@@ -657,6 +667,40 @@ class ConversionResult:
 | `__str__` | `ConversionResult(SUCCESS, complete, 12/12 pages, 41893 chars, converter=pymupdf)` |
 
 `format` is documented as `"plaintext"` or `"markdown"`, but **`PyMuPDFConverter` always emits `"plaintext"`** — no built-in backend produces markdown. The field exists for future backends such as `pymupdf4llm`.
+
+**`page_texts`** holds the text of each page *that yielded any*, in order. A
+page with no extractable text (an image-only scan) contributes no entry, so
+this is **not indexable by page number** and its length can be less than
+`page_count`. It exists because page boundaries are what let `render_html()`
+recognise furniture that repeats across pages. A backend that cannot report
+pages separately leaves it empty.
+
+### `render_html(result: ConversionResult) -> str`
+
+Renders extracted PDF text as readable HTML — a fragment of `<p>` elements,
+escaped. Returns `""` when the conversion failed or produced no text.
+
+Two heuristics, both publisher-agnostic:
+
+- **Repeated-line stripping.** A line appearing on at least
+  `REPEATED_LINE_RATIO` (0.6) of the pages is treated as a running head,
+  footer or watermark and dropped. `ceil()` and a floor of
+  `REPEATED_LINE_MIN_PAGES` (3) push the effective share higher on short
+  documents — 100% at 3 pages, 75% at 4 — converging on 0.6 as the page count
+  grows. Below 3 pages nothing is stripped, since a repeat is as likely to be
+  prose. Lines are counted once per page, so a phrase repeating *within* one
+  page is not mistaken for furniture.
+- **Paragraph reflow.** A PDF carries no paragraph marks: text wraps hard at
+  the column edge, so a line falling below `PARAGRAPH_BREAK_RATIO` (0.85) of
+  the column width is where the paragraph ended. The width is estimated as
+  the 90th-percentile line length, which discards over-long outliers; when
+  fewer than a tenth of the lines run full width — a reference list, a table,
+  a two-column extraction — that estimate lands on a stub and the longest
+  line is used instead.
+
+It recovers prose, not layout: figures, tables and formatting are lost, which
+is why `FullTextService` keeps `pdf_url` and `file_path` populated alongside
+the extracted `html`.
 
 ### PDFConverter
 
@@ -743,134 +787,6 @@ try:
     converter = get_converter("pymupdf")
 except ImportError:
     converter = None   # pip install bmlib[pdf] to enable
-```
-
-Identifiers that are not filename-safe (e.g. raw DOIs containing `/`) are sanitized into `<safe>_<hash>` filenames, where `<hash>` is a short SHA-1 prefix of the raw identifier, so distinct identifiers can never collide. Already-safe identifiers (PMIDs, PMC IDs) are used verbatim.
-
----
-
-## PDF Conversion
-
-Pluggable PDF-to-text conversion behind a small registry, prioritising completeness of extracted text over formatting. The only built-in backend is `PyMuPDFConverter`, which requires the optional `pymupdf` dependency (`pip install bmlib[pdf]`); it is loaded lazily, so importing `bmlib.fulltext` never requires PyMuPDF.
-
-### Registry
-
-```python
-def get_converter(name: str = "pymupdf") -> PDFConverter: ...
-def list_converters() -> list[str]: ...
-```
-
-| Function | Returns | Description |
-|----------|---------|-------------|
-| `get_converter(name)` | `PDFConverter` | Initialised converter by name (default `"pymupdf"`) |
-| `list_converters()` | `list[str]` | Names of all registered converters |
-
-**Raises:** `get_converter()` raises `ValueError` for an unknown name, and `ImportError` if the converter's optional dependency is missing (`Install with: pip install bmlib[pdf]`).
-
-### PDFConverter
-
-Abstract base class for PDF converters.
-
-```python
-class PDFConverter(ABC):
-    @property
-    def name(self) -> str: ...      # abstract — converter name identifier
-    @property
-    def version(self) -> str: ...   # abstract — converter version string
-
-    def convert(self, pdf_path: Path) -> ConversionResult: ...  # abstract
-    def validate_pdf_path(self, pdf_path: Path) -> None: ...
-```
-
-| Method | Description |
-|--------|-------------|
-| `convert(pdf_path)` | Convert a PDF to text; raises `FileNotFoundError` if the file does not exist, `ValueError` if the path is not a PDF file |
-| `validate_pdf_path(pdf_path)` | Check the path exists, is a file, and has a `.pdf` suffix (same exceptions as above) |
-
-### ConversionResult
-
-Result of a PDF-to-text conversion — a stable interface across backends.
-
-```python
-@dataclass
-class ConversionResult:
-    success: bool
-    text: str
-    format: str                    # "plaintext" or "markdown"
-    page_count: int
-    converted_pages: int
-    char_count: int
-    warnings: list[str] = field(default_factory=list)
-    converter_name: str = ""
-    converter_version: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
-    error_message: str | None = None
-    page_texts: list[str] = field(default_factory=list)
-
-    @property
-    def is_complete(self) -> bool: ...        # all pages converted and some text extracted
-    @property
-    def completion_ratio(self) -> float: ...  # converted_pages / page_count (0.0 when no pages)
-```
-
-**`page_texts`** holds the text of each page *that yielded any*, in order. A
-page with no extractable text (an image-only scan) contributes no entry, so
-this is **not indexable by page number** and its length can be less than
-`page_count`. It exists because page boundaries are what let `render_html()`
-recognise furniture that repeats across pages. A backend that cannot report
-pages separately leaves it empty.
-
-### `render_html(result: ConversionResult) -> str`
-
-Renders extracted PDF text as readable HTML — a fragment of `<p>` elements,
-escaped. Returns `""` when the conversion failed or produced no text.
-
-Two heuristics, both publisher-agnostic:
-
-- **Repeated-line stripping.** A line appearing on at least
-  `REPEATED_LINE_RATIO` (0.6) of the pages is treated as a running head,
-  footer or watermark and dropped. `ceil()` and a floor of
-  `REPEATED_LINE_MIN_PAGES` (3) push the effective share higher on short
-  documents — 100% at 3 pages, 75% at 4 — converging on 0.6 as the page count
-  grows. Below 3 pages nothing is stripped, since a repeat is as likely to be
-  prose. Lines are counted once per page, so a phrase repeating *within* one
-  page is not mistaken for furniture.
-- **Paragraph reflow.** A PDF carries no paragraph marks: text wraps hard at
-  the column edge, so a line falling below `PARAGRAPH_BREAK_RATIO` (0.85) of
-  the column width is where the paragraph ended. The width is estimated as
-  the 90th-percentile line length, which discards over-long outliers; when
-  fewer than a tenth of the lines run full width — a reference list, a table,
-  a two-column extraction — that estimate lands on a stub and the longest
-  line is used instead.
-
-It recovers prose, not layout: figures, tables and formatting are lost, which
-is why `FullTextService` keeps `pdf_url` and `file_path` populated alongside
-the extracted `html`.
-
-### PyMuPDFConverter
-
-Built-in backend backed by PyMuPDF (`fitz`); registered as `"pymupdf"`. The constructor raises `ImportError` if `pymupdf` is not installed.
-
-- Extracts plaintext from every page; pages with no extractable text (e.g. image-only) are still counted as converted, with a warning.
-- A single failing page does not abort the rest — a warning is recorded instead.
-- PDF metadata (title, author, subject, keywords, creator, producer, creation/modification dates) is collected best-effort into `metadata`.
-- Invalid or corrupted PDFs return `success=False` with `error_message` set rather than raising.
-
-### Example
-
-```python
-from pathlib import Path
-from bmlib.fulltext import get_converter, list_converters
-
-print(list_converters())        # ["pymupdf"]
-
-converter = get_converter()     # default: "pymupdf"
-result = converter.convert(Path("paper.pdf"))
-
-if result.success and result.is_complete:
-    print(result.text[:200])
-else:
-    print(result.error_message or result.warnings)
 ```
 
 ---

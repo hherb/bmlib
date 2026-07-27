@@ -36,6 +36,10 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
      `JATSArticle.has_body`, never cached, and held back as a last resort.
      Also fixed: a missing abstract no longer kills a scoring batch, and the
      Tier 2 classifier's token budget is no longer overridden at the call site.
+  4. **Unsectioned JATS `<body>` parsed** (issues #30, #31) — loose `<p>`
+     prose becomes a titleless `JATSBodySection` instead of being dropped,
+     and `docs/manual/fulltext.md`'s duplicated `PDF Conversion` section is
+     merged into one.
   **Deciding whether this is 0.6.0 is open work** — see "Next up" below. The
   `publications` and `fulltext` changes are additive, so a minor bump fits.
 - **805 tests passing + 31 skipped** (`uv run pytest tests/ -q`). The 31 skips
@@ -53,15 +57,6 @@ Nothing is blocked on anything else.
 
 ### Open GitHub issues
 
-- **#30 — JATS parser drops body paragraphs not inside a `<sec>`.** `<sec>` is
-  optional inside `<body>`; `_JATSHandler` only records a `<p>` when
-  `section_stack` is non-empty, so an unsectioned body is lost entirely. Since
-  PR #29 this also costs a permanent cache miss, because `has_body` reads
-  `False` and `FullTextService` classifies the article as abstract-only. Fix:
-  give `<body>` an implicit root section.
-- **#31 — `docs/manual/fulltext.md` has two `## PDF Conversion` sections**
-  with overlapping, non-identical content. Keep the second (more complete)
-  copy, fold in anything unique to the first, check for dangling anchors.
 - **#17 — consolidate duplicated JSON extraction** (`llm/utils.py::extract_json`
   vs `llm/json_repair.py::extract_and_repair_json`): unify the span-location
   logic behind one locator. Fold into the Phase 1 BaseAgent work below.

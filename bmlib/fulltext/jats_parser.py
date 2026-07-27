@@ -397,6 +397,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.in_body = False
         self.in_back = False
         self.section_stack: list[_SectionBuilder] = []
+        # <sec> is optional inside <body>, so prose can arrive with an empty
+        # section_stack. It is collected here and flushed to body_sections at
+        # the next <sec> or at </body>, rather than pushed onto section_stack:
+        # a real <sec> opening afterwards would otherwise nest inside it.
+        self.implicit_body_section: _SectionBuilder | None = None
         # Prose found inside <body>. Counted separately from body_sections
         # because back-matter sections land there too, so a non-empty
         # body_sections does not by itself mean the article has a body.
@@ -443,6 +448,21 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.text_stack[-1] += text
         return text
 
+    # -- Section helpers -----------------------------------------------------
+
+    def _flush_implicit_body_section(self) -> None:
+        """Emit any pending unsectioned ``<body>`` prose as a body section.
+
+        Called when a real ``<sec>`` opens and again at ``</body>``, so loose
+        paragraphs keep their position in document order. The section carries
+        no title — JATS gave it none, and inventing one would put a heading in
+        the rendered article that the publisher never wrote.
+        """
+        if self.implicit_body_section is None:
+            return
+        self.body_sections.append(self.implicit_body_section.build())
+        self.implicit_body_section = None
+
     # -- SAX events ----------------------------------------------------------
 
     def startElement(self, name: str, attrs: xml.sax.xmlreader.AttributesImpl) -> None:
@@ -471,6 +491,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.in_back = True
         elif name == "sec":
             if not self.in_abstract:
+                # Flush first, so prose that preceded this <sec> becomes its own
+                # body section rather than being folded in as the <sec>'s parent.
+                self._flush_implicit_body_section()
                 self.section_stack.append(_SectionBuilder())
         elif name == "fig":
             self.in_figure = True
@@ -616,6 +639,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 if self.in_body and normalized_text:
                     self.body_paragraph_count += 1
                 self.section_stack[-1].paragraphs.append(normalized_text)
+            elif self.in_body and normalized_text:
+                # An unsectioned <body> child. Empty paragraphs are dropped
+                # rather than opening a section, so a <body> holding nothing
+                # but whitespace stays body-less.
+                if self.implicit_body_section is None:
+                    self.implicit_body_section = _SectionBuilder()
+                self.body_paragraph_count += 1
+                self.implicit_body_section.paragraphs.append(normalized_text)
             elif self.in_figure and self.current_figure:
                 if self.current_figure.caption and normalized_text:
                     self.current_figure.caption += " "
@@ -626,6 +657,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.current_table.caption += normalized_text
 
         elif name == "body":
+            self._flush_implicit_body_section()
             self.in_body = False
         elif name == "back":
             self.in_back = False
