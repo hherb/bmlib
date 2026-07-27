@@ -28,6 +28,7 @@ from bmlib.fulltext.pdf_converter import (
     PDFConverter,
     get_converter,
     list_converters,
+    render_html,
 )
 
 _HAS_FITZ = importlib.util.find_spec("fitz") is not None
@@ -180,3 +181,83 @@ class TestPyMuPDFConversion:
         assert result.success is False
         assert result.text == ""
         assert result.error_message
+
+
+class TestRenderHTML:
+    """Rendering extracted PDF text as readable HTML."""
+
+    @staticmethod
+    def _result(pages: list[str]) -> ConversionResult:
+        text = "\n\n".join(pages)
+        return ConversionResult(
+            success=True,
+            text=text,
+            format="plaintext",
+            page_count=len(pages),
+            converted_pages=len(pages),
+            char_count=len(text),
+            page_texts=pages,
+        )
+
+    def test_strips_repeated_page_furniture(self):
+        """Watermarks and running heads repeat on every page; article text does not."""
+        pages = [
+            f"medRxiv preprint\nCC-BY 4.0 International license\nUnique sentence number {n}."
+            for n in range(5)
+        ]
+        html = render_html(self._result(pages))
+
+        assert "medRxiv preprint" not in html
+        assert "CC-BY 4.0" not in html
+        for n in range(5):
+            assert f"Unique sentence number {n}." in html
+
+    def test_keeps_repeats_in_short_documents(self):
+        """Under three pages, a repeat is as likely to be prose as furniture."""
+        pages = ["Repeated line.\nFirst.", "Repeated line.\nSecond."]
+        html = render_html(self._result(pages))
+
+        assert "Repeated line." in html
+
+    def test_reflows_hard_wrapped_lines(self):
+        """Lines wrapped at the column edge rejoin; a short line ends the paragraph."""
+        page = (
+            "This opening line runs the full width of the column and wraps\n"
+            "onward across a second line of the very same paragraph here\n"
+            "and stops.\n"
+            "A new full-width line begins the following separate paragraph\n"
+            "and ends.\n"
+        )
+        html = render_html(self._result([page]))
+
+        assert "wraps onward across a second line" in html
+        assert html.count("<p>") == 2
+
+    def test_escapes_markup(self):
+        html = render_html(self._result(["Effect of <T> & <U> on outcome measured here."]))
+
+        assert "&lt;T&gt; &amp; &lt;U&gt;" in html
+        assert "<T>" not in html
+
+    def test_empty_for_failed_conversion(self):
+        failed = ConversionResult(
+            success=False,
+            text="",
+            format="plaintext",
+            page_count=0,
+            converted_pages=0,
+            char_count=0,
+        )
+        assert render_html(failed) == ""
+
+    def test_falls_back_to_joined_text_without_page_texts(self):
+        """A backend that cannot report pages still renders, just unstripped."""
+        result = ConversionResult(
+            success=True,
+            text="Only the joined text is available here for rendering.",
+            format="plaintext",
+            page_count=1,
+            converted_pages=1,
+            char_count=53,
+        )
+        assert "Only the joined text" in render_html(result)

@@ -148,6 +148,11 @@ class JATSArticle:
     figures: list[JATSFigureInfo]
     tables: list[JATSTableInfo]
     references: list[JATSReferenceInfo]
+    # Whether the document carried an <body> with actual prose. Some
+    # publishers (medRxiv among them) serve a JATS document made of <front>
+    # and <back> only; it parses cleanly but holds nothing beyond the
+    # abstract, so callers must not mistake it for full text.
+    has_body: bool = False
 
 
 @dataclass

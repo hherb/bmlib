@@ -397,6 +397,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.in_body = False
         self.in_back = False
         self.section_stack: list[_SectionBuilder] = []
+        # Prose found inside <body>. Counted separately from body_sections
+        # because back-matter sections land there too, so a non-empty
+        # body_sections does not by itself mean the article has a body.
+        self.body_paragraph_count = 0
 
         # Figure / table state
         self.in_figure = False
@@ -609,6 +613,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 if normalized_text:
                     self.current_abstract_text.append(normalized_text)
             elif (self.in_body or self.in_back) and self.section_stack:
+                if self.in_body and normalized_text:
+                    self.body_paragraph_count += 1
                 self.section_stack[-1].paragraphs.append(normalized_text)
             elif self.in_figure and self.current_figure:
                 if self.current_figure.caption and normalized_text:
@@ -816,12 +822,26 @@ class JATSParser:
             figures=h.figures,
             tables=h.tables,
             references=h.references,
+            has_body=h.body_paragraph_count > 0,
         )
 
     def to_html(self) -> str:
         """Parse XML and return HTML string."""
-        h = self._run_parser()
-        return _build_html(h)
+        return _build_html(self.parse())
+
+    def parse_with_html(self) -> tuple[JATSArticle, str]:
+        """Parse XML once and return both the article and its HTML rendering.
+
+        Callers that need to inspect the article (to check
+        :attr:`~bmlib.fulltext.models.JATSArticle.has_body`, say) and also
+        render it should use this rather than calling :meth:`parse` and
+        :meth:`to_html` in turn, which would parse the document twice.
+
+        Returns:
+            A tuple of the parsed article and its HTML.
+        """
+        article = self.parse()
+        return article, _build_html(article)
 
 
 # ---------------------------------------------------------------------------
@@ -829,7 +849,7 @@ class JATSParser:
 # ---------------------------------------------------------------------------
 
 
-def _build_html(h: _JATSHandler) -> str:
+def _build_html(h: JATSArticle) -> str:
     parts: list[str] = []
 
     # Title
@@ -858,17 +878,18 @@ def _build_html(h: _JATSHandler) -> str:
     # Abstract
     if h.abstract_sections:
         parts.append("<h2>Abstract</h2>")
-        for sec in h.abstract_sections:
-            if sec.title:
+        for abstract_sec in h.abstract_sections:
+            if abstract_sec.title:
                 parts.append(
-                    f"<p><strong>{html_escape(sec.title)}:</strong> {html_escape(sec.content)}</p>"
+                    f"<p><strong>{html_escape(abstract_sec.title)}:</strong> "
+                    f"{html_escape(abstract_sec.content)}</p>"
                 )
             else:
-                parts.append(f"<p>{html_escape(sec.content)}</p>")
+                parts.append(f"<p>{html_escape(abstract_sec.content)}</p>")
 
     # Body sections
-    for sec in h.body_sections:
-        parts.extend(_format_body_section_html(sec, level=2))
+    for body_sec in h.body_sections:
+        parts.extend(_format_body_section_html(body_sec, level=2))
 
     # Figures
     if h.figures:

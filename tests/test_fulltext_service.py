@@ -543,3 +543,104 @@ class TestCacheIntegration:
         assert result.source == "medrxiv"
         assert result.file_path is not None
         assert Path(result.file_path).exists()
+
+
+class TestBodylessJATS:
+    """A JATS document with no <body> carries only the abstract.
+
+    medRxiv's ``jatsxml`` URL serves such a document for some preprints. It
+    returns HTTP 200 and parses cleanly, so it must not be mistaken for a
+    successful full-text retrieval — the PDF holds the actual article.
+    """
+
+    PDF_MAGIC = b"%PDF-1.4 fake pdf content"
+
+    @staticmethod
+    def _sources() -> list[FullTextSourceEntry]:
+        """The two entries medRxiv's fetcher records for a preprint."""
+        return [
+            FullTextSourceEntry(
+                url="https://medrxiv.org/paper.full.pdf",
+                format="pdf",
+                source="medrxiv",
+            ),
+            FullTextSourceEntry(
+                url="https://medrxiv.org/paper.source.xml",
+                format="xml",
+                source="medrxiv",
+            ),
+        ]
+
+    def test_falls_through_to_pdf(self, tmp_path):
+        """A body-less XML must not shadow the PDF that has the real text."""
+        mock_xml = MagicMock()
+        mock_xml.status_code = 200
+        mock_xml.content = (FIXTURES / "abstract_only_article.xml").read_bytes()
+
+        mock_pdf = MagicMock()
+        mock_pdf.status_code = 200
+        mock_pdf.content = self.PDF_MAGIC
+
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(service, "_http_get", side_effect=[mock_xml, mock_pdf]):
+            result = service.fetch_fulltext(
+                fulltext_sources=self._sources(),
+                identifier="10.1234/test",
+            )
+
+        # The PDF wins, and its URL travels with the result so a caller can
+        # always offer the original (figures, layout) alongside any text.
+        assert result.pdf_url == "https://medrxiv.org/paper.full.pdf"
+        assert result.file_path is not None
+
+    def test_abstract_only_html_is_not_cached(self, tmp_path):
+        """The abstract-only render must not poison the disk cache."""
+        mock_xml = MagicMock()
+        mock_xml.status_code = 200
+        mock_xml.content = (FIXTURES / "abstract_only_article.xml").read_bytes()
+
+        mock_pdf = MagicMock()
+        mock_pdf.status_code = 200
+        mock_pdf.content = self.PDF_MAGIC
+
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(service, "_http_get", side_effect=[mock_xml, mock_pdf]):
+            service.fetch_fulltext(
+                fulltext_sources=self._sources(),
+                identifier="10.1234/test",
+            )
+
+        cached = cache.get_html(_sanitize_identifier("10.1234/test"))
+        assert cached is None or "Data Availability" not in cached
+
+    def test_used_as_last_resort(self, tmp_path):
+        """With nothing better available, the abstract still beats nothing."""
+        mock_xml = MagicMock()
+        mock_xml.status_code = 200
+        mock_xml.content = (FIXTURES / "abstract_only_article.xml").read_bytes()
+
+        xml_only = [
+            FullTextSourceEntry(
+                url="https://medrxiv.org/paper.source.xml",
+                format="xml",
+                source="medrxiv",
+            ),
+        ]
+
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        # XML first, then the Europe PMC search that finds nothing.
+        mock_search = MagicMock()
+        mock_search.status_code = 200
+        mock_search.json.return_value = {"resultList": {"result": []}}
+        with patch.object(service, "_http_get", side_effect=[mock_xml, mock_search, mock_search]):
+            result = service.fetch_fulltext(
+                fulltext_sources=xml_only,
+                doi="10.1234/test",
+                identifier="10.1234/test",
+            )
+
+        assert result.html is not None
+        assert "Why More Doctors" in result.html

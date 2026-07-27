@@ -34,8 +34,12 @@ Example::
 from __future__ import annotations
 
 import logging
+import math
+import re
 from abc import ABC, abstractmethod
+from collections import Counter
 from dataclasses import dataclass, field
+from html import escape as html_escape
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +48,19 @@ logger = logging.getLogger(__name__)
 # Supported converter names.
 CONVERTER_PYMUPDF = "pymupdf"
 DEFAULT_CONVERTER = CONVERTER_PYMUPDF
+
+# A line recurring on this share of pages is furniture — a running head,
+# footer, or watermark — rather than article text. Publisher watermarks
+# (medRxiv stamps seven fragments onto every page) are stripped by this
+# frequency rule alone, so no per-publisher rules are needed.
+REPEATED_LINE_RATIO = 0.6
+# Below this many pages the rule cannot tell furniture from a short article
+# that simply repeats a phrase, so nothing is stripped.
+REPEATED_LINE_MIN_PAGES = 3
+# A line shorter than this fraction of the body's typical width ends a
+# paragraph — PDF text wraps hard at the column edge, so a short line is
+# where the author, not the layout, stopped.
+PARAGRAPH_BREAK_RATIO = 0.85
 
 
 @dataclass
@@ -61,6 +78,10 @@ class ConversionResult:
     converter_version: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
     error_message: str | None = None
+    # Per-page text, kept alongside the joined ``text`` because page
+    # boundaries are what let :func:`render_html` recognise repeated
+    # furniture. Empty when a backend cannot report pages separately.
+    page_texts: list[str] = field(default_factory=list)
 
     @property
     def is_complete(self) -> bool:
@@ -221,6 +242,7 @@ class PyMuPDFConverter(PDFConverter):
                 converter_name=self.name,
                 converter_version=self.version,
                 metadata=metadata,
+                page_texts=list(text_parts),
             )
 
         except self._fitz.FileDataError as e:
@@ -254,6 +276,95 @@ class PyMuPDFConverter(PDFConverter):
                 converter_version=self.version,
                 error_message=error_msg,
             )
+
+
+_WS_RE = re.compile(r"\s+")
+
+
+def _normalize(line: str) -> str:
+    """Collapse runs of whitespace so lines compare on their words alone."""
+    return _WS_RE.sub(" ", line).strip()
+
+
+def _repeated_lines(page_texts: list[str]) -> set[str]:
+    """Return the normalised lines that recur across most pages.
+
+    These are running heads, footers and watermarks — layout furniture that
+    reads as noise once the pages are concatenated. Counting each line once
+    per page keeps a phrase that merely repeats within one page from being
+    mistaken for furniture.
+    """
+    page_count = len(page_texts)
+    if page_count < REPEATED_LINE_MIN_PAGES:
+        return set()
+
+    counts: Counter[str] = Counter()
+    for text in page_texts:
+        counts.update({_normalize(line) for line in text.splitlines() if line.strip()})
+
+    threshold = max(REPEATED_LINE_MIN_PAGES, math.ceil(page_count * REPEATED_LINE_RATIO))
+    return {line for line, seen_on in counts.items() if seen_on >= threshold}
+
+
+def _group_paragraphs(lines: list[str]) -> list[str]:
+    """Join hard-wrapped PDF lines back into paragraphs.
+
+    A PDF carries no paragraph marks: text wraps at the column edge, so
+    every line but the last of a paragraph runs nearly the full width. A
+    line falling well short of that width is therefore where the paragraph
+    ended.
+    """
+    if not lines:
+        return []
+
+    # The typical full-width line, measured from the longest lines present so
+    # that headings and stub lines do not drag the estimate down.
+    widths = sorted((len(line) for line in lines), reverse=True)
+    typical_width = widths[len(widths) // 10] if len(widths) >= 10 else widths[0]
+    break_below = typical_width * PARAGRAPH_BREAK_RATIO
+
+    paragraphs: list[str] = []
+    current: list[str] = []
+    for line in lines:
+        current.append(line)
+        if len(line) < break_below:
+            paragraphs.append(" ".join(current))
+            current = []
+    if current:
+        paragraphs.append(" ".join(current))
+    return paragraphs
+
+
+def render_html(result: ConversionResult) -> str:
+    """Render extracted PDF text as readable HTML.
+
+    Strips repeated page furniture, reflows hard-wrapped lines into
+    paragraphs and escapes the text. Intended for displaying a PDF-only
+    article inline; it recovers the prose, not the layout, so a caller
+    should still offer the original PDF for figures and tables.
+
+    Args:
+        result: A conversion produced by a :class:`PDFConverter`.
+
+    Returns:
+        An HTML fragment of ``<p>`` elements, or an empty string when the
+        conversion failed or yielded no text.
+    """
+    if not result.success or not result.text.strip():
+        return ""
+
+    pages = result.page_texts or [result.text]
+    furniture = _repeated_lines(pages)
+
+    lines = [
+        normalized
+        for page in pages
+        for line in page.splitlines()
+        if (normalized := _normalize(line)) and normalized not in furniture
+    ]
+
+    paragraphs = _group_paragraphs(lines)
+    return "\n".join(f"<p>{html_escape(p)}</p>" for p in paragraphs if p)
 
 
 # Registry of available converters. Future backends (pymupdf4llm, docling,
