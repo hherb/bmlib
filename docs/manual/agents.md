@@ -386,7 +386,9 @@ The two `BaseAgent` subclasses shipped with bmlib both follow this pattern — s
 
 | Agent | Method | Call settings | On failure |
 |-------|--------|---------------|------------|
-| `StudyClassifier` (Tier 2) | `classify(title, abstract)` | `chat_json(temperature=0.1, max_tokens=256)` | Logs a warning, returns `QualityAssessment.unclassified()` |
-| `QualityAgent` (Tier 3) | `assess(title, abstract)` | `chat_json(temperature=0.2, max_tokens=1024)` | Logs a warning, returns `QualityAssessment.unclassified()` |
+| `StudyClassifier` (Tier 2) | `classify(title, abstract)` | constructor defaults `temperature=0.1, max_tokens=1024` | Logs a warning, returns `QualityAssessment.unclassified()` |
+| `QualityAgent` (Tier 3) | `assess(title, abstract)` | constructor defaults `temperature=0.2, max_tokens=1024` | Logs a warning, returns `QualityAssessment.unclassified()` |
 
-Both run at temperature `> 0`, so a truncated response consumes the full retry budget before failing — the cheap classifier's 256-token ceiling makes that a real possibility on verbose models. Neither propagates the `ValueError`: a failed assessment degrades one document rather than aborting a batch.
+Neither passes sampling arguments to `chat_json()`, so the constructor's values apply — a call-site argument would silently override whatever the constructor was given, which is what once made the classifier's budget impossible to raise.
+
+Both run at temperature `> 0`, so a truncated response consumes the full retry budget before failing. Neither propagates the `ValueError`: a failed assessment degrades one document rather than aborting a batch.

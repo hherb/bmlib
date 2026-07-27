@@ -1,6 +1,6 @@
 # bmlib.fulltext — Full-Text Retrieval, JATS Parsing & PDF Conversion
 
-Full-text retrieval for biomedical literature. Provides a multi-tier retrieval chain (caller-supplied sources → Europe PMC → Unpaywall → DOI/PubMed), a SAX-based JATS parser that converts PubMed Central XML to structured data or HTML, a disk cache for downloaded content, and a **standalone** pluggable PDF-to-text converter.
+Full-text retrieval for biomedical literature. Provides a multi-tier retrieval chain (caller-supplied sources → Europe PMC → Unpaywall → DOI/PubMed), a SAX-based JATS parser that converts PubMed Central XML to structured data or HTML, a disk cache for downloaded content, and a pluggable PDF-to-text converter that the retrieval chain uses to make a PDF-only article readable inline.
 
 ## Installation
 
@@ -19,10 +19,12 @@ pip install bmlib[pdf]              # PDF → text conversion (pymupdf)
 | `jats_parser` | `JATSParser` | Yes — used by the service to render XML |
 | `cache` | `FullTextCache`, `sanitize_identifier()` | Yes — the service constructs one by default |
 | `models` | `FullTextResult`, `FullTextSourceEntry`, all `JATS*` dataclasses | Yes |
-| `pdf_converter` | `ConversionResult`, `PDFConverter`, `PyMuPDFConverter`, `get_converter()`, `list_converters()` | **No — standalone** |
+| `pdf_converter` | `ConversionResult`, `PDFConverter`, `PyMuPDFConverter`, `get_converter()`, `list_converters()`, `render_html()` | Yes — the service extracts a retrieved PDF's text |
 
-> **`pdf_converter` is not wired into `FullTextService`.**
-> `service.py` never imports `pdf_converter`. The retrieval chain downloads and caches PDF *bytes*; it never extracts text from them. There is no automatic PDF → text step and no field on [`FullTextResult`](#fulltextresult) that holds converted text. If you want the text of a cached PDF, call a converter yourself on `result.file_path` — see [Integration example](#integration-example).
+> **A retrieved PDF is extracted into `FullTextResult.html`.**
+> When the `bmlib[pdf]` extra is installed, the retrieval chain runs a cached PDF through `render_html()` and puts the result in [`FullTextResult.html`](#fulltextresult) with `content_kind="extracted"`. Two conditions apply: extraction happens only *after* the PDF is cached, so `fetch_fulltext()` must be given an `identifier`; and without the extra the result simply carries no HTML. Opt out with `FullTextService(convert_pdfs=False)`.
+>
+> `pdf_url` and `file_path` stay populated either way — extraction recovers the prose but not figures, tables or layout, so the original PDF is still worth offering.
 
 ## Imports
 
@@ -51,12 +53,13 @@ from bmlib.fulltext import (
     JATSFigureInfo,
     JATSTableInfo,
     JATSReferenceInfo,
-    # PDF conversion (standalone)
+    # PDF conversion
     ConversionResult,
     PDFConverter,
     PyMuPDFConverter,
     get_converter,
     list_converters,
+    render_html,
 )
 ```
 
@@ -166,6 +169,7 @@ class FullTextService:
         email: str,
         timeout: float = 30.0,
         cache: FullTextCache | None = None,
+        convert_pdfs: bool = True,
     ) -> None: ...
 
     def fetch_fulltext(
@@ -186,6 +190,7 @@ class FullTextService:
 | `email` | `str` | Contact email, required by the Unpaywall API. No default — always supply a real address |
 | `timeout` | `float` | HTTP request timeout in seconds (default `30.0`) |
 | `cache` | `FullTextCache \| None` | Cache instance. When `None`, a default `FullTextCache()` is constructed, so a cache always exists |
+| `convert_pdfs` | `bool` | Extract a retrieved PDF's text into `html` (default `True`). Requires `bmlib[pdf]`, and only applies once the PDF is cached — so `fetch_fulltext()` must be given an `identifier`. `pdf_url` and `file_path` stay set either way |
 
 ### `fetch_fulltext()`
 
@@ -227,7 +232,9 @@ Within Tier 0, an `xml` entry is fetched and JATS-parsed into HTML, a `pdf` entr
 - **No rate limiting.** The package sleeps for nothing and throttles nothing. Callers hitting Europe PMC or Unpaywall in bulk must implement their own pacing.
 - **No environment variables, no API keys.** The only credential-like input is the Unpaywall contact email passed to the constructor.
 - **One client per request.** Every HTTP call goes through an internal helper that opens a fresh `httpx.Client` with `follow_redirects=True`. There is no connection pooling across calls.
-- **PDF download failure is non-fatal.** When a PDF cannot be downloaded or fails magic-byte validation, the result is still returned with `pdf_url` set, so the URL remains a usable fallback; only `file_path` is left unset.
+- **PDF download failure is non-fatal.** When a PDF cannot be downloaded or fails magic-byte validation, the result is still returned with `pdf_url` set, so the URL remains a usable fallback; only `file_path` is left unset. If a body-less JATS document was seen earlier in the chain, its abstract is merged into that result rather than discarded, so the caller gets an abstract plus a link instead of a bare link.
+- **PDF text extraction is best-effort and logged.** A missing `bmlib[pdf]` extra, a corrupt PDF, or a scan with no extractable text all leave `html` unset and emit a `WARNING`; a partial extraction is attached but flagged. Nothing here aborts a retrieval.
+- **Extracted PDF text is not cached; it is re-derived.** Only body-carrying JATS HTML is written to the HTML cache, so a cached HTML hit always means full text. A cached *PDF* hit re-runs extraction on the local file, so a second `fetch_fulltext()` returns the same `html` and `content_kind` as the first.
 - **Caching is opt-in per call.** The service holds a `FullTextCache` unconditionally, but reads and writes only occur when `identifier` is passed.
 
 ---
@@ -240,11 +247,29 @@ Result of a full-text retrieval attempt.
 @dataclass
 class FullTextResult:
     source: str                    # see table below
-    html: str | None = None        # Parsed HTML (from JATS XML)
+    html: str | None = None        # Rendered article HTML
     pdf_url: str | None = None     # Open-access PDF URL
     web_url: str | None = None     # Publisher / PubMed website URL
     file_path: str | None = None   # Local cached file path
+    content_kind: ContentKind = "none"   # what `html` actually is
 ```
+
+### `content_kind`
+
+`html` being set does **not** mean you have the article. `content_kind` says
+which of three quite different things it holds:
+
+| Value | `html` holds | Notes |
+|-------|--------------|-------|
+| `"fulltext"` | A JATS document that had a `<body>` | The real thing |
+| `"abstract"` | A body-less JATS rendering — abstract and metadata only | Returned only as a last resort, when no tier found the article. Never cached. `web_url` is attached so the reader has somewhere to go |
+| `"extracted"` | Prose recovered from a PDF | No figures, tables or layout, and possibly not every page — `pdf_url`/`file_path` remain worth offering |
+| `"none"` | Nothing — `html` is `None` | |
+
+Code that scores, summarises or analyses an article should check
+`content_kind == "fulltext"` rather than `if result.html`. Some publishers
+(medRxiv among them) serve a JATS document made of `<front>` and `<back>`
+alone: it returns HTTP 200 and parses cleanly, but there is no article in it.
 
 The `source` values the service can emit:
 
@@ -318,7 +343,7 @@ class JATSParser:
 
 **Security:** external entity loading is disabled on the SAX parser (`feature_external_ges` and `feature_external_pes` are both set to `False`), so hostile XML cannot pull in external resources.
 
-**Performance:** `parse()` and `to_html()` each run a *fresh* SAX pass over the stored bytes. Calling both on the same instance parses the document twice; parse once and reuse the result if you need both representations.
+**Performance:** `parse()` and `to_html()` each run a *fresh* SAX pass over the stored bytes. Calling both on the same instance parses the document twice — use `parse_with_html()`, which parses once and returns `(JATSArticle, str)`.
 
 ### `parse()` → `JATSArticle`
 
@@ -337,6 +362,13 @@ Returns an HTML string with semantic markup:
 - `<div class="table-container">` with `<table>` for tables
 - `<ol class="references">` for bibliography
 
+### `parse_with_html()` → `tuple[JATSArticle, str]`
+
+Parses once and returns both representations. Prefer this over calling
+`parse()` and `to_html()` in turn, which runs two SAX passes over the same
+bytes. The service uses it to render a document and check `has_body` in one
+pass.
+
 ### Supported JATS elements
 
 | JATS element | Parsed as |
@@ -354,7 +386,7 @@ Returns an HTML string with semantic markup:
 
 ## JATSArticle
 
-Complete parsed article data. **All fifteen fields are required** — the dataclass has no defaults, so construct it via `JATSParser.parse()` rather than by hand.
+Complete parsed article data. The first fifteen fields are required — construct it via `JATSParser.parse()` rather than by hand. `has_body` defaults to `False`, so a hand-built article reports "no body" unless it says otherwise.
 
 ```python
 @dataclass
@@ -374,7 +406,23 @@ class JATSArticle:
     figures: list[JATSFigureInfo]
     tables: list[JATSTableInfo]
     references: list[JATSReferenceInfo]
+    has_body: bool = False
 ```
+
+**`has_body`** is `True` when `<body>` held at least one non-empty `<p>`
+inside a `<sec>` — that is, body prose that survived parsing. It is what lets
+`FullTextService` tell a real article from a body-less document that parses
+cleanly but carries only the abstract.
+
+It deliberately counts body paragraphs rather than `body_sections`, because
+back-matter sections land in the latter too: a "Data Availability" section
+would otherwise pass for an article body. Two consequences follow from
+tracking what survived parsing rather than what the XML contained. A `<p>`
+sitting directly in `<body>` with no enclosing `<sec>` is dropped by the
+handler and so does not count — consistent with the rendered HTML, which has
+no body prose either, but it means a valid article of that shape reads as
+abstract-only. And the default is `False`, so a hand-built `JATSArticle`
+reports "no body" unless it says otherwise.
 
 ### JATSAuthorInfo
 
@@ -593,6 +641,7 @@ class ConversionResult:
     converter_version: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
     error_message: str | None = None
+    page_texts: list[str] = field(default_factory=list)
 
     @property
     def is_complete(self) -> bool: ...
@@ -756,12 +805,47 @@ class ConversionResult:
     converter_version: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
     error_message: str | None = None
+    page_texts: list[str] = field(default_factory=list)
 
     @property
     def is_complete(self) -> bool: ...        # all pages converted and some text extracted
     @property
     def completion_ratio(self) -> float: ...  # converted_pages / page_count (0.0 when no pages)
 ```
+
+**`page_texts`** holds the text of each page *that yielded any*, in order. A
+page with no extractable text (an image-only scan) contributes no entry, so
+this is **not indexable by page number** and its length can be less than
+`page_count`. It exists because page boundaries are what let `render_html()`
+recognise furniture that repeats across pages. A backend that cannot report
+pages separately leaves it empty.
+
+### `render_html(result: ConversionResult) -> str`
+
+Renders extracted PDF text as readable HTML — a fragment of `<p>` elements,
+escaped. Returns `""` when the conversion failed or produced no text.
+
+Two heuristics, both publisher-agnostic:
+
+- **Repeated-line stripping.** A line appearing on at least
+  `REPEATED_LINE_RATIO` (0.6) of the pages is treated as a running head,
+  footer or watermark and dropped. `ceil()` and a floor of
+  `REPEATED_LINE_MIN_PAGES` (3) push the effective share higher on short
+  documents — 100% at 3 pages, 75% at 4 — converging on 0.6 as the page count
+  grows. Below 3 pages nothing is stripped, since a repeat is as likely to be
+  prose. Lines are counted once per page, so a phrase repeating *within* one
+  page is not mistaken for furniture.
+- **Paragraph reflow.** A PDF carries no paragraph marks: text wraps hard at
+  the column edge, so a line falling below `PARAGRAPH_BREAK_RATIO` (0.85) of
+  the column width is where the paragraph ended. The width is estimated as
+  the 90th-percentile line length, which discards over-long outliers; when
+  fewer than a tenth of the lines run full width — a reference list, a table,
+  a two-column extraction — that estimate lands on a stub and the longest
+  line is used instead.
+
+It recovers prose, not layout: figures, tables and formatting are lost, which
+is why `FullTextService` keeps `pdf_url` and `file_path` populated alongside
+the extracted `html`.
 
 ### PyMuPDFConverter
 

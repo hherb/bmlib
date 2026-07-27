@@ -155,3 +155,38 @@ class TestJATSParserHTML:
         data = _load_fixture("sample_article.xml")
         html = JATSParser(data, known_pmc_id="PMC7614751").to_html()
         assert "<h1>" in html
+
+
+class TestJATSParserHasBody:
+    """Telling a real article apart from a metadata-only JATS record.
+
+    Some publishers — medRxiv among them — serve a JATS document made of
+    ``<front>`` and ``<back>`` alone for certain preprints. It parses without
+    error but carries nothing past the abstract, so consumers need a way to
+    tell the two apart rather than treating any parse as full text.
+    """
+
+    def test_true_for_article_with_body(self):
+        article = JATSParser(_load_fixture("sample_article.xml")).parse()
+        assert article.has_body is True
+
+    def test_false_without_body_element(self):
+        article = JATSParser(_load_fixture("abstract_only_article.xml")).parse()
+        assert article.has_body is False
+
+    def test_back_matter_alone_does_not_count_as_body(self):
+        """A <back> section lands in body_sections, so it must not fool has_body."""
+        article = JATSParser(_load_fixture("abstract_only_article.xml")).parse()
+
+        # The "Data Availability" section is present and rendered...
+        assert any("Data Availability" in s.title for s in article.body_sections)
+        # ...but the article still has no body.
+        assert article.has_body is False
+
+    def test_parse_with_html_agrees_with_parse(self):
+        data = _load_fixture("abstract_only_article.xml")
+        article, html = JATSParser(data).parse_with_html()
+
+        assert article.has_body is False
+        assert html == JATSParser(data).to_html()
+        assert "Why More Doctors" in html

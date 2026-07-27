@@ -33,9 +33,70 @@ All notable changes to bmlib are documented here. The format is based on
   and the suite is unchanged. CI runs it against a `postgres:16` service on
   every matrix entry, with `BMLIB_REQUIRE_POSTGRESQL=1` so a missing or broken
   DSN fails the build instead of skipping behind a green check.
+- **`FullTextService` extracts a retrieved PDF's text into
+  `FullTextResult.html`**, so a PDF-only article can be read inline. Needs the
+  `bmlib[pdf]` extra and a cached PDF (that is, an `identifier`); opt out with
+  `FullTextService(convert_pdfs=False)`. `pdf_url` and `file_path` stay
+  populated, since extraction recovers prose but not figures, tables or
+  layout. This closes the ROADMAP item that had the converter standalone.
+- `fulltext.render_html()` — renders extracted PDF text as HTML, stripping
+  repeated page furniture (running heads, footers, publisher watermarks) by a
+  frequency rule that needs no per-publisher knowledge, and reflowing
+  hard-wrapped lines back into paragraphs.
+- `FullTextResult.content_kind` — says whether `html` holds a real article
+  (`"fulltext"`), only an abstract (`"abstract"`), or prose extracted from a
+  PDF (`"extracted"`). Code that scores or summarises an article should branch
+  on this rather than on `html` being set.
+- `JATSArticle.has_body` — whether `<body>` carried actual prose. It counts
+  body paragraphs rather than `body_sections`, because back-matter sections
+  land in the latter and a "Data Availability" section was otherwise passing
+  for an article body.
+- `JATSParser.parse_with_html()` — parses once and returns both the article
+  and its HTML, instead of the two SAX passes `parse()` + `to_html()` cost.
+- `ConversionResult.page_texts` — the text of each page that yielded any.
+  Page boundaries are what let `render_html()` spot repeated furniture.
 
 ### Fixed
 
+- **A body-less JATS document was mistaken for full text.** medRxiv's
+  `jatsxml` URL serves, for some preprints, a document made of `<front>` and
+  `<back>` alone. It returns HTTP 200 and parses cleanly, so the retrieval
+  chain — which sorts `xml` ahead of `pdf` — treated it as a successful
+  retrieval, never tried the PDF holding the actual article, and cached the
+  abstract-only rendering permanently. Body presence varies per paper rather
+  than per publisher, so this is fixed generically: such a document is now
+  detected, never cached, and held back as a last resort while the chain keeps
+  looking. If nothing better turns up it is returned with any resolved link
+  attached, so the reader gets the abstract *and* somewhere to go.
+- **Text extracted from a PDF was produced once and then lost.** Only the PDF
+  bytes were cached, so a second `fetch_fulltext()` for the same identifier
+  returned a bare `file_path` and the inline article text silently
+  disappeared. A cached PDF hit now re-derives it.
+- **A missing abstract killed the whole scoring batch.** A record with no
+  abstract arrives as `None` from a nullable column, and both LLM tiers sliced
+  it unguarded, so a `TypeError` escaped the assessment and took every later
+  paper down with it. Both tiers now tolerate a `None` title or abstract. With
+  *both* missing they return `unclassified()` without calling the model, since
+  an empty prompt yields not an empty answer but an invented one that nothing
+  downstream can tell from a real assessment.
+- **The Tier 2 classifier's token budget could not be raised.** `classify()`
+  repeated `temperature` and `max_tokens` at the call site, silently
+  overriding the constructor. The classification JSON is ~50 tokens, but small
+  local models preface it with commentary despite being asked for JSON alone,
+  and the 256-token ceiling truncated the preamble and lost the JSON with it —
+  affected papers fell back to `UNCLASSIFIED` with only a warning. The
+  overrides are gone and the budget is now 1024, matching the assessor. Both
+  agents carry their tuned sampling as constructor defaults, so it holds
+  however they are built rather than only via `QualityManager`.
+- **A PDF that yielded no text failed silently.** `PyMuPDFConverter.convert()`
+  reports failure in its result rather than raising, so a corrupt PDF, an
+  image-only scan, or a partial extraction all passed unlogged. Each is now
+  reported at WARNING, and a partial extraction is flagged rather than
+  attached as if it were the whole article.
+- **`render_html()` collapsed a document into a single paragraph** when fewer
+  than a tenth of its lines ran full width — a reference list, a table, a
+  two-column extraction. The wrap-width estimate landed on a stub line, so no
+  line ever counted as short enough to end a paragraph.
 - **`fetch_scalar()` always returned `None` on PostgreSQL.** psycopg2's
   `RealDictRow` is keyed by column name, so `row[0]` raised `KeyError` and was
   swallowed by the fallback. It now reads the first value on dict-like rows.

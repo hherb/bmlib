@@ -19,6 +19,7 @@
 from bmlib.fulltext.cache import FullTextCache
 from bmlib.fulltext.jats_parser import JATSParser
 from bmlib.fulltext.models import (
+    ContentKind,
     FullTextResult,
     FullTextSourceEntry,
     JATSAbstractSection,
@@ -35,10 +36,12 @@ from bmlib.fulltext.pdf_converter import (
     PyMuPDFConverter,
     get_converter,
     list_converters,
+    render_html,
 )
 from bmlib.fulltext.service import FullTextError, FullTextService
 
 __all__ = [
+    "ContentKind",
     "ConversionResult",
     "FullTextCache",
     "FullTextError",
@@ -57,4 +60,5 @@ __all__ = [
     "PyMuPDFConverter",
     "get_converter",
     "list_converters",
+    "render_html",
 ]

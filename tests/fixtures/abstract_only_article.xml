@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A JATS document with no <body> — the shape medRxiv serves for some
+  preprints via the `jatsxml` URL in its details API. Front matter and a
+  back-matter "Data Availability" section are present, but there is no
+  article body, so this document carries nothing beyond the abstract.
+-->
+<article xml:lang="en" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <front>
+    <journal-meta>
+      <journal-id journal-id-type="hwp">medrxiv</journal-id>
+      <journal-title>medRxiv</journal-title>
+    </journal-meta>
+    <article-meta>
+      <article-id pub-id-type="doi">10.64898/2025.12.25.25343018</article-id>
+      <title-group>
+        <article-title>Why More Doctors May Not Mean More Essential-Specialty Physicians</article-title>
+      </title-group>
+      <contrib-group>
+        <contrib contrib-type="author">
+          <name>
+            <surname>Yu</surname>
+            <given-names>Hojun</given-names>
+          </name>
+        </contrib>
+      </contrib-group>
+      <pub-date>
+        <year>2026</year>
+      </pub-date>
+      <abstract>
+        <p>Korea is expanding medical school admissions on the assumption that a
+        larger physician pool will relieve shortages in essential specialties.
+        This article argues that the essential-care crisis is better understood
+        as a problem of allocation than of absolute numbers.</p>
+      </abstract>
+    </article-meta>
+  </front>
+  <back>
+    <sec>
+      <title>Data Availability</title>
+      <p>All data produced in the present work are contained in the manuscript.</p>
+    </sec>
+  </back>
+</article>

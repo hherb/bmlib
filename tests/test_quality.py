@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from bmlib.quality.data_models import (
     DESIGN_TO_TIER,
     BiasRisk,
@@ -255,3 +257,222 @@ class TestQualityManager:
         assert result.assessment_tier == 2
         mgr.classifier.classify.assert_called_once()
         mgr.assessor.assess.assert_not_called()
+
+
+class TestMissingAbstract:
+    """A record with no abstract must degrade, not raise.
+
+    Sources routinely omit abstracts, and the value arrives here as ``None``
+    rather than ``""`` when it came from a nullable database column. Both
+    LLM tiers slice the abstract to a character budget, so an unguarded
+    ``None`` raises ``TypeError`` mid-run and takes the whole scoring pass
+    down with it.
+    """
+
+    def _stub_llm(self):
+        from unittest.mock import MagicMock
+
+        llm = MagicMock()
+        # Whatever the agent asks of the model, hand back a usable answer so
+        # the test exercises prompt construction rather than parsing.
+        llm.chat.return_value = MagicMock(
+            content='{"study_design": "rct", "confidence": 0.9}',
+            stop_reason="stop",
+        )
+        return llm
+
+    def test_classifier_handles_none_abstract(self):
+        from bmlib.quality.study_classifier import StudyClassifier
+
+        classifier = StudyClassifier(llm=self._stub_llm(), model="ollama:x")
+        result = classifier.classify("A title", None)
+
+        assert result is not None
+        assert result.study_design == StudyDesign.RCT
+
+    def test_assessor_handles_none_abstract(self):
+        from bmlib.quality.quality_agent import QualityAgent
+
+        agent = QualityAgent(llm=self._stub_llm(), model="ollama:x")
+        result = agent.assess("A title", None)
+
+        assert result is not None
+
+    def test_classifier_handles_none_title(self):
+        """A None title must not reach the model as the literal text "None".
+
+        ``str.format`` renders None rather than raising, so asserting only
+        that a result comes back cannot fail — the prompt has to be checked.
+        """
+        from bmlib.quality.study_classifier import StudyClassifier
+
+        llm = self._stub_llm()
+        classifier = StudyClassifier(llm=llm, model="ollama:x")
+        assert classifier.classify(None, "An abstract") is not None
+
+        prompt = llm.chat.call_args.kwargs["messages"][-1].content
+        assert "Title: \n" in prompt
+        assert "None" not in prompt
+
+    def test_assessor_handles_none_title(self):
+        from bmlib.quality.quality_agent import QualityAgent
+
+        llm = self._stub_llm()
+        agent = QualityAgent(llm=llm, model="ollama:x")
+        assert agent.assess(None, "An abstract") is not None
+
+        prompt = llm.chat.call_args.kwargs["messages"][-1].content
+        assert "None" not in prompt
+
+    @pytest.mark.parametrize(
+        "filt",
+        [
+            QualityFilter(use_llm_classification=True, use_detailed_assessment=False),
+            QualityFilter(use_llm_classification=True, use_detailed_assessment=True),
+        ],
+        ids=["tier2", "tier3"],
+    )
+    def test_the_manager_survives_a_none_abstract(self, filt):
+        """The production entry point, not just the agents beneath it."""
+        from bmlib.quality.manager import QualityManager
+
+        llm = self._stub_llm()
+        mgr = QualityManager(llm=llm, classifier_model="ollama:x", assessor_model="ollama:y")
+        result = mgr.assess("A title", None, publication_types=[], filter_settings=filt)
+
+        assert result is not None
+
+        prompt = llm.chat.call_args.kwargs["messages"][-1].content
+        assert "None" not in prompt
+
+
+class TestNothingToAssess:
+    """With neither title nor abstract there is nothing to work from.
+
+    An empty prompt does not produce an empty answer — the model invents a
+    plausible design, and a fabricated tier-2 RCT is indistinguishable
+    downstream from a real classification. Refusing is the honest result,
+    and it costs no tokens.
+    """
+
+    def _llm(self):
+        from unittest.mock import MagicMock
+
+        llm = MagicMock()
+        llm.chat.return_value = MagicMock(
+            content='{"study_design": "rct", "confidence": 0.95}', stop_reason="stop"
+        )
+        return llm
+
+    @pytest.mark.parametrize("title,abstract", [(None, None), ("", ""), ("  ", "\n")])
+    def test_classifier_refuses_without_calling_the_model(self, title, abstract):
+        from bmlib.quality.study_classifier import StudyClassifier
+
+        llm = self._llm()
+        result = StudyClassifier(llm=llm, model="ollama:x").classify(title, abstract)
+
+        assert result.quality_tier == QualityTier.UNCLASSIFIED
+        assert result.study_design != StudyDesign.RCT
+        llm.chat.assert_not_called()
+
+    @pytest.mark.parametrize("title,abstract", [(None, None), ("", ""), ("  ", "\n")])
+    def test_assessor_refuses_without_calling_the_model(self, title, abstract):
+        from bmlib.quality.quality_agent import QualityAgent
+
+        llm = self._llm()
+        result = QualityAgent(llm=llm, model="ollama:y").assess(title, abstract)
+
+        assert result.quality_tier == QualityTier.UNCLASSIFIED
+        llm.chat.assert_not_called()
+
+    def test_a_title_alone_is_still_worth_classifying(self):
+        """Weak but honest — the guard must not swallow a usable title."""
+        from bmlib.quality.study_classifier import StudyClassifier
+
+        llm = self._llm()
+        result = StudyClassifier(llm=llm, model="ollama:x").classify("A randomised trial", None)
+
+        assert result.study_design == StudyDesign.RCT
+        llm.chat.assert_called_once()
+
+
+class TestTunedSamplingDefaults:
+    """The tuned sampling belongs to the agents, not to QualityManager.
+
+    These values were once forced at the call site, so they held however the
+    agent was built. Moving them to the constructor would have quietly
+    dropped a directly-constructed agent to BaseAgent's generic 0.3/4096.
+    """
+
+    def _llm(self):
+        from unittest.mock import MagicMock
+
+        llm = MagicMock()
+        llm.chat.return_value = MagicMock(
+            content='{"study_design": "rct", "confidence": 0.9}', stop_reason="stop"
+        )
+        return llm
+
+    def test_a_directly_constructed_classifier_keeps_them(self):
+        from bmlib.quality.study_classifier import StudyClassifier
+
+        llm = self._llm()
+        StudyClassifier(llm=llm, model="ollama:x").classify("Title", "Abstract")
+
+        assert llm.chat.call_args.kwargs["temperature"] == 0.1
+        assert llm.chat.call_args.kwargs["max_tokens"] == 1024
+
+    def test_a_directly_constructed_assessor_keeps_them(self):
+        from bmlib.quality.quality_agent import QualityAgent
+
+        llm = self._llm()
+        QualityAgent(llm=llm, model="ollama:y").assess("Title", "Abstract")
+
+        assert llm.chat.call_args.kwargs["temperature"] == 0.2
+        assert llm.chat.call_args.kwargs["max_tokens"] == 1024
+
+
+class TestGenerationBudget:
+    """The configured token budget must actually reach the model.
+
+    Both LLM tiers used to repeat their temperature and ``max_tokens`` at the
+    call site, which silently overrode whatever the constructor was given —
+    so raising the budget had no effect. A ceiling too low for a chatty model
+    truncates the response and every paper falls back to UNCLASSIFIED.
+    """
+
+    def _llm(self):
+        from unittest.mock import MagicMock
+
+        llm = MagicMock()
+        llm.chat.return_value = MagicMock(
+            content='{"study_design": "rct", "confidence": 0.9}', stop_reason="stop"
+        )
+        return llm
+
+    def _manager(self, llm):
+        from bmlib.quality.manager import QualityManager
+
+        return QualityManager(llm=llm, classifier_model="ollama:x", assessor_model="ollama:y")
+
+    def test_classifier_budget_reaches_the_model(self):
+        llm = self._llm()
+        self._manager(llm).classifier.classify("Title", "Abstract")
+
+        assert llm.chat.call_args.kwargs["max_tokens"] == 1024
+        assert llm.chat.call_args.kwargs["temperature"] == 0.1
+
+    def test_assessor_budget_reaches_the_model(self):
+        llm = self._llm()
+        self._manager(llm).assessor.assess("Title", "Abstract")
+
+        assert llm.chat.call_args.kwargs["max_tokens"] == 1024
+        assert llm.chat.call_args.kwargs["temperature"] == 0.2
+
+    def test_a_caller_can_override_the_budget(self):
+        from bmlib.quality.study_classifier import StudyClassifier
+
+        llm = self._llm()
+        StudyClassifier(llm=llm, model="ollama:x", max_tokens=4096).classify("T", "A")
+
+        assert llm.chat.call_args.kwargs["max_tokens"] == 4096

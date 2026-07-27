@@ -25,11 +25,13 @@ from __future__ import annotations
 import logging
 
 from bmlib.agents.base import BaseAgent
+from bmlib.llm import LLMClient
 from bmlib.quality.data_models import (
     STUDY_DESIGN_MAPPING,
     QualityAssessment,
     StudyDesign,
 )
+from bmlib.templates import TemplateEngine
 
 logger = logging.getLogger(__name__)
 
@@ -67,18 +69,56 @@ letter, guideline, other, unknown."""
 
 
 class StudyClassifier(BaseAgent):
-    """Tier 2 study-design classifier using a cheap LLM."""
+    """Tier 2 study-design classifier using a cheap LLM.
+
+    Sampling defaults live here rather than at the call site so that they
+    hold however the classifier is constructed: a low temperature because
+    this returns a fixed JSON shape, and a budget well above the ~50 tokens
+    that shape needs because small local models preface it with commentary
+    that would otherwise be truncated along with the JSON.
+    """
+
+    def __init__(
+        self,
+        llm: LLMClient,
+        model: str,
+        template_engine: TemplateEngine | None = None,
+        temperature: float = 0.1,
+        max_tokens: int = 1024,
+    ) -> None:
+        super().__init__(
+            llm=llm,
+            model=model,
+            template_engine=template_engine,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
 
     def classify(
         self,
-        title: str,
-        abstract: str,
+        title: str | None,
+        abstract: str | None,
     ) -> QualityAssessment:
         """Classify study design from title and abstract.
+
+        Either field may be ``None`` — sources omit abstracts often enough,
+        and a nullable database column delivers the gap that way. Classifying
+        from the title alone is weak but honest, and raising would abort the
+        caller's whole batch. With *both* missing there is nothing to
+        classify, so no LLM call is made.
 
         Returns a Tier 2 :class:`QualityAssessment`.  On failure,
         returns ``QualityAssessment.unclassified()``.
         """
+        title = title or ""
+        abstract = abstract or ""
+        if not title.strip() and not abstract.strip():
+            # An empty prompt does not yield an empty answer — the model
+            # invents a plausible design, and nothing downstream can tell that
+            # apart from a real classification. Refusing is the honest result.
+            logger.warning("Cannot classify: both title and abstract are empty")
+            return QualityAssessment.unclassified()
+
         prompt = CLASSIFIER_USER_TEMPLATE.format(
             title=title,
             abstract=abstract[:MAX_ABSTRACT_CHARS],
@@ -90,8 +130,6 @@ class StudyClassifier(BaseAgent):
                     self.system_msg(CLASSIFIER_SYSTEM_PROMPT),
                     self.user_msg(prompt),
                 ],
-                temperature=0.1,
-                max_tokens=256,
             )
             return self._parse_data(data)
         except Exception as e:
