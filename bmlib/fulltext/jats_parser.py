@@ -936,7 +936,7 @@ def _build_html(h: JATSArticle) -> str:
     return "\n".join(parts)
 
 
-def _format_journal_html(h: _JATSHandler) -> str:
+def _format_journal_html(h: JATSArticle) -> str:
     parts: list[str] = []
     if h.journal:
         parts.append(f"<em>{html_escape(h.journal)}</em>")
@@ -954,7 +954,7 @@ def _format_journal_html(h: _JATSHandler) -> str:
     return " ".join(parts)
 
 
-def _format_identifiers_html(h: _JATSHandler) -> str:
+def _format_identifiers_html(h: JATSArticle) -> str:
     ids: list[str] = []
     if h.doi:
         ids.append(f'DOI: <a href="https://doi.org/{html_escape(h.doi)}">{html_escape(h.doi)}</a>')

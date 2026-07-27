@@ -93,16 +93,25 @@ class FullTextService:
             timeout: Per-request timeout in seconds.
             cache: Disk cache to use. A default one is created when omitted.
             convert_pdfs: Whether to extract text from a retrieved PDF into
-                :attr:`FullTextResult.html`, so a PDF-only article can still
+                :attr:`FullTextResult.html` (marked
+                ``content_kind="extracted"``), so a PDF-only article can still
                 be read inline. Requires the ``bmlib[pdf]`` extra; without it
                 the result simply carries no HTML. The PDF's URL and path are
                 reported either way, since extracted text loses figures and
                 layout.
+
+                Applies only when the PDF is cached to disk — that is, when
+                :meth:`fetch_fulltext` was given an ``identifier`` and a cache
+                is configured. Without one there is no file to extract from
+                and this setting has no effect.
         """
         self.email = email
         self.timeout = timeout
         self.cache = cache if cache is not None else FullTextCache()
         self.convert_pdfs = convert_pdfs
+        # Guards the one-off warning in _attach_pdf_text when the bmlib[pdf]
+        # extra is missing: worth saying once, not once per article.
+        self._pdf_extra_warned = False
 
     def _http_get(self, url: str, **kwargs: object) -> httpx.Response:
         """HTTP GET with timeout. Separated for testability."""
@@ -154,7 +163,7 @@ class FullTextService:
         if fulltext_sources:
             result, abstract_only = self._try_known_sources(fulltext_sources, cache_id=cache_id)
             if result is not None:
-                return result
+                return self._with_abstract_fallback(result, abstract_only)
 
         # Tier 1a: Europe PMC with known PMC ID
         xml_failed = False
@@ -164,10 +173,12 @@ class FullTextService:
                 if has_body:
                     logger.info("Full text retrieved from Europe PMC for %s", pmc_id)
                     self._cache_html(html, cache_id)
-                    return FullTextResult(source="europepmc", html=html)
+                    return FullTextResult(source="europepmc", html=html, content_kind="fulltext")
                 logger.info("Europe PMC XML for %s has no body — looking further", pmc_id)
                 if abstract_only is None:
-                    abstract_only = FullTextResult(source="europepmc", html=html)
+                    abstract_only = FullTextResult(
+                        source="europepmc", html=html, content_kind="abstract"
+                    )
                 # Treated as a failure so the free-PDF lookup below still runs.
                 xml_failed = True
             except Exception:
@@ -189,13 +200,17 @@ class FullTextService:
                             discovered_pmc_id,
                         )
                         self._cache_html(html, cache_id)
-                        return FullTextResult(source="europepmc", html=html)
+                        return FullTextResult(
+                            source="europepmc", html=html, content_kind="fulltext"
+                        )
                     logger.info(
                         "Europe PMC XML for discovered %s has no body — looking further",
                         discovered_pmc_id,
                     )
                     if abstract_only is None:
-                        abstract_only = FullTextResult(source="europepmc", html=html)
+                        abstract_only = FullTextResult(
+                            source="europepmc", html=html, content_kind="abstract"
+                        )
             except Exception:
                 logger.debug(
                     "Europe PMC discovery failed for doi=%s pmid=%s",
@@ -219,7 +234,7 @@ class FullTextService:
             logger.info("PDF available from Europe PMC render: %s", pdf_render_url)
             result = FullTextResult(source="europepmc_pdf", pdf_url=pdf_render_url)
             self._download_and_cache_pdf(pdf_render_url, cache_id, result)
-            return result
+            return self._with_abstract_fallback(result, abstract_only)
 
         # Tier 2: Unpaywall
         if doi:
@@ -228,7 +243,7 @@ class FullTextService:
                 logger.info("PDF URL found via Unpaywall for DOI %s", doi)
                 result = FullTextResult(source="unpaywall", pdf_url=pdf_url)
                 self._download_and_cache_pdf(pdf_url, cache_id, result)
-                return result
+                return self._with_abstract_fallback(result, abstract_only)
             except Exception:
                 logger.debug("Unpaywall failed for DOI %s", doi, exc_info=True)
 
@@ -244,14 +259,44 @@ class FullTextService:
             web_url = f"{PUBMED_BASE}/{pmid}/"
 
         if abstract_only is not None:
-            abstract_only.web_url = web_url
-            logger.info("No full text found — returning the abstract-only rendering")
+            if web_url:
+                abstract_only.web_url = web_url
+            logger.warning(
+                "No full text found for doi=%s pmid=%s — returning the abstract only", doi, pmid
+            )
             return abstract_only
 
         if web_url:
             return FullTextResult(source="doi" if doi else "pubmed", web_url=web_url)
 
         raise FullTextError("No identifiers provided")
+
+    def _with_abstract_fallback(
+        self,
+        result: FullTextResult,
+        abstract_only: FullTextResult | None,
+    ) -> FullTextResult:
+        """Carry a held-back abstract onto a result that has no text of its own.
+
+        A PDF tier counts as a success as soon as it has a URL — the download
+        may have failed, or there may have been no cache to extract from.
+        Returning that alone would discard an abstract already in hand and
+        leave the reader a bare link, which is the outcome the whole fallback
+        exists to prevent. The link stays on the result either way.
+
+        Args:
+            result: The winning tier's result, modified in place.
+            abstract_only: A body-less JATS rendering seen earlier, if any.
+
+        Returns:
+            ``result``, with the abstract merged in when it had no text.
+        """
+        if abstract_only is None or result.html:
+            return result
+        result.html = abstract_only.html
+        result.content_kind = "abstract"
+        logger.info("PDF yielded no text — pairing the link with the abstract-only rendering")
+        return result
 
     def _try_known_sources(
         self,
@@ -264,11 +309,15 @@ class FullTextService:
         Priority: xml (JATS) > pdf > html.
 
         Returns:
-            A tuple of ``(result, abstract_only)``. ``result`` is the full
-            text when one was found, else ``None``. ``abstract_only`` holds a
-            body-less JATS rendering if one was seen — worth showing when
-            every other tier comes up empty, but never worth stopping on,
-            since the PDF behind it usually has the whole article.
+            A tuple of ``(result, abstract_only)``. ``result`` is the best
+            source that worked — JATS full text, a PDF, or a link — or
+            ``None`` when every entry failed; only a ``content_kind`` of
+            ``"fulltext"`` means article text was actually retrieved.
+            ``abstract_only`` holds a body-less JATS rendering if one was
+            seen. It is never worth stopping on, because a publisher that
+            serves an abstract-only JATS (medRxiv does) generally serves the
+            complete article as a PDF alongside it; the caller merges it back
+            in via :meth:`_with_abstract_fallback` if nothing better turns up.
         """
         priority = {"xml": 0, "pdf": 1, "html": 2}
         sorted_sources = sorted(
@@ -291,11 +340,16 @@ class FullTextService:
                             entry.source,
                         )
                         if abstract_only is None:
-                            abstract_only = FullTextResult(source=entry.source, html=html)
+                            abstract_only = FullTextResult(
+                                source=entry.source, html=html, content_kind="abstract"
+                            )
                         continue
                     logger.info("Full text from JATS XML (%s)", entry.source)
                     self._cache_html(html, cache_id)
-                    return FullTextResult(source=entry.source, html=html), abstract_only
+                    return (
+                        FullTextResult(source=entry.source, html=html, content_kind="fulltext"),
+                        abstract_only,
+                    )
                 elif entry.format == "pdf":
                     logger.info("PDF available from %s", entry.source)
                     result = FullTextResult(source=entry.source, pdf_url=entry.url)
@@ -318,15 +372,27 @@ class FullTextService:
     # --- Cache helpers --------------------------------------------------------
 
     def _check_cache(self, cache_id: str) -> FullTextResult | None:
-        """Return a cached FullTextResult if available on disk."""
+        """Return a cached FullTextResult if available on disk.
+
+        Only HTML that came from a JATS ``<body>`` is ever written to the
+        cache, so a cached HTML hit is always full text. Text extracted from
+        a PDF is not cached — it is re-derived here from the cached PDF, so a
+        cache hit carries the same ``html`` and ``content_kind`` as the
+        original retrieval instead of silently dropping to a bare file path.
+        Re-extraction is local CPU work on a file already on disk; caching the
+        output instead would make it indistinguishable from real full text on
+        the next hit.
+        """
         html = self.cache.get_html(cache_id)
         if html:
             logger.info("Cache hit (HTML) for %s", cache_id)
-            return FullTextResult(source="cached", html=html)
+            return FullTextResult(source="cached", html=html, content_kind="fulltext")
         pdf_path = self.cache.get_pdf(cache_id)
         if pdf_path:
             logger.info("Cache hit (PDF) for %s", cache_id)
-            return FullTextResult(source="cached", file_path=pdf_path)
+            result = FullTextResult(source="cached", file_path=pdf_path)
+            self._attach_pdf_text(pdf_path, result)
+            return result
         return None
 
     def _cache_html(self, html: str, cache_id: str | None) -> None:
@@ -345,11 +411,19 @@ class FullTextService:
     ) -> None:
         """Download a PDF and save it to the disk cache.
 
-        On success, sets ``result.file_path`` to the cached file.
+        On success, sets ``result.file_path`` to the cached file and — when
+        ``convert_pdfs`` is on and a backend is available — ``result.html``
+        and ``result.content_kind`` from the PDF's extracted text.
         On failure (network error or invalid PDF), leaves result unchanged
         so the caller can still use ``result.pdf_url`` as a fallback.
         """
         if not cache_id or not self.cache:
+            if self.convert_pdfs:
+                logger.info(
+                    "convert_pdfs is on but no identifier was given — a PDF is only "
+                    "extracted once cached, so %s is left as a URL",
+                    pdf_url,
+                )
             return
         try:
             resp = self._http_get(pdf_url)
@@ -369,26 +443,71 @@ class FullTextService:
     def _attach_pdf_text(self, pdf_path: str, result: FullTextResult) -> None:
         """Extract a cached PDF's text into ``result.html``.
 
-        Best-effort: a missing ``bmlib[pdf]`` extra or an unreadable PDF
-        leaves the result untouched, so the caller still has the PDF itself.
-        ``result.pdf_url`` and ``result.file_path`` are deliberately left in
-        place — extracted text recovers the prose but not figures, tables or
-        layout, so the original stays worth offering.
+        A no-op when ``convert_pdfs`` is off or ``result.html`` is already
+        populated — an earlier tier's text is never overwritten.
+
+        Otherwise best-effort: a missing ``bmlib[pdf]`` extra or an unreadable
+        PDF leaves the result untouched, so the caller still has the PDF
+        itself. ``result.pdf_url`` and ``result.file_path`` are deliberately
+        left in place — extracted text recovers the prose but not figures,
+        tables or layout, so the original stays worth offering.
+
+        Every way this can come up empty is logged at WARNING: a scanned PDF
+        that yields nothing is invisible otherwise, and a partial extraction
+        must not be mistaken for a whole article.
         """
         if not self.convert_pdfs or result.html:
             return
         try:
-            conversion = get_converter().convert(Path(pdf_path))
+            converter = get_converter()
+        except ImportError as e:
+            # Only constructing the backend can raise this, and only for a
+            # missing extra — but report what was actually raised rather than
+            # asserting the cause, so a broken PyMuPDF install is not
+            # misreported as an uninstalled one.
+            if not self._pdf_extra_warned:
+                logger.warning(
+                    "convert_pdfs is enabled but no PDF backend is usable (%s); "
+                    "PDFs will be returned as links only. Install bmlib[pdf].",
+                    e,
+                )
+                self._pdf_extra_warned = True
+            return
+
+        try:
+            # convert() reports backend failures in its result rather than
+            # raising; this guards the unexpected (a missing cache file, an
+            # unreadable one, a bug in render_html).
+            conversion = converter.convert(Path(pdf_path))
             html = render_html(conversion)
-        except ImportError:
-            logger.debug("PDF text extraction unavailable — install bmlib[pdf]")
-            return
         except Exception:
-            logger.debug("PDF text extraction failed for %s", pdf_path, exc_info=True)
+            logger.warning("PDF text extraction failed for %s", pdf_path, exc_info=True)
             return
-        if html:
-            result.html = html
-            logger.info("Extracted %d chars of text from PDF %s", conversion.char_count, pdf_path)
+
+        if not conversion.success:
+            logger.warning(
+                "PDF text extraction failed for %s: %s", pdf_path, conversion.error_message
+            )
+            return
+        if not html:
+            logger.warning(
+                "PDF %s yielded no extractable text over %d page(s) — likely a scan; %s",
+                pdf_path,
+                conversion.page_count,
+                conversion.warnings[:3] or "no warnings reported",
+            )
+            return
+        if not conversion.is_complete:
+            logger.warning(
+                "PDF %s extracted only %d of %d pages — the attached text is incomplete",
+                pdf_path,
+                conversion.converted_pages,
+                conversion.page_count,
+            )
+
+        result.html = html
+        result.content_kind = "extracted"
+        logger.info("Extracted %d chars of text from PDF %s", conversion.char_count, pdf_path)
 
     # --- Fetch helpers --------------------------------------------------------
 

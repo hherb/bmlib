@@ -22,7 +22,11 @@ Mirrors the Swift BioMedLit library's JATSModels and FullTextResult types.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
+
+# What a :attr:`FullTextResult.html` payload actually is. See the field's
+# comment on :class:`FullTextResult` for what each value promises.
+ContentKind = Literal["none", "abstract", "extracted", "fulltext"]
 
 
 @dataclass
@@ -148,10 +152,18 @@ class JATSArticle:
     figures: list[JATSFigureInfo]
     tables: list[JATSTableInfo]
     references: list[JATSReferenceInfo]
-    # Whether the document carried an <body> with actual prose. Some
-    # publishers (medRxiv among them) serve a JATS document made of <front>
-    # and <back> only; it parses cleanly but holds nothing beyond the
-    # abstract, so callers must not mistake it for full text.
+    # True when <body> held at least one non-empty <p> inside a <sec> — that
+    # is, body prose that survived parsing. Some publishers (medRxiv among
+    # them) serve a JATS document made of <front> and <back> only; it parses
+    # cleanly but holds nothing beyond the abstract, so callers must not
+    # mistake it for full text.
+    #
+    # Two consequences of tracking what survived parsing rather than what the
+    # XML contained. A <p> sitting directly in <body> with no enclosing <sec>
+    # is dropped by the handler and so does not count — consistent with the
+    # rendered HTML, which has no body prose either, but it means a valid
+    # article of that shape reads as abstract-only. And the default is False,
+    # so a hand-built JATSArticle reports "no body" unless it says otherwise.
     has_body: bool = False
 
 
@@ -201,3 +213,18 @@ class FullTextResult:
     pdf_url: str | None = None
     web_url: str | None = None
     file_path: str | None = None
+    # What ``html`` actually holds. The service can tell an article body from
+    # an abstract and from PDF-extracted prose, so it says which rather than
+    # leaving every case looking alike:
+    #
+    #   "fulltext"  — a JATS document that had a <body>
+    #   "abstract"  — a body-less JATS rendering, returned only as a last
+    #                 resort; there is no article text in it
+    #   "extracted" — text recovered from a PDF. Prose only: no figures,
+    #                 tables or layout, and possibly not every page, so
+    #                 ``pdf_url``/``file_path`` stay worth offering
+    #   "none"      — ``html`` is None
+    #
+    # Callers that must not analyse an abstract as if it were an article
+    # should branch on this rather than on ``html`` being set.
+    content_kind: ContentKind = "none"

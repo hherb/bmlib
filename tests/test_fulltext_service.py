@@ -23,6 +23,7 @@ import pytest
 
 from bmlib.fulltext.cache import FullTextCache
 from bmlib.fulltext.models import FullTextSourceEntry
+from bmlib.fulltext.pdf_converter import ConversionResult
 from bmlib.fulltext.service import FullTextError, FullTextService, _sanitize_identifier
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -644,3 +645,324 @@ class TestBodylessJATS:
 
         assert result.html is not None
         assert "Why More Doctors" in result.html
+        assert result.content_kind == "abstract"
+
+    def test_last_resort_carries_the_resolved_link(self, tmp_path):
+        """The abstract is worth more paired with a link than alone."""
+        mock_xml = MagicMock()
+        mock_xml.status_code = 200
+        mock_xml.content = (FIXTURES / "abstract_only_article.xml").read_bytes()
+
+        xml_only = [
+            FullTextSourceEntry(
+                url="https://medrxiv.org/paper.source.xml", format="xml", source="medrxiv"
+            ),
+        ]
+        mock_search = MagicMock()
+        mock_search.status_code = 200
+        mock_search.json.return_value = {"resultList": {"result": []}}
+
+        service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
+        with patch.object(service, "_http_get", side_effect=[mock_xml, mock_search, mock_search]):
+            result = service.fetch_fulltext(
+                fulltext_sources=xml_only, doi="10.1234/test", identifier="10.1234/test"
+            )
+
+        assert result.web_url == "https://doi.org/10.1234/test"
+
+    def test_last_resort_abstract_is_never_cached(self, tmp_path):
+        """Caching it would make the abstract permanent for this identifier."""
+        mock_xml = MagicMock()
+        mock_xml.status_code = 200
+        mock_xml.content = (FIXTURES / "abstract_only_article.xml").read_bytes()
+
+        xml_only = [
+            FullTextSourceEntry(
+                url="https://medrxiv.org/paper.source.xml", format="xml", source="medrxiv"
+            ),
+        ]
+        mock_search = MagicMock()
+        mock_search.status_code = 200
+        mock_search.json.return_value = {"resultList": {"result": []}}
+
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(service, "_http_get", side_effect=[mock_xml, mock_search, mock_search]):
+            service.fetch_fulltext(
+                fulltext_sources=xml_only, doi="10.1234/test", identifier="10.1234/test"
+            )
+
+        assert cache.get_html(_sanitize_identifier("10.1234/test")) is None
+
+    def test_abstract_is_merged_into_a_pdf_that_yielded_no_text(self, tmp_path):
+        """A PDF entry counts as success on its URL alone.
+
+        When the download fails there is no text and no file — returning that
+        bare link would discard an abstract already in hand.
+        """
+        mock_xml = MagicMock()
+        mock_xml.status_code = 200
+        mock_xml.content = (FIXTURES / "abstract_only_article.xml").read_bytes()
+
+        dead_pdf = MagicMock()
+        dead_pdf.status_code = 404
+        dead_pdf.content = b""
+
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(service, "_http_get", side_effect=[mock_xml, dead_pdf]):
+            result = service.fetch_fulltext(
+                fulltext_sources=self._sources(), identifier="10.1234/test"
+            )
+
+        assert result.pdf_url == "https://medrxiv.org/paper.full.pdf"
+        assert result.file_path is None
+        assert result.html is not None
+        assert "Why More Doctors" in result.html
+        assert result.content_kind == "abstract"
+
+
+class TestBodylessEuropePMC:
+    """Europe PMC serves body-less JATS too, on both of its paths.
+
+    The known-PMC-ID tier additionally has to mark the attempt as failed so
+    the free-PDF lookup below it still runs.
+    """
+
+    @staticmethod
+    def _bodyless() -> MagicMock:
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "abstract_only_article.xml").read_bytes()
+        return resp
+
+    @staticmethod
+    def _search(pmcid: str | None = None, pdf_url: str | None = None) -> MagicMock:
+        hit: dict = {}
+        if pmcid:
+            hit["pmcid"] = pmcid
+            hit["inEPMC"] = "Y"
+        if pdf_url:
+            hit["fullTextUrlList"] = {
+                "fullTextUrl": [{"documentStyle": "pdf", "availability": "Free", "url": pdf_url}]
+            }
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"resultList": {"result": [hit] if hit else []}}
+        return resp
+
+    def test_known_pmc_id_falls_through_to_the_free_pdf(self, tmp_path):
+        """A body-less XML must not shadow the PDF render URL beneath it."""
+        pdf = MagicMock()
+        pdf.status_code = 200
+        pdf.content = b"%PDF-1.4 fake pdf content"
+
+        service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
+        with patch.object(
+            service,
+            "_http_get",
+            side_effect=[
+                self._bodyless(),
+                self._search(pdf_url="https://europepmc.org/x.pdf"),
+                pdf,
+            ],
+        ):
+            result = service.fetch_fulltext(
+                pmc_id="PMC123", doi="10.1234/test", identifier="10.1234/test"
+            )
+
+        assert result.source == "europepmc_pdf"
+        assert result.pdf_url == "https://europepmc.org/x.pdf"
+
+    def test_known_pmc_id_body_less_xml_is_not_cached(self, tmp_path):
+        """It must not become the permanent answer for this identifier."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        with patch.object(
+            service, "_http_get", side_effect=[self._bodyless(), self._search(), self._search()]
+        ):
+            result = service.fetch_fulltext(
+                pmc_id="PMC123", doi="10.1234/test", identifier="10.1234/test"
+            )
+
+        assert cache.get_html(_sanitize_identifier("10.1234/test")) is None
+        assert result.content_kind == "abstract"
+
+    def test_discovered_pmc_id_body_less_xml_is_not_full_text(self, tmp_path):
+        """The discovery path needs the same guard as the known-ID path."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        # search (discovers PMC999) -> body-less XML -> unpaywall miss
+        unpaywall = MagicMock()
+        unpaywall.status_code = 404
+        with patch.object(
+            service,
+            "_http_get",
+            side_effect=[self._search(pmcid="PMC999"), self._bodyless(), unpaywall],
+        ):
+            result = service.fetch_fulltext(doi="10.1234/test", identifier="10.1234/test")
+
+        assert result.content_kind == "abstract"
+        assert cache.get_html(_sanitize_identifier("10.1234/test")) is None
+        assert result.web_url == "https://doi.org/10.1234/test"
+
+
+class TestPDFTextExtraction:
+    """The seam that carries a PDF's extracted text into ``result.html``.
+
+    ``render_html`` is unit-tested in ``test_pdf_converter``; what matters
+    here is that ``fetch_fulltext`` actually reaches it, honours
+    ``convert_pdfs``, marks what it produced, and survives a backend that is
+    absent or fails.
+    """
+
+    PDF_MAGIC = b"%PDF-1.4 fake pdf content"
+
+    @staticmethod
+    def _sources() -> list[FullTextSourceEntry]:
+        return [
+            FullTextSourceEntry(
+                url="https://medrxiv.org/paper.full.pdf", format="pdf", source="medrxiv"
+            ),
+        ]
+
+    @staticmethod
+    def _conversion(text: str = "Extracted article prose from the PDF.") -> ConversionResult:
+        return ConversionResult(
+            success=True,
+            text=text,
+            format="plaintext",
+            page_count=1,
+            converted_pages=1,
+            char_count=len(text),
+            page_texts=[text],
+        )
+
+    def _stub_converter(self, conversion: ConversionResult) -> MagicMock:
+        converter = MagicMock()
+        converter.convert.return_value = conversion
+        return converter
+
+    def _fetch(self, tmp_path, get_converter, **service_kwargs):
+        pdf = MagicMock()
+        pdf.status_code = 200
+        pdf.content = self.PDF_MAGIC
+        service = FullTextService(
+            email="test@example.com", cache=FullTextCache(cache_dir=tmp_path), **service_kwargs
+        )
+        with (
+            patch.object(service, "_http_get", return_value=pdf),
+            patch("bmlib.fulltext.service.get_converter", get_converter),
+        ):
+            return service, service.fetch_fulltext(
+                fulltext_sources=self._sources(), identifier="10.1234/test"
+            )
+
+    def test_text_is_attached_and_the_original_survives(self, tmp_path):
+        """Extraction recovers prose, not figures — the PDF stays on offer."""
+        _, result = self._fetch(
+            tmp_path, MagicMock(return_value=self._stub_converter(self._conversion()))
+        )
+
+        assert "Extracted article prose" in (result.html or "")
+        assert result.content_kind == "extracted"
+        assert result.pdf_url == "https://medrxiv.org/paper.full.pdf"
+        assert result.file_path is not None
+
+    def test_convert_pdfs_false_opts_out(self, tmp_path):
+        get_converter = MagicMock(return_value=self._stub_converter(self._conversion()))
+        _, result = self._fetch(tmp_path, get_converter, convert_pdfs=False)
+
+        assert result.html is None
+        assert result.content_kind == "none"
+        assert result.file_path is not None
+        get_converter.assert_not_called()
+
+    def test_a_missing_pdf_extra_is_survivable(self, tmp_path):
+        """Without bmlib[pdf] the caller still gets the PDF itself."""
+        _, result = self._fetch(
+            tmp_path, MagicMock(side_effect=ImportError("Install with: pip install bmlib[pdf]"))
+        )
+
+        assert result.html is None
+        assert result.file_path is not None
+
+    def test_a_failed_conversion_leaves_no_html(self, tmp_path):
+        """convert() reports failure in its result rather than raising."""
+        failed = ConversionResult(
+            success=False,
+            text="",
+            format="plaintext",
+            page_count=3,
+            converted_pages=0,
+            char_count=0,
+            error_message="Invalid or corrupted PDF",
+        )
+        _, result = self._fetch(tmp_path, MagicMock(return_value=self._stub_converter(failed)))
+
+        assert result.html is None
+        assert result.content_kind == "none"
+
+    def test_a_scanned_pdf_yielding_no_text_is_reported(self, tmp_path, caplog):
+        """An image-only scan extracts cleanly to nothing — say so."""
+        empty = ConversionResult(
+            success=True,
+            text="",
+            format="plaintext",
+            page_count=2,
+            converted_pages=2,
+            char_count=0,
+            warnings=["Page 1: No extractable text", "Page 2: No extractable text"],
+        )
+        with caplog.at_level("WARNING"):
+            _, result = self._fetch(tmp_path, MagicMock(return_value=self._stub_converter(empty)))
+
+        assert result.html is None
+        assert "no extractable text" in caplog.text.lower()
+
+    def test_a_partial_extraction_is_flagged(self, tmp_path, caplog):
+        """Text covering half the pages must not pass for a whole article."""
+        partial = ConversionResult(
+            success=True,
+            text="Only the first page came through here.",
+            format="plaintext",
+            page_count=4,
+            converted_pages=1,
+            char_count=38,
+            page_texts=["Only the first page came through here."],
+        )
+        with caplog.at_level("WARNING"):
+            _, result = self._fetch(tmp_path, MagicMock(return_value=self._stub_converter(partial)))
+
+        assert result.html is not None
+        assert "incomplete" in caplog.text.lower()
+
+    def test_a_cache_hit_still_carries_the_extracted_text(self, tmp_path):
+        """Regression: the text used to be produced once and then lost.
+
+        Only the PDF bytes are cached, so a second fetch returned a bare
+        ``file_path`` and the inline article text silently disappeared the
+        moment a paper was viewed twice.
+        """
+        get_converter = MagicMock(return_value=self._stub_converter(self._conversion()))
+        service, first = self._fetch(tmp_path, get_converter)
+
+        with patch("bmlib.fulltext.service.get_converter", get_converter):
+            second = service.fetch_fulltext(
+                fulltext_sources=self._sources(), identifier="10.1234/test"
+            )
+
+        assert second.source == "cached"
+        assert second.html == first.html
+        assert second.content_kind == "extracted"
+        assert second.file_path is not None
+
+    def test_cached_jats_html_is_reported_as_full_text(self, tmp_path):
+        """Only body-carrying JATS is ever written to the HTML cache."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_html("<h1>Article</h1>", _sanitize_identifier("10.1234/test"))
+        service = FullTextService(email="test@example.com", cache=cache)
+
+        result = service.fetch_fulltext(identifier="10.1234/test")
+
+        assert result.content_kind == "fulltext"

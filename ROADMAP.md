@@ -55,7 +55,7 @@ hold the full story.
 | ✅ Done | Tiered retrieval | Caller-supplied sources → Europe PMC XML → Europe PMC PDF → Unpaywall → DOI/PubMed URL, with disk-based caching |
 | ✅ Done | JATS XML parser | JATS → structured `JATSArticle` data; external entity loading disabled |
 | ✅ Done | PDF → text conversion | Pluggable `PDFConverter` with a PyMuPDF backend behind the optional `bmlib[pdf]` extra (0.4.0) |
-| ⬜ Planned | Wire PDF conversion into `FullTextService` | The converter is standalone; the service downloads and caches PDF bytes but never converts them |
+| ✅ Done | Wire PDF conversion into `FullTextService` | A retrieved PDF is extracted into `FullTextResult.html` via `render_html()`; `convert_pdfs=False` opts out (unreleased) |
 | ⬜ Planned | Rate limiting | The package throttles nothing — bulk callers must self-throttle against Europe PMC and Unpaywall |
 | **Quality & maintenance** | | |
 | ✅ Done | Test suite | 562 tests + 2 skipped; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services |

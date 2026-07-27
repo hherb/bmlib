@@ -61,31 +61,27 @@ class QualityManager:
         assessor_model: str,
         template_engine: TemplateEngine | None = None,
     ) -> None:
+        # Sampling is left to each agent's own defaults (0.1/1024 and
+        # 0.2/1024), which is where the reasoning for those numbers lives.
+        # The classifier's budget is far above the ~50 tokens its JSON needs
+        # because small local models preface it with commentary despite being
+        # asked for JSON alone: a tight ceiling truncates that preamble and
+        # loses the JSON with it, leaving every paper UNCLASSIFIED.
         self.classifier = StudyClassifier(
             llm=llm,
             model=classifier_model,
             template_engine=template_engine,
-            temperature=0.1,
-            # The classification JSON is barely 50 tokens, but small local
-            # models tend to preface it with commentary despite being asked
-            # for JSON alone. A tight ceiling truncates that preamble and
-            # loses the JSON with it, so every paper falls back to
-            # UNCLASSIFIED. Matching the assessor's budget costs little and
-            # leaves room for the chatter.
-            max_tokens=1024,
         )
         self.assessor = QualityAgent(
             llm=llm,
             model=assessor_model,
             template_engine=template_engine,
-            temperature=0.2,
-            max_tokens=1024,
         )
 
     def assess(
         self,
-        title: str,
-        abstract: str,
+        title: str | None,
+        abstract: str | None,
         *,
         publication_types: Sequence[str] = (),
         filter_settings: QualityFilter | None = None,
@@ -93,8 +89,11 @@ class QualityManager:
         """Run the tiered assessment pipeline for a single paper.
 
         Args:
-            title: Paper title.
-            abstract: Paper abstract.
+            title: Paper title. May be ``None``.
+            abstract: Paper abstract. May be ``None`` — sources omit it often
+                enough, and a nullable database column delivers the gap that
+                way. The LLM tiers work around it rather than raising, so one
+                gappy record cannot abort a batch.
             publication_types: PubMed publication types (for Tier 1).
             filter_settings: Controls which tiers are enabled.
         """

@@ -261,3 +261,82 @@ class TestRenderHTML:
             char_count=53,
         )
         assert "Only the joined text" in render_html(result)
+
+    def test_furniture_needs_a_majority_of_pages(self):
+        """Pins REPEATED_LINE_RATIO from both sides.
+
+        Over ten pages the threshold is six. A running head on six pages is
+        furniture; a sentence that happens to recur on five is not.
+        """
+        pages = []
+        for n in range(10):
+            lines = []
+            if n < 6:  # six of ten — at the threshold, so furniture
+                lines.append("Running head on most pages")
+            if n < 5:  # five of ten — below it, so prose
+                lines.append("Recurring methods note.")
+            lines.append(f"Unique sentence number {n}.")
+            pages.append("\n".join(lines))
+        html = render_html(self._result(pages))
+
+        assert "Running head on most pages" not in html
+        assert "Recurring methods note." in html
+
+    def test_three_pages_is_enough_to_strip_furniture(self):
+        """Pins REPEATED_LINE_MIN_PAGES at exactly its boundary.
+
+        Two pages are covered by ``test_keeps_repeats_in_short_documents``;
+        three is where the rule starts applying.
+        """
+        pages = [f"Watermark line\nUnique sentence number {n}." for n in range(3)]
+        html = render_html(self._result(pages))
+
+        assert "Watermark line" not in html
+        for n in range(3):
+            assert f"Unique sentence number {n}." in html
+
+    def test_an_overlong_line_does_not_set_the_wrap_width(self):
+        """Pins the 90th-percentile estimate against using the maximum.
+
+        One merged or unwrapped line is an outlier. Taken as the column
+        width it would put every real line "short", breaking each onto its
+        own paragraph.
+        """
+        wide = "W" * 200
+        full = "F" * 70
+        short = "S" * 30
+        lines = [wide] + [full] * 4 + [short] + [full] * 4 + [short]
+        html = render_html(self._result(["\n".join(lines)]))
+
+        assert html.count("<p>") == 2
+
+    def test_a_minority_of_full_width_lines_still_reflows(self):
+        """Regression: the document used to collapse into one paragraph.
+
+        A reference list or table leaves few full-width lines, so the
+        percentile estimate lands on a stub, nothing falls short of it, and
+        every line was joined into a single block.
+        """
+        lines = ["W" * 90] * 5 + ["short entry"] * 95
+        html = render_html(self._result(["\n".join(lines)]))
+
+        assert html.count("<p>") > 50
+
+    def test_a_line_well_short_of_the_column_ends_a_paragraph(self):
+        """Pins PARAGRAPH_BREAK_RATIO.
+
+        A last line rarely stops just a character or two early, so the
+        threshold has to sit well below the column width — but high enough
+        that a line at 70% of it still reads as the end of a paragraph.
+        """
+        full = "F" * 100
+        seventy_percent = "S" * 70
+        lines = [full] * 4 + [seventy_percent] + [full] * 4 + [seventy_percent]
+        html = render_html(self._result(["\n".join(lines)]))
+
+        assert html.count("<p>") == 2
+
+    def test_a_page_of_pure_furniture_renders_nothing(self):
+        """Every line stripped leaves no prose to render, not a stray tag."""
+        pages = ["Watermark\nRunning head"] * 3
+        assert render_html(self._result(pages)) == ""

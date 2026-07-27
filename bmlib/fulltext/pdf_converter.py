@@ -49,18 +49,26 @@ logger = logging.getLogger(__name__)
 CONVERTER_PYMUPDF = "pymupdf"
 DEFAULT_CONVERTER = CONVERTER_PYMUPDF
 
-# A line recurring on this share of pages is furniture — a running head,
-# footer, or watermark — rather than article text. Publisher watermarks
-# (medRxiv stamps seven fragments onto every page) are stripped by this
-# frequency rule alone, so no per-publisher rules are needed.
+# A line recurring on at least this share of pages is furniture — a running
+# head, footer, or watermark — rather than article text. Publisher watermarks
+# are stripped by this frequency rule alone, so no per-publisher rules are
+# needed. Note this is a floor, not the test: ``ceil()`` and the MIN_PAGES
+# floor below push the effective share higher on short documents (100% at
+# 3 pages, 75% at 4), converging on 0.6 as the page count grows.
 REPEATED_LINE_RATIO = 0.6
 # Below this many pages the rule cannot tell furniture from a short article
-# that simply repeats a phrase, so nothing is stripped.
+# that simply repeats a phrase, so nothing is stripped. Doubles as the floor
+# on the occurrence count itself: nothing counts as furniture on fewer than
+# this many pages, whatever the ratio works out to.
 REPEATED_LINE_MIN_PAGES = 3
 # A line shorter than this fraction of the body's typical width ends a
 # paragraph — PDF text wraps hard at the column edge, so a short line is
 # where the author, not the layout, stopped.
 PARAGRAPH_BREAK_RATIO = 0.85
+# Reflow needs the column's wrap width, and takes it from the widest lines so
+# that headings and stubs do not drag the estimate down. Below this many lines
+# there is no distribution worth a percentile, so the longest line is used.
+PARAGRAPH_WIDTH_MIN_LINES = 10
 
 
 @dataclass
@@ -78,9 +86,12 @@ class ConversionResult:
     converter_version: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
     error_message: str | None = None
-    # Per-page text, kept alongside the joined ``text`` because page
-    # boundaries are what let :func:`render_html` recognise repeated
-    # furniture. Empty when a backend cannot report pages separately.
+    # Text of each page that yielded any, in order — kept alongside the joined
+    # ``text`` because page boundaries are what let :func:`render_html`
+    # recognise repeated furniture. A page with no extractable text (an
+    # image-only scan) contributes no entry, so this is NOT indexable by page
+    # number and its length can be less than ``page_count``. Empty when a
+    # backend cannot report pages separately.
     page_texts: list[str] = field(default_factory=list)
 
     @property
@@ -306,6 +317,20 @@ def _repeated_lines(page_texts: list[str]) -> set[str]:
     return {line for line, seen_on in counts.items() if seen_on >= threshold}
 
 
+def _split_on_short_lines(lines: list[str], break_below: float) -> list[str]:
+    """Join consecutive lines, ending a paragraph after each short line."""
+    paragraphs: list[str] = []
+    current: list[str] = []
+    for line in lines:
+        current.append(line)
+        if len(line) < break_below:
+            paragraphs.append(" ".join(current))
+            current = []
+    if current:
+        paragraphs.append(" ".join(current))
+    return paragraphs
+
+
 def _group_paragraphs(lines: list[str]) -> list[str]:
     """Join hard-wrapped PDF lines back into paragraphs.
 
@@ -317,21 +342,20 @@ def _group_paragraphs(lines: list[str]) -> list[str]:
     if not lines:
         return []
 
-    # The typical full-width line, measured from the longest lines present so
-    # that headings and stub lines do not drag the estimate down.
+    # Estimate the column's wrap width. Sorted descending, index n//10 is the
+    # 90th percentile: it discards the longest 10% so that a merged line or a
+    # long URL cannot set the width on its own.
     widths = sorted((len(line) for line in lines), reverse=True)
-    typical_width = widths[len(widths) // 10] if len(widths) >= 10 else widths[0]
-    break_below = typical_width * PARAGRAPH_BREAK_RATIO
+    estimate = widths[len(widths) // 10] if len(widths) >= PARAGRAPH_WIDTH_MIN_LINES else widths[0]
+    paragraphs = _split_on_short_lines(lines, estimate * PARAGRAPH_BREAK_RATIO)
 
-    paragraphs: list[str] = []
-    current: list[str] = []
-    for line in lines:
-        current.append(line)
-        if len(line) < break_below:
-            paragraphs.append(" ".join(current))
-            current = []
-    if current:
-        paragraphs.append(" ".join(current))
+    # That estimate assumes at least a tenth of the lines run full width. When
+    # they do not — a reference list, a table, a two-column extraction — it
+    # lands on a stub line, no line falls short of it, and the document
+    # collapses into a single paragraph. The longest line is the better width
+    # in that case, so retry with it rather than return one giant block.
+    if len(paragraphs) == 1 and estimate < widths[0]:
+        paragraphs = _split_on_short_lines(lines, widths[0] * PARAGRAPH_BREAK_RATIO)
     return paragraphs
 
 

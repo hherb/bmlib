@@ -493,10 +493,15 @@ Cohort designs precede case-control in the priority list, so a paper tagged with
 
 ```python
 class StudyClassifier(BaseAgent):
-    def classify(self, title: str, abstract: str) -> QualityAssessment
+    def __init__(self, *args, temperature: float = 0.1, max_tokens: int = 1024, **kwargs)
+    def classify(self, title: str | None, abstract: str | None) -> QualityAssessment
 ```
 
-The `StudyClassifier` (subclass of `BaseAgent`) uses a cheap/fast LLM to classify study design from title + abstract. The abstract is truncated to `MAX_ABSTRACT_CHARS` (3000); the call uses `temperature=0.1`, `max_tokens=256`. Any exception — including JSON-repair failure after retries — is logged and yields `QualityAssessment.unclassified()` rather than propagating.
+The `StudyClassifier` (subclass of `BaseAgent`) uses a cheap/fast LLM to classify study design from title + abstract. The abstract is truncated to `MAX_ABSTRACT_CHARS` (3000). Any exception — including JSON-repair failure after retries — is logged and yields `QualityAssessment.unclassified()` rather than propagating.
+
+Either argument may be `None` — sources omit abstracts often enough, and a nullable database column delivers the gap that way. A missing abstract is worked around rather than raised, so one gappy record cannot abort a caller's batch. When *both* are missing there is nothing to classify, so no LLM call is made and `QualityAssessment.unclassified()` is returned: an empty prompt does not produce an empty answer, and a fabricated classification is indistinguishable downstream from a real one.
+
+The classifier's budget is far above the ~50 tokens its JSON needs because small local models preface it with commentary despite being asked for JSON alone; a tight ceiling truncates the preamble and loses the JSON with it, leaving every paper `UNCLASSIFIED`.
 
 It returns structured JSON with:
 
@@ -527,11 +532,11 @@ The `QualityAgent` (subclass of `BaseAgent`) uses a capable LLM for comprehensiv
 - Methodological strengths and limitations
 - Confidence score
 
-The abstract is truncated to `MAX_ABSTRACT_CHARS` (4000); the call uses `temperature=0.2`, `max_tokens=1024`. The result carries `assessment_tier=3` and `extraction_method="llm_deep_assessment"`. As with Tier 2, any exception yields `QualityAssessment.unclassified()`.
+The abstract is truncated to `MAX_ABSTRACT_CHARS` (4000). The result carries `assessment_tier=3` and `extraction_method="llm_deep_assessment"`. As with Tier 2, any exception yields `QualityAssessment.unclassified()`, either argument may be `None`, and both missing short-circuits to `unclassified()` without an LLM call.
 
 This tier is the most expensive and should be used selectively.
 
-Both agents inherit `BaseAgent.__init__(llm, model, template_engine=None, temperature=0.3, max_tokens=4096)`; `QualityManager` overrides the temperature and token limits shown above when constructing them.
+Both agents override `BaseAgent`'s generic `temperature=0.3, max_tokens=4096` with their own defaults — `0.1 / 1024` for the classifier, `0.2 / 1024` for the assessor. The defaults live on the agents rather than at the call site or in `QualityManager`, so they hold however an agent is constructed; a caller can still override either through the constructor.
 
 ---
 

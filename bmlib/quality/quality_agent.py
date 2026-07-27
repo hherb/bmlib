@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 
 from bmlib.agents.base import BaseAgent
+from bmlib.llm import LLMClient
 from bmlib.quality.data_models import (
     DESIGN_TO_TIER,
     STUDY_DESIGN_MAPPING,
@@ -36,6 +37,7 @@ from bmlib.quality.data_models import (
     QualityTier,
     StudyDesign,
 )
+from bmlib.templates import TemplateEngine
 
 logger = logging.getLogger(__name__)
 
@@ -94,23 +96,54 @@ Focus on THIS study's methodology, not studies it references."""
 
 
 class QualityAgent(BaseAgent):
-    """Tier 3 deep quality assessor."""
+    """Tier 3 deep quality assessor.
+
+    As with :class:`~bmlib.quality.study_classifier.StudyClassifier`, the
+    sampling defaults live here rather than at the call site so they hold
+    however the agent is constructed.
+    """
+
+    def __init__(
+        self,
+        llm: LLMClient,
+        model: str,
+        template_engine: TemplateEngine | None = None,
+        temperature: float = 0.2,
+        max_tokens: int = 1024,
+    ) -> None:
+        super().__init__(
+            llm=llm,
+            model=model,
+            template_engine=template_engine,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
 
     def assess(
         self,
-        title: str,
-        abstract: str,
+        title: str | None,
+        abstract: str | None,
     ) -> QualityAssessment:
         """Perform detailed quality assessment.
+
+        As in the Tier 2 classifier, either field may be ``None``: a gap is
+        something to work around, not a reason to abort the caller's batch.
+        With both missing there is nothing to assess and no LLM call is made.
 
         Returns a Tier 3 :class:`QualityAssessment`.  On failure,
         returns ``QualityAssessment.unclassified()``.
         """
-        # As in the Tier 2 classifier: a missing abstract is a gap to work
-        # around, not a reason to abort the caller's batch.
+        title = title or ""
+        abstract = abstract or ""
+        if not title.strip() and not abstract.strip():
+            # Left to itself the model would return fully-formed strengths and
+            # limitations for a paper it was told nothing about.
+            logger.warning("Cannot assess: both title and abstract are empty")
+            return QualityAssessment.unclassified()
+
         prompt = ASSESSMENT_USER_TEMPLATE.format(
-            title=title or "",
-            abstract=(abstract or "")[:MAX_ABSTRACT_CHARS],
+            title=title,
+            abstract=abstract[:MAX_ABSTRACT_CHARS],
         )
 
         try:
