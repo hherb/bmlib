@@ -255,3 +255,95 @@ class TestQualityManager:
         assert result.assessment_tier == 2
         mgr.classifier.classify.assert_called_once()
         mgr.assessor.assess.assert_not_called()
+
+
+class TestMissingAbstract:
+    """A record with no abstract must degrade, not raise.
+
+    Sources routinely omit abstracts, and the value arrives here as ``None``
+    rather than ``""`` when it came from a nullable database column. Both
+    LLM tiers slice the abstract to a character budget, so an unguarded
+    ``None`` raises ``TypeError`` mid-run and takes the whole scoring pass
+    down with it.
+    """
+
+    def _stub_llm(self):
+        from unittest.mock import MagicMock
+
+        llm = MagicMock()
+        # Whatever the agent asks of the model, hand back a usable answer so
+        # the test exercises prompt construction rather than parsing.
+        llm.chat.return_value = MagicMock(
+            content='{"study_design": "rct", "confidence": 0.9}',
+            stop_reason="stop",
+        )
+        return llm
+
+    def test_classifier_handles_none_abstract(self):
+        from bmlib.quality.study_classifier import StudyClassifier
+
+        classifier = StudyClassifier(llm=self._stub_llm(), model="ollama:x")
+        result = classifier.classify("A title", None)
+
+        assert result is not None
+        assert result.study_design == StudyDesign.RCT
+
+    def test_assessor_handles_none_abstract(self):
+        from bmlib.quality.quality_agent import QualityAgent
+
+        agent = QualityAgent(llm=self._stub_llm(), model="ollama:x")
+        result = agent.assess("A title", None)
+
+        assert result is not None
+
+    def test_classifier_handles_none_title(self):
+        from bmlib.quality.study_classifier import StudyClassifier
+
+        classifier = StudyClassifier(llm=self._stub_llm(), model="ollama:x")
+        assert classifier.classify(None, "An abstract") is not None
+
+
+class TestGenerationBudget:
+    """The configured token budget must actually reach the model.
+
+    Both LLM tiers used to repeat their temperature and ``max_tokens`` at the
+    call site, which silently overrode whatever the constructor was given —
+    so raising the budget had no effect. A ceiling too low for a chatty model
+    truncates the response and every paper falls back to UNCLASSIFIED.
+    """
+
+    def _llm(self):
+        from unittest.mock import MagicMock
+
+        llm = MagicMock()
+        llm.chat.return_value = MagicMock(
+            content='{"study_design": "rct", "confidence": 0.9}', stop_reason="stop"
+        )
+        return llm
+
+    def _manager(self, llm):
+        from bmlib.quality.manager import QualityManager
+
+        return QualityManager(llm=llm, classifier_model="ollama:x", assessor_model="ollama:y")
+
+    def test_classifier_budget_reaches_the_model(self):
+        llm = self._llm()
+        self._manager(llm).classifier.classify("Title", "Abstract")
+
+        assert llm.chat.call_args.kwargs["max_tokens"] == 1024
+        assert llm.chat.call_args.kwargs["temperature"] == 0.1
+
+    def test_assessor_budget_reaches_the_model(self):
+        llm = self._llm()
+        self._manager(llm).assessor.assess("Title", "Abstract")
+
+        assert llm.chat.call_args.kwargs["max_tokens"] == 1024
+        assert llm.chat.call_args.kwargs["temperature"] == 0.2
+
+    def test_a_caller_can_override_the_budget(self):
+        from bmlib.quality.study_classifier import StudyClassifier
+
+        llm = self._llm()
+        StudyClassifier(llm=llm, model="ollama:x", max_tokens=4096).classify("T", "A")
+
+        assert llm.chat.call_args.kwargs["max_tokens"] == 4096

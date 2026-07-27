@@ -79,9 +79,12 @@ class StudyClassifier(BaseAgent):
         Returns a Tier 2 :class:`QualityAssessment`.  On failure,
         returns ``QualityAssessment.unclassified()``.
         """
+        # Sources omit abstracts often enough, and a nullable database column
+        # delivers the gap as None. Classifying from the title alone is weak
+        # but honest; raising here would abort the caller's whole batch.
         prompt = CLASSIFIER_USER_TEMPLATE.format(
-            title=title,
-            abstract=abstract[:MAX_ABSTRACT_CHARS],
+            title=title or "",
+            abstract=(abstract or "")[:MAX_ABSTRACT_CHARS],
         )
 
         try:
@@ -90,8 +93,6 @@ class StudyClassifier(BaseAgent):
                     self.system_msg(CLASSIFIER_SYSTEM_PROMPT),
                     self.user_msg(prompt),
                 ],
-                temperature=0.1,
-                max_tokens=256,
             )
             return self._parse_data(data)
         except Exception as e:

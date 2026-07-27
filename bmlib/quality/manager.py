@@ -66,7 +66,13 @@ class QualityManager:
             model=classifier_model,
             template_engine=template_engine,
             temperature=0.1,
-            max_tokens=256,
+            # The classification JSON is barely 50 tokens, but small local
+            # models tend to preface it with commentary despite being asked
+            # for JSON alone. A tight ceiling truncates that preamble and
+            # loses the JSON with it, so every paper falls back to
+            # UNCLASSIFIED. Matching the assessor's budget costs little and
+            # leaves room for the chatter.
+            max_tokens=1024,
         )
         self.assessor = QualityAgent(
             llm=llm,

@@ -106,9 +106,11 @@ class QualityAgent(BaseAgent):
         Returns a Tier 3 :class:`QualityAssessment`.  On failure,
         returns ``QualityAssessment.unclassified()``.
         """
+        # As in the Tier 2 classifier: a missing abstract is a gap to work
+        # around, not a reason to abort the caller's batch.
         prompt = ASSESSMENT_USER_TEMPLATE.format(
-            title=title,
-            abstract=abstract[:MAX_ABSTRACT_CHARS],
+            title=title or "",
+            abstract=(abstract or "")[:MAX_ABSTRACT_CHARS],
         )
 
         try:
@@ -117,8 +119,6 @@ class QualityAgent(BaseAgent):
                     self.system_msg(ASSESSMENT_SYSTEM_PROMPT),
                     self.user_msg(prompt),
                 ],
-                temperature=0.2,
-                max_tokens=1024,
             )
             return self._parse_data(data)
         except Exception as e:
