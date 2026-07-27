@@ -9,20 +9,21 @@ hold the full story.
 | **Database (`bmlib.db`)** | | |
 | ✅ Done | SQLite + PostgreSQL connections | `connect_sqlite()` / `connect_postgresql()`; pure functions over DB-API connections, no ORM |
 | ✅ Done | Operations helpers | `execute`, `fetch_one`, `fetch_all`, `fetch_scalar`, `table_exists`, `create_tables` |
-| ✅ Done | Transaction context manager | `transaction(conn)`; joining an open SQLite transaction uses a savepoint and defers commit to the enclosing owner (0.4.0 breaking change) |
+| ✅ Done | Transaction context manager | `transaction(conn)`; joining an open transaction uses a savepoint and defers commit to the enclosing owner (0.4.0 breaking change on SQLite; extended to PostgreSQL, unreleased) |
 | ✅ Done | Migration runner | `Migration` dataclass + idempotent `run_migrations()` |
+| ✅ Done | Public backend detection | `is_sqlite()`, `placeholder()`, `placeholders()` promoted out of `db/migrations.py`; plus `transaction_depth()` / `owns_commit()` for code that commits conditionally (unreleased) |
 | **LLM (`bmlib.llm`)** | | |
 | ✅ Done | Unified client with provider registry | `LLMClient` router, `"provider:model"` strings, lazy built-in registration, `register_provider()` for runtime extension |
 | ✅ Done | Seven providers | Anthropic, OpenAI, Ollama, OpenAI-compatible servers, DeepSeek, Mistral, Gemini |
 | ✅ Done | Thread-safe token tracking | `TokenTracker` singleton with `threading.Lock()`, `reset_*()` for tests |
 | ✅ Done | Tool calling | `tools` / `tool_choice` on `chat()`; `LLMToolDefinition`, `LLMToolCall`, `LLMResponse.tool_calls`; Anthropic, Ollama, and OpenAI-compatible providers (0.4.0) |
 | ✅ Done | Embeddings | `LLMClient.embed()` → `EmbeddingResponse`; Ollama only — every other provider raises `NotImplementedError` |
-| ✅ Done | Batch embeddings | `LLMClient.embed_batch()` → `BatchEmbeddingResponse`; bounded batching (`max_batch_size`, Ollama default 256) for ~7.6× on bulk corpora. Moved Ollama embeddings onto `/api/embed`, which returns L2-normalised vectors — breaking for non-cosine distance metrics (unreleased) |
+| ✅ Done | Batch embeddings | `LLMClient.embed_batch()` → `BatchEmbeddingResponse`; bounded batching (`max_batch_size`, Ollama default 256) for ~7.6× on bulk corpora. Moved Ollama embeddings onto `/api/embed`, which returns L2-normalised vectors — breaking for non-cosine distance metrics (0.5.0) |
 | ✅ Done | JSON repair | `json_repair.py` — single quotes, trailing/missing commas, control chars, truncation, unquoted keys; wired into `BaseAgent.parse_json()` |
 | ✅ Done | Text chunking | `text_utils.py` — boundary-aware `TextChunker` plus map-reduce and rolling-summary helpers |
 | ✅ Done | Defensive `list_models()` cache | Issue #12 — Anthropic and OpenAI-compatible providers return a copy of the cached model list; caller mutation can no longer corrupt the cache |
-| ✅ Done | Single-request Ollama `list_models()` | Reads `/api/tags` as raw JSON — the SDK's Pydantic model silently drops the `capabilities` array and `details.context_length` — so 139 models cost one request (~3.6 s → ~46 ms) and capability flags populate for the first time. Context windows not carried in the listing resolve lazily behind a memoised `show()`. Adds the TTL cache + `force_refresh` Ollama alone lacked. The raw path re-implements the SDK's HTTP safety defaults: HTTP(S)-only scheme, and the bearer token stripped across cross-origin redirects (unreleased) |
-| ✅ Done | Thinking/reasoning support | Cross-provider `think` kwarg on `chat()` (`bool` / effort string / `int` budget) mapped to each provider's native parameter; trace returned in `LLMResponse.thinking` (unreleased) |
+| ✅ Done | Single-request Ollama `list_models()` | Reads `/api/tags` as raw JSON — the SDK's Pydantic model silently drops the `capabilities` array and `details.context_length` — so 139 models cost one request (~3.6 s → ~46 ms) and capability flags populate for the first time. Context windows not carried in the listing resolve lazily behind a memoised `show()`. Adds the TTL cache + `force_refresh` Ollama alone lacked. The raw path re-implements the SDK's HTTP safety defaults: HTTP(S)-only scheme, and the bearer token stripped across cross-origin redirects (0.5.1) |
+| ✅ Done | Thinking/reasoning support | Cross-provider `think` kwarg on `chat()` (`bool` / effort string / `int` budget) mapped to each provider's native parameter; trace returned in `LLMResponse.thinking` (0.5.0) |
 | ⬜ Planned | Round-trip Anthropic thinking blocks in tool loops | Extended thinking + multi-turn tool use fails on the follow-up request: the API requires the original `thinking` blocks (with signatures) re-sent in the assistant turn, but the message converter drops them and `LLMResponse.thinking` is a plain string. Needs signature-preserving block storage |
 | ⬜ Planned | Embeddings beyond Ollama | Only Ollama implements `embed()`; add OpenAI and Gemini backends when a consumer needs them |
 | ⬜ Planned | Consolidate JSON extraction | Issue #17 — `llm/utils.py::extract_json` and `llm/json_repair.py::extract_and_repair_json` duplicate span-location logic; unify behind one locator (fold into the Phase 1 BaseAgent work) |
@@ -50,15 +51,25 @@ hold the full story.
 | ✅ Done | Dedup + merge-on-upsert | Deduplication by DOI/PMID with field-merge logic |
 | ✅ Done | PubMed fetcher populates `publication_types` | Parsed from `PublicationTypeList`, so synced PubMed records reach the free Tier 1 filter instead of falling through to the paid LLM classifier (0.4.0) |
 | ✅ Done | Batched sync commits | One commit per synced day; SQLite write lock no longer held across network I/O (0.4.0) |
-| ⬜ Planned | PostgreSQL support for the storage layer | `storage.py` is SQLite-specific (`?` placeholders, `ON CONFLICT`, `cur.lastrowid`); port when a PostgreSQL consumer needs it |
+| ✅ Done | PostgreSQL support for the storage layer | `schema.py`, `storage.py` and `sync.py` are dual-dialect; `ensure_schema()` picks the matching DDL. `tests/test_backends.py` runs each test against both backends, and CI fails rather than skips when the DSN is missing (unreleased) |
+| ✅ Done | `publications.pmcid` | A fetcher's PMC id was dropped on store, so full-text retrieval could not use it. Declared last on the dataclass to keep positional construction stable (unreleased) |
 | **Full text (`bmlib.fulltext`)** | | |
 | ✅ Done | Tiered retrieval | Caller-supplied sources → Europe PMC XML → Europe PMC PDF → Unpaywall → DOI/PubMed URL, with disk-based caching |
-| ✅ Done | JATS XML parser | JATS → structured `JATSArticle` data; external entity loading disabled |
+| ✅ Done | JATS XML parser | JATS → structured `JATSArticle` data; external entity loading disabled. `parse_with_html()` gets both in one SAX pass |
 | ✅ Done | PDF → text conversion | Pluggable `PDFConverter` with a PyMuPDF backend behind the optional `bmlib[pdf]` extra (0.4.0) |
 | ✅ Done | Wire PDF conversion into `FullTextService` | A retrieved PDF is extracted into `FullTextResult.html` via `render_html()`; `convert_pdfs=False` opts out (unreleased) |
+| ✅ Done | Body-less JATS detection | medRxiv serves `<front>`+`<back>` with no prose for some preprints; detected via `JATSArticle.has_body`, never cached, held back as a last resort so the chain keeps looking. `FullTextResult.content_kind` tells the caller what it got (unreleased) |
+| ⬜ Planned | Parse an unsectioned `<body>` | Issue #30 — `<sec>` is optional in JATS, but `_JATSHandler` records a `<p>` only when `section_stack` is non-empty, so such a body is lost entirely and (since `has_body`) also re-fetched on every request |
 | ⬜ Planned | Rate limiting | The package throttles nothing — bulk callers must self-throttle against Europe PMC and Unpaywall |
+| **Quality (`bmlib.quality`) — robustness** | | |
+| ✅ Done | Survive a missing abstract | A `None` abstract from a nullable column was sliced unguarded in both LLM tiers, so one record took the whole scoring batch down. With title *and* abstract missing the tiers return `unclassified()` without calling the model (unreleased) |
+| ✅ Done | Tier 2 token budget is settable | `classify()` repeated `temperature`/`max_tokens` at the call site, silently overriding the constructor; the 256-token ceiling truncated small local models' preamble and lost the JSON with it (unreleased) |
 | **Quality & maintenance** | | |
-| ✅ Done | Test suite | 562 tests + 2 skipped; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services |
+| ✅ Done | Test suite | 805 tests + 31 skipped; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services. The skips are the PostgreSQL parameterisations of `test_backends.py`, which need `BMLIB_TEST_POSTGRESQL_DSN` |
 | ✅ Done | Reference manual | `docs/manual/` — one page per module |
 | ✅ Done | Documentation refresh for 0.4.0 | CHANGELOG, README, CLAUDE.md and all eight manual pages rewritten against the real source, signatures verified and examples executed |
+| ⬜ Planned | Deduplicate `docs/manual/fulltext.md` | Issue #31 — the `## PDF Conversion` section appears twice with overlapping, non-identical content, so every converter API change has to be made twice |
 | ✅ Done | Release 0.4.0 | Cut 2026-07-19; 0.3.0 was bumped in-tree but never released, so its changes ship inside 0.4.0 |
+| ✅ Done | Release 0.5.0 | Cut 2026-07-20; batch embeddings and cross-provider thinking support. Carries one breaking change — Ollama embeddings moved to `/api/embed`, which returns L2-normalised vectors |
+| ✅ Done | Release 0.5.1 | Cut 2026-07-21; single-request Ollama `list_models()`, entirely within `ollama.py` |
+| ⬜ Planned | Cut the next release | `[Unreleased]` has accumulated three bodies of work — PostgreSQL `publications`, PDF→text wiring, body-less JATS. All additive, so a minor bump fits |
