@@ -1,8 +1,8 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-07-27. `main` is at v0.5.1 plus a large `[Unreleased]`
+_Last updated: 2026-07-28. `main` is at v0.5.1 plus a large `[Unreleased]`
 section (PostgreSQL `publications`, PDF→text wiring, body-less JATS fix).
-805 tests passing + 31 skipped._
+818 tests passing + 31 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -42,7 +42,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
      merged into one.
   **Deciding whether this is 0.6.0 is open work** — see "Next up" below. The
   `publications` and `fulltext` changes are additive, so a minor bump fits.
-- **805 tests passing + 31 skipped** (`uv run pytest tests/ -q`). The 31 skips
+- **818 tests passing + 31 skipped** (`uv run pytest tests/ -q`). The 31 skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`, which run
   only when `BMLIB_TEST_POSTGRESQL_DSN` is set.
 - **Documentation was rewritten for 0.4.0 and updated through PR #28/#29.**
@@ -153,6 +153,13 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   redirects, `"<word>:<digits>"` read as host:port). Simplifying any of these
   back to the obvious one-liner reintroduces a real defect; each has a
   regression test naming it.
+- **The unsectioned-`<body>` branch in `_JATSHandler.endElement` sits *below*
+  the figure and table branches, not next to the sectioned-prose branch it
+  reads as a pair with.** Figure and table captions are `<p>` elements too, and
+  outside a `<sec>` they reach the same chain; testing `in_body` first blanks
+  the caption, reprints it as article prose, and makes a `<body>` holding only
+  a captioned figure report `has_body`. Pinned by
+  `TestJATSParserUnsectionedBodyFurniture`.
 
 ## Conventions and gotchas for the next session
 

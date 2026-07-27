@@ -391,6 +391,12 @@ pass.
 > than becoming subsections of the loose prose. Such paragraphs count towards
 > [`has_body`](#jatsarticle); empty ones are dropped, so a `<body>` holding
 > only whitespace still reports no body.
+>
+> Figure and table captions are unaffected. A `<fig>` or `<table-wrap>` may sit
+> directly under `<body>` — commonly after the last `<sec>` — and its caption is
+> a `<p>` like any other, but it stays on the figure or table rather than
+> joining the loose prose. A `<body>` carrying nothing but a captioned figure
+> therefore still reports no body.
 
 ---
 

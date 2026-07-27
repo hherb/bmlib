@@ -274,3 +274,97 @@ class TestJATSParserUnsectionedBody:
 </article>"""
         article = JATSParser(data).parse()
         assert article.has_body is False
+
+    def test_whitespace_only_body_reports_no_body(self):
+        """An empty <p> must not open an implicit section — that would make a
+        <body> carrying no prose at all look like full text and get cached."""
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Blank</article-title>
+  </title-group></article-meta></front>
+  <body><p>   </p></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert article.has_body is False
+        assert article.body_sections == []
+
+
+class TestJATSParserUnsectionedBodyFurniture:
+    """Figures and tables are legal direct children of ``<body>``.
+
+    Their captions are ``<p>`` elements, and outside a ``<sec>`` they reach the
+    same handler branch as unsectioned prose. The caption must stay on the
+    figure or table: routing it to the implicit body section would both blank
+    the caption and render it as article prose — and, for a ``<body>`` holding
+    nothing but a captioned figure, make ``has_body`` true on furniture alone.
+    """
+
+    FIGURE_IN_UNSECTIONED_BODY = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Loose figure</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <p>Loose opening prose.</p>
+    <fig id="f1"><label>Figure 1</label>
+      <caption><p>A caption for the figure.</p></caption>
+      <graphic xlink:href="f1.jpg"/></fig>
+    <table-wrap id="t1"><label>Table 1</label>
+      <caption><p>A caption for the table.</p></caption></table-wrap>
+  </body>
+</article>"""
+
+    FIGURE_AFTER_LAST_SECTION = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Floated figure</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <sec><title>Methods</title><p>We did the thing.</p></sec>
+    <fig id="f1"><label>Figure 1</label>
+      <caption><p>A caption for the figure.</p></caption></fig>
+  </body>
+</article>"""
+
+    def test_caption_stays_on_the_figure(self):
+        article = JATSParser(self.FIGURE_IN_UNSECTIONED_BODY).parse()
+
+        assert [(f.label, f.caption) for f in article.figures] == [
+            ("Figure 1", "A caption for the figure.")
+        ]
+
+    def test_caption_stays_on_the_table(self):
+        article = JATSParser(self.FIGURE_IN_UNSECTIONED_BODY).parse()
+
+        assert [(t.label, t.caption) for t in article.tables] == [
+            ("Table 1", "A caption for the table.")
+        ]
+
+    def test_captions_do_not_become_body_prose(self):
+        article = JATSParser(self.FIGURE_IN_UNSECTIONED_BODY).parse()
+        paragraphs = [p for s in article.body_sections for p in s.paragraphs]
+
+        assert paragraphs == ["Loose opening prose."]
+
+    def test_figure_floated_after_the_last_section_keeps_its_caption(self):
+        """A <fig> can sit directly under <body> after the final <sec> — a
+        normal JATS layout, and one where section_stack is empty again."""
+        article = JATSParser(self.FIGURE_AFTER_LAST_SECTION).parse()
+
+        assert [f.caption for f in article.figures] == ["A caption for the figure."]
+        assert [(s.title, tuple(s.paragraphs)) for s in article.body_sections] == [
+            ("Methods", ("We did the thing.",))
+        ]
+
+    def test_a_captioned_figure_alone_is_not_a_body(self):
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Figure only</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <fig id="f1"><label>Figure 1</label>
+      <caption><p>A caption for the figure.</p></caption></fig>
+  </body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert article.has_body is False

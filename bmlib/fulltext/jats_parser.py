@@ -639,14 +639,6 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 if self.in_body and normalized_text:
                     self.body_paragraph_count += 1
                 self.section_stack[-1].paragraphs.append(normalized_text)
-            elif self.in_body and normalized_text:
-                # An unsectioned <body> child. Empty paragraphs are dropped
-                # rather than opening a section, so a <body> holding nothing
-                # but whitespace stays body-less.
-                if self.implicit_body_section is None:
-                    self.implicit_body_section = _SectionBuilder()
-                self.body_paragraph_count += 1
-                self.implicit_body_section.paragraphs.append(normalized_text)
             elif self.in_figure and self.current_figure:
                 if self.current_figure.caption and normalized_text:
                     self.current_figure.caption += " "
@@ -655,6 +647,17 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 if self.current_table.caption and normalized_text:
                     self.current_table.caption += " "
                 self.current_table.caption += normalized_text
+            elif self.in_body and normalized_text:
+                # An unsectioned <body> child. This must stay below the figure
+                # and table branches: their captions are <p> too, and outside a
+                # <sec> they reach here, so testing <body> first would blank the
+                # caption and reprint it as article prose. Empty paragraphs are
+                # dropped rather than opening a section, so a <body> holding
+                # nothing but whitespace stays body-less.
+                if self.implicit_body_section is None:
+                    self.implicit_body_section = _SectionBuilder()
+                self.body_paragraph_count += 1
+                self.implicit_body_section.paragraphs.append(normalized_text)
 
         elif name == "body":
             self._flush_implicit_body_section()

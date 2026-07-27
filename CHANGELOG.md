@@ -68,7 +68,9 @@ All notable changes to bmlib are documented here. The format is based on
   `JATSBodySection` with an empty `title` — no heading is invented — flushed
   at each `<sec>` boundary so document order survives and real sections stay
   top-level instead of nesting inside it. Empty paragraphs are dropped, so a
-  whitespace-only `<body>` still reports no body.
+  whitespace-only `<body>` still reports no body, and figure and table
+  captions — `<p>` elements that also sit outside any `<sec>` — stay on their
+  figure or table rather than joining the prose.
 - **A body-less JATS document was mistaken for full text.** medRxiv's
   `jatsxml` URL serves, for some preprints, a document made of `<front>` and
   `<back>` alone. It returns HTTP 200 and parses cleanly, so the retrieval
