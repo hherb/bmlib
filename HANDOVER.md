@@ -1,196 +1,194 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-07-19 (v0.4.0 released; Phase 0 ports merged to `main`;
-full documentation refresh done — CHANGELOG, README, CLAUDE.md and all eight
-`docs/manual/` pages rewritten against the current APIs. 562 tests passing +
-2 skipped on `main`)._
+_Last updated: 2026-07-28. `main` is at v0.5.1 plus a large `[Unreleased]`
+section (PostgreSQL `publications`, PDF→text wiring, body-less JATS fix).
+826 tests passing + 31 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
 plan; delete sections that are finished and no longer instructive. Per-PR
-implementation detail lives in git history and `docs/plans/` — do not
-re-narrate it here.
+implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
+— do not re-narrate it here.
 
 ## Current state
 
-- **v0.4.0 is released.** `pyproject.toml` and `bmlib/__init__.py` both say
-  0.4.0, and `CHANGELOG.md` has a dated `[0.4.0] — 2026-07-19` section. It
-  carries three breaking changes (`transaction()` savepoint-join semantics;
-  `sync()` per-day commit batching with `on_record` firing before storage;
-  `_check_europepmc()` returning a 6-tuple). 0.3.0 was never released — the
-  version string was bumped in-tree when embedding support landed but no
-  release was cut, so those changes ship inside 0.4.0.
-- **Documentation is current as of this release.** CHANGELOG, README,
-  CLAUDE.md, and all eight `docs/manual/` pages were rewritten against the
-  actual source, with every signature verified and code examples executed.
-  Assume they are accurate; if you find drift, that is a regression worth
-  fixing rather than expected staleness.
-- Merged since the last handover: the 0.3.0 documentation refresh with the
-  fixes for issues #12 and #13 (PR #19), Phase 0 bmlibrarian ports (PR #16),
-  CI hardening (PR #15), plus the earlier code-review fix batches, the
-  one-commit-per-synced-day perf work, and industry-COI detection.
-- **562 tests passing + 2 skipped** (`uv run pytest tests/ -q`) on `main`.
+- **Released: 0.5.1** (2026-07-21). `pyproject.toml` and `bmlib/__init__.py`
+  agree. Release history: 0.4.0 (2026-07-19) → 0.5.0 (2026-07-20) → 0.5.1.
+  0.3.0 was bumped in-tree but never released; its changes shipped inside
+  0.4.0.
+- **`[Unreleased]` is substantial and unreleased.** Three bodies of work sit
+  on `main` waiting for a version:
+  1. **`bmlib.publications` on PostgreSQL** (PR #28) — `schema.py`,
+     `storage.py`, `sync.py` were SQLite-only; every statement is now
+     dual-dialect. Brought `db.is_sqlite()` / `placeholder()` /
+     `placeholders()` / `transaction_depth()` / `owns_commit()` into the
+     public API, added `publications.pmcid`, fixed `fetch_scalar()` on
+     psycopg2 `RealDictRow`, and made `transaction()` nest via savepoints on
+     PostgreSQL. `tests/test_backends.py` runs each test against both
+     backends; CI sets `BMLIB_REQUIRE_POSTGRESQL=1` so a missing DSN fails
+     rather than skips.
+  2. **PDF→text wired into `FullTextService`** — a retrieved PDF is extracted
+     into `FullTextResult.html` via the new `render_html()`; opt out with
+     `convert_pdfs=False`. Added `FullTextResult.content_kind`
+     (`fulltext` / `abstract` / `extracted`) and `ConversionResult.page_texts`.
+  3. **Body-less JATS handled** (PR #29) — medRxiv serves `<front>`+`<back>`
+     with no prose for some preprints; such a document is detected via
+     `JATSArticle.has_body`, never cached, and held back as a last resort.
+     Also fixed: a missing abstract no longer kills a scoring batch, and the
+     Tier 2 classifier's token budget is no longer overridden at the call site.
+  4. **Unsectioned JATS `<body>` parsed** (issues #30, #31) — loose `<p>`
+     prose becomes a titleless `JATSBodySection` instead of being dropped,
+     and `docs/manual/fulltext.md`'s duplicated `PDF Conversion` section is
+     merged into one. Review of that work turned up a second, older defect,
+     fixed in the same PR: figure and table captions were lost whenever the
+     figure sat inside a `<sec>` — the ordinary PMC layout — and their text
+     was reprinted as article prose.
+  **Deciding whether this is 0.6.0 is open work** — see "Next up" below. The
+  `publications` and `fulltext` changes are additive, so a minor bump fits.
+- **826 tests passing + 31 skipped** (`uv run pytest tests/ -q`). The 31 skips
+  are the PostgreSQL parameterisations of `tests/test_backends.py`, which run
+  only when `BMLIB_TEST_POSTGRESQL_DSN` is set.
+- **Documentation was rewritten for 0.4.0 and updated through PR #28/#29/#32.**
+  Treat drift as a regression worth fixing, not expected staleness. Issue #31
+  (a duplicated `PDF Conversion` section in `docs/manual/fulltext.md`) is
+  closed.
 
-## bmlibrarian → bmlib porting (active effort)
+## Next up
 
-The "mother project" `~/src/bmlibrarian` holds a lot of functionality that
-belongs in bmlib but was never ported. The full assessment and phased backlog
-live in [`docs/plans/2026-07-17-bmlibrarian-porting-analysis.md`](docs/plans/2026-07-17-bmlibrarian-porting-analysis.md)
+Pick from the open issues below, or resume the bmlibrarian porting effort.
+Nothing is blocked on anything else.
+
+### Open GitHub issues
+
+- **#17 — consolidate duplicated JSON extraction** (`llm/utils.py::extract_json`
+  vs `llm/json_repair.py::extract_and_repair_json`): unify the span-location
+  logic behind one locator. Fold into the Phase 1 BaseAgent work below.
+- **#18 — `TransparencyAnalyzer` accepts `pubmed_api_key` but never uses it**:
+  remove (breaking) or wire it up when a real NCBI check is added. The manual
+  documents it as accepted-but-unused.
+- **#21 — transparency `UNKNOWN` results are distinguishable only by
+  `risk_indicators` string matching**: add a structured `unknown_reason` enum
+  when a consumer needs to branch on disabled vs no-identifier vs unreachable.
+
+### bmlibrarian → bmlib porting (paused, Phase 1 next)
+
+The "mother project" `~/src/bmlibrarian` holds functionality that belongs in
+bmlib. The assessment and phased backlog live in
+[`docs/plans/2026-07-17-bmlibrarian-porting-analysis.md`](docs/plans/2026-07-17-bmlibrarian-porting-analysis.md)
 — **read that first.** It has a master priority table, a "do not port" list
 with reasons, and open caveats (ClinicalTrials.gov legacy XML deprecation,
 transparency/quality reconciliation, no GRADE engine exists, SSRF guard).
 
-### Phase 0 — DONE (merged, shipped in 0.4.0)
+**Phase 0 is done** and shipped in 0.4.0: `llm/json_repair.py`,
+`llm/text_utils.py`, `quality/cochrane_models.py` + `cochrane_formatter.py`,
+`quality/extractors.py` + `scoring_models.py`, `fulltext/pdf_converter.py`.
 
-Five pure/near-pure quick-wins, each test-first, exported from its package,
-recorded in `CHANGELOG.md` under `[0.4.0]`:
+**Phase 1 — the two next ports, in order:**
 
-- `bmlib/llm/json_repair.py` — malformed-JSON repair; wired into
-  `BaseAgent.parse_json()` as a fallback.
-- `bmlib/llm/text_utils.py` — consolidated boundary-aware chunker +
-  map-reduce / rolling-summary helpers.
-- `bmlib/quality/cochrane_models.py` + `cochrane_formatter.py` — 9-domain RoB
-  + study-characteristics + MD/HTML renderers.
-- `bmlib/quality/extractors.py` + `scoring_models.py` — rule-based study-type
-  / sample-size scoring with `DimensionScore` audit trail.
-- `bmlib/fulltext/pdf_converter.py` — pluggable PDF→text, PyMuPDF backend
-  behind the new optional `bmlib[pdf]` extra.
-
-Code-review hardening landed on the same branch: whole-word study-type
-keyword matching (an "RCT" keyword no longer matches "infarct"), decimal-only
-CI patterns, O(n) JSON repair, truncated-JSON extraction in
-`extract_and_repair_json`, consistent RoB domain labels across MD/HTML, and
-`bmlib.llm` package exports. One refactor was deferred to issue #17:
-consolidating the duplicated JSON-extraction logic in `llm/utils.py` vs
-`llm/json_repair.py` — fold it into the Phase 1 BaseAgent work.
-
-### Phase 1 — NEXT (do these two, in order)
-
-Both are named in the analysis doc (#15, #16). Follow the **port recipe**
-below for each.
-
-1. **BaseAgent enhancement (keystone — do first; unblocks the Phase 4 agent
-   family).** Source: `~/src/bmlibrarian/src/bmlibrarian/agents/base.py`
-   (the app's own `BaseAgent`, ~1200 lines). Target: merge its genuinely
-   useful extras **into** the existing `bmlib/agents/base.py` — do **not**
-   ship a second base class:
+1. **BaseAgent enhancement (keystone — unblocks the Phase 4 agent family).**
+   Source: `~/src/bmlibrarian/src/bmlibrarian/agents/base.py` (~1200 lines).
+   Target: merge the genuinely useful extras **into** the existing
+   `bmlib/agents/base.py` — do **not** ship a second base class:
    - `PerformanceMetrics` (per-agent timing/success/token accounting).
-   - `_generate_and_parse_json`'s *regenerate-on-parse-failure* behaviour
-     (re-prompt the model when JSON won't parse) — reconcile with bmlib's
-     existing `chat_json()` retry loop rather than duplicating it.
-   - `_generate_embedding` (bmlib already has `LLMClient.embed()` — wire the
-     helper to that, don't reimplement).
+   - `_generate_and_parse_json`'s *regenerate-on-parse-failure* behaviour —
+     reconcile with bmlib's existing `chat_json()` retry loop, don't duplicate.
+   - `_generate_embedding` — wire to `LLMClient.embed()`, don't reimplement.
    - optionally `test_connection`.
    - **Drop** all queue/orchestrator hooks (`submit_task`, queue_manager
      coupling) and any `bmlibrarian.config` reads — bmlib's base stays
      injection-only.
-   - While in there, do **issue #17**: consolidate the duplicated
-     JSON-extraction logic in `llm/utils.py::extract_json` vs
-     `llm/json_repair.py::extract_and_repair_json` behind one shared span
-     locator (see the issue for the suggested split).
+   - Do **issue #17** while in there.
 2. **`context_processor`.** Source:
-   `~/src/bmlibrarian/src/bmlibrarian/agents/context_processor/` (base.py ABC
-   + data_types.py + semantic_chunk_processor.py, ~840 lines, already
-   callback-injected — clean). Target: `bmlib/context_processor/` (new
-   subpackage) or under `bmlib/agents/`. It batches oversized items across an
-   LLM context window and consolidates results. `create_prisma_chunk_processor`
-   is PRISMA-specific — leave that factory in the app, port the generic core.
-   It can build on the new `bmlib/llm/text_utils.py` chunker.
+   `~/src/bmlibrarian/src/bmlibrarian/agents/context_processor/` (~840 lines,
+   already callback-injected — clean). Target: `bmlib/context_processor/` or
+   under `bmlib/agents/`. It batches oversized items across an LLM context
+   window and consolidates results. `create_prisma_chunk_processor` is
+   PRISMA-specific — leave that factory in the app, port the generic core. It
+   can build on `bmlib/llm/text_utils.py`.
+
+Later phases (2–4: citations, discovery, pubmed_search, MeSH, the
+prompt-driven agent family, paper_weight) are in the analysis doc.
 
 ### The port recipe (how Phase 0 was done — repeat it)
 
 1. **TDD, always.** Write behaviour tests first (the upstream code is the
    spec), watch them fail (a `ModuleNotFoundError` is the correct red for a
-   new module), then port the implementation and watch them pass. Bug in a
-   test you wrote? Fix the test, not correct code.
-2. **Modernise to bmlib style:** AGPL header on every file (copy from any
-   existing source), `from __future__ import annotations`, lowercase builtin
-   generics (`list`/`dict`/`X | None`, not `List`/`Optional`), `datetime.UTC`.
+   new module), then port and watch them pass. Bug in a test you wrote? Fix
+   the test, not correct code.
+2. **Modernise to bmlib style:** AGPL header on every file,
+   `from __future__ import annotations`, lowercase builtin generics
+   (`list`/`dict`/`X | None`), `datetime.UTC`.
 3. **Sever app coupling:** replace `get_db_manager()`/`bmlibrarian.config`
    with injected connections/params; guard optional deps with
    `try/except ImportError` raising `pip install bmlib[extra]`; route LLM
    calls through `bmlib.llm` / `bmlib.agents.BaseAgent`, never raw `ollama`.
 4. **Export** the public names from the package `__init__.py` `__all__`.
-5. **Verify:** `uv run pytest tests/ -q`, `uv run ruff check bmlib/ tests/`,
-   `uv run ruff format --check bmlib/ tests/` — all clean before done.
-6. **Record** each port in `CHANGELOG.md` under a new `[Unreleased]`
-   heading (`### Added`); it gets a version and a date when a release is cut.
+5. **Verify:** tests + both ruff commands clean before done.
+6. **Record** each port in `CHANGELOG.md` under `[Unreleased]`.
 7. **Reconcile, don't fork:** where a port overlaps existing bmlib (quality
-   study-classification, transparency), build on the existing module — see
-   the analysis doc's "reconciliation" caveats.
+   study-classification, transparency), build on the existing module.
 
-Later phases (2–4: citations, discovery, pubmed_search, MeSH, the
-prompt-driven agent family, paper_weight) are laid out in the analysis doc.
+## Deliberate non-fixes — do not "fix" these
 
-## Other open work
+Each was investigated and closed as correct. Reopening them wastes a session.
 
-### 1. Defects from the 0.4.0 documentation sweep — ALL FIXED
-
-Writing the manual against the real source surfaced eight defects. Every one
-is now fixed, each with a regression test that was watched fail first, and
-the manual passages that documented the old behaviour were rewritten. See
-`CHANGELOG.md` under `[0.4.0] → Fixed` for the full list. In short:
-
-- `fetch_pubmed` now populates `publication_types`, so PubMed records reach
-  the free Tier 1 quality filter instead of falling through to the paid LLM
-  classifier. This was the costly one.
-- `register_source()` can override a built-in name.
-- `TransparencyAnalyzer` is thread-safe: mutex-guarded rate limiting (shared,
-  because it throttles a shared API), thread-local reachability (per-analysis).
-- `settings.enabled` is honoured, short-circuiting before the `httpx` import.
-- `TransparencyResult.to_dict()` round-trips `full_text_analyzed`.
-- `create_tables()` parses `CREATE TRIGGER ... BEGIN ... END;`.
-- Removed the unreachable `resultsSection` fallback; corrected the three
-  stale `on_record` annotations.
-
-Two were closed as documentation rather than code, deliberately:
-
-- **`filtering_enabled`, `max_concurrent_analyses`, `cache_results`** are not
-  dead — they are orchestration hints for the *calling* application. The
-  library analyses one document per call and does no filtering, threading, or
-  caching of its own. `TransparencySettings`' docstring now says which fields
-  the analyzer honours and which the caller owns. Removing them would break a
-  public dataclass to no benefit.
-- **`outcome_switching_detected`** stays reserved and always `False`.
-  Deciding it means comparing a trial's pre-registered primary outcomes
-  against those actually reported — a real feature with real false-positive
-  risk, not a fix. It stays in the schema so persisted results need no
-  migration when detection lands. Tracked in ROADMAP.md.
-
-### 2. Open GitHub issues
-
-Issues #12 (`list_models()` cache aliasing) and #13 (tagged COI section
-without a cue phrase) were fixed in PR #19 and are closed — do not reopen
-them. Still open:
-
-- **#17 — consolidate duplicated JSON extraction** (`llm/utils.py` vs
-  `llm/json_repair.py`): folded into the Phase 1 BaseAgent work above.
-- **#18 — `TransparencyAnalyzer` accepts `pubmed_api_key` but never uses
-  it**: remove (breaking) or wire it up when a real NCBI check is added.
-  The manual documents it as accepted-but-unused for now.
-- **#21 — transparency: `UNKNOWN` results distinguishable only by
-  `risk_indicators` string matching**: add a structured `unknown_reason`
-  enum when a consumer needs to branch on disabled vs unreachable.
-  Deferred from the 0.4.0 release review.
-
-### Known limitations (no issue filed)
-
-- The `publications/` storage layer is SQLite-specific (`?` placeholders,
-  `ON CONFLICT`, `cur.lastrowid`) even though `db/` also supports
-  PostgreSQL. Port when a PostgreSQL consumer needs it.
+- **`TransparencySettings.filtering_enabled`, `max_concurrent_analyses`,
+  `cache_results` are not dead code.** They are orchestration hints for the
+  *calling* application. The library analyses one document per call and does
+  no filtering, threading, or caching of its own. The docstring says which
+  fields the analyzer honours and which the caller owns.
+- **`outcome_switching_detected` stays reserved and always `False`.** Deciding
+  it means comparing a trial's pre-registered primary outcomes against those
+  reported — a real feature with real false-positive risk, not a fix. It stays
+  in the schema so persisted results need no migration when detection lands.
+- **`Publication.pmcid` is declared last on the dataclass, not beside `pmid`.**
+  `Publication` is constructed positionally by downstream projects, so any
+  other placement shifts every following argument and lands a caller's
+  `abstract` in `pmcid` with no error anywhere. Pinned by
+  `test_positional_construction_is_stable_across_versions`.
+- **PostgreSQL transaction nesting is detected from bmlib's own open-block
+  count, not psycopg2's status.** psycopg2 opens a transaction on the first
+  statement of *any* kind, so a bare `SELECT` would make every following block
+  look nested and stop committing. The count is keyed by *(thread,
+  `id(conn)`)* — see CLAUDE.md for why both parts are load-bearing.
+- **The Ollama raw `/api/tags` path re-implements httpx's safety defaults on
+  purpose** (HTTP(S)-only scheme, bearer token stripped across cross-origin
+  redirects, `"<word>:<digits>"` read as host:port). Simplifying any of these
+  back to the obvious one-liner reintroduces a real defect; each has a
+  regression test naming it.
+- **`_JATSHandler.endElement` tests `in_figure or in_table_wrap` before any
+  prose branch, for both `<p>` and `<title>`, and routes on `in_caption`
+  rather than on which `in_*` flag is set.** JATS reuses `<p>` for caption
+  body and `<title>` for the caption lead, and a `<fig>` or `<table-wrap>`
+  normally sits *inside* a `<sec>`, so asking about the section first blanks
+  the caption, reprints it as article prose, and — for `<title>` — renames the
+  enclosing section after the figure. The same branch deliberately **drops**
+  non-caption `<p>`: table cell text is collected by `characters()`, so
+  letting it through duplicates cells and footnotes into the prose and counts
+  them towards `has_body`. Pinned by `TestJATSParserCaptionScoping` and
+  `TestJATSParserUnsectionedBodyFurniture`.
 
 ## Conventions and gotchas for the next session
 
-- Coding rules live in `CLAUDE.md` — pure functions with the DB-API
-  connection as first argument, type hints and docstrings on everything
-  public, AGPL-3 header on every source file, dataclass models with
-  `to_dict()`/`from_dict()`, explicit SQL (no ORM), optional dependencies
-  guarded with a helpful `ImportError`.
-- `uv` only (never pip). Tests: `uv run pytest tests/ -v`. Lint:
-  `ruff check .` and `ruff format --check .` (CI pins ruff — match the
-  pinned version, see `.github/workflows/ci.yml`; `uvx ruff@<pinned>` works).
-- Tests use in-memory SQLite (`connect_sqlite(":memory:")`) and mocked
-  HTTP; no external services. New functionality needs unit tests.
+- Coding rules live in `CLAUDE.md` — pure functions with the DB-API connection
+  as first argument, type hints and docstrings on everything public, AGPL-3
+  header on every source file, dataclass models with `to_dict()`/`from_dict()`,
+  explicit SQL (no ORM), optional dependencies guarded with a helpful
+  `ImportError`.
+- `uv` only (never pip). Tests: `uv run pytest tests/ -v`.
+- **Lint with the CI-pinned ruff, not the one in `.venv`.** CI pins
+  **ruff 0.15.20** (`.github/workflows/ci.yml`); the `.venv` currently holds
+  0.6.5, which false-flags `UP038` on `ollama.py` — a rule newer ruff removed.
+  Use:
+
+  ```bash
+  uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
+  ```
+
+- Tests use in-memory SQLite (`connect_sqlite(":memory:")`) and mocked HTTP;
+  no external services. To run the PostgreSQL half of `test_backends.py`, set
+  `BMLIB_TEST_POSTGRESQL_DSN` to a database the tests may drop every table in.
+- New functionality needs unit tests; see CLAUDE.md's test-file mapping table.
 - Session workflow lives in the `nextsession` skill
   (`.claude/skills/nextsession/`); the post-review fix-up workflow lives in
   the `fixall` skill (`.claude/skills/fixall/`).

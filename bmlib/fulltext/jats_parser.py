@@ -397,6 +397,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.in_body = False
         self.in_back = False
         self.section_stack: list[_SectionBuilder] = []
+        # <sec> is optional inside <body>, so prose can arrive with an empty
+        # section_stack. It is collected here and flushed to body_sections at
+        # the next <sec> or at </body>, rather than pushed onto section_stack:
+        # a real <sec> opening afterwards would otherwise nest inside it.
+        self.implicit_body_section: _SectionBuilder | None = None
         # Prose found inside <body>. Counted separately from body_sections
         # because back-matter sections land there too, so a non-empty
         # body_sections does not by itself mean the article has a body.
@@ -405,6 +410,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # Figure / table state
         self.in_figure = False
         self.in_table_wrap = False
+        # Caption text is carried in <p> and <title> — the same elements that
+        # carry section prose and section headings — so routing it needs the
+        # enclosing <caption>, not just "a figure is open somewhere above".
+        self.in_caption = False
         self.current_figure: _FigureBuilder | None = None
         self.current_table: _TableBuilder | None = None
 
@@ -443,6 +452,40 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.text_stack[-1] += text
         return text
 
+    # -- Section and caption helpers -----------------------------------------
+
+    def _append_caption_text(self, text: str) -> None:
+        """Append caption prose to whichever of the figure or table is open.
+
+        A ``<caption>`` carries a ``<title>`` lead and one or more ``<p>``
+        elements, which arrive in document order, so they are joined with a
+        single space into the one ``caption`` string the models expose.
+
+        Args:
+            text: Whitespace-normalised text of the caption child element.
+        """
+        builder: _FigureBuilder | _TableBuilder | None = (
+            self.current_figure if self.in_figure else self.current_table
+        )
+        if builder is None or not text:
+            return
+        if builder.caption:
+            builder.caption += " "
+        builder.caption += text
+
+    def _flush_implicit_body_section(self) -> None:
+        """Emit any pending unsectioned ``<body>`` prose as a body section.
+
+        Called when a real ``<sec>`` opens and again at ``</body>``, so loose
+        paragraphs keep their position in document order. The section carries
+        no title — JATS gave it none, and inventing one would put a heading in
+        the rendered article that the publisher never wrote.
+        """
+        if self.implicit_body_section is None:
+            return
+        self.body_sections.append(self.implicit_body_section.build())
+        self.implicit_body_section = None
+
     # -- SAX events ----------------------------------------------------------
 
     def startElement(self, name: str, attrs: xml.sax.xmlreader.AttributesImpl) -> None:
@@ -471,10 +514,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.in_back = True
         elif name == "sec":
             if not self.in_abstract:
+                # Flush first, so prose that preceded this <sec> becomes its own
+                # body section rather than being folded in as the <sec>'s parent.
+                self._flush_implicit_body_section()
                 self.section_stack.append(_SectionBuilder())
         elif name == "fig":
             self.in_figure = True
             self.current_figure = _FigureBuilder(id=attrs.get("id", ""))
+        elif name == "caption":
+            self.in_caption = True
         elif name == "graphic":
             if self.in_figure and self.current_figure is not None:
                 href = attrs.get("xlink:href") or attrs.get("href") or attrs.get("xlink-href") or ""
@@ -598,7 +646,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 )
             self.in_abstract = False
         elif name == "title":
-            if self.in_abstract:
+            if self.in_figure or self.in_table_wrap:
+                # <caption><title> is the caption's lead, not a section
+                # heading — but it is the same element name as one, so
+                # without this it would rename the enclosing <sec> after
+                # the figure.
+                if self.in_caption:
+                    self._append_caption_text(normalized_text)
+            elif self.in_abstract:
                 if self.current_abstract_text or self.current_abstract_title:
                     content = " ".join(self.current_abstract_text)
                     self.abstract_sections.append(
@@ -609,23 +664,35 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             elif self.section_stack:
                 self.section_stack[-1].title = normalized_text
         elif name == "p":
-            if self.in_abstract:
+            if self.in_figure or self.in_table_wrap:
+                # Figure and table internals, tested before every prose branch
+                # because a <fig> or <table-wrap> usually sits inside a <sec>:
+                # asking about the section first would blank the caption and
+                # reprint it as article prose. Only <caption> content is kept.
+                # Cell and footnote <p> is dropped — characters() already
+                # collects cells into the rendered table, so letting it through
+                # would duplicate furniture into the prose and count it towards
+                # has_body.
+                if self.in_caption:
+                    self._append_caption_text(normalized_text)
+            elif self.in_abstract:
                 if normalized_text:
                     self.current_abstract_text.append(normalized_text)
             elif (self.in_body or self.in_back) and self.section_stack:
                 if self.in_body and normalized_text:
                     self.body_paragraph_count += 1
                 self.section_stack[-1].paragraphs.append(normalized_text)
-            elif self.in_figure and self.current_figure:
-                if self.current_figure.caption and normalized_text:
-                    self.current_figure.caption += " "
-                self.current_figure.caption += normalized_text
-            elif self.in_table_wrap and self.current_table:
-                if self.current_table.caption and normalized_text:
-                    self.current_table.caption += " "
-                self.current_table.caption += normalized_text
+            elif self.in_body and normalized_text:
+                # An unsectioned <body> child. Empty paragraphs are dropped
+                # rather than opening a section, so a <body> holding nothing
+                # but whitespace stays body-less.
+                if self.implicit_body_section is None:
+                    self.implicit_body_section = _SectionBuilder()
+                self.body_paragraph_count += 1
+                self.implicit_body_section.paragraphs.append(normalized_text)
 
         elif name == "body":
+            self._flush_implicit_body_section()
             self.in_body = False
         elif name == "back":
             self.in_back = False
@@ -643,6 +710,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.figures.append(self.current_figure.build())
             self.in_figure = False
             self.current_figure = None
+        elif name == "caption":
+            self.in_caption = False
         elif name == "label":
             if self.in_figure and self.current_figure:
                 self.current_figure.label = text
