@@ -368,3 +368,126 @@ class TestJATSParserUnsectionedBodyFurniture:
         article = JATSParser(data).parse()
 
         assert article.has_body is False
+
+
+class TestJATSParserCaptionScoping:
+    """A caption belongs to its figure or table in *every* document shape.
+
+    ``<fig>`` and ``<table-wrap>`` are usually nested inside a ``<sec>`` — the
+    ordinary PMC layout. Caption text is carried in ``<p>`` and ``<title>``
+    elements, the same ones that carry section prose and section headings, so
+    the handler has to route them by their enclosing ``<caption>`` rather than
+    by which of the ``in_*`` flags happens to be set. Getting this wrong blanks
+    the caption and reprints it as article prose, and — for ``<title>`` —
+    renames the enclosing section after the figure.
+
+    The same scoping keeps table internals out of the prose: cell and footnote
+    text reaches the table's own rendering and must not be duplicated into
+    ``body_sections`` or appended to the caption.
+    """
+
+    FIGURE_IN_SECTION = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Figured</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <sec><title>Methods</title><p>We did the thing.</p>
+      <fig id="f1"><label>Figure 1</label>
+        <caption><title>Caption heading</title><p>A caption for the figure.</p></caption>
+        <graphic xlink:href="f1.jpg"/></fig>
+    </sec>
+  </body>
+</article>"""
+
+    TABLE_IN_SECTION = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Tabled</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <sec><title>Results</title><p>We measured the thing.</p>
+      <table-wrap id="t1"><label>Table 1</label>
+        <caption><p>A caption for the table.</p></caption>
+        <table>
+          <thead><tr><th><p>Group</p></th></tr></thead>
+          <tbody><tr><td><p>Treated</p></td></tr></tbody>
+        </table>
+        <table-wrap-foot><fn><p>A footnote under the table.</p></fn></table-wrap-foot>
+      </table-wrap>
+    </sec>
+  </body>
+</article>"""
+
+    def test_figure_caption_survives_inside_a_section(self):
+        article = JATSParser(self.FIGURE_IN_SECTION).parse()
+
+        assert [f.label for f in article.figures] == ["Figure 1"]
+        assert article.figures[0].caption == "Caption heading A caption for the figure."
+
+    def test_figure_caption_does_not_leak_into_section_prose(self):
+        article = JATSParser(self.FIGURE_IN_SECTION).parse()
+
+        assert [(s.title, tuple(s.paragraphs)) for s in article.body_sections] == [
+            ("Methods", ("We did the thing.",))
+        ]
+
+    def test_caption_title_does_not_rename_the_section(self):
+        """<caption><title> and <sec><title> are the same element name."""
+        article = JATSParser(self.FIGURE_IN_SECTION).parse()
+
+        assert [s.title for s in article.body_sections] == ["Methods"]
+
+    def test_table_caption_survives_inside_a_section(self):
+        article = JATSParser(self.TABLE_IN_SECTION).parse()
+
+        assert [(t.label, t.caption) for t in article.tables] == [
+            ("Table 1", "A caption for the table.")
+        ]
+
+    def test_table_internals_do_not_leak_into_section_prose(self):
+        article = JATSParser(self.TABLE_IN_SECTION).parse()
+
+        assert [(s.title, tuple(s.paragraphs)) for s in article.body_sections] == [
+            ("Results", ("We measured the thing.",))
+        ]
+
+    def test_table_cells_still_render(self):
+        """Dropping cell <p> from the prose must not empty the table itself —
+        cell text is collected by characters(), not by the <p> handler."""
+        article = JATSParser(self.TABLE_IN_SECTION).parse()
+
+        assert "Group" in article.tables[0].html_content
+        assert "Treated" in article.tables[0].html_content
+
+    def test_table_cells_do_not_append_to_the_caption(self):
+        """Outside a <sec> the cell <p> used to fall through to the caption."""
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Loose table</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <table-wrap id="t1"><label>Table 1</label>
+      <caption><p>A caption for the table.</p></caption>
+      <table><tbody><tr><td><p>Treated</p></td></tr></tbody></table>
+    </table-wrap>
+  </body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert article.tables[0].caption == "A caption for the table."
+
+    def test_captions_do_not_count_towards_has_body(self):
+        """A section carrying only a captioned figure is not article prose."""
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Caption only</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <sec><title>Figures</title>
+      <fig id="f1"><label>Figure 1</label>
+        <caption><p>A caption for the figure.</p></caption></fig>
+    </sec>
+  </body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert article.has_body is False

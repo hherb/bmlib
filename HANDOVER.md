@@ -2,7 +2,7 @@
 
 _Last updated: 2026-07-28. `main` is at v0.5.1 plus a large `[Unreleased]`
 section (PostgreSQL `publications`, PDF→text wiring, body-less JATS fix).
-818 tests passing + 31 skipped._
+826 tests passing + 31 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -39,16 +39,19 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   4. **Unsectioned JATS `<body>` parsed** (issues #30, #31) — loose `<p>`
      prose becomes a titleless `JATSBodySection` instead of being dropped,
      and `docs/manual/fulltext.md`'s duplicated `PDF Conversion` section is
-     merged into one.
+     merged into one. Review of that work turned up a second, older defect,
+     fixed in the same PR: figure and table captions were lost whenever the
+     figure sat inside a `<sec>` — the ordinary PMC layout — and their text
+     was reprinted as article prose.
   **Deciding whether this is 0.6.0 is open work** — see "Next up" below. The
   `publications` and `fulltext` changes are additive, so a minor bump fits.
-- **818 tests passing + 31 skipped** (`uv run pytest tests/ -q`). The 31 skips
+- **826 tests passing + 31 skipped** (`uv run pytest tests/ -q`). The 31 skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`, which run
   only when `BMLIB_TEST_POSTGRESQL_DSN` is set.
-- **Documentation was rewritten for 0.4.0 and updated through PR #28/#29.**
-  Treat drift as a regression worth fixing, not expected staleness — but note
-  issue #31 records one real defect (a duplicated section in
-  `docs/manual/fulltext.md`).
+- **Documentation was rewritten for 0.4.0 and updated through PR #28/#29/#32.**
+  Treat drift as a regression worth fixing, not expected staleness. Issue #31
+  (a duplicated `PDF Conversion` section in `docs/manual/fulltext.md`) is
+  closed.
 
 ## Next up
 
@@ -153,12 +156,16 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   redirects, `"<word>:<digits>"` read as host:port). Simplifying any of these
   back to the obvious one-liner reintroduces a real defect; each has a
   regression test naming it.
-- **The unsectioned-`<body>` branch in `_JATSHandler.endElement` sits *below*
-  the figure and table branches, not next to the sectioned-prose branch it
-  reads as a pair with.** Figure and table captions are `<p>` elements too, and
-  outside a `<sec>` they reach the same chain; testing `in_body` first blanks
-  the caption, reprints it as article prose, and makes a `<body>` holding only
-  a captioned figure report `has_body`. Pinned by
+- **`_JATSHandler.endElement` tests `in_figure or in_table_wrap` before any
+  prose branch, for both `<p>` and `<title>`, and routes on `in_caption`
+  rather than on which `in_*` flag is set.** JATS reuses `<p>` for caption
+  body and `<title>` for the caption lead, and a `<fig>` or `<table-wrap>`
+  normally sits *inside* a `<sec>`, so asking about the section first blanks
+  the caption, reprints it as article prose, and — for `<title>` — renames the
+  enclosing section after the figure. The same branch deliberately **drops**
+  non-caption `<p>`: table cell text is collected by `characters()`, so
+  letting it through duplicates cells and footnotes into the prose and counts
+  them towards `has_body`. Pinned by `TestJATSParserCaptionScoping` and
   `TestJATSParserUnsectionedBodyFurniture`.
 
 ## Conventions and gotchas for the next session

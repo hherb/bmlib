@@ -60,12 +60,13 @@ hold the full story.
 | ✅ Done | Wire PDF conversion into `FullTextService` | A retrieved PDF is extracted into `FullTextResult.html` via `render_html()`; `convert_pdfs=False` opts out (unreleased) |
 | ✅ Done | Body-less JATS detection | medRxiv serves `<front>`+`<back>` with no prose for some preprints; detected via `JATSArticle.has_body`, never cached, held back as a last resort so the chain keeps looking. `FullTextResult.content_kind` tells the caller what it got (unreleased) |
 | ✅ Done | Parse an unsectioned `<body>` | Issue #30 — `<sec>` is optional in JATS, so loose `<p>` prose now becomes a titleless `JATSBodySection`, flushed at each `<sec>` boundary to keep document order and stop real sections nesting inside it. It counts towards `has_body`, ending the permanent cache miss (unreleased) |
+| ✅ Done | Figure and table captions in every shape | Caption body (`<p>`) and lead (`<title>`) are routed on the enclosing `<caption>`, not on whichever `in_*` flag is set, so a `<fig>` inside a `<sec>` — the ordinary PMC layout — keeps its caption instead of blanking it, spilling it into the section's prose, and renaming the section. Figure and table internals no longer leak into `body_sections` or `has_body` (unreleased) |
 | ⬜ Planned | Rate limiting | The package throttles nothing — bulk callers must self-throttle against Europe PMC and Unpaywall |
 | **Quality (`bmlib.quality`) — robustness** | | |
 | ✅ Done | Survive a missing abstract | A `None` abstract from a nullable column was sliced unguarded in both LLM tiers, so one record took the whole scoring batch down. With title *and* abstract missing the tiers return `unclassified()` without calling the model (unreleased) |
 | ✅ Done | Tier 2 token budget is settable | `classify()` repeated `temperature`/`max_tokens` at the call site, silently overriding the constructor; the 256-token ceiling truncated small local models' preamble and lost the JSON with it (unreleased) |
 | **Quality & maintenance** | | |
-| ✅ Done | Test suite | 818 tests + 31 skipped; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services. The skips are the PostgreSQL parameterisations of `test_backends.py`, which need `BMLIB_TEST_POSTGRESQL_DSN` |
+| ✅ Done | Test suite | 826 tests + 31 skipped; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services. The skips are the PostgreSQL parameterisations of `test_backends.py`, which need `BMLIB_TEST_POSTGRESQL_DSN` |
 | ✅ Done | Reference manual | `docs/manual/` — one page per module |
 | ✅ Done | Documentation refresh for 0.4.0 | CHANGELOG, README, CLAUDE.md and all eight manual pages rewritten against the real source, signatures verified and examples executed |
 | ✅ Done | Deduplicate `docs/manual/fulltext.md` | Issue #31 — the `## PDF Conversion` section appeared twice with overlapping, non-identical content; the two are merged, and the copy that wrongly called the converter standalone is gone (unreleased) |

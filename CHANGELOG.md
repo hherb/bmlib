@@ -68,9 +68,21 @@ All notable changes to bmlib are documented here. The format is based on
   `JATSBodySection` with an empty `title` — no heading is invented — flushed
   at each `<sec>` boundary so document order survives and real sections stay
   top-level instead of nesting inside it. Empty paragraphs are dropped, so a
-  whitespace-only `<body>` still reports no body, and figure and table
-  captions — `<p>` elements that also sit outside any `<sec>` — stay on their
-  figure or table rather than joining the prose.
+  whitespace-only `<body>` still reports no body.
+- **Figure and table captions were lost whenever the figure sat inside a
+  `<sec>`** — the ordinary PMC layout. JATS carries caption body in `<p>` and
+  the caption lead in `<title>`, the same elements that carry section prose
+  and section headings, and the handler routed them by whichever `in_*` flag
+  was set rather than by the enclosing `<caption>`. Inside a section the
+  section branch won, so `JATSFigureInfo.caption` and `JATSTableInfo.caption`
+  came back empty, the caption text was reprinted as article prose, and a
+  `<caption><title>` **renamed the enclosing section** after the figure.
+  Captions are now routed on `<caption>` itself and survive in every document
+  shape. Non-caption `<p>` inside a figure or table — cell text, table
+  footnotes — no longer leaks either: cells reach the rendered table through
+  `characters()`, so passing them on had been duplicating them into
+  `body_sections` and counting them towards `has_body`, and outside a `<sec>`
+  appending them to the caption.
 - **A body-less JATS document was mistaken for full text.** medRxiv's
   `jatsxml` URL serves, for some preprints, a document made of `<front>` and
   `<back>` alone. It returns HTTP 200 and parses cleanly, so the retrieval

@@ -378,6 +378,7 @@ pass.
 | `body/sec/title/p` | Body sections with nesting |
 | `body/p` (no enclosing `<sec>`) | A titleless body section — see below |
 | `fig/graphic/label/caption` | Figures with Europe PMC image URLs |
+| `caption/title` + `caption/p` | Caption text, space-joined in document order |
 | `table-wrap/thead/tbody/tr/th/td` | Tables (rendered as HTML `<table>`) |
 | `ref-list/ref/element-citation` | Structured references |
 | `bold/italic/sub/sup/monospace` | Inline formatting |
@@ -391,12 +392,22 @@ pass.
 > than becoming subsections of the loose prose. Such paragraphs count towards
 > [`has_body`](#jatsarticle); empty ones are dropped, so a `<body>` holding
 > only whitespace still reports no body.
+
+> **Captions belong to their figure or table, wherever it sits.** JATS carries
+> caption body in `<p>` and the caption lead in `<title>` — the same elements
+> that carry section prose and section headings — so a `<fig>` inside a `<sec>`
+> (the ordinary PMC layout), one floated directly under `<body>` after the last
+> section, and one in back matter all resolve the same way: the text lands in
+> `JATSFigureInfo.caption` / `JATSTableInfo.caption`, never in the enclosing
+> section's paragraphs or title. A `<caption>` holding both a `<title>` and one
+> or more `<p>` is space-joined in document order.
 >
-> Figure and table captions are unaffected. A `<fig>` or `<table-wrap>` may sit
-> directly under `<body>` — commonly after the last `<sec>` — and its caption is
-> a `<p>` like any other, but it stays on the figure or table rather than
-> joining the loose prose. A `<body>` carrying nothing but a captioned figure
-> therefore still reports no body.
+> Everything else inside a `<fig>` or `<table-wrap>` is furniture and is kept
+> out of the prose: table cell text reaches `html_content` through the table
+> renderer, and cell and `<table-wrap-foot>` paragraphs are not repeated into
+> `body_sections`. Nothing inside a figure or table counts towards
+> [`has_body`](#jatsarticle), so a `<body>` carrying only a captioned figure
+> still reports no body.
 
 ---
 
