@@ -55,6 +55,65 @@ All notable changes to bmlib are documented here. The format is based on
   and its HTML, instead of the two SAX passes `parse()` + `to_html()` cost.
 - `ConversionResult.page_texts` — the text of each page that yielded any.
   Page boundaries are what let `render_html()` spot repeated furniture.
+- `bmlib.agents.PerformanceMetrics` — thread-safe per-agent call accounting
+  (prompt/completion/total tokens, request and retry counts, wall time),
+  independent of the process-wide `TokenTracker`: `PerformanceMetrics` answers
+  "what did this agent do", `TokenTracker` answers "what has this process
+  spent". `BaseAgent` gained the matching accessors — `metrics` (an
+  independent snapshot), `reset_metrics()`, `start_metrics()`,
+  `stop_metrics()`, and `format_metrics_report()`. `chat()` times every call
+  and records it into the metrics only on success; a call that raises records
+  nothing, so a burst of failures cannot deflate `tokens_per_second`.
+- `BaseAgent.embed()` / `embed_batch()` / `test_connection()`, and the
+  `embedding_model` constructor parameter. `embedding_model` is declared
+  **last**, after `max_tokens`, so existing positional construction is
+  unaffected. Embedding calls are deliberately excluded from
+  `PerformanceMetrics` — mixing them into `tokens_per_second`, a figure about
+  generation throughput, would distort it.
+- `BaseAgent.chat_json(..., retry_context: str = "")` — a label naming the
+  task being attempted, folded into every retry, error, and failure message,
+  including the temperature-0 truncation raise. Empty by default, so existing
+  log lines are unchanged for callers that do not pass it.
+- `bmlib.llm.utils.iter_json_spans()` — the locator now shared by
+  `extract_json()` and `extract_and_repair_json()` (see Changed, below).
+  Yields JSON candidate spans best-first without validating them: fenced
+  ` ```json ` blocks, other JSON-shaped fences, remaining fences, balanced
+  `{...}`/`[...]` spans, brace-only spans nested inside an already-yielded
+  span, and — only when nothing balanced, i.e. truncated output — the text
+  from the first opener to the end.
+- `bmlib.llm.json_repair.salvage_json_fields()` — recovers individually named
+  fields from a response `extract_and_repair_json()` gives up on entirely.
+  Two-phase per key: a fast `raw_decode` pass over every match, then at most
+  one `repair_json` attempt at the last match if no fast attempt succeeded.
+  That bound matters — repairing at every failed match was quadratic (3,000
+  matches took 135s; the bounded version takes 0.19s). Never raises on
+  malformed text; returns `{}` when nothing is found. Not wired into
+  `parse_json()` — silently returning partial data would turn a loud failure
+  into a quiet wrong answer, so callers opt in after catching the
+  `ValueError`.
+
+### Changed
+
+- **`extract_json()` and `extract_and_repair_json()` are rebuilt on the
+  shared locator `iter_json_spans()`** (closes #17). Four behaviour deltas
+  fall out of the consolidation:
+  - Bare top-level arrays are now visible to `extract_json()` — previously an
+    unfenced `[...]` response with no object anywhere fell through to the
+    raw, unparsed input.
+  - **Dict preference:** when a response contains both an array and an
+    object, `extract_json()` returns the object —
+    `extract_json('[{"a": 1}]')` now returns `{"a": 1}`, not the enclosing
+    array, because the object is what a `json_mode` caller actually asked
+    for.
+  - **Fence priority:** a ` ```json `-tagged fence now wins over an earlier
+    untagged fence, instead of whichever fence comes first in document order
+    winning regardless of its language tag.
+  - `extract_and_repair_json()` now walks candidates instead of staking
+    everything on a single span: a candidate that fails to parse or repair no
+    longer ends the search, so the next one gets a chance.
+- `BaseAgent.parse_json()` now logs a WARNING when its repair stage is what
+  rescued the response — repair closes brackets, so a truncated response can
+  parse into a valid but incomplete object, and the log line says so.
 
 ### Fixed
 
