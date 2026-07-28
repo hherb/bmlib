@@ -20,6 +20,109 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterator
+
+# Fence opener, optional language tag, optional trailing newline, then the
+# body up to the closing fence.  ``(.*?)`` is non-greedy so consecutive
+# fences do not merge into one block.
+_FENCE_RE = re.compile(r"```(\w*)[ \t]*\r?\n?(.*?)```", re.DOTALL)
+
+# Which closer ends a span opened by which opener.
+_CLOSERS = {"{": "}", "[": "]"}
+
+
+def _iter_balanced(text: str, openers: str) -> Iterator[tuple[int, str]]:
+    """Yield ``(start_index, span)`` for each outermost balanced span.
+
+    Only the pair type of a span's *own* opener is counted, so a ``[`` span
+    is not disturbed by the braces nested inside it.  Quoted strings — and
+    escapes within them — are honoured, so a brace inside a string value
+    never affects nesting.  A span that never balances ends the scan: any
+    later opener is nested inside it, not a sibling.
+    """
+    in_str = False
+    escape = False
+    depth = 0
+    start = -1
+    opener = ""
+    closer = ""
+
+    for i, ch in enumerate(text):
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+
+        if ch == '"':
+            in_str = True
+        elif depth == 0:
+            if ch in openers:
+                opener, closer = ch, _CLOSERS[ch]
+                start = i
+                depth = 1
+        elif ch == opener:
+            depth += 1
+        elif ch == closer:
+            depth -= 1
+            if depth == 0:
+                yield start, text[start : i + 1]
+                start = -1
+
+
+def iter_json_spans(text: str) -> Iterator[str]:
+    """Yield candidate JSON spans from *text*, best first, without validating.
+
+    Callers apply their own acceptance policy — validate, or validate-or-repair
+    — by walking the candidates in order.  Stages, in priority order:
+
+    1. ```json fenced bodies, in document order.
+    2. Other fenced bodies that start with ``{`` or ``[``.
+    3. The remaining fenced bodies.
+    4. Balanced ``{...}``/``[...]`` spans, in document order.
+    5. Brace-only balanced spans not already yielded, so an object nested in
+       an array is still offered as a candidate.
+    6. The text from the first opener to the end — only when nothing balanced,
+       which is what truncated model output looks like.
+    """
+    if not text:
+        return
+
+    fences = [(lang, body.strip()) for lang, body in _FENCE_RE.findall(text)]
+    taken: set[int] = set()
+
+    for stage in ("json", "jsonish", "rest"):
+        for index, (lang, body) in enumerate(fences):
+            if index in taken or not body:
+                continue
+            if stage == "json" and lang != "json":
+                continue
+            if stage == "jsonish" and not body.startswith(("{", "[")):
+                continue
+            taken.add(index)
+            yield body
+
+    seen: set[tuple[int, int]] = set()
+    balanced_found = False
+    for openers in ("{[", "{"):
+        for start, span in _iter_balanced(text, openers):
+            balanced_found = True
+            key = (start, len(span))
+            if key in seen:
+                continue
+            seen.add(key)
+            yield span
+
+    if not balanced_found:
+        first = min(
+            (i for i in (text.find("{"), text.find("[")) if i >= 0),
+            default=-1,
+        )
+        if first >= 0:
+            yield text[first:]
 
 
 def _iter_balanced_objects(text: str):

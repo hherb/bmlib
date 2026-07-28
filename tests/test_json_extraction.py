@@ -1,0 +1,69 @@
+# bmlib — shared library for biomedical literature tools
+# Copyright (C) 2024-2026 Dr Horst Herb
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Tests for the shared JSON span locator and the two extractors built on it."""
+
+from __future__ import annotations
+
+from bmlib.llm.utils import iter_json_spans
+
+
+class TestIterJsonSpans:
+    def test_json_fence_comes_first(self):
+        text = '```\nnot json\n```\n```json\n{"a": 1}\n```'
+        assert list(iter_json_spans(text))[0] == '{"a": 1}'
+
+    def test_bare_fence_with_json_body_beats_plain_fence(self):
+        text = '```\nprose\n```\n```\n{"a": 1}\n```'
+        spans = list(iter_json_spans(text))
+        assert spans.index('{"a": 1}') < spans.index("prose")
+
+    def test_balanced_span_in_prose(self):
+        text = 'The answer is {"score": 5} according to the model.'
+        assert '{"score": 5}' in list(iter_json_spans(text))
+
+    def test_braces_inside_strings_do_not_break_balancing(self):
+        text = 'Result: {"expr": "f(x) = {x}", "ok": true} done.'
+        assert '{"expr": "f(x) = {x}", "ok": true}' in list(iter_json_spans(text))
+
+    def test_escaped_quote_does_not_end_the_string(self):
+        text = r'{"a": "he said \"hi\"", "b": 2}'
+        assert text in list(iter_json_spans(text))
+
+    def test_array_span_and_nested_object_are_both_offered(self):
+        # Stage 4 yields the array; stage 5 yields the object nested in it.
+        spans = list(iter_json_spans('[{"a": 1}]'))
+        assert '[{"a": 1}]' in spans
+        assert '{"a": 1}' in spans
+        assert spans.index('[{"a": 1}]') < spans.index('{"a": 1}')
+
+    def test_two_objects_are_yielded_in_document_order(self):
+        spans = list(iter_json_spans('noise {not valid} more {"good": 1} end'))
+        assert spans.index("{not valid}") < spans.index('{"good": 1}')
+
+    def test_unbalanced_opener_yields_the_tail(self):
+        # Nothing balances, so the truncated tail is the only candidate.
+        assert list(iter_json_spans('Result: {"a": 1, "b": [2')) == ['{"a": 1, "b": [2']
+
+    def test_tail_is_not_yielded_when_something_balanced(self):
+        spans = list(iter_json_spans('{"a": 1} trailing {'))
+        assert spans == ['{"a": 1}']
+
+    def test_no_json_yields_nothing(self):
+        assert list(iter_json_spans("no json here")) == []
+
+    def test_empty_text_yields_nothing(self):
+        assert list(iter_json_spans("")) == []
