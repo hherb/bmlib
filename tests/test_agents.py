@@ -416,3 +416,94 @@ class TestPerformanceMetrics:
         from bmlib.agents import PerformanceMetrics as pkg_metrics  # noqa: N813
 
         assert pkg_metrics is PerformanceMetrics
+
+
+class TestAgentMetrics:
+    def test_chat_records_a_request(self):
+        agent = _make_agent()
+        agent.llm.chat.return_value = LLMResponse(
+            content="hi", model="test", input_tokens=10, output_tokens=4
+        )
+
+        agent.chat([agent.user_msg("test")])
+
+        assert agent.metrics.total_requests == 1
+        assert agent.metrics.total_prompt_tokens == 10
+        assert agent.metrics.total_completion_tokens == 4
+        assert agent.metrics.total_wall_time_seconds >= 0.0
+
+    def test_failed_chat_records_nothing(self):
+        agent = _make_agent()
+        agent.llm.chat.side_effect = RuntimeError("provider exploded")
+
+        with pytest.raises(RuntimeError):
+            agent.chat([agent.user_msg("test")])
+
+        assert agent.metrics.total_requests == 0
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_chat_json_counts_attempts_and_retries(self, mock_sleep):
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [
+            _make_response(""),
+            LLMResponse(content='{"a": 1}', model="test", input_tokens=5, output_tokens=2),
+        ]
+
+        agent.chat_json([agent.user_msg("test")])
+
+        assert agent.metrics.total_requests == 2
+        assert agent.metrics.total_retries == 1
+
+    def test_metrics_property_is_a_snapshot(self):
+        agent = _make_agent()
+        agent.llm.chat.return_value = LLMResponse(
+            content="hi", model="test", input_tokens=1, output_tokens=1
+        )
+        agent.chat([agent.user_msg("test")])
+
+        snap = agent.metrics
+        agent.chat([agent.user_msg("test")])
+
+        assert snap.total_requests == 1
+        assert agent.metrics.total_requests == 2
+
+    def test_reset_start_stop(self):
+        agent = _make_agent()
+        agent.llm.chat.return_value = LLMResponse(
+            content="hi", model="test", input_tokens=1, output_tokens=1
+        )
+        agent.chat([agent.user_msg("test")])
+        agent.reset_metrics()
+        assert agent.metrics.total_requests == 0
+
+        agent.start_metrics()
+        agent.stop_metrics()
+        assert agent.metrics.end_time is not None
+
+    def test_format_metrics_report_names_the_agent_class(self):
+        agent = _make_agent()
+        assert "BaseAgent" in agent.format_metrics_report()
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_retry_context_appears_in_the_log(self, mock_sleep, caplog):
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [
+            _make_response(""),
+            _make_response('{"a": 1}'),
+        ]
+
+        with caplog.at_level("WARNING", logger="bmlib.agents.base"):
+            agent.chat_json([agent.user_msg("t")], retry_context="citation extraction")
+
+        assert "citation extraction" in caplog.text
+
+    def test_repaired_response_logs_a_warning(self, caplog):
+        # A response that only parsed after repair is the truncation signal.
+        with caplog.at_level("WARNING", logger="bmlib.agents.base"):
+            BaseAgent.parse_json('{"design": "rct", "scores": [1, 2')
+        assert "repair" in caplog.text.lower()
+
+    def test_clean_response_logs_no_warning(self, caplog):
+        with caplog.at_level("WARNING", logger="bmlib.agents.base"):
+            BaseAgent.parse_json('{"a": 1}')
+        assert caplog.text == ""

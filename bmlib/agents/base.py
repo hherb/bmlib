@@ -44,6 +44,7 @@ import logging
 import time
 from typing import Any
 
+from bmlib.agents.metrics import PerformanceMetrics
 from bmlib.llm import LLMClient, LLMMessage, LLMResponse
 from bmlib.llm.json_repair import extract_and_repair_json
 from bmlib.llm.utils import extract_json
@@ -80,6 +81,7 @@ class BaseAgent:
         self.templates = template_engine
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self._metrics = PerformanceMetrics()
 
     # --- Message helpers ---
 
@@ -106,8 +108,13 @@ class BaseAgent:
         max_tokens: int | None = None,
         **kwargs: object,
     ) -> LLMResponse:
-        """Send a chat request through the LLM client."""
-        return self.llm.chat(
+        """Send a chat request through the LLM client.
+
+        Records the call into :attr:`metrics` on success; a request that
+        raises records nothing.
+        """
+        start = time.monotonic()
+        response = self.llm.chat(
             messages=messages,
             model=self.model,
             temperature=temperature if temperature is not None else self.temperature,
@@ -115,6 +122,10 @@ class BaseAgent:
             json_mode=json_mode,
             **kwargs,
         )
+        self._metrics.add_request(
+            response.input_tokens, response.output_tokens, time.monotonic() - start
+        )
+        return response
 
     def chat_json(
         self,
@@ -123,6 +134,7 @@ class BaseAgent:
         temperature: float | None = None,
         max_tokens: int | None = None,
         max_retries: int = 3,
+        retry_context: str = "",
         **kwargs: object,
     ) -> dict:
         """Chat with JSON mode, retry on empty/unparseable responses.
@@ -140,21 +152,36 @@ class BaseAgent:
         fits, so truncation still gets the normal retries, but the
         final error names the real cause.
 
-        Returns the parsed dict.  Raises :class:`ValueError` on
-        truncation or after all retries are exhausted.
+        Args:
+            messages: Conversation turns to send.
+            temperature: Sampling temperature override.
+            max_tokens: Max output token override.
+            max_retries: Maximum number of attempts before giving up.
+            retry_context: Label naming the task, folded into the retry and
+                failure log lines so a failure says what was being attempted.
+            **kwargs: Passed through to :meth:`chat`.
+
+        Returns:
+            The parsed dict.
+
+        Raises:
+            ValueError: On truncation or after all retries are exhausted.
         """
+        context = f" for {retry_context}" if retry_context else ""
         last_error: str | None = None
         for attempt in range(max_retries):
             if attempt > 0:
                 delay = 2 ** (attempt - 1)  # 1s, 2s, 4s …
                 logger.warning(
-                    "Retry %d/%d after %.0fs (previous: %s)",
+                    "Retry %d/%d%s after %.0fs (previous: %s)",
                     attempt + 1,
                     max_retries,
+                    context,
                     delay,
                     last_error,
                 )
                 time.sleep(delay)
+                self._metrics.add_retry()
 
             response = self.chat(
                 messages,
@@ -179,9 +206,10 @@ class BaseAgent:
                     "or request less output"
                 )
                 logger.error(
-                    "LLM response truncated (attempt %d/%d), full response: %s",
+                    "LLM response truncated (attempt %d/%d%s), full response: %s",
                     attempt + 1,
                     max_retries,
+                    context,
                     content,
                 )
                 effective_temperature = temperature if temperature is not None else self.temperature
@@ -197,9 +225,10 @@ class BaseAgent:
             if not content:
                 last_error = "empty response from model"
                 logger.warning(
-                    "LLM returned empty response (attempt %d/%d)",
+                    "LLM returned empty response (attempt %d/%d%s)",
                     attempt + 1,
                     max_retries,
+                    context,
                 )
                 continue
 
@@ -208,14 +237,38 @@ class BaseAgent:
             except ValueError:
                 last_error = "unparseable response"
                 logger.error(
-                    "LLM returned unparseable response (attempt %d/%d), full response: %s",
+                    "LLM returned unparseable response (attempt %d/%d%s), full response: %s",
                     attempt + 1,
                     max_retries,
+                    context,
                     content,
                 )
                 continue
 
-        raise ValueError(f"Failed after {max_retries} attempts: {last_error}")
+        raise ValueError(f"Failed after {max_retries} attempts{context}: {last_error}")
+
+    # --- Performance metrics ---
+
+    @property
+    def metrics(self) -> PerformanceMetrics:
+        """An independent snapshot of this agent's cumulative statistics."""
+        return self._metrics.snapshot()
+
+    def reset_metrics(self) -> None:
+        """Clear all accumulated metrics."""
+        self._metrics.reset()
+
+    def start_metrics(self) -> None:
+        """Mark the start of a metrics collection period."""
+        self._metrics.mark_start()
+
+    def stop_metrics(self) -> None:
+        """Mark the end of a metrics collection period."""
+        self._metrics.mark_end()
+
+    def format_metrics_report(self) -> str:
+        """Render this agent's metrics as a human-readable report."""
+        return self._metrics.snapshot().format_report(title=type(self).__name__)
 
     # --- Template rendering ---
 
@@ -261,9 +314,18 @@ class BaseAgent:
         # Last resort: repair common LLM JSON defects (single quotes, trailing
         # commas, truncation, unquoted keys) after extracting the JSON span.
         try:
-            repaired, _ = extract_and_repair_json(text)
-            return json.loads(repaired)
+            repaired, was_repaired = extract_and_repair_json(text)
+            parsed = json.loads(repaired)
         except (ValueError, json.JSONDecodeError):
             pass
+        else:
+            if was_repaired:
+                # Repair closes brackets, so a truncated response can parse
+                # into a valid but incomplete object.  Say so.
+                logger.warning(
+                    "LLM JSON needed repair — the response may be truncated: %s",
+                    text[:200],
+                )
+            return parsed
 
         raise ValueError(f"Could not parse JSON from LLM response: {text[:200]!r}")
