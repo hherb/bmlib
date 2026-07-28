@@ -67,3 +67,10 @@ class TestIterJsonSpans:
 
     def test_empty_text_yields_nothing(self):
         assert list(iter_json_spans("")) == []
+
+    def test_tail_skips_an_opener_inside_a_string(self):
+        text = 'named "config{v1}" and the result: {"a": 1, "items": [1, 2'
+        assert list(iter_json_spans(text)) == ['{"a": 1, "items": [1, 2']
+
+    def test_no_tail_when_the_only_opener_is_inside_a_string(self):
+        assert list(iter_json_spans('Just a "quoted { thing" and nothing else.')) == []

@@ -31,6 +31,33 @@ _FENCE_RE = re.compile(r"```(\w*)[ \t]*\r?\n?(.*?)```", re.DOTALL)
 _CLOSERS = {"{": "}", "[": "]"}
 
 
+def _first_opener(text: str, openers: str = "{[") -> int:
+    """Find the index of the first opener outside any quoted string.
+
+    Honoring backslash escapes, so an escaped quote does not end a string.
+    Returns -1 if no opener is found outside a string.
+    """
+    in_str = False
+    escape = False
+
+    for i, ch in enumerate(text):
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+
+        if ch == '"':
+            in_str = True
+        elif ch in openers:
+            return i
+
+    return -1
+
+
 def _iter_balanced(text: str, openers: str) -> Iterator[tuple[int, str]]:
     """Yield ``(start_index, span)`` for each outermost balanced span.
 
@@ -117,10 +144,7 @@ def iter_json_spans(text: str) -> Iterator[str]:
             yield span
 
     if not balanced_found:
-        first = min(
-            (i for i in (text.find("{"), text.find("[")) if i >= 0),
-            default=-1,
-        )
+        first = _first_opener(text)
         if first >= 0:
             yield text[first:]
 
