@@ -184,12 +184,19 @@ def iter_json_spans(text: str) -> Iterator[str]:
     # 2. other fence contents whose body starts with { or [
     # 3. remaining fence contents
     # 4. balanced {...} / [...] spans, document order, escape-aware
-    # 5. opener-to-end tail — only when stage 4 yielded nothing (truncation)
+    # 5. brace-only balanced spans not already yielded by stage 4
+    # 6. opener-to-end tail — only when 4 and 5 yielded nothing (truncation)
 ```
 
 Stage 4 counts only the pair type of the span's own opener, which reproduces
 today's `_iter_balanced_objects` for `{` and the repair path's scan for a
 leading `[`.
+
+Stage 5 is load-bearing, not belt-and-braces. On `[{"a":1}]` stage 4 yields
+only the outer array — the object is swallowed inside it — so dict-preference
+would return the array where today's brace-only scan returns `{"a":1}`. That
+is a silent change in every provider's `json_mode` path. Stage 5 re-offers the
+nested object as a lower-priority candidate, and today's outcome is preserved.
 
 Both public functions collapse to a policy over that generator:
 
@@ -220,6 +227,10 @@ a span came from.
    Today the object also wins (its brace scan is object-only), so this
    preserves today's outcome under the widened stage 4 — which is exactly why
    dict-preference is the right resolution rather than document order.
+   Together with stage 5 it also preserves `[{"a":1}]` → `{"a":1}`. That
+   inherits today's silent drop of any siblings in `[{"a":1},{"b":2}]`;
+   changing it is a contract decision, filed as a follow-up rather than
+   smuggled in here.
 3. **Fence priority.** A bare fence containing parseable junk ahead of a
    ` ```json ` fence no longer wins. Pathological; strictly better.
 4. **`extract_and_repair_json` no longer stakes everything on one span.**
