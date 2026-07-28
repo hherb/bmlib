@@ -80,6 +80,9 @@ class TestIterJsonSpans:
     def test_no_tail_when_the_only_opener_is_inside_a_string(self):
         assert list(iter_json_spans('Just a "quoted { thing" and nothing else.')) == []
 
+    def test_nested_objects_can_be_suppressed(self):
+        assert list(iter_json_spans('[{"a": 1}]', nested_objects=False)) == ['[{"a": 1}]']
+
 
 class TestExtractJson:
     def test_plain_object(self):
@@ -148,3 +151,10 @@ class TestExtractAndRepairJsonPolicy:
     def test_repair_disabled_raises_on_malformed(self):
         with pytest.raises(ValueError):
             extract_and_repair_json('{"a": 1,}', repair=False)
+
+    def test_raises_rather_than_returning_a_fragment_of_a_broken_array(self):
+        # Walking must not reach into a candidate it already rejected: the
+        # nested object parses alone, but returning it discards the array
+        # and everything after it.
+        with pytest.raises(ValueError):
+            extract_and_repair_json('[{"a": 1}, invalid junk]')

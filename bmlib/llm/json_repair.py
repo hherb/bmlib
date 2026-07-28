@@ -484,7 +484,7 @@ def extract_and_repair_json(response: str, repair: bool = True) -> tuple[str, bo
 
     last_error: Exception | None = None
 
-    for candidate in iter_json_spans(response.strip()):
+    for candidate in iter_json_spans(response.strip(), nested_objects=False):
         try:
             json.loads(candidate)
             return candidate, False

@@ -100,7 +100,7 @@ def _iter_balanced(text: str, openers: str) -> Iterator[tuple[int, str]]:
                 start = -1
 
 
-def iter_json_spans(text: str) -> Iterator[str]:
+def iter_json_spans(text: str, *, nested_objects: bool = True) -> Iterator[str]:
     """Yield candidate JSON spans from *text*, best first, without validating.
 
     Callers apply their own acceptance policy — validate, or validate-or-repair
@@ -111,9 +111,17 @@ def iter_json_spans(text: str) -> Iterator[str]:
     3. The remaining fenced bodies.
     4. Balanced ``{...}``/``[...]`` spans, in document order.
     5. Brace-only balanced spans not already yielded, so an object nested in
-       an array is still offered as a candidate.
+       an array is still offered as a candidate. Skipped if *nested_objects*
+       is False.
     6. The text from the first opener to the end — only when nothing balanced,
        which is what truncated model output looks like.
+
+    Args:
+        text: The text to scan for JSON spans.
+        nested_objects: When False, stage 5 is skipped, so an object nested
+            inside a larger span is not offered as a separate candidate.
+            Consumers that repair a candidate want this off — repairing a
+            nested fragment silently discards the structure around it.
     """
     if not text:
         return
@@ -134,7 +142,8 @@ def iter_json_spans(text: str) -> Iterator[str]:
 
     seen: set[tuple[int, int]] = set()
     balanced_found = False
-    for openers in ("{[", "{"):
+    passes = ("{[", "{") if nested_objects else ("{[",)
+    for openers in passes:
         for start, span in _iter_balanced(text, openers):
             balanced_found = True
             key = (start, len(span))
