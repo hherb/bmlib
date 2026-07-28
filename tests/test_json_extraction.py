@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from bmlib.llm.utils import iter_json_spans
+from bmlib.llm.utils import extract_json, iter_json_spans
 
 
 class TestIterJsonSpans:
@@ -74,3 +74,43 @@ class TestIterJsonSpans:
 
     def test_no_tail_when_the_only_opener_is_inside_a_string(self):
         assert list(iter_json_spans('Just a "quoted { thing" and nothing else.')) == []
+
+
+class TestExtractJson:
+    def test_plain_object(self):
+        assert extract_json('{"a": 1}') == '{"a": 1}'
+
+    def test_object_from_json_fence(self):
+        assert extract_json('```json\n{"a": 1}\n```') == '{"a": 1}'
+
+    def test_object_from_bare_fence(self):
+        assert extract_json('```\n{"a": 42}\n```') == '{"a": 42}'
+
+    def test_object_from_prose(self):
+        text = 'Here is the result: {"score": 0.8} end.'
+        assert extract_json(text) == '{"score": 0.8}'
+
+    def test_skips_unparseable_candidate(self):
+        text = 'noise {not valid} more prose {"good": 1} trailing'
+        assert extract_json(text) == '{"good": 1}'
+
+    def test_returns_input_unchanged_when_nothing_parses(self):
+        assert extract_json("no json here") == "no json here"
+
+    def test_prefers_a_dict_over_an_earlier_array(self):
+        # Preserves the pre-consolidation outcome: the brace-only scan was
+        # object-only, so the object won.  Dict-preference keeps that.
+        assert extract_json('[1, 2] then {"a": 1}') == '{"a": 1}'
+
+    def test_prefers_the_object_nested_in_a_single_element_array(self):
+        assert extract_json('[{"a": 1}]') == '{"a": 1}'
+
+    def test_falls_back_to_an_array_when_no_object_parses(self):
+        # No dict candidate anywhere, so the array is better than nothing —
+        # previously the whole prose-wrapped text came back unchanged.
+        assert extract_json("Values: [1, 2, 3] done") == "[1, 2, 3]"
+
+    def test_truncated_text_is_left_alone(self):
+        # The tail candidate never parses, so it self-excludes.
+        text = '{"a": 1, "b": [2'
+        assert extract_json(text) == text
