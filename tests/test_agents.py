@@ -18,11 +18,13 @@
 
 from __future__ import annotations
 
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from bmlib.agents.base import BaseAgent
+from bmlib.agents.metrics import PerformanceMetrics
 from bmlib.llm.data_types import LLMResponse
 
 
@@ -299,3 +301,118 @@ class TestChatJson:
         result = agent.chat_json([agent.user_msg("test")])
         assert result == {"ok": True}
         assert agent.llm.chat.call_count == 2
+
+
+class TestPerformanceMetrics:
+    def test_starts_empty(self):
+        m = PerformanceMetrics()
+        assert m.total_tokens == 0
+        assert m.total_requests == 0
+        assert m.tokens_per_second == 0.0
+        assert m.average_tokens_per_request == 0.0
+        assert m.elapsed_time_seconds == 0.0
+
+    def test_add_request_accumulates(self):
+        m = PerformanceMetrics()
+        m.add_request(100, 50, 2.0)
+        m.add_request(10, 5, 1.0)
+        assert m.total_prompt_tokens == 110
+        assert m.total_completion_tokens == 55
+        assert m.total_tokens == 165
+        assert m.total_requests == 2
+        assert m.total_wall_time_seconds == 3.0
+
+    def test_tokens_per_second_uses_wall_time(self):
+        m = PerformanceMetrics()
+        m.add_request(100, 50, 2.0)
+        assert m.tokens_per_second == 25.0
+
+    def test_average_tokens_per_request(self):
+        m = PerformanceMetrics()
+        m.add_request(100, 50, 1.0)
+        m.add_request(50, 0, 1.0)
+        assert m.average_tokens_per_request == 100.0
+
+    def test_add_retry_is_separate_from_requests(self):
+        m = PerformanceMetrics()
+        m.add_request(1, 1, 0.1)
+        m.add_retry()
+        assert m.total_requests == 1
+        assert m.total_retries == 1
+
+    def test_elapsed_time_between_marks(self):
+        m = PerformanceMetrics()
+        m.mark_start()
+        m.mark_end()
+        assert m.elapsed_time_seconds >= 0.0
+        assert m.end_time is not None
+
+    def test_mark_start_clears_a_previous_end(self):
+        m = PerformanceMetrics()
+        m.mark_start()
+        m.mark_end()
+        m.mark_start()
+        assert m.end_time is None
+
+    def test_reset_clears_everything(self):
+        m = PerformanceMetrics()
+        m.add_request(100, 50, 2.0)
+        m.add_retry()
+        m.mark_start()
+        m.reset()
+        assert m.total_tokens == 0
+        assert m.total_retries == 0
+        assert m.start_time is None
+
+    def test_snapshot_is_independent(self):
+        m = PerformanceMetrics()
+        m.add_request(100, 50, 2.0)
+        snap = m.snapshot()
+        m.add_request(1, 1, 0.1)
+        assert snap.total_tokens == 150
+        assert m.total_tokens == 152
+
+    def test_to_dict_round_trips(self):
+        m = PerformanceMetrics()
+        m.add_request(100, 50, 2.0)
+        m.add_retry()
+        restored = PerformanceMetrics.from_dict(m.to_dict())
+        assert restored.total_tokens == m.total_tokens
+        assert restored.total_retries == m.total_retries
+        assert restored.total_wall_time_seconds == m.total_wall_time_seconds
+
+    def test_to_dict_has_no_lock(self):
+        assert "_lock" not in PerformanceMetrics().to_dict()
+
+    def test_format_report_includes_the_numbers(self):
+        m = PerformanceMetrics()
+        m.add_request(100, 50, 2.0)
+        report = m.format_report(title="ScoringAgent")
+        assert "ScoringAgent" in report
+        assert "150" in report
+        assert "1" in report
+
+    def test_format_report_without_title(self):
+        assert "===" not in PerformanceMetrics().format_report()
+
+    def test_concurrent_add_request_loses_nothing(self):
+        # += is a read-modify-write; a shared agent must not drop counts.
+        m = PerformanceMetrics()
+
+        def worker() -> None:
+            for _ in range(200):
+                m.add_request(1, 1, 0.001)
+
+        threads = [threading.Thread(target=worker) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert m.total_requests == 1600
+        assert m.total_tokens == 3200
+
+    def test_exported_from_package(self):
+        from bmlib.agents import PerformanceMetrics as pkg_metrics  # noqa: N813
+
+        assert pkg_metrics is PerformanceMetrics
