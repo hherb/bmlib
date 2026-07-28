@@ -38,6 +38,8 @@ import logging
 import re
 from typing import Any
 
+from bmlib.llm.utils import iter_json_spans
+
 logger = logging.getLogger(__name__)
 
 # Configuration constants
@@ -464,85 +466,42 @@ def extract_and_repair_json(response: str, repair: bool = True) -> tuple[str, bo
     """Extract a JSON string from an LLM response and optionally repair it.
 
     Handles pure JSON, JSON in markdown code blocks, and JSON embedded in
-    explanatory prose.
+    explanatory prose. Walks candidate JSON spans in priority order: the
+    first candidate that validates (or repairs, if enabled) is returned.
 
     Args:
         response: Raw LLM response string.
-        repair: Whether to attempt repair.
+        repair: Whether to attempt repair on malformed candidates.
 
     Returns:
         Tuple of ``(extracted_json_string, was_repaired)``.
 
     Raises:
-        ValueError: If no JSON can be found in *response*.
+        ValueError: If no JSON can be found or repaired in *response*.
     """
     if not response or not response.strip():
         raise ValueError("Cannot extract JSON from empty response")
 
-    response = response.strip()
-    json_str: str | None = None
+    last_error: Exception | None = None
 
-    # Try a ```json fenced block.
-    if "```json" in response:
-        match = re.search(r"```json\s*([\s\S]*?)\s*```", response)
-        if match:
-            json_str = match.group(1).strip()
+    for candidate in iter_json_spans(response.strip()):
+        try:
+            json.loads(candidate)
+            return candidate, False
+        except json.JSONDecodeError as e:
+            last_error = e
 
-    # Try a bare ``` fenced block that starts with { or [.
-    if not json_str and "```" in response:
-        match = re.search(r"```\s*([\s\S]*?)\s*```", response)
-        if match:
-            content = match.group(1).strip()
-            if content.startswith("{") or content.startswith("["):
-                json_str = content
-
-    # Fall back to the first balanced object/array embedded in prose.
-    if not json_str:
-        start_idx = -1
-        for i, char in enumerate(response):
-            if char in "{[":
-                start_idx = i
-                break
-
-        if start_idx >= 0:
-            open_char = response[start_idx]
-            close_char = "}" if open_char == "{" else "]"
-            count = 0
-            in_string = False
-
-            for i, char in enumerate(response[start_idx:], start_idx):
-                prev = response[i - 1] if i > 0 else ""
-                is_escaped = prev == "\\" and not (i >= 2 and response[i - 2] == "\\")
-
-                if char == '"' and not is_escaped:
-                    in_string = not in_string
-                elif not in_string:
-                    if char == open_char:
-                        count += 1
-                    elif char == close_char:
-                        count -= 1
-                        if count == 0:
-                            json_str = response[start_idx : i + 1]
-                            break
-
-            if not json_str and repair:
-                # Never balanced — likely truncated output. Take everything
-                # from the opener and let repair_json() close it.
-                json_str = response[start_idx:]
-
-    if not json_str:
-        raise ValueError("No JSON found in response")
-
-    try:
-        json.loads(json_str)
-        return json_str, False
-    except json.JSONDecodeError:
         if not repair:
-            raise
+            raise ValueError(f"Invalid JSON: {last_error}") from last_error
 
-    try:
-        repaired = repair_json(json_str)
-        json.loads(repaired)  # Validate it parses.
-        return repaired, True
-    except (JSONRepairError, json.JSONDecodeError) as e:
-        raise ValueError(f"Cannot parse extracted JSON: {e}") from e
+        try:
+            repaired = repair_json(candidate)
+            json.loads(repaired)  # Validate it parses.
+            return repaired, True
+        except (JSONRepairError, json.JSONDecodeError) as e:
+            # This candidate is a dead end; the next one may not be.
+            last_error = e
+
+    if last_error is None:
+        raise ValueError("No JSON found in response")
+    raise ValueError(f"Cannot parse extracted JSON: {last_error}")

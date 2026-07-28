@@ -18,6 +18,11 @@
 
 from __future__ import annotations
 
+import json
+
+import pytest
+
+from bmlib.llm.json_repair import extract_and_repair_json
 from bmlib.llm.utils import extract_json, iter_json_spans
 
 
@@ -114,3 +119,32 @@ class TestExtractJson:
         # The tail candidate never parses, so it self-excludes.
         text = '{"a": 1, "b": [2'
         assert extract_json(text) == text
+
+
+class TestExtractAndRepairJsonPolicy:
+    def test_walks_past_a_candidate_that_cannot_repair(self):
+        # The junk fence body is offered first; the real object follows.
+        text = '```\nnot json at all\n```\nbut here: {"a": 1}'
+        extracted, repaired = extract_and_repair_json(text)
+        assert json.loads(extracted) == {"a": 1}
+        assert repaired is False
+
+    def test_walks_past_an_unrepairable_brace_span(self):
+        text = 'noise {not valid} more prose {"good": 1} trailing'
+        extracted, _ = extract_and_repair_json(text)
+        assert json.loads(extracted) == {"good": 1}
+
+    def test_array_span_wins_over_its_nested_object(self):
+        # Unlike extract_json, this has no dict-preference: the outermost
+        # span is the model's actual output and repair should target it.
+        extracted, _ = extract_and_repair_json('[{"a": 1}]')
+        assert json.loads(extracted) == [{"a": 1}]
+
+    def test_repair_disabled_still_finds_valid_json(self):
+        extracted, repaired = extract_and_repair_json('{"a": 1}', repair=False)
+        assert json.loads(extracted) == {"a": 1}
+        assert repaired is False
+
+    def test_repair_disabled_raises_on_malformed(self):
+        with pytest.raises(ValueError):
+            extract_and_repair_json('{"a": 1,}', repair=False)
