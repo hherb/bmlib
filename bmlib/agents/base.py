@@ -66,6 +66,9 @@ class BaseAgent:
         template_engine: Template engine for loading prompt files.
         temperature: Default sampling temperature.
         max_tokens: Default max tokens.
+        embedding_model: Default model string for :meth:`embed`. ``None``
+            lets the client pick its default provider's default. Declared
+            last so positional construction stays stable across versions.
     """
 
     def __init__(
@@ -75,12 +78,14 @@ class BaseAgent:
         template_engine: TemplateEngine | None = None,
         temperature: float = 0.3,
         max_tokens: int = 4096,
+        embedding_model: str | None = None,
     ) -> None:
         self.llm = llm
         self.model = model
         self.templates = template_engine
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.embedding_model = embedding_model
         self._metrics = PerformanceMetrics()
 
     # --- Message helpers ---
@@ -203,7 +208,7 @@ class BaseAgent:
                 truncated = (
                     f"response truncated at max_tokens={budget} "
                     f"(stop_reason={response.stop_reason!r}) — raise max_tokens "
-                    "or request less output"
+                    f"or request less output{context}"
                 )
                 logger.error(
                     "LLM response truncated (attempt %d/%d%s), full response: %s",
@@ -269,6 +274,81 @@ class BaseAgent:
     def format_metrics_report(self) -> str:
         """Render this agent's metrics as a human-readable report."""
         return self._metrics.snapshot().format_report(title=type(self).__name__)
+
+    # --- Embeddings ---
+
+    def embed(self, text: str, model: str | None = None) -> list[float]:
+        """Embed *text*, returning the raw vector.
+
+        Args:
+            text: The text to embed.
+            model: Model string, overriding :attr:`embedding_model` for this
+                call.  ``None`` falls back to the agent's default, then to
+                the client's.
+
+        Returns:
+            The embedding vector.
+
+        Raises:
+            ValueError: If the provider returns an empty vector.
+
+        Note:
+            Embedding calls are not recorded into :attr:`metrics`: mixing
+            them into ``tokens_per_second`` would distort a figure that is
+            about generation.
+        """
+        response = self.llm.embed(text=text, model=model or self.embedding_model)
+        if not response.embedding:
+            raise ValueError(f"Empty embedding returned by model {response.model!r}")
+        return response.embedding
+
+    def embed_batch(
+        self,
+        texts: list[str],
+        model: str | None = None,
+        max_batch_size: int | None = None,
+    ) -> list[list[float]]:
+        """Embed *texts* in as few provider requests as possible.
+
+        Several times faster than looping :meth:`embed` on bulk corpora.
+
+        Args:
+            texts: The texts to embed.  An empty list returns ``[]`` without
+                contacting the provider.
+            model: Model string, overriding :attr:`embedding_model`.
+            max_batch_size: Maximum texts per provider request; ``None`` lets
+                the provider choose.
+
+        Returns:
+            One vector per input text, in input order.
+
+        Raises:
+            ValueError: If the provider returns a different number of vectors
+                than texts given.
+        """
+        if not texts:
+            return []
+        response = self.llm.embed_batch(
+            texts=texts,
+            model=model or self.embedding_model,
+            max_batch_size=max_batch_size,
+        )
+        if len(response.embeddings) != len(texts):
+            raise ValueError(
+                f"Provider returned {len(response.embeddings)} embeddings for {len(texts)} texts"
+            )
+        return response.embeddings
+
+    # --- Connectivity ---
+
+    def test_connection(self) -> bool:
+        """Report whether this agent's provider is reachable.
+
+        Reachability only — whether *this* model is installed is a separate
+        question, answered by ``llm.list_models(provider)``.
+        """
+        provider = self.model.split(":", 1)[0] if ":" in self.model else self.llm.default_provider
+        return bool(self.llm.test_connection(provider))
 
     # --- Template rendering ---
 

@@ -25,7 +25,7 @@ import pytest
 
 from bmlib.agents.base import BaseAgent
 from bmlib.agents.metrics import PerformanceMetrics
-from bmlib.llm.data_types import LLMResponse
+from bmlib.llm.data_types import BatchEmbeddingResponse, EmbeddingResponse, LLMResponse
 
 
 class TestParseJson:
@@ -176,6 +176,20 @@ class TestChatJson:
             agent.chat_json([agent.user_msg("test")], temperature=0.7)
 
         assert agent.llm.chat.call_count == 3
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_truncation_failure_names_the_retry_context(self, mock_sleep):
+        agent = _make_agent()
+        agent.llm.chat.return_value = LLMResponse(
+            content='{"cases": [{"claim": "truncated mid-obj',
+            model="test",
+            stop_reason="max_tokens",
+        )
+
+        with pytest.raises(ValueError, match="cochrane assessment"):
+            agent.chat_json(
+                [agent.user_msg("t")], temperature=0.0, retry_context="cochrane assessment"
+            )
 
     @patch("bmlib.agents.base.time.sleep")
     def test_truncated_then_shorter_retry_recovers(self, mock_sleep):
@@ -507,3 +521,93 @@ class TestAgentMetrics:
         with caplog.at_level("WARNING", logger="bmlib.agents.base"):
             BaseAgent.parse_json('{"a": 1}')
         assert caplog.text == ""
+
+
+class TestAgentEmbeddings:
+    def test_embed_returns_the_vector(self):
+        agent = _make_agent()
+        agent.llm.embed.return_value = EmbeddingResponse(
+            embedding=[0.1, 0.2], model="e", dimensions=2
+        )
+
+        assert agent.embed("hello") == [0.1, 0.2]
+
+    def test_embed_uses_the_configured_embedding_model(self):
+        mock_llm = MagicMock()
+        agent = BaseAgent(llm=mock_llm, model="test:model", embedding_model="ollama:e2")
+        mock_llm.embed.return_value = EmbeddingResponse(embedding=[1.0], model="e2")
+
+        agent.embed("hello")
+
+        assert mock_llm.embed.call_args.kwargs["model"] == "ollama:e2"
+
+    def test_embed_argument_overrides_the_default(self):
+        mock_llm = MagicMock()
+        agent = BaseAgent(llm=mock_llm, model="test:model", embedding_model="ollama:e2")
+        mock_llm.embed.return_value = EmbeddingResponse(embedding=[1.0], model="e3")
+
+        agent.embed("hello", model="ollama:e3")
+
+        assert mock_llm.embed.call_args.kwargs["model"] == "ollama:e3"
+
+    def test_embed_raises_on_an_empty_vector(self):
+        agent = _make_agent()
+        agent.llm.embed.return_value = EmbeddingResponse(embedding=[], model="e")
+
+        with pytest.raises(ValueError, match="[Ee]mpty embedding"):
+            agent.embed("hello")
+
+    def test_embed_does_not_touch_generation_metrics(self):
+        agent = _make_agent()
+        agent.llm.embed.return_value = EmbeddingResponse(embedding=[1.0], model="e")
+
+        agent.embed("hello")
+
+        assert agent.metrics.total_requests == 0
+
+    def test_embed_batch_returns_vectors_in_order(self):
+        agent = _make_agent()
+        agent.llm.embed_batch.return_value = BatchEmbeddingResponse(
+            embeddings=[[1.0], [2.0]], model="e", dimensions=1
+        )
+
+        assert agent.embed_batch(["a", "b"]) == [[1.0], [2.0]]
+
+    def test_embed_batch_short_circuits_on_an_empty_list(self):
+        agent = _make_agent()
+
+        assert agent.embed_batch([]) == []
+        agent.llm.embed_batch.assert_not_called()
+
+    def test_embed_batch_raises_on_a_count_mismatch(self):
+        agent = _make_agent()
+        agent.llm.embed_batch.return_value = BatchEmbeddingResponse(
+            embeddings=[[1.0]], model="e", dimensions=1
+        )
+
+        with pytest.raises(ValueError, match="2 texts"):
+            agent.embed_batch(["a", "b"])
+
+
+class TestAgentConnection:
+    def test_reports_a_reachable_provider(self):
+        agent = _make_agent()
+        agent.llm.test_connection.return_value = True
+
+        assert agent.test_connection() is True
+        agent.llm.test_connection.assert_called_once_with("test")
+
+    def test_reports_an_unreachable_provider(self):
+        agent = _make_agent()
+        agent.llm.test_connection.return_value = False
+
+        assert agent.test_connection() is False
+
+    def test_falls_back_to_the_client_default_provider(self):
+        mock_llm = MagicMock()
+        mock_llm.default_provider = "ollama"
+        mock_llm.test_connection.return_value = True
+        agent = BaseAgent(llm=mock_llm, model="bare-model-name")
+
+        assert agent.test_connection() is True
+        mock_llm.test_connection.assert_called_once_with("ollama")
