@@ -22,7 +22,7 @@ import json
 
 import pytest
 
-from bmlib.llm.json_repair import extract_and_repair_json
+from bmlib.llm.json_repair import extract_and_repair_json, salvage_json_fields
 from bmlib.llm.utils import extract_json, iter_json_spans
 
 
@@ -158,3 +158,45 @@ class TestExtractAndRepairJsonPolicy:
         # and everything after it.
         with pytest.raises(ValueError):
             extract_and_repair_json('[{"a": 1}, invalid junk]')
+
+
+class TestSalvageJsonFields:
+    def test_recovers_fields_from_valid_json(self):
+        text = '{"a": 1, "b": "x"}'
+        assert salvage_json_fields(text, ["a", "b"]) == {"a": 1, "b": "x"}
+
+    def test_recovers_intact_fields_when_the_tail_is_malformed(self):
+        # The motivating case: only the trailing array was mangled.
+        text = '{"judgement": "high", "quotes": ["a", "b'
+        result = salvage_json_fields(text, ["judgement", "quotes"])
+        assert result["judgement"] == "high"
+        assert result["quotes"] == ["a", "b"]
+
+    def test_recovers_values_of_every_json_type(self):
+        text = '{"s": "x", "n": 1.5, "b": true, "z": null, "o": {"k": [1]}}'
+        result = salvage_json_fields(text, ["s", "n", "b", "z", "o"])
+        assert result == {"s": "x", "n": 1.5, "b": True, "z": None, "o": {"k": [1]}}
+
+    def test_decodes_escapes_in_string_values(self):
+        text = r'{"j": "he said \"hi\"\nthen left"}'
+        assert salvage_json_fields(text, ["j"])["j"] == 'he said "hi"\nthen left'
+
+    def test_missing_key_is_simply_absent(self):
+        assert salvage_json_fields('{"a": 1}', ["a", "nope"]) == {"a": 1}
+
+    def test_never_raises_on_junk(self):
+        assert salvage_json_fields("no json here", ["a"]) == {}
+
+    def test_empty_text_returns_empty_dict(self):
+        assert salvage_json_fields("", ["a"]) == {}
+
+    def test_first_match_wins(self):
+        # Documented limitation: a key name occurring inside a string value
+        # can be matched.  The first occurrence is what is taken.
+        text = '{"note": "raw "judgement": "wrong" here", "judgement": "right"}'
+        assert salvage_json_fields(text, ["judgement"])["judgement"] == "wrong"
+
+    def test_exported_from_package(self):
+        from bmlib.llm import salvage_json_fields as pkg_salvage
+
+        assert pkg_salvage is salvage_json_fields

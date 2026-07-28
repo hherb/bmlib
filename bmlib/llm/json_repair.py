@@ -36,6 +36,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Iterable
 from typing import Any
 
 from bmlib.llm.utils import iter_json_spans
@@ -505,3 +506,66 @@ def extract_and_repair_json(response: str, repair: bool = True) -> tuple[str, bo
     if last_error is None:
         raise ValueError("No JSON found in response")
     raise ValueError(f"Cannot parse extracted JSON: {last_error}")
+
+
+def salvage_json_fields(text: str, keys: Iterable[str]) -> dict[str, Any]:
+    """Recover individual top-level fields from a document that will not parse.
+
+    A last resort for responses :func:`extract_and_repair_json` gives up on.
+    A long structured answer is often malformed in only one place — typically
+    a truncated array at the tail — while the fields the caller actually needs
+    are intact.  This locates each requested key and decodes just the value
+    that follows it.
+
+    Deliberately **not** wired into :meth:`bmlib.agents.BaseAgent.parse_json`:
+    returning partial data automatically would turn a loud failure into a
+    quiet wrong answer.  Catch the :class:`ValueError` and opt in.
+
+    Args:
+        text: Raw response, valid JSON or not.
+        keys: Field names to look for.
+
+    Returns:
+        A dict of the keys that could be recovered.  Never raises; returns an
+        empty dict when nothing is found.
+
+    Note:
+        Matching is textual, so a key name appearing inside a string value can
+        be matched.  The first occurrence wins.
+    """
+    recovered: dict[str, Any] = {}
+    if not text:
+        return recovered
+
+    decoder = json.JSONDecoder()
+
+    for key in keys:
+        pattern = re.compile(r'"' + re.escape(key) + r'"\s*:\s*')
+        for match in pattern.finditer(text):
+            value, found = _decode_value_at(decoder, text, match.end())
+            if found:
+                recovered[key] = value
+                break
+
+    return recovered
+
+
+def _decode_value_at(decoder: json.JSONDecoder, text: str, index: int) -> tuple[Any, bool]:
+    """Decode one JSON value starting at *index*, repairing a truncated tail.
+
+    Returns ``(value, True)`` on success and ``(None, False)`` on failure —
+    a bare ``None`` return would be indistinguishable from a decoded
+    ``null``.
+    """
+    try:
+        value, _ = decoder.raw_decode(text, index)
+        return value, True
+    except ValueError:
+        pass
+
+    # The value runs to the end of a truncated document: close it and retry.
+    try:
+        value, _ = decoder.raw_decode(repair_json(text[index:]), 0)
+        return value, True
+    except (JSONRepairError, ValueError):
+        return None, False

@@ -41,6 +41,7 @@ from bmlib.llm.json_repair import (
     extract_and_repair_json,
     repair_json,
     safe_json_loads,
+    salvage_json_fields,
 )
 from bmlib.llm.text_utils import (
     TextChunk,
@@ -52,6 +53,7 @@ from bmlib.llm.text_utils import (
     process_with_rolling_summary,
 )
 from bmlib.llm.token_tracker import TokenTracker, get_token_tracker, reset_token_tracker
+from bmlib.llm.utils import iter_json_spans
 
 __all__ = [
     "BatchEmbeddingResponse",
@@ -71,11 +73,13 @@ __all__ = [
     "get_llm_client",
     "get_text_with_priority",
     "get_token_tracker",
+    "iter_json_spans",
     "process_with_map_reduce",
     "process_with_rolling_summary",
     "repair_json",
     "reset_llm_client",
     "reset_token_tracker",
     "safe_json_loads",
+    "salvage_json_fields",
     "supports_tools",
 ]
