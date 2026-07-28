@@ -162,14 +162,20 @@ def extract_json(text: str) -> str:
     """Extract a JSON span from text that may contain prose or code blocks.
 
     Walks the candidates from :func:`iter_json_spans` and returns the first
-    that parses **to a dict**, falling back to the first that parses at all.
-    Returns *text* unchanged when nothing parses.
+    that either came from a fence or parses **to a dict**, falling back to
+    the first that parses at all. Returns *text* unchanged when nothing
+    parses.
 
-    The preference for objects is deliberate: callers here — the Anthropic
-    and OpenAI-compatible providers' ``json_mode`` path, and
+    A fenced candidate wins on parse alone, ahead of dict preference: a fence
+    is the model's own delimitation of its answer, so a fenced JSON array
+    must not be reduced to an object plucked from inside it by a later,
+    unfenced stage (stages 4/5 rescan fence interiors as plain text). Without
+    a fence, the dict preference still applies — callers here — the
+    Anthropic and OpenAI-compatible providers' ``json_mode`` path, and
     :meth:`bmlib.agents.BaseAgent.parse_json` — want the object a model was
     asked for, not an incidental array that happens to appear earlier.
     """
+    fenced = {body.strip() for _, body in _FENCE_RE.findall(text)}
     fallback: str | None = None
 
     for candidate in iter_json_spans(text):
@@ -177,7 +183,7 @@ def extract_json(text: str) -> str:
             parsed = json.loads(candidate)
         except json.JSONDecodeError:
             continue
-        if isinstance(parsed, dict):
+        if isinstance(parsed, dict) or candidate in fenced:
             return candidate
         if fallback is None:
             fallback = candidate

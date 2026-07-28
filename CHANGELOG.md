@@ -95,22 +95,34 @@ All notable changes to bmlib are documented here. The format is based on
 ### Changed
 
 - **`extract_json()` and `extract_and_repair_json()` are rebuilt on the
-  shared locator `iter_json_spans()`** (closes #17). Four behaviour deltas
-  fall out of the consolidation:
+  shared locator `iter_json_spans()`** (closes #17). Behaviour deltas fall
+  out of the consolidation:
   - Bare top-level arrays are now visible to `extract_json()` — previously an
     unfenced `[...]` response with no object anywhere fell through to the
     raw, unparsed input.
-  - **Dict preference:** when a response contains both an array and an
-    object, `extract_json()` returns the object —
-    `extract_json('[{"a": 1}]')` now returns `{"a": 1}`, not the enclosing
-    array, because the object is what a `json_mode` caller actually asked
-    for.
-  - **Fence priority:** a ` ```json `-tagged fence now wins over an earlier
-    untagged fence, instead of whichever fence comes first in document order
-    winning regardless of its language tag.
+  - **Dict preference (`extract_json()` only):** when a response contains an
+    object anywhere — nested inside an array, or alongside one —
+    `extract_json()` returns the object over an incidental array, because the
+    object is what a `json_mode` caller actually asked for. This is not new:
+    the pre-consolidation brace-only scan was object-only, so it already
+    returned `{"a": 1}` for `extract_json('[{"a": 1}]')`; consolidation
+    preserves that outcome rather than changing it. What *is* new is that a
+    **fenced** candidate now outranks dict preference: a fence is the model's
+    own delimitation of its answer, so a fenced JSON array must not be
+    reduced to an object plucked from inside it by a later, unfenced stage.
+  - **Fence priority (`extract_json()` only):** a ` ```json `-tagged fence now
+    wins over an earlier untagged fence, instead of whichever fence comes
+    first in document order winning regardless of its language tag.
+    `extract_and_repair_json()` already prioritised ` ```json ` fences before
+    this branch, so this delta is new only for `extract_json()`.
   - `extract_and_repair_json()` now walks candidates instead of staking
     everything on a single span: a candidate that fails to parse or repair no
-    longer ends the search, so the next one gets a chance.
+    longer ends the search, so the next one gets a chance. With
+    `repair=False`, this raises a plain `ValueError` on the final exhausted
+    candidate where the pre-consolidation code re-raised the original
+    `json.JSONDecodeError`. `JSONDecodeError` subclasses `ValueError`, so
+    `except ValueError` callers are unaffected; `except json.JSONDecodeError`
+    specifically no longer catches it.
 - `BaseAgent.parse_json()` now logs a WARNING when its repair stage is what
   rescued the response — repair closes brackets, so a truncated response can
   parse into a valid but incomplete object, and the log line says so.
@@ -225,6 +237,14 @@ byte-for-byte unchanged — the full pre-existing suite passes untouched. On
 PostgreSQL the changes above are strictly fixes to paths that were broken or
 absent. Databases created by an earlier bmlib pick up the new `pmcid` column
 on the next `ensure_schema()` call, which `sync()` makes for you.
+
+This section is otherwise about additive and fix-only changes, but the JSON
+extraction deltas above (dict/fence-priority ordering in `extract_json()`;
+walk-past-a-bad-candidate policy in `extract_and_repair_json()`) are the
+first **behaviour** change here on a genuinely hot path: both
+`bmlib/llm/providers/anthropic.py` and `openai_compat.py` call
+`extract_json()` on every `json_mode` response, unconditionally, not from an
+opt-in code path.
 
 Two details worth knowing when upgrading:
 

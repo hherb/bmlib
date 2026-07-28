@@ -1106,7 +1106,7 @@ print(data["design"], was_repaired)   # RCT True
 def extract_json(text: str) -> str
 ```
 
-Not exported from `bmlib.llm` — import it from `bmlib.llm.utils`. Walks the same locator as `extract_and_repair_json()`, but via `iter_json_spans(text)` with `nested_objects=True`, and returns the first candidate that **parses to a dict**, falling back to the first that parses at all if no candidate is an object. Returns *text* unchanged if nothing parses.
+Not exported from `bmlib.llm` — import it from `bmlib.llm.utils`. Walks the same locator as `extract_and_repair_json()`, but via `iter_json_spans(text)` with `nested_objects=True`, and returns the first candidate that either came from a fence or **parses to a dict**, falling back to the first that parses at all if neither. Returns *text* unchanged if nothing parses.
 
 The dict preference is deliberate: the callers here — the Anthropic and OpenAI-compatible providers' `json_mode` path, and `BaseAgent.parse_json()` — want the object a model was asked for, not an incidental array that happens to appear earlier in the response:
 
@@ -1117,12 +1117,19 @@ extract_json('Result: [{"a": 1}]')
 # '{"a": 1}' — the object nested in the single-element array, not the array itself
 ```
 
+A fence outranks the dict preference, though: it is the model's own delimitation of its answer, so a fenced array must not be reduced to an object plucked from inside it by a later, unfenced stage.
+
+```python
+extract_json('```json\n[{"a": 1}, {"a": 2}]\n```')
+# '[{"a": 1}, {"a": 2}]' — the whole fenced array, not the first element
+```
+
 Both extractors share `iter_json_spans()` as their locator and differ only in acceptance policy:
 
 | | `extract_json` | `extract_and_repair_json` |
 |---|---|---|
 | Locates candidates via | `iter_json_spans(text)` | `iter_json_spans(text, nested_objects=False)` |
-| Acceptance policy | First candidate that parses **to a dict**; else first that parses at all | First candidate that parses **or repairs** |
+| Acceptance policy | First candidate that is fenced or parses **to a dict**; else first that parses at all | First candidate that parses **or repairs** |
 | Top-level arrays | Returned only if no candidate parses to a dict | Returned if it is the first candidate that parses or repairs |
 | Repairs malformed JSON | No | Yes (unless `repair=False`) |
 | On failure | Returns the input unchanged | Raises `ValueError` |

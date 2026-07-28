@@ -493,7 +493,9 @@ def extract_and_repair_json(response: str, repair: bool = True) -> tuple[str, bo
             last_error = e
 
         if not repair:
-            raise ValueError(f"Invalid JSON: {last_error}") from last_error
+            # This candidate does not parse and repair is disabled — it is a
+            # dead end, but not the whole search: walk on to the next one.
+            continue
 
         try:
             repaired = repair_json(candidate)

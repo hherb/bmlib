@@ -350,7 +350,7 @@ Thread-safe: an internal `threading.Lock` guards every mutation, so a `BaseAgent
 | `mark_start()` | Set `start_time` to now, clear `end_time`. |
 | `mark_end()` | Set `end_time` to now. |
 | `reset()` | Clear every counter and both time marks. |
-| `snapshot()` | Return an independent copy, read under the lock. |
+| `snapshot()` | Return an independent copy, read under the lock. The only supported way to copy an instance — the `threading.Lock` field makes `copy.deepcopy()` and `pickle` raise `TypeError` directly on a `PerformanceMetrics`. |
 | `to_dict()` | Serialise to a plain dict, including the derived properties below (each rounded). |
 | `from_dict(data)` | Classmethod; rebuild from `to_dict()` output. Derived values are ignored — they are recomputed from the raw fields. |
 | `format_report(title=None)` | Render a human-readable, multi-line report. The heading line is omitted entirely when `title` is `None`. |

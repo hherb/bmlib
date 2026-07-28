@@ -354,12 +354,14 @@ class TestPerformanceMetrics:
         assert m.total_requests == 1
         assert m.total_retries == 1
 
-    def test_elapsed_time_between_marks(self):
+    @patch("bmlib.agents.metrics.time.time")
+    def test_elapsed_time_between_marks(self, mock_time):
+        mock_time.side_effect = [100.0, 102.5]
         m = PerformanceMetrics()
         m.mark_start()
         m.mark_end()
-        assert m.elapsed_time_seconds >= 0.0
-        assert m.end_time is not None
+        assert m.elapsed_time_seconds == 2.5
+        assert m.end_time == 102.5
 
     def test_mark_start_clears_a_previous_end(self):
         m = PerformanceMetrics()
@@ -404,7 +406,7 @@ class TestPerformanceMetrics:
         report = m.format_report(title="ScoringAgent")
         assert "ScoringAgent" in report
         assert "150" in report
-        assert "1" in report
+        assert "Requests:     1" in report
 
     def test_format_report_without_title(self):
         assert "===" not in PerformanceMetrics().format_report()
@@ -427,13 +429,15 @@ class TestPerformanceMetrics:
         assert m.total_tokens == 3200
 
     def test_exported_from_package(self):
-        from bmlib.agents import PerformanceMetrics as pkg_metrics  # noqa: N813
+        from bmlib.agents import PerformanceMetrics as PkgPerformanceMetrics
 
-        assert pkg_metrics is PerformanceMetrics
+        assert PkgPerformanceMetrics is PerformanceMetrics
 
 
 class TestAgentMetrics:
-    def test_chat_records_a_request(self):
+    @patch("bmlib.agents.base.time.monotonic")
+    def test_chat_records_a_request(self, mock_monotonic):
+        mock_monotonic.side_effect = [10.0, 12.5]
         agent = _make_agent()
         agent.llm.chat.return_value = LLMResponse(
             content="hi", model="test", input_tokens=10, output_tokens=4
@@ -444,7 +448,7 @@ class TestAgentMetrics:
         assert agent.metrics.total_requests == 1
         assert agent.metrics.total_prompt_tokens == 10
         assert agent.metrics.total_completion_tokens == 4
-        assert agent.metrics.total_wall_time_seconds >= 0.0
+        assert agent.metrics.total_wall_time_seconds == 2.5
 
     def test_failed_chat_records_nothing(self):
         agent = _make_agent()
@@ -608,6 +612,19 @@ class TestAgentConnection:
         mock_llm.default_provider = "ollama"
         mock_llm.test_connection.return_value = True
         agent = BaseAgent(llm=mock_llm, model="bare-model-name")
+
+        assert agent.test_connection() is True
+        mock_llm.test_connection.assert_called_once_with("ollama")
+
+    def test_pathological_leading_colon_falls_back_to_the_client_default(self):
+        # ":model".split(":", 1)[0] is "" — falsy — which must not be passed
+        # through as the provider.  LLMClient.test_connection("") takes the
+        # all-providers branch and returns a (truthy) dict, so this would
+        # silently report a non-existent provider as reachable.
+        mock_llm = MagicMock()
+        mock_llm.default_provider = "ollama"
+        mock_llm.test_connection.return_value = True
+        agent = BaseAgent(llm=mock_llm, model=":model")
 
         assert agent.test_connection() is True
         mock_llm.test_connection.assert_called_once_with("ollama")

@@ -346,9 +346,16 @@ class BaseAgent:
 
         Reachability only — whether *this* model is installed is a separate
         question, answered by ``llm.list_models(provider)``.
+
+        A model string with no provider before the colon (``":model"``)
+        splits to an empty provider, which is falsy — fall back to the
+        client's default rather than passing it through: an empty string
+        makes ``LLMClient.test_connection()`` take its all-providers branch
+        and return a non-empty dict, which is truthy, silently reporting a
+        non-existent provider as reachable.
         """
         provider = self.model.split(":", 1)[0] if ":" in self.model else self.llm.default_provider
-        return bool(self.llm.test_connection(provider))
+        return bool(self.llm.test_connection(provider or self.llm.default_provider))
 
     # --- Template rendering ---
 

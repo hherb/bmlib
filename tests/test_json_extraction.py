@@ -123,6 +123,18 @@ class TestExtractJson:
         text = '{"a": 1, "b": [2'
         assert extract_json(text) == text
 
+    def test_fenced_array_of_objects_is_returned_whole(self):
+        # A fence is the model's own delimitation of its answer, so it wins
+        # over dict-preference.  Returning the first element would silently
+        # drop the rest of a list a caller asked for.
+        text = '```json\n[{"pmid": "111"}, {"pmid": "222"}]\n```'
+        assert json.loads(extract_json(text)) == [{"pmid": "111"}, {"pmid": "222"}]
+
+    def test_unfenced_nested_object_still_wins(self):
+        # Without a fence, dict-preference still applies — this is the
+        # pre-consolidation behaviour and must not change.
+        assert extract_json('[{"a": 1}]') == '{"a": 1}'
+
 
 class TestExtractAndRepairJsonPolicy:
     def test_walks_past_a_candidate_that_cannot_repair(self):
@@ -158,6 +170,16 @@ class TestExtractAndRepairJsonPolicy:
         # and everything after it.
         with pytest.raises(ValueError):
             extract_and_repair_json('[{"a": 1}, invalid junk]')
+
+    def test_repair_disabled_still_walks_past_a_junk_candidate(self):
+        text = '```\nnot json at all\n```\nand {"a": 1}'
+        extracted, repaired = extract_and_repair_json(text, repair=False)
+        assert json.loads(extracted) == {"a": 1}
+        assert repaired is False
+
+    def test_repair_disabled_raises_when_every_candidate_fails(self):
+        with pytest.raises(ValueError):
+            extract_and_repair_json('{"a": 1,} and {"b": 2,}', repair=False)
 
 
 class TestSalvageJsonFields:
