@@ -200,3 +200,21 @@ class TestSalvageJsonFields:
         from bmlib.llm import salvage_json_fields as pkg_salvage
 
         assert pkg_salvage is salvage_json_fields
+
+    def test_repair_is_attempted_at_most_once_per_key(self, monkeypatch):
+        # A repetition-loop response matches the key many times and never
+        # decodes.  Repairing the tail at every match is quadratic.
+        from bmlib.llm import json_repair as jr
+
+        calls = []
+        real_repair = jr.repair_json
+
+        def counting_repair(text, *args, **kwargs):
+            calls.append(len(text))
+            return real_repair(text, *args, **kwargs)
+
+        monkeypatch.setattr(jr, "repair_json", counting_repair)
+
+        text = '{"j": ' * 500
+        assert jr.salvage_json_fields(text, ["j"]) == {}
+        assert len(calls) <= 1

@@ -526,8 +526,8 @@ def salvage_json_fields(text: str, keys: Iterable[str]) -> dict[str, Any]:
         keys: Field names to look for.
 
     Returns:
-        A dict of the keys that could be recovered.  Never raises; returns an
-        empty dict when nothing is found.
+        A dict of the keys that could be recovered.  Never raises on malformed
+        text; returns an empty dict when nothing is found.
 
     Note:
         Matching is textual, so a key name appearing inside a string value can
@@ -541,27 +541,51 @@ def salvage_json_fields(text: str, keys: Iterable[str]) -> dict[str, Any]:
 
     for key in keys:
         pattern = re.compile(r'"' + re.escape(key) + r'"\s*:\s*')
-        for match in pattern.finditer(text):
-            value, found = _decode_value_at(decoder, text, match.end())
+        matches = list(pattern.finditer(text))
+
+        # Phase 1: Try fast decode on all matches.
+        for match in matches:
+            value, found = _decode_value_at(decoder, text, match.end(), allow_repair=False)
             if found:
                 recovered[key] = value
                 break
+        else:
+            # Phase 2: None of the fast decodes worked. If there were matches,
+            # try repair on the last one only — repair is for closing a
+            # truncated tail, which exists in only one place.
+            if matches:
+                last_match = matches[-1]
+                value, found = _decode_value_at(decoder, text, last_match.end(), allow_repair=True)
+                if found:
+                    recovered[key] = value
 
     return recovered
 
 
-def _decode_value_at(decoder: json.JSONDecoder, text: str, index: int) -> tuple[Any, bool]:
-    """Decode one JSON value starting at *index*, repairing a truncated tail.
+def _decode_value_at(
+    decoder: json.JSONDecoder, text: str, index: int, *, allow_repair: bool = True
+) -> tuple[Any, bool]:
+    """Decode one JSON value starting at *index*, optionally repairing a truncated tail.
 
     Returns ``(value, True)`` on success and ``(None, False)`` on failure —
     a bare ``None`` return would be indistinguishable from a decoded
     ``null``.
+
+    Args:
+        decoder: JSON decoder instance.
+        text: Full text being searched.
+        index: Start position for value parsing.
+        allow_repair: If False, skip repair and return False on any parse error.
+            If True, attempt repair_json on truncated tail.
     """
     try:
         value, _ = decoder.raw_decode(text, index)
         return value, True
     except ValueError:
         pass
+
+    if not allow_repair:
+        return None, False
 
     # The value runs to the end of a truncated document: close it and retry.
     try:
