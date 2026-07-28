@@ -1130,7 +1130,7 @@ Both extractors share `iter_json_spans()` as their locator and differ only in ac
 |---|---|---|
 | Locates candidates via | `iter_json_spans(text)` | `iter_json_spans(text, nested_objects=False)` |
 | Acceptance policy | First candidate that is fenced or parses **to a dict**; else first that parses at all | First candidate that parses **or repairs** |
-| Top-level arrays | Returned only if no candidate parses to a dict | Returned if it is the first candidate that parses or repairs |
+| Top-level arrays | Returned when fenced, or when no candidate parses to a dict | Returned if it is the first candidate that parses or repairs |
 | Repairs malformed JSON | No | Yes (unless `repair=False`) |
 | On failure | Returns the input unchanged | Raises `ValueError` |
 | Return value | `str` | `tuple[str, bool]` |
