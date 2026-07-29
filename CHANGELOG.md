@@ -133,9 +133,13 @@ All notable changes to bmlib are documented here. The format is based on
   meant matching `risk_indicators` prose — documentation, not API. The
   strings stay for humans. Set if and only if `risk_level` is `UNKNOWN`:
   `calculate_risk_level()` never returns `UNKNOWN`, so every one comes from a
-  known early return. Serialised by value like `risk_level`, and read
-  defensively on the way back in, so results persisted before the field
-  existed still load. Declared **last** on the dataclass, for the same reason
+  known early return. Serialised by value like `risk_level`, and the *key* is
+  read defensively on the way back in, so results persisted before the field
+  existed still load — a present-but-unrecognised value still raises, exactly
+  as `risk_level` does. `__post_init__` enforces the invariant in the one
+  direction that cannot collide with those legacy results: a reason on a
+  non-`UNKNOWN` result raises `ValueError`, while an `UNKNOWN` without a
+  reason is accepted. Declared **last** on the dataclass, for the same reason
   as `Publication.pmcid`.
 
 ### Changed
@@ -204,10 +208,13 @@ All notable changes to bmlib are documented here. The format is based on
   in a registry other than ClinicalTrials.gov, which PubMed's `<DataBankList>`
   makes visible for the first time. `trial_results_compliant` stays `False`
   there — ClinicalTrials.gov has no answer for an ISRCTN number — so the
-  indicator says `"Trial registered outside ClinicalTrials.gov; results
-  posting not checked"` rather than the misleading `"Registered trial without
-  posted results"`. Read the indicator, not the flag, to tell "checked and
-  absent" from "not checkable".
+  indicator says `"Trial registration found; posted-results status could not
+  be checked"` rather than the misleading `"Registered trial without posted
+  results"`. Read the indicator, not the flag, to tell "checked and absent"
+  from "not checkable". The line names the consequence rather than the cause
+  because it also covers a *ClinicalTrials.gov* registration whose accession
+  was unusable, for which "registered outside ClinicalTrials.gov" would be
+  false.
 - A COI disclosure found in PubMed retracts the two full-text COI indicators
   (`"No COI disclosure found in full text"`, `"COI disclosure status unknown
   (full text unavailable)"`) rather than leaving them to contradict

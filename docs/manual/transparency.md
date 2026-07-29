@@ -77,6 +77,8 @@ elif result.unknown_reason is TransparencyUnknownReason.NO_IDENTIFIER:
 
 **Invariant:** `unknown_reason` is set if and only if `risk_level is TransparencyRisk.UNKNOWN`. Every determinate result carries `None`.
 
+`__post_init__` enforces one half of that: constructing a non-`UNKNOWN` result with a reason raises `ValueError`. The other half is deliberately not enforced — an `UNKNOWN` *without* a reason constructs fine, because that is what results persisted before this field existed load as, and rejecting them would turn an additive field into a breaking change.
+
 ---
 
 ## Data Models
@@ -179,7 +181,7 @@ A statement is found by any of three routes:
 
 1. **Structural** — a non-blank JATS-tagged COI container (`<fn fn-type="COI-statement">`, `<sec sec-type="conflict">`, a `<sec>` whose `<title>` names conflicts or competing interests) counts as a disclosure *regardless of its wording*. The tag is proof a statement exists, so a disclosure phrased in a way no cue phrase matches is still credited.
 2. **Cue phrase** — the fallback for untagged text, scanning for `"conflict of interest"`, `"competing interest"`, `"no conflict"`, `"nothing to disclose"`, `"declare no"`, `"financial disclosure"`.
-3. **PubMed `<CoiStatement>`** — publisher-supplied structured metadata, consulted whether or not full text was available. This is the route that reaches closed-access papers, where routes 1 and 2 have nothing to scan.
+3. **PubMed `<CoiStatement>`** — publisher-supplied structured metadata, consulted whether or not full text was available. This is the route that reaches closed-access papers, where routes 1 and 2 have nothing to scan. The element's full text content is read, not just its leading text node: the MEDLINE DTD declares `CoiStatement` as `(%text;)*`, so a statement may open with inline markup (`<b>Conflict of interest:</b> …`) and would otherwise be read as blank.
 
 A whitespace-only tagged section proves nothing and does not suppress the fallback, so an untagged disclosure elsewhere in the document is still found. `SCORE_COI_DISCLOSED` is credited exactly once no matter how many routes fire.
 
@@ -386,11 +388,15 @@ Each CrossRef funder `name` is lowercased and tested against `_INDUSTRY_KEYWORDS
 
 A hit appends the indicator `f"Industry funder: {name}"` and sets `industry_funding_confidence` to `DEFAULT_INDUSTRY_CONFIDENCE` (0.8). These keywords are matched **only** against funder names — short, curated org strings where a suffix like `"inc."` is strong evidence.
 
+The three suffix forms carry their trailing dot on purpose: a bare `"inc"` matches `"Lincoln"` and `"province"` as a substring. The cost is a false negative on a name written without the dot — an NLM-normalised `"Pfizer Inc"` is missed. [Issue #36](https://github.com/hherb/bmlib/issues/36) tracks replacing the substring test with word-boundary matching, which needs calibrating against both the CrossRef and PubMed corpora.
+
 ### Signal 2 — PubMed grant agencies (confidence 0.8)
 
 `<Grant><Agency>` names from the PubMed record are tested against the same `_INDUSTRY_KEYWORDS` list, append the same `f"Industry funder: {name}"` indicator, and carry the same 0.8 confidence: a grant agency is structured publisher-supplied metadata, the same class of evidence as a CrossRef funder record.
 
 In practice PubMed's `GrantList` is dominated by public funders, so this signal fires rarely. Its real value is the funder *information* it supplies for papers CrossRef cannot be asked about — a PMID-only analysis had no funder signal at all before it.
+
+Agencies are deduplicated twice over, because PubMed emits one `<Grant>` element per *grant number*: an agency funding four grants on one paper appears four times in the XML. `_parse_pubmed_signals()` collapses those to one entry, and the merge step also skips a funder CrossRef has already named. One funder is one indicator line, however many grants and sources report it.
 
 ### Signal 3 — industry ties in the COI statement (confidence 0.5) — *new in 0.4.0*
 
@@ -448,8 +454,10 @@ When the PubMed record lists a trial-registry databank, that is the publisher as
 
 Two consequences worth knowing:
 
-- **Registration outside ClinicalTrials.gov now counts.** `trial_registered` is `True` and 20 points are awarded, but posted results cannot be looked up — ClinicalTrials.gov has no answer for an ISRCTN number. The result says so with `"Trial registered outside ClinicalTrials.gov; results posting not checked"` rather than the misleading `"Registered trial without posted results"`. `trial_results_compliant` is `False` in both cases, so read the indicator, not the flag, to tell "checked and absent" from "not checkable".
+- **Registration outside ClinicalTrials.gov now counts.** `trial_registered` is `True` and 20 points are awarded, but posted results cannot be looked up — ClinicalTrials.gov has no answer for an ISRCTN number. The result says so with `"Trial registration found; posted-results status could not be checked"` rather than the misleading `"Registered trial without posted results"`. `trial_results_compliant` is `False` in both cases, so read the indicator, not the flag, to tell "checked and absent" from "not checkable".
 - **Accessions are validated before use.** Only a well-formed `NCT\d{8}` id is carried forward, because it is publisher-supplied text that would otherwise be interpolated into a ClinicalTrials.gov URL path unchecked. A ClinicalTrials.gov entry whose accession is missing or malformed still counts as a registration — it just falls into the not-checkable case above.
+
+  This is why that indicator names the *consequence* and not the registry: it covers both a genuine non-ClinicalTrials.gov registration and a ClinicalTrials.gov one whose accession was unusable, and "registered outside ClinicalTrials.gov" would be simply false in the second case. The distinction is logged at `DEBUG`, not carried on the result — nothing scores differently on it.
 
 ### Abstract heuristic — the fallback
 

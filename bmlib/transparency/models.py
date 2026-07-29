@@ -116,6 +116,21 @@ class TransparencyResult:
     # argument by one with no error raised anywhere.
     unknown_reason: TransparencyUnknownReason | None = None
 
+    def __post_init__(self) -> None:
+        """Reject a reason on a result that is not ``UNKNOWN``.
+
+        Only this direction is enforced. The converse — every ``UNKNOWN``
+        carries a reason — holds for anything :meth:`analyze` produces, but
+        results persisted before the field existed load with ``None``, and
+        refusing to construct those would make the field a breaking change
+        rather than an additive one.
+        """
+        if self.unknown_reason is not None and self.risk_level is not TransparencyRisk.UNKNOWN:
+            raise ValueError(
+                f"unknown_reason={self.unknown_reason.value!r} is meaningless on a "
+                f"{self.risk_level.value!r} result; it is set only when risk_level is UNKNOWN"
+            )
+
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dictionary."""
         return {
@@ -152,8 +167,11 @@ class TransparencyResult:
             analyzed_at = datetime.now(tz=UTC)
 
         # Absent from results persisted before the field existed, and null on
-        # every determinate result, so it is read defensively rather than
-        # indexed.
+        # every determinate result, so the *key* is read defensively rather
+        # than indexed. A present-but-unrecognised value still raises, exactly
+        # as `risk_level` does: a member this version does not know about is a
+        # result it cannot interpret, and inventing `None` for it would report
+        # a determinate analysis.
         unknown_reason_raw = data.get("unknown_reason")
         unknown_reason = (
             TransparencyUnknownReason(unknown_reason_raw) if unknown_reason_raw else None

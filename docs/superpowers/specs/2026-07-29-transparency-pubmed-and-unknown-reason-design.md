@@ -191,3 +191,43 @@ setting reachability.
 **`unknown_reason`:** each of the three causes; a determinate result carrying
 `None`; `to_dict()` / `from_dict()` round trip; a legacy dict without the key
 loading as `None`.
+
+---
+
+## As built — amendments from review of PR #35
+
+This document records the design as written. Six things changed under review;
+the names above are kept as the historical record, not as a description of the
+shipped code.
+
+- **`_PubMedSignals.other_registry` shipped as `registration_not_checkable`,**
+  and its indicator names the consequence rather than a registry. The flag was
+  always set for two different situations — a registration in another registry,
+  *and* a ClinicalTrials.gov entry whose accession failed validation — so
+  `"Trial registered outside ClinicalTrials.gov"` was a plain falsehood in the
+  second case. The shipped line is `"Trial registration found; posted-results
+  status could not be checked"`; the distinction between the two causes is
+  logged at DEBUG, since nothing scores differently on it.
+- **`<CoiStatement>` is read with `itertext()`, not `.text`.** The MEDLINE DTD
+  declares it `(%text;)*`, so a statement opening with inline markup —
+  `<b>Conflict of interest:</b> …` — has an empty leading text node and was
+  read as absent.
+- **`funders` is deduplicated in the parser, and the merge skips a funder
+  CrossRef already named.** PubMed emits one `<Grant>` per grant *number*, so
+  an agency funding four grants appeared four times and contributed four
+  identical `"Industry funder: …"` lines.
+- **`funder_info_scored` is threaded into `_check_crossref` as well as out of
+  it.** Computing it fresh there is correct only while CrossRef is the first
+  funder source consulted.
+- **`_merge_pubmed_signals()` copies `indicators` on the way in.** Its two
+  branches otherwise disagreed — the COI branch rebound, the funder branch
+  appended in place — so a caller ignoring the return value saw a
+  half-applied merge.
+- **`TransparencyResult.__post_init__` enforces the `unknown_reason`
+  invariant** in the one direction that cannot reject legacy data: a reason on
+  a non-`UNKNOWN` result raises; an `UNKNOWN` without a reason is accepted.
+
+Two review findings were deliberately *not* fixed here and are lodged instead:
+issue #36 (industry-keyword matching is punctuation-dependent — needs
+calibrating against both corpora, not a one-line edit) and issue #37 (the
+accumulator tuples in `analyze()` want a mutable `_Analysis` dataclass).

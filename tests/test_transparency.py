@@ -18,16 +18,19 @@
 
 from __future__ import annotations
 
+import pytest
+
 from bmlib.transparency.analyzer import (
     _INDICATOR_COI_IN_PUBMED,
     _INDICATOR_COI_UNKNOWN,
     _INDICATOR_NO_COI_IN_FULLTEXT,
     _INDICATOR_NO_POSTED_RESULTS,
-    _INDICATOR_REGISTRY_NOT_CHECKED,
+    _INDICATOR_RESULTS_NOT_CHECKABLE,
     DEFAULT_INDUSTRY_CONFIDENCE,
     SCORE_COI_DISCLOSED,
     SCORE_FUNDER_INFO,
     TransparencyAnalyzer,
+    _merge_pubmed_signals,
     _parse_pubmed_signals,
     _PubMedSignals,
 )
@@ -981,6 +984,28 @@ class TestUnknownReason:
             is None
         )
 
+    def test_a_reason_on_a_determinate_result_is_rejected(self):
+        # The invariant is documented; this makes it enforced in the one
+        # direction that cannot collide with legacy data.
+        with pytest.raises(ValueError, match="only when risk_level is UNKNOWN"):
+            TransparencyResult(
+                document_id="doc1",
+                transparency_score=80,
+                risk_level=TransparencyRisk.LOW,
+                unknown_reason=TransparencyUnknownReason.DISABLED,
+            )
+
+    def test_a_legacy_unknown_without_a_reason_still_constructs(self):
+        # The converse is deliberately not enforced: results persisted before
+        # the field existed are UNKNOWN with no reason, and refusing them would
+        # make an additive field a breaking change.
+        result = TransparencyResult(
+            document_id="doc1",
+            transparency_score=0,
+            risk_level=TransparencyRisk.UNKNOWN,
+        )
+        assert result.unknown_reason is None
+
     def test_survives_round_trip(self):
         original = TransparencyResult(
             document_id="doc1",
@@ -1128,6 +1153,16 @@ class TestPubMedSignalParsing:
     def test_absent_coi_statement(self):
         assert _parse_pubmed_signals(_pubmed_xml()).coi_statement is False
 
+    def test_a_coi_statement_opening_with_markup_is_still_a_disclosure(self):
+        # The MEDLINE DTD declares CoiStatement as (%text;)*, so <b>/<i>/<sup>
+        # are legal inside it. Reading the element's `.text` alone sees only
+        # the leading text node — empty here — and would report a disclosure
+        # that is plainly present as absent.
+        xml = _pubmed_xml(coi="PLACEHOLDER").replace(
+            "PLACEHOLDER", "<b>Conflict of interest:</b> Dr X consults for Y."
+        )
+        assert _parse_pubmed_signals(xml).coi_statement is True
+
     def test_clinicaltrials_accessions_collected_and_upper_cased(self):
         signals = _parse_pubmed_signals(
             _pubmed_xml(databanks=(("ClinicalTrials.gov", ("nct01234567", "NCT07654321")),))
@@ -1136,7 +1171,7 @@ class TestPubMedSignalParsing:
 
     def test_non_clinicaltrials_registry_registers_without_accessions(self):
         signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("ISRCTN", ("ISRCTN12345678",)),)))
-        assert signals.other_registry is True
+        assert signals.registration_not_checkable is True
         assert signals.trial_accessions == ()
 
     def test_registry_name_matching_ignores_case(self):
@@ -1149,23 +1184,33 @@ class TestPubMedSignalParsing:
         # An accession is publisher-supplied text that would be interpolated
         # into the ClinicalTrials.gov URL path, so it is validated before it is
         # carried forward. The registration itself still counts — it just
-        # cannot be followed up, which is what `other_registry` records.
+        # cannot be followed up, which is what `registration_not_checkable`
+        # records.
         signals = _parse_pubmed_signals(
             _pubmed_xml(databanks=(("ClinicalTrials.gov", ("../../../evil", "NCT-nope")),))
         )
         assert signals.trial_accessions == ()
-        assert signals.other_registry is True
+        assert signals.registration_not_checkable is True
 
     def test_data_deposition_databank_is_not_a_registration(self):
         # GENBANK/PDB accessions are a data-availability signal, deliberately
         # out of scope here — they must not be mistaken for trial registration.
         signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("GENBANK", ("MN908947",)),)))
         assert signals.trial_accessions == ()
-        assert signals.other_registry is False
+        assert signals.registration_not_checkable is False
 
     def test_grant_agencies_collected(self):
         signals = _parse_pubmed_signals(_pubmed_xml(agencies=("NCI NIH HHS", "Wellcome Trust")))
         assert signals.funders == ("NCI NIH HHS", "Wellcome Trust")
+
+    def test_repeated_agencies_are_collapsed(self):
+        # PubMed emits one <Grant> per grant number, so an agency funding four
+        # grants on one paper appears four times in the XML. Left as-is, each
+        # repeat adds its own "Industry funder: …" line to the result.
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(agencies=("Genentech Inc.", "NCI NIH HHS", "Genentech Inc."))
+        )
+        assert signals.funders == ("Genentech Inc.", "NCI NIH HHS")
 
     def test_malformed_xml_yields_no_signals(self):
         assert _parse_pubmed_signals("<PubmedArticleSet><trunca") == _PubMedSignals()
@@ -1234,6 +1279,33 @@ class TestPubMedRequest:
         self._install(monkeypatch, client)
         analyzer.analyze("doc1", pmid=pmid, doi=doi)
         return client
+
+
+class TestFunderInfoIsScoredOnce:
+    """`SCORE_FUNDER_INFO` is worth 15 points once, across every funder source.
+
+    CrossRef happens to run first today, which is what makes the flag safe to
+    compute fresh there. Threading it in as well as out is what keeps it safe
+    when it no longer does.
+    """
+
+    def test_crossref_respects_an_already_spent_component(self):
+        client = _RecordingClient(crossref={"message": {"funder": [{"name": "Some Trust"}]}})
+        analyzer = TransparencyAnalyzer()
+        score, _, _, _, funder_info_scored = analyzer._check_crossref(
+            client, "10.1234/x", 0, False, 0.0, [], True
+        )
+        assert score == 0
+        assert funder_info_scored is True
+
+    def test_crossref_spends_it_when_nothing_has(self):
+        client = _RecordingClient(crossref={"message": {"funder": [{"name": "Some Trust"}]}})
+        analyzer = TransparencyAnalyzer()
+        score, _, _, _, funder_info_scored = analyzer._check_crossref(
+            client, "10.1234/x", 0, False, 0.0, [], False
+        )
+        assert score == SCORE_FUNDER_INFO
+        assert funder_info_scored is True
 
 
 class TestPubMedSignalMerge:
@@ -1345,8 +1417,53 @@ class TestPubMedSignalMerge:
         assert result.trial_registered is True
         assert result.trial_results_compliant is False
         assert _INDICATOR_NO_POSTED_RESULTS not in result.risk_indicators
-        assert _INDICATOR_REGISTRY_NOT_CHECKED in result.risk_indicators
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE in result.risk_indicators
         assert not any("clinicaltrials.gov/api" in url for url in client.urls())
+
+    def test_an_unusable_clinicaltrials_accession_is_not_called_another_registry(self, monkeypatch):
+        # The registration *is* at ClinicalTrials.gov; only its accession was
+        # unusable. An indicator saying "registered outside ClinicalTrials.gov"
+        # would be a plain falsehood, so the line names the consequence
+        # (not checkable) rather than guessing at the cause.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1"),
+            pubmed=_pubmed_xml(databanks=(("ClinicalTrials.gov", ("NCT1234",)),)),
+        )
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.trial_registered is True
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE in result.risk_indicators
+        assert not any(
+            "outside" in ind.lower() or "clinicaltrials.gov" in ind.lower()
+            for ind in result.risk_indicators
+        )
+
+    def test_one_industry_funder_is_one_indicator(self, monkeypatch):
+        # CrossRef and PubMed can both name the same funder. The indicator list
+        # is a set of findings; one funder is one finding however many sources
+        # report it.
+        client = _RecordingClient(
+            crossref={"message": {"funder": [{"name": "Genentech Inc."}]}},
+            epmc=_epmc_payload(pmid="1"),
+            pubmed=_pubmed_xml(agencies=("Genentech Inc.",)),
+        )
+        result = self._analyze(monkeypatch, client, doi="10.1234/x")
+        assert result.risk_indicators.count("Industry funder: Genentech Inc.") == 1
+
+    def test_the_merge_does_not_mutate_the_caller_s_indicators(self):
+        # The COI branch rebinds while the funder branch appends, so a caller
+        # that ignored the return value would previously see a half-applied
+        # merge. Copying on the way in makes the two branches agree.
+        original = ["No funder information in CrossRef"]
+        _merge_pubmed_signals(
+            _PubMedSignals(coi_statement=True, funders=("Genentech Inc.",)),
+            None,
+            0,
+            original,
+            False,
+            0.0,
+            False,
+        )
+        assert original == ["No funder information in CrossRef"]
 
     def test_an_unreachable_pubmed_is_survivable(self, monkeypatch):
         client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=None)

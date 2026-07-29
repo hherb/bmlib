@@ -44,7 +44,14 @@ from bmlib.transparency.models import (
 logger = logging.getLogger(__name__)
 
 # ---- Known pharma / industry funder keywords ----
-# Matched against CrossRef's structured funder names (short org-name strings).
+# Matched against structured funder names — CrossRef `funder[].name` and
+# PubMed `<Grant><Agency>` — both short org-name strings.
+#
+# The three suffix forms carry their trailing dot deliberately: bare "inc"
+# matches "Lincoln"/"province" as a substring. The cost is that an
+# NLM-normalised agency written "Pfizer Inc" without the dot is missed. Issue
+# #36 tracks replacing the substring test with word-boundary matching, which
+# needs calibrating against both corpora rather than a one-line edit.
 _INDUSTRY_KEYWORDS = [
     "pharma",
     "biotech",
@@ -113,8 +120,12 @@ _INDICATOR_NO_COI_IN_FULLTEXT = "No COI disclosure found in full text"
 _INDICATOR_COI_UNKNOWN = "COI disclosure status unknown (full text unavailable)"
 _INDICATOR_COI_IN_PUBMED = "COI disclosure found in PubMed record"
 _INDICATOR_NO_POSTED_RESULTS = "Registered trial without posted results"
-_INDICATOR_REGISTRY_NOT_CHECKED = (
-    "Trial registered outside ClinicalTrials.gov; results posting not checked"
+# Deliberately does not name a registry. It covers a registration in another
+# registry *and* a ClinicalTrials.gov registration whose accession was missing
+# or malformed; saying "registered outside ClinicalTrials.gov" would be a plain
+# falsehood in the second case.
+_INDICATOR_RESULTS_NOT_CHECKABLE = (
+    "Trial registration found; posted-results status could not be checked"
 )
 
 # ---- Rate limiting ----
@@ -229,15 +240,19 @@ class _PubMedSignals:
     Attributes:
         coi_statement: A non-blank ``<CoiStatement>`` is present.
         trial_accessions: ClinicalTrials.gov NCT ids, upper-cased.
-        other_registry: An accession in a trial registry other than
-            ClinicalTrials.gov. Registration is established, but posted results
-            cannot be checked from it.
-        funders: ``<Grant><Agency>`` names.
+        registration_not_checkable: A registration was recorded that
+            ClinicalTrials.gov cannot be asked about — either it belongs to
+            another registry, or it is a ClinicalTrials.gov entry whose
+            accession is missing or malformed. Registration is established
+            either way; followability is the separate fact this records.
+        funders: Distinct ``<Grant><Agency>`` names, in document order. PubMed
+            emits one ``<Grant>`` per grant number, so a single agency funding
+            four grants appears four times in the XML and once here.
     """
 
     coi_statement: bool = False
     trial_accessions: tuple[str, ...] = ()
-    other_registry: bool = False
+    registration_not_checkable: bool = False
     funders: tuple[str, ...] = ()
 
 
@@ -254,15 +269,24 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
         logger.debug("PubMed response was not parsable XML: %s", e)
         return _PubMedSignals()
 
+    # Only `PubmedArticle` is read. A `PubmedBookArticle` (StatPearls,
+    # GeneReviews, …) carries no `<CoiStatement>` and no `<DataBankList>` in
+    # its DTD, so the two signals worth having are absent by construction and
+    # the record degrades to empty signals rather than being parsed for the
+    # third.
     citation = root.find(".//PubmedArticle/MedlineCitation")
     if citation is None:
         return _PubMedSignals()
 
+    # The MEDLINE DTD declares CoiStatement as (%text;)*, so inline markup
+    # (<b>, <i>, <sup>, …) is legal inside it. Reading `.text` alone would miss
+    # a statement that opens with a tag — "<b>Conflict of interest:</b> none" —
+    # and report a disclosure as absent.
     coi_el = citation.find("CoiStatement")
-    coi_statement = coi_el is not None and bool((coi_el.text or "").strip())
+    coi_statement = coi_el is not None and bool("".join(coi_el.itertext()).strip())
 
     accessions: list[str] = []
-    other_registry = False
+    registration_not_checkable = False
     for databank in citation.findall("Article/DataBankList/DataBank"):
         name = (databank.findtext("DataBankName") or "").strip().lower()
         if name not in _TRIAL_REGISTRY_NAMES:
@@ -271,7 +295,7 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
         # into a ClinicalTrials.gov URL path, so only a well-formed NCT id is
         # ever carried forward. A ClinicalTrials.gov entry whose accession is
         # missing or malformed still establishes registration — it just cannot
-        # be followed up, which is exactly what `other_registry` means.
+        # be followed up, which is what `registration_not_checkable` records.
         usable = [
             acc
             for acc in (
@@ -283,20 +307,30 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
         if name == _CLINICALTRIALS_GOV and usable:
             accessions.extend(usable)
         else:
-            other_registry = True
+            if name == _CLINICALTRIALS_GOV:
+                # Not the same story as a registration in another registry, and
+                # the only place the difference is visible — the result records
+                # followability, not which of the two caused it.
+                logger.debug("ClinicalTrials.gov databank carried no usable accession")
+            registration_not_checkable = True
 
+    # Deduplicated: PubMed emits one <Grant> per grant number, so an agency
+    # funding several grants on one paper would otherwise repeat — and each
+    # repeat would add its own "Industry funder: …" line to the result.
     funders = tuple(
-        agency
-        for agency in (
-            (el.text or "").strip() for el in citation.findall("Article/GrantList/Grant/Agency")
+        dict.fromkeys(
+            agency
+            for agency in (
+                (el.text or "").strip() for el in citation.findall("Article/GrantList/Grant/Agency")
+            )
+            if agency
         )
-        if agency
     )
 
     return _PubMedSignals(
         coi_statement=coi_statement,
         trial_accessions=tuple(accessions),
-        other_registry=other_registry,
+        registration_not_checkable=registration_not_checkable,
         funders=funders,
     )
 
@@ -312,15 +346,22 @@ def _merge_pubmed_signals(
 ) -> tuple[bool | None, int, list[str], bool, float, bool]:
     """Fold PubMed's structured signals into the analysis so far.
 
-    Pure: trial registration is handled separately, in
+    A module-level function rather than a method because it needs no HTTP
+    client; trial registration is handled separately, in
     :meth:`TransparencyAnalyzer._check_trial_registration`, because that step
-    also needs the HTTP client.
+    does.
+
+    Mutates nothing it is given — ``indicators`` is copied on the way in and
+    the copy is returned — so a caller that ignores a return value is left
+    with exactly what it passed rather than a half-applied merge.
 
     Each score component is awarded at most once. ``coi_disclosed is not
     True`` is a reliable guard rather than an incidental one: the only
     branch that sets ``True`` is the same branch that adds
     ``SCORE_COI_DISCLOSED``.
     """
+    indicators = list(indicators)
+
     if pubmed.coi_statement and coi_disclosed is not True:
         coi_disclosed = True
         score += SCORE_COI_DISCLOSED
@@ -350,7 +391,13 @@ def _merge_pubmed_signals(
                 # evidence as a CrossRef funder record — not the weaker
                 # signal inferred from COI prose.
                 industry_confidence = max(industry_confidence, DEFAULT_INDUSTRY_CONFIDENCE)
-                indicators.append(f"Industry funder: {agency}")
+                # CrossRef may already have named this funder. The test is an
+                # exact match on a string this module builds, not a reading of
+                # indicator prose — the list is a set of findings, and one
+                # funder is one finding however many sources report it.
+                line = f"Industry funder: {agency}"
+                if line not in indicators:
+                    indicators.append(line)
 
     return (
         coi_disclosed,
@@ -597,6 +644,7 @@ class TransparencyAnalyzer:
                     industry_funding,
                     industry_confidence,
                     indicators,
+                    funder_info_scored,
                 )
 
             # --- EuropePMC (full text / abstract, COI, data availability) ---
@@ -705,6 +753,7 @@ class TransparencyAnalyzer:
         industry_funding: bool,
         industry_confidence: float,
         indicators: list[str],
+        funder_info_scored: bool,
     ) -> tuple[int, bool, float, list[str], bool]:
         """Query CrossRef for funder information.
 
@@ -712,14 +761,19 @@ class TransparencyAnalyzer:
         funder_info_scored)``. The last element tells the caller whether
         ``SCORE_FUNDER_INFO`` has been spent, so the PubMed grant list cannot
         award it a second time.
+
+        It is threaded *in* as well as out, like every other accumulator here.
+        Computing it fresh would be correct only for as long as this stays the
+        first funder source consulted, and would silently double-score the
+        component the day a second one is added ahead of it.
         """
-        funder_info_scored = False
         cr = self._query_crossref(client, doi)
         if cr:
             funders = cr.get("message", {}).get("funder", [])
             if funders:
-                score += SCORE_FUNDER_INFO
-                funder_info_scored = True
+                if not funder_info_scored:
+                    score += SCORE_FUNDER_INFO
+                    funder_info_scored = True
                 for funder in funders:
                     name = (funder.get("name") or "").lower()
                     if any(kw in name for kw in _INDUSTRY_KEYWORDS):
@@ -900,16 +954,17 @@ class TransparencyAnalyzer:
         to it. The heuristic remains the fallback for records PubMed does not
         cover.
 
-        A registration in a registry other than ClinicalTrials.gov counts, but
-        its posted-results status cannot be looked up, so no claim is made
-        about it either way.
+        A registration ClinicalTrials.gov cannot be asked about — another
+        registry, or a ClinicalTrials.gov entry with an unusable accession —
+        counts as registered, but no claim is made about posted results either
+        way.
         """
         pubmed = pubmed or _PubMedSignals()
         trial_registered = False
         results_compliant = False
 
         ct_ids = list(pubmed.trial_accessions) or self._find_trial_ids(client, pmid, doi, epmc=epmc)
-        if ct_ids or pubmed.other_registry:
+        if ct_ids or pubmed.registration_not_checkable:
             trial_registered = True
             score += SCORE_TRIAL_REGISTERED
 
@@ -921,8 +976,8 @@ class TransparencyAnalyzer:
                     break
             if not results_compliant:
                 indicators.append(_INDICATOR_NO_POSTED_RESULTS)
-        elif pubmed.other_registry:
-            indicators.append(_INDICATOR_REGISTRY_NOT_CHECKED)
+        elif pubmed.registration_not_checkable:
+            indicators.append(_INDICATOR_RESULTS_NOT_CHECKABLE)
 
         return trial_registered, results_compliant, score, indicators
 
