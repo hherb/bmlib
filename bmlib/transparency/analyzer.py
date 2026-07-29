@@ -301,6 +301,67 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
     )
 
 
+def _merge_pubmed_signals(
+    pubmed: _PubMedSignals,
+    coi_disclosed: bool | None,
+    score: int,
+    indicators: list[str],
+    industry_funding: bool,
+    industry_confidence: float,
+    funder_info_scored: bool,
+) -> tuple[bool | None, int, list[str], bool, float, bool]:
+    """Fold PubMed's structured signals into the analysis so far.
+
+    Pure: trial registration is handled separately, in
+    :meth:`TransparencyAnalyzer._check_trial_registration`, because that step
+    also needs the HTTP client.
+
+    Each score component is awarded at most once. ``coi_disclosed is not
+    True`` is a reliable guard rather than an incidental one: the only
+    branch that sets ``True`` is the same branch that adds
+    ``SCORE_COI_DISCLOSED``.
+    """
+    if pubmed.coi_statement and coi_disclosed is not True:
+        coi_disclosed = True
+        score += SCORE_COI_DISCLOSED
+        # Both lines were written before PubMed was consulted and would now
+        # contradict the result, so they are retracted rather than left to
+        # be reconciled by whoever reads the indicators.
+        indicators = [
+            ind
+            for ind in indicators
+            if ind not in (_INDICATOR_NO_COI_IN_FULLTEXT, _INDICATOR_COI_UNKNOWN)
+        ]
+        indicators.append(_INDICATOR_COI_IN_PUBMED)
+
+    # A missing <CoiStatement> deliberately does not demote `None` to
+    # `False`: it means the publisher supplied no statement to PubMed, not
+    # that the paper carries none, and `False` would trigger the
+    # missing-COI downgrade on no evidence.
+
+    if pubmed.funders:
+        if not funder_info_scored:
+            score += SCORE_FUNDER_INFO
+            funder_info_scored = True
+        for agency in pubmed.funders:
+            if any(kw in agency.lower() for kw in _INDUSTRY_KEYWORDS):
+                industry_funding = True
+                # A grant agency is structured metadata, the same class of
+                # evidence as a CrossRef funder record — not the weaker
+                # signal inferred from COI prose.
+                industry_confidence = max(industry_confidence, DEFAULT_INDUSTRY_CONFIDENCE)
+                indicators.append(f"Industry funder: {agency}")
+
+    return (
+        coi_disclosed,
+        score,
+        indicators,
+        industry_funding,
+        industry_confidence,
+        funder_info_scored,
+    )
+
+
 def _extract_tagged_coi_text(full_text: str) -> str:
     """Return the text of JATS-tagged COI containers, tag-stripped and lowercased.
 
@@ -566,7 +627,7 @@ class TransparencyAnalyzer:
                 industry_funding,
                 industry_confidence,
                 funder_info_scored,
-            ) = self._merge_pubmed_signals(
+            ) = _merge_pubmed_signals(
                 pubmed,
                 coi_disclosed,
                 score,
@@ -803,66 +864,6 @@ class TransparencyAnalyzer:
         if not xml_text:
             return _PubMedSignals()
         return _parse_pubmed_signals(xml_text)
-
-    def _merge_pubmed_signals(
-        self,
-        pubmed: _PubMedSignals,
-        coi_disclosed: bool | None,
-        score: int,
-        indicators: list[str],
-        industry_funding: bool,
-        industry_confidence: float,
-        funder_info_scored: bool,
-    ) -> tuple[bool | None, int, list[str], bool, float, bool]:
-        """Fold PubMed's structured signals into the analysis so far.
-
-        Trial registration is handled separately, in
-        :meth:`_check_trial_registration`, because it also needs the client.
-
-        Each score component is awarded at most once. ``coi_disclosed is not
-        True`` is a reliable guard rather than an incidental one: the only
-        branch that sets ``True`` is the same branch that adds
-        ``SCORE_COI_DISCLOSED``.
-        """
-        if pubmed.coi_statement and coi_disclosed is not True:
-            coi_disclosed = True
-            score += SCORE_COI_DISCLOSED
-            # Both lines were written before PubMed was consulted and would now
-            # contradict the result, so they are retracted rather than left to
-            # be reconciled by whoever reads the indicators.
-            indicators = [
-                ind
-                for ind in indicators
-                if ind not in (_INDICATOR_NO_COI_IN_FULLTEXT, _INDICATOR_COI_UNKNOWN)
-            ]
-            indicators.append(_INDICATOR_COI_IN_PUBMED)
-
-        # A missing <CoiStatement> deliberately does not demote `None` to
-        # `False`: it means the publisher supplied no statement to PubMed, not
-        # that the paper carries none, and `False` would trigger the
-        # missing-COI downgrade on no evidence.
-
-        if pubmed.funders:
-            if not funder_info_scored:
-                score += SCORE_FUNDER_INFO
-                funder_info_scored = True
-            for agency in pubmed.funders:
-                if any(kw in agency.lower() for kw in _INDUSTRY_KEYWORDS):
-                    industry_funding = True
-                    # A grant agency is structured metadata, the same class of
-                    # evidence as a CrossRef funder record — not the weaker
-                    # signal inferred from COI prose.
-                    industry_confidence = max(industry_confidence, DEFAULT_INDUSTRY_CONFIDENCE)
-                    indicators.append(f"Industry funder: {agency}")
-
-        return (
-            coi_disclosed,
-            score,
-            indicators,
-            industry_funding,
-            industry_confidence,
-            funder_info_scored,
-        )
 
     def _check_openalex(
         self,
