@@ -53,8 +53,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
      plus a new `salvage_json_fields()` for field-level recovery. This is
      **Phase 1 item 1** of the bmlibrarian port — the keystone; the agent
      family is now unblocked.
-  6. **Transparency: a real PubMed step + `unknown_reason`** (PR pending,
-     closes #18 and #21) — `pubmed_api_key` was accepted and never read; the
+  6. **Transparency: a real PubMed step + `unknown_reason`** (PR #35, closed
+     #18 and #21) — `pubmed_api_key` was accepted and never read; the
      analyzer now spends one E-utilities `efetch` per analysis (skipped
      without a PMID, which it will take from the Europe PMC record it already
      fetched) for `<CoiStatement>`, `<DataBankList>` and `<GrantList>` —
@@ -87,7 +87,7 @@ Nothing is blocked on anything else.
 - **#33 — `BaseAgent.parse_json` is annotated `-> dict` but can return a list**
   when a response contains only a top-level array. **Decided and designed; not
   yet implemented** — `docs/superpowers/specs/2026-07-29-json-parse-contract-design.md`
-  on `fix/json-parse-contract` is approved and ready to build from. The
+  is on `main` (PR #38, docs only), approved and ready to build from. The
   investigation found that the same code path silently drops data: an unfenced
   `[{"a": 1}, {"b": 2}]` in prose returns `{"a": 1}`, because `extract_json()`'s
   dict preference is satisfied by the nested-object stage. That is why the
@@ -113,7 +113,11 @@ Nothing is blocked on anything else.
   A mutable `_Analysis` dataclass mutated in place would remove the arity
   entirely. Worth doing before the next signal source lands in `analyze()`.
 
-#18 and #21 close with the pending transparency PR.
+#36 is also designed and approved —
+`docs/superpowers/specs/2026-07-29-industry-funder-matching-design.md`. It needs
+a live sampling run (`scripts/sample_funder_names.py`, to be written) against
+CrossRef and PubMed to build the labelled corpus the ship rule is measured
+against, so it cannot be done offline.
 
 ### Worth doing, not yet an issue
 
