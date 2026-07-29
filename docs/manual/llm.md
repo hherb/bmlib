@@ -48,12 +48,14 @@ from bmlib.llm import (
     get_llm_client,
     get_text_with_priority,
     get_token_tracker,
+    iter_json_spans,
     process_with_map_reduce,
     process_with_rolling_summary,
     repair_json,
     reset_llm_client,
     reset_token_tracker,
     safe_json_loads,
+    salvage_json_fields,
 )
 ```
 
@@ -978,7 +980,7 @@ for model, stats in summary.by_model.items():
 
 ## JSON Repair
 
-`bmlib.llm.json_repair` fixes the syntax errors LLMs habitually produce: single-quoted strings, unescaped newlines/tabs/control characters inside strings, trailing commas, missing commas between values, truncated output (unclosed brackets), and unquoted JavaScript-style keys.
+`bmlib.llm.json_repair` fixes the syntax errors LLMs habitually produce: single-quoted strings, unescaped newlines/tabs/control characters inside strings, trailing commas, missing commas between values, truncated output (unclosed brackets), and unquoted JavaScript-style keys. Locating the JSON inside a response that also contains prose or code fences is a separate concern, handled by `bmlib.llm.utils.iter_json_spans()` — the locator shared by `extract_json()` and `extract_and_repair_json()` below.
 
 **Module constants:**
 
@@ -986,6 +988,7 @@ for model, stats in summary.by_model.items():
 |----------|-------|-------------|
 | `MAX_REPAIR_ATTEMPTS` | `3` | Default number of repair iterations. |
 | `MAX_JSON_LENGTH` | `1_000_000` | Maximum input size in characters (1 MB). |
+| `MAX_SALVAGE_MATCHES` | `200` | Matches of one key `salvage_json_fields()` decodes in its fast pass before giving up on it. |
 
 ### `JSONRepairError`
 
@@ -1032,17 +1035,55 @@ Parse JSON, repairing first if the initial parse fails.
 
 **Raises:** `ValueError` if the JSON cannot be parsed even after repair — `JSONRepairError` is converted into `ValueError`, so callers only need to catch the one exception.
 
+### `bmlib.llm.utils.iter_json_spans`
+
+```python
+def iter_json_spans(text: str, *, nested_objects: bool = True) -> Iterator[str]
+```
+
+The locator shared by `extract_json()` and `extract_and_repair_json()` below. Yields candidate JSON spans from *text*, best first, **without validating them** — a caller applies its own acceptance policy by walking the candidates in order and taking the first that satisfies it. Re-exported from `bmlib.llm` as well as `bmlib.llm.utils`.
+
+**Stages, in priority order:**
+
+1. ` ```json ` fenced code block bodies, in document order.
+2. Other fenced bodies whose content starts with `{` or `[`.
+3. The remaining fenced bodies (a ` ``` ` block that is not JSON-shaped).
+4. Balanced `{...}`/`[...]` spans in the raw text, in document order. Only the pair type of a span's *own* opener is counted, so an array's balance is not disturbed by braces nested inside it, and a brace or bracket inside a quoted string is ignored.
+5. Brace-only balanced spans not already yielded by stage 4 — so an object nested inside an array (`[{"a": 1}]`) is still offered as a candidate in its own right, after the array. Skipped when `nested_objects=False`.
+6. The text from the first opener to the end of the string — only when stages 4 and 5 yielded nothing balanced, which is what truncated model output looks like. The opener search is string-aware: an opener character inside a quoted string does not count.
+
+**No span is yielded twice**, compared by text rather than by position. The stages overlap heavily — stages 4 and 5 rescan fence interiors as plain text, so every fenced body would otherwise reach the caller a second time — and a repeated candidate is pure waste: an identical string parses and repairs identically, so re-offering it only buys a second run of `repair_json()`'s attempt loop on a span that has already failed.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `text` | `str` | *(required)* | Text to scan for JSON spans. |
+| `nested_objects` | `bool` | `True` | When `False`, stage 5 is skipped. Callers that *repair* a candidate want this off: repairing a nested fragment would silently discard the structure around it — `extract_and_repair_json()` passes `nested_objects=False` for exactly this reason. |
+
+**Example:**
+
+```python
+from bmlib.llm.utils import iter_json_spans
+
+list(iter_json_spans('Result: [{"a": 1}]'))
+# ['[{"a": 1}]', '{"a": 1}']  — the array (stage 4), then the object nested inside it (stage 5)
+
+list(iter_json_spans('Result: [{"a": 1}]', nested_objects=False))
+# ['[{"a": 1}]']  — the nested object is suppressed
+```
+
 ### `extract_and_repair_json`
 
 ```python
 def extract_and_repair_json(response: str, repair: bool = True) -> tuple[str, bool]
 ```
 
-Locate JSON inside a raw LLM response and repair it. Extraction tries, in order: a ` ```json ` fenced block, a bare ` ``` ` fenced block whose content starts with `{` or `[`, then the first balanced object or array embedded in prose. If a run of text opens with `{` or `[` but never balances (truncated output) and `repair` is true, everything from the opener onwards is taken and closed by `repair_json()`.
+Locate JSON inside a raw LLM response and repair it. Walks the candidates from `iter_json_spans(response, nested_objects=False)` and returns the first one that either parses as-is or repairs successfully. A candidate that does neither is a dead end — the walk moves on to the next one rather than giving up on the whole response.
+
+`nested_objects=False` is deliberate: it keeps the walk from ever returning an object nested *inside* a candidate it has already rejected — repairing that fragment alone would silently discard the array or object around it.
 
 **Returns:** `(json_string, was_repaired)`.
 
-**Raises:** `ValueError` if no JSON can be found, or if the extracted JSON cannot be parsed after repair.
+**Raises:** `ValueError` if every candidate is exhausted without one parsing or repairing. A candidate that raises `RecursionError` — `json.loads()` descends recursively, so text nested past the interpreter's stack limit blows the stack rather than failing to decode — counts as one that did not parse, so the walk continues and the contract stays `ValueError`.
 
 **Example:**
 
@@ -1068,16 +1109,85 @@ print(data["design"], was_repaired)   # RCT True
 def extract_json(text: str) -> str
 ```
 
-The older, narrower extractor. Not exported from `bmlib.llm` — import it from `bmlib.llm.utils`.
+Not exported from `bmlib.llm` — import it from `bmlib.llm.utils`. Walks the same locator as `extract_and_repair_json()`, but via `iter_json_spans(text)` with `nested_objects=True`, and returns the first candidate that either came from a fence or **parses to a dict**, falling back to the first that parses at all if neither. Returns *text* unchanged if nothing parses.
+
+**Never raises.** That matters more here than elsewhere: this runs unconditionally on every `json_mode` response in both the Anthropic and OpenAI-compatible providers, so anything that escapes takes out the provider call. A candidate that raises `RecursionError` — `json.loads()` descends recursively, so text nested past the interpreter's stack limit blows the stack instead of failing to decode — is skipped like any other undecodable candidate.
+
+The dict preference is deliberate: the callers here — the Anthropic and OpenAI-compatible providers' `json_mode` path, and `BaseAgent.parse_json()` — want the object a model was asked for, not an incidental array that happens to appear earlier in the response:
+
+```python
+from bmlib.llm.utils import extract_json
+
+extract_json('Result: [{"a": 1}]')
+# '{"a": 1}' — the object nested in the single-element array, not the array itself
+```
+
+A fence outranks the dict preference, though: it is the model's own delimitation of its answer, so a fenced array must not be reduced to an object plucked from inside it by a later, unfenced stage.
+
+```python
+extract_json('```json\n[{"a": 1}, {"a": 2}]\n```')
+# '[{"a": 1}, {"a": 2}]' — the whole fenced array, not the first element
+```
+
+Both extractors share `iter_json_spans()` as their locator and differ only in acceptance policy:
 
 | | `extract_json` | `extract_and_repair_json` |
 |---|---|---|
-| Top-level arrays | Not found | Found |
+| Locates candidates via | `iter_json_spans(text)` | `iter_json_spans(text, nested_objects=False)` |
+| Acceptance policy | First candidate that is fenced or parses **to a dict**; else first that parses at all | First candidate that parses **or repairs** |
+| Top-level arrays | Returned when fenced, or when no candidate parses to a dict | Returned if it is the first candidate that parses or repairs |
 | Repairs malformed JSON | No | Yes (unless `repair=False`) |
 | On failure | Returns the input unchanged | Raises `ValueError` |
 | Return value | `str` | `tuple[str, bool]` |
 
-Prefer `extract_and_repair_json()` for new code.
+The dict preference is the row to watch: `extract_and_repair_json()` does **not** have one. On `'text [1,2] then {"a": 1}'`, `extract_json()` returns `{"a": 1}` and `extract_and_repair_json()` returns `[1,2]`. That is deliberate — dict preference serves `json_mode` callers who asked a model for an object, whereas `extract_and_repair_json()` is a general-purpose extractor whose caller may well want the array. The divergence cannot surface through `BaseAgent.parse_json()`, which reaches `extract_and_repair_json()` only once `extract_json()` has found nothing parseable at all.
+
+Prefer `extract_and_repair_json()` for new code — it recovers more responses and never silently hands back unparsed input.
+
+### `salvage_json_fields`
+
+```python
+def salvage_json_fields(text: str, keys: Iterable[str]) -> dict[str, Any]
+```
+
+Recovers individual named fields from a document that will not parse at all — the last resort after `extract_and_repair_json()` has given up. A long structured LLM answer is often malformed in only one place while the fields the caller actually needs are intact elsewhere; `salvage_json_fields()` locates each requested key by a regex over the raw text and decodes just the value that follows it, independent of whether the rest of the document parses.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `text` | `str` | Raw response, valid JSON or not. |
+| `keys` | `Iterable[str]` | Field names to look for. |
+
+**Returns:** a dict of the keys that could be recovered. **Never raises** on malformed text — returns `{}` when nothing is found, and simply omits any key whose value cannot be decoded. `RecursionError` counts as "cannot be decoded": `raw_decode()` descends recursively, so a value nested past the interpreter's stack limit would otherwise escape as a non-`ValueError`.
+
+**Algorithm, per key** — two phases, both bounded. Every failed decode scans forward to the end of the document, so an unbounded pass is quadratic in the response length, and a repetition-looping model — exactly the failure mode salvage exists for — is what produces thousands of matches:
+
+1. **Fast pass:** the first `MAX_SALVAGE_MATCHES` (200) regex matches of `"key"\s*:\s*` are decoded with a plain `json.JSONDecoder.raw_decode()` — no repair. The first match that decodes wins.
+2. **Repair pass, at most once:** only if no match decoded in phase 1, and only at the *last* match — repair is for closing a truncated tail, which by construction exists in only one place. The last match is used regardless of the cap.
+
+Together those bounds make the work linear in the response length: 50,000 matches of one key take ~0.08s, against ~135s for the unbounded "repair every match" shape and ~1.0s for a version that bounded only the repair pass.
+
+**Note:** matching is textual, not structural — a key name that happens to appear inside a string *value* can match, and the first occurrence that decodes wins regardless of nesting depth. A key occurring more than `MAX_SALVAGE_MATCHES` times whose only decodable occurrence lies past the cap is recovered only if that occurrence is also the last one.
+
+**Example — recovering known fields from a document a genuine syntax error elsewhere makes entirely unparseable:**
+
+```python
+from bmlib.llm.json_repair import extract_and_repair_json, salvage_json_fields
+
+text = (
+    '{"summary": "Great paper", "score": 8, '
+    '"results": [{"metric": "x" "value": 1}, {"metric": "y", "value": 2]}'
+)
+
+try:
+    extract_and_repair_json(text)
+except ValueError:
+    salvaged = salvage_json_fields(text, ["summary", "score", "results"])
+# salvaged == {"summary": "Great paper", "score": 8}
+# "results" is missing: its own value is corrupted (a comma is missing
+# inside the array), so there is nothing valid to decode for that key.
+```
+
+`salvage_json_fields()` is **not** wired into `BaseAgent.parse_json()` — see [agents.md](agents.md#baseagentparse_json). Returning partial data automatically would turn a loud failure into a quiet wrong answer; callers catch the `ValueError` from `parse_json()` (or `extract_and_repair_json()`) and opt in explicitly.
 
 ---
 

@@ -36,13 +36,23 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Iterable
 from typing import Any
+
+from bmlib.llm.utils import iter_json_spans
 
 logger = logging.getLogger(__name__)
 
 # Configuration constants
 MAX_REPAIR_ATTEMPTS: int = 3
 MAX_JSON_LENGTH: int = 1_000_000  # 1 MB max
+
+# How many textual matches of one key salvage_json_fields() decodes before
+# giving up on the fast pass.  Each failed decode scans forward to the end of
+# the document, so an unbounded pass is quadratic in the response length —
+# a degenerate repetition loop, exactly the failure mode salvage exists for,
+# is what produces thousands of matches.  See salvage_json_fields().
+MAX_SALVAGE_MATCHES: int = 200
 
 
 class JSONRepairError(Exception):
@@ -464,85 +474,164 @@ def extract_and_repair_json(response: str, repair: bool = True) -> tuple[str, bo
     """Extract a JSON string from an LLM response and optionally repair it.
 
     Handles pure JSON, JSON in markdown code blocks, and JSON embedded in
-    explanatory prose.
+    explanatory prose. Walks candidate JSON spans in priority order: the
+    first candidate that validates (or repairs, if enabled) is returned.
+
+    Unlike :func:`bmlib.llm.utils.extract_json`, this applies **no dict
+    preference** — the first candidate that parses wins, object or array.
+    The two functions share a locator but not an acceptance policy, so on
+    ``'text [1,2] then {"a": 1}'`` ``extract_json()`` returns the object and
+    this returns ``[1,2]``.  That is deliberate: dict preference exists to
+    serve ``json_mode`` callers who asked a model for an object, whereas this
+    function is a general-purpose extractor whose caller may well want the
+    array.  The divergence cannot surface through
+    :meth:`bmlib.agents.BaseAgent.parse_json`, which reaches this function
+    only once ``extract_json()`` has found nothing parseable at all.
 
     Args:
         response: Raw LLM response string.
-        repair: Whether to attempt repair.
+        repair: Whether to attempt repair on malformed candidates.
 
     Returns:
         Tuple of ``(extracted_json_string, was_repaired)``.
 
     Raises:
-        ValueError: If no JSON can be found in *response*.
+        ValueError: If no JSON can be found or repaired in *response*.
     """
     if not response or not response.strip():
         raise ValueError("Cannot extract JSON from empty response")
 
-    response = response.strip()
-    json_str: str | None = None
+    last_error: Exception | None = None
 
-    # Try a ```json fenced block.
-    if "```json" in response:
-        match = re.search(r"```json\s*([\s\S]*?)\s*```", response)
-        if match:
-            json_str = match.group(1).strip()
+    for candidate in iter_json_spans(response.strip(), nested_objects=False):
+        try:
+            json.loads(candidate)
+            return candidate, False
+        except (json.JSONDecodeError, RecursionError) as e:
+            # RecursionError because json.loads() descends recursively: a
+            # candidate nested past the stack limit is undecodable, which is
+            # this loop's ordinary "try the next one" case, not a reason to
+            # abandon the documented ValueError contract.
+            last_error = e
 
-    # Try a bare ``` fenced block that starts with { or [.
-    if not json_str and "```" in response:
-        match = re.search(r"```\s*([\s\S]*?)\s*```", response)
-        if match:
-            content = match.group(1).strip()
-            if content.startswith("{") or content.startswith("["):
-                json_str = content
-
-    # Fall back to the first balanced object/array embedded in prose.
-    if not json_str:
-        start_idx = -1
-        for i, char in enumerate(response):
-            if char in "{[":
-                start_idx = i
-                break
-
-        if start_idx >= 0:
-            open_char = response[start_idx]
-            close_char = "}" if open_char == "{" else "]"
-            count = 0
-            in_string = False
-
-            for i, char in enumerate(response[start_idx:], start_idx):
-                prev = response[i - 1] if i > 0 else ""
-                is_escaped = prev == "\\" and not (i >= 2 and response[i - 2] == "\\")
-
-                if char == '"' and not is_escaped:
-                    in_string = not in_string
-                elif not in_string:
-                    if char == open_char:
-                        count += 1
-                    elif char == close_char:
-                        count -= 1
-                        if count == 0:
-                            json_str = response[start_idx : i + 1]
-                            break
-
-            if not json_str and repair:
-                # Never balanced — likely truncated output. Take everything
-                # from the opener and let repair_json() close it.
-                json_str = response[start_idx:]
-
-    if not json_str:
-        raise ValueError("No JSON found in response")
-
-    try:
-        json.loads(json_str)
-        return json_str, False
-    except json.JSONDecodeError:
         if not repair:
-            raise
+            # This candidate does not parse and repair is disabled — it is a
+            # dead end, but not the whole search: walk on to the next one.
+            continue
 
+        try:
+            repaired = repair_json(candidate)
+            json.loads(repaired)  # Validate it parses.
+            return repaired, True
+        except (JSONRepairError, json.JSONDecodeError, RecursionError) as e:
+            # This candidate is a dead end; the next one may not be.
+            last_error = e
+
+    if last_error is None:
+        raise ValueError("No JSON found in response")
+    raise ValueError(f"Cannot parse extracted JSON: {last_error}")
+
+
+def salvage_json_fields(text: str, keys: Iterable[str]) -> dict[str, Any]:
+    """Recover individual top-level fields from a document that will not parse.
+
+    A last resort for responses :func:`extract_and_repair_json` gives up on.
+    A long structured answer is often malformed in only one place — typically
+    a truncated array at the tail — while the fields the caller actually needs
+    are intact.  This locates each requested key and decodes just the value
+    that follows it.
+
+    Deliberately **not** wired into :meth:`bmlib.agents.BaseAgent.parse_json`:
+    returning partial data automatically would turn a loud failure into a
+    quiet wrong answer.  Catch the :class:`ValueError` and opt in.
+
+    Args:
+        text: Raw response, valid JSON or not.
+        keys: Field names to look for.
+
+    Returns:
+        A dict of the keys that could be recovered.  Never raises on malformed
+        text; returns an empty dict when nothing is found.
+
+    Note:
+        Matching is textual, so a key name appearing inside a string value can
+        be matched.  The first occurrence that decodes wins.
+
+    Note:
+        Work is bounded, because both phases are otherwise linear in the
+        document *per match* and a repetition-looping model emits thousands of
+        them.  The fast pass decodes at most
+        :data:`MAX_SALVAGE_MATCHES` occurrences of a key; repair is attempted
+        at most once, always at the *last* occurrence, since repair closes a
+        truncated tail and there is only one tail.  A key occurring more than
+        the cap with its only decodable occurrence past the cap is therefore
+        recovered only if that occurrence is also the last one.
+    """
+    recovered: dict[str, Any] = {}
+    if not text:
+        return recovered
+
+    decoder = json.JSONDecoder()
+
+    for key in keys:
+        pattern = re.compile(r'"' + re.escape(key) + r'"\s*:\s*')
+        matches = list(pattern.finditer(text))
+
+        # Phase 1: Try fast decode on the first MAX_SALVAGE_MATCHES matches.
+        for match in matches[:MAX_SALVAGE_MATCHES]:
+            value, found = _decode_value_at(decoder, text, match.end(), allow_repair=False)
+            if found:
+                recovered[key] = value
+                break
+        else:
+            # Phase 2: None of the fast decodes worked. If there were matches,
+            # try repair on the last one only — repair is for closing a
+            # truncated tail, which exists in only one place.
+            if matches:
+                last_match = matches[-1]
+                value, found = _decode_value_at(decoder, text, last_match.end(), allow_repair=True)
+                if found:
+                    recovered[key] = value
+
+    return recovered
+
+
+def _decode_value_at(
+    decoder: json.JSONDecoder, text: str, index: int, *, allow_repair: bool = True
+) -> tuple[Any, bool]:
+    """Decode one JSON value starting at *index*, optionally repairing a truncated tail.
+
+    Returns ``(value, True)`` on success and ``(None, False)`` on failure —
+    a bare ``None`` return would be indistinguishable from a decoded
+    ``null``.
+
+    ``RecursionError`` counts as a failure, not an error to propagate:
+    :meth:`~json.JSONDecoder.raw_decode` descends recursively, so a value
+    nested past the interpreter's stack limit — ``'{"j": ' * 20000``, the
+    shape a repetition-looping model produces — blows the stack rather than
+    raising :class:`ValueError`.  Letting it escape would break
+    :func:`salvage_json_fields`'s promise never to raise on malformed text,
+    for input that is malformed in precisely the way it exists to survive.
+
+    Args:
+        decoder: JSON decoder instance.
+        text: Full text being searched.
+        index: Start position for value parsing.
+        allow_repair: If False, skip repair and return False on any parse error.
+            If True, attempt repair_json on truncated tail.
+    """
     try:
-        repaired = repair_json(json_str)
-        json.loads(repaired)  # Validate it parses.
-        return repaired, True
-    except (JSONRepairError, json.JSONDecodeError) as e:
-        raise ValueError(f"Cannot parse extracted JSON: {e}") from e
+        value, _ = decoder.raw_decode(text, index)
+        return value, True
+    except (ValueError, RecursionError):
+        pass
+
+    if not allow_repair:
+        return None, False
+
+    # The value runs to the end of a truncated document: close it and retry.
+    try:
+        value, _ = decoder.raw_decode(repair_json(text[index:]), 0)
+        return value, True
+    except (JSONRepairError, ValueError, RecursionError):
+        return None, False

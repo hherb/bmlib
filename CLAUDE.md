@@ -40,7 +40,9 @@ uv pip install -e ".[all,dev]"
 ```
 bmlib/
 ├── __init__.py              # Package root, exports __version__
-├── agents/base.py           # BaseAgent — LLM-driven task base class
+├── agents/                  # LLM-driven task base class and per-agent metrics
+│   ├── base.py              # BaseAgent — chat/chat_json, embeddings, JSON parsing
+│   └── metrics.py           # PerformanceMetrics — thread-safe per-agent call accounting
 ├── db/                      # Database abstraction (SQLite + PostgreSQL)
 │   ├── backend.py           # is_sqlite(), placeholder(), placeholders() — dialect detection
 │   ├── connection.py        # connect_sqlite(), connect_postgresql()
@@ -102,7 +104,7 @@ bmlib/
 - **`db/`** — Thin database abstraction via pure functions over DB-API connections. Supports SQLite (built-in) and PostgreSQL (optional). No ORM; all SQL is explicit, so any module serving both backends gets its parameter placeholder from `placeholder(conn)` / `placeholders(conn, n)` rather than hard-coding `?`.
 - **`llm/`** — Unified LLM client with a pluggable provider registry. Built-in providers: Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini. Model strings use `"provider:model_name"` format (e.g. `"anthropic:claude-sonnet-4-20250514"`). Providers are lazily registered on first access, and a provider whose SDK is not installed is silently skipped — so `list_providers()` reflects what is installed, not what exists. Beyond chat, the package covers embeddings (`LLMClient.embed()` / batch `embed_batch()`, Ollama only, both via `/api/embed`), tool calling (`tools`/`tool_choice` on `chat()`), thinking/reasoning (`think=` kwarg on `chat()` → `LLMResponse.thinking`), JSON repair, and text chunking. Model listing never fans out per model: the Anthropic and OpenAI-compatible providers each issue a single source-level `models.list()` call (the SDK may paginate underneath), and Ollama defers its per-model context-window lookup (see "Lazy model metadata" below).
 - **`templates/`** — Jinja2-based prompt template engine with user directory override and default directory fallback.
-- **`agents/`** — `BaseAgent` class for LLM-driven tasks. Provides `chat()`, `chat_json()` (retry with backoff, truncation-aware), `render_template()`, `parse_json()`, and message helpers.
+- **`agents/`** — `BaseAgent` class for LLM-driven tasks. Provides `chat()`, `chat_json()` (retry with backoff, truncation-aware, `retry_context` label folded into every log line), `render_template()`, `parse_json()`, and message helpers. `embed()` / `embed_batch()` wrap the client's embedding calls (via the `embedding_model` constructor parameter, declared last for positional stability) and are deliberately excluded from the metrics below; `test_connection()` reports provider reachability only, not whether a given model is installed. `agents/metrics.py` provides `PerformanceMetrics`, thread-safe per-agent call accounting (tokens, requests, retries, wall time) surfaced via `BaseAgent.metrics` / `reset_metrics()` / `start_metrics()` / `stop_metrics()` / `format_metrics_report()` — independent of the process-wide `llm.TokenTracker`, since it answers "what did this agent do" rather than "what has this process spent".
 - **`quality/`** — 3-tier quality assessment: (1) free metadata classification, (2) cheap LLM classifier, (3) deep LLM assessment. Uses CEBM evidence hierarchy for quality tiers. The Cochrane models/formatter and the rule-based extractors are **standalone**: nothing in the tiered pipeline imports them, and there is no conversion between `BiasRisk` and `CochraneRiskOfBias`, or between `DimensionScore` and `QualityAssessment`. Wiring them together is open work — see ROADMAP.md.
 - **`transparency/`** — Queries CrossRef, Europe PMC (search + full text), OpenAlex, and ClinicalTrials.gov to compute a transparency score (0-100) covering funding, COI, data availability, trial registration, and open access. `pubmed_api_key` is accepted but no PubMed endpoint is currently called. When no API is reachable the result is `UNKNOWN` at score 0, so an unreachable network does not masquerade as a HIGH-risk paper.
 - **`publications/`** — Publication ingestion from multiple sources (PubMed, bioRxiv, medRxiv, OpenAlex) with deduplication by DOI/PMID, merge-on-upsert, and date-range sync tracking. Runs on both backends `db/` supports: placeholders come from `db.placeholder()`, `ensure_schema()` picks the matching DDL, and the one irreducibly dialect-specific need — reading back an inserted row's id — is `cur.lastrowid` on SQLite and `RETURNING id` on PostgreSQL. Everything else is written in the intersection of the two dialects. `tests/test_backends.py` runs each test against both.
@@ -218,7 +220,7 @@ CI runs this against a `postgres:16` service on every matrix entry and also sets
 | Module               | Test file(s)                                               |
 |----------------------|------------------------------------------------------------|
 | `db/`                | `test_db.py`, `test_migrations.py`, `test_backends.py`     |
-| `llm/`               | `test_llm.py`, `test_openai_compat.py`, `test_llm_tools.py`, `test_llm_thinking.py`, `test_llm_embeddings.py`, `test_json_repair.py`, `test_text_utils.py` |
+| `llm/`               | `test_llm.py`, `test_openai_compat.py`, `test_llm_tools.py`, `test_llm_thinking.py`, `test_llm_embeddings.py`, `test_json_repair.py`, `test_text_utils.py`, `test_json_extraction.py` |
 | `agents/`            | `test_agents.py`                                           |
 | `quality/`           | `test_quality.py`, `test_cochrane.py`, `test_extractors.py` |
 | `templates/`         | `test_templates.py`                                        |

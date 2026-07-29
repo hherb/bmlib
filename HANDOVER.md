@@ -1,8 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-07-28. `main` is at v0.5.1 plus a large `[Unreleased]`
-section (PostgreSQL `publications`, PDF→text wiring, body-less JATS fix).
-826 tests passing + 31 skipped._
+_Last updated: 2026-07-29. `main` is at v0.5.1 plus a large `[Unreleased]`
+section (PostgreSQL `publications`, PDF→text wiring, body-less JATS fix,
+BaseAgent metrics/embeddings, consolidated JSON extraction).
+916 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -43,11 +44,23 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
      fixed in the same PR: figure and table captions were lost whenever the
      figure sat inside a `<sec>` — the ordinary PMC layout — and their text
      was reprinted as article prose.
+  5. **BaseAgent metrics/embeddings + consolidated JSON extraction** (PR #34,
+     closes #17) — `PerformanceMetrics` (per-agent, thread-safe, independent
+     of the global `TokenTracker`), `BaseAgent.embed()`/`embed_batch()`/
+     `test_connection()`/`embedding_model`, `chat_json(retry_context=...)`,
+     and a WARNING when `parse_json()`'s repair stage rescued a response.
+     bmlib's two JSON extractors now share one locator, `iter_json_spans()`,
+     plus a new `salvage_json_fields()` for field-level recovery. This is
+     **Phase 1 item 1** of the bmlibrarian port — the keystone; the agent
+     family is now unblocked.
   **Deciding whether this is 0.6.0 is open work** — see "Next up" below. The
   `publications` and `fulltext` changes are additive, so a minor bump fits.
-- **826 tests passing + 31 skipped** (`uv run pytest tests/ -q`). The 31 skips
-  are the PostgreSQL parameterisations of `tests/test_backends.py`, which run
-  only when `BMLIB_TEST_POSTGRESQL_DSN` is set.
+  Note `~/src/bmlibrarian` pins `bmlib[ollama]>=0.5.1,<0.6.0`, so a 0.6.0
+  release needs that pin lifted downstream.
+- **916 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+  the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
+  when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
+  tests needing PyMuPDF, which the dev venv does not install.
 - **Documentation was rewritten for 0.4.0 and updated through PR #28/#29/#32.**
   Treat drift as a regression worth fixing, not expected staleness. Issue #31
   (a duplicated `PDF Conversion` section in `docs/manual/fulltext.md`) is
@@ -60,9 +73,11 @@ Nothing is blocked on anything else.
 
 ### Open GitHub issues
 
-- **#17 — consolidate duplicated JSON extraction** (`llm/utils.py::extract_json`
-  vs `llm/json_repair.py::extract_and_repair_json`): unify the span-location
-  logic behind one locator. Fold into the Phase 1 BaseAgent work below.
+- **#33 — `BaseAgent.parse_json` is annotated `-> dict` but can return a list**
+  when a response contains only a top-level array. Pre-existing; dict-preference
+  narrowed it but did not close it. Decide between a runtime guard (breaking)
+  and widening the annotation. Same decision covers `extract_json` silently
+  returning the first object of `[{...}, {...}]`.
 - **#18 — `TransparencyAnalyzer` accepts `pubmed_api_key` but never uses it**:
   remove (breaking) or wire it up when a real NCBI check is added. The manual
   documents it as accepted-but-unused.
@@ -83,22 +98,17 @@ transparency/quality reconciliation, no GRADE engine exists, SSRF guard).
 `llm/text_utils.py`, `quality/cochrane_models.py` + `cochrane_formatter.py`,
 `quality/extractors.py` + `scoring_models.py`, `fulltext/pdf_converter.py`.
 
-**Phase 1 — the two next ports, in order:**
+**Phase 1 item 1 — BaseAgent enhancement — is done** (PR #34). The extras
+merged into the existing `bmlib/agents/base.py`; the queue/orchestrator hooks
+and `bmlibrarian.config` reads were dropped as planned; upstream's
+`_generate_and_parse_json` needed no port because bmlib's `chat_json()`
+already regenerates on parse failure. Issue #17 closed in the same PR.
+Design and plan: `docs/superpowers/specs/2026-07-28-*` and
+`docs/superpowers/plans/2026-07-28-*`.
 
-1. **BaseAgent enhancement (keystone — unblocks the Phase 4 agent family).**
-   Source: `~/src/bmlibrarian/src/bmlibrarian/agents/base.py` (~1200 lines).
-   Target: merge the genuinely useful extras **into** the existing
-   `bmlib/agents/base.py` — do **not** ship a second base class:
-   - `PerformanceMetrics` (per-agent timing/success/token accounting).
-   - `_generate_and_parse_json`'s *regenerate-on-parse-failure* behaviour —
-     reconcile with bmlib's existing `chat_json()` retry loop, don't duplicate.
-   - `_generate_embedding` — wire to `LLMClient.embed()`, don't reimplement.
-   - optionally `test_connection`.
-   - **Drop** all queue/orchestrator hooks (`submit_task`, queue_manager
-     coupling) and any `bmlibrarian.config` reads — bmlib's base stays
-     injection-only.
-   - Do **issue #17** while in there.
-2. **`context_processor`.** Source:
+**Phase 1 item 2 — the next port:**
+
+1. **`context_processor`.** Source:
    `~/src/bmlibrarian/src/bmlibrarian/agents/context_processor/` (~840 lines,
    already callback-injected — clean). Target: `bmlib/context_processor/` or
    under `bmlib/agents/`. It batches oversized items across an LLM context
@@ -156,6 +166,66 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   redirects, `"<word>:<digits>"` read as host:port). Simplifying any of these
   back to the obvious one-liner reintroduces a real defect; each has a
   regression test naming it.
+- **`extract_json()` lets a fenced candidate win on parse alone, ahead of its
+  dict preference.** A fence is the model's own delimitation of its answer, so
+  reducing a fenced `[{...}, {...}]` to the first object — which dict
+  preference alone does, via the nested-object stage — silently drops every
+  sibling on a path both providers run for every `json_mode` response. Pinned
+  by `test_fenced_array_of_objects_is_returned_whole`.
+- **`extract_and_repair_json()` passes `nested_objects=False`.** It *repairs*
+  candidates, and repairing an object nested inside a span it already rejected
+  discards the structure around it — `'[{"a": 1}, invalid junk]'` would return
+  `{"a": 1}` where it should raise. `extract_json()` keeps the nested stage,
+  because it only ever validates. Pinned by
+  `test_raises_rather_than_returning_a_fragment_of_a_broken_array`.
+- **`salvage_json_fields()` bounds *both* of its passes.** Every failed
+  `raw_decode()` scans forward to the end of the document, so an unbounded
+  pass is quadratic in the response length, and a repetition-looping model —
+  the failure mode salvage exists for — is what produces thousands of
+  matches. Repair runs at most once per key, at the last match, because
+  repair exists to close a value truncated at the end of the document and
+  earlier matches cannot need it (3000 matches: 135 s → 0.19 s). The fast
+  pass stops after `MAX_SALVAGE_MATCHES`, which is what makes the whole
+  function linear (50,000 matches: ~1.0 s → ~0.08 s). Pinned by
+  `test_repair_is_attempted_at_most_once_per_key` and
+  `test_fast_pass_is_bounded_to_the_match_cap`; the last match staying
+  reachable past the cap is pinned by
+  `test_the_last_match_is_still_reached_beyond_the_cap`.
+- **`RecursionError` is caught wherever a JSON candidate is decoded.**
+  `json.loads()` / `raw_decode()` descend recursively, so text nested past
+  the interpreter's stack limit blows the stack instead of raising
+  `ValueError` — and `'{"j": ' * 20000` is a shape repetition-looping models
+  actually emit. `extract_json()` is the one that matters: it is documented
+  never to raise and runs unconditionally on every `json_mode` response in
+  the Anthropic and OpenAI-compatible providers, so an escape takes out the
+  provider call. Narrowing any of these back to `except json.JSONDecodeError`
+  reintroduces it. Pinned by
+  `test_deep_nesting_returns_the_text_rather_than_raising`,
+  `test_deep_nesting_raises_valueerror_not_recursionerror` (×2) and
+  `test_deeply_nested_text_raises_valueerror_not_recursionerror`.
+- **`iter_json_spans()` dedupes candidates by text, not position.** Stages 4
+  and 5 rescan fence interiors as plain text, so without it every fenced body
+  is offered twice and an unrepairable one pays `repair_json()`'s attempt
+  loop twice. `balanced_found` is set *before* the dedup check — a span that
+  repeats one already yielded still means the text balanced, so the stage-6
+  truncation tail must not fire.
+- **`PerformanceMetrics.elapsed_time_seconds` reads `time.monotonic()`, not
+  the `time.time()` timestamps it stores.** `start_time` / `end_time` stay
+  absolute so a caller can render them as dates, but a wall-clock difference
+  can be distorted or made negative by an NTP step or DST change mid-run, and
+  `format_report()` prints elapsed directly against `total_wall_time_seconds`,
+  which `BaseAgent` accumulates monotonically. `snapshot()` must copy the
+  monotonic marks by hand — they are `init=False`, so a keyword-only copy
+  silently drops them to the wall-clock fallback. Pinned by
+  `test_elapsed_survives_a_wall_clock_step` and
+  `test_snapshot_carries_the_monotonic_marks`.
+- **`PerformanceMetrics` omits model-inference and prompt-eval timers.** No
+  provider reports them through bmlib — `LLMResponse.duration_seconds` is
+  declared but never populated — so they would be permanently `0.0` and every
+  derived figure would lie. `tokens_per_second` uses wall time instead.
+- **`BaseAgent.__init__`'s `embedding_model` is declared last**, for the same
+  reason as `Publication.pmcid`: downstream projects construct subclasses
+  positionally.
 - **`_JATSHandler.endElement` tests `in_figure or in_table_wrap` before any
   prose branch, for both `<p>` and `<title>`, and routes on `in_caption`
   rather than on which `in_*` flag is set.** JATS reuses `<p>` for caption

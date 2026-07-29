@@ -26,9 +26,14 @@ hold the full story.
 | ✅ Done | Thinking/reasoning support | Cross-provider `think` kwarg on `chat()` (`bool` / effort string / `int` budget) mapped to each provider's native parameter; trace returned in `LLMResponse.thinking` (0.5.0) |
 | ⬜ Planned | Round-trip Anthropic thinking blocks in tool loops | Extended thinking + multi-turn tool use fails on the follow-up request: the API requires the original `thinking` blocks (with signatures) re-sent in the assistant turn, but the message converter drops them and `LLMResponse.thinking` is a plain string. Needs signature-preserving block storage |
 | ⬜ Planned | Embeddings beyond Ollama | Only Ollama implements `embed()`; add OpenAI and Gemini backends when a consumer needs them |
-| ⬜ Planned | Consolidate JSON extraction | Issue #17 — `llm/utils.py::extract_json` and `llm/json_repair.py::extract_and_repair_json` duplicate span-location logic; unify behind one locator (fold into the Phase 1 BaseAgent work) |
+| ✅ Done | Consolidate JSON extraction | Issue #17 — one locator, `iter_json_spans()`, yields candidate spans in six priority stages without validating; `extract_json()` and `extract_and_repair_json()` are acceptance policies over it, dropping ~70 lines of duplicated fence and brace scanning. A fenced candidate outranks the object preference, and the repair path suppresses the nested-object stage so it cannot return a fragment of a span it rejected (unreleased) |
+| ✅ Done | Field-level JSON salvage | `salvage_json_fields()` — when a long structured response is malformed in one place, recover the fields that are intact instead of losing all of it. Generalises biasbuster's `lenient_extract`; at most one repair pass per key, at the last match (unreleased) |
 | **Agents (`bmlib.agents`)** | | |
 | ✅ Done | `BaseAgent` | `chat()`, `chat_json()` with retry and truncation fail-fast, template rendering, message helpers |
+| ✅ Done | Per-agent performance metrics | `PerformanceMetrics` — thread-safe token/request/retry/timing accounting, independent of the global `TokenTracker`; `agent.metrics` returns a snapshot. Upstream's model-inference timers are omitted: no provider reports them through bmlib, so they would be permanently zero (unreleased) |
+| ✅ Done | Agent-level embeddings and connection test | `BaseAgent.embed()` / `embed_batch()` / `test_connection()` plus the `embedding_model` parameter, declared last so positional construction stays stable. Embeddings are excluded from the metrics — `tokens_per_second` is about generation (unreleased) |
+| ✅ Done | Diagnosable JSON failures | `chat_json(retry_context=...)` labels every retry and failure message with the task; `parse_json()` warns when the repair stage was what rescued a response, since repair closes brackets and a truncated response can parse into a valid but incomplete object (unreleased) |
+| ⬜ Planned | Decide `parse_json`'s return contract | Issue #33 — annotated `-> dict` but returns a list when the response holds only a top-level array. Runtime guard (breaking) or widened annotation |
 | **Templates (`bmlib.templates`)** | | |
 | ✅ Done | Jinja2 prompt engine | User directory override with default-directory fallback |
 | **Quality (`bmlib.quality`)** | | |
@@ -66,7 +71,7 @@ hold the full story.
 | ✅ Done | Survive a missing abstract | A `None` abstract from a nullable column was sliced unguarded in both LLM tiers, so one record took the whole scoring batch down. With title *and* abstract missing the tiers return `unclassified()` without calling the model (unreleased) |
 | ✅ Done | Tier 2 token budget is settable | `classify()` repeated `temperature`/`max_tokens` at the call site, silently overriding the constructor; the 256-token ceiling truncated small local models' preamble and lost the JSON with it (unreleased) |
 | **Quality & maintenance** | | |
-| ✅ Done | Test suite | 826 tests + 31 skipped; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services. The skips are the PostgreSQL parameterisations of `test_backends.py`, which need `BMLIB_TEST_POSTGRESQL_DSN` |
+| ✅ Done | Test suite | 906 tests + 32 skipped; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services. 30 skips are the PostgreSQL parameterisations of `test_backends.py`, which need `BMLIB_TEST_POSTGRESQL_DSN`; 2 need PyMuPDF |
 | ✅ Done | Reference manual | `docs/manual/` — one page per module |
 | ✅ Done | Documentation refresh for 0.4.0 | CHANGELOG, README, CLAUDE.md and all eight manual pages rewritten against the real source, signatures verified and examples executed |
 | ✅ Done | Deduplicate `docs/manual/fulltext.md` | Issue #31 — the `## PDF Conversion` section appeared twice with overlapping, non-identical content; the two are merged, and the copy that wrongly called the converter standalone is gone (unreleased) |
