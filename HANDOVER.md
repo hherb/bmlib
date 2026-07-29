@@ -94,9 +94,12 @@ Nothing is blocked on anything else.
   runtime-guard option was rejected — raising would hide the loss rather than
   fix it, and inconsistently, since a *bare* array parses before the extractor
   is ever reached. The design widens the annotation, adds an opt-in
-  `require_dict` that retries inside `chat_json()`, and makes the nested stage a
-  last resort. Note it inverts two existing tests in `test_json_extraction.py`
-  (`:113` and `:133`) — deliberately, and the design says so.
+  `require_dict` that retries inside `chat_json()` (except at temperature 0,
+  where it fails fast like the truncation path), and makes the nested stage a
+  last resort behind a ranked fallback. Note it inverts two existing tests in
+  `test_json_extraction.py` — `test_prefers_the_object_nested_in_a_single_element_array`
+  and `test_unfenced_nested_object_still_wins` — deliberately, and the design
+  says so.
 - **#36 — industry-funder keyword matching is punctuation-dependent.**
   `_INDUSTRY_KEYWORDS` tests substrings, so `"inc."` carries its dot to avoid
   matching `"Lincoln"` — and consequently misses an NLM-normalised
