@@ -23,6 +23,7 @@ from bmlib.transparency.models import (
     TransparencyResult,
     TransparencyRisk,
     TransparencySettings,
+    TransparencyUnknownReason,
     calculate_risk_level,
 )
 
@@ -867,3 +868,132 @@ class TestSettingsEnabled:
 
     def test_enabled_by_default(self):
         assert TransparencySettings().enabled is True
+
+
+class TestUnknownReason:
+    """Issue #21 — the cause of an UNKNOWN result must be readable as data.
+
+    ``analyze()`` returns UNKNOWN at score 0 for three unrelated reasons. A
+    caller that wants to retry a network outage but silently skip a disabled
+    analyzer had to match on ``risk_indicators`` prose, which is documentation
+    rather than API.
+    """
+
+    def test_disabled_analysis_reports_disabled(self, monkeypatch):
+        import httpx
+
+        def _boom(*a, **k):
+            raise AssertionError("no HTTP client may be created when disabled")
+
+        monkeypatch.setattr(httpx, "Client", _boom)
+
+        analyzer = TransparencyAnalyzer(settings=TransparencySettings(enabled=False))
+        result = analyzer.analyze("doc1", doi="10.1234/x")
+
+        assert result.unknown_reason is TransparencyUnknownReason.DISABLED
+
+    def test_missing_identifier_reports_no_identifier(self):
+        analyzer = TransparencyAnalyzer()
+        result = analyzer.analyze("doc1")
+
+        assert result.risk_level == TransparencyRisk.UNKNOWN
+        assert result.unknown_reason is TransparencyUnknownReason.NO_IDENTIFIER
+
+    def test_total_outage_reports_unreachable(self, monkeypatch):
+        import httpx
+
+        monkeypatch.setattr(
+            httpx, "Client", lambda *a, **k: TestAnalyzeApiReachability._DeadClient()
+        )
+        analyzer = TransparencyAnalyzer()
+        result = analyzer.analyze("doc1", doi="10.1234/x")
+
+        assert result.risk_level == TransparencyRisk.UNKNOWN
+        assert result.unknown_reason is TransparencyUnknownReason.UNREACHABLE
+
+    def test_the_three_causes_are_distinguishable(self, monkeypatch):
+        """The point of the field: three UNKNOWNs, three different values."""
+        import httpx
+
+        monkeypatch.setattr(
+            httpx, "Client", lambda *a, **k: TestAnalyzeApiReachability._DeadClient()
+        )
+        disabled = TransparencyAnalyzer(settings=TransparencySettings(enabled=False)).analyze(
+            "doc1", doi="10.1234/x"
+        )
+        no_id = TransparencyAnalyzer().analyze("doc2")
+        unreachable = TransparencyAnalyzer().analyze("doc3", doi="10.1234/x")
+
+        reasons = {disabled.unknown_reason, no_id.unknown_reason, unreachable.unknown_reason}
+        assert len(reasons) == 3
+
+    def test_a_measured_result_carries_no_reason(self, monkeypatch):
+        """Invariant: a reason is present if and only if the risk is UNKNOWN.
+
+        ``calculate_risk_level()`` never returns UNKNOWN, so every UNKNOWN the
+        analyzer produces comes from one of the three early returns — and
+        nothing else may claim a reason.
+        """
+        import httpx
+
+        class _EmptyClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def get(self, url, **kwargs):
+                if "crossref" in url:
+                    return _FakeResponse(status_code=200, json_data={"message": {}})
+                if "europepmc" in url and "fullTextXML" not in url:
+                    return _FakeResponse(
+                        status_code=200,
+                        json_data={"resultList": {"result": [{"abstractText": "", "inEPMC": "N"}]}},
+                    )
+                return _FakeResponse(status_code=404)
+
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: _EmptyClient())
+        result = TransparencyAnalyzer().analyze("doc1", doi="10.1234/x")
+
+        assert result.risk_level != TransparencyRisk.UNKNOWN
+        assert result.unknown_reason is None
+
+    def test_default_is_none(self):
+        assert (
+            TransparencyResult(
+                document_id="doc1",
+                transparency_score=50,
+                risk_level=TransparencyRisk.MEDIUM,
+            ).unknown_reason
+            is None
+        )
+
+    def test_survives_round_trip(self):
+        original = TransparencyResult(
+            document_id="doc1",
+            transparency_score=0,
+            risk_level=TransparencyRisk.UNKNOWN,
+            unknown_reason=TransparencyUnknownReason.UNREACHABLE,
+        )
+        assert TransparencyResult.from_dict(original.to_dict()) == original
+
+    def test_serialised_by_value_like_transparency_risk(self):
+        result = TransparencyResult(
+            document_id="doc1",
+            transparency_score=0,
+            risk_level=TransparencyRisk.UNKNOWN,
+            unknown_reason=TransparencyUnknownReason.NO_IDENTIFIER,
+        )
+        assert result.to_dict()["unknown_reason"] == "no_identifier"
+
+    def test_a_result_persisted_before_this_field_existed_still_loads(self):
+        # Results stored by earlier versions carry no `unknown_reason` key;
+        # from_dict() must default rather than raise.
+        legacy = {
+            "document_id": "doc1",
+            "transparency_score": 0,
+            "risk_level": "unknown",
+            "risk_indicators": ["Transparency APIs unreachable — score not determinable"],
+        }
+        assert TransparencyResult.from_dict(legacy).unknown_reason is None

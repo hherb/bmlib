@@ -36,6 +36,20 @@ class TransparencyRisk(Enum):
     UNKNOWN = "unknown"
 
 
+class TransparencyUnknownReason(Enum):
+    """Why an analysis could not determine a transparency score.
+
+    ``UNKNOWN`` is returned for three unrelated reasons, and a caller may well
+    want to treat them differently — retry an outage later, skip a disabled
+    analyzer silently. Each is also named in ``risk_indicators``, but as prose
+    for humans; this enum is the machine-readable form (issue #21).
+    """
+
+    DISABLED = "disabled"  # settings.enabled is False
+    NO_IDENTIFIER = "no_identifier"  # neither PMID nor DOI was supplied
+    UNREACHABLE = "unreachable"  # no external API answered
+
+
 @dataclass
 class TransparencySettings:
     """User-configurable transparency thresholds and orchestration hints.
@@ -95,6 +109,13 @@ class TransparencyResult:
     analyzer_version: str = "1.0"
     full_text_analyzed: bool = False
 
+    # Set if and only if `risk_level` is UNKNOWN. Declared last for the same
+    # reason as `Publication.pmcid`: downstream projects construct this
+    # dataclass positionally, so inserting a field beside its logical
+    # neighbours (`risk_level`, `risk_indicators`) would shift every following
+    # argument by one with no error raised anywhere.
+    unknown_reason: TransparencyUnknownReason | None = None
+
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dictionary."""
         return {
@@ -117,6 +138,8 @@ class TransparencyResult:
             # absent" rather than "undeterminable". Dropping it on the way to
             # storage made a persisted `coi_disclosed=False` uninterpretable.
             "full_text_analyzed": self.full_text_analyzed,
+            # Enum serialised by value, mirroring `risk_level`.
+            "unknown_reason": self.unknown_reason.value if self.unknown_reason else None,
         }
 
     @classmethod
@@ -127,6 +150,14 @@ class TransparencyResult:
             analyzed_at = datetime.fromisoformat(analyzed_at_raw)
         else:
             analyzed_at = datetime.now(tz=UTC)
+
+        # Absent from results persisted before the field existed, and null on
+        # every determinate result, so it is read defensively rather than
+        # indexed.
+        unknown_reason_raw = data.get("unknown_reason")
+        unknown_reason = (
+            TransparencyUnknownReason(unknown_reason_raw) if unknown_reason_raw else None
+        )
 
         return cls(
             document_id=data["document_id"],
@@ -144,6 +175,7 @@ class TransparencyResult:
             analyzed_at=analyzed_at,
             analyzer_version=data.get("analyzer_version", "1.0"),
             full_text_analyzed=data.get("full_text_analyzed", False),
+            unknown_reason=unknown_reason,
         )
 
 

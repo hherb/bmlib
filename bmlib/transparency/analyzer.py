@@ -38,6 +38,7 @@ from bmlib.transparency.models import (
     TransparencyResult,
     TransparencyRisk,
     TransparencySettings,
+    TransparencyUnknownReason,
     calculate_risk_level,
 )
 
@@ -307,11 +308,17 @@ class TransparencyAnalyzer:
 
         At least one of *pmid* or *doi* must be provided.
 
-        Returns an ``UNKNOWN`` result without contacting any API when
-        ``settings.enabled`` is False, when neither identifier is given, or
-        when every external API was unreachable — three distinct cases, each
-        named in ``risk_indicators``. ``UNKNOWN`` never triggers a quality
-        tier downgrade, so a paper we learned nothing about is not penalised.
+        Returns an ``UNKNOWN`` result when ``settings.enabled`` is False, when
+        neither identifier is given, or when every external API was unreachable
+        — three distinct cases, each named in ``risk_indicators`` for humans
+        and in ``TransparencyResult.unknown_reason`` for callers that branch on
+        the cause. The first two cases contact no API at all.
+
+        ``unknown_reason`` is set if and only if ``risk_level`` is ``UNKNOWN``:
+        :func:`~bmlib.transparency.models.calculate_risk_level` never returns
+        ``UNKNOWN``, so every ``UNKNOWN`` originates in one of the three early
+        returns below. ``UNKNOWN`` never triggers a quality tier downgrade, so
+        a paper we learned nothing about is not penalised.
         """
         # Checked before the httpx import: a disabled analyzer does no HTTP,
         # so it must not demand the optional dependency either.
@@ -321,6 +328,7 @@ class TransparencyAnalyzer:
                 transparency_score=0,
                 risk_level=TransparencyRisk.UNKNOWN,
                 risk_indicators=["Transparency analysis disabled in settings"],
+                unknown_reason=TransparencyUnknownReason.DISABLED,
             )
 
         try:
@@ -337,6 +345,7 @@ class TransparencyAnalyzer:
                 transparency_score=0,
                 risk_level=TransparencyRisk.UNKNOWN,
                 risk_indicators=["No PMID or DOI provided"],
+                unknown_reason=TransparencyUnknownReason.NO_IDENTIFIER,
             )
 
         self._api_reachable = False
@@ -408,6 +417,7 @@ class TransparencyAnalyzer:
                 transparency_score=0,
                 risk_level=TransparencyRisk.UNKNOWN,
                 risk_indicators=["Transparency APIs unreachable — score not determinable"],
+                unknown_reason=TransparencyUnknownReason.UNREACHABLE,
             )
 
         score = min(score, MAX_TRANSPARENCY_SCORE)
