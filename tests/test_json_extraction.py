@@ -107,11 +107,11 @@ class TestExtractJson:
 
     def test_prefers_a_dict_over_an_earlier_array(self):
         # Preserves the pre-consolidation outcome: the brace-only scan was
-        # object-only, so the object won.  Dict-preference keeps that.
+        # object-only, so the object won.  Dict-preference keeps that — but
+        # only for a *top-level* dict, which is all this text contains.  A
+        # dict reachable only from inside an array no longer wins; see
+        # TestExtractJsonPrefersWholeSpans.
         assert extract_json('[1, 2] then {"a": 1}') == '{"a": 1}'
-
-    def test_prefers_the_object_nested_in_a_single_element_array(self):
-        assert extract_json('[{"a": 1}]') == '{"a": 1}'
 
     def test_falls_back_to_an_array_when_no_object_parses(self):
         # No dict candidate anywhere, so the array is better than nothing —
@@ -130,11 +130,6 @@ class TestExtractJson:
         text = '```json\n[{"pmid": "111"}, {"pmid": "222"}]\n```'
         assert json.loads(extract_json(text)) == [{"pmid": "111"}, {"pmid": "222"}]
 
-    def test_unfenced_nested_object_still_wins(self):
-        # Without a fence, dict-preference still applies — this is the
-        # pre-consolidation behaviour and must not change.
-        assert extract_json('[{"a": 1}]') == '{"a": 1}'
-
     def test_deep_nesting_returns_the_text_rather_than_raising(self):
         # json.loads() descends recursively, so the stage-6 tail candidate of
         # a repetition loop blows the stack.  extract_json() is documented
@@ -143,6 +138,57 @@ class TestExtractJson:
         # take out the provider call.
         text = '{"j": ' * 20000
         assert extract_json(text) == text
+
+
+class TestExtractJsonPrefersWholeSpans:
+    """A span the model actually emitted beats an object dug out of its inside.
+
+    The nested-object stage is a *last resort*, not a preference.  Preferring
+    it reduced an array of objects to its first element and dropped every
+    sibling with no error anywhere — a silent data loss on a path both the
+    Anthropic and OpenAI-compatible providers run for every ``json_mode``
+    response.
+    """
+
+    def test_unfenced_array_of_objects_is_returned_whole(self):
+        # The defect.  Dict-preference used to accept the nested {"a": 1}.
+        assert extract_json('[{"a": 1}, {"b": 2}]') == '[{"a": 1}, {"b": 2}]'
+
+    def test_single_element_array_of_objects_is_returned_whole(self):
+        # Two earlier tests asserted this returned '{"a": 1}', one of them
+        # commented "must not change".  That invariant was written to pin the
+        # *fence* asymmetry, before the sibling-dropping cost of dict
+        # preference had been noticed; it is deliberately retired.
+        assert extract_json('[{"a": 1}]') == '[{"a": 1}]'
+
+    def test_array_of_objects_in_prose_is_returned_whole(self):
+        text = 'Here are the records: [{"pmid": "111"}, {"pmid": "222"}] done.'
+        assert json.loads(extract_json(text)) == [{"pmid": "111"}, {"pmid": "222"}]
+
+    def test_nested_object_is_still_rescued_when_no_whole_span_parses(self):
+        # The case the nested stage exists for: the enclosing span is junk,
+        # so the second walk is what finds anything at all.
+        assert extract_json('Here: [garbage {"a": 1} garbage]') == '{"a": 1}'
+
+    def test_an_incidental_empty_array_does_not_mask_the_payload(self):
+        # The ranked fallback.  First-parseable would return '[]' — which
+        # substitutes *unrelated* data, parses cleanly, and survives any
+        # downstream shape check, so nothing would ever notice.
+        assert extract_json('[] and [{"a": 1}]') == '[{"a": 1}]'
+
+    def test_an_incidental_non_empty_array_does_not_mask_the_payload(self):
+        # '[]' above is falsy, so an implementation leaning on truthiness
+        # rather than `is None` passes that case by accident.  This one needs
+        # the ranking to be real.
+        assert extract_json('x ["s"] y [{"a": 1}]') == '[{"a": 1}]'
+
+    def test_an_incidental_scalar_array_does_not_mask_the_payload(self):
+        assert extract_json('Prose [1, 2] and [{"a": 1}]') == '[{"a": 1}]'
+
+    def test_ranking_does_not_engage_without_objects_anywhere(self):
+        # No candidate holds an object, so the first parseable span still
+        # wins and document order is preserved.
+        assert extract_json('First [1, 2] then ["a"]') == "[1, 2]"
 
 
 class TestExtractAndRepairJsonPolicy:
