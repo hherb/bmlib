@@ -55,11 +55,15 @@ XML:
 ```python
 @dataclass(frozen=True)
 class _PubMedSignals:
-    coi_statement: bool       # non-blank <CoiStatement>
-    trial_accessions: list[str]  # ClinicalTrials.gov NCT ids, upper-cased
-    other_registry: bool      # accession in a non-ClinicalTrials.gov registry
-    funders: list[str]        # <Grant><Agency> names
+    coi_statement: bool = False           # non-blank <CoiStatement>
+    trial_accessions: tuple[str, ...] = ()  # ClinicalTrials.gov NCT ids, upper-cased
+    other_registry: bool = False          # registered somewhere not followable
+    funders: tuple[str, ...] = ()         # <Grant><Agency> names
 ```
+
+Tuples rather than lists, so the frozen dataclass is genuinely immutable, and
+every field defaults, so `_PubMedSignals()` is the single "nothing found"
+value every failure path returns.
 
 | Element | Rule |
 |---------|------|
@@ -111,6 +115,13 @@ prose cannot distinguish a paper's own registration from a review's citation
 list; a `DataBankList` entry is the publisher asserting *this* paper's
 registration. The abstract heuristic remains the fallback for records with no
 `DataBankList` (and for DOI-only analyses that never reached PubMed).
+
+An accession is nonetheless validated as a well-formed `NCT\d{8}` id before it
+is carried forward, because it is publisher-supplied text that would otherwise
+be interpolated into a ClinicalTrials.gov URL path unchecked. A
+ClinicalTrials.gov entry whose accession is missing or malformed still
+establishes registration — it just cannot be followed up, which is what
+`other_registry` records.
 
 ### Signature
 

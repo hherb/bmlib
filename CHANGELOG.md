@@ -96,6 +96,47 @@ All notable changes to bmlib are documented here. The format is based on
   limit; returns `{}` when nothing is found. Not wired into `parse_json()` —
   silently returning partial data would turn a loud failure into a quiet wrong
   answer, so callers opt in after catching the `ValueError`.
+- **`TransparencyAnalyzer` queries PubMed, and `pubmed_api_key` finally does
+  something** (closes #18). The parameter has always been accepted and never
+  read — the port from bmlibrarian dropped the client that used it. There is
+  now one E-utilities `efetch` request per analysis at most, placed after
+  Europe PMC (so a DOI-only analysis can reuse the PMID from the record
+  already fetched) and before ClinicalTrials.gov (so a structured accession
+  can feed the posted-results check). No PMID from either source and the step
+  is skipped entirely. It contributes three signals, all publisher-supplied
+  structured metadata, each closing a gap Europe PMC leaves on closed-access
+  papers:
+  - `<CoiStatement>` establishes a COI disclosure with no full text to scan.
+    A *missing* statement never demotes `coi_disclosed` from `None` to
+    `False`: it means the publisher supplied none, not that the paper carries
+    none, and `False` would trigger the missing-COI downgrade on no evidence.
+  - `<DataBankList>` trial-registry accessions are trusted directly, skipping
+    the abstract heuristic's registration-cue window and two-id cap — those
+    exist only because scraping NCT ids out of prose cannot tell a paper's own
+    registration from a review's citation list, which a databank entry
+    already distinguishes. Registration in a registry other than
+    ClinicalTrials.gov now counts too, with a distinct indicator, since its
+    posted-results status cannot be looked up there.
+  - `<GrantList>` gives a PMID-only analysis its first funder signal; an
+    industry agency carries `DEFAULT_INDUSTRY_CONFIDENCE`, the same as a
+    CrossRef funder record, both being structured metadata.
+
+  What the key buys, stated precisely: NCBI meters unkeyed E-utilities traffic
+  at 3 requests/second per IP and keyed traffic at 10 requests/second per key,
+  so passing it moves bmlib's request out of the bucket the calling
+  application's own E-utilities traffic already competes for. It does not
+  change bmlib's own pacing, which stays on the 350 ms interval shared with
+  the other APIs.
+- `TransparencyUnknownReason` (`DISABLED` / `NO_IDENTIFIER` / `UNREACHABLE`)
+  and `TransparencyResult.unknown_reason` (closes #21). `analyze()` returns
+  `UNKNOWN` at score 0 for three unrelated reasons, and telling them apart
+  meant matching `risk_indicators` prose — documentation, not API. The
+  strings stay for humans. Set if and only if `risk_level` is `UNKNOWN`:
+  `calculate_risk_level()` never returns `UNKNOWN`, so every one comes from a
+  known early return. Serialised by value like `risk_level`, and read
+  defensively on the way back in, so results persisted before the field
+  existed still load. Declared **last** on the dataclass, for the same reason
+  as `Publication.pmcid`.
 
 ### Changed
 
@@ -159,6 +200,19 @@ All notable changes to bmlib are documented here. The format is based on
   monotonic marks across; an instance rebuilt by `from_dict()` has none —
   they are not meaningful between processes, so they are not serialised —
   and falls back to the timestamp difference.
+- `TransparencyResult.trial_registered` can now be `True` for a registration
+  in a registry other than ClinicalTrials.gov, which PubMed's `<DataBankList>`
+  makes visible for the first time. `trial_results_compliant` stays `False`
+  there — ClinicalTrials.gov has no answer for an ISRCTN number — so the
+  indicator says `"Trial registered outside ClinicalTrials.gov; results
+  posting not checked"` rather than the misleading `"Registered trial without
+  posted results"`. Read the indicator, not the flag, to tell "checked and
+  absent" from "not checkable".
+- A COI disclosure found in PubMed retracts the two full-text COI indicators
+  (`"No COI disclosure found in full text"`, `"COI disclosure status unknown
+  (full text unavailable)"`) rather than leaving them to contradict
+  `coi_disclosed=True`, and appends `"COI disclosure found in PubMed record"`
+  in their place.
 
 ### Fixed
 
@@ -262,6 +316,13 @@ All notable changes to bmlib are documented here. The format is based on
   `render_html()` material the other copy held alone. A stray cache-key
   paragraph that had been duplicated into the same region, restating what
   "Cache keys" already covers, is gone too.
+- `docs/manual/transparency.md` contradicted itself on thread safety: the
+  constructor section said "do not share one analyzer across threads" —
+  guidance from before 0.4.0 made it thread-safe — while the concurrency
+  section 300 lines below correctly recommended sharing one instance. The
+  stale sentence is gone. A paragraph about the COI fallback window's known
+  limitation also appeared twice, in slightly different words; the two are
+  merged.
 
 ### Compatibility
 
@@ -288,6 +349,24 @@ Two details worth knowing when upgrading:
   code that goes straight to `store_publication()` must call it itself.
 - `Publication` gained a field. Positional construction and `from_dict()` on a
   dict serialised by an older bmlib both behave exactly as before.
+- `TransparencyResult` likewise gained `unknown_reason`, declared last, so
+  positional construction is unaffected and a dict without the key loads with
+  it set to `None`.
+
+The transparency analyzer's behaviour does change, in ways worth planning for
+even though no signature did:
+
+- **One more outgoing request per analysis** (~0.35 s of enforced interval)
+  whenever a PMID is available, which is most of the time. An analysis with
+  neither a supplied PMID nor one in the Europe PMC record costs exactly what
+  it did before.
+- **Scores can go up.** A closed-access paper that previously scored 0 for COI
+  and funding can now earn both from PubMed metadata, which may move a paper
+  across `score_threshold` and out of HIGH. Stored scores from an earlier
+  bmlib are not comparable with new ones for the same paper.
+- `coi_disclosed` can now be `True` where it was `None`, and `False` is
+  correspondingly rarer: it now means neither the full text nor PubMed had a
+  statement.
 
 ## [0.5.1] — 2026-07-21
 
