@@ -85,10 +85,18 @@ Nothing is blocked on anything else.
 ### Open GitHub issues
 
 - **#33 — `BaseAgent.parse_json` is annotated `-> dict` but can return a list**
-  when a response contains only a top-level array. Pre-existing; dict-preference
-  narrowed it but did not close it. Decide between a runtime guard (breaking)
-  and widening the annotation. Same decision covers `extract_json` silently
-  returning the first object of `[{...}, {...}]`.
+  when a response contains only a top-level array. **Decided and designed; not
+  yet implemented** — `docs/superpowers/specs/2026-07-29-json-parse-contract-design.md`
+  on `fix/json-parse-contract` is approved and ready to build from. The
+  investigation found that the same code path silently drops data: an unfenced
+  `[{"a": 1}, {"b": 2}]` in prose returns `{"a": 1}`, because `extract_json()`'s
+  dict preference is satisfied by the nested-object stage. That is why the
+  runtime-guard option was rejected — raising would hide the loss rather than
+  fix it, and inconsistently, since a *bare* array parses before the extractor
+  is ever reached. The design widens the annotation, adds an opt-in
+  `require_dict` that retries inside `chat_json()`, and makes the nested stage a
+  last resort. Note it inverts two existing tests in `test_json_extraction.py`
+  (`:113` and `:133`) — deliberately, and the design says so.
 - **#36 — industry-funder keyword matching is punctuation-dependent.**
   `_INDUSTRY_KEYWORDS` tests substrings, so `"inc."` carries its dot to avoid
   matching `"Lincoln"` — and consequently misses an NLM-normalised

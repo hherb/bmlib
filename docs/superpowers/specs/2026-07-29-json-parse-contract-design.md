@@ -1,6 +1,6 @@
 # `parse_json`'s Return Contract, and the Fragment It Hides — Design
 
-**Date:** 2026-07-29
+**Date:** 2026-07-29 (reviewed and amended 2026-07-30)
 **Status:** Approved (interactive session; scope decisions recorded below)
 **Closes:** #33
 **Ships as:** its own PR, separate from #36 — unrelated defect, unrelated module
@@ -21,9 +21,28 @@ changes the calculus, and which the issue records as "related, same decision":
 `[{"a": 1}, {"b": 2}]`, `iter_json_spans()` yields the whole array at stage 4
 and then the *nested* `{"a": 1}` at stage 5. The dict preference at
 `llm/utils.py:208` accepts the nested object, so `extract_json()` returns
-`{"a": 1}` and the sibling vanishes with no error anywhere. This runs on
-**every** `json_mode` response from the Anthropic and OpenAI-compatible
-providers, not just through `BaseAgent`.
+`{"a": 1}` and the sibling vanishes with no error anywhere. The reach is wider
+than `BaseAgent`: the Anthropic and OpenAI-compatible providers both call
+`extract_json()` on their `json_mode` path.
+
+How much wider needs stating precisely, because it bounds the blast radius of
+the fix. Both providers guard the call
+(`providers/anthropic.py:253`, `providers/openai_compat.py:254`):
+
+```python
+if json_mode and content:
+    try:
+        json.loads(content)
+    except json.JSONDecodeError:
+        content = extract_json(content)
+```
+
+A *bare* array response parses, so it never reaches `extract_json()` and is
+already returned whole today. A *fenced* array does reach it — the fence
+markers stop the outer `json.loads` — but the fence rule already returns it
+whole. What is left, and what the defect actually costs, is an unfenced array
+of objects sitting in prose. So the blast radius of both the bug and the fix is
+that one shape, not every `json_mode` response.
 
 That reframes the choice. Raising on a non-dict does not fix the truncation —
 it *hides* it, and inconsistently: `parse_json()` tries `json.loads(text)`
@@ -90,6 +109,27 @@ identical in policy rather than introducing stage-aware bookkeeping into
 `iter_json_spans()`. Every genuinely new candidate in the second walk comes
 from the brace-only pass, so it is an object and returns immediately.
 
+That last sentence is load-bearing and worth stating why it holds: stage 6
+cannot newly fire in the second walk. `balanced_found` for `nested_objects=True`
+is a superset of the `nested_objects=False` case — it ORs in the brace-only
+pass — so if the second walk reaches stage 6, the first walk did too, and it
+offered the identical tail. New candidates therefore only ever come from the
+brace-only pass, and a span opening with `{` either parses to a dict or fails.
+
+Two mechanical notes for the implementer:
+
+- Build the `fenced` set once in `extract_json()` and pass it into
+  `_first_acceptable()`. Today's lazy build is per-call, so two walks would run
+  `_FENCE_RE.findall` over the whole response twice. It only bites on the
+  malformed path, but threading it through is free and keeps the "built on
+  first need" comment honest.
+- `iter_json_spans()`'s `nested_objects` default becomes `True` for exactly one
+  caller — the second walk — while both other call sites pass `False`
+  explicitly. Leave the default alone rather than flipping it: `True` is what
+  the parameter name reads as, and a `False` default would make
+  `extract_and_repair_json()`'s explicit `False` look redundant and invite its
+  removal. Note the imbalance in the docstring instead.
+
 **Why this does not contradict the two existing deliberate non-fixes.** A fence
 still wins on parse alone — the same principle, that a fence is the model's own
 delimitation of its answer, now extended to unfenced spans. And
@@ -103,6 +143,11 @@ brackets around it and fabricates a structure the model never emitted.
 `parse_json`, `chat_json` and `_try_parse` become `dict | list` (`| None` for
 `_try_parse`). Docstrings state that a response whose JSON is an array yields
 that array whole.
+
+The module docstring's usage example (`agents/base.py:31-37`) is part of this:
+it declares `def score(...) -> dict` and returns `self.parse_json(...)`. It is
+the first thing a reader of the module sees, so leaving it annotated `-> dict`
+re-teaches the contract this change corrects.
 
 ### 3. Opt-in strictness
 
@@ -136,18 +181,55 @@ friction. Note that CI runs ruff only — no type checker — so the overloads
 serve downstream consumers' checkers and are verified by reading, not by our
 build. Runtime behaviour is covered by tests either way.
 
+Because nothing in the build checks them, pin the `@overload` / `@staticmethod`
+decorator order deliberately and verify it **once** against a real type checker
+(`uvx mypy`, throwaway — not added to CI). Stacking these two has been
+order-sensitive across checker versions, and a wrong order fails silently here:
+ruff will not flag it, the tests will not catch it, and the only symptom is a
+downstream consumer's checker inferring `dict | list` where the overload was
+supposed to give it `dict`. That is the whole benefit of the decision, lost
+with no signal.
+
 ## Testing
 
 `tests/test_json_extraction.py`:
 
+New:
+
 - an unfenced array of objects is returned whole, not reduced to its first
   element (the defect);
 - a nested object is still rescued when no enclosing span parses (the rescue
-  case the stage exists for);
-- `test_fenced_array_of_objects_is_returned_whole` re-run unchanged as the
-  guard that the fence rule survived;
-- an incidental array before the requested object still loses to the object
-  (the dict preference is unchanged).
+  case the stage exists for).
+
+**Rewritten — two existing tests assert the behaviour this design changes, and
+both must be inverted.** `test_prefers_the_object_nested_in_a_single_element_array`
+(`test_json_extraction.py:113`) and `test_unfenced_nested_object_still_wins`
+(`:133`) are the same assertion under two names —
+`extract_json('[{"a": 1}]') == '{"a": 1}'` — and `[{"a": 1}]` is exactly the
+"only parseable JSON is an array containing objects" case, so both now yield
+`'[{"a": 1}]'`. A prototype of the two-walk policy run against the current
+suite fails these two and no others.
+
+The second one's comment currently reads *"this is the pre-consolidation
+behaviour and **must not change**"*. That invariant is deliberately retired
+here: it was written to pin the *fence* asymmetry — that dict preference still
+applied without a fence — at a time when the sibling-dropping cost of that
+preference had not been noticed. Replace both with a single test asserting the
+array is returned whole, carrying a comment that says the nested stage is now a
+last resort and why. Leaving the old comment in place would read as a standing
+prohibition on this change and invite the next session to revert it.
+
+Unchanged, and worth re-running deliberately:
+
+- `test_fenced_array_of_objects_is_returned_whole` — the guard that the fence
+  rule survived;
+- `test_prefers_a_dict_over_an_earlier_array` (`'[1, 2] then {"a": 1}'`) — an
+  incidental array before the requested object still loses to the object, so
+  the dict preference itself is intact;
+- `test_falls_back_to_an_array_when_no_object_parses`
+  (`"Values: [1, 2, 3] done"`) — a near miss that still passes. It looks like
+  the changed case but is not: the array holds no objects, so no nested
+  candidate ever competed with it.
 
 `tests/test_agents.py`:
 
@@ -163,14 +245,26 @@ build. Runtime behaviour is covered by tests either way.
 
 - `CHANGELOG.md` under `[Unreleased]`: the widened contract, the new keyword,
   and the extraction change — flagged as a behaviour change for anyone whose
-  prompts produce arrays embedded in prose, since they will now receive the
-  whole array where they previously received its first element.
+  prompts produce an array **of objects** embedded in prose, since they will
+  now receive the whole array where they previously received its first
+  element. Scope the note to that shape: a fenced array already came back
+  whole, a bare array never reached `extract_json()`, and an array of scalars
+  had no nested candidate to lose to.
 - `docs/manual/agents.md` and `docs/manual/llm.md`: the contract and
   `require_dict`.
-- `HANDOVER.md` deliberate-non-fix list: a new entry for the two-walk policy —
-  specifically that collapsing it back to a single walk restores the silent
-  truncation, and that `extract_and_repair_json` deliberately has no equivalent
-  second walk.
+- `HANDOVER.md` deliberate-non-fix list, **two edits, not one**:
+  - a new entry for the two-walk policy — specifically that collapsing it back
+    to a single walk restores the silent truncation, and that
+    `extract_and_repair_json` deliberately has no equivalent second walk;
+  - an amendment to the existing `extract_and_repair_json() passes
+    nested_objects=False` entry. It currently justifies itself with
+    *"`extract_json()` keeps the nested stage, because it only ever
+    validates"* — the very reasoning this design demotes. The stage does
+    survive, so the entry is not wrong, but left as written the list holds two
+    entries whose rationales read as contradictory. Reword it to say
+    `extract_json()` keeps the nested stage *as a last resort only*, and that
+    the asymmetry with repair is now about fabricating structure rather than
+    about validate-versus-repair licence generally.
 
 ## Verification
 
