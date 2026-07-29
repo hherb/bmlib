@@ -47,6 +47,13 @@ logger = logging.getLogger(__name__)
 MAX_REPAIR_ATTEMPTS: int = 3
 MAX_JSON_LENGTH: int = 1_000_000  # 1 MB max
 
+# How many textual matches of one key salvage_json_fields() decodes before
+# giving up on the fast pass.  Each failed decode scans forward to the end of
+# the document, so an unbounded pass is quadratic in the response length —
+# a degenerate repetition loop, exactly the failure mode salvage exists for,
+# is what produces thousands of matches.  See salvage_json_fields().
+MAX_SALVAGE_MATCHES: int = 200
+
 
 class JSONRepairError(Exception):
     """Raised when JSON cannot be repaired."""
@@ -470,6 +477,17 @@ def extract_and_repair_json(response: str, repair: bool = True) -> tuple[str, bo
     explanatory prose. Walks candidate JSON spans in priority order: the
     first candidate that validates (or repairs, if enabled) is returned.
 
+    Unlike :func:`bmlib.llm.utils.extract_json`, this applies **no dict
+    preference** — the first candidate that parses wins, object or array.
+    The two functions share a locator but not an acceptance policy, so on
+    ``'text [1,2] then {"a": 1}'`` ``extract_json()`` returns the object and
+    this returns ``[1,2]``.  That is deliberate: dict preference exists to
+    serve ``json_mode`` callers who asked a model for an object, whereas this
+    function is a general-purpose extractor whose caller may well want the
+    array.  The divergence cannot surface through
+    :meth:`bmlib.agents.BaseAgent.parse_json`, which reaches this function
+    only once ``extract_json()`` has found nothing parseable at all.
+
     Args:
         response: Raw LLM response string.
         repair: Whether to attempt repair on malformed candidates.
@@ -489,7 +507,11 @@ def extract_and_repair_json(response: str, repair: bool = True) -> tuple[str, bo
         try:
             json.loads(candidate)
             return candidate, False
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, RecursionError) as e:
+            # RecursionError because json.loads() descends recursively: a
+            # candidate nested past the stack limit is undecodable, which is
+            # this loop's ordinary "try the next one" case, not a reason to
+            # abandon the documented ValueError contract.
             last_error = e
 
         if not repair:
@@ -501,7 +523,7 @@ def extract_and_repair_json(response: str, repair: bool = True) -> tuple[str, bo
             repaired = repair_json(candidate)
             json.loads(repaired)  # Validate it parses.
             return repaired, True
-        except (JSONRepairError, json.JSONDecodeError) as e:
+        except (JSONRepairError, json.JSONDecodeError, RecursionError) as e:
             # This candidate is a dead end; the next one may not be.
             last_error = e
 
@@ -533,7 +555,17 @@ def salvage_json_fields(text: str, keys: Iterable[str]) -> dict[str, Any]:
 
     Note:
         Matching is textual, so a key name appearing inside a string value can
-        be matched.  The first occurrence wins.
+        be matched.  The first occurrence that decodes wins.
+
+    Note:
+        Work is bounded, because both phases are otherwise linear in the
+        document *per match* and a repetition-looping model emits thousands of
+        them.  The fast pass decodes at most
+        :data:`MAX_SALVAGE_MATCHES` occurrences of a key; repair is attempted
+        at most once, always at the *last* occurrence, since repair closes a
+        truncated tail and there is only one tail.  A key occurring more than
+        the cap with its only decodable occurrence past the cap is therefore
+        recovered only if that occurrence is also the last one.
     """
     recovered: dict[str, Any] = {}
     if not text:
@@ -545,8 +577,8 @@ def salvage_json_fields(text: str, keys: Iterable[str]) -> dict[str, Any]:
         pattern = re.compile(r'"' + re.escape(key) + r'"\s*:\s*')
         matches = list(pattern.finditer(text))
 
-        # Phase 1: Try fast decode on all matches.
-        for match in matches:
+        # Phase 1: Try fast decode on the first MAX_SALVAGE_MATCHES matches.
+        for match in matches[:MAX_SALVAGE_MATCHES]:
             value, found = _decode_value_at(decoder, text, match.end(), allow_repair=False)
             if found:
                 recovered[key] = value
@@ -573,6 +605,14 @@ def _decode_value_at(
     a bare ``None`` return would be indistinguishable from a decoded
     ``null``.
 
+    ``RecursionError`` counts as a failure, not an error to propagate:
+    :meth:`~json.JSONDecoder.raw_decode` descends recursively, so a value
+    nested past the interpreter's stack limit — ``'{"j": ' * 20000``, the
+    shape a repetition-looping model produces — blows the stack rather than
+    raising :class:`ValueError`.  Letting it escape would break
+    :func:`salvage_json_fields`'s promise never to raise on malformed text,
+    for input that is malformed in precisely the way it exists to survive.
+
     Args:
         decoder: JSON decoder instance.
         text: Full text being searched.
@@ -583,7 +623,7 @@ def _decode_value_at(
     try:
         value, _ = decoder.raw_decode(text, index)
         return value, True
-    except ValueError:
+    except (ValueError, RecursionError):
         pass
 
     if not allow_repair:
@@ -593,5 +633,5 @@ def _decode_value_at(
     try:
         value, _ = decoder.raw_decode(repair_json(text[index:]), 0)
         return value, True
-    except (JSONRepairError, ValueError):
+    except (JSONRepairError, ValueError, RecursionError):
         return None, False

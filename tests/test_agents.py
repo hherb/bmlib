@@ -81,6 +81,12 @@ class TestParseJson:
         result = BaseAgent.parse_json('{"design": "rct", "scores": [1, 2')
         assert result == {"design": "rct", "scores": [1, 2]}
 
+    def test_deeply_nested_text_raises_valueerror_not_recursionerror(self):
+        # json.loads() descends recursively, so a repetition-looping model
+        # blows the stack.  The documented contract is ValueError.
+        with pytest.raises(ValueError, match="Could not parse JSON"):
+            BaseAgent.parse_json('{"j": ' * 20000)
+
     def test_message_helpers(self):
         sys = BaseAgent.system_msg("sys")
         usr = BaseAgent.user_msg("usr")
@@ -354,14 +360,48 @@ class TestPerformanceMetrics:
         assert m.total_requests == 1
         assert m.total_retries == 1
 
+    @patch("bmlib.agents.metrics.time.monotonic")
     @patch("bmlib.agents.metrics.time.time")
-    def test_elapsed_time_between_marks(self, mock_time):
+    def test_elapsed_time_between_marks(self, mock_time, mock_monotonic):
         mock_time.side_effect = [100.0, 102.5]
+        mock_monotonic.side_effect = [5.0, 7.5]
         m = PerformanceMetrics()
         m.mark_start()
         m.mark_end()
         assert m.elapsed_time_seconds == 2.5
+        # start_time/end_time stay absolute wall-clock timestamps.
         assert m.end_time == 102.5
+
+    @patch("bmlib.agents.metrics.time.monotonic")
+    @patch("bmlib.agents.metrics.time.time")
+    def test_elapsed_survives_a_wall_clock_step(self, mock_time, mock_monotonic):
+        # An NTP correction or DST change moves time.time() backwards mid-run.
+        # elapsed must stay positive, or format_report() prints a duration
+        # shorter than the time already accounted to requests.
+        mock_time.side_effect = [100.0, 40.0]
+        mock_monotonic.side_effect = [5.0, 8.0]
+        m = PerformanceMetrics()
+        m.mark_start()
+        m.mark_end()
+        assert m.elapsed_time_seconds == 3.0
+
+    def test_elapsed_falls_back_to_timestamps_after_from_dict(self):
+        # Monotonic marks are not serialisable across processes.
+        restored = PerformanceMetrics.from_dict({"start_time": 100.0, "end_time": 102.5})
+        assert restored.elapsed_time_seconds == 2.5
+
+    @patch("bmlib.agents.metrics.time.monotonic")
+    @patch("bmlib.agents.metrics.time.time")
+    def test_snapshot_carries_the_monotonic_marks(self, mock_time, mock_monotonic):
+        # The two clocks get deliberately different intervals: a snapshot that
+        # dropped the monotonic marks would fall back to end_time - start_time
+        # and still look plausible, so equal intervals would not catch it.
+        mock_time.side_effect = [100.0, 109.0]  # 9s of wall clock
+        mock_monotonic.side_effect = [5.0, 8.0]  # 3s of monotonic
+        m = PerformanceMetrics()
+        m.mark_start()
+        m.mark_end()
+        assert m.snapshot().elapsed_time_seconds == 3.0
 
     def test_mark_start_clears_a_previous_end(self):
         m = PerformanceMetrics()
@@ -369,6 +409,8 @@ class TestPerformanceMetrics:
         m.mark_end()
         m.mark_start()
         assert m.end_time is None
+        # A stale monotonic end would freeze elapsed at the previous period.
+        assert m.snapshot().elapsed_time_seconds >= 0.0
 
     def test_reset_clears_everything(self):
         m = PerformanceMetrics()

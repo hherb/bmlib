@@ -3,7 +3,7 @@
 _Last updated: 2026-07-29. `main` is at v0.5.1 plus a large `[Unreleased]`
 section (PostgreSQL `publications`, PDF→text wiring, body-less JATS fix,
 BaseAgent metrics/embeddings, consolidated JSON extraction).
-906 tests passing + 32 skipped._
+916 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -57,7 +57,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   `publications` and `fulltext` changes are additive, so a minor bump fits.
   Note `~/src/bmlibrarian` pins `bmlib[ollama]>=0.5.1,<0.6.0`, so a 0.6.0
   release needs that pin lifted downstream.
-- **906 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **916 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -178,11 +178,47 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   `{"a": 1}` where it should raise. `extract_json()` keeps the nested stage,
   because it only ever validates. Pinned by
   `test_raises_rather_than_returning_a_fragment_of_a_broken_array`.
-- **`salvage_json_fields()` makes at most one `repair_json()` call per key,
-  at the last match.** Repair exists to close a value truncated at the end of
-  the document, so earlier matches cannot need it. Repairing at every failed
-  match was quadratic: 3000 matches took 135 s, now 0.19 s. Pinned by
-  `test_repair_is_attempted_at_most_once_per_key`.
+- **`salvage_json_fields()` bounds *both* of its passes.** Every failed
+  `raw_decode()` scans forward to the end of the document, so an unbounded
+  pass is quadratic in the response length, and a repetition-looping model —
+  the failure mode salvage exists for — is what produces thousands of
+  matches. Repair runs at most once per key, at the last match, because
+  repair exists to close a value truncated at the end of the document and
+  earlier matches cannot need it (3000 matches: 135 s → 0.19 s). The fast
+  pass stops after `MAX_SALVAGE_MATCHES`, which is what makes the whole
+  function linear (50,000 matches: ~1.0 s → ~0.08 s). Pinned by
+  `test_repair_is_attempted_at_most_once_per_key` and
+  `test_fast_pass_is_bounded_to_the_match_cap`; the last match staying
+  reachable past the cap is pinned by
+  `test_the_last_match_is_still_reached_beyond_the_cap`.
+- **`RecursionError` is caught wherever a JSON candidate is decoded.**
+  `json.loads()` / `raw_decode()` descend recursively, so text nested past
+  the interpreter's stack limit blows the stack instead of raising
+  `ValueError` — and `'{"j": ' * 20000` is a shape repetition-looping models
+  actually emit. `extract_json()` is the one that matters: it is documented
+  never to raise and runs unconditionally on every `json_mode` response in
+  the Anthropic and OpenAI-compatible providers, so an escape takes out the
+  provider call. Narrowing any of these back to `except json.JSONDecodeError`
+  reintroduces it. Pinned by
+  `test_deep_nesting_returns_the_text_rather_than_raising`,
+  `test_deep_nesting_raises_valueerror_not_recursionerror` (×2) and
+  `test_deeply_nested_text_raises_valueerror_not_recursionerror`.
+- **`iter_json_spans()` dedupes candidates by text, not position.** Stages 4
+  and 5 rescan fence interiors as plain text, so without it every fenced body
+  is offered twice and an unrepairable one pays `repair_json()`'s attempt
+  loop twice. `balanced_found` is set *before* the dedup check — a span that
+  repeats one already yielded still means the text balanced, so the stage-6
+  truncation tail must not fire.
+- **`PerformanceMetrics.elapsed_time_seconds` reads `time.monotonic()`, not
+  the `time.time()` timestamps it stores.** `start_time` / `end_time` stay
+  absolute so a caller can render them as dates, but a wall-clock difference
+  can be distorted or made negative by an NTP step or DST change mid-run, and
+  `format_report()` prints elapsed directly against `total_wall_time_seconds`,
+  which `BaseAgent` accumulates monotonically. `snapshot()` must copy the
+  monotonic marks by hand — they are `init=False`, so a keyword-only copy
+  silently drops them to the wall-clock fallback. Pinned by
+  `test_elapsed_survives_a_wall_clock_step` and
+  `test_snapshot_carries_the_monotonic_marks`.
 - **`PerformanceMetrics` omits model-inference and prompt-eval timers.** No
   provider reports them through bmlib — `LLMResponse.duration_seconds` is
   declared but never populated — so they would be permanently `0.0` and every

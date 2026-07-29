@@ -135,6 +135,15 @@ class TestExtractJson:
         # pre-consolidation behaviour and must not change.
         assert extract_json('[{"a": 1}]') == '{"a": 1}'
 
+    def test_deep_nesting_returns_the_text_rather_than_raising(self):
+        # json.loads() descends recursively, so the stage-6 tail candidate of
+        # a repetition loop blows the stack.  extract_json() is documented
+        # never to raise and runs on every json_mode response from the
+        # Anthropic and OpenAI-compatible providers, so a crash here would
+        # take out the provider call.
+        text = '{"j": ' * 20000
+        assert extract_json(text) == text
+
 
 class TestExtractAndRepairJsonPolicy:
     def test_walks_past_a_candidate_that_cannot_repair(self):
@@ -180,6 +189,22 @@ class TestExtractAndRepairJsonPolicy:
     def test_repair_disabled_raises_when_every_candidate_fails(self):
         with pytest.raises(ValueError):
             extract_and_repair_json('{"a": 1,} and {"b": 2,}', repair=False)
+
+    def test_deep_nesting_raises_valueerror_not_recursionerror(self):
+        # json.loads() descends recursively, so a repetition loop nests past
+        # the stack limit.  RecursionError is not a ValueError and would
+        # escape the documented contract.
+        with pytest.raises(ValueError):
+            extract_and_repair_json('{"j": ' * 20000)
+
+    def test_no_dict_preference_unlike_extract_json(self):
+        # The two share a locator but not an acceptance policy.  Pinned
+        # because it is the one place where sharing iter_json_spans() could
+        # tempt a future change into "harmonising" them.
+        text = 'text [1,2] then {"a": 1}'
+        extracted, _ = extract_and_repair_json(text)
+        assert json.loads(extracted) == [1, 2]
+        assert extract_json(text) == '{"a": 1}'
 
 
 class TestSalvageJsonFields:
@@ -240,3 +265,38 @@ class TestSalvageJsonFields:
         text = '{"j": ' * 500
         assert jr.salvage_json_fields(text, ["j"]) == {}
         assert len(calls) <= 1
+
+    def test_fast_pass_is_bounded_to_the_match_cap(self, monkeypatch):
+        # Each failed raw_decode scans forward to the end of the document, so
+        # an unbounded fast pass is quadratic in the response length.
+        from bmlib.llm import json_repair as jr
+
+        calls = []
+        real_decode_at = jr._decode_value_at
+
+        def counting_decode_at(*args, **kwargs):
+            calls.append(kwargs.get("allow_repair", True))
+            return real_decode_at(*args, **kwargs)
+
+        monkeypatch.setattr(jr, "_decode_value_at", counting_decode_at)
+
+        text = '{"j": ' * (jr.MAX_SALVAGE_MATCHES * 5)
+        assert jr.salvage_json_fields(text, ["j"]) == {}
+        # MAX_SALVAGE_MATCHES fast attempts, plus the single repair attempt.
+        assert len(calls) == jr.MAX_SALVAGE_MATCHES + 1
+        assert calls.count(True) == 1
+
+    def test_the_last_match_is_still_reached_beyond_the_cap(self):
+        # The cap bounds the fast pass, but repair always runs at the true
+        # last match — that is where a truncated tail lives.
+        from bmlib.llm.json_repair import MAX_SALVAGE_MATCHES
+
+        text = '{"j": ' * (MAX_SALVAGE_MATCHES + 50) + '{"j": 42}'
+        assert salvage_json_fields(text, ["j"]) == {"j": 42}
+
+    def test_deep_nesting_does_not_raise_recursionerror(self):
+        # raw_decode descends recursively; a repetition loop nests past the
+        # interpreter's stack limit.  RecursionError is not a ValueError, so
+        # it would escape the promise never to raise on malformed text.
+        text = '{"j": ' * 20000
+        assert salvage_json_fields(text, ["j"]) == {}

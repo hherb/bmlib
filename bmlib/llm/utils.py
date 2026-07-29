@@ -58,8 +58,8 @@ def _first_opener(text: str, openers: str = "{[") -> int:
     return -1
 
 
-def _iter_balanced(text: str, openers: str) -> Iterator[tuple[int, str]]:
-    """Yield ``(start_index, span)`` for each outermost balanced span.
+def _iter_balanced(text: str, openers: str) -> Iterator[str]:
+    """Yield each outermost balanced span, in document order.
 
     Only the pair type of a span's *own* opener is counted, so a ``[`` span
     is not disturbed by the braces nested inside it.  Quoted strings — and
@@ -96,7 +96,7 @@ def _iter_balanced(text: str, openers: str) -> Iterator[tuple[int, str]]:
         elif ch == closer:
             depth -= 1
             if depth == 0:
-                yield start, text[start : i + 1]
+                yield text[start : i + 1]
                 start = -1
 
 
@@ -116,6 +116,14 @@ def iter_json_spans(text: str, *, nested_objects: bool = True) -> Iterator[str]:
     6. The text from the first opener to the end — only when nothing balanced,
        which is what truncated model output looks like.
 
+    No span is yielded twice, compared by text rather than by position.  The
+    stages overlap heavily — stages 4 and 5 rescan fence interiors as plain
+    text, so every fenced body reaches the balanced scan a second time — and
+    a repeated candidate is pure waste to the caller: an identical string
+    parses and repairs identically, so re-offering it only buys a second run
+    of :func:`~bmlib.llm.json_repair.repair_json`'s attempt loop on a span
+    that has already failed.
+
     Args:
         text: The text to scan for JSON spans.
         nested_objects: When False, stage 5 is skipped, so an object nested
@@ -128,6 +136,7 @@ def iter_json_spans(text: str, *, nested_objects: bool = True) -> Iterator[str]:
 
     fences = [(lang, body.strip()) for lang, body in _FENCE_RE.findall(text)]
     taken: set[int] = set()
+    yielded: set[str] = set()
 
     for stage in ("json", "jsonish", "rest"):
         for index, (lang, body) in enumerate(fences):
@@ -138,24 +147,27 @@ def iter_json_spans(text: str, *, nested_objects: bool = True) -> Iterator[str]:
             if stage == "jsonish" and not body.startswith(("{", "[")):
                 continue
             taken.add(index)
-            yield body
+            if body not in yielded:
+                yielded.add(body)
+                yield body
 
-    seen: set[tuple[int, int]] = set()
     balanced_found = False
     passes = ("{[", "{") if nested_objects else ("{[",)
     for openers in passes:
-        for start, span in _iter_balanced(text, openers):
+        for span in _iter_balanced(text, openers):
+            # Set before the dedup check: a span that repeats one already
+            # yielded still means the text balanced, so stage 6 must not fire.
             balanced_found = True
-            key = (start, len(span))
-            if key in seen:
-                continue
-            seen.add(key)
-            yield span
+            if span not in yielded:
+                yielded.add(span)
+                yield span
 
     if not balanced_found:
         first = _first_opener(text)
         if first >= 0:
-            yield text[first:]
+            tail = text[first:]
+            if tail not in yielded:
+                yield tail
 
 
 def extract_json(text: str) -> str:
@@ -175,15 +187,29 @@ def extract_json(text: str) -> str:
     :meth:`bmlib.agents.BaseAgent.parse_json` — want the object a model was
     asked for, not an incidental array that happens to appear earlier.
     """
-    fenced = {body.strip() for _, body in _FENCE_RE.findall(text)}
+    # Built on first need rather than up front: it costs a second pass of
+    # _FENCE_RE over the whole response, and the common case — the first
+    # candidate parses to a dict — never consults it.  This runs on every
+    # json_mode response from the Anthropic and OpenAI-compatible providers.
+    fenced: set[str] | None = None
     fallback: str | None = None
 
     for candidate in iter_json_spans(text):
         try:
             parsed = json.loads(candidate)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, RecursionError):
+            # RecursionError, not just a decode failure: json.loads() descends
+            # recursively, so a candidate nested past the interpreter's stack
+            # limit — '{"j": ' * 20000, what a repetition-looping model emits —
+            # blows the stack.  This function is documented never to raise and
+            # runs unconditionally on every json_mode response, so an
+            # undecodable candidate is skipped like any other.
             continue
-        if isinstance(parsed, dict) or candidate in fenced:
+        if isinstance(parsed, dict):
+            return candidate
+        if fenced is None:
+            fenced = {body.strip() for _, body in _FENCE_RE.findall(text)}
+        if candidate in fenced:
             return candidate
         if fallback is None:
             fallback = candidate

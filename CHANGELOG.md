@@ -83,14 +83,19 @@ All notable changes to bmlib are documented here. The format is based on
   from the first opener to the end.
 - `bmlib.llm.json_repair.salvage_json_fields()` — recovers individually named
   fields from a response `extract_and_repair_json()` gives up on entirely.
-  Two-phase per key: a fast `raw_decode` pass over every match, then at most
-  one `repair_json` attempt at the last match if no fast attempt succeeded.
-  That bound matters — repairing at every failed match was quadratic (3,000
-  matches took 135s; the bounded version takes 0.19s). Never raises on
-  malformed text; returns `{}` when nothing is found. Not wired into
-  `parse_json()` — silently returning partial data would turn a loud failure
-  into a quiet wrong answer, so callers opt in after catching the
-  `ValueError`.
+  Two-phase per key, both phases bounded: a fast `raw_decode` pass over the
+  first `MAX_SALVAGE_MATCHES` (200) matches, then at most one `repair_json`
+  attempt, at the last match, if no fast attempt succeeded. Both bounds
+  matter, because every failed decode scans forward to the end of the
+  document and a repetition-looping model — the failure mode salvage exists
+  for — is what produces thousands of matches: unbounded repair made 3,000
+  matches take 135s, and an unbounded fast pass left the whole function
+  quadratic at ~1.0s for 50,000 matches. Bounded, that case is ~0.08s. Never
+  raises on malformed text — including `RecursionError`, which `raw_decode()`
+  throws rather than `ValueError` on input nested past the interpreter's stack
+  limit; returns `{}` when nothing is found. Not wired into `parse_json()` —
+  silently returning partial data would turn a loud failure into a quiet wrong
+  answer, so callers opt in after catching the `ValueError`.
 
 ### Changed
 
@@ -123,9 +128,37 @@ All notable changes to bmlib are documented here. The format is based on
     `json.JSONDecodeError`. `JSONDecodeError` subclasses `ValueError`, so
     `except ValueError` callers are unaffected; `except json.JSONDecodeError`
     specifically no longer catches it.
+  - `iter_json_spans()` yields no span twice, compared by text rather than
+    position. The stages overlap — stages 4 and 5 rescan fence interiors as
+    plain text, so every fenced body reached the balanced scan a second time
+    — and a repeated candidate only buys a second run of `repair_json()`'s
+    attempt loop on a span that has already failed.
+  - `RecursionError` is caught alongside `JSONDecodeError` wherever a
+    candidate is decoded — in `extract_json()`, `extract_and_repair_json()`
+    and `BaseAgent.parse_json()`. `json.loads()` descends recursively, so
+    text nested past the interpreter's stack limit (`'{"j": ' * 20000`, the
+    shape a repetition-looping model emits) blows the stack rather than
+    failing to decode, and each of those functions documents a
+    never-raise-or-`ValueError` contract that the escape broke.
+    `extract_json()` is the one that matters: it runs unconditionally on
+    every `json_mode` response in both the Anthropic and OpenAI-compatible
+    providers, and the stage-6 tail candidate hands it the whole nested run
+    where the pre-consolidation brace scan found nothing balanced and
+    returned the input untouched.
 - `BaseAgent.parse_json()` now logs a WARNING when its repair stage is what
   rescued the response — repair closes brackets, so a truncated response can
   parse into a valid but incomplete object, and the log line says so.
+- `PerformanceMetrics.elapsed_time_seconds` is measured on `time.monotonic()`
+  rather than as a difference of the `time.time()` timestamps in `start_time`
+  / `end_time`, which remain absolute so a caller can still render them as
+  dates. A wall-clock difference can be distorted — or made negative — by an
+  NTP step or a DST change mid-run, and `format_report()` prints this figure
+  directly against `total_wall_time_seconds`, which `BaseAgent` accumulates
+  from `time.monotonic()`; two clocks either side of that comparison is how
+  "12.3s elapsed (14.1s in requests)" gets printed. `snapshot()` carries the
+  monotonic marks across; an instance rebuilt by `from_dict()` has none —
+  they are not meaningful between processes, so they are not serialised —
+  and falls back to the timestamp difference.
 
 ### Fixed
 

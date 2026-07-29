@@ -988,6 +988,7 @@ for model, stats in summary.by_model.items():
 |----------|-------|-------------|
 | `MAX_REPAIR_ATTEMPTS` | `3` | Default number of repair iterations. |
 | `MAX_JSON_LENGTH` | `1_000_000` | Maximum input size in characters (1 MB). |
+| `MAX_SALVAGE_MATCHES` | `200` | Matches of one key `salvage_json_fields()` decodes in its fast pass before giving up on it. |
 
 ### `JSONRepairError`
 
@@ -1051,6 +1052,8 @@ The locator shared by `extract_json()` and `extract_and_repair_json()` below. Yi
 5. Brace-only balanced spans not already yielded by stage 4 — so an object nested inside an array (`[{"a": 1}]`) is still offered as a candidate in its own right, after the array. Skipped when `nested_objects=False`.
 6. The text from the first opener to the end of the string — only when stages 4 and 5 yielded nothing balanced, which is what truncated model output looks like. The opener search is string-aware: an opener character inside a quoted string does not count.
 
+**No span is yielded twice**, compared by text rather than by position. The stages overlap heavily — stages 4 and 5 rescan fence interiors as plain text, so every fenced body would otherwise reach the caller a second time — and a repeated candidate is pure waste: an identical string parses and repairs identically, so re-offering it only buys a second run of `repair_json()`'s attempt loop on a span that has already failed.
+
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `text` | `str` | *(required)* | Text to scan for JSON spans. |
@@ -1080,7 +1083,7 @@ Locate JSON inside a raw LLM response and repair it. Walks the candidates from `
 
 **Returns:** `(json_string, was_repaired)`.
 
-**Raises:** `ValueError` if every candidate is exhausted without one parsing or repairing.
+**Raises:** `ValueError` if every candidate is exhausted without one parsing or repairing. A candidate that raises `RecursionError` — `json.loads()` descends recursively, so text nested past the interpreter's stack limit blows the stack rather than failing to decode — counts as one that did not parse, so the walk continues and the contract stays `ValueError`.
 
 **Example:**
 
@@ -1107,6 +1110,8 @@ def extract_json(text: str) -> str
 ```
 
 Not exported from `bmlib.llm` — import it from `bmlib.llm.utils`. Walks the same locator as `extract_and_repair_json()`, but via `iter_json_spans(text)` with `nested_objects=True`, and returns the first candidate that either came from a fence or **parses to a dict**, falling back to the first that parses at all if neither. Returns *text* unchanged if nothing parses.
+
+**Never raises.** That matters more here than elsewhere: this runs unconditionally on every `json_mode` response in both the Anthropic and OpenAI-compatible providers, so anything that escapes takes out the provider call. A candidate that raises `RecursionError` — `json.loads()` descends recursively, so text nested past the interpreter's stack limit blows the stack instead of failing to decode — is skipped like any other undecodable candidate.
 
 The dict preference is deliberate: the callers here — the Anthropic and OpenAI-compatible providers' `json_mode` path, and `BaseAgent.parse_json()` — want the object a model was asked for, not an incidental array that happens to appear earlier in the response:
 
@@ -1135,6 +1140,8 @@ Both extractors share `iter_json_spans()` as their locator and differ only in ac
 | On failure | Returns the input unchanged | Raises `ValueError` |
 | Return value | `str` | `tuple[str, bool]` |
 
+The dict preference is the row to watch: `extract_and_repair_json()` does **not** have one. On `'text [1,2] then {"a": 1}'`, `extract_json()` returns `{"a": 1}` and `extract_and_repair_json()` returns `[1,2]`. That is deliberate — dict preference serves `json_mode` callers who asked a model for an object, whereas `extract_and_repair_json()` is a general-purpose extractor whose caller may well want the array. The divergence cannot surface through `BaseAgent.parse_json()`, which reaches `extract_and_repair_json()` only once `extract_json()` has found nothing parseable at all.
+
 Prefer `extract_and_repair_json()` for new code — it recovers more responses and never silently hands back unparsed input.
 
 ### `salvage_json_fields`
@@ -1150,14 +1157,16 @@ Recovers individual named fields from a document that will not parse at all — 
 | `text` | `str` | Raw response, valid JSON or not. |
 | `keys` | `Iterable[str]` | Field names to look for. |
 
-**Returns:** a dict of the keys that could be recovered. **Never raises** on malformed text — returns `{}` when nothing is found, and simply omits any key whose value cannot be decoded.
+**Returns:** a dict of the keys that could be recovered. **Never raises** on malformed text — returns `{}` when nothing is found, and simply omits any key whose value cannot be decoded. `RecursionError` counts as "cannot be decoded": `raw_decode()` descends recursively, so a value nested past the interpreter's stack limit would otherwise escape as a non-`ValueError`.
 
-**Algorithm, per key** — two phases, bounded to avoid the quadratic blowup a naive "repair every match" approach hit (3,000 matches took 135s; the bounded version takes 0.19s):
+**Algorithm, per key** — two phases, both bounded. Every failed decode scans forward to the end of the document, so an unbounded pass is quadratic in the response length, and a repetition-looping model — exactly the failure mode salvage exists for — is what produces thousands of matches:
 
-1. **Fast pass:** every regex match of `"key"\s*:\s*` is decoded with a plain `json.JSONDecoder.raw_decode()` — no repair. The first match that decodes wins.
-2. **Repair pass, at most once:** only if no match decoded in phase 1, and only at the *last* match — repair is for closing a truncated tail, which by construction exists in only one place.
+1. **Fast pass:** the first `MAX_SALVAGE_MATCHES` (200) regex matches of `"key"\s*:\s*` are decoded with a plain `json.JSONDecoder.raw_decode()` — no repair. The first match that decodes wins.
+2. **Repair pass, at most once:** only if no match decoded in phase 1, and only at the *last* match — repair is for closing a truncated tail, which by construction exists in only one place. The last match is used regardless of the cap.
 
-**Note:** matching is textual, not structural — a key name that happens to appear inside a string *value* can match, and the first occurrence wins regardless of nesting depth.
+Together those bounds make the work linear in the response length: 50,000 matches of one key take ~0.08s, against ~135s for the unbounded "repair every match" shape and ~1.0s for a version that bounded only the repair pass.
+
+**Note:** matching is textual, not structural — a key name that happens to appear inside a string *value* can match, and the first occurrence that decodes wins regardless of nesting depth. A key occurring more than `MAX_SALVAGE_MATCHES` times whose only decodable occurrence lies past the cap is recovered only if that occurrence is also the last one.
 
 **Example — recovering known fields from a document a genuine syntax error elsewhere makes entirely unparseable:**
 

@@ -382,11 +382,21 @@ class BaseAgent:
         """Extract and parse JSON from LLM response text.
 
         Handles responses wrapped in markdown code blocks.
+
+        ``RecursionError`` is caught at every stage alongside the decode
+        errors: :func:`json.loads` descends recursively, so text nested past
+        the interpreter's stack limit — ``'{"j": ' * 20000``, the shape a
+        repetition-looping model emits — blows the stack instead of failing to
+        decode.  Such a response is unparseable, and this method's contract is
+        to report that as :class:`ValueError`.
+
+        Raises:
+            ValueError: If no JSON can be parsed out of *text*.
         """
         # Try direct parse
         try:
             return json.loads(text)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, RecursionError):
             pass
 
         # Fall back to the shared extractor (code-block aware + balanced-brace
@@ -395,7 +405,7 @@ class BaseAgent:
         if candidate != text:
             try:
                 return json.loads(candidate)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, RecursionError):
                 pass
 
         # Last resort: repair common LLM JSON defects (single quotes, trailing
@@ -403,7 +413,7 @@ class BaseAgent:
         try:
             repaired, was_repaired = extract_and_repair_json(text)
             parsed = json.loads(repaired)
-        except (ValueError, json.JSONDecodeError):
+        except (ValueError, json.JSONDecodeError, RecursionError):
             pass
         else:
             if was_repaired:
