@@ -18,11 +18,27 @@
 
 from __future__ import annotations
 
-from bmlib.transparency.analyzer import TransparencyAnalyzer
+import pytest
+
+from bmlib.transparency.analyzer import (
+    _INDICATOR_COI_IN_PUBMED,
+    _INDICATOR_COI_UNKNOWN,
+    _INDICATOR_NO_COI_IN_FULLTEXT,
+    _INDICATOR_NO_POSTED_RESULTS,
+    _INDICATOR_RESULTS_NOT_CHECKABLE,
+    DEFAULT_INDUSTRY_CONFIDENCE,
+    SCORE_COI_DISCLOSED,
+    SCORE_FUNDER_INFO,
+    TransparencyAnalyzer,
+    _merge_pubmed_signals,
+    _parse_pubmed_signals,
+    _PubMedSignals,
+)
 from bmlib.transparency.models import (
     TransparencyResult,
     TransparencyRisk,
     TransparencySettings,
+    TransparencyUnknownReason,
     calculate_risk_level,
 )
 
@@ -867,3 +883,589 @@ class TestSettingsEnabled:
 
     def test_enabled_by_default(self):
         assert TransparencySettings().enabled is True
+
+
+class TestUnknownReason:
+    """Issue #21 — the cause of an UNKNOWN result must be readable as data.
+
+    ``analyze()`` returns UNKNOWN at score 0 for three unrelated reasons. A
+    caller that wants to retry a network outage but silently skip a disabled
+    analyzer had to match on ``risk_indicators`` prose, which is documentation
+    rather than API.
+    """
+
+    def test_disabled_analysis_reports_disabled(self, monkeypatch):
+        import httpx
+
+        def _boom(*a, **k):
+            raise AssertionError("no HTTP client may be created when disabled")
+
+        monkeypatch.setattr(httpx, "Client", _boom)
+
+        analyzer = TransparencyAnalyzer(settings=TransparencySettings(enabled=False))
+        result = analyzer.analyze("doc1", doi="10.1234/x")
+
+        assert result.unknown_reason is TransparencyUnknownReason.DISABLED
+
+    def test_missing_identifier_reports_no_identifier(self):
+        analyzer = TransparencyAnalyzer()
+        result = analyzer.analyze("doc1")
+
+        assert result.risk_level == TransparencyRisk.UNKNOWN
+        assert result.unknown_reason is TransparencyUnknownReason.NO_IDENTIFIER
+
+    def test_total_outage_reports_unreachable(self, monkeypatch):
+        import httpx
+
+        monkeypatch.setattr(
+            httpx, "Client", lambda *a, **k: TestAnalyzeApiReachability._DeadClient()
+        )
+        analyzer = TransparencyAnalyzer()
+        result = analyzer.analyze("doc1", doi="10.1234/x")
+
+        assert result.risk_level == TransparencyRisk.UNKNOWN
+        assert result.unknown_reason is TransparencyUnknownReason.UNREACHABLE
+
+    def test_the_three_causes_are_distinguishable(self, monkeypatch):
+        """The point of the field: three UNKNOWNs, three different values."""
+        import httpx
+
+        monkeypatch.setattr(
+            httpx, "Client", lambda *a, **k: TestAnalyzeApiReachability._DeadClient()
+        )
+        disabled = TransparencyAnalyzer(settings=TransparencySettings(enabled=False)).analyze(
+            "doc1", doi="10.1234/x"
+        )
+        no_id = TransparencyAnalyzer().analyze("doc2")
+        unreachable = TransparencyAnalyzer().analyze("doc3", doi="10.1234/x")
+
+        reasons = {disabled.unknown_reason, no_id.unknown_reason, unreachable.unknown_reason}
+        assert len(reasons) == 3
+
+    def test_a_measured_result_carries_no_reason(self, monkeypatch):
+        """Invariant: a reason is present if and only if the risk is UNKNOWN.
+
+        ``calculate_risk_level()`` never returns UNKNOWN, so every UNKNOWN the
+        analyzer produces comes from one of the three early returns — and
+        nothing else may claim a reason.
+        """
+        import httpx
+
+        class _EmptyClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def get(self, url, **kwargs):
+                if "crossref" in url:
+                    return _FakeResponse(status_code=200, json_data={"message": {}})
+                if "europepmc" in url and "fullTextXML" not in url:
+                    return _FakeResponse(
+                        status_code=200,
+                        json_data={"resultList": {"result": [{"abstractText": "", "inEPMC": "N"}]}},
+                    )
+                return _FakeResponse(status_code=404)
+
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: _EmptyClient())
+        result = TransparencyAnalyzer().analyze("doc1", doi="10.1234/x")
+
+        assert result.risk_level != TransparencyRisk.UNKNOWN
+        assert result.unknown_reason is None
+
+    def test_default_is_none(self):
+        assert (
+            TransparencyResult(
+                document_id="doc1",
+                transparency_score=50,
+                risk_level=TransparencyRisk.MEDIUM,
+            ).unknown_reason
+            is None
+        )
+
+    def test_a_reason_on_a_determinate_result_is_rejected(self):
+        # The invariant is documented; this makes it enforced in the one
+        # direction that cannot collide with legacy data.
+        with pytest.raises(ValueError, match="only when risk_level is UNKNOWN"):
+            TransparencyResult(
+                document_id="doc1",
+                transparency_score=80,
+                risk_level=TransparencyRisk.LOW,
+                unknown_reason=TransparencyUnknownReason.DISABLED,
+            )
+
+    def test_a_legacy_unknown_without_a_reason_still_constructs(self):
+        # The converse is deliberately not enforced: results persisted before
+        # the field existed are UNKNOWN with no reason, and refusing them would
+        # make an additive field a breaking change.
+        result = TransparencyResult(
+            document_id="doc1",
+            transparency_score=0,
+            risk_level=TransparencyRisk.UNKNOWN,
+        )
+        assert result.unknown_reason is None
+
+    def test_survives_round_trip(self):
+        original = TransparencyResult(
+            document_id="doc1",
+            transparency_score=0,
+            risk_level=TransparencyRisk.UNKNOWN,
+            unknown_reason=TransparencyUnknownReason.UNREACHABLE,
+        )
+        assert TransparencyResult.from_dict(original.to_dict()) == original
+
+    def test_serialised_by_value_like_transparency_risk(self):
+        result = TransparencyResult(
+            document_id="doc1",
+            transparency_score=0,
+            risk_level=TransparencyRisk.UNKNOWN,
+            unknown_reason=TransparencyUnknownReason.NO_IDENTIFIER,
+        )
+        assert result.to_dict()["unknown_reason"] == "no_identifier"
+
+    def test_a_result_persisted_before_this_field_existed_still_loads(self):
+        # Results stored by earlier versions carry no `unknown_reason` key;
+        # from_dict() must default rather than raise.
+        legacy = {
+            "document_id": "doc1",
+            "transparency_score": 0,
+            "risk_level": "unknown",
+            "risk_indicators": ["Transparency APIs unreachable — score not determinable"],
+        }
+        assert TransparencyResult.from_dict(legacy).unknown_reason is None
+
+
+# ---------------------------------------------------------------------------
+# PubMed E-utilities step (issue #18)
+# ---------------------------------------------------------------------------
+
+
+def _pubmed_xml(
+    *,
+    coi: str | None = None,
+    databanks: tuple[tuple[str, tuple[str, ...]], ...] = (),
+    agencies: tuple[str, ...] = (),
+) -> str:
+    """Build a minimal PubmedArticleSet response.
+
+    *databanks* is a tuple of ``(DataBankName, accession numbers)`` pairs.
+    """
+    databank_xml = "".join(
+        f"<DataBank><DataBankName>{name}</DataBankName><AccessionNumberList>"
+        + "".join(f"<AccessionNumber>{a}</AccessionNumber>" for a in accessions)
+        + "</AccessionNumberList></DataBank>"
+        for name, accessions in databanks
+    )
+    grant_xml = "".join(
+        f"<Grant><GrantID>G{i}</GrantID><Agency>{agency}</Agency>"
+        f"<Country>United States</Country></Grant>"
+        for i, agency in enumerate(agencies)
+    )
+    return (
+        '<?xml version="1.0" ?><PubmedArticleSet><PubmedArticle><MedlineCitation>'
+        "<PMID>12345678</PMID><Article>"
+        "<ArticleTitle>A study</ArticleTitle>"
+        + (f"<GrantList>{grant_xml}</GrantList>" if grant_xml else "")
+        + (f"<DataBankList>{databank_xml}</DataBankList>" if databank_xml else "")
+        + "</Article>"
+        + (f"<CoiStatement>{coi}</CoiStatement>" if coi is not None else "")
+        + "</MedlineCitation></PubmedArticle></PubmedArticleSet>"
+    )
+
+
+class _RecordingClient:
+    """Fake httpx client that dispatches on URL and records every request."""
+
+    def __init__(
+        self,
+        *,
+        crossref: dict | None = None,
+        epmc: dict | None = None,
+        full_text: str | None = None,
+        pubmed: str | None = None,
+        trial_has_results: bool = False,
+    ):
+        self.crossref = crossref
+        self.epmc = epmc
+        self.full_text = full_text
+        self.pubmed = pubmed
+        self.trial_has_results = trial_has_results
+        self.calls: list[tuple[str, dict]] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def get(self, url, **kwargs):
+        params = kwargs.get("params") or {}
+        self.calls.append((url, params))
+        if "crossref" in url:
+            if self.crossref is None:
+                return _FakeResponse(status_code=404)
+            return _FakeResponse(status_code=200, json_data=self.crossref)
+        if "fullTextXML" in url:
+            if self.full_text is None:
+                return _FakeResponse(status_code=404)
+            return _FakeResponse(status_code=200, text=self.full_text)
+        if "europepmc" in url:
+            if self.epmc is None:
+                return _FakeResponse(status_code=404)
+            return _FakeResponse(status_code=200, json_data=self.epmc)
+        if "eutils" in url:
+            if self.pubmed is None:
+                return _FakeResponse(status_code=404)
+            return _FakeResponse(status_code=200, text=self.pubmed)
+        if "clinicaltrials" in url:
+            return _FakeResponse(status_code=200, json_data={"hasResults": self.trial_has_results})
+        return _FakeResponse(status_code=404)
+
+    def urls(self) -> list[str]:
+        return [url for url, _ in self.calls]
+
+    def params_for(self, fragment: str) -> dict:
+        for url, params in self.calls:
+            if fragment in url:
+                return params
+        raise AssertionError(f"no request matched {fragment!r}")
+
+
+def _epmc_payload(*, abstract: str = "", pmid: str | None = None, in_epmc: str = "N") -> dict:
+    record: dict = {"abstractText": abstract, "inEPMC": in_epmc}
+    if pmid is not None:
+        record["pmid"] = pmid
+    return {"resultList": {"result": [record]}}
+
+
+class TestPubMedSignalParsing:
+    """The PubMed record is parsed without HTTP, so parsing is tested alone."""
+
+    def test_coi_statement_detected(self):
+        signals = _parse_pubmed_signals(_pubmed_xml(coi="The authors declare none."))
+        assert signals.coi_statement is True
+
+    def test_whitespace_only_coi_statement_is_not_a_disclosure(self):
+        signals = _parse_pubmed_signals(_pubmed_xml(coi="   "))
+        assert signals.coi_statement is False
+
+    def test_absent_coi_statement(self):
+        assert _parse_pubmed_signals(_pubmed_xml()).coi_statement is False
+
+    def test_a_coi_statement_opening_with_markup_is_still_a_disclosure(self):
+        # The MEDLINE DTD declares CoiStatement as (%text;)*, so <b>/<i>/<sup>
+        # are legal inside it. Reading the element's `.text` alone sees only
+        # the leading text node — empty here — and would report a disclosure
+        # that is plainly present as absent.
+        xml = _pubmed_xml(coi="PLACEHOLDER").replace(
+            "PLACEHOLDER", "<b>Conflict of interest:</b> Dr X consults for Y."
+        )
+        assert _parse_pubmed_signals(xml).coi_statement is True
+
+    def test_clinicaltrials_accessions_collected_and_upper_cased(self):
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("ClinicalTrials.gov", ("nct01234567", "NCT07654321")),))
+        )
+        assert signals.trial_accessions == ("NCT01234567", "NCT07654321")
+
+    def test_non_clinicaltrials_registry_registers_without_accessions(self):
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("ISRCTN", ("ISRCTN12345678",)),)))
+        assert signals.registration_not_checkable is True
+        assert signals.trial_accessions == ()
+
+    def test_registry_name_matching_ignores_case(self):
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("clinicaltrials.gov", ("NCT01234567",)),))
+        )
+        assert signals.trial_accessions == ("NCT01234567",)
+
+    def test_a_malformed_accession_never_reaches_a_url(self):
+        # An accession is publisher-supplied text that would be interpolated
+        # into the ClinicalTrials.gov URL path, so it is validated before it is
+        # carried forward. The registration itself still counts — it just
+        # cannot be followed up, which is what `registration_not_checkable`
+        # records.
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("ClinicalTrials.gov", ("../../../evil", "NCT-nope")),))
+        )
+        assert signals.trial_accessions == ()
+        assert signals.registration_not_checkable is True
+
+    def test_data_deposition_databank_is_not_a_registration(self):
+        # GENBANK/PDB accessions are a data-availability signal, deliberately
+        # out of scope here — they must not be mistaken for trial registration.
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("GENBANK", ("MN908947",)),)))
+        assert signals.trial_accessions == ()
+        assert signals.registration_not_checkable is False
+
+    def test_grant_agencies_collected(self):
+        signals = _parse_pubmed_signals(_pubmed_xml(agencies=("NCI NIH HHS", "Wellcome Trust")))
+        assert signals.funders == ("NCI NIH HHS", "Wellcome Trust")
+
+    def test_repeated_agencies_are_collapsed(self):
+        # PubMed emits one <Grant> per grant number, so an agency funding four
+        # grants on one paper appears four times in the XML. Left as-is, each
+        # repeat adds its own "Industry funder: …" line to the result.
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(agencies=("Genentech Inc.", "NCI NIH HHS", "Genentech Inc."))
+        )
+        assert signals.funders == ("Genentech Inc.", "NCI NIH HHS")
+
+    def test_malformed_xml_yields_no_signals(self):
+        assert _parse_pubmed_signals("<PubmedArticleSet><trunca") == _PubMedSignals()
+
+    def test_empty_article_set_yields_no_signals(self):
+        assert _parse_pubmed_signals("<PubmedArticleSet/>") == _PubMedSignals()
+
+
+class TestPubMedRequest:
+    """The request itself: identification, the API key, and when it is issued."""
+
+    def test_api_key_is_sent_when_configured(self, monkeypatch):
+        client = self._run(monkeypatch, TransparencyAnalyzer(pubmed_api_key="KEY123"), pmid="1")
+        assert client.params_for("eutils")["api_key"] == "KEY123"
+
+    def test_no_api_key_parameter_when_unset(self, monkeypatch):
+        client = self._run(monkeypatch, TransparencyAnalyzer(), pmid="1")
+        assert "api_key" not in client.params_for("eutils")
+
+    def test_the_request_identifies_the_caller(self, monkeypatch):
+        # NCBI asks every E-utilities caller to identify itself with tool+email.
+        client = self._run(monkeypatch, TransparencyAnalyzer(email="me@example.org"), pmid="1")
+        params = client.params_for("eutils")
+        assert params["email"] == "me@example.org"
+        assert params["tool"] == "bmlib"
+
+    def test_pmid_recovered_from_the_europepmc_record(self, monkeypatch):
+        # A DOI-only caller still gets the PubMed step: the Europe PMC record
+        # already fetched carries the PMID, so it costs no extra request.
+        client = self._run(
+            monkeypatch,
+            TransparencyAnalyzer(),
+            doi="10.1234/x",
+            epmc=_epmc_payload(pmid="999888"),
+        )
+        assert client.params_for("eutils")["id"] == "999888"
+
+    def test_no_request_without_a_pmid(self, monkeypatch):
+        client = self._run(
+            monkeypatch, TransparencyAnalyzer(), doi="10.1234/x", epmc=_epmc_payload()
+        )
+        assert not any("eutils" in url for url in client.urls())
+
+    def test_a_successful_response_counts_as_reachable(self, monkeypatch):
+        # PubMed answering alone means the analysis measured something, so the
+        # result must be scored rather than reported UNKNOWN.
+        client = _RecordingClient(pubmed=_pubmed_xml(coi="None declared."))
+        self._install(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc1", pmid="12345678")
+        assert result.risk_level != TransparencyRisk.UNKNOWN
+        assert result.unknown_reason is None
+
+    # --- helpers ---
+
+    @staticmethod
+    def _install(monkeypatch, client):
+        import httpx
+
+        from bmlib.transparency import analyzer as analyzer_mod
+
+        monkeypatch.setattr(analyzer_mod, "_MIN_REQUEST_INTERVAL_SECONDS", 0.0)
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: client)
+
+    def _run(self, monkeypatch, analyzer, *, pmid=None, doi=None, epmc=None):
+        client = _RecordingClient(epmc=epmc, pubmed=_pubmed_xml())
+        self._install(monkeypatch, client)
+        analyzer.analyze("doc1", pmid=pmid, doi=doi)
+        return client
+
+
+class TestFunderInfoIsScoredOnce:
+    """`SCORE_FUNDER_INFO` is worth 15 points once, across every funder source.
+
+    CrossRef happens to run first today, which is what makes the flag safe to
+    compute fresh there. Threading it in as well as out is what keeps it safe
+    when it no longer does.
+    """
+
+    def test_crossref_respects_an_already_spent_component(self):
+        client = _RecordingClient(crossref={"message": {"funder": [{"name": "Some Trust"}]}})
+        analyzer = TransparencyAnalyzer()
+        score, _, _, _, funder_info_scored = analyzer._check_crossref(
+            client, "10.1234/x", 0, False, 0.0, [], True
+        )
+        assert score == 0
+        assert funder_info_scored is True
+
+    def test_crossref_spends_it_when_nothing_has(self):
+        client = _RecordingClient(crossref={"message": {"funder": [{"name": "Some Trust"}]}})
+        analyzer = TransparencyAnalyzer()
+        score, _, _, _, funder_info_scored = analyzer._check_crossref(
+            client, "10.1234/x", 0, False, 0.0, [], False
+        )
+        assert score == SCORE_FUNDER_INFO
+        assert funder_info_scored is True
+
+
+class TestPubMedSignalMerge:
+    """How PubMed's signals combine with the ones already gathered."""
+
+    def _analyze(self, monkeypatch, client, **kwargs):
+        TestPubMedRequest._install(monkeypatch, client)
+        return TransparencyAnalyzer().analyze("doc1", **kwargs)
+
+    def test_coi_statement_establishes_disclosure_when_full_text_is_unavailable(self, monkeypatch):
+        # The gap this closes: a closed-access paper yields no full text, so
+        # COI status was previously undeterminable even though PubMed carries
+        # the publisher's statement as structured metadata.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml(coi="The authors declare none.")
+        )
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.coi_disclosed is True
+        assert result.transparency_score == SCORE_COI_DISCLOSED
+
+    def test_a_pubmed_statement_retracts_the_undeterminable_indicator(self, monkeypatch):
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml(coi="Dr X consults for Y.")
+        )
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert _INDICATOR_COI_UNKNOWN not in result.risk_indicators
+        assert _INDICATOR_COI_IN_PUBMED in result.risk_indicators
+
+    def test_a_pubmed_statement_retracts_the_full_text_absence_indicator(self, monkeypatch):
+        # Full text was scanned and carried no COI statement, but PubMed has
+        # one: leaving "No COI disclosure found in full text" in the result
+        # would contradict coi_disclosed=True.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1", in_epmc="Y"),
+            full_text="<article><body><p>Methods and results.</p></body></article>",
+            pubmed=_pubmed_xml(coi="The authors declare none."),
+        )
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.coi_disclosed is True
+        assert _INDICATOR_NO_COI_IN_FULLTEXT not in result.risk_indicators
+
+    def test_coi_is_not_scored_twice(self, monkeypatch):
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1", abstract="Conflict of interest: none."),
+            pubmed=_pubmed_xml(coi="The authors declare none."),
+        )
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.transparency_score == SCORE_COI_DISCLOSED
+
+    def test_an_absent_pubmed_statement_leaves_the_status_unknown(self, monkeypatch):
+        # A record without <CoiStatement> means the publisher supplied none to
+        # PubMed — not that the paper carries none. Demoting None to False
+        # would trigger the missing-COI downgrade on no evidence.
+        client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml())
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.coi_disclosed is None
+
+    def test_grants_award_funder_info_when_crossref_found_none(self, monkeypatch):
+        # A PMID-only analysis never reaches CrossRef, so PubMed's GrantList is
+        # its only possible funder signal.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml(agencies=("NCI NIH HHS",))
+        )
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.transparency_score == SCORE_FUNDER_INFO
+
+    def test_funder_info_is_not_scored_twice(self, monkeypatch):
+        client = _RecordingClient(
+            crossref={"message": {"funder": [{"name": "National Cancer Institute"}]}},
+            epmc=_epmc_payload(pmid="1"),
+            pubmed=_pubmed_xml(agencies=("NCI NIH HHS",)),
+        )
+        result = self._analyze(monkeypatch, client, doi="10.1234/x")
+        assert result.transparency_score == SCORE_FUNDER_INFO
+
+    def test_an_industry_agency_carries_structured_confidence(self, monkeypatch):
+        # A grant agency is structured metadata, the same evidence class as a
+        # CrossRef funder record — not the weaker text-derived signal.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml(agencies=("Genentech Inc.",))
+        )
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.industry_funding_detected is True
+        assert result.industry_funding_confidence == DEFAULT_INDUSTRY_CONFIDENCE
+
+    def test_databank_registration_bypasses_the_abstract_heuristic(self, monkeypatch):
+        # Five distinct NCT ids in the abstract read as a review's citation
+        # list, so the heuristic credits nothing. The publisher's DataBankList
+        # entry asserts *this* paper's registration, so it is trusted.
+        abstract = "Registered at ClinicalTrials.gov: " + ", ".join(
+            f"NCT0000000{i}" for i in range(1, 6)
+        )
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1", abstract=abstract),
+            pubmed=_pubmed_xml(databanks=(("ClinicalTrials.gov", ("NCT01234567",)),)),
+        )
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.trial_registered is True
+        assert any("clinicaltrials.gov/api" in url for url in client.urls())
+
+    def test_registration_elsewhere_makes_no_claim_about_posted_results(self, monkeypatch):
+        # ClinicalTrials.gov cannot answer for an ISRCTN registration, so the
+        # result must not read as "registered but nothing posted".
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1"),
+            pubmed=_pubmed_xml(databanks=(("ISRCTN", ("ISRCTN12345678",)),)),
+        )
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.trial_registered is True
+        assert result.trial_results_compliant is False
+        assert _INDICATOR_NO_POSTED_RESULTS not in result.risk_indicators
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE in result.risk_indicators
+        assert not any("clinicaltrials.gov/api" in url for url in client.urls())
+
+    def test_an_unusable_clinicaltrials_accession_is_not_called_another_registry(self, monkeypatch):
+        # The registration *is* at ClinicalTrials.gov; only its accession was
+        # unusable. An indicator saying "registered outside ClinicalTrials.gov"
+        # would be a plain falsehood, so the line names the consequence
+        # (not checkable) rather than guessing at the cause.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1"),
+            pubmed=_pubmed_xml(databanks=(("ClinicalTrials.gov", ("NCT1234",)),)),
+        )
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.trial_registered is True
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE in result.risk_indicators
+        assert not any(
+            "outside" in ind.lower() or "clinicaltrials.gov" in ind.lower()
+            for ind in result.risk_indicators
+        )
+
+    def test_one_industry_funder_is_one_indicator(self, monkeypatch):
+        # CrossRef and PubMed can both name the same funder. The indicator list
+        # is a set of findings; one funder is one finding however many sources
+        # report it.
+        client = _RecordingClient(
+            crossref={"message": {"funder": [{"name": "Genentech Inc."}]}},
+            epmc=_epmc_payload(pmid="1"),
+            pubmed=_pubmed_xml(agencies=("Genentech Inc.",)),
+        )
+        result = self._analyze(monkeypatch, client, doi="10.1234/x")
+        assert result.risk_indicators.count("Industry funder: Genentech Inc.") == 1
+
+    def test_the_merge_does_not_mutate_the_caller_s_indicators(self):
+        # The COI branch rebinds while the funder branch appends, so a caller
+        # that ignored the return value would previously see a half-applied
+        # merge. Copying on the way in makes the two branches agree.
+        original = ["No funder information in CrossRef"]
+        _merge_pubmed_signals(
+            _PubMedSignals(coi_statement=True, funders=("Genentech Inc.",)),
+            None,
+            0,
+            original,
+            False,
+            0.0,
+            False,
+        )
+        assert original == ["No funder information in CrossRef"]
+
+    def test_an_unreachable_pubmed_is_survivable(self, monkeypatch):
+        client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=None)
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.risk_level != TransparencyRisk.UNKNOWN

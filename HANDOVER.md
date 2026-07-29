@@ -2,8 +2,8 @@
 
 _Last updated: 2026-07-29. `main` is at v0.5.1 plus a large `[Unreleased]`
 section (PostgreSQL `publications`, PDF→text wiring, body-less JATS fix,
-BaseAgent metrics/embeddings, consolidated JSON extraction).
-916 tests passing + 32 skipped._
+BaseAgent metrics/embeddings, consolidated JSON extraction, transparency
+PubMed step). 962 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -53,11 +53,22 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
      plus a new `salvage_json_fields()` for field-level recovery. This is
      **Phase 1 item 1** of the bmlibrarian port — the keystone; the agent
      family is now unblocked.
+  6. **Transparency: a real PubMed step + `unknown_reason`** (PR pending,
+     closes #18 and #21) — `pubmed_api_key` was accepted and never read; the
+     analyzer now spends one E-utilities `efetch` per analysis (skipped
+     without a PMID, which it will take from the Europe PMC record it already
+     fetched) for `<CoiStatement>`, `<DataBankList>` and `<GrantList>` —
+     signals Europe PMC cannot supply for a closed-access paper.
+     `TransparencyUnknownReason` makes the three `UNKNOWN` causes branchable
+     without matching indicator prose. **No signature changed, but analyzer
+     *behaviour* did**: one more request per analysis, and scores on
+     closed-access papers can rise, so stored scores are not comparable
+     across this change.
   **Deciding whether this is 0.6.0 is open work** — see "Next up" below. The
   `publications` and `fulltext` changes are additive, so a minor bump fits.
   Note `~/src/bmlibrarian` pins `bmlib[ollama]>=0.5.1,<0.6.0`, so a 0.6.0
   release needs that pin lifted downstream.
-- **916 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **962 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -78,12 +89,33 @@ Nothing is blocked on anything else.
   narrowed it but did not close it. Decide between a runtime guard (breaking)
   and widening the annotation. Same decision covers `extract_json` silently
   returning the first object of `[{...}, {...}]`.
-- **#18 — `TransparencyAnalyzer` accepts `pubmed_api_key` but never uses it**:
-  remove (breaking) or wire it up when a real NCBI check is added. The manual
-  documents it as accepted-but-unused.
-- **#21 — transparency `UNKNOWN` results are distinguishable only by
-  `risk_indicators` string matching**: add a structured `unknown_reason` enum
-  when a consumer needs to branch on disabled vs no-identifier vs unreachable.
+- **#36 — industry-funder keyword matching is punctuation-dependent.**
+  `_INDUSTRY_KEYWORDS` tests substrings, so `"inc."` carries its dot to avoid
+  matching `"Lincoln"` — and consequently misses an NLM-normalised
+  `"Pfizer Inc"`. Always true of CrossRef names; the PubMed `<Grant><Agency>`
+  corpus makes it bite more often. Word-boundary matching fixes every case but
+  changes detection on the existing corpus too, and `industry_funding_detected`
+  feeds a HIGH-risk rule — so it needs measuring, not a one-line edit.
+- **#37 — `analyze()` threads eight accumulators through 4-to-6-element
+  tuples.** Nothing is broken; a mis-ordered unpacking would be a silent
+  type-compatible swap, and adding one boolean meant widening two signatures.
+  A mutable `_Analysis` dataclass mutated in place would remove the arity
+  entirely. Worth doing before the next signal source lands in `analyze()`.
+
+#18 and #21 close with the pending transparency PR.
+
+### Worth doing, not yet an issue
+
+- **Data-deposition accessions in PubMed's `<DataBankList>`** (GENBANK, PDB,
+  SRA, Dryad, figshare) are structured proof of data sharing, strictly
+  stronger than the current substring scan of the full text. Deliberately left
+  out of the PubMed step to keep the data-availability scoring path out of
+  that change; `_parse_pubmed_signals()` already walks the databanks, so this
+  is a small follow-up rather than a rewrite.
+- **`.claude/worktrees/` holds three stale worktrees** (`next-session-5b78ba`,
+  `next-session-180be7`, `review-19-bde68f`) from earlier sessions. They shadow
+  every repo-wide `grep`. Worth pruning with `git worktree remove` /
+  `git worktree prune` if they are genuinely dead.
 
 ### bmlibrarian → bmlib porting (paused, Phase 1 next)
 
@@ -226,6 +258,30 @@ Each was investigated and closed as correct. Reopening them wastes a session.
 - **`BaseAgent.__init__`'s `embedding_model` is declared last**, for the same
   reason as `Publication.pmcid`: downstream projects construct subclasses
   positionally.
+- **A PubMed record with no `<CoiStatement>` leaves `coi_disclosed` alone.**
+  Absence there means the publisher supplied no statement to PubMed, not that
+  the paper carries none; demoting `None` to `False` would trigger the
+  missing-COI HIGH-risk rule on no evidence. Only a *present* statement moves
+  the field, and only upwards. Pinned by
+  `test_an_absent_pubmed_statement_leaves_the_status_unknown`.
+- **`<DataBankList>` accessions are validated as `NCT\d{8}` before use, and a
+  ClinicalTrials.gov entry that fails validation still counts as registered.**
+  The accession is publisher-supplied text that would otherwise be
+  interpolated into a ClinicalTrials.gov URL path unchecked. Registration is a
+  separate fact from followability — that is what `registration_not_checkable`
+  means, and why `trial_results_compliant is False` covers both "checked and
+  absent" and "not checkable" (the indicator distinguishes them). The
+  indicator names the consequence, not a registry, because the same flag
+  covers a ClinicalTrials.gov entry with an unusable accession. Pinned by
+  `test_a_malformed_accession_never_reaches_a_url` and
+  `test_an_unusable_clinicaltrials_accession_is_not_called_another_registry`.
+- **`TransparencyResult.unknown_reason` is declared last**, for the same reason
+  as `Publication.pmcid` and `BaseAgent.embedding_model`.
+- **The transparency indicator strings are module constants, not literals.**
+  The PubMed step must retract the two full-text COI lines when it establishes
+  a disclosure they contradict, and appending and filtering through the same
+  name is what keeps that honest. Pinned by
+  `test_a_pubmed_statement_retracts_the_full_text_absence_indicator`.
 - **`_JATSHandler.endElement` tests `in_figure or in_table_wrap` before any
   prose branch, for both `<p>` and `<title>`, and routes on `in_caption`
   rather than on which `in_*` flag is set.** JATS reuses `<p>` for caption

@@ -16,11 +16,8 @@
 
 """Multi-API transparency analyzer.
 
-Queries CrossRef, Europe PMC (search and full text), OpenAlex, and
+Queries CrossRef, Europe PMC (search and full text), PubMed, OpenAlex, and
 ClinicalTrials.gov to assess transparency of biomedical publications.
-
-No PubMed endpoint is currently called; ``pubmed_api_key`` is accepted for
-forward compatibility but unused.
 
 Requires ``httpx`` (install with ``pip install bmlib[transparency]``).
 """
@@ -31,6 +28,8 @@ import logging
 import re
 import threading
 import time
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from typing import Any
 
 from bmlib import __version__
@@ -38,13 +37,21 @@ from bmlib.transparency.models import (
     TransparencyResult,
     TransparencyRisk,
     TransparencySettings,
+    TransparencyUnknownReason,
     calculate_risk_level,
 )
 
 logger = logging.getLogger(__name__)
 
 # ---- Known pharma / industry funder keywords ----
-# Matched against CrossRef's structured funder names (short org-name strings).
+# Matched against structured funder names — CrossRef `funder[].name` and
+# PubMed `<Grant><Agency>` — both short org-name strings.
+#
+# The three suffix forms carry their trailing dot deliberately: bare "inc"
+# matches "Lincoln"/"province" as a substring. The cost is that an
+# NLM-normalised agency written "Pfizer Inc" without the dot is missed. Issue
+# #36 tracks replacing the substring test with word-boundary matching, which
+# needs calibrating against both corpora rather than a one-line edit.
 _INDUSTRY_KEYWORDS = [
     "pharma",
     "biotech",
@@ -67,6 +74,59 @@ _INDUSTRY_COI_KEYWORDS = [
     "consultant for",
     "advisory board",
 ]
+
+# ---- PubMed E-utilities ----
+EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+# NCBI asks every E-utilities caller to identify itself; `email` comes from the
+# analyzer's own contact address.
+EUTILS_TOOL_NAME = "bmlib"
+
+# `DataBankName` values PubMed emits for clinical-trial registries, lowercased
+# for matching. Anything outside this set — GENBANK, PDB, SRA, Dryad, … — is a
+# data-deposition accession, which is a transparency signal of its own but not
+# a trial registration, and is ignored here.
+_TRIAL_REGISTRY_NAMES = frozenset(
+    {
+        "clinicaltrials.gov",
+        "isrctn",
+        "eudract",
+        "anzctr",
+        "chictr",
+        "cris",
+        "ctri",
+        "drks",
+        "iran registry of clinical trials",
+        "irct",
+        "japiccti",
+        "jprn",
+        "jrct",
+        "ntr",
+        "pactr",
+        "rebec",
+        "rpcec",
+        "slctr",
+        "tctr",
+        "umin-ctr",
+    }
+)
+_CLINICALTRIALS_GOV = "clinicaltrials.gov"
+
+# ---- Indicator strings ----
+# Named rather than inlined because the PubMed step must be able to retract the
+# two COI lines: a structured <CoiStatement> can establish a disclosure that the
+# full-text scan missed, and leaving either line in place would then contradict
+# `coi_disclosed=True`.
+_INDICATOR_NO_COI_IN_FULLTEXT = "No COI disclosure found in full text"
+_INDICATOR_COI_UNKNOWN = "COI disclosure status unknown (full text unavailable)"
+_INDICATOR_COI_IN_PUBMED = "COI disclosure found in PubMed record"
+_INDICATOR_NO_POSTED_RESULTS = "Registered trial without posted results"
+# Deliberately does not name a registry. It covers a registration in another
+# registry *and* a ClinicalTrials.gov registration whose accession was missing
+# or malformed; saying "registered outside ClinicalTrials.gov" would be a plain
+# falsehood in the second case.
+_INDICATOR_RESULTS_NOT_CHECKABLE = (
+    "Trial registration found; posted-results status could not be checked"
+)
 
 # ---- Rate limiting ----
 _MIN_REQUEST_INTERVAL_SECONDS = 0.35
@@ -168,6 +228,187 @@ _NON_INDUSTRY_CONTEXT_RE = re.compile(
 )
 
 
+@dataclass(frozen=True)
+class _PubMedSignals:
+    """Transparency signals carried by a PubMed record.
+
+    All three are structured publisher-supplied metadata, which is why they
+    outrank the text heuristics elsewhere in this module. An empty instance is
+    the result of every failure path (no PMID, unreachable, unparsable), so
+    callers never have to distinguish "no signals" from "no answer".
+
+    Attributes:
+        coi_statement: A non-blank ``<CoiStatement>`` is present.
+        trial_accessions: ClinicalTrials.gov NCT ids, upper-cased.
+        registration_not_checkable: A registration was recorded that
+            ClinicalTrials.gov cannot be asked about — either it belongs to
+            another registry, or it is a ClinicalTrials.gov entry whose
+            accession is missing or malformed. Registration is established
+            either way; followability is the separate fact this records.
+        funders: Distinct ``<Grant><Agency>`` names, in document order. PubMed
+            emits one ``<Grant>`` per grant number, so a single agency funding
+            four grants appears four times in the XML and once here.
+    """
+
+    coi_statement: bool = False
+    trial_accessions: tuple[str, ...] = ()
+    registration_not_checkable: bool = False
+    funders: tuple[str, ...] = ()
+
+
+def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
+    """Extract transparency signals from a PubMed ``efetch`` response.
+
+    Returns empty signals for anything unusable — malformed XML, an empty
+    result set, a record without the relevant elements — so a surprising
+    response degrades the analysis rather than raising into it.
+    """
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as e:
+        logger.debug("PubMed response was not parsable XML: %s", e)
+        return _PubMedSignals()
+
+    # Only `PubmedArticle` is read. A `PubmedBookArticle` (StatPearls,
+    # GeneReviews, …) carries no `<CoiStatement>` and no `<DataBankList>` in
+    # its DTD, so the two signals worth having are absent by construction and
+    # the record degrades to empty signals rather than being parsed for the
+    # third.
+    citation = root.find(".//PubmedArticle/MedlineCitation")
+    if citation is None:
+        return _PubMedSignals()
+
+    # The MEDLINE DTD declares CoiStatement as (%text;)*, so inline markup
+    # (<b>, <i>, <sup>, …) is legal inside it. Reading `.text` alone would miss
+    # a statement that opens with a tag — "<b>Conflict of interest:</b> none" —
+    # and report a disclosure as absent.
+    coi_el = citation.find("CoiStatement")
+    coi_statement = coi_el is not None and bool("".join(coi_el.itertext()).strip())
+
+    accessions: list[str] = []
+    registration_not_checkable = False
+    for databank in citation.findall("Article/DataBankList/DataBank"):
+        name = (databank.findtext("DataBankName") or "").strip().lower()
+        if name not in _TRIAL_REGISTRY_NAMES:
+            continue
+        # Every accession is publisher-supplied text that would be interpolated
+        # into a ClinicalTrials.gov URL path, so only a well-formed NCT id is
+        # ever carried forward. A ClinicalTrials.gov entry whose accession is
+        # missing or malformed still establishes registration — it just cannot
+        # be followed up, which is what `registration_not_checkable` records.
+        usable = [
+            acc
+            for acc in (
+                (el.text or "").strip().upper()
+                for el in databank.findall("AccessionNumberList/AccessionNumber")
+            )
+            if _NCT_ID_RE.fullmatch(acc)
+        ]
+        if name == _CLINICALTRIALS_GOV and usable:
+            accessions.extend(usable)
+        else:
+            if name == _CLINICALTRIALS_GOV:
+                # Not the same story as a registration in another registry, and
+                # the only place the difference is visible — the result records
+                # followability, not which of the two caused it.
+                logger.debug("ClinicalTrials.gov databank carried no usable accession")
+            registration_not_checkable = True
+
+    # Deduplicated: PubMed emits one <Grant> per grant number, so an agency
+    # funding several grants on one paper would otherwise repeat — and each
+    # repeat would add its own "Industry funder: …" line to the result.
+    funders = tuple(
+        dict.fromkeys(
+            agency
+            for agency in (
+                (el.text or "").strip() for el in citation.findall("Article/GrantList/Grant/Agency")
+            )
+            if agency
+        )
+    )
+
+    return _PubMedSignals(
+        coi_statement=coi_statement,
+        trial_accessions=tuple(accessions),
+        registration_not_checkable=registration_not_checkable,
+        funders=funders,
+    )
+
+
+def _merge_pubmed_signals(
+    pubmed: _PubMedSignals,
+    coi_disclosed: bool | None,
+    score: int,
+    indicators: list[str],
+    industry_funding: bool,
+    industry_confidence: float,
+    funder_info_scored: bool,
+) -> tuple[bool | None, int, list[str], bool, float, bool]:
+    """Fold PubMed's structured signals into the analysis so far.
+
+    A module-level function rather than a method because it needs no HTTP
+    client; trial registration is handled separately, in
+    :meth:`TransparencyAnalyzer._check_trial_registration`, because that step
+    does.
+
+    Mutates nothing it is given — ``indicators`` is copied on the way in and
+    the copy is returned — so a caller that ignores a return value is left
+    with exactly what it passed rather than a half-applied merge.
+
+    Each score component is awarded at most once. ``coi_disclosed is not
+    True`` is a reliable guard rather than an incidental one: the only
+    branch that sets ``True`` is the same branch that adds
+    ``SCORE_COI_DISCLOSED``.
+    """
+    indicators = list(indicators)
+
+    if pubmed.coi_statement and coi_disclosed is not True:
+        coi_disclosed = True
+        score += SCORE_COI_DISCLOSED
+        # Both lines were written before PubMed was consulted and would now
+        # contradict the result, so they are retracted rather than left to
+        # be reconciled by whoever reads the indicators.
+        indicators = [
+            ind
+            for ind in indicators
+            if ind not in (_INDICATOR_NO_COI_IN_FULLTEXT, _INDICATOR_COI_UNKNOWN)
+        ]
+        indicators.append(_INDICATOR_COI_IN_PUBMED)
+
+    # A missing <CoiStatement> deliberately does not demote `None` to
+    # `False`: it means the publisher supplied no statement to PubMed, not
+    # that the paper carries none, and `False` would trigger the
+    # missing-COI downgrade on no evidence.
+
+    if pubmed.funders:
+        if not funder_info_scored:
+            score += SCORE_FUNDER_INFO
+            funder_info_scored = True
+        for agency in pubmed.funders:
+            if any(kw in agency.lower() for kw in _INDUSTRY_KEYWORDS):
+                industry_funding = True
+                # A grant agency is structured metadata, the same class of
+                # evidence as a CrossRef funder record — not the weaker
+                # signal inferred from COI prose.
+                industry_confidence = max(industry_confidence, DEFAULT_INDUSTRY_CONFIDENCE)
+                # CrossRef may already have named this funder. The test is an
+                # exact match on a string this module builds, not a reading of
+                # indicator prose — the list is a set of findings, and one
+                # funder is one finding however many sources report it.
+                line = f"Industry funder: {agency}"
+                if line not in indicators:
+                    indicators.append(line)
+
+    return (
+        coi_disclosed,
+        score,
+        indicators,
+        industry_funding,
+        industry_confidence,
+        funder_info_scored,
+    )
+
+
 def _extract_tagged_coi_text(full_text: str) -> str:
     """Return the text of JATS-tagged COI containers, tag-stripped and lowercased.
 
@@ -251,12 +492,32 @@ _DATA_PATTERNS: dict[str, str] = {
 }
 
 
+def _pmid_from_epmc(epmc: dict | None) -> str | None:
+    """Return the PMID carried by an already-fetched Europe PMC record.
+
+    Lets a DOI-only analysis reach PubMed without spending an extra request to
+    resolve the identifier.
+    """
+    if not epmc:
+        return None
+    results = epmc.get("resultList", {}).get("result", [])
+    if not results:
+        return None
+    pmid = results[0].get("pmid")
+    return str(pmid) if pmid else None
+
+
 class TransparencyAnalyzer:
     """Analyze transparency of a biomedical publication via external APIs.
 
     Args:
         email: Contact email for API politeness headers.
-        pubmed_api_key: Optional NCBI API key for higher rate limits.
+        pubmed_api_key: Optional NCBI API key. Sent with the PubMed
+            ``efetch`` request, which moves it out of NCBI's 3 requests/second
+            per-IP bucket and into the key's 10 requests/second one — so
+            bmlib's traffic stops competing with the calling application's own
+            E-utilities requests. It does not change bmlib's own pacing, which
+            stays at the interval shared with the other APIs.
         settings: Transparency settings (thresholds, etc.).
     """
 
@@ -307,11 +568,17 @@ class TransparencyAnalyzer:
 
         At least one of *pmid* or *doi* must be provided.
 
-        Returns an ``UNKNOWN`` result without contacting any API when
-        ``settings.enabled`` is False, when neither identifier is given, or
-        when every external API was unreachable — three distinct cases, each
-        named in ``risk_indicators``. ``UNKNOWN`` never triggers a quality
-        tier downgrade, so a paper we learned nothing about is not penalised.
+        Returns an ``UNKNOWN`` result when ``settings.enabled`` is False, when
+        neither identifier is given, or when every external API was unreachable
+        — three distinct cases, each named in ``risk_indicators`` for humans
+        and in ``TransparencyResult.unknown_reason`` for callers that branch on
+        the cause. The first two cases contact no API at all.
+
+        ``unknown_reason`` is set if and only if ``risk_level`` is ``UNKNOWN``:
+        :func:`~bmlib.transparency.models.calculate_risk_level` never returns
+        ``UNKNOWN``, so every ``UNKNOWN`` originates in one of the three early
+        returns below. ``UNKNOWN`` never triggers a quality tier downgrade, so
+        a paper we learned nothing about is not penalised.
         """
         # Checked before the httpx import: a disabled analyzer does no HTTP,
         # so it must not demand the optional dependency either.
@@ -321,6 +588,7 @@ class TransparencyAnalyzer:
                 transparency_score=0,
                 risk_level=TransparencyRisk.UNKNOWN,
                 risk_indicators=["Transparency analysis disabled in settings"],
+                unknown_reason=TransparencyUnknownReason.DISABLED,
             )
 
         try:
@@ -337,6 +605,7 @@ class TransparencyAnalyzer:
                 transparency_score=0,
                 risk_level=TransparencyRisk.UNKNOWN,
                 risk_indicators=["No PMID or DOI provided"],
+                unknown_reason=TransparencyUnknownReason.NO_IDENTIFIER,
             )
 
         self._api_reachable = False
@@ -349,6 +618,12 @@ class TransparencyAnalyzer:
         trial_registered = False
         results_compliant = False
         full_text_analyzed = False
+        # Two sources can award funder information (CrossRef funders, PubMed
+        # grants), and the score component is worth 15 points once, not twice.
+        # Tracked explicitly: "CrossRef found funders" is otherwise recoverable
+        # only from an indicator string, and branching on indicator prose is
+        # the very thing `unknown_reason` exists to avoid.
+        funder_info_scored = False
 
         with httpx.Client(
             timeout=_HTTP_TIMEOUT_SECONDS,
@@ -356,13 +631,20 @@ class TransparencyAnalyzer:
         ) as client:
             # --- CrossRef (funder info) ---
             if doi:
-                score, industry_funding, industry_confidence, indicators = self._check_crossref(
+                (
+                    score,
+                    industry_funding,
+                    industry_confidence,
+                    indicators,
+                    funder_info_scored,
+                ) = self._check_crossref(
                     client,
                     doi,
                     score,
                     industry_funding,
                     industry_confidence,
                     indicators,
+                    funder_info_scored,
                 )
 
             # --- EuropePMC (full text / abstract, COI, data availability) ---
@@ -381,6 +663,28 @@ class TransparencyAnalyzer:
                     industry_confidence = max(industry_confidence, TEXT_INDUSTRY_CONFIDENCE)
                     indicators.append("Industry ties disclosed in COI statement")
 
+            # --- PubMed (structured COI, trial registration, grants) ---
+            # Placed after Europe PMC so a DOI-only analysis can reuse the PMID
+            # from the record already fetched, and before ClinicalTrials.gov so
+            # a structured accession can feed the posted-results check.
+            pubmed = self._check_pubmed(client, pmid or _pmid_from_epmc(epmc))
+            (
+                coi_disclosed,
+                score,
+                indicators,
+                industry_funding,
+                industry_confidence,
+                funder_info_scored,
+            ) = _merge_pubmed_signals(
+                pubmed,
+                coi_disclosed,
+                score,
+                indicators,
+                industry_funding,
+                industry_confidence,
+                funder_info_scored,
+            )
+
             # --- OpenAlex (additional metadata) ---
             if doi:
                 score = self._check_openalex(client, doi, score)
@@ -395,6 +699,7 @@ class TransparencyAnalyzer:
                         score,
                         indicators,
                         epmc=epmc,
+                        pubmed=pubmed,
                     )
                 )
 
@@ -408,6 +713,7 @@ class TransparencyAnalyzer:
                 transparency_score=0,
                 risk_level=TransparencyRisk.UNKNOWN,
                 risk_indicators=["Transparency APIs unreachable — score not determinable"],
+                unknown_reason=TransparencyUnknownReason.UNREACHABLE,
             )
 
         score = min(score, MAX_TRANSPARENCY_SCORE)
@@ -447,13 +753,27 @@ class TransparencyAnalyzer:
         industry_funding: bool,
         industry_confidence: float,
         indicators: list[str],
-    ) -> tuple[int, bool, float, list[str]]:
-        """Query CrossRef for funder information."""
+        funder_info_scored: bool,
+    ) -> tuple[int, bool, float, list[str], bool]:
+        """Query CrossRef for funder information.
+
+        Returns ``(score, industry_funding, industry_confidence, indicators,
+        funder_info_scored)``. The last element tells the caller whether
+        ``SCORE_FUNDER_INFO`` has been spent, so the PubMed grant list cannot
+        award it a second time.
+
+        It is threaded *in* as well as out, like every other accumulator here.
+        Computing it fresh would be correct only for as long as this stays the
+        first funder source consulted, and would silently double-score the
+        component the day a second one is added ahead of it.
+        """
         cr = self._query_crossref(client, doi)
         if cr:
             funders = cr.get("message", {}).get("funder", [])
             if funders:
-                score += SCORE_FUNDER_INFO
+                if not funder_info_scored:
+                    score += SCORE_FUNDER_INFO
+                    funder_info_scored = True
                 for funder in funders:
                     name = (funder.get("name") or "").lower()
                     if any(kw in name for kw in _INDUSTRY_KEYWORDS):
@@ -462,7 +782,7 @@ class TransparencyAnalyzer:
                         indicators.append(f"Industry funder: {funder.get('name')}")
             else:
                 indicators.append("No funder information in CrossRef")
-        return score, industry_funding, industry_confidence, indicators
+        return score, industry_funding, industry_confidence, indicators, funder_info_scored
 
     def _fetch_europepmc(
         self,
@@ -536,10 +856,10 @@ class TransparencyAnalyzer:
         elif full_text_analyzed:
             # Full text inspected and no COI statement found -> explicitly absent.
             coi_disclosed = False
-            indicators.append("No COI disclosure found in full text")
+            indicators.append(_INDICATOR_NO_COI_IN_FULLTEXT)
         else:
             # Could not inspect full text; status is genuinely unknown.
-            indicators.append("COI disclosure status unknown (full text unavailable)")
+            indicators.append(_INDICATOR_COI_UNKNOWN)
 
         # Industry ties disclosed in the COI statement itself ("consultant
         # for X", "speaker fees from Y"). Scanned only in full text — an
@@ -585,6 +905,20 @@ class TransparencyAnalyzer:
             logger.debug("EuropePMC full-text fetch failed for %s/%s: %s", source, ext_id, e)
         return None
 
+    def _check_pubmed(self, client: Any, pmid: str | None) -> _PubMedSignals:
+        """Fetch and parse the PubMed record for *pmid*.
+
+        Returns empty signals when there is no PMID to look up or the request
+        fails, so the step is optional in every sense: it costs no request
+        without an identifier and never breaks an analysis when NCBI is down.
+        """
+        if not pmid:
+            return _PubMedSignals()
+        xml_text = self._query_pubmed(client, pmid)
+        if not xml_text:
+            return _PubMedSignals()
+        return _parse_pubmed_signals(xml_text)
+
     def _check_openalex(
         self,
         client: Any,
@@ -610,22 +944,40 @@ class TransparencyAnalyzer:
         indicators: list[str],
         *,
         epmc: dict | None = None,
+        pubmed: _PubMedSignals | None = None,
     ) -> tuple[bool, bool, int, list[str]]:
-        """Check ClinicalTrials.gov registration and results posting."""
+        """Check trial registration and, where possible, results posting.
+
+        PubMed's ``DataBankList`` is preferred over the abstract heuristic when
+        present: it is the publisher asserting *this* paper's registration, so
+        none of the heuristic's defences against a review's citation list apply
+        to it. The heuristic remains the fallback for records PubMed does not
+        cover.
+
+        A registration ClinicalTrials.gov cannot be asked about — another
+        registry, or a ClinicalTrials.gov entry with an unusable accession —
+        counts as registered, but no claim is made about posted results either
+        way.
+        """
+        pubmed = pubmed or _PubMedSignals()
         trial_registered = False
         results_compliant = False
 
-        ct_ids = self._find_trial_ids(client, pmid, doi, epmc=epmc)
-        if ct_ids:
+        ct_ids = list(pubmed.trial_accessions) or self._find_trial_ids(client, pmid, doi, epmc=epmc)
+        if ct_ids or pubmed.registration_not_checkable:
             trial_registered = True
             score += SCORE_TRIAL_REGISTERED
+
+        if ct_ids:
             for tid in ct_ids[:MAX_TRIAL_IDS_TO_CHECK]:
                 if self._check_trial_results(client, tid):
                     results_compliant = True
                     score += SCORE_RESULTS_POSTED
                     break
             if not results_compliant:
-                indicators.append("Registered trial without posted results")
+                indicators.append(_INDICATOR_NO_POSTED_RESULTS)
+        elif pubmed.registration_not_checkable:
+            indicators.append(_INDICATOR_RESULTS_NOT_CHECKABLE)
 
         return trial_registered, results_compliant, score, indicators
 
@@ -672,6 +1024,34 @@ class TransparencyAnalyzer:
                 return resp.json()
         except Exception as e:
             logger.debug("EuropePMC query failed: %s", e)
+        return None
+
+    def _query_pubmed(self, client: Any, pmid: str) -> str | None:
+        """Fetch a single PubMed record as XML via E-utilities ``efetch``.
+
+        ``tool`` and ``email`` identify the caller, as NCBI asks. ``api_key``
+        is sent when configured: it does not change this client's pacing, but
+        it moves the request into the key's 10 requests/second allowance
+        instead of the 3 requests/second shared by everything on the IP.
+        """
+        params: dict[str, str] = {
+            "db": "pubmed",
+            "id": pmid,
+            "retmode": "xml",
+            "tool": EUTILS_TOOL_NAME,
+            "email": self.email,
+        }
+        if self.pubmed_api_key:
+            params["api_key"] = self.pubmed_api_key
+
+        self._rate_limit()
+        try:
+            resp = client.get(EFETCH_URL, params=params)
+            if resp.status_code == 200:
+                self._api_reachable = True
+                return resp.text
+        except Exception as e:
+            logger.debug("PubMed query failed for %s: %s", pmid, e)
         return None
 
     def _query_openalex(self, client: Any, doi: str) -> dict | None:
