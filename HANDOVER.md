@@ -126,22 +126,12 @@ a non-dict was rejected.
   out of the PubMed step to keep the data-availability scoring path out of
   that change; `_parse_pubmed_signals()` already walks the databanks, so this
   is a small follow-up rather than a rewrite.
-- **`.claude/worktrees/` holds three stale worktrees** (`next-session-5b78ba`,
-  `next-session-180be7`, `review-19-bde68f`) from earlier sessions. They shadow
-  every repo-wide `grep`. **Verified dead 2026-07-30**: all three have clean
-  working trees and HEADs already contained in `main`, so nothing is lost by
-  removing them. Left in place only because deleting directories is the
-  owner's call:
-
-  ```bash
-  for w in next-session-5b78ba next-session-180be7 review-19-bde68f; do
-      git worktree remove ".claude/worktrees/$w"
-  done
-  git worktree prune
-  ```
-
-  There are also ~20 merged local branches (`git branch --merged main`) worth
-  the same treatment.
+- **Repo housekeeping is done (2026-07-30).** The three stale worktrees under
+  `.claude/worktrees/` — which shadowed every repo-wide `grep` — are removed,
+  and 27 merged local branches are deleted. Only `main` and any in-flight
+  branch remain. `git branch -r` still lists several merged branches on
+  `origin`; those are untouched, since deleting shared refs is a separate
+  decision.
 
 ### bmlibrarian → bmlib porting (paused, Phase 1 next)
 
