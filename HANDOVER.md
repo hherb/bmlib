@@ -1,10 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-07-30. `main` is at v0.5.1 plus a large `[Unreleased]`
-section (PostgreSQL `publications`, PDF→text wiring, body-less JATS fix,
-BaseAgent metrics/embeddings, consolidated JSON extraction, transparency
-PubMed step, the `parse_json` contract, measured industry-funder matching).
-1033 tests passing + 32 skipped._
+_Last updated: 2026-07-30. **0.6.0 is cut** — `[Unreleased]` is empty and every
+body of work listed below has shipped. 1033 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -14,100 +11,37 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ## Current state
 
-- **Released: 0.5.1** (2026-07-21). `pyproject.toml` and `bmlib/__init__.py`
-  agree. Release history: 0.4.0 (2026-07-19) → 0.5.0 (2026-07-20) → 0.5.1.
-  0.3.0 was bumped in-tree but never released; its changes shipped inside
-  0.4.0.
-- **`[Unreleased]` is substantial and unreleased.** Three bodies of work sit
-  on `main` waiting for a version:
-  1. **`bmlib.publications` on PostgreSQL** (PR #28) — `schema.py`,
-     `storage.py`, `sync.py` were SQLite-only; every statement is now
-     dual-dialect. Brought `db.is_sqlite()` / `placeholder()` /
-     `placeholders()` / `transaction_depth()` / `owns_commit()` into the
-     public API, added `publications.pmcid`, fixed `fetch_scalar()` on
-     psycopg2 `RealDictRow`, and made `transaction()` nest via savepoints on
-     PostgreSQL. `tests/test_backends.py` runs each test against both
-     backends; CI sets `BMLIB_REQUIRE_POSTGRESQL=1` so a missing DSN fails
-     rather than skips.
-  2. **PDF→text wired into `FullTextService`** — a retrieved PDF is extracted
-     into `FullTextResult.html` via the new `render_html()`; opt out with
-     `convert_pdfs=False`. Added `FullTextResult.content_kind`
-     (`fulltext` / `abstract` / `extracted`) and `ConversionResult.page_texts`.
-  3. **Body-less JATS handled** (PR #29) — medRxiv serves `<front>`+`<back>`
-     with no prose for some preprints; such a document is detected via
-     `JATSArticle.has_body`, never cached, and held back as a last resort.
-     Also fixed: a missing abstract no longer kills a scoring batch, and the
-     Tier 2 classifier's token budget is no longer overridden at the call site.
-  4. **Unsectioned JATS `<body>` parsed** (issues #30, #31) — loose `<p>`
-     prose becomes a titleless `JATSBodySection` instead of being dropped,
-     and `docs/manual/fulltext.md`'s duplicated `PDF Conversion` section is
-     merged into one. Review of that work turned up a second, older defect,
-     fixed in the same PR: figure and table captions were lost whenever the
-     figure sat inside a `<sec>` — the ordinary PMC layout — and their text
-     was reprinted as article prose.
-  5. **BaseAgent metrics/embeddings + consolidated JSON extraction** (PR #34,
-     closes #17) — `PerformanceMetrics` (per-agent, thread-safe, independent
-     of the global `TokenTracker`), `BaseAgent.embed()`/`embed_batch()`/
-     `test_connection()`/`embedding_model`, `chat_json(retry_context=...)`,
-     and a WARNING when `parse_json()`'s repair stage rescued a response.
-     bmlib's two JSON extractors now share one locator, `iter_json_spans()`,
-     plus a new `salvage_json_fields()` for field-level recovery. This is
-     **Phase 1 item 1** of the bmlibrarian port — the keystone; the agent
-     family is now unblocked.
-  6. **Transparency: a real PubMed step + `unknown_reason`** (PR #35, closed
-     #18 and #21) — `pubmed_api_key` was accepted and never read; the
-     analyzer now spends one E-utilities `efetch` per analysis (skipped
-     without a PMID, which it will take from the Europe PMC record it already
-     fetched) for `<CoiStatement>`, `<DataBankList>` and `<GrantList>` —
-     signals Europe PMC cannot supply for a closed-access paper.
-     `TransparencyUnknownReason` makes the three `UNKNOWN` causes branchable
-     without matching indicator prose. **No signature changed, but analyzer
-     *behaviour* did**: one more request per analysis, and scores on
-     closed-access papers can rise, so stored scores are not comparable
-     across this change.
-  7. **`parse_json`'s return contract, and the fragment it hid** (PR #39,
-     closed #33) — `extract_json()` was reducing an unfenced array of objects
-     to its first element, dropping every sibling with no error, on a path both
-     the Anthropic and OpenAI-compatible providers run for every `json_mode`
-     response. Its acceptance policy is now `_first_acceptable()`, run twice —
-     whole spans first, the nested-object stage only as a last resort — with a
-     *ranked* non-dict fallback so an incidental `[]` cannot mask the payload.
-     `parse_json()`/`chat_json()` are annotated `dict | list` with an opt-in
-     `require_dict` that retries the wrong shape (and fails fast at temperature
-     0, like truncation); bmlib's two quality tiers pass it. Review of the PR
-     turned up the same defect one layer down and it is fixed in the same
-     change: a **truncated** array of objects never balances, so `parse_json()`
-     was taking the first object out of it and skipping the repair stage that
-     recovers the whole array — the fragment now waits until repair has failed
-     (`extract_json(allow_fragments=False)`). `dict | list` is also *enforced*
-     rather than only annotated: a bare scalar response raises.
-     **Behaviour changes, on two response shapes**: an unfenced array of
-     objects in prose now arrives whole (`extract_json()`, so both providers
-     too), and a truncated array of objects arrives whole through
-     `parse_json()`. A fenced array already did, and a bare array never reached
-     `extract_json()`.
-  8. **Measured industry-funder matching** (PR #40, closes #36) — the
-     substring keyword list is split into stems and whole words behind one
-     `_is_industry_funder()` predicate, calibrated against 833 real
-     CrossRef/PubMed names (417 hand-labelled, committed as
-     `tests/data/funder_names.json`, sampled by the new live runner
-     `scripts/sample_funder_names.py`). **Precision 0.400 → 0.917, recall
-     0.176 → 0.324.** The data removed two obvious-looking keywords —
-     `"pharma"` reached "Pharmacy"/"Pharmacogenetics", `"biotech"` reached a
-     ministry and a research council — so `industry_funding_detected` moves in
-     **both** directions and stored values are not comparable.
-  **Deciding whether this is 0.6.0 is open work** — see "Next up" below. The
-  `publications` and `fulltext` changes are additive, so a minor bump fits.
-  Note `~/src/bmlibrarian` pins `bmlib[ollama]>=0.5.1,<0.6.0`, so a 0.6.0
-  release needs that pin lifted downstream.
+- **Released: 0.6.0** (2026-07-30). Release history: 0.4.0 (2026-07-19) →
+  0.5.0 (2026-07-20) → 0.5.1 (2026-07-21) → 0.6.0. 0.3.0 was bumped in-tree
+  but never released; its changes shipped inside 0.4.0. The version lives in
+  **four** places — `pyproject.toml`, `bmlib/__init__.py`, the README version
+  line, `CLAUDE.md`'s header — and all four agree.
+- **What 0.6.0 shipped** (full detail in `CHANGELOG.md`, do not re-narrate it
+  here): `bmlib.publications` on PostgreSQL (#28); PDF→text wired into
+  `FullTextService`; body-less and unsectioned JATS handled, plus figure and
+  table captions in every document shape (#29, #30, #31); `BaseAgent` metrics,
+  embeddings and `retry_context`, with the two JSON extractors consolidated
+  onto one locator (#34, closed #17); the transparency PubMed step and
+  `unknown_reason` (#35, closed #18 and #21); `parse_json`'s `dict | list`
+  contract and the two silent truncations it hid (#38/#39, closed #33);
+  measured industry-funder matching (#40, closed #36).
+- **Three behaviour changes in 0.6.0 make stored results non-comparable**, and
+  none is behind a flag: transparency scores can rise (the PubMed step),
+  `industry_funding_detected` moves in *both* directions (the funder matcher),
+  and an unfenced or truncated array of objects now extracts whole where it
+  arrived as its first element. Anything persisting those values across the
+  upgrade needs to know.
+- **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it will
+  not see this release until that pin is widened. That is a downstream change,
+  not a bmlib one.
 - **1033 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
-- **Documentation was rewritten for 0.4.0 and updated through PR #28/#29/#32.**
-  Treat drift as a regression worth fixing, not expected staleness. Issue #31
-  (a duplicated `PDF Conversion` section in `docs/manual/fulltext.md`) is
-  closed.
+- **Documentation was rewritten for 0.4.0 and kept current through 0.6.0.**
+  Treat drift as a regression worth fixing, not expected staleness. The
+  `(unreleased)` markers in `docs/manual/` were promoted to `0.6.0` at release;
+  if you add one, it is the next release's job to promote it.
 
 ## Next up
 
@@ -123,10 +57,10 @@ Nothing is blocked on anything else.
   entirely. Worth doing before the next signal source lands in `analyze()`.
 
 #37 is the only issue still open. #18 and #21 closed with PR #35, #33 with
-PR #39, and #36 closes with PR #40 — the industry-funder matching in this
-branch. Both closed designs stay in `docs/superpowers/specs/` as the record of
-what was rejected and why: for #33, raising unconditionally on a non-dict; for
-#36, word-boundary matching applied uniformly across the keyword list.
+PR #39, and #36 with PR #40 (merged 2026-07-30). Both closed designs stay in
+`docs/superpowers/specs/` as the record of what was rejected and why: for #33,
+raising unconditionally on a non-dict; for #36, word-boundary matching applied
+uniformly across the keyword list.
 
 ### Worth doing, not yet an issue
 
@@ -136,12 +70,17 @@ what was rejected and why: for #33, raising unconditionally on a non-dict; for
   out of the PubMed step to keep the data-availability scoring path out of
   that change; `_parse_pubmed_signals()` already walks the databanks, so this
   is a small follow-up rather than a rewrite.
+- **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume this
+  release. Read the three non-comparable behaviour changes above first — the
+  transparency ones move stored scores, so a project holding historical
+  assessments wants to know before it upgrades.
 - **Repo housekeeping is done (2026-07-30).** The three stale worktrees under
   `.claude/worktrees/` — which shadowed every repo-wide `grep` — are removed,
-  and 27 merged local branches are deleted. Only `main` and any in-flight
-  branch remain. `git branch -r` still lists several merged branches on
-  `origin`; those are untouched, since deleting shared refs is a separate
-  decision.
+  and 29 merged local branches are deleted (the last two, `fix/parse-json-
+  contract-impl` and `fix/industry-funder-matching`, on 2026-07-30 after their
+  PRs merged). Only `main` and any in-flight branch remain. `git branch -r`
+  still lists several merged branches on `origin`; those are untouched, since
+  deleting shared refs is a separate decision.
 
 ### bmlibrarian → bmlib porting (paused, Phase 1 next)
 
@@ -399,3 +338,16 @@ Each was investigated and closed as correct. Reopening them wastes a session.
 - Session workflow lives in the `nextsession` skill
   (`.claude/skills/nextsession/`); the post-review fix-up workflow lives in
   the `fixall` skill (`.claude/skills/fixall/`).
+- **Cutting a release** (0.4.0, 0.5.0, 0.5.1 and 0.6.0 were all cut this way):
+  bump the version in the **four** places that carry it — `pyproject.toml`,
+  `bmlib/__init__.py`, the README version line, `CLAUDE.md`'s header — promote
+  the CHANGELOG's `[Unreleased]` body under a dated `## [X.Y.Z]` heading while
+  leaving `## [Unreleased]` in place above it, promote any `(unreleased)`
+  markers in `docs/manual/` and `ROADMAP.md` to the version, then commit on a
+  `release/X.Y.Z` branch and open a PR. After CI is green, merge with
+  `--merge` (**not** squash) so the tag lands on main's first-parent line, tag
+  the *merge commit*, push the tag, `uv build`, and publish with
+  **`uvx twine upload`** — *not* `uv publish`, which cannot read the
+  credentials in `~/.pypirc`. Finally create the GitHub release. PyPI's JSON
+  API serves a stale CDN cache for a while afterwards; verify against
+  `https://pypi.org/simple/bmlib/`, which is what installers actually read.

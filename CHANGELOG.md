@@ -6,6 +6,21 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-30
+
+The largest release since 0.4.0. `bmlib.publications` runs on PostgreSQL,
+`FullTextService` reads PDFs, `BaseAgent` gained per-agent metrics and
+embeddings, the transparency analyzer queries PubMed, and the JSON extraction
+path was consolidated and two silent-truncation defects fixed.
+
+No public signature changed incompatibly and nothing was removed, so the bump
+is minor. **Three behaviour changes make stored results non-comparable**, none
+of them behind an opt-in flag: transparency scores can rise (the PubMed step),
+`industry_funding_detected` moves in *both* directions (the measured funder
+matcher), and an unfenced or truncated array of objects now extracts whole
+where it used to arrive as its first element. See **Compatibility** at the end
+of this section for exactly who is affected.
+
 ### Added
 
 - **`bmlib.publications` works on PostgreSQL.** `schema.py`, `storage.py` and

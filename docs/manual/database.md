@@ -4,7 +4,7 @@ Thin database abstraction layer providing pure functions over standard DB-API 2.
 
 All functions take a DB-API connection as their first argument. SQL is passed directly — callers are responsible for writing backend-appropriate SQL. Ask the connection for its placeholder rather than hard-coding one: [`placeholder(conn)`](#placeholder) returns `?` or `%s`, and [`placeholders(conn, n)`](#placeholders) builds a comma-separated run of them.
 
-> **Changed (unreleased) — `transaction()` now nests on PostgreSQL too.**
+> **Changed in 0.6.0 — `transaction()` now nests on PostgreSQL too.**
 > Savepoint nesting was previously implemented for SQLite only; on PostgreSQL an inner block committed connection-wide. Both backends now behave the same way, so a batch loop pays one commit on either. Un-nested blocks are unaffected. See [Nested transactions](#nested-transactions).
 >
 > Two PostgreSQL-only bugs were fixed alongside it: `fetch_scalar()` always returned `None`, and `create_tables()` committed even inside an open transaction. See the [changelog](../../CHANGELOG.md).
@@ -66,7 +66,7 @@ from bmlib.db.migrations import get_applied_versions
 
 ## Backend Helpers
 
-**New (unreleased).** Writing SQL for both backends means knowing which one you are holding. These three answer that; they were private helpers inside `db/migrations.py` before `bmlib.publications` needed them too.
+**New in 0.6.0.** Writing SQL for both backends means knowing which one you are holding. These three answer that; they were private helpers inside `db/migrations.py` before `bmlib.publications` needed them too.
 
 ### `is_sqlite`
 
@@ -314,7 +314,7 @@ Execute a query and return the first column of the first row, or `None`. Conveni
 
 "First column" means the first *value* on a dict-like row and `row[0]` otherwise. psycopg2's `RealDictRow` is a dict subclass keyed by column name, so `row[0]` is a `KeyError` there; `sqlite3.Row` is not a dict, so it keeps the index path. If neither works, `None` is returned rather than raising.
 
-> **Fixed (unreleased).** This function previously read `row[0]` on every backend, so on PostgreSQL it raised `KeyError` into a silent fallback and returned `None` for *every* query. Code that worked around it by using `fetch_one()` instead is still correct and needs no change.
+> **Fixed in 0.6.0.** This function previously read `row[0]` on every backend, so on PostgreSQL it raised `KeyError` into a silent fallback and returned `None` for *every* query. Code that worked around it by using `fetch_one()` instead is still correct and needs no change.
 
 **Parameters:**
 
@@ -380,7 +380,7 @@ Commit behaviour follows from that:
 | SQLite | Statements split and executed one at a time | Commits **only** when `conn.in_transaction` is `False` (i.e. a standalone call). Inside an open transaction the commit is left to its owner. |
 | PostgreSQL | Whole script passed to a single `cursor.execute()` | Commits **only** when [`owns_commit(conn)`](#owns_commit) is `True`. Inside an open transaction the commit is left to its owner. PostgreSQL supports transactional DDL too. |
 
-> **Changed (unreleased).** The PostgreSQL path used to commit unconditionally, which broke `run_migrations()` there: a migration that failed part-way left its DDL applied. It now matches SQLite. Note the condition is `owns_commit()`, **not** the driver's transaction status — psycopg2 counts a bare `SELECT` as opening a transaction, so its status cannot distinguish "someone wrapped me" from "someone ran a query".
+> **Changed in 0.6.0.** The PostgreSQL path used to commit unconditionally, which broke `run_migrations()` there: a migration that failed part-way left its DDL applied. It now matches SQLite. Note the condition is `owns_commit()`, **not** the driver's transaction status — psycopg2 counts a bare `SELECT` as opening a transaction, so its status cannot distinguish "someone wrapped me" from "someone ran a query".
 
 **Parameters:**
 
@@ -572,7 +572,7 @@ applied.
 
 ### Nested transactions
 
-**New in 0.4.0 for SQLite; extended to PostgreSQL (unreleased).** `sqlite3` auto-begins a transaction before DML, so by the time a nested `transaction()` block is entered the connection may already hold uncommitted writes — issuing `BEGIN` there would raise *"cannot start a transaction within a transaction"*. Instead, the inner block runs inside a savepoint. This is what makes nesting composable:
+**New in 0.4.0 for SQLite; extended to PostgreSQL in 0.6.0.** `sqlite3` auto-begins a transaction before DML, so by the time a nested `transaction()` block is entered the connection may already hold uncommitted writes — issuing `BEGIN` there would raise *"cannot start a transaction within a transaction"*. Instead, the inner block runs inside a savepoint. This is what makes nesting composable:
 
 - On **inner failure**, only the inner block's writes are rolled back. The outer block's writes survive, still uncommitted, and the outer block can carry on.
 - On **inner success**, the savepoint is released and **no commit is issued** — whoever opened the enclosing transaction owns the commit.
@@ -632,7 +632,7 @@ except RuntimeError:
 print(fetch_scalar(conn, "SELECT COUNT(*) FROM papers"))   # still 4 — 'e' was discarded
 ```
 
-> **PostgreSQL nests the same way (unreleased).**
+> **PostgreSQL nests the same way (0.6.0).**
 > The examples above are written against SQLite for their `conn.in_transaction` assertions, but the commit semantics are now identical on psycopg2: an inner block opens a savepoint, releases it without committing, and the outermost block owns the commit. Code relying on nesting is portable across both backends.
 >
 > Previously psycopg2 had no savepoint path — a nested block committed connection-wide, so an inner success made the outer block's work durable early and an inner failure discarded it. If you worked around that by keeping a single outermost `transaction()` block, that code is still correct; it simply is no longer required.
@@ -653,7 +653,7 @@ That is a bound on the damage, not a licence to share connections. Statements fr
 def transaction_depth(conn: Any) -> int
 ```
 
-**New (unreleased).** Return how many `transaction()` blocks the **calling thread** currently has open on `conn`. Zero means the next block on this thread owns the commit. Blocks opened by other threads are not counted.
+**New in 0.6.0.** Return how many `transaction()` blocks the **calling thread** currently has open on `conn`. Zero means the next block on this thread owns the commit. Blocks opened by other threads are not counted.
 
 ### `owns_commit`
 
@@ -661,7 +661,7 @@ def transaction_depth(conn: Any) -> int
 def owns_commit(conn: Any) -> bool
 ```
 
-**New (unreleased).** Return `True` if a write on `conn` right now would need its own commit — equivalent to `transaction_depth(conn) == 0`. `False` means the caller is inside a `transaction()` block that will commit on its way out, so an inner helper must not commit on its own.
+**New in 0.6.0.** Return `True` if a write on `conn` right now would need its own commit — equivalent to `transaction_depth(conn) == 0`. `False` means the caller is inside a `transaction()` block that will commit on its way out, so an inner helper must not commit on its own.
 
 This is what any helper that commits conditionally should ask. Do **not** consult psycopg2's transaction status for this: it reports `INTRANS` after any statement at all, including a bare `SELECT`.
 
