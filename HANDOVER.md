@@ -1,9 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-07-29. `main` is at v0.5.1 plus a large `[Unreleased]`
+_Last updated: 2026-07-30. `main` is at v0.5.1 plus a large `[Unreleased]`
 section (PostgreSQL `publications`, PDF→text wiring, body-less JATS fix,
 BaseAgent metrics/embeddings, consolidated JSON extraction, transparency
-PubMed step). 962 tests passing + 32 skipped._
+PubMed step, the `parse_json` contract). 981 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -64,11 +64,24 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
      *behaviour* did**: one more request per analysis, and scores on
      closed-access papers can rise, so stored scores are not comparable
      across this change.
+  7. **`parse_json`'s return contract, and the fragment it hid** (PR pending,
+     closes #33) — `extract_json()` was reducing an unfenced array of objects
+     to its first element, dropping every sibling with no error, on a path both
+     the Anthropic and OpenAI-compatible providers run for every `json_mode`
+     response. Its acceptance policy is now `_first_acceptable()`, run twice —
+     whole spans first, the nested-object stage only as a last resort — with a
+     *ranked* non-dict fallback so an incidental `[]` cannot mask the payload.
+     `parse_json()`/`chat_json()` are annotated `dict | list` with an opt-in
+     `require_dict` that retries the wrong shape (and fails fast at temperature
+     0, like truncation); bmlib's two quality tiers pass it. **Behaviour change
+     on one response shape**: an unfenced array of objects in prose now arrives
+     whole. A fenced array already did, and a bare array never reached
+     `extract_json()`.
   **Deciding whether this is 0.6.0 is open work** — see "Next up" below. The
   `publications` and `fulltext` changes are additive, so a minor bump fits.
   Note `~/src/bmlibrarian` pins `bmlib[ollama]>=0.5.1,<0.6.0`, so a 0.6.0
   release needs that pin lifted downstream.
-- **962 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **981 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -84,22 +97,6 @@ Nothing is blocked on anything else.
 
 ### Open GitHub issues
 
-- **#33 — `BaseAgent.parse_json` is annotated `-> dict` but can return a list**
-  when a response contains only a top-level array. **Decided and designed; not
-  yet implemented** — `docs/superpowers/specs/2026-07-29-json-parse-contract-design.md`
-  is on `main` (PR #38, docs only), approved and ready to build from. The
-  investigation found that the same code path silently drops data: an unfenced
-  `[{"a": 1}, {"b": 2}]` in prose returns `{"a": 1}`, because `extract_json()`'s
-  dict preference is satisfied by the nested-object stage. That is why the
-  runtime-guard option was rejected — raising would hide the loss rather than
-  fix it, and inconsistently, since a *bare* array parses before the extractor
-  is ever reached. The design widens the annotation, adds an opt-in
-  `require_dict` that retries inside `chat_json()` (except at temperature 0,
-  where it fails fast like the truncation path), and makes the nested stage a
-  last resort behind a ranked fallback. Note it inverts two existing tests in
-  `test_json_extraction.py` — `test_prefers_the_object_nested_in_a_single_element_array`
-  and `test_unfenced_nested_object_still_wins` — deliberately, and the design
-  says so.
 - **#36 — industry-funder keyword matching is punctuation-dependent.**
   `_INDUSTRY_KEYWORDS` tests substrings, so `"inc."` carries its dot to avoid
   matching `"Lincoln"` — and consequently misses an NLM-normalised
@@ -113,11 +110,13 @@ Nothing is blocked on anything else.
   A mutable `_Analysis` dataclass mutated in place would remove the arity
   entirely. Worth doing before the next signal source lands in `analyze()`.
 
-#36 is also designed and approved —
+#36 is designed and approved —
 `docs/superpowers/specs/2026-07-29-industry-funder-matching-design.md`. It needs
 a live sampling run (`scripts/sample_funder_names.py`, to be written) against
 CrossRef and PubMed to build the labelled corpus the ship rule is measured
-against, so it cannot be done offline.
+against, so it cannot be done offline. #33 closes with the pending
+`parse_json` contract PR; its design doc stays as the record of why raising on
+a non-dict was rejected.
 
 ### Worth doing, not yet an issue
 
@@ -129,8 +128,20 @@ against, so it cannot be done offline.
   is a small follow-up rather than a rewrite.
 - **`.claude/worktrees/` holds three stale worktrees** (`next-session-5b78ba`,
   `next-session-180be7`, `review-19-bde68f`) from earlier sessions. They shadow
-  every repo-wide `grep`. Worth pruning with `git worktree remove` /
-  `git worktree prune` if they are genuinely dead.
+  every repo-wide `grep`. **Verified dead 2026-07-30**: all three have clean
+  working trees and HEADs already contained in `main`, so nothing is lost by
+  removing them. Left in place only because deleting directories is the
+  owner's call:
+
+  ```bash
+  for w in next-session-5b78ba next-session-180be7 review-19-bde68f; do
+      git worktree remove ".claude/worktrees/$w"
+  done
+  git worktree prune
+  ```
+
+  There are also ~20 merged local branches (`git branch --merged main`) worth
+  the same treatment.
 
 ### bmlibrarian → bmlib porting (paused, Phase 1 next)
 
@@ -215,15 +226,31 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   regression test naming it.
 - **`extract_json()` lets a fenced candidate win on parse alone, ahead of its
   dict preference.** A fence is the model's own delimitation of its answer, so
-  reducing a fenced `[{...}, {...}]` to the first object — which dict
-  preference alone does, via the nested-object stage — silently drops every
-  sibling on a path both providers run for every `json_mode` response. Pinned
-  by `test_fenced_array_of_objects_is_returned_whole`.
+  it must not lose to an object found elsewhere in the response — a fenced
+  `[1, 2]` alongside a later top-level `{"a": 1}` returns the fenced array.
+  Since the whole-span policy landed, the fence rule is no longer the *only*
+  thing keeping a fenced array of objects intact (the ranked fallback would
+  also return it), but it is still what makes a fence outrank a competing
+  top-level dict. Pinned by `test_fenced_array_of_objects_is_returned_whole`.
+- **`extract_json()` runs its acceptance policy twice, and its non-dict
+  fallback is ranked.** Collapsing the two walks back into one restores the
+  silent truncation #33 fixed: dict preference is satisfied by the object
+  `iter_json_spans()` digs out of an array, so `'[{"a": 1}, {"b": 2}]'` in
+  prose returns `{"a": 1}` and the sibling vanishes. Reducing the ranked
+  fallback to first-parseable is the *other* way to restore it, and a worse
+  one: the first walk would accept an incidental `[]`, the second walk would
+  never run, and the caller would get unrelated data that parses cleanly and
+  passes every downstream check. `extract_and_repair_json()` deliberately has
+  no equivalent second walk (next entry). Pinned by
+  `TestExtractJsonPrefersWholeSpans`.
 - **`extract_and_repair_json()` passes `nested_objects=False`.** It *repairs*
   candidates, and repairing an object nested inside a span it already rejected
   discards the structure around it — `'[{"a": 1}, invalid junk]'` would return
   `{"a": 1}` where it should raise. `extract_json()` keeps the nested stage,
-  because it only ever validates. Pinned by
+  but as a **last resort only**: the asymmetry between the two is that
+  validating a fragment reports what is there, while repairing one fabricates a
+  structure the model never emitted — not that validation has a general licence
+  to prefer fragments. Pinned by
   `test_raises_rather_than_returning_a_fragment_of_a_broken_array`.
 - **`salvage_json_fields()` bounds *both* of its passes.** Every failed
   `raw_decode()` scans forward to the end of the document, so an unbounded

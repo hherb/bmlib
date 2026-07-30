@@ -141,25 +141,73 @@ All notable changes to bmlib are documented here. The format is based on
   non-`UNKNOWN` result raises `ValueError`, while an `UNKNOWN` without a
   reason is accepted. Declared **last** on the dataclass, for the same reason
   as `Publication.pmcid`.
+- **`require_dict` on `BaseAgent.parse_json()` and `chat_json()`** (part of
+  #33) — opt-in strictness for callers that need a JSON object rather than
+  whatever the model happened to emit. `parse_json(require_dict=True)` raises
+  `ValueError` naming the shape it got. `chat_json(require_dict=True)` treats a
+  wrong shape as a retryable failure inside its existing backoff loop, so a
+  model that answered with an array gets up to `max_retries` attempts at a
+  usable answer — **except at temperature 0**, where it raises on the first
+  one, mirroring the truncation path: greedy sampling returns the same array
+  from the same messages, so the retry is provably futile. The shape failure is
+  reported separately from `"unparseable response"`: the response *was* valid
+  JSON, just the wrong shape, and `chat_json()` runs its own `isinstance` check
+  rather than message-sniffing a `ValueError` to tell the two apart. Both
+  return paths are covered, including the truncation path's `_try_parse()`
+  shortcut. `@overload` on `Literal[True]` narrows the return to `dict` for
+  strict callers, so the widened annotation costs them no `isinstance`
+  friction; CI runs ruff only, so the `@overload`/`@staticmethod` stacking
+  order was verified once against mypy outside the build.
 
 ### Changed
 
+- **`extract_json()` prefers a whole span over a nested fragment** (part of
+  #33). The acceptance policy is split out as a private `_first_acceptable()`
+  and run twice: once over whole spans only, and — only when nothing there
+  parsed — once more with the nested-object stage enabled. An object dug out
+  of the inside of another span is now a last resort rather than a preference,
+  so a response whose JSON is an **array of objects** is returned whole where
+  it was previously reduced to its first element.
+
+  The non-dict fallback within each walk is *ranked* rather than
+  first-parseable: a span that is a list holding at least one object beats any
+  other non-dict span. Without that, an incidental parseable span earlier in
+  the response (`'[] and [{"a": 1}]'`) would be accepted by the first walk, the
+  second walk would never run, and the caller would receive unrelated data
+  that parses cleanly and survives every downstream shape check — a worse
+  failure than the truncation being fixed.
+
+  `extract_and_repair_json()` deliberately has **no** equivalent second walk.
+  Validating a nested fragment reports what is there; repairing one closes
+  brackets around it and fabricates a structure the model never emitted.
+- **`BaseAgent.parse_json()` and `chat_json()` are annotated `dict | list`**
+  (closes #33). They always returned whatever the response parsed to, so a
+  model answering with a top-level array handed back a list; the annotation
+  now says so. Raising on a non-dict was considered and rejected: it would
+  have hidden the fragment loss above rather than repairing it — and
+  inconsistently, since `parse_json()` tries `json.loads(text)` first, so a
+  bare array would have raised while the same array in prose came back as its
+  first element and passed as a dict. It would also lock out the array-shaped
+  agents queued for the bmlibrarian port. Callers needing an object say so
+  with `require_dict` instead; `_try_parse()` widens to `dict | list | None`
+  to match.
 - **`extract_json()` and `extract_and_repair_json()` are rebuilt on the
   shared locator `iter_json_spans()`** (closes #17). Behaviour deltas fall
   out of the consolidation:
   - Bare top-level arrays are now visible to `extract_json()` — previously an
     unfenced `[...]` response with no object anywhere fell through to the
     raw, unparsed input.
-  - **Dict preference (`extract_json()` only):** when a response contains an
-    object anywhere — nested inside an array, or alongside one —
-    `extract_json()` returns the object over an incidental array, because the
-    object is what a `json_mode` caller actually asked for. This is not new:
-    the pre-consolidation brace-only scan was object-only, so it already
-    returned `{"a": 1}` for `extract_json('[{"a": 1}]')`; consolidation
-    preserves that outcome rather than changing it. What *is* new is that a
-    **fenced** candidate now outranks dict preference: a fence is the model's
-    own delimitation of its answer, so a fenced JSON array must not be
-    reduced to an object plucked from inside it by a later, unfenced stage.
+  - **Dict preference (`extract_json()` only):** when a response contains a
+    **top-level** object alongside an incidental array, `extract_json()`
+    returns the object, because the object is what a `json_mode` caller
+    actually asked for. This is not new: the pre-consolidation brace-only scan
+    was object-only, so it already returned `{"a": 1}` for
+    `extract_json('[1, 2] then {"a": 1}')`. What *is* new is that a **fenced**
+    candidate now outranks dict preference — a fence is the model's own
+    delimitation of its answer, so a fenced JSON array must not be reduced to
+    an object plucked from inside it by a later, unfenced stage — and that the
+    preference no longer extends to an object reachable only from *inside*
+    another span; see "prefers a whole span over a nested fragment" below.
   - **Fence priority (`extract_json()` only):** a ` ```json `-tagged fence now
     wins over an earlier untagged fence, instead of whichever fence comes
     first in document order winning regardless of its language tag.
@@ -223,6 +271,19 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **`extract_json()` silently dropped every sibling of an unfenced array of
+  objects** (part of #33). `iter_json_spans()` offers the array at stage 4 and
+  the object nested inside it at stage 5, and the dict preference accepted the
+  fragment — so `'[{"a": 1}, {"b": 2}]'` in prose returned `{"a": 1}` with no
+  error anywhere. See the two-walk policy under **Changed** for the fix, and
+  **Compatibility** for who is affected.
+- **A wrong-shaped response cost the two quality tiers a whole assessment.**
+  `StudyClassifier.classify()` and `QualityAgent.assess()` hand `chat_json()`'s
+  result to a `_parse_data()` that calls `.get()`, so a list raised
+  `AttributeError` into a broad `except Exception` and degraded the paper to
+  `UNCLASSIFIED` — no retry, and nothing in the log naming the shape. Both now
+  pass `require_dict=True`, and both run at temperature > 0, so the wrong shape
+  buys up to three attempts at a usable answer instead of one silent failure.
 - **An unsectioned JATS `<body>` lost all its prose.** `<sec>` is optional
   inside `<body>`, but the handler recorded a `<p>` only when a section was
   open, so an article whose body is bare `<p>` children was parsed as having
@@ -340,12 +401,28 @@ absent. Databases created by an earlier bmlib pick up the new `pmcid` column
 on the next `ensure_schema()` call, which `sync()` makes for you.
 
 This section is otherwise about additive and fix-only changes, but the JSON
-extraction deltas above (dict/fence-priority ordering in `extract_json()`;
-walk-past-a-bad-candidate policy in `extract_and_repair_json()`) are the
-first **behaviour** change here on a genuinely hot path: both
-`bmlib/llm/providers/anthropic.py` and `openai_compat.py` call
-`extract_json()` on every `json_mode` response, unconditionally, not from an
-opt-in code path.
+extraction deltas above (dict/fence-priority ordering and the whole-span
+preference in `extract_json()`; walk-past-a-bad-candidate policy in
+`extract_and_repair_json()`) are the first **behaviour** change here on a
+genuinely hot path: both `bmlib/llm/providers/anthropic.py` and
+`openai_compat.py` call `extract_json()` on every `json_mode` response,
+unconditionally, not from an opt-in code path.
+
+**Who is affected by the whole-span preference.** Exactly one response shape:
+an **array of objects sitting unfenced in prose**. Such a response now arrives
+whole where it previously arrived as its first element. Three neighbouring
+shapes are unchanged — a fenced array already came back whole, a bare array
+parses at the provider's own `json.loads()` guard and never reaches
+`extract_json()` at all, and an array of scalars had no nested candidate to
+lose to. Code that relied on receiving the first element will now receive a
+list; `BaseAgent` callers wanting the old dict-or-nothing guarantee should pass
+`require_dict=True`, which turns the wrong shape into a diagnosed retry rather
+than a silent truncation.
+
+`parse_json()` and `chat_json()` return `dict | list` where they were annotated
+`-> dict`. No runtime behaviour changed for a response that parses to an
+object, and nothing was removed — the annotation was always wrong for an array
+response, which is what #33 reported.
 
 Two details worth knowing when upgrading:
 

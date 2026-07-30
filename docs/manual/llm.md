@@ -1057,7 +1057,7 @@ The locator shared by `extract_json()` and `extract_and_repair_json()` below. Yi
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `text` | `str` | *(required)* | Text to scan for JSON spans. |
-| `nested_objects` | `bool` | `True` | When `False`, stage 5 is skipped. Callers that *repair* a candidate want this off: repairing a nested fragment would silently discard the structure around it — `extract_and_repair_json()` passes `nested_objects=False` for exactly this reason. |
+| `nested_objects` | `bool` | `True` | When `False`, stage 5 is skipped. Note the imbalance: every caller in bmlib passes this explicitly, and only `extract_json()`'s last-resort second walk passes `True`. `extract_and_repair_json()` passes `False` because repairing a nested fragment would silently discard the structure around it; `extract_json()`'s *first* walk passes `False` so a whole span always outranks a fragment plucked from inside one. The default stays `True` because that is what the parameter name reads as. |
 
 **Example:**
 
@@ -1109,20 +1109,37 @@ print(data["design"], was_repaired)   # RCT True
 def extract_json(text: str) -> str
 ```
 
-Not exported from `bmlib.llm` — import it from `bmlib.llm.utils`. Walks the same locator as `extract_and_repair_json()`, but via `iter_json_spans(text)` with `nested_objects=True`, and returns the first candidate that either came from a fence or **parses to a dict**, falling back to the first that parses at all if neither. Returns *text* unchanged if nothing parses.
+Not exported from `bmlib.llm` — import it from `bmlib.llm.utils`. Applies one acceptance policy to the shared locator **twice**: first over whole spans only (`nested_objects=False`), and — only if nothing there parsed — again with the nested-object stage enabled. Each walk returns the first candidate that came from a fence or **parses to a dict**, else the best span that parses at all. Returns *text* unchanged if nothing parses in either walk.
 
 **Never raises.** That matters more here than elsewhere: this runs unconditionally on every `json_mode` response in both the Anthropic and OpenAI-compatible providers, so anything that escapes takes out the provider call. A candidate that raises `RecursionError` — `json.loads()` descends recursively, so text nested past the interpreter's stack limit blows the stack instead of failing to decode — is skipped like any other undecodable candidate.
 
-The dict preference is deliberate: the callers here — the Anthropic and OpenAI-compatible providers' `json_mode` path, and `BaseAgent.parse_json()` — want the object a model was asked for, not an incidental array that happens to appear earlier in the response:
+The dict preference is deliberate, and applies to **top-level** spans: the callers here — the Anthropic and OpenAI-compatible providers' `json_mode` path, and `BaseAgent.parse_json()` — want the object a model was asked for, not an incidental array that happens to appear earlier in the response:
 
 ```python
 from bmlib.llm.utils import extract_json
 
-extract_json('Result: [{"a": 1}]')
-# '{"a": 1}' — the object nested in the single-element array, not the array itself
+extract_json('[1, 2] then {"a": 1}')
+# '{"a": 1}' — the object, not the incidental array before it
 ```
 
-A fence outranks the dict preference, though: it is the model's own delimitation of its answer, so a fenced array must not be reduced to an object plucked from inside it by a later, unfenced stage.
+**An object reachable only from inside another span is a last resort, not a preference.** That is what the second walk is: preferring the nested fragment reduced an array of objects to its first element and dropped every sibling with no error anywhere.
+
+```python
+extract_json('Records: [{"a": 1}, {"b": 2}]')
+# '[{"a": 1}, {"b": 2}]' — the whole array
+
+extract_json('Here: [garbage {"a": 1} garbage]')
+# '{"a": 1}' — no whole span parses, so the second walk rescues the fragment
+```
+
+The non-dict fallback inside each walk is **ranked**, not first-parseable: a span that is a list holding at least one object beats any other non-dict span. Without the ranking, an incidental parseable span earlier in the response would be accepted by the first walk, so the second would never run — and the caller would receive unrelated data that parses cleanly and survives every downstream shape check.
+
+```python
+extract_json('[] and [{"a": 1}]')
+# '[{"a": 1}]' — not '[]'
+```
+
+A fence outranks all of this: it is the model's own delimitation of its answer, so a fenced array must not be reduced to an object plucked from inside it by a later, unfenced stage.
 
 ```python
 extract_json('```json\n[{"a": 1}, {"a": 2}]\n```')
@@ -1133,14 +1150,17 @@ Both extractors share `iter_json_spans()` as their locator and differ only in ac
 
 | | `extract_json` | `extract_and_repair_json` |
 |---|---|---|
-| Locates candidates via | `iter_json_spans(text)` | `iter_json_spans(text, nested_objects=False)` |
-| Acceptance policy | First candidate that is fenced or parses **to a dict**; else first that parses at all | First candidate that parses **or repairs** |
-| Top-level arrays | Returned when fenced, or when no candidate parses to a dict | Returned if it is the first candidate that parses or repairs |
+| Locates candidates via | `iter_json_spans(text, nested_objects=False)`, then `nested_objects=True` if the first walk found nothing | `iter_json_spans(text, nested_objects=False)` |
+| Acceptance policy | First candidate that is fenced or parses **to a dict**; else the best non-dict span (a list of objects outranks anything else) | First candidate that parses **or repairs** |
+| Top-level arrays | Returned whenever they parse and no top-level dict is present | Returned if it is the first candidate that parses or repairs |
+| Nested objects | Last resort — only when no whole span parsed | Never |
 | Repairs malformed JSON | No | Yes (unless `repair=False`) |
 | On failure | Returns the input unchanged | Raises `ValueError` |
 | Return value | `str` | `tuple[str, bool]` |
 
 The dict preference is the row to watch: `extract_and_repair_json()` does **not** have one. On `'text [1,2] then {"a": 1}'`, `extract_json()` returns `{"a": 1}` and `extract_and_repair_json()` returns `[1,2]`. That is deliberate — dict preference serves `json_mode` callers who asked a model for an object, whereas `extract_and_repair_json()` is a general-purpose extractor whose caller may well want the array. The divergence cannot surface through `BaseAgent.parse_json()`, which reaches `extract_and_repair_json()` only once `extract_json()` has found nothing parseable at all.
+
+`extract_and_repair_json()` has no equivalent second walk, and must not grow one. *Validating* a nested fragment reports what is there; *repairing* one closes brackets around it and fabricates a structure the model never emitted — `'[{"a": 1}, invalid junk]'` would come back as `{"a": 1}` where it should raise.
 
 Prefer `extract_and_repair_json()` for new code — it recovers more responses and never silently hands back unparsed input.
 
