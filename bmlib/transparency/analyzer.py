@@ -29,7 +29,7 @@ import re
 import threading
 import time
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from bmlib import __version__
@@ -199,6 +199,7 @@ _CLINICALTRIALS_GOV = "clinicaltrials.gov"
 _INDICATOR_NO_COI_IN_FULLTEXT = "No COI disclosure found in full text"
 _INDICATOR_COI_UNKNOWN = "COI disclosure status unknown (full text unavailable)"
 _INDICATOR_COI_IN_PUBMED = "COI disclosure found in PubMed record"
+_INDICATOR_INDUSTRY_COI = "Industry ties disclosed in COI statement"
 _INDICATOR_NO_POSTED_RESULTS = "Registered trial without posted results"
 # Deliberately does not name a registry. It covers a registration in another
 # registry *and* a ClinicalTrials.gov registration whose accession was missing
@@ -413,6 +414,94 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
         registration_not_checkable=registration_not_checkable,
         funders=funders,
     )
+
+
+@dataclass
+class _Analysis:
+    """Everything :meth:`TransparencyAnalyzer.analyze` accumulates.
+
+    Passed to each sub-step and mutated in place. The alternative — passing
+    each value in and unpacking a tuple back out — bound a value to its name by
+    position alone, so a mis-ordered unpacking was a silent, type-compatible
+    swap (``industry_funding`` and ``funder_info_scored`` are both ``bool``;
+    ``score`` is interchangeable with any other ``int``) and adding one signal
+    meant widening several signatures.
+
+    Mutable by design, and private: it never leaves this module, which is why
+    it carries no ``to_dict()``/``from_dict()`` — the same reasoning as the
+    frozen :class:`_PubMedSignals` beside it, which is a message from one
+    source rather than shared state.
+
+    Attributes:
+        score: Running transparency score, uncapped until ``analyze()`` ends.
+        indicators: Human-readable findings, in the order they were made.
+        industry_funding: Any industry involvement was detected.
+        industry_confidence: Confidence in that detection; the strongest
+            evidence seen wins, regardless of arrival order.
+        data_level: Data-availability level from :data:`_DATA_PATTERNS`.
+        coi_disclosed: Tri-state — ``True`` (statement found), ``False`` (full
+            text scanned, none found), ``None`` (undeterminable).
+        trial_registered: A trial registration was established.
+        results_compliant: Posted results were found for a registered trial.
+        full_text_analyzed: Findings came from full text, not just an abstract.
+        funder_info_scored: :data:`SCORE_FUNDER_INFO` has been spent. Named
+            state rather than a positional bool, so a third funder source
+            cannot award it again by forgetting a convention.
+    """
+
+    score: int = 0
+    indicators: list[str] = field(default_factory=list)
+    industry_funding: bool = False
+    industry_confidence: float = 0.0
+    data_level: str = "unknown"
+    coi_disclosed: bool | None = None
+    trial_registered: bool = False
+    results_compliant: bool = False
+    full_text_analyzed: bool = False
+    funder_info_scored: bool = False
+
+    def award_funder_info(self) -> None:
+        """Award :data:`SCORE_FUNDER_INFO` the first time any source reports funders.
+
+        Two sources can report them — CrossRef funder records and PubMed's
+        ``<GrantList>`` — and the component is worth 15 points once, not twice.
+        Neither caller has to know whether the other ran first, which is what
+        makes a third source safe to add.
+        """
+        if not self.funder_info_scored:
+            self.score += SCORE_FUNDER_INFO
+            self.funder_info_scored = True
+
+    def note_industry_funder(self, name: str) -> None:
+        """Record *name* as an industry funder named in structured metadata.
+
+        The confidence is fixed at :data:`DEFAULT_INDUSTRY_CONFIDENCE` rather
+        than passed in: "structured metadata" — a CrossRef funder record or a
+        PubMed ``<Grant><Agency>`` — is exactly what distinguishes this from
+        the weaker prose signal in :meth:`note_industry_coi`, and a caller free
+        to choose the number could blur the two.
+
+        The indicator is deduplicated. One funder is one finding however many
+        sources report it, and however often a single source repeats it: both
+        registries emit one record per award, so an organisation funding four
+        awards on one paper appears four times upstream.
+        """
+        self.industry_funding = True
+        self.industry_confidence = max(self.industry_confidence, DEFAULT_INDUSTRY_CONFIDENCE)
+        line = f"Industry funder: {name}"
+        if line not in self.indicators:
+            self.indicators.append(line)
+
+    def note_industry_coi(self) -> None:
+        """Record industry ties disclosed in a full-text COI statement.
+
+        Weaker evidence than a funder record — an inference from prose rather
+        than a structured field — so it raises the confidence only to
+        :data:`TEXT_INDUSTRY_CONFIDENCE` and never lowers a stronger one.
+        """
+        self.industry_funding = True
+        self.industry_confidence = max(self.industry_confidence, TEXT_INDUSTRY_CONFIDENCE)
+        self.indicators.append(_INDICATOR_INDUSTRY_COI)
 
 
 def _merge_pubmed_signals(
@@ -741,7 +830,7 @@ class TransparencyAnalyzer:
                 if industry_coi:
                     industry_funding = True
                     industry_confidence = max(industry_confidence, TEXT_INDUSTRY_CONFIDENCE)
-                    indicators.append("Industry ties disclosed in COI statement")
+                    indicators.append(_INDICATOR_INDUSTRY_COI)
 
             # --- PubMed (structured COI, trial registration, grants) ---
             # Placed after Europe PMC so a DOI-only analysis can reuse the PMID

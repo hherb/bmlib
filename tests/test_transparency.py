@@ -23,13 +23,16 @@ import pytest
 from bmlib.transparency.analyzer import (
     _INDICATOR_COI_IN_PUBMED,
     _INDICATOR_COI_UNKNOWN,
+    _INDICATOR_INDUSTRY_COI,
     _INDICATOR_NO_COI_IN_FULLTEXT,
     _INDICATOR_NO_POSTED_RESULTS,
     _INDICATOR_RESULTS_NOT_CHECKABLE,
     DEFAULT_INDUSTRY_CONFIDENCE,
     SCORE_COI_DISCLOSED,
     SCORE_FUNDER_INFO,
+    TEXT_INDUSTRY_CONFIDENCE,
     TransparencyAnalyzer,
+    _Analysis,
     _merge_pubmed_signals,
     _parse_pubmed_signals,
     _PubMedSignals,
@@ -161,6 +164,77 @@ def _epmc_record(abstract="", in_epmc="Y"):
             ]
         }
     }
+
+
+class TestAnalysisCarrier:
+    """The accumulator carrier's own semantics, before anything uses it."""
+
+    def test_defaults_match_a_fresh_analysis(self):
+        analysis = _Analysis()
+        assert analysis.score == 0
+        assert analysis.indicators == []
+        assert analysis.industry_funding is False
+        assert analysis.industry_confidence == 0.0
+        assert analysis.data_level == "unknown"
+        assert analysis.coi_disclosed is None
+        assert analysis.trial_registered is False
+        assert analysis.results_compliant is False
+        assert analysis.full_text_analyzed is False
+        assert analysis.funder_info_scored is False
+
+    def test_each_carrier_gets_its_own_indicator_list(self):
+        # A mutable default shared across instances would leak one analysis's
+        # findings into the next.
+        first, second = _Analysis(), _Analysis()
+        first.indicators.append("x")
+        assert second.indicators == []
+
+    def test_funder_info_is_awarded_once(self):
+        analysis = _Analysis()
+        analysis.award_funder_info()
+        analysis.award_funder_info()
+        assert analysis.score == SCORE_FUNDER_INFO
+        assert analysis.funder_info_scored is True
+
+    def test_funder_info_is_not_awarded_when_already_spent(self):
+        # The hazard the method exists for: whichever source runs first spends
+        # the component, and the second must not spend it again.
+        analysis = _Analysis(funder_info_scored=True)
+        analysis.award_funder_info()
+        assert analysis.score == 0
+
+    def test_an_industry_funder_is_recorded_with_structured_confidence(self):
+        analysis = _Analysis()
+        analysis.note_industry_funder("Genentech Inc.")
+        assert analysis.industry_funding is True
+        assert analysis.industry_confidence == DEFAULT_INDUSTRY_CONFIDENCE
+        assert analysis.indicators == ["Industry funder: Genentech Inc."]
+
+    def test_one_funder_is_one_indicator_however_often_it_is_reported(self):
+        analysis = _Analysis()
+        analysis.note_industry_funder("Genentech Inc.")
+        analysis.note_industry_funder("Genentech Inc.")
+        assert analysis.indicators == ["Industry funder: Genentech Inc."]
+
+    def test_a_funder_never_lowers_an_established_confidence(self):
+        analysis = _Analysis(industry_confidence=0.95)
+        analysis.note_industry_funder("Genentech Inc.")
+        assert analysis.industry_confidence == 0.95
+
+    def test_an_industry_coi_is_weaker_evidence_than_a_funder_record(self):
+        analysis = _Analysis()
+        analysis.note_industry_coi()
+        assert analysis.industry_funding is True
+        assert analysis.industry_confidence == TEXT_INDUSTRY_CONFIDENCE
+        assert analysis.indicators == [_INDICATOR_INDUSTRY_COI]
+
+    def test_a_coi_signal_never_lowers_a_funder_record_s_confidence(self):
+        # Arrival order must not decide the confidence: a structured funder
+        # record outranks COI prose whichever is seen first.
+        analysis = _Analysis()
+        analysis.note_industry_funder("Genentech Inc.")
+        analysis.note_industry_coi()
+        assert analysis.industry_confidence == DEFAULT_INDUSTRY_CONFIDENCE
 
 
 class TestCheckEuropePMC:
