@@ -1358,28 +1358,37 @@ class TestPubMedRequest:
 class TestFunderInfoIsScoredOnce:
     """`SCORE_FUNDER_INFO` is worth 15 points once, across every funder source.
 
-    CrossRef happens to run first today, which is what makes the flag safe to
-    compute fresh there. Threading it in as well as out is what keeps it safe
+    CrossRef happens to run first today, which is what made the flag safe to
+    compute fresh there. `_Analysis.award_funder_info()` is what keeps it safe
     when it no longer does.
     """
 
     def test_crossref_respects_an_already_spent_component(self):
         client = _RecordingClient(crossref={"message": {"funder": [{"name": "Some Trust"}]}})
-        analyzer = TransparencyAnalyzer()
-        score, _, _, _, funder_info_scored = analyzer._check_crossref(
-            client, "10.1234/x", 0, False, 0.0, [], True
-        )
-        assert score == 0
-        assert funder_info_scored is True
+        analysis = _Analysis(funder_info_scored=True)
+        TransparencyAnalyzer()._check_crossref(client, "10.1234/x", analysis)
+        assert analysis.score == 0
+        assert analysis.funder_info_scored is True
 
     def test_crossref_spends_it_when_nothing_has(self):
         client = _RecordingClient(crossref={"message": {"funder": [{"name": "Some Trust"}]}})
-        analyzer = TransparencyAnalyzer()
-        score, _, _, _, funder_info_scored = analyzer._check_crossref(
-            client, "10.1234/x", 0, False, 0.0, [], False
+        analysis = _Analysis()
+        TransparencyAnalyzer()._check_crossref(client, "10.1234/x", analysis)
+        assert analysis.score == SCORE_FUNDER_INFO
+        assert analysis.funder_info_scored is True
+
+    def test_a_repeated_crossref_funder_is_one_indicator(self):
+        # CrossRef lists one record per award, so an organisation funding two
+        # awards on one paper appears twice. The indicator list is a set of
+        # findings: one funder is one finding.
+        client = _RecordingClient(
+            crossref={
+                "message": {"funder": [{"name": "Genentech Inc."}, {"name": "Genentech Inc."}]}
+            }
         )
-        assert score == SCORE_FUNDER_INFO
-        assert funder_info_scored is True
+        analysis = _Analysis()
+        TransparencyAnalyzer()._check_crossref(client, "10.1234/x", analysis)
+        assert analysis.indicators == ["Industry funder: Genentech Inc."]
 
 
 class TestPubMedSignalMerge:

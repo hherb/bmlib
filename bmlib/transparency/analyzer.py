@@ -778,21 +778,14 @@ class TransparencyAnalyzer:
             )
 
         self._api_reachable = False
-        score = 0
-        indicators: list[str] = []
-        industry_funding = False
-        industry_confidence = 0.0
-        data_level = "unknown"
+        analysis = _Analysis()
+        # Locals for the sub-steps not yet migrated onto the carrier. They go
+        # away as each is converted.
         coi_disclosed: bool | None = None
+        data_level = "unknown"
         trial_registered = False
         results_compliant = False
         full_text_analyzed = False
-        # Two sources can award funder information (CrossRef funders, PubMed
-        # grants), and the score component is worth 15 points once, not twice.
-        # Tracked explicitly: "CrossRef found funders" is otherwise recoverable
-        # only from an indicator string, and branching on indicator prose is
-        # the very thing `unknown_reason` exists to avoid.
-        funder_info_scored = False
 
         with httpx.Client(
             timeout=_HTTP_TIMEOUT_SECONDS,
@@ -800,21 +793,7 @@ class TransparencyAnalyzer:
         ) as client:
             # --- CrossRef (funder info) ---
             if doi:
-                (
-                    score,
-                    industry_funding,
-                    industry_confidence,
-                    indicators,
-                    funder_info_scored,
-                ) = self._check_crossref(
-                    client,
-                    doi,
-                    score,
-                    industry_funding,
-                    industry_confidence,
-                    indicators,
-                    funder_info_scored,
-                )
+                self._check_crossref(client, doi, analysis)
 
             # --- EuropePMC (full text / abstract, COI, data availability) ---
             epmc = self._fetch_europepmc(client, pmid, doi)
@@ -822,15 +801,13 @@ class TransparencyAnalyzer:
                 (
                     coi_disclosed,
                     data_level,
-                    score,
-                    indicators,
+                    analysis.score,
+                    analysis.indicators,
                     full_text_analyzed,
                     industry_coi,
-                ) = self._check_europepmc(client, epmc, score, indicators)
+                ) = self._check_europepmc(client, epmc, analysis.score, analysis.indicators)
                 if industry_coi:
-                    industry_funding = True
-                    industry_confidence = max(industry_confidence, TEXT_INDUSTRY_CONFIDENCE)
-                    indicators.append(_INDICATOR_INDUSTRY_COI)
+                    analysis.note_industry_coi()
 
             # --- PubMed (structured COI, trial registration, grants) ---
             # Placed after Europe PMC so a DOI-only analysis can reuse the PMID
@@ -839,34 +816,34 @@ class TransparencyAnalyzer:
             pubmed = self._check_pubmed(client, pmid or _pmid_from_epmc(epmc))
             (
                 coi_disclosed,
-                score,
-                indicators,
-                industry_funding,
-                industry_confidence,
-                funder_info_scored,
+                analysis.score,
+                analysis.indicators,
+                analysis.industry_funding,
+                analysis.industry_confidence,
+                analysis.funder_info_scored,
             ) = _merge_pubmed_signals(
                 pubmed,
                 coi_disclosed,
-                score,
-                indicators,
-                industry_funding,
-                industry_confidence,
-                funder_info_scored,
+                analysis.score,
+                analysis.indicators,
+                analysis.industry_funding,
+                analysis.industry_confidence,
+                analysis.funder_info_scored,
             )
 
             # --- OpenAlex (additional metadata) ---
             if doi:
-                score = self._check_openalex(client, doi, score)
+                self._check_openalex(client, doi, analysis)
 
             # --- ClinicalTrials.gov (trial registration) ---
             if doi or pmid:
-                trial_registered, results_compliant, score, indicators = (
+                trial_registered, results_compliant, analysis.score, analysis.indicators = (
                     self._check_trial_registration(
                         client,
                         pmid,
                         doi,
-                        score,
-                        indicators,
+                        analysis.score,
+                        analysis.indicators,
                         epmc=epmc,
                         pubmed=pubmed,
                     )
@@ -885,11 +862,11 @@ class TransparencyAnalyzer:
                 unknown_reason=TransparencyUnknownReason.UNREACHABLE,
             )
 
-        score = min(score, MAX_TRANSPARENCY_SCORE)
+        analysis.score = min(analysis.score, MAX_TRANSPARENCY_SCORE)
 
         risk_level = calculate_risk_level(
-            score=score,
-            industry_funding=industry_funding,
+            score=analysis.score,
+            industry_funding=analysis.industry_funding,
             data_availability=data_level,
             coi_disclosed=coi_disclosed,
             settings=self.settings,
@@ -897,15 +874,15 @@ class TransparencyAnalyzer:
 
         return TransparencyResult(
             document_id=document_id,
-            transparency_score=score,
+            transparency_score=analysis.score,
             risk_level=risk_level,
-            industry_funding_detected=industry_funding,
-            industry_funding_confidence=industry_confidence,
+            industry_funding_detected=analysis.industry_funding,
+            industry_funding_confidence=analysis.industry_confidence,
             data_availability_level=data_level,
             coi_disclosed=coi_disclosed,
             trial_registered=trial_registered,
             trial_results_compliant=results_compliant,
-            risk_indicators=indicators,
+            risk_indicators=analysis.indicators,
             full_text_analyzed=full_text_analyzed,
             tier_downgrade_applied=(
                 self.settings.tier_downgrade_amount if risk_level == TransparencyRisk.HIGH else 0
@@ -914,43 +891,25 @@ class TransparencyAnalyzer:
 
     # --- Analysis sub-steps ---
 
-    def _check_crossref(
-        self,
-        client: Any,
-        doi: str,
-        score: int,
-        industry_funding: bool,
-        industry_confidence: float,
-        indicators: list[str],
-        funder_info_scored: bool,
-    ) -> tuple[int, bool, float, list[str], bool]:
-        """Query CrossRef for funder information.
+    def _check_crossref(self, client: Any, doi: str, analysis: _Analysis) -> None:
+        """Query CrossRef for funder information and fold it into *analysis*.
 
-        Returns ``(score, industry_funding, industry_confidence, indicators,
-        funder_info_scored)``. The last element tells the caller whether
-        ``SCORE_FUNDER_INFO`` has been spent, so the PubMed grant list cannot
-        award it a second time.
-
-        It is threaded *in* as well as out, like every other accumulator here.
-        Computing it fresh would be correct only for as long as this stays the
-        first funder source consulted, and would silently double-score the
-        component the day a second one is added ahead of it.
+        ``SCORE_FUNDER_INFO`` is spent through
+        :meth:`_Analysis.award_funder_info`, so it stays a once-per-analysis
+        component however many funder sources run and in whatever order — this
+        step is merely the first one today.
         """
         cr = self._query_crossref(client, doi)
         if cr:
             funders = cr.get("message", {}).get("funder", [])
             if funders:
-                if not funder_info_scored:
-                    score += SCORE_FUNDER_INFO
-                    funder_info_scored = True
+                analysis.award_funder_info()
                 for funder in funders:
-                    if _is_industry_funder(funder.get("name") or ""):
-                        industry_funding = True
-                        industry_confidence = max(industry_confidence, DEFAULT_INDUSTRY_CONFIDENCE)
-                        indicators.append(f"Industry funder: {funder.get('name')}")
+                    name = funder.get("name") or ""
+                    if _is_industry_funder(name):
+                        analysis.note_industry_funder(name)
             else:
-                indicators.append("No funder information in CrossRef")
-        return score, industry_funding, industry_confidence, indicators, funder_info_scored
+                analysis.indicators.append("No funder information in CrossRef")
 
     def _fetch_europepmc(
         self,
@@ -1087,21 +1046,15 @@ class TransparencyAnalyzer:
             return _PubMedSignals()
         return _parse_pubmed_signals(xml_text)
 
-    def _check_openalex(
-        self,
-        client: Any,
-        doi: str,
-        score: int,
-    ) -> int:
-        """Check open-access status and citation count via OpenAlex."""
+    def _check_openalex(self, client: Any, doi: str, analysis: _Analysis) -> None:
+        """Fold open-access status and citation count from OpenAlex into *analysis*."""
         oa = self._query_openalex(client, doi)
         if oa:
             oa_info = oa.get("open_access", {})
             if oa_info.get("is_oa"):
-                score += SCORE_OPEN_ACCESS
+                analysis.score += SCORE_OPEN_ACCESS
             if oa.get("cited_by_count", 0) > 0:
-                score += SCORE_CITED
-        return score
+                analysis.score += SCORE_CITED
 
     def _check_trial_registration(
         self,
