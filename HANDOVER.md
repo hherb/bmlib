@@ -3,7 +3,8 @@
 _Last updated: 2026-07-30. `main` is at v0.5.1 plus a large `[Unreleased]`
 section (PostgreSQL `publications`, PDF→text wiring, body-less JATS fix,
 BaseAgent metrics/embeddings, consolidated JSON extraction, transparency
-PubMed step, the `parse_json` contract). 996 tests passing + 32 skipped._
+PubMed step, the `parse_json` contract, measured industry-funder matching).
+1033 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -64,8 +65,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
      *behaviour* did**: one more request per analysis, and scores on
      closed-access papers can rise, so stored scores are not comparable
      across this change.
-  7. **`parse_json`'s return contract, and the fragment it hid** (PR pending,
-     closes #33) — `extract_json()` was reducing an unfenced array of objects
+  7. **`parse_json`'s return contract, and the fragment it hid** (PR #39,
+     closed #33) — `extract_json()` was reducing an unfenced array of objects
      to its first element, dropping every sibling with no error, on a path both
      the Anthropic and OpenAI-compatible providers run for every `json_mode`
      response. Its acceptance policy is now `_first_acceptable()`, run twice —
@@ -85,11 +86,21 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
      too), and a truncated array of objects arrives whole through
      `parse_json()`. A fenced array already did, and a bare array never reached
      `extract_json()`.
+  8. **Measured industry-funder matching** (PR #40, closes #36) — the
+     substring keyword list is split into stems and whole words behind one
+     `_is_industry_funder()` predicate, calibrated against 833 real
+     CrossRef/PubMed names (417 hand-labelled, committed as
+     `tests/data/funder_names.json`, sampled by the new live runner
+     `scripts/sample_funder_names.py`). **Precision 0.400 → 0.917, recall
+     0.176 → 0.324.** The data removed two obvious-looking keywords —
+     `"pharma"` reached "Pharmacy"/"Pharmacogenetics", `"biotech"` reached a
+     ministry and a research council — so `industry_funding_detected` moves in
+     **both** directions and stored values are not comparable.
   **Deciding whether this is 0.6.0 is open work** — see "Next up" below. The
   `publications` and `fulltext` changes are additive, so a minor bump fits.
   Note `~/src/bmlibrarian` pins `bmlib[ollama]>=0.5.1,<0.6.0`, so a 0.6.0
   release needs that pin lifted downstream.
-- **996 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **1033 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -105,26 +116,17 @@ Nothing is blocked on anything else.
 
 ### Open GitHub issues
 
-- **#36 — industry-funder keyword matching is punctuation-dependent.**
-  `_INDUSTRY_KEYWORDS` tests substrings, so `"inc."` carries its dot to avoid
-  matching `"Lincoln"` — and consequently misses an NLM-normalised
-  `"Pfizer Inc"`. Always true of CrossRef names; the PubMed `<Grant><Agency>`
-  corpus makes it bite more often. Word-boundary matching fixes every case but
-  changes detection on the existing corpus too, and `industry_funding_detected`
-  feeds a HIGH-risk rule — so it needs measuring, not a one-line edit.
 - **#37 — `analyze()` threads eight accumulators through 4-to-6-element
   tuples.** Nothing is broken; a mis-ordered unpacking would be a silent
   type-compatible swap, and adding one boolean meant widening two signatures.
   A mutable `_Analysis` dataclass mutated in place would remove the arity
   entirely. Worth doing before the next signal source lands in `analyze()`.
 
-#36 is designed and approved —
-`docs/superpowers/specs/2026-07-29-industry-funder-matching-design.md`. It needs
-a live sampling run (`scripts/sample_funder_names.py`, to be written) against
-CrossRef and PubMed to build the labelled corpus the ship rule is measured
-against, so it cannot be done offline. #33 closes with the pending
-`parse_json` contract PR; its design doc stays as the record of why raising on
-a non-dict was rejected.
+#37 is the only issue still open. #18 and #21 closed with PR #35, #33 with
+PR #39, and #36 closes with PR #40 — the industry-funder matching in this
+branch. Both closed designs stay in `docs/superpowers/specs/` as the record of
+what was rejected and why: for #33, raising unconditionally on a non-dict; for
+#36, word-boundary matching applied uniformly across the keyword list.
 
 ### Worth doing, not yet an issue
 
@@ -198,6 +200,21 @@ prompt-driven agent family, paper_weight) are in the analysis doc.
 
 Each was investigated and closed as correct. Reopening them wastes a session.
 
+- **`_INDUSTRY_STEMS` and `_INDUSTRY_WORDS` must not be merged back into one
+  list**, and neither may be extended without re-running the measurement. The
+  stems have to reach inside longer words; the whole words must not, or `"inc"`
+  matches `"Lincoln"`. Every member was decided against
+  `tests/data/funder_names.json`, and two intuitive members were *removed* by
+  that data: `"pharma"` as a substring scored 3 true positives to 5 false ones
+  (it reaches `"Pharmacy"`, `"Pharmacogenetics"`), and `"biotech"` scored 0 to 4
+  (`"Department of Biotechnology"`, `"…Research Council"` — it names a field, not
+  a company type). `"co"`, `"corporation"`, `"ab"` and `"labs"` were rejected for
+  reasons recorded in the source comment. Regenerate the corpus with
+  `scripts/sample_funder_names.py` before changing any of it; the metric test is
+  `tests/test_funder_matching.py::TestAgainstTheLabelledCorpus`.
+- **`_is_industry_funder()` is deliberately not applied to COI prose.**
+  `_INDUSTRY_COI_KEYWORDS` stays separate: the org suffixes match far too freely
+  in running text, and those phrases never occur in a funder name.
 - **`TransparencySettings.filtering_enabled`, `max_concurrent_analyses`,
   `cache_results` are not dead code.** They are orchestration hints for the
   *calling* application. The library analyses one document per call and does

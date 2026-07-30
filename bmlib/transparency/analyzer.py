@@ -47,26 +47,106 @@ logger = logging.getLogger(__name__)
 # Matched against structured funder names — CrossRef `funder[].name` and
 # PubMed `<Grant><Agency>` — both short org-name strings.
 #
-# The three suffix forms carry their trailing dot deliberately: bare "inc"
-# matches "Lincoln"/"province" as a substring. The cost is that an
-# NLM-normalised agency written "Pfizer Inc" without the dot is missed. Issue
-# #36 tracks replacing the substring test with word-boundary matching, which
-# needs calibrating against both corpora rather than a one-line edit.
-_INDUSTRY_KEYWORDS = [
+# THE LIST IS TWO KINDS OF THING, AND MERGING THEM BACK INTO ONE IS A BUG.
+# A stem has to match *inside* a longer word ("pharmaceutic" reaching
+# "Pharmaceuticals"); a whole word must not ("inc" as a substring matches
+# "Lincoln", "Vincent" and "province"). Applying word boundaries uniformly —
+# how issue #36 frames the fix — would lose the stems; applying substrings
+# uniformly is what made "Pfizer Inc" a false negative in the first place.
+#
+# Membership of both lists was decided by measuring against 833 real names
+# sampled from CrossRef and PubMed — see `scripts/sample_funder_names.py`,
+# the labelled corpus in `tests/data/funder_names.json`, and the metric test
+# in `tests/test_funder_matching.py`. The counts below are from that corpus.
+
+# Substring stems. Every one scored at least one true positive and no false
+# positives; each is also *narrower* than what it replaced:
+#   "pharmaceutic"  3 TP / 0 FP  — replaces "pharma", which scored 3 TP / 5 FP
+#                                  by reaching "Pharmacy", "Pharmacology" and
+#                                  "Pharmacogenetics", all academic.
+#   "therapeutics"  1 TP / 0 FP
+#   "laboratories"  1 TP / 0 FP  — the plural only. "Key Laboratory" (singular)
+#                                  is a Chinese state-lab form and appeared 8
+#                                  times; it must keep missing them.
+_INDUSTRY_STEMS = (
+    "pharmaceutic",
+    "therapeutics",
+    "laboratories",
+)
+
+# Whole words. No trailing "\.?" is needed: `\b` already sits between the last
+# letter and a following ".", so "Inc" and "Inc." both match.
+#
+# The first two are the safe residue of stems the corpus disqualified — see
+# `_INDUSTRY_STEMS` for "pharma", and for "biotech": as a substring it scored
+# 0 TP / 4 FP, reaching only "Department of Biotechnology" (an Indian
+# ministry) and "Biotechnology and Biological Sciences Research Council" (a UK
+# research council). "Biotechnology" names a field, not a company type. As a
+# bare word it is a company name ("Acme Biotech"), so that form is kept.
+#
+# The rest are legally reserved incorporation suffixes — a public body cannot
+# use one. Deliberately absent, each for a measured or stated reason:
+#   "co"           4 TP / 1 FP — collides with the English prefix in
+#                                "project co-sponsored by province…"
+#   "corporation"  1 TP / 1 FP — US non-profits use it ("Research Corporation
+#                                for Science Advancement")
+#   "plc" "pty"    0 TP        — no corpus evidence, so nothing earned
+#   "ag" "bv" "nv" "sa"  0 TP  — same, and two-letter tokens besides
+#   "ab"           1 TP / 0 FP — passes the count but excluded: it collides
+#                                with province and country codes, and these
+#                                strings carry locations ("…, Hyderabad,
+#                                India"), so "University of Calgary, AB" would
+#                                be a false positive the corpus cannot see.
+#                                Costs one true positive, "Roche Sweden AB".
+#   "labs"         1 TP / 0 FP — same call: "Los Alamos National Labs" is not
+#                                industry. Costs "Tempus Labs".
+# Ties go to precision here, because `industry_funding_detected` feeds a
+# HIGH-risk rule and HIGH downgrades a paper's quality tier.
+_INDUSTRY_WORDS = (
     "pharma",
     "biotech",
-    "therapeutics",
-    "inc.",
-    "corp.",
-    "ltd.",
+    "incorporated",
+    "inc",
+    "corp",
+    "limited",
+    "ltd",
     "gmbh",
-    "laboratories",
-]
+    "llc",
+)
+
+_INDUSTRY_WORD_RE = re.compile(
+    r"\b(?:" + "|".join(_INDUSTRY_WORDS) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_industry_funder(name: str) -> bool:
+    """Report whether a structured funder name looks like a commercial entity.
+
+    The single predicate behind both funder sources — CrossRef
+    ``funder[].name`` and PubMed ``<Grant><Agency>`` — so there is one
+    definition to test and one to measure against the labelled corpus.
+
+    Deliberately **not** applied to COI prose; see
+    :data:`_INDUSTRY_COI_KEYWORDS` for why that is a different corpus with
+    different failure modes.
+
+    Args:
+        name: The funder or grant-agency name as the source reported it.
+
+    Returns:
+        True if a stem matches anywhere in the name, or one of the whole-word
+        terms matches as a word.
+    """
+    if any(stem in name.lower() for stem in _INDUSTRY_STEMS):
+        return True
+    return _INDUSTRY_WORD_RE.search(name) is not None
+
 
 # ---- Industry disclosure phrases ----
 # Matched against the paper's COI/disclosure statement in the full text. Kept
-# separate from _INDUSTRY_KEYWORDS: the generic org suffixes above ("inc.",
-# "ltd.", …) match far too freely in running text, while these phrases never
+# separate from the funder keywords above: the generic org suffixes ("inc",
+# "ltd", …) match far too freely in running text, while these phrases never
 # occur in a funder name.
 _INDUSTRY_COI_KEYWORDS = [
     "employee of",
@@ -385,7 +465,7 @@ def _merge_pubmed_signals(
             score += SCORE_FUNDER_INFO
             funder_info_scored = True
         for agency in pubmed.funders:
-            if any(kw in agency.lower() for kw in _INDUSTRY_KEYWORDS):
+            if _is_industry_funder(agency):
                 industry_funding = True
                 # A grant agency is structured metadata, the same class of
                 # evidence as a CrossRef funder record — not the weaker
@@ -775,8 +855,7 @@ class TransparencyAnalyzer:
                     score += SCORE_FUNDER_INFO
                     funder_info_scored = True
                 for funder in funders:
-                    name = (funder.get("name") or "").lower()
-                    if any(kw in name for kw in _INDUSTRY_KEYWORDS):
+                    if _is_industry_funder(funder.get("name") or ""):
                         industry_funding = True
                         industry_confidence = max(industry_confidence, DEFAULT_INDUSTRY_CONFIDENCE)
                         indicators.append(f"Industry funder: {funder.get('name')}")
