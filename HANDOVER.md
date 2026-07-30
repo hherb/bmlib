@@ -1,9 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-07-29. `main` is at v0.5.1 plus a large `[Unreleased]`
+_Last updated: 2026-07-30. `main` is at v0.5.1 plus a large `[Unreleased]`
 section (PostgreSQL `publications`, PDF→text wiring, body-less JATS fix,
 BaseAgent metrics/embeddings, consolidated JSON extraction, transparency
-PubMed step). 962 tests passing + 32 skipped._
+PubMed step, the `parse_json` contract). 996 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -53,8 +53,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
      plus a new `salvage_json_fields()` for field-level recovery. This is
      **Phase 1 item 1** of the bmlibrarian port — the keystone; the agent
      family is now unblocked.
-  6. **Transparency: a real PubMed step + `unknown_reason`** (PR pending,
-     closes #18 and #21) — `pubmed_api_key` was accepted and never read; the
+  6. **Transparency: a real PubMed step + `unknown_reason`** (PR #35, closed
+     #18 and #21) — `pubmed_api_key` was accepted and never read; the
      analyzer now spends one E-utilities `efetch` per analysis (skipped
      without a PMID, which it will take from the Europe PMC record it already
      fetched) for `<CoiStatement>`, `<DataBankList>` and `<GrantList>` —
@@ -64,11 +64,32 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
      *behaviour* did**: one more request per analysis, and scores on
      closed-access papers can rise, so stored scores are not comparable
      across this change.
+  7. **`parse_json`'s return contract, and the fragment it hid** (PR pending,
+     closes #33) — `extract_json()` was reducing an unfenced array of objects
+     to its first element, dropping every sibling with no error, on a path both
+     the Anthropic and OpenAI-compatible providers run for every `json_mode`
+     response. Its acceptance policy is now `_first_acceptable()`, run twice —
+     whole spans first, the nested-object stage only as a last resort — with a
+     *ranked* non-dict fallback so an incidental `[]` cannot mask the payload.
+     `parse_json()`/`chat_json()` are annotated `dict | list` with an opt-in
+     `require_dict` that retries the wrong shape (and fails fast at temperature
+     0, like truncation); bmlib's two quality tiers pass it. Review of the PR
+     turned up the same defect one layer down and it is fixed in the same
+     change: a **truncated** array of objects never balances, so `parse_json()`
+     was taking the first object out of it and skipping the repair stage that
+     recovers the whole array — the fragment now waits until repair has failed
+     (`extract_json(allow_fragments=False)`). `dict | list` is also *enforced*
+     rather than only annotated: a bare scalar response raises.
+     **Behaviour changes, on two response shapes**: an unfenced array of
+     objects in prose now arrives whole (`extract_json()`, so both providers
+     too), and a truncated array of objects arrives whole through
+     `parse_json()`. A fenced array already did, and a bare array never reached
+     `extract_json()`.
   **Deciding whether this is 0.6.0 is open work** — see "Next up" below. The
   `publications` and `fulltext` changes are additive, so a minor bump fits.
   Note `~/src/bmlibrarian` pins `bmlib[ollama]>=0.5.1,<0.6.0`, so a 0.6.0
   release needs that pin lifted downstream.
-- **962 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **996 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -84,22 +105,6 @@ Nothing is blocked on anything else.
 
 ### Open GitHub issues
 
-- **#33 — `BaseAgent.parse_json` is annotated `-> dict` but can return a list**
-  when a response contains only a top-level array. **Decided and designed; not
-  yet implemented** — `docs/superpowers/specs/2026-07-29-json-parse-contract-design.md`
-  on `fix/json-parse-contract` is approved and ready to build from. The
-  investigation found that the same code path silently drops data: an unfenced
-  `[{"a": 1}, {"b": 2}]` in prose returns `{"a": 1}`, because `extract_json()`'s
-  dict preference is satisfied by the nested-object stage. That is why the
-  runtime-guard option was rejected — raising would hide the loss rather than
-  fix it, and inconsistently, since a *bare* array parses before the extractor
-  is ever reached. The design widens the annotation, adds an opt-in
-  `require_dict` that retries inside `chat_json()` (except at temperature 0,
-  where it fails fast like the truncation path), and makes the nested stage a
-  last resort behind a ranked fallback. Note it inverts two existing tests in
-  `test_json_extraction.py` — `test_prefers_the_object_nested_in_a_single_element_array`
-  and `test_unfenced_nested_object_still_wins` — deliberately, and the design
-  says so.
 - **#36 — industry-funder keyword matching is punctuation-dependent.**
   `_INDUSTRY_KEYWORDS` tests substrings, so `"inc."` carries its dot to avoid
   matching `"Lincoln"` — and consequently misses an NLM-normalised
@@ -113,7 +118,13 @@ Nothing is blocked on anything else.
   A mutable `_Analysis` dataclass mutated in place would remove the arity
   entirely. Worth doing before the next signal source lands in `analyze()`.
 
-#18 and #21 close with the pending transparency PR.
+#36 is designed and approved —
+`docs/superpowers/specs/2026-07-29-industry-funder-matching-design.md`. It needs
+a live sampling run (`scripts/sample_funder_names.py`, to be written) against
+CrossRef and PubMed to build the labelled corpus the ship rule is measured
+against, so it cannot be done offline. #33 closes with the pending
+`parse_json` contract PR; its design doc stays as the record of why raising on
+a non-dict was rejected.
 
 ### Worth doing, not yet an issue
 
@@ -123,10 +134,12 @@ Nothing is blocked on anything else.
   out of the PubMed step to keep the data-availability scoring path out of
   that change; `_parse_pubmed_signals()` already walks the databanks, so this
   is a small follow-up rather than a rewrite.
-- **`.claude/worktrees/` holds three stale worktrees** (`next-session-5b78ba`,
-  `next-session-180be7`, `review-19-bde68f`) from earlier sessions. They shadow
-  every repo-wide `grep`. Worth pruning with `git worktree remove` /
-  `git worktree prune` if they are genuinely dead.
+- **Repo housekeeping is done (2026-07-30).** The three stale worktrees under
+  `.claude/worktrees/` — which shadowed every repo-wide `grep` — are removed,
+  and 27 merged local branches are deleted. Only `main` and any in-flight
+  branch remain. `git branch -r` still lists several merged branches on
+  `origin`; those are untouched, since deleting shared refs is a separate
+  decision.
 
 ### bmlibrarian → bmlib porting (paused, Phase 1 next)
 
@@ -211,16 +224,56 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   regression test naming it.
 - **`extract_json()` lets a fenced candidate win on parse alone, ahead of its
   dict preference.** A fence is the model's own delimitation of its answer, so
-  reducing a fenced `[{...}, {...}]` to the first object — which dict
-  preference alone does, via the nested-object stage — silently drops every
-  sibling on a path both providers run for every `json_mode` response. Pinned
-  by `test_fenced_array_of_objects_is_returned_whole`.
+  it must not lose to an object found elsewhere in the response — a fenced
+  `[1, 2]` alongside a later top-level `{"a": 1}` returns the fenced array.
+  Since the whole-span policy landed, the fence rule is no longer the *only*
+  thing keeping a fenced array of objects intact (the ranked fallback would
+  also return it), but it is still what makes a fence outrank a competing
+  top-level dict. Pinned by `test_fenced_array_of_objects_is_returned_whole`.
+- **`extract_json()` runs its acceptance policy twice, and its non-dict
+  fallback is ranked.** Collapsing the two walks back into one restores the
+  silent truncation #33 fixed: dict preference is satisfied by the object
+  `iter_json_spans()` digs out of an array, so `'[{"a": 1}, {"b": 2}]'` in
+  prose returns `{"a": 1}` and the sibling vanishes. Reducing the ranked
+  fallback to first-parseable is the *other* way to restore it, and a worse
+  one: the first walk would accept an incidental `[]`, the second walk would
+  never run, and the caller would get unrelated data that parses cleanly and
+  passes every downstream check. `extract_and_repair_json()` deliberately has
+  no equivalent second walk (next entry). Pinned by
+  `TestExtractJsonPrefersWholeSpans`.
 - **`extract_and_repair_json()` passes `nested_objects=False`.** It *repairs*
   candidates, and repairing an object nested inside a span it already rejected
   discards the structure around it — `'[{"a": 1}, invalid junk]'` would return
   `{"a": 1}` where it should raise. `extract_json()` keeps the nested stage,
-  because it only ever validates. Pinned by
+  but as a **last resort only**: the asymmetry between the two is that
+  validating a fragment reports what is there, while repairing one fabricates a
+  structure the model never emitted — not that validation has a general licence
+  to prefer fragments. Pinned by
   `test_raises_rather_than_returning_a_fragment_of_a_broken_array`.
+- **`BaseAgent.parse_json()` asks `extract_json()` for whole spans first and
+  re-asks with fragments only after repair has failed.** Collapsing the two
+  calls back into one `extract_json(text)` at stage 2 looks like an obvious
+  simplification and reintroduces a silent data loss: a *truncated* array of
+  objects never balances, so the only span extraction can offer is the first
+  object, and taking it drops the sibling and skips the repair stage's
+  possibly-truncated WARNING. Repair closes the bracket and recovers the whole
+  array, which is why it must go first. The fragment is still reachable —
+  `'[{"a": 1}, invalid junk]'` neither parses nor repairs — just last. Pinned
+  by `test_a_truncated_array_of_objects_is_repaired_whole` and
+  `test_a_fragment_is_still_the_last_resort`.
+- **`parse_json()` enforces `dict | list` rather than only annotating it.** A
+  bare scalar — `42`, `"done"`, `true`, `null` — raises. Letting it through
+  would make the annotation a lie again (which is what #33 was about) and only
+  defer the failure to the caller's first subscript; inside `chat_json()` the
+  raise becomes an ordinary retry, which is the right response to a model that
+  answered a `json_mode` request with a number. Pinned by
+  `test_a_bare_scalar_is_not_a_structured_answer`.
+- **`require_dict` has a third `bool` overload on both methods.** It looks
+  redundant beside the two `Literal` ones and is not: mypy does not expand
+  `bool` into `Literal[True] | Literal[False]` to match them, so a caller
+  writing `require_dict=self.strict` gets "no overload variant matches" with no
+  way to satisfy it. Verified with mypy 1.14 — CI runs ruff only, so nothing in
+  the build will catch its removal.
 - **`salvage_json_fields()` bounds *both* of its passes.** Every failed
   `raw_decode()` scans forward to the end of the document, so an unbounded
   pass is quadratic in the response length, and a repetition-looping model —

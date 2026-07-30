@@ -130,6 +130,10 @@ class StudyClassifier(BaseAgent):
                     self.system_msg(CLASSIFIER_SYSTEM_PROMPT),
                     self.user_msg(prompt),
                 ],
+                # _parse_data() calls .get(): a top-level array would raise
+                # AttributeError into the handler below and degrade the paper
+                # to UNCLASSIFIED without ever retrying.
+                require_dict=True,
             )
             return self._parse_data(data)
         except Exception as e:

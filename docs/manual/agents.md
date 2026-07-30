@@ -15,7 +15,7 @@ The package is two files, `bmlib/agents/base.py` and `bmlib/agents/metrics.py`, 
 | `test_connection()` | method | Provider reachability check. See [Connectivity](#connectivity). |
 | `system_msg()` / `user_msg()` / `assistant_msg()` | static methods | `LLMMessage` constructors. |
 | `render_template()` | method | Prompt rendering via the injected `TemplateEngine`. |
-| `parse_json()` | static method | Three-stage JSON extraction and repair. |
+| `parse_json()` | static method | Four-stage JSON extraction and repair, returning `dict \| list`. Pass `require_dict=True` to demand an object. |
 
 ## Imports
 
@@ -144,8 +144,9 @@ def chat_json(
     max_tokens: int | None = None,
     max_retries: int = 3,
     retry_context: str = "",
+    require_dict: bool = False,
     **kwargs: object,
-) -> dict
+) -> dict | list
 ```
 
 Send a chat request in JSON mode, parse the result, and retry on empty, unparseable, or truncated responses. This is the method agent subclasses should call — it combines [`chat()`](#baseagentchat) with [`parse_json()`](#baseagentparse_json) and exponential backoff.
@@ -159,11 +160,12 @@ Send a chat request in JSON mode, parse the result, and retry on empty, unparsea
 | `max_tokens` | `int \| None` | `None` | Override the agent's default max tokens. |
 | `max_retries` | `int` | `3` | Total attempts, not extra attempts after the first. |
 | `retry_context` | `str` | `""` | Label naming the task being attempted, folded into every retry, error, and failure message — `retry_context="quality classification"` turns `Retry 2/3 after 2s` into `Retry 2/3 for quality classification after 2s`. Also appears in the truncation `ValueError` and the final exhaustion message. Empty by default, in which case every message reads exactly as it did before this parameter existed. |
+| `require_dict` | `bool` | `False` | Demand a JSON object. A response that parses to anything else is retried like any other bad response — see [Shape handling](#shape-handling). |
 | `**kwargs` | `object` | | Forwarded to `chat()` and on to the provider. |
 
-**Returns:** the parsed `dict`.
+**Returns:** the parsed `dict`, or the parsed `list` when `require_dict` is unset and the model answered with a top-level array. `@overload` on `Literal[True]` narrows the return to `dict` for `require_dict=True`, so strict callers need no `isinstance` check. A third overload takes a plain `bool` and returns the union, so `require_dict=self.strict` — a runtime flag, which matches neither literal — still type-checks.
 
-**Raises:** `ValueError` — immediately on truncation at temperature 0, or after all attempts are exhausted.
+**Raises:** `ValueError` — immediately on truncation at temperature 0, immediately on a wrong shape at temperature 0 under `require_dict`, or after all attempts are exhausted.
 
 `json_mode=True` is always set; it is not a parameter.
 
@@ -199,12 +201,13 @@ The truncation error message names the budget that was actually in force (`max_t
 response truncated at max_tokens=256 (stop_reason='max_tokens') — raise max_tokens or request less output
 ```
 
-**The other two failure modes** are treated as ordinary retryable errors:
+**The other failure modes** are treated as ordinary retryable errors:
 
 | Failure | `last_error` | Log level |
 |---------|--------------|-----------|
 | Empty content after `.strip()` | `"empty response from model"` | WARNING — treated as a transport/model error. |
-| `parse_json()` raises `ValueError` | `"unparseable response"` | ERROR, **with the full model output** for diagnosis. |
+| `parse_json()` raises `ValueError` | `"unparseable response"` | ERROR, **with the full model output** for diagnosis. A bare scalar answer (`42`) lands here — it is outside `parse_json()`'s `dict \| list` contract. |
+| `require_dict=True` and the result is not a dict | `"expected a JSON object, got list"` | ERROR. A separate diagnosis from unparseability: the response *was* valid JSON, just the wrong shape. At temperature 0 this raises immediately instead, for the same reason truncation does. |
 
 **Example — reacting to the two kinds of failure:**
 
@@ -229,6 +232,29 @@ except ValueError as exc:
 
 ---
 
+#### Shape handling
+
+`chat_json()` returns whatever the response parsed to, so a model that answers with a top-level array yields that array **whole**. Callers that need an object pass `require_dict=True` rather than assuming one:
+
+```python
+data = agent.chat_json(
+    [agent.system_msg("Reply with a JSON object."), agent.user_msg(prompt)],
+    require_dict=True,
+)
+data["score"]  # safe — a list would have been retried, then raised
+```
+
+A wrong shape is not a parse failure, and the two are reported separately: `chat_json()` runs its own `isinstance` check instead of catching a `ValueError` out of `parse_json()`, because `"unparseable response"` and `"expected a JSON object, got list"` are different diagnoses and message-sniffing to separate them would be fragile. The check covers both return paths — the normal one and the truncation path's `_try_parse()` shortcut, which must not hand back a list either.
+
+| Effective temperature | Behaviour on a wrong shape |
+|---|---|
+| `> 0` | Logged at ERROR, then the normal backoff retry — a resample may answer with the object that was asked for. The final exhaustion error names the shape. |
+| exactly `0.0` | Raises `ValueError` **immediately — no retry**. Greedy sampling returns the same array from the same messages, exactly as it reproduces a truncation. |
+
+This mirrors the truncation policy deliberately: two adjacent branches in one method must not sit on opposite rules for the same reason. It matters for a caller pinning temperature 0 for reproducibility — which is exactly the caller most likely to want `require_dict`.
+
+---
+
 ### `BaseAgent.render_template`
 
 ```python
@@ -249,19 +275,33 @@ No template engine configured — cannot render 'scoring.txt'
 
 ```python
 @staticmethod
-def parse_json(text: str) -> dict
+def parse_json(text: str, *, require_dict: bool = False) -> dict | list
 ```
 
-Extract and parse JSON from LLM response text, escalating through three stages and stopping at the first that succeeds:
+Extract and parse JSON from LLM response text, escalating through four stages and stopping at the first that succeeds:
 
 1. **Direct parse** — `json.loads(text)`.
-2. **Extraction** — [`extract_json()`](llm.md) from `bmlib.llm.utils`. Walks the candidate spans yielded by `iter_json_spans()` — fenced code blocks first, then balanced `{...}`/`[...]` spans — and returns the first candidate that parses **to a dict**, falling back to the first that parses at all if no candidate is an object. A greedy first-brace-to-last-brace match would swallow prose between two separate objects; walking balanced spans does not. If nothing parses, the extractor returns the input unchanged and this stage is skipped rather than re-parsed.
+2. **Whole-span extraction** — [`extract_json(text, allow_fragments=False)`](llm.md#bmlibllmutilsextract_json) from `bmlib.llm.utils`. Walks the candidate spans yielded by `iter_json_spans()` — fenced code blocks first, then balanced `{...}`/`[...]` spans — and returns the first candidate that parses **to a dict**, falling back to the best span that parses at all if no candidate is an object. A greedy first-brace-to-last-brace match would swallow prose between two separate objects; walking balanced spans does not. If nothing whole parses, the extractor returns the input unchanged and this stage is skipped rather than re-parsed.
 3. **Repair** — `extract_and_repair_json()` from `bmlib.llm.json_repair`. Walks the same candidate spans (with nested-object candidates suppressed, so it can never return an object nested inside a candidate it has already rejected) and returns the first that either validates as-is or repairs: single-quote string delimiters, trailing commas, missing commas, unquoted keys, unescaped newlines/tabs/control characters inside strings, and truncated output (missing closing brackets are appended). **A repaired candidate logs a WARNING** naming the response as possibly truncated — repair closes brackets, so a truncated response can parse into a valid but incomplete object.
+4. **Nested fragment** — `extract_json(text)` with fragments allowed, for a span that neither parsed nor repaired. Only `'[{"a": 1}, invalid junk]'`-shaped input reaches here: nothing whole is recoverable, so the object dug out of the inside beats reporting the response unparseable.
 
-**Raises:** `ValueError` if all three stages fail. The message embeds the first 200 characters of the input:
+**Stage order matters, and 4 comes after 3 deliberately.** A truncated array of objects — `'[{"a": 1}, {"b": 2}'` — never balances, so the only span extraction can offer is the first object. Taking it at stage 2 would drop the sibling *and* skip stage 3's truncation warning; letting repair go first closes the bracket and recovers the whole array. That is the same silent loss the whole-span preference exists to prevent, one level up.
+
+**Returns:** whatever the response parsed to — `dict | list`, because both really happen. A model that answers with a top-level array yields that array **whole**, including when the array sits unfenced in prose. Callers that need an object pass `require_dict=True`, which raises rather than returning a non-object; `@overload` on `Literal[True]` narrows the return to `dict` for them, and a third `bool` overload keeps a caller passing a runtime flag (`require_dict=self.strict`) type-checkable.
+
+**`dict | list` is the whole contract, and it is enforced.** A response that parses to a bare scalar — `42`, `"done"`, `true`, `null` — raises rather than being handed back past an annotation that excludes it. A scalar is not a structured answer to a `json_mode` request, and returning one only defers the failure to the caller's first subscript. Inside `chat_json()` it surfaces as an ordinary unparseable response and is retried.
+
+**Raises:** `ValueError` if all four stages fail. The message embeds the first 200 characters of the input:
 
 ```
 Could not parse JSON from LLM response: '<first 200 chars>'
+```
+
+Also `ValueError` when the result is outside the contract, naming the shape it got:
+
+```
+expected a JSON object or array, got int      # any scalar result
+expected a JSON object, got list              # require_dict=True only
 ```
 
 `RecursionError` is caught at every stage alongside the decode errors. `json.loads()` descends recursively, so text nested past the interpreter's stack limit — `'{"j": ' * 20000`, the shape a repetition-looping model emits — blows the stack rather than failing to decode. Such a response is unparseable, and the contract is to report that as `ValueError`.
@@ -275,13 +315,25 @@ BaseAgent.parse_json('```json\n{"score": 8}\n```')      # stage 2
 BaseAgent.parse_json('The result is {"score": 8}.')     # stage 2
 BaseAgent.parse_json("{'score': 8,}")                   # stage 3 — quotes + trailing comma
 BaseAgent.parse_json('{"score": 8, "notes": "cut off')  # stage 3 — truncation repair
+BaseAgent.parse_json('[{"a": 1}, invalid junk]')        # stage 4 -> {"a": 1}
+
+# An array answer comes back whole, in every shape:
+BaseAgent.parse_json('[{"pmid": "1"}, {"pmid": "2"}]')           # -> list of 2
+BaseAgent.parse_json('Records: [{"pmid": "1"}, {"pmid": "2"}]')  # -> list of 2
+BaseAgent.parse_json('[{"pmid": "1"}, {"pmid": "2"}')            # -> list of 2, repaired
+
+# Demand an object instead:
+BaseAgent.parse_json('[{"pmid": "1"}]', require_dict=True)       # ValueError
+
+# A scalar is outside the contract either way:
+BaseAgent.parse_json('42')                                       # ValueError
 ```
 
 > **Stage 3 can rescue a truncated response.** That is why [`chat_json()`](#truncation-handling) attempts a parse *before* declaring a truncation stop reason fatal — a response that hit the ceiling mid-string may still yield a usable object. Repaired truncation means the tail of the JSON was invented by bracket-closing, so treat trailing fields as unreliable.
 
-> **`salvage_json_fields()` is an opt-in last resort, not a fourth stage.** `parse_json()` never calls it automatically — silently returning partial data would turn a loud failure into a quiet wrong answer. When only a few known fields matter, catch the `ValueError` from `parse_json()` and call `salvage_json_fields(text, keys)` yourself; see [llm.md](llm.md#salvage_json_fields).
+> **`salvage_json_fields()` is an opt-in last resort, not a fifth stage.** `parse_json()` never calls it automatically — silently returning partial data would turn a loud failure into a quiet wrong answer. When only a few known fields matter, catch the `ValueError` from `parse_json()` and call `salvage_json_fields(text, keys)` yourself; see [llm.md](llm.md#salvage_json_fields).
 
-Internally, `chat_json()` uses the private classmethod `_try_parse(text)`, which is `parse_json()` returning `None` instead of raising (and `None` for empty input).
+Internally, `chat_json()` uses the private classmethod `_try_parse(text)`, which is `parse_json()` returning `None` instead of raising (and `None` for empty input). The shape check lives in `chat_json()` rather than in `_try_parse()`, so the truncation shortcut still reports "unparseable" and "wrong shape" as the distinct outcomes they are.
 
 ---
 
@@ -528,9 +580,13 @@ The two `BaseAgent` subclasses shipped with bmlib both follow this pattern — s
 
 | Agent | Method | Call settings | On failure |
 |-------|--------|---------------|------------|
-| `StudyClassifier` (Tier 2) | `classify(title, abstract)` | constructor defaults `temperature=0.1, max_tokens=1024` | Logs a warning, returns `QualityAssessment.unclassified()` |
-| `QualityAgent` (Tier 3) | `assess(title, abstract)` | constructor defaults `temperature=0.2, max_tokens=1024` | Logs a warning, returns `QualityAssessment.unclassified()` |
+| `StudyClassifier` (Tier 2) | `classify(title, abstract)` | constructor defaults `temperature=0.1, max_tokens=1024`; `require_dict=True` | Logs a warning, returns `QualityAssessment.unclassified()` |
+| `QualityAgent` (Tier 3) | `assess(title, abstract)` | constructor defaults `temperature=0.2, max_tokens=1024`; `require_dict=True` | Logs a warning, returns `QualityAssessment.unclassified()` |
 
-Neither passes sampling arguments to `chat_json()`, so the constructor's values apply — a call-site argument would silently override whatever the constructor was given, which is what once made the classifier's budget impossible to raise.
+Neither passes *sampling* arguments to `chat_json()`, so the constructor's values apply — a call-site argument would silently override whatever the constructor was given, which is what once made the classifier's budget impossible to raise.
 
-Both run at temperature `> 0`, so a truncated response consumes the full retry budget before failing. Neither propagates the `ValueError`: a failed assessment degrades one document rather than aborting a batch.
+Both pass `require_dict=True`, because both hand the result to a `_parse_data()` that calls `.get()`. Without it a top-level array raised `AttributeError` into the broad `except Exception` below and degraded the paper to `UNCLASSIFIED` — no retry, and nothing in the log naming the shape.
+
+Both run at temperature `> 0`, so neither a truncated response nor a wrong shape fails fast: each consumes the full retry budget, buying up to three attempts at a usable answer instead of one silent failure. Neither propagates the `ValueError`: a failed assessment degrades one document rather than aborting a batch.
+
+> **What that costs in a batch.** `QualityManager.assess_batch()` is a serial loop, and the retry backoff is a blocking `time.sleep`. A model that answers *every* request with the wrong shape now spends 3 calls plus ~3s per paper where it previously spent 1 call and no sleep — a real difference across a few thousand records. The trade is deliberate: the alternative is one silent `UNCLASSIFIED` per paper with nothing in the log to explain it. If the log fills with `expected a JSON object`, fix the prompt or the model rather than absorbing the retries.

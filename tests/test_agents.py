@@ -96,6 +96,60 @@ class TestParseJson:
         assert asst.role == "assistant"
 
 
+class TestParseJsonShape:
+    """The return contract: ``dict | list``, with opt-in strictness."""
+
+    def test_a_bare_array_response_returns_the_list(self):
+        assert BaseAgent.parse_json('[{"a": 1}, {"b": 2}]') == [{"a": 1}, {"b": 2}]
+
+    def test_a_fenced_array_response_returns_the_list(self):
+        text = '```json\n[{"pmid": "111"}, {"pmid": "222"}]\n```'
+        assert BaseAgent.parse_json(text) == [{"pmid": "111"}, {"pmid": "222"}]
+
+    def test_an_array_in_prose_returns_the_whole_list(self):
+        # The fragment defect reached parse_json() through extract_json():
+        # this used to return {"a": 1} and drop the sibling.
+        text = 'Records: [{"a": 1}, {"b": 2}] done.'
+        assert BaseAgent.parse_json(text) == [{"a": 1}, {"b": 2}]
+
+    def test_require_dict_raises_and_names_the_shape(self):
+        with pytest.raises(ValueError, match="list"):
+            BaseAgent.parse_json('[{"a": 1}]', require_dict=True)
+
+    def test_require_dict_accepts_a_dict(self):
+        assert BaseAgent.parse_json('{"a": 1}', require_dict=True) == {"a": 1}
+
+    def test_a_truncated_array_of_objects_is_repaired_whole(self, caplog):
+        # The array never balances, so extraction can only offer the first
+        # object.  Taking it would drop the sibling *and* skip the truncation
+        # warning, which is the same silent loss the whole-span preference
+        # exists to prevent — so the fragment waits until repair has had its
+        # turn, and repair closes the bracket.
+        with caplog.at_level("WARNING", logger="bmlib.agents.base"):
+            result = BaseAgent.parse_json('[{"a": 1}, {"b": 2}')
+
+        assert result == [{"a": 1}, {"b": 2}]
+        assert "truncated" in caplog.text.lower()
+
+    def test_a_fragment_is_still_the_last_resort(self):
+        # Nothing whole parses and nothing repairs — extract_and_repair_json()
+        # refuses to repair a fragment of a broken array — so the nested
+        # object is better than reporting the response unparseable.
+        assert BaseAgent.parse_json('[{"a": 1}, invalid junk]') == {"a": 1}
+
+    @pytest.mark.parametrize("text", ["42", '"done"', "true", "null"])
+    def test_a_bare_scalar_is_not_a_structured_answer(self, text):
+        # dict | list is the whole contract, so it is enforced rather than
+        # merely annotated: a scalar handed back would only defer the failure
+        # to the caller's first subscript.
+        with pytest.raises(ValueError, match="expected a JSON object or array"):
+            BaseAgent.parse_json(text)
+
+    def test_the_scalar_error_names_the_type_it_got(self):
+        with pytest.raises(ValueError, match="got int"):
+            BaseAgent.parse_json("42")
+
+
 def _make_response(content: str) -> LLMResponse:
     return LLMResponse(content=content, model="test", input_tokens=0, output_tokens=0)
 
@@ -320,6 +374,146 @@ class TestChatJson:
 
         result = agent.chat_json([agent.user_msg("test")])
         assert result == {"ok": True}
+        assert agent.llm.chat.call_count == 2
+
+
+class TestChatJsonRequireDict:
+    """``require_dict`` turns a wrong-shaped answer into a retry, then an error.
+
+    Without it a list reached the two bmlib callers' ``_parse_data()`` and died
+    on ``.get()`` with an ``AttributeError``, swallowed by a broad
+    ``except Exception`` and degraded to ``unclassified()`` — no retry, no
+    diagnosis.
+    """
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_default_returns_a_list_unchanged(self, mock_sleep):
+        # Non-breaking: the widened contract is the default.
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response('[{"a": 1}, {"b": 2}]')
+
+        assert agent.chat_json([agent.user_msg("test")]) == [{"a": 1}, {"b": 2}]
+        assert agent.llm.chat.call_count == 1
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_retries_a_list_then_accepts_the_dict(self, mock_sleep):
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [
+            _make_response('[{"a": 1}]'),
+            _make_response('{"study_design": "rct"}'),
+        ]
+
+        result = agent.chat_json([agent.user_msg("test")], require_dict=True)
+
+        assert result == {"study_design": "rct"}
+        assert agent.llm.chat.call_count == 2
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_persistent_list_names_the_shape_not_unparseability(self, mock_sleep):
+        # "expected a JSON object, got list" and "unparseable response" are
+        # different diagnoses; chat_json does its own isinstance check rather
+        # than message-sniffing parse_json's ValueError to keep them apart.
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response('[{"a": 1}]')
+
+        with pytest.raises(ValueError, match="expected a JSON object, got list"):
+            agent.chat_json([agent.user_msg("test")], require_dict=True, temperature=0.7)
+
+        assert agent.llm.chat.call_count == 3
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_list_at_temperature_zero_fails_fast(self, mock_sleep):
+        # Mirrors the truncation path: greedy sampling returns the same array
+        # from the same messages, so the retry is provably futile.  Assert the
+        # call count, not just the exception — retrying still ends in a
+        # ValueError naming the shape, so an exception-only assertion cannot
+        # tell the two behaviours apart.
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response('[{"a": 1}]')
+
+        with pytest.raises(ValueError, match="expected a JSON object, got list"):
+            agent.chat_json([agent.user_msg("test")], require_dict=True, temperature=0.0)
+
+        assert agent.llm.chat.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_rejects_a_list_arriving_via_the_truncation_path(self, mock_sleep):
+        # A response that hit the ceiling but happens to hold complete JSON is
+        # returned as-is by _try_parse — that shortcut must respect the shape
+        # requirement too.
+        agent = _make_agent()
+        agent.llm.chat.return_value = LLMResponse(
+            content='[{"a": 1}]',
+            model="test",
+            stop_reason="max_tokens",
+        )
+
+        with pytest.raises(ValueError, match="expected a JSON object, got list"):
+            agent.chat_json([agent.user_msg("test")], require_dict=True, temperature=0.0)
+
+        assert agent.llm.chat.call_count == 1
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_retries_a_list_from_the_truncation_path_above_temperature_zero(self, mock_sleep):
+        # The other half of the truncation shortcut: above temperature 0 the
+        # wrong shape is retryable there too, exactly as it is on the normal
+        # return path.  Without this the `continue` in that branch is dead as
+        # far as the suite is concerned.
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [
+            LLMResponse(content='[{"a": 1}]', model="test", stop_reason="max_tokens"),
+            _make_response('{"study_design": "rct"}'),
+        ]
+
+        result = agent.chat_json([agent.user_msg("t")], require_dict=True, temperature=0.7)
+
+        assert result == {"study_design": "rct"}
+        assert agent.llm.chat.call_count == 2
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_the_shape_failure_names_the_retry_context(self, mock_sleep):
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response('[{"a": 1}]')
+
+        with pytest.raises(ValueError, match="cochrane assessment"):
+            agent.chat_json(
+                [agent.user_msg("t")],
+                require_dict=True,
+                temperature=0.0,
+                retry_context="cochrane assessment",
+            )
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_the_shape_failure_log_line_names_the_context_once(self, mock_sleep, caplog):
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response('[{"a": 1}]')
+
+        with caplog.at_level("ERROR", logger="bmlib.agents.base"):
+            with pytest.raises(ValueError):
+                agent.chat_json(
+                    [agent.user_msg("t")],
+                    require_dict=True,
+                    temperature=0.0,
+                    retry_context="quality classification",
+                )
+
+        # The attempt marker already carries the context; the reason must not
+        # repeat it.
+        assert caplog.text.count("quality classification") == 1
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_scalar_response_is_retried_as_unparseable(self, mock_sleep):
+        # A bare scalar is outside parse_json's dict | list contract, so it
+        # surfaces as a ValueError and chat_json retries it like any other
+        # unparseable response rather than handing back 42.
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [
+            _make_response("42"),
+            _make_response('{"study_design": "rct"}'),
+        ]
+
+        assert agent.chat_json([agent.user_msg("t")]) == {"study_design": "rct"}
         assert agent.llm.chat.call_count == 2
 
 
