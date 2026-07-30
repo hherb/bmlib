@@ -299,6 +299,48 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **Industry-funder matching was punctuation-dependent, and measurably
+  imprecise** (closes #36). `_INDUSTRY_KEYWORDS` tested substrings, so `"inc."`
+  had to carry its trailing dot as a crude word-boundary substitute — and
+  therefore missed an NLM-normalised `"Pfizer Inc"`. The list is now split into
+  substring stems and whole-word terms behind one `_is_industry_funder()`
+  predicate, used by both structured funder sources.
+
+  The recalibration was **measured** rather than assumed, because
+  `industry_funding_detected` feeds a HIGH-risk rule and HIGH applies
+  `tier_downgrade_amount`. Against 833 real names sampled from CrossRef
+  `funder[].name` and PubMed `<Grant><Agency>` (`scripts/sample_funder_names.py`,
+  a live runner outside the pytest suite), 417 of them hand-labelled and
+  committed as `tests/data/funder_names.json`:
+
+  | Matcher | Precision | Recall |
+  |---|---|---|
+  | Substring (before) | 0.400 | 0.176 |
+  | Split (now) | 0.917 | 0.324 |
+
+  The corpus overturned two members that looked obviously right:
+  - `"pharma"` scored 3 true positives against 5 false ones, reaching
+    `"Faculty of Pharmacy"`, `"Pharmacogenetics …"` and `"Clinical Pharmacy"`.
+    Narrowed to `"pharmaceutic"`, which keeps every true positive; the bare
+    word is retained separately for `"Novartis Pharma AG"`.
+  - `"biotech"` scored 0 true positives against 4 false ones — an Indian
+    ministry department and a UK research council. *Biotechnology* names a
+    field, not a company type. Only the bare word survives.
+
+  Added on measured evidence: `"llc"`, `"incorporated"`, `"limited"` (2/1/1 true
+  positives, no false ones; `\binc\b` cannot reach `"Incorporated"`). Rejected
+  on it: `"co"` (collides with the English prefix) and `"corporation"` (US
+  non-profits use it). `"ab"` and `"labs"` passed the count but were excluded
+  because they collide with province codes and national laboratories, which the
+  corpus happens not to contain — costing two true positives, named in the
+  source comment.
+
+  **Detection moves in both directions**, so stored `industry_funding_detected`
+  values and the scores derived from them are not comparable across this change.
+  Papers funded by `"… Inc"`, `"… LLC"`, `"… Limited"` or `"… Incorporated"`
+  start being flagged; papers whose only match was a pharmacy department, a
+  biotechnology ministry or a research council stop being flagged. The second
+  group is the larger one, and every one of them was a false positive.
 - **`extract_json()` silently dropped every sibling of an unfenced array of
   objects** (part of #33). `iter_json_spans()` offers the array at stage 4 and
   the object nested inside it at stage 5, and the dict preference accepted the
@@ -433,6 +475,14 @@ All notable changes to bmlib are documented here. The format is based on
   limitation also appeared twice, in slightly different words; the two are
   merged.
 
+### Added — development tooling
+
+- `scripts/sample_funder_names.py` — samples funder names live from CrossRef and
+  PubMed to build the labelled corpus behind `_is_industry_funder()`. A live
+  runner outside the pytest suite, like `scripts/smoke_test_tool_calling.py`;
+  the suite consumes only its committed, hand-labelled output, so tests stay
+  offline.
+
 ### Compatibility
 
 No public signature changed and nothing was removed. SQLite behaviour is
@@ -503,6 +553,12 @@ even though no signature did:
 - `coi_disclosed` can now be `True` where it was `None`, and `False` is
   correspondingly rarer: it now means neither the full text nor PubMed had a
   statement.
+- **`industry_funding_detected` moves in both directions** with the #36 matcher
+  recalibration — see **Fixed** for the measured numbers. Papers matched only by
+  a pharmacy department, a biotechnology ministry or a research council stop
+  being flagged (all false positives); papers funded by `"… Inc"` without a dot,
+  or by an LLC, stop being missed. Precision rose from 0.400 to 0.917 on the
+  labelled corpus, so the net effect is fewer spurious tier downgrades.
 
 ## [0.5.1] — 2026-07-21
 

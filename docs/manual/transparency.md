@@ -153,7 +153,7 @@ class TransparencyResult:
 | `document_id` | `str` | Identifier for the document (echoed from the `analyze()` argument). |
 | `transparency_score` | `int` | Overall transparency score, capped at `MAX_TRANSPARENCY_SCORE` (100). |
 | `risk_level` | `TransparencyRisk` | Computed risk level. |
-| `industry_funding_detected` | `bool` | Industry involvement found — via a CrossRef funder name, a PubMed grant agency, **or** the full-text COI statement. |
+| `industry_funding_detected` | `bool` | Industry involvement found — via a CrossRef funder name, a PubMed grant agency, **or** the full-text COI statement. The name matcher behind the first two is measured against a labelled corpus; see [Industry Involvement Detection](#industry-involvement-detection). |
 | `industry_funding_confidence` | `float` | `0.8` for a structured funder match (CrossRef funder or PubMed grant agency), `0.5` when inferred from COI text, `0.0` when nothing was found. The largest of those that fire. |
 | `data_availability_level` | `str` | One of `"full_open"`, `"on_request"`, `"not_available"`, `"unknown"`. |
 | `coi_disclosed` | `bool \| None` | **Tri-state** — see below. |
@@ -380,19 +380,44 @@ Note that the score is a *transparency* measure, not a quality measure, and it i
 
 ### Signal 1 — structured CrossRef funders (confidence 0.8)
 
-Each CrossRef funder `name` is lowercased and tested against `_INDUSTRY_KEYWORDS`:
+Each CrossRef funder `name` is passed to `_is_industry_funder()`, the single predicate behind both structured funder sources. A hit appends the indicator `f"Industry funder: {name}"` and sets `industry_funding_confidence` to `DEFAULT_INDUSTRY_CONFIDENCE` (0.8). It is applied **only** to funder names — short org strings, never running prose.
+
+**The vocabulary is two kinds of thing, and merging them back into one is a bug.**
 
 ```python
-["pharma", "biotech", "therapeutics", "inc.", "corp.", "ltd.", "gmbh", "laboratories"]
+# Substrings — these must reach inside longer words.
+_INDUSTRY_STEMS = ("pharmaceutic", "therapeutics", "laboratories")
+
+# Whole words — `\b(?:…)\b`, so "Inc" and "Inc." both match and "Lincoln" does not.
+_INDUSTRY_WORDS = ("pharma", "biotech", "incorporated", "inc", "corp",
+                   "limited", "ltd", "gmbh", "llc")
 ```
 
-A hit appends the indicator `f"Industry funder: {name}"` and sets `industry_funding_confidence` to `DEFAULT_INDUSTRY_CONFIDENCE` (0.8). These keywords are matched **only** against funder names — short, curated org strings where a suffix like `"inc."` is strong evidence.
+A stem has to match inside a longer word (`"pharmaceutic"` reaching `"Pharmaceuticals"`); a whole word must not, because a bare `"inc"` as a substring matches `"Lincoln"`, `"Vincent"` and `"province"`. Applying word boundaries uniformly — the obvious one-line reading of [issue #36](https://github.com/hherb/bmlib/issues/36) — would lose the stems. Applying substrings uniformly is what made `"Pfizer Inc"` a false negative in the first place, since `"inc."` needed its dot as a crude word-boundary substitute.
 
-The three suffix forms carry their trailing dot on purpose: a bare `"inc"` matches `"Lincoln"` and `"province"` as a substring. The cost is a false negative on a name written without the dot — an NLM-normalised `"Pfizer Inc"` is missed. [Issue #36](https://github.com/hherb/bmlib/issues/36) tracks replacing the substring test with word-boundary matching, which needs calibrating against both the CrossRef and PubMed corpora.
+**Membership was measured, not chosen.** `industry_funding_detected` feeds a HIGH-risk rule and HIGH applies `tier_downgrade_amount`, so a false positive costs more than a false negative — which is why the change was calibrated against 833 real names sampled from both corpora by `scripts/sample_funder_names.py`, of which 417 are hand-labelled and committed as `tests/data/funder_names.json`:
+
+| Matcher | Precision | Recall |
+|---|---|---|
+| Substring (before) | 0.400 | 0.176 |
+| Split (now) | **0.917** | **0.324** |
+
+The corpus overturned two intuitive members:
+
+- **`"pharma"` scored 3 true positives against 5 false ones.** It reached `"Faculty of Pharmacy"`, `"Pharmacogenetics and Medicines Optimisation Network"` and `"Clinical Pharmacy"` — all academic. Narrowing it to `"pharmaceutic"` keeps every true positive and drops four of the five false ones; the bare word is retained separately for `"Novartis Pharma AG"`.
+- **`"biotech"` scored 0 true positives against 4 false ones.** Its only hits were `"Department of Biotechnology, Ministry of Science and Technology"` and `"Biotechnology and Biological Sciences Research Council"`. *Biotechnology* names a **field**, not a company type, so public bodies use it freely. Only the bare word survives, which is the company form (`"Acme Biotech"`).
+
+`"laboratories"` survived at 1 true positive (`"Dr. Reddy's Laboratories"`) and no false ones. The plural is load-bearing: the singular `"Key Laboratory"` is a Chinese state-lab form that appeared 8 times in the corpus. A residual risk the corpus happened not to contain is `"Sandia National Laboratories"`.
+
+`"llc"`, `"incorporated"` and `"limited"` earned inclusion on 2, 1 and 1 true positives with no false ones. The spelled-out forms need their own entries — `\binc\b` demands a boundary that `"Incorporated"` denies.
+
+Rejected, each for a recorded reason: `"co"` (4 TP / 1 FP — it collides with the English prefix, as in `"project co-sponsored by province and ministry"`); `"corporation"` (1 TP / 1 FP — US non-profits use it, e.g. `"Research Corporation for Science Advancement"`); `"plc"`, `"pty"`, `"ag"`, `"bv"`, `"nv"`, `"sa"` (no true positives in the corpus, so nothing earned). `"ab"` and `"labs"` passed the count but were excluded anyway, because both collide with tokens the corpus happens not to contain — province and country codes in strings that demonstrably carry locations, and national laboratories. That call costs two true positives, `"Roche Sweden AB"` and `"Tempus Labs"`.
+
+> **The recall ceiling is bare brand names.** Most industry funders this misses are names with no legal suffix and no field word — `"Pfizer"`, `"Roche"`, `"AbbVie"`, `"Teva"`, `"Bristol Myers Squibb"`. No keyword list can reach them; that needs a company-name gazetteer, which is a different feature with its own false-positive profile. `tests/test_funder_matching.py` pins those as known misses so the 0.32 figure reads as a ceiling rather than an unnoticed defect.
 
 ### Signal 2 — PubMed grant agencies (confidence 0.8)
 
-`<Grant><Agency>` names from the PubMed record are tested against the same `_INDUSTRY_KEYWORDS` list, append the same `f"Industry funder: {name}"` indicator, and carry the same 0.8 confidence: a grant agency is structured publisher-supplied metadata, the same class of evidence as a CrossRef funder record.
+`<Grant><Agency>` names from the PubMed record go through the same `_is_industry_funder()` predicate, append the same `f"Industry funder: {name}"` indicator, and carry the same 0.8 confidence: a grant agency is structured publisher-supplied metadata, the same class of evidence as a CrossRef funder record.
 
 In practice PubMed's `GrantList` is dominated by public funders, so this signal fires rarely. Its real value is the funder *information* it supplies for papers CrossRef cannot be asked about — a PMID-only analysis had no funder signal at all before it.
 
@@ -406,7 +431,7 @@ A paper can be industry-entangled without an industry funder record: the relatio
 _INDUSTRY_COI_KEYWORDS = ["employee of", "speaker fee", "consultant for", "advisory board"]
 ```
 
-A hit sets `industry_funding_detected = True`, raises `industry_funding_confidence` to at least `TEXT_INDUSTRY_CONFIDENCE` (0.5), and appends the indicator `"Industry ties disclosed in COI statement"`. The two lists are **not** interchangeable: the generic org suffixes of signals 1 and 2 match far too freely in running prose, while these phrases never occur in a funder or agency name.
+A hit sets `industry_funding_detected = True`, raises `industry_funding_confidence` to at least `TEXT_INDUSTRY_CONFIDENCE` (0.5), and appends the indicator `"Industry ties disclosed in COI statement"`. The two vocabularies are **not** interchangeable, and `_is_industry_funder()` is deliberately not applied here: the org suffixes of signals 1 and 2 match far too freely in running prose, while these phrases never occur in a funder or agency name. COI prose is a different corpus with different failure modes, and it was left untouched by the #36 recalibration for that reason.
 
 The lower confidence is the honest label on a text heuristic. Where several signals fire, the highest (0.8) is kept.
 
