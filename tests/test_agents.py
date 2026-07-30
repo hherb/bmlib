@@ -96,6 +96,30 @@ class TestParseJson:
         assert asst.role == "assistant"
 
 
+class TestParseJsonShape:
+    """The return contract: ``dict | list``, with opt-in strictness."""
+
+    def test_a_bare_array_response_returns_the_list(self):
+        assert BaseAgent.parse_json('[{"a": 1}, {"b": 2}]') == [{"a": 1}, {"b": 2}]
+
+    def test_a_fenced_array_response_returns_the_list(self):
+        text = '```json\n[{"pmid": "111"}, {"pmid": "222"}]\n```'
+        assert BaseAgent.parse_json(text) == [{"pmid": "111"}, {"pmid": "222"}]
+
+    def test_an_array_in_prose_returns_the_whole_list(self):
+        # The fragment defect reached parse_json() through extract_json():
+        # this used to return {"a": 1} and drop the sibling.
+        text = 'Records: [{"a": 1}, {"b": 2}] done.'
+        assert BaseAgent.parse_json(text) == [{"a": 1}, {"b": 2}]
+
+    def test_require_dict_raises_and_names_the_shape(self):
+        with pytest.raises(ValueError, match="list"):
+            BaseAgent.parse_json('[{"a": 1}]', require_dict=True)
+
+    def test_require_dict_accepts_a_dict(self):
+        assert BaseAgent.parse_json('{"a": 1}', require_dict=True) == {"a": 1}
+
+
 def _make_response(content: str) -> LLMResponse:
     return LLMResponse(content=content, model="test", input_tokens=0, output_tokens=0)
 
@@ -321,6 +345,97 @@ class TestChatJson:
         result = agent.chat_json([agent.user_msg("test")])
         assert result == {"ok": True}
         assert agent.llm.chat.call_count == 2
+
+
+class TestChatJsonRequireDict:
+    """``require_dict`` turns a wrong-shaped answer into a retry, then an error.
+
+    Without it a list reached the two bmlib callers' ``_parse_data()`` and died
+    on ``.get()`` with an ``AttributeError``, swallowed by a broad
+    ``except Exception`` and degraded to ``unclassified()`` — no retry, no
+    diagnosis.
+    """
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_default_returns_a_list_unchanged(self, mock_sleep):
+        # Non-breaking: the widened contract is the default.
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response('[{"a": 1}, {"b": 2}]')
+
+        assert agent.chat_json([agent.user_msg("test")]) == [{"a": 1}, {"b": 2}]
+        assert agent.llm.chat.call_count == 1
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_retries_a_list_then_accepts_the_dict(self, mock_sleep):
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [
+            _make_response('[{"a": 1}]'),
+            _make_response('{"study_design": "rct"}'),
+        ]
+
+        result = agent.chat_json([agent.user_msg("test")], require_dict=True)
+
+        assert result == {"study_design": "rct"}
+        assert agent.llm.chat.call_count == 2
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_persistent_list_names_the_shape_not_unparseability(self, mock_sleep):
+        # "expected a JSON object, got list" and "unparseable response" are
+        # different diagnoses; chat_json does its own isinstance check rather
+        # than message-sniffing parse_json's ValueError to keep them apart.
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response('[{"a": 1}]')
+
+        with pytest.raises(ValueError, match="expected a JSON object, got list"):
+            agent.chat_json([agent.user_msg("test")], require_dict=True, temperature=0.7)
+
+        assert agent.llm.chat.call_count == 3
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_list_at_temperature_zero_fails_fast(self, mock_sleep):
+        # Mirrors the truncation path: greedy sampling returns the same array
+        # from the same messages, so the retry is provably futile.  Assert the
+        # call count, not just the exception — retrying still ends in a
+        # ValueError naming the shape, so an exception-only assertion cannot
+        # tell the two behaviours apart.
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response('[{"a": 1}]')
+
+        with pytest.raises(ValueError, match="expected a JSON object, got list"):
+            agent.chat_json([agent.user_msg("test")], require_dict=True, temperature=0.0)
+
+        assert agent.llm.chat.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_rejects_a_list_arriving_via_the_truncation_path(self, mock_sleep):
+        # A response that hit the ceiling but happens to hold complete JSON is
+        # returned as-is by _try_parse — that shortcut must respect the shape
+        # requirement too.
+        agent = _make_agent()
+        agent.llm.chat.return_value = LLMResponse(
+            content='[{"a": 1}]',
+            model="test",
+            stop_reason="max_tokens",
+        )
+
+        with pytest.raises(ValueError, match="expected a JSON object, got list"):
+            agent.chat_json([agent.user_msg("test")], require_dict=True, temperature=0.0)
+
+        assert agent.llm.chat.call_count == 1
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_the_shape_failure_names_the_retry_context(self, mock_sleep):
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response('[{"a": 1}]')
+
+        with pytest.raises(ValueError, match="cochrane assessment"):
+            agent.chat_json(
+                [agent.user_msg("t")],
+                require_dict=True,
+                temperature=0.0,
+                retry_context="cochrane assessment",
+            )
 
 
 class TestPerformanceMetrics:

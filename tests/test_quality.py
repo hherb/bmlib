@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from bmlib.quality.data_models import (
@@ -476,3 +478,50 @@ class TestGenerationBudget:
         StudyClassifier(llm=llm, model="ollama:x", max_tokens=4096).classify("T", "A")
 
         assert llm.chat.call_args.kwargs["max_tokens"] == 4096
+
+
+class TestArrayResponseIsRetried:
+    """A model answering with an array must not silently cost the assessment.
+
+    Both LLM tiers hand ``chat_json``'s result straight to ``_parse_data()``,
+    which calls ``.get()`` on it. A list therefore raised ``AttributeError``
+    into the broad ``except Exception``, and the paper degraded to
+    UNCLASSIFIED with no retry and nothing in the log naming the shape. Both
+    tiers now pass ``require_dict=True``, so the wrong shape is retried like
+    any other bad response.
+    """
+
+    def _llm(self, *contents: str):
+        from unittest.mock import MagicMock
+
+        llm = MagicMock()
+        llm.chat.side_effect = [
+            MagicMock(content=content, stop_reason="stop") for content in contents
+        ]
+        return llm
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_the_classifier_retries_and_recovers(self, mock_sleep):
+        from bmlib.quality.study_classifier import StudyClassifier
+
+        llm = self._llm(
+            '[{"study_design": "rct", "confidence": 0.9}]',
+            '{"study_design": "rct", "confidence": 0.9}',
+        )
+        result = StudyClassifier(llm=llm, model="ollama:x").classify("Title", "Abstract")
+
+        assert result.study_design == StudyDesign.RCT
+        assert llm.chat.call_count == 2
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_the_assessor_retries_and_recovers(self, mock_sleep):
+        from bmlib.quality.quality_agent import QualityAgent
+
+        llm = self._llm(
+            '[{"study_design": "rct"}]',
+            '{"study_design": "rct", "confidence": 0.9}',
+        )
+        result = QualityAgent(llm=llm, model="ollama:y").assess("Title", "Abstract")
+
+        assert result.study_design == StudyDesign.RCT
+        assert llm.chat.call_count == 2
