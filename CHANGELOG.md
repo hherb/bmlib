@@ -157,7 +157,17 @@ All notable changes to bmlib are documented here. The format is based on
   shortcut. `@overload` on `Literal[True]` narrows the return to `dict` for
   strict callers, so the widened annotation costs them no `isinstance`
   friction; CI runs ruff only, so the `@overload`/`@staticmethod` stacking
-  order was verified once against mypy outside the build.
+  order was verified once against mypy outside the build. A **third overload
+  taking a plain `bool`** keeps `require_dict=self.strict` type-checkable —
+  mypy does not expand `bool` into `Literal[True] | Literal[False]` to match
+  one of the other two, so without it a caller holding a runtime flag gets
+  "no overload variant matches" and no way to satisfy it.
+- **`allow_fragments` on `bmlib.llm.utils.extract_json()`** — when False the
+  last-resort second walk is skipped, so *text* comes back unchanged rather
+  than an object dug out of the inside of a span. A caller that can *repair*
+  has something better to try than a fragment; `BaseAgent.parse_json()` is the
+  one caller that does. The providers' `json_mode` path takes the default,
+  since it has no repair stage.
 
 ### Changed
 
@@ -191,6 +201,24 @@ All notable changes to bmlib are documented here. The format is based on
   agents queued for the bmlibrarian port. Callers needing an object say so
   with `require_dict` instead; `_try_parse()` widens to `dict | list | None`
   to match.
+
+  `dict | list` is now the whole contract and is **enforced**, not merely
+  annotated: a response that parses to a bare scalar — `42`, `"done"`,
+  `true`, `null` — raises `ValueError` naming the type it got, where it used
+  to be handed back past an annotation that excluded it. A scalar is not a
+  structured answer to a `json_mode` request, and returning one only defers
+  the failure to the caller's first subscript. Inside `chat_json()` it
+  surfaces as an ordinary unparseable response and is retried.
+- **`BaseAgent.parse_json()` defers the nested fragment past its repair
+  stage.** It now asks `extract_json()` for whole spans only, tries repair,
+  and re-asks with fragments allowed only if repair also failed. A *truncated*
+  array of objects — `'[{"a": 1}, {"b": 2}'` — never balances, so extraction
+  could only ever offer the first object: taking it dropped the sibling and
+  skipped repair's truncation WARNING, while repair closes the bracket and
+  recovers the whole array. This is the same silent loss the whole-span
+  preference fixes one level up, on the shape most likely to arrive that way.
+  `'[{"a": 1}, invalid junk]'` — nothing whole to recover — still returns the
+  fragment.
 - **`extract_json()` and `extract_and_repair_json()` are rebuilt on the
   shared locator `iter_json_spans()`** (closes #17). Behaviour deltas fall
   out of the consolidation:
@@ -284,6 +312,19 @@ All notable changes to bmlib are documented here. The format is based on
   `UNCLASSIFIED` — no retry, and nothing in the log naming the shape. Both now
   pass `require_dict=True`, and both run at temperature > 0, so the wrong shape
   buys up to three attempts at a usable answer instead of one silent failure.
+  Note the cost on the other side: `assess_batch()` is a serial loop and the
+  backoff is a blocking `sleep`, so a model that answers *every* request with
+  the wrong shape now spends 3 calls plus ~3s per paper where it spent 1 call
+  and no sleep.
+- **A truncated array of objects reached the caller as its first element.**
+  `require_dict=True` was no defence: `chat_json()`'s truncation branch asked
+  `_try_parse()` first, `parse_json()`'s extraction stage returned the object
+  dug out of the unbalanced array, and the result passed the `isinstance`
+  check as a dict — so the response came back as `{"a": 1}` on the first
+  attempt with no truncation error and no repair WARNING, under a comment
+  claiming the JSON "happens to be complete". `parse_json()` now holds the
+  fragment back until repair has had its turn; repair closes the bracket and
+  recovers the whole array.
 - **An unsectioned JATS `<body>` lost all its prose.** `<sec>` is optional
   inside `<body>`, but the handler recorded a `<p>` only when a section was
   open, so an article whose body is bare `<p>` children was parsed as having
@@ -408,21 +449,32 @@ genuinely hot path: both `bmlib/llm/providers/anthropic.py` and
 `openai_compat.py` call `extract_json()` on every `json_mode` response,
 unconditionally, not from an opt-in code path.
 
-**Who is affected by the whole-span preference.** Exactly one response shape:
-an **array of objects sitting unfenced in prose**. Such a response now arrives
-whole where it previously arrived as its first element. Three neighbouring
-shapes are unchanged — a fenced array already came back whole, a bare array
-parses at the provider's own `json.loads()` guard and never reaches
-`extract_json()` at all, and an array of scalars had no nested candidate to
-lose to. Code that relied on receiving the first element will now receive a
-list; `BaseAgent` callers wanting the old dict-or-nothing guarantee should pass
-`require_dict=True`, which turns the wrong shape into a diagnosed retry rather
-than a silent truncation.
+**Who is affected by the whole-span preference.** In `extract_json()` — the
+function the two providers call — exactly one response shape: an **array of
+objects sitting unfenced in prose**. Such a response now arrives whole where it
+previously arrived as its first element. Two neighbouring shapes are unchanged
+there — a fenced array already came back whole, and a bare array parses at the
+provider's own `json.loads()` guard and never reaches `extract_json()` at all —
+and an array of scalars had no nested candidate to lose to. Code that relied on
+receiving the first element will now receive a list; `BaseAgent` callers wanting
+the old dict-or-nothing guarantee should pass `require_dict=True`, which turns
+the wrong shape into a diagnosed retry rather than a silent truncation.
+
+**A second shape changes through `BaseAgent.parse_json()` only:** a **truncated**
+array of objects, `'[{"a": 1}, {"b": 2}'`. It never balances, so `extract_json()`
+still has only the first object to offer and is unchanged for the providers —
+but `parse_json()` now lets its repair stage go first, so the response arrives
+as the whole array with the usual possibly-truncated WARNING instead of as
+`{"a": 1}` in silence. Under `require_dict=True` the recovered list is the wrong
+shape, so it becomes a diagnosed retry — this is the one case where adding
+`require_dict=True` can turn a previously "successful" call into a raise. That
+call was returning a single record out of two.
 
 `parse_json()` and `chat_json()` return `dict | list` where they were annotated
 `-> dict`. No runtime behaviour changed for a response that parses to an
 object, and nothing was removed — the annotation was always wrong for an array
-response, which is what #33 reported.
+response, which is what #33 reported. The one narrowing is that `dict | list`
+is now enforced: a bare scalar response raises where it used to be returned.
 
 Two details worth knowing when upgrading:
 

@@ -190,6 +190,40 @@ class TestExtractJsonPrefersWholeSpans:
         # wins and document order is preserved.
         assert extract_json('First [1, 2] then ["a"]') == "[1, 2]"
 
+    def test_a_top_level_dict_still_outranks_an_earlier_array_of_objects(self):
+        # The ranked fallback must stay *below* dict preference, not beside it.
+        # test_prefers_a_dict_over_an_earlier_array uses '[1, 2]', which the
+        # ranking would never promote, so it cannot catch the two being
+        # reordered — this text needs the dict return to come first.
+        assert extract_json('[{"b": 2}] and {"a": 1}') == '{"a": 1}'
+
+
+class TestExtractJsonAllowFragments:
+    """``allow_fragments=False`` withholds the last-resort second walk.
+
+    A caller that can *repair* has something better to try than a fragment:
+    for a truncated ``'[{"a": 1}, {"b": 2}'`` the fragment is only the first
+    object, while repair closes the bracket and recovers both.
+    """
+
+    def test_a_fragment_is_withheld(self):
+        text = '[{"a": 1}, {"b": 2}'
+        assert extract_json(text) == '{"a": 1}'
+        assert extract_json(text, allow_fragments=False) == text
+
+    def test_a_whole_span_is_still_returned(self):
+        # Only the second walk is suppressed; the first is untouched.
+        text = 'Records: [{"a": 1}, {"b": 2}] done.'
+        assert extract_json(text, allow_fragments=False) == '[{"a": 1}, {"b": 2}]'
+
+    def test_a_top_level_dict_is_still_returned(self):
+        assert extract_json('Result: {"a": 1}', allow_fragments=False) == '{"a": 1}'
+
+    def test_the_default_is_to_allow_them(self):
+        # The providers' json_mode path takes the default: it has no repair
+        # stage, so a fragment is the best it can do.
+        assert extract_json('Here: [garbage {"a": 1} garbage]') == '{"a": 1}'
+
 
 class TestExtractAndRepairJsonPolicy:
     def test_walks_past_a_candidate_that_cannot_repair(self):

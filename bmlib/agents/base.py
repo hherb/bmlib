@@ -161,6 +161,23 @@ class BaseAgent:
         **kwargs: object,
     ) -> dict | list: ...
 
+    # A caller holding a runtime bool — ``require_dict=self.strict`` — matches
+    # neither literal overload, and mypy does not expand ``bool`` into
+    # ``Literal[True] | Literal[False]`` to find one.  Without this variant it
+    # reports "no overload variant matches" with no way to satisfy it.
+    @overload
+    def chat_json(
+        self,
+        messages: list[LLMMessage],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        max_retries: int = 3,
+        retry_context: str = "",
+        require_dict: bool,
+        **kwargs: object,
+    ) -> dict | list: ...
+
     def chat_json(
         self,
         messages: list[LLMMessage],
@@ -224,12 +241,16 @@ class BaseAgent:
             cannot drift apart.
             """
             message = f"expected a JSON object, got {type(parsed).__name__}{context}"
+            # The attempt marker already carries *context*, so the log line
+            # spells the reason out rather than reusing *message* — which ends
+            # in the same context and would print it twice.
             logger.error(
-                "LLM returned the wrong JSON shape (attempt %d/%d%s): %s",
+                "LLM returned the wrong JSON shape (attempt %d/%d%s): expected a JSON "
+                "object, got %s",
                 attempt + 1,
                 max_retries,
                 context,
-                message,
+                type(parsed).__name__,
             )
             if effective_temperature == 0.0:
                 # Greedy sampling returns the same array from the same
@@ -456,6 +477,13 @@ class BaseAgent:
     @staticmethod
     def parse_json(text: str, *, require_dict: Literal[False] = False) -> dict | list: ...
 
+    # See the note on :meth:`chat_json`'s third overload: a runtime bool needs
+    # its own variant, because mypy will not expand ``bool`` into the two
+    # literals to match one of those above.
+    @overload
+    @staticmethod
+    def parse_json(text: str, *, require_dict: bool) -> dict | list: ...
+
     @staticmethod
     def parse_json(text: str, *, require_dict: bool = False) -> dict | list:
         """Extract and parse JSON from LLM response text.
@@ -466,6 +494,13 @@ class BaseAgent:
         with a top-level array yields that array **whole** — the annotation
         is ``dict | list`` because both really happen.  Callers that need an
         object should say so with *require_dict* rather than assuming.
+
+        ``dict | list`` is the whole of the contract, and it is enforced: a
+        response that parses to a bare scalar — ``42``, ``"done"``, ``true``,
+        ``null`` — is reported as :class:`ValueError` rather than handed back
+        past an annotation that excludes it.  A scalar is not a structured
+        answer to a ``json_mode`` request, and returning one only defers the
+        failure to the caller's first subscript.
 
         ``RecursionError`` is caught at every stage alongside the decode
         errors: :func:`json.loads` descends recursively, so text nested past
@@ -479,17 +514,24 @@ class BaseAgent:
             require_dict: Raise instead of returning a non-object result.
 
         Raises:
-            ValueError: If no JSON can be parsed out of *text*, or if
-                *require_dict* is set and the result is not a dict.
+            ValueError: If no JSON can be parsed out of *text*, if the result
+                is a bare scalar, or if *require_dict* is set and the result
+                is not a dict.
         """
         parsed = BaseAgent._parse_json_any(text)
+        if not isinstance(parsed, (dict, list)):
+            raise ValueError(f"expected a JSON object or array, got {type(parsed).__name__}")
         if require_dict and not isinstance(parsed, dict):
             raise ValueError(f"expected a JSON object, got {type(parsed).__name__}")
         return parsed
 
     @staticmethod
-    def _parse_json_any(text: str) -> dict | list:
-        """:meth:`parse_json` without the shape check."""
+    def _parse_json_any(text: str) -> Any:
+        """:meth:`parse_json` without the shape checks.
+
+        Returns any JSON value, scalars included — the ``dict | list``
+        contract is enforced by :meth:`parse_json`, not here.
+        """
         # Try direct parse
         try:
             return json.loads(text)
@@ -497,16 +539,22 @@ class BaseAgent:
             pass
 
         # Fall back to the shared extractor (code-block aware + balanced-brace
-        # scanning that picks the first parseable object).
-        candidate = extract_json(text)
+        # scanning that picks the first parseable object).  Fragments are held
+        # back for the stage below: for a *truncated* array of objects —
+        # '[{"a": 1}, {"b": 2}' — extraction can only offer the first object,
+        # while repair closes the bracket and recovers both.  Taking the
+        # fragment here would drop the sibling and skip the truncation warning,
+        # which is the same silent loss the whole-span preference exists to
+        # prevent.
+        candidate = extract_json(text, allow_fragments=False)
         if candidate != text:
             try:
                 return json.loads(candidate)
             except (json.JSONDecodeError, RecursionError):
                 pass
 
-        # Last resort: repair common LLM JSON defects (single quotes, trailing
-        # commas, truncation, unquoted keys) after extracting the JSON span.
+        # Repair common LLM JSON defects (single quotes, trailing commas,
+        # truncation, unquoted keys) after extracting the JSON span.
         try:
             repaired, was_repaired = extract_and_repair_json(text)
             parsed = json.loads(repaired)
@@ -521,5 +569,15 @@ class BaseAgent:
                     text[:200],
                 )
             return parsed
+
+        # Last resort: an object dug out of the inside of a span that neither
+        # parsed nor repaired — '[{"a": 1}, invalid junk]'.  Nothing whole is
+        # recoverable, so a fragment beats reporting the response unparseable.
+        fragment = extract_json(text)
+        if fragment != text:
+            try:
+                return json.loads(fragment)
+            except (json.JSONDecodeError, RecursionError):
+                pass
 
         raise ValueError(f"Could not parse JSON from LLM response: {text[:200]!r}")

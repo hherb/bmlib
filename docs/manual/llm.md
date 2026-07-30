@@ -1106,10 +1106,15 @@ print(data["design"], was_repaired)   # RCT True
 ### `bmlib.llm.utils.extract_json`
 
 ```python
-def extract_json(text: str) -> str
+def extract_json(text: str, *, allow_fragments: bool = True) -> str
 ```
 
 Not exported from `bmlib.llm` — import it from `bmlib.llm.utils`. Applies one acceptance policy to the shared locator **twice**: first over whole spans only (`nested_objects=False`), and — only if nothing there parsed — again with the nested-object stage enabled. Each walk returns the first candidate that came from a fence or **parses to a dict**, else the best span that parses at all. Returns *text* unchanged if nothing parses in either walk.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `text` | `str` | *(required)* | Text to extract a JSON span from. |
+| `allow_fragments` | `bool` | `True` | When `False`, the second walk is skipped, so *text* comes back unchanged rather than an object dug out of the inside of a span. See [Withholding the fragment](#withholding-the-fragment). |
 
 **Never raises.** That matters more here than elsewhere: this runs unconditionally on every `json_mode` response in both the Anthropic and OpenAI-compatible providers, so anything that escapes takes out the provider call. A candidate that raises `RecursionError` — `json.loads()` descends recursively, so text nested past the interpreter's stack limit blows the stack instead of failing to decode — is skipped like any other undecodable candidate.
 
@@ -1146,6 +1151,20 @@ extract_json('```json\n[{"a": 1}, {"a": 2}]\n```')
 # '[{"a": 1}, {"a": 2}]' — the whole fenced array, not the first element
 ```
 
+#### Withholding the fragment
+
+The fragment is a last resort *for this function*, but a caller that can **repair** has something better to try than a fragment. A truncated array of objects never balances, so no whole span parses and the second walk offers the first object — while repair closes the bracket and recovers the whole array:
+
+```python
+extract_json('[{"a": 1}, {"b": 2}')
+# '{"a": 1}' — the fragment, and the sibling is gone
+
+extract_json('[{"a": 1}, {"b": 2}', allow_fragments=False)
+# '[{"a": 1}, {"b": 2}' — unchanged, so the caller can try repair instead
+```
+
+`BaseAgent.parse_json()` passes `allow_fragments=False` for exactly that reason and re-asks with the default once repair has also failed — see [Stage order](agents.md#baseagentparse_json). The providers' `json_mode` path takes the default: it has no repair stage, so a fragment is the best it can do.
+
 Both extractors share `iter_json_spans()` as their locator and differ only in acceptance policy:
 
 | | `extract_json` | `extract_and_repair_json` |
@@ -1153,12 +1172,12 @@ Both extractors share `iter_json_spans()` as their locator and differ only in ac
 | Locates candidates via | `iter_json_spans(text, nested_objects=False)`, then `nested_objects=True` if the first walk found nothing | `iter_json_spans(text, nested_objects=False)` |
 | Acceptance policy | First candidate that is fenced or parses **to a dict**; else the best non-dict span (a list of objects outranks anything else) | First candidate that parses **or repairs** |
 | Top-level arrays | Returned whenever they parse and no top-level dict is present | Returned if it is the first candidate that parses or repairs |
-| Nested objects | Last resort — only when no whole span parsed | Never |
+| Nested objects | Last resort — only when no whole span parsed, and not at all under `allow_fragments=False` | Never |
 | Repairs malformed JSON | No | Yes (unless `repair=False`) |
 | On failure | Returns the input unchanged | Raises `ValueError` |
 | Return value | `str` | `tuple[str, bool]` |
 
-The dict preference is the row to watch: `extract_and_repair_json()` does **not** have one. On `'text [1,2] then {"a": 1}'`, `extract_json()` returns `{"a": 1}` and `extract_and_repair_json()` returns `[1,2]`. That is deliberate — dict preference serves `json_mode` callers who asked a model for an object, whereas `extract_and_repair_json()` is a general-purpose extractor whose caller may well want the array. The divergence cannot surface through `BaseAgent.parse_json()`, which reaches `extract_and_repair_json()` only once `extract_json()` has found nothing parseable at all.
+The dict preference is the row to watch: `extract_and_repair_json()` does **not** have one. On `'text [1,2] then {"a": 1}'`, `extract_json()` returns `{"a": 1}` and `extract_and_repair_json()` returns `[1,2]`. That is deliberate — dict preference serves `json_mode` callers who asked a model for an object, whereas `extract_and_repair_json()` is a general-purpose extractor whose caller may well want the array. The divergence cannot surface through `BaseAgent.parse_json()`: it reaches `extract_and_repair_json()` only once no *whole* span has parsed, and dict preference can only differ from first-parseable when at least one whole span did.
 
 `extract_and_repair_json()` has no equivalent second walk, and must not grow one. *Validating* a nested fragment reports what is there; *repairing* one closes brackets around it and fabricates a structure the model never emitted — `'[{"a": 1}, invalid junk]'` would come back as `{"a": 1}` where it should raise.
 

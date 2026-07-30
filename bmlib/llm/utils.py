@@ -174,7 +174,7 @@ def iter_json_spans(text: str, *, nested_objects: bool = True) -> Iterator[str]:
                 yield tail
 
 
-def extract_json(text: str) -> str:
+def extract_json(text: str, *, allow_fragments: bool = True) -> str:
     """Extract a JSON span from text that may contain prose or code blocks.
 
     Applies :func:`_first_acceptable` to the candidates from
@@ -194,6 +194,19 @@ def extract_json(text: str) -> str:
     An object reachable *only* from inside another span is a last resort, not
     a preference. Preferring it reduced an array of objects to its first
     element and dropped every sibling with no error anywhere.
+
+    Args:
+        text: The text to extract a JSON span from.
+        allow_fragments: When False, the second walk is skipped, so *text*
+            comes back unchanged rather than an object dug out of the inside
+            of a span. A caller that can *repair* has something better to try
+            than a fragment: for a truncated ``'[{"a": 1}, {"b": 2}'`` the
+            fragment is only the first object, while repair closes the bracket
+            and recovers both. :meth:`bmlib.agents.BaseAgent.parse_json`
+            passes False for exactly that reason and re-asks with the default
+            once repair has also failed. The providers' ``json_mode`` path
+            takes the default: it has no repair stage, so a fragment is the
+            best it can do.
     """
     # Built on first need rather than up front: it costs a second pass of
     # _FENCE_RE over the whole response, and the common case — the first
@@ -212,6 +225,8 @@ def extract_json(text: str) -> str:
     whole = _first_acceptable(text, fences, nested_objects=False)
     if whole is not None:
         return whole
+    if not allow_fragments:
+        return text
 
     # Nothing at the top level parsed.  Only now is an object dug out of the
     # inside of a span worth having.  The stage 1-4 candidates the first walk

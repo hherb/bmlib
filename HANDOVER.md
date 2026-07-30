@@ -3,7 +3,7 @@
 _Last updated: 2026-07-30. `main` is at v0.5.1 plus a large `[Unreleased]`
 section (PostgreSQL `publications`, PDF→text wiring, body-less JATS fix,
 BaseAgent metrics/embeddings, consolidated JSON extraction, transparency
-PubMed step, the `parse_json` contract). 981 tests passing + 32 skipped._
+PubMed step, the `parse_json` contract). 996 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -73,15 +73,23 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
      *ranked* non-dict fallback so an incidental `[]` cannot mask the payload.
      `parse_json()`/`chat_json()` are annotated `dict | list` with an opt-in
      `require_dict` that retries the wrong shape (and fails fast at temperature
-     0, like truncation); bmlib's two quality tiers pass it. **Behaviour change
-     on one response shape**: an unfenced array of objects in prose now arrives
-     whole. A fenced array already did, and a bare array never reached
+     0, like truncation); bmlib's two quality tiers pass it. Review of the PR
+     turned up the same defect one layer down and it is fixed in the same
+     change: a **truncated** array of objects never balances, so `parse_json()`
+     was taking the first object out of it and skipping the repair stage that
+     recovers the whole array — the fragment now waits until repair has failed
+     (`extract_json(allow_fragments=False)`). `dict | list` is also *enforced*
+     rather than only annotated: a bare scalar response raises.
+     **Behaviour changes, on two response shapes**: an unfenced array of
+     objects in prose now arrives whole (`extract_json()`, so both providers
+     too), and a truncated array of objects arrives whole through
+     `parse_json()`. A fenced array already did, and a bare array never reached
      `extract_json()`.
   **Deciding whether this is 0.6.0 is open work** — see "Next up" below. The
   `publications` and `fulltext` changes are additive, so a minor bump fits.
   Note `~/src/bmlibrarian` pins `bmlib[ollama]>=0.5.1,<0.6.0`, so a 0.6.0
   release needs that pin lifted downstream.
-- **981 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **996 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -242,6 +250,30 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   structure the model never emitted — not that validation has a general licence
   to prefer fragments. Pinned by
   `test_raises_rather_than_returning_a_fragment_of_a_broken_array`.
+- **`BaseAgent.parse_json()` asks `extract_json()` for whole spans first and
+  re-asks with fragments only after repair has failed.** Collapsing the two
+  calls back into one `extract_json(text)` at stage 2 looks like an obvious
+  simplification and reintroduces a silent data loss: a *truncated* array of
+  objects never balances, so the only span extraction can offer is the first
+  object, and taking it drops the sibling and skips the repair stage's
+  possibly-truncated WARNING. Repair closes the bracket and recovers the whole
+  array, which is why it must go first. The fragment is still reachable —
+  `'[{"a": 1}, invalid junk]'` neither parses nor repairs — just last. Pinned
+  by `test_a_truncated_array_of_objects_is_repaired_whole` and
+  `test_a_fragment_is_still_the_last_resort`.
+- **`parse_json()` enforces `dict | list` rather than only annotating it.** A
+  bare scalar — `42`, `"done"`, `true`, `null` — raises. Letting it through
+  would make the annotation a lie again (which is what #33 was about) and only
+  defer the failure to the caller's first subscript; inside `chat_json()` the
+  raise becomes an ordinary retry, which is the right response to a model that
+  answered a `json_mode` request with a number. Pinned by
+  `test_a_bare_scalar_is_not_a_structured_answer`.
+- **`require_dict` has a third `bool` overload on both methods.** It looks
+  redundant beside the two `Literal` ones and is not: mypy does not expand
+  `bool` into `Literal[True] | Literal[False]` to match them, so a caller
+  writing `require_dict=self.strict` gets "no overload variant matches" with no
+  way to satisfy it. Verified with mypy 1.14 — CI runs ruff only, so nothing in
+  the build will catch its removal.
 - **`salvage_json_fields()` bounds *both* of its passes.** Every failed
   `raw_decode()` scans forward to the end of the document, so an unbounded
   pass is quadratic in the response length, and a repetition-looping model —
