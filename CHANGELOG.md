@@ -16,12 +16,15 @@ All notable changes to bmlib are documented here. The format is based on
   GenBank and said so in a structured field earned nothing unless one of
   those words happened to appear in its prose, and a closed-access paper has
   no full text to scan at all. `_parse_pubmed_signals()` now also collects
-  `DataBankName` values against two curated allow-lists drawn from
+  `DataBankName` values against a curated allow-list drawn from
   [NLM's published vocabulary](https://www.nlm.nih.gov/bsd/medline_databank_source.html):
-  `_DEPOSITION_DATABANK_NAMES` (BioProject, dbVar, Dryad, figshare, GenBank,
-  GEO, PDB, SRA) nominates `full_open`; `_CONTROLLED_DEPOSITION_DATABANK_NAMES`
-  (dbGaP alone) nominates only `on_request`, since dbGaP data needs Data
-  Access Committee approval. NLM's remaining names — dbSNP, GDB, OMIM, PIR,
+  `_DEPOSITION_DATABANK_LEVELS` maps each repository to the level a deposit
+  into it establishes — BioProject, dbVar, Dryad, figshare, GenBank, GEO, PDB
+  and SRA nominate `full_open`; dbGaP nominates only `on_request`, since its
+  data needs Data Access Committee approval. A mapping rather than a
+  set-per-level so that adding a repository has to state what a deposit into
+  it is worth instead of inheriting the generous default. NLM's remaining
+  names — dbSNP, GDB, OMIM, PIR,
   the three PubChem tables, RefSeq, SWISSPROT, UniMES, UniParc, UniProtKB,
   UniRef — are curated *reference* databases and score nothing (an OMIM
   number says the paper is about a known condition, not that these authors

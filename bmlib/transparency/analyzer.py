@@ -163,11 +163,11 @@ EUTILS_TOOL_NAME = "bmlib"
 
 # `DataBankName` values PubMed emits for clinical-trial registries, lowercased
 # for matching. A name outside this set is not necessarily a data-deposition
-# accession: it is one only if it is also in `_DEPOSITION_DATABANK_NAMES` or
-# `_CONTROLLED_DEPOSITION_DATABANK_NAMES` below (GENBANK, PDB, SRA, Dryad, …).
-# A name in neither set — OMIM, RefSeq, dbSNP, PubChem-*, or anything NLM adds
-# that this module has not been updated for — is simply not scored; see the
-# comment above `_DEPOSITION_DATABANK_NAMES` for why those specific names are
+# accession: it is one only if it is also a key of
+# `_DEPOSITION_DATABANK_LEVELS` below (GENBANK, PDB, SRA, Dryad, …). A name in
+# neither — OMIM, RefSeq, dbSNP, PubChem-*, or anything NLM adds that this
+# module has not been updated for — is simply not scored; see the comment
+# above `_DEPOSITION_DATABANK_LEVELS` for why those specific names are
 # excluded on purpose rather than by omission.
 #
 # Curated from NLM's published vocabulary:
@@ -205,7 +205,14 @@ _TRIAL_REGISTRY_NAMES = frozenset(
 )
 _CLINICALTRIALS_GOV = "clinicaltrials.gov"
 
-# `DataBankName` values naming a repository authors *deposit into*, lowercased.
+# `DataBankName` values naming a repository authors *deposit into*, lowercased,
+# each mapped to the data-availability level a deposit into it establishes.
+# A mapping rather than a set-per-level so that adding a repository cannot
+# silently inherit a default: the level is the value, so there is nowhere to
+# add a name without stating what a deposit into it is worth. That matters
+# because the two levels are not interchangeable — see `dbgap` below — and the
+# generous one feeds a 20-point award.
+#
 # Curated from the same NLM vocabulary as the registries above, whose second
 # table this splits in half. The other half is deliberately excluded: dbSNP,
 # GDB, OMIM, PIR, PubChem-BioAssay, PubChem-Compound, PubChem-Substance,
@@ -216,33 +223,30 @@ _CLINICALTRIALS_GOV = "clinicaltrials.gov"
 # data, which is what the data-availability component measures — so adding
 # one back would award 20 points for a citation.
 #
-# dbSNP is the one exclusion worth spelling out, since dbVar sits right below
-# it in this set: a dbVar accession is a structural-variant submission, but a
-# dbSNP citation is overwhelmingly an rs-number reference to a variant someone
-# else already catalogued, not a deposit of these authors' own data. Submitters
+# dbSNP is the one exclusion worth spelling out, since dbVar sits right in
+# this map: a dbVar accession is a structural-variant submission, but a dbSNP
+# citation is overwhelmingly an rs-number reference to a variant someone else
+# already catalogued, not a deposit of these authors' own data. Submitters
 # can deposit novel variants as ss accessions, but that is the rare case, and
 # ties go to precision here because this component feeds a HIGH-risk rule.
 #
 # Zenodo is absent because NLM's vocabulary does not carry it, so PubMed never
 # emits it. `_DATA_PATTERNS` already matches "zenodo" in prose.
-_DEPOSITION_DATABANK_NAMES = frozenset(
-    {
-        "bioproject",
-        "dbvar",
-        "dryad",
-        "figshare",
-        "genbank",
-        "geo",
-        "pdb",
-        "sra",
-    }
-)
-
-# Deposition into a controlled-access repository. The deposit is real,
-# findable and citable, but a reader needs Data Access Committee approval to
-# obtain the data — which is what `on_request` already means, so scoring it
-# `full_open` would overstate what a reader can actually get.
-_CONTROLLED_DEPOSITION_DATABANK_NAMES = frozenset({"dbgap"})
+_DEPOSITION_DATABANK_LEVELS: dict[str, str] = {
+    "bioproject": "full_open",
+    "dbvar": "full_open",
+    "dryad": "full_open",
+    "figshare": "full_open",
+    "genbank": "full_open",
+    "geo": "full_open",
+    "pdb": "full_open",
+    "sra": "full_open",
+    # Controlled access. The deposit is real, findable and citable, but a
+    # reader needs Data Access Committee approval to obtain the data — which
+    # is what `on_request` already means, so `full_open` would overstate what
+    # a reader can actually get.
+    "dbgap": "on_request",
+}
 
 # ---- Indicator strings ----
 # Named rather than inlined because the PubMed step must be able to retract the
@@ -457,7 +461,7 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
         raw_name = (databank.findtext("DataBankName") or "").strip()
         name = raw_name.lower()
 
-        if name in _DEPOSITION_DATABANK_NAMES or name in _CONTROLLED_DEPOSITION_DATABANK_NAMES:
+        if name in _DEPOSITION_DATABANK_LEVELS:
             # A repository name with no accession is an assertion with no
             # referent — nothing a reader could go and fetch — so it is not
             # the structured proof of a deposit this signal claims to be.
@@ -643,11 +647,11 @@ def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
     branch that sets ``True`` is the same branch that adds
     ``SCORE_COI_DISCLOSED``.
 
-    ``<DataBankList>`` deposition accessions nominate a data-availability
-    level — ``on_request`` for a controlled-access repository, ``full_open``
-    otherwise — through :meth:`_Analysis.note_data_level`, so the strongest
-    evidence wins whichever source ran first. The component itself is scored
-    later, by :func:`_score_data_availability`.
+    ``<DataBankList>`` deposition accessions nominate the data-availability
+    level :data:`_DEPOSITION_DATABANK_LEVELS` maps their repository to,
+    through :meth:`_Analysis.note_data_level`, so the strongest evidence wins
+    whichever source ran first. The component itself is scored later, by
+    :func:`_score_data_availability`.
     """
     if pubmed.coi_statement and analysis.coi_disclosed is not True:
         analysis.coi_disclosed = True
@@ -681,12 +685,11 @@ def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
         for name in pubmed.deposition_databanks:
             # The parser collected the name; deciding what a deposit into it
             # is worth is this step's job, which is why the signals carry
-            # names rather than a level.
-            analysis.note_data_level(
-                "on_request"
-                if name.lower() in _CONTROLLED_DEPOSITION_DATABANK_NAMES
-                else "full_open"
-            )
+            # names rather than a level. Subscripted rather than defaulted:
+            # the parser admits a name only if it is a key here, so a name
+            # that is not one is a bug in this module and raises, the same
+            # way `note_data_level()` raises on a level outside the ranking.
+            analysis.note_data_level(_DEPOSITION_DATABANK_LEVELS[name.lower()])
         # Written whether or not the level above won: it reports what PubMed
         # said, which stays true either way.
         analysis.indicators.append(
@@ -701,23 +704,18 @@ def _score_data_availability(analysis: _Analysis) -> None:
     nominated, rather than by the step that finds a level. With two producers
     — Europe PMC's text scan and PubMed's deposition accessions — scoring at
     the point of discovery would either spend the component twice or spend it
-    on a level later beaten. Deferring makes double-counting unrepresentable
-    *for the sub-steps*: they only ever call :meth:`_Analysis.note_data_level`,
-    which nominates and cannot itself add points, so neither producer is
-    capable of scoring this component even once, let alone twice.
+    on a level later beaten. The sub-steps only ever call
+    :meth:`_Analysis.note_data_level`, which nominates and cannot add points,
+    so neither is capable of scoring this component at all.
 
-    That is a weaker guarantee than :meth:`_Analysis.award_funder_info`, which
-    carries its own `funder_info_scored` flag and stays safe even if called
-    more than once. This function has no such flag — nothing stops a second
-    call from awarding the points again. What actually keeps this to one award
-    is that :meth:`TransparencyAnalyzer.analyze` calls it from exactly one
-    place. A future re-score or retry path added to ``analyze()`` would need
-    to reckon with that; it cannot lean on this function the way callers of
-    ``award_funder_info()`` lean on the funder flag.
+    Unlike :meth:`_Analysis.award_funder_info`, this carries no
+    "already spent" flag: what holds it to one award is that ``analyze()``
+    calls it from exactly one place, so a re-score or retry path added there
+    would have to bring its own guard.
 
-    It is also what keeps :data:`_INDICATOR_DATA_NOT_AVAILABLE` honest: the
-    line is written only if that level survived the merge, so it never has to
-    be retracted the way the PubMed COI lines are.
+    Deferring is also what keeps :data:`_INDICATOR_DATA_NOT_AVAILABLE`
+    honest: the line is written only if that level survived the merge, so it
+    never has to be retracted the way the PubMed COI lines are.
     """
     if analysis.data_level == "full_open":
         analysis.score += SCORE_DATA_FULL_OPEN

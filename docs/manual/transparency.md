@@ -481,18 +481,25 @@ This is the same "strongest evidence wins, regardless of arrival order" rule `in
 
 `<DataBankList>` also carries data-deposition repositories — GENBANK, PDB, SRA, Dryad, and others — alongside the trial registries covered in [Trial Registration Detection](#trial-registration-detection). This is publisher-supplied structured metadata: a paper that deposited its sequences and said so in a structured field is stronger evidence than a substring match in prose, and — unlike the prose scan — it reaches a closed-access paper, which has no full text to scan at all.
 
-Two lowercased allow-lists, curated from [NLM's `DataBankName` vocabulary](https://www.nlm.nih.gov/bsd/medline_databank_source.html), decide what counts as a deposit and what it is worth:
+One lowercased allow-list, curated from [NLM's `DataBankName` vocabulary](https://www.nlm.nih.gov/bsd/medline_databank_source.html), decides both what counts as a deposit and what it is worth — the repository is the key, the level it establishes is the value:
 
 ```python
-_DEPOSITION_DATABANK_NAMES = frozenset({
-    "bioproject", "dbvar", "dryad", "figshare", "genbank", "geo", "pdb", "sra",
-})
-_CONTROLLED_DEPOSITION_DATABANK_NAMES = frozenset({"dbgap"})
+_DEPOSITION_DATABANK_LEVELS: dict[str, str] = {
+    "bioproject": "full_open",
+    "dbvar": "full_open",
+    "dryad": "full_open",
+    "figshare": "full_open",
+    "genbank": "full_open",
+    "geo": "full_open",
+    "pdb": "full_open",
+    "sra": "full_open",
+    "dbgap": "on_request",
+}
 ```
 
-A repository in the first set nominates `full_open`. `dbgap` nominates only `on_request`: the deposit is real, findable and citable, but a reader needs Data Access Committee approval to obtain it — which is what `on_request` already means, so scoring it `full_open` would overstate what a reader can actually get.
+`dbgap` is the reason this is a mapping rather than a set: the deposit is real, findable and citable, but a reader needs Data Access Committee approval to obtain it — which is what `on_request` already means, so `full_open` would overstate what a reader can actually get. Were the level a default applied to everything outside a second controlled-access set, adding the next controlled repository would silently score it 20 points as fully open. As a mapping there is nowhere to add a name without stating what a deposit into it is worth. `_merge_pubmed_signals()` subscripts the map rather than defaulting, so a name the parser should never have admitted raises instead of being scored generously.
 
-NLM's remaining `DataBankName` values — dbSNP, GDB, OMIM, PIR, PubChem-BioAssay, PubChem-Compound, PubChem-Substance, RefSeq, SWISSPROT, UniMES, UniParc, UniProtKB, UniRef — are deliberately in **neither** set. They are curated *reference* databases, not deposit targets: an OMIM number says the paper is about a known condition, and a RefSeq accession names a sequence NCBI curated, not one these authors produced. dbSNP is the sharpest case, since it sits right next to `dbvar` in NLM's table — a dbVar accession is a structural-variant submission, but a dbSNP citation is overwhelmingly an rs-number reference to a variant someone else already catalogued. Neither kind of name is evidence that *these* authors shared *their* data, which is what this component measures, so neither scores. Zenodo is absent from both sets because NLM's vocabulary does not carry it — PubMed never emits it, and the prose scan above already matches `"zenodo"`.
+NLM's remaining `DataBankName` values — dbSNP, GDB, OMIM, PIR, PubChem-BioAssay, PubChem-Compound, PubChem-Substance, RefSeq, SWISSPROT, UniMES, UniParc, UniProtKB, UniRef — are deliberately **absent**. They are curated *reference* databases, not deposit targets: an OMIM number says the paper is about a known condition, and a RefSeq accession names a sequence NCBI curated, not one these authors produced. dbSNP is the sharpest case, since it sits right next to `dbvar` in NLM's table — a dbVar accession is a structural-variant submission, but a dbSNP citation is overwhelmingly an rs-number reference to a variant someone else already catalogued. Neither kind of name is evidence that *these* authors shared *their* data, which is what this component measures, so neither scores. Zenodo is absent because NLM's vocabulary does not carry it — PubMed never emits it, and the prose scan above already matches `"zenodo"`.
 
 A `<DataBank>` entry only counts if at least one `<AccessionNumberList>/<AccessionNumber>` is non-blank. A repository name with no accession is an assertion with no referent — nothing a reader could go and fetch.
 

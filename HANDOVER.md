@@ -3,7 +3,7 @@
 _Last updated: 2026-08-01. **0.6.0 is cut.** `[Unreleased]` holds the
 `_Analysis` carrier (#37) and data deposition from PubMed's `<DataBankList>`
 — the latter on `feature/databank-data-deposition`, open as a PR against
-`main`. 1089 tests passing + 32 skipped._
+`main`. 1093 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -54,12 +54,17 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
     `[Unreleased]` entry for the exact list. A pre-existing bug rode along:
     three PubMed trial-registry names (`JMACCT`, `REPEC`, `UMIN CTR`) were
     missing from `_TRIAL_REGISTRY_NAMES`.
-- **Current branch: `feature/databank-data-deposition`**, open as a PR against
-  `main`. It passed a whole-branch review, whose one Important finding (the
-  manual still claimed a paywalled paper forfeits its data-availability
+- **Current branch: `feature/databank-data-deposition`**, open as PR #43
+  against `main`. It passed a whole-branch review, whose one Important finding
+  (the manual still claimed a paywalled paper forfeits its data-availability
   points — the exact case this feature fixes) and seven minor findings were
-  all addressed before the PR opened.
-- **1089 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+  all addressed before the PR opened. A second review, of the PR itself,
+  raised four more, all fixed on the branch: the deposition allow-lists became
+  one name→level mapping (see "Deliberate non-fixes" below), two
+  cross-map invariants gained tests, the `_score_data_availability` fallthrough
+  gained a direct one, and that function's docstring lost two paragraphs that
+  were answering a reviewer rather than the next reader.
+- **1093 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -203,23 +208,46 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   `test_a_step_that_found_nothing_does_not_lower_an_established_level`, which
   pins the merge instead. Pinned by that test and
   `test_an_inbound_results_flag_does_not_stand_in_for_this_check`.
+- **Every level either producer can nominate must be a key of
+  `_DATA_LEVEL_RANK`.** `note_data_level()` raises `KeyError` by design rather
+  than ranking an unrecognised level at zero, so a level that reaches it from
+  outside the map is not a wrong score but an uncaught exception out of
+  `analyze()` — and only for the papers that matched, so a green suite proves
+  nothing. The trap is baited: `"restricted"` and `"not_stated"` are levels
+  `calculate_risk_level()` genuinely accepts from callers who compute the
+  level themselves, so adding a `_DATA_PATTERNS` entry for one reads as
+  completing a set. `test_every_pattern_maps_to_a_level_the_ranking_knows` and
+  `test_every_repository_maps_to_a_level_the_ranking_knows` pin the two
+  producers' vocabularies against the map.
 - **Only the first half of NLM's `DataBankName` vocabulary scores a data
-  deposit; the second half is excluded on purpose.** `_DEPOSITION_DATABANK_NAMES`
-  (BioProject, dbVar, Dryad, figshare, GenBank, GEO, PDB, SRA) and
-  `_CONTROLLED_DEPOSITION_DATABANK_NAMES` (dbGaP) nominate a level; dbSNP,
+  deposit; the second half is excluded on purpose.**
+  `_DEPOSITION_DATABANK_LEVELS` maps BioProject, dbVar, Dryad, figshare,
+  GenBank, GEO, PDB and SRA to `full_open` and dbGaP to `on_request`; dbSNP,
   GDB, OMIM, PIR, the three PubChem tables, RefSeq, SWISSPROT, UniMES,
-  UniParc, UniProtKB and UniRef do not, and must not be added without
+  UniParc, UniProtKB and UniRef are absent, and must not be added without
   re-deriving the split. Those names are curated *reference* databases — an
   OMIM number says the paper is about a known condition, a RefSeq accession
   names a sequence NCBI curated — not proof that *these* authors deposited
   *their own* data, which is what the data-availability component measures.
-  dbSNP is the sharpest case, since it sits right next to `dbvar` in NLM's
-  table: a dbVar accession is a structural-variant submission, but a dbSNP
-  citation is overwhelmingly an rs-number reference to a variant someone else
-  already catalogued. "Complete the allow-list" by moving OMIM or RefSeq
-  across is the obvious-looking change that gets this wrong. The exclusion is
-  spelled out, member by member, in the source comment above
-  `_DEPOSITION_DATABANK_NAMES`.
+  dbSNP is the sharpest case, since it sits right next to `dbvar` in the map:
+  a dbVar accession is a structural-variant submission, but a dbSNP citation
+  is overwhelmingly an rs-number reference to a variant someone else already
+  catalogued. "Complete the allow-list" by moving OMIM or RefSeq across is the
+  obvious-looking change that gets this wrong. The exclusion is spelled out,
+  member by member, in the source comment above
+  `_DEPOSITION_DATABANK_LEVELS`.
+- **It is a mapping, not a set-per-level, and `_merge_pubmed_signals()`
+  subscripts it.** The earlier shape was two frozensets with the merge reading
+  `"on_request" if name in controlled else "full_open"` — correct, but the
+  level was a default, so the next controlled-access repository (EGA, say)
+  added to the deposit set and not the controlled one would silently earn 20
+  points as fully open. With the level as the value there is nowhere to add a
+  name without stating its worth, and the subscript raises on a name the
+  parser should never have admitted rather than scoring it generously. Three
+  tests hold the shape:
+  `test_every_repository_maps_to_a_level_the_ranking_knows`,
+  `test_no_repository_nominates_a_level_weaker_than_on_request` and
+  `test_the_deposition_and_registry_name_sets_are_disjoint`.
 - **`TransparencySettings.filtering_enabled`, `max_concurrent_analyses`,
   `cache_results` are not dead code.** They are orchestration hints for the
   *calling* application. The library analyses one document per call and does

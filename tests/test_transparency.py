@@ -21,8 +21,9 @@ from __future__ import annotations
 import pytest
 
 from bmlib.transparency.analyzer import (
-    _CONTROLLED_DEPOSITION_DATABANK_NAMES,
-    _DEPOSITION_DATABANK_NAMES,
+    _DATA_LEVEL_RANK,
+    _DATA_PATTERNS,
+    _DEPOSITION_DATABANK_LEVELS,
     _INDICATOR_COI_IN_PUBMED,
     _INDICATOR_COI_UNKNOWN,
     _INDICATOR_DATA_DEPOSITED_PREFIX,
@@ -859,6 +860,27 @@ class TestDataAvailabilityPatterns:
         _score_data_availability(analysis)
         assert analysis.score == SCORE_DATA_FULL_OPEN
 
+    def test_a_level_nobody_established_scores_nothing_and_says_nothing(self):
+        # The branch every other test reaches only by implication: "unknown"
+        # falls off the end of the chain, so it must award no points *and*
+        # write no indicator. Silence is not a finding — an indicator here
+        # would report an absence of evidence as evidence.
+        analysis = _Analysis()
+        _score_data_availability(analysis)
+        assert analysis.data_level == "unknown"
+        assert analysis.score == 0
+        assert analysis.indicators == []
+
+    def test_every_pattern_maps_to_a_level_the_ranking_knows(self):
+        # `_check_europepmc` feeds these values straight to
+        # `note_data_level()`, which raises on anything outside
+        # `_DATA_LEVEL_RANK`. The trap is baited: "restricted" and
+        # "not_stated" are levels `calculate_risk_level()` genuinely accepts,
+        # so adding a pattern for one reads as reasonable — and would then
+        # throw a KeyError out of `analyze()` for every paper whose text
+        # matched it. Nothing but this test stands between the two maps.
+        assert set(_DATA_PATTERNS.values()) <= set(_DATA_LEVEL_RANK)
+
 
 class TestAnalyzeApiReachability:
     """A run where no external API responds must be UNKNOWN, not HIGH."""
@@ -1503,12 +1525,32 @@ class TestPubMedSignalParsing:
         # deposit and never reach the registry branch — silently dropping
         # `trial_registered`, `SCORE_TRIAL_REGISTERED` (20) and the registry
         # indicator while a deposit scores 20 instead. The total would look
-        # plausible and nothing would raise. Nothing enforces the sets stay
-        # disjoint except this test; if it ever fails, the fix is to remove
-        # the name from whichever set it does not belong in, not to reorder
-        # the branches in the parser.
-        deposition_names = _DEPOSITION_DATABANK_NAMES | _CONTROLLED_DEPOSITION_DATABANK_NAMES
-        assert not deposition_names & _TRIAL_REGISTRY_NAMES
+        # plausible and nothing would raise. Nothing enforces the two
+        # vocabularies stay disjoint except this test; if it ever fails, the
+        # fix is to remove the name from whichever of the two it does not
+        # belong in, not to reorder the branches in the parser.
+        assert not set(_DEPOSITION_DATABANK_LEVELS) & _TRIAL_REGISTRY_NAMES
+
+    def test_every_repository_maps_to_a_level_the_ranking_knows(self):
+        # `_merge_pubmed_signals` subscripts `_DEPOSITION_DATABANK_LEVELS` and
+        # feeds the result straight to `note_data_level()`, which raises on a
+        # level outside `_DATA_LEVEL_RANK`. A typo in a value here would
+        # therefore surface as a KeyError escaping `analyze()` for exactly
+        # those papers that deposited data — the ones this feature exists to
+        # credit — rather than at import time.
+        assert set(_DEPOSITION_DATABANK_LEVELS.values()) <= set(_DATA_LEVEL_RANK)
+
+    def test_no_repository_nominates_a_level_weaker_than_on_request(self):
+        # A deposit is positive evidence. Mapping one to "unknown" or
+        # "not_available" would be a contradiction the type system cannot
+        # catch: both are keys of `_DATA_LEVEL_RANK`, so the test above would
+        # still pass and the paper would silently score nothing — or, at
+        # "not_available", earn a "Data explicitly not available" indicator
+        # off the back of an accession proving the opposite.
+        assert all(
+            _DATA_LEVEL_RANK[level] >= _DATA_LEVEL_RANK["on_request"]
+            for level in _DEPOSITION_DATABANK_LEVELS.values()
+        )
 
 
 class TestPubMedRequest:
