@@ -333,7 +333,7 @@ All requests go through one `httpx.Client` with a 15-second timeout and the head
 
 The step-2 search is issued **once** per document: the record is threaded into the PubMed and trial-registration steps rather than re-queried, halving Europe PMC traffic compared to earlier releases.
 
-Step 3 is the difference between a real data-availability reading and a guess. COI and data-availability statements live in a paper's full text, never its abstract, so when `inEPMC != "Y"` (no open-access full text at Europe PMC) the analyzer falls back to scanning the abstract, `full_text_analyzed` stays `False`, and industry-COI detection does not run at all. COI *disclosure* is the exception: step 4 can establish it from PubMed's structured metadata whether or not full text was reachable.
+Step 3 is the difference between a real data-availability reading and a guess. COI and data-availability statements live in a paper's full text, never its abstract, so when `inEPMC != "Y"` (no open-access full text at Europe PMC) the analyzer falls back to scanning the abstract, `full_text_analyzed` stays `False`, and industry-COI detection does not run at all. COI *disclosure* and data availability are two exceptions: step 4 can establish either — a COI statement, or a `<DataBankList>` deposition accession — from PubMed's structured metadata whether or not full text was reachable.
 
 Step 4's ordering is deliberate. It sits after Europe PMC so a DOI-only analysis can reuse the PMID from the record already fetched, and before ClinicalTrials.gov so a structured registry accession can feed the posted-results check. It costs one request at most, and none at all when no PMID is available. Its four signals — COI, trial registration, data-deposition accessions, and funders — are all publisher-supplied structured metadata, which is why they outrank the text heuristics elsewhere in the module. A PubMed record that is missing, unreachable, or unparsable yields no signals and changes nothing.
 
@@ -357,7 +357,7 @@ The two data-availability awards are mutually exclusive, so the best attainable 
 
 Unlike every other row, the data-availability points are not spent by the step that found the level. Two sub-steps can each propose a level — Europe PMC's full-text scan and PubMed's `<DataBankList>` deposition accessions — so scoring at the point of discovery would either double-count or spend points on a level a later, stronger nomination beats. `_score_data_availability(analysis)` runs once, in `analyze()`, after every sub-step has run and before the `MAX_TRANSPARENCY_SCORE` cap, and looks only at the level that survived the merge.
 
-Note that the score is a *transparency* measure, not a quality measure, and it is heavily influenced by article type: a non-trial paper can never earn the 35 trial-related points, and a paywalled paper forfeits the 15 open-access points and (via step 3) the data-availability points. Compare scores within an article class, not across.
+Note that the score is a *transparency* measure, not a quality measure, and it is heavily influenced by article type: a non-trial paper can never earn the 35 trial-related points, and a paywalled paper forfeits the 15 open-access points; the data-availability points are usually lost too (step 3 needs full text) but not always — a `<DataBankList>` deposition accession from step 4 can still credit them for a closed-access paper. Compare scores within an article class, not across.
 
 **Other constants:**
 

@@ -43,13 +43,17 @@ All notable changes to bmlib are documented here. The format is based on
 
   **Moves stored values, not behind a flag:** `transparency_score` rises by
   10 or 20 for papers whose PubMed record names a deposition repository the
-  prose scan missed; `data_availability_level` can move off
-  `"not_available"` and `"unknown"`, which can in turn lift a `HIGH` result
-  the industry-funding + restricted-data rule produced; and `"Data
-  explicitly not available"` moves to the end of `risk_indicators` (it is
-  now appended by `_score_data_availability()` after every step has run,
-  rather than by the step that found the level), with `"Data deposited:
-  …"` a new line alongside it. See
+  prose scan missed. `data_availability_level` can move off
+  `"not_available"`, which can in turn lift a `HIGH` result the
+  industry-funding + restricted-data rule produced — `calculate_risk_level()`
+  treats `"not_available"` as restricted. It can also move off `"unknown"`,
+  but `"unknown"` was never restricted, so that move cannot affect the
+  industry-funding rule; it can still turn a score-threshold `HIGH` into
+  something else, since the added points can carry the score past
+  `score_threshold`. And `"Data explicitly not available"` moves to the end
+  of `risk_indicators` (it is now appended by `_score_data_availability()`
+  after every step has run, rather than by the step that found the level),
+  with `"Data deposited: …"` a new line alongside it. See
   `docs/superpowers/specs/2026-08-01-databank-data-deposition-design.md` for
   the rejected alternatives — a fifth `"deposited"` level distinct from
   `full_open`, scoring inside `note_data_level()` with a refund pass, and
@@ -84,10 +88,14 @@ All notable changes to bmlib are documented here. The format is based on
   both spellings are now kept, since the hyphenated form appears in older
   records). A paper registered in any of the three silently lost
   `SCORE_TRIAL_REGISTERED`. **Moves stored values:** `trial_registered`
-  becomes `True` and `transparency_score` rises by 20 for affected papers.
-  Found while curating the deposition allow-lists above against NLM's
-  vocabulary table; it is a pre-existing bug rather than part of that
-  feature, so it gets its own entry.
+  becomes `True` and `transparency_score` rises by 20 for affected papers;
+  a paper registered in one of the three with no NCT id credited in its
+  abstract also gains a new `risk_indicators` line, `"Trial registration
+  found; posted-results status could not be checked"`, from the
+  `_check_trial_registration` branch that `registration_not_checkable` now
+  reaches for these names. Found while curating the deposition allow-lists
+  above against NLM's vocabulary table; it is a pre-existing bug rather than
+  part of that feature, so it gets its own entry.
 
 ## [0.6.0] — 2026-07-30
 

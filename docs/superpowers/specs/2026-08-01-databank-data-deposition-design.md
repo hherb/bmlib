@@ -85,7 +85,7 @@ mixes two different kinds of thing:
 | | |
 |---|---|
 | **Deposited into** | BioProject, dbGaP, dbVar, Dryad, figshare, GENBANK, GEO, PDB, SRA |
-| **Cited a record in** | GDB, OMIM, PIR, PubChem-BioAssay, PubChem-Compound, PubChem-Substance, RefSeq, SWISSPROT, UniMES, UniParc, UniProtKB, UniRef |
+| **Cited a record in** | dbSNP, GDB, OMIM, PIR, PubChem-BioAssay, PubChem-Compound, PubChem-Substance, RefSeq, SWISSPROT, UniMES, UniParc, UniProtKB, UniRef |
 
 An OMIM number says the paper is about a known condition. A RefSeq accession
 names a reference sequence NCBI curated, not one these authors produced. Only
@@ -93,6 +93,15 @@ the first column is evidence that *these* authors shared *their* data, so only
 the first column scores. The second column is excluded by a comment naming
 each member and the reason, following the `_INDUSTRY_WORDS` precedent, so a
 future contributor reads the omission as a decision rather than an oversight.
+
+dbSNP is the sharpest case in that second column, since `dbVar` sits right
+beside it in the first: a dbVar accession is a structural-variant submission,
+but a dbSNP citation is overwhelmingly an rs-number reference to a variant
+someone else already catalogued, not a deposit of these authors' own data.
+(dbSNP was missing from this table's first draft and the exclusion comment it
+fed — `_DEPOSITION_DATABANK_NAMES` never included it, so nothing scored
+wrong, but the comment claimed a completeness it did not have. Caught and
+fixed during implementation, not settled here beforehand.)
 
 dbGaP is genuine deposition but **controlled access** — a reader needs Data
 Access Committee approval — so it maps to `on_request` (10) rather than
@@ -256,11 +265,17 @@ All four move values a caller may have persisted. None is behind a flag.
 
 1. `transparency_score` rises by 10 or 20 for papers whose PubMed record names
    a deposition repository the prose scan missed.
-2. `data_availability_level` can move off `"not_available"` and `"unknown"`,
-   which can in turn lift a `HIGH` result produced by the industry-funding +
-   restricted-data rule.
+2. `data_availability_level` can move off `"not_available"`, which can in turn
+   lift a `HIGH` result produced by the industry-funding + restricted-data
+   rule (`calculate_risk_level()` treats `"not_available"` as restricted). It
+   can also move off `"unknown"`, but `"unknown"` was never restricted, so
+   that move cannot affect the industry-funding rule — only the
+   score-threshold one, since the added points can carry the score past
+   `score_threshold`.
 3. Papers registered in JMACCT, REPEC or UMIN CTR gain
-   `trial_registered=True` and 20 points.
+   `trial_registered=True` and 20 points; one with no NCT id credited in its
+   abstract also gains the `risk_indicators` line "Trial registration found;
+   posted-results status could not be checked".
 4. `"Data explicitly not available"` moves to the end of `risk_indicators`,
    and `"Data deposited: …"` is a new line.
 
