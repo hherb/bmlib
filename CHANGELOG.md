@@ -6,6 +6,26 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- **`transparency`: `analyze()`'s accumulators moved onto one `_Analysis`
+  carrier.** Ten values were passed into each sub-step and unpacked back out of
+  a 4-to-6-element tuple, where element order was the only thing binding a
+  value to its name — so a mis-ordered unpacking was a silent, type-compatible
+  swap, and adding one signal meant widening several signatures. All five
+  sub-steps now mutate the carrier and return `None`. `SCORE_FUNDER_INFO` is
+  spent through a named `award_funder_info()` method, which makes "award this
+  component at most once" a mechanism rather than a convention two call sites
+  had to remember. Internal only: no public signature changed
+  ([#37](https://github.com/hherb/bmlib/issues/37)).
+- **`transparency`: a funder named repeatedly by CrossRef now yields one
+  `Industry funder: X` indicator, not one per award record.** CrossRef emits
+  one record per award, so an organisation funding several awards on a paper
+  repeated in `risk_indicators`. PubMed's grant list already deduplicated;
+  both sources now go through the same `note_industry_funder()` and follow the
+  same rule. No score, no `industry_funding_detected` and no risk level moves
+  — only the length of `risk_indicators` for affected papers.
+
 ## [0.6.0] — 2026-07-30
 
 The largest release since 0.4.0. `bmlib.publications` runs on PostgreSQL,
