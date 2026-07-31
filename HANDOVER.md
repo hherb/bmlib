@@ -2,8 +2,8 @@
 
 _Last updated: 2026-08-01. **0.6.0 is cut.** `[Unreleased]` holds the
 `_Analysis` carrier (#37) and data deposition from PubMed's `<DataBankList>`
-— the latter on `feature/databank-data-deposition`, six commits, not yet
-pushed or opened as a PR. 1087 tests passing + 32 skipped._
+— the latter on `feature/databank-data-deposition`, open as a PR against
+`main`. 1089 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -54,11 +54,12 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
     `[Unreleased]` entry for the exact list. A pre-existing bug rode along:
     three PubMed trial-registry names (`JMACCT`, `REPEC`, `UMIN CTR`) were
     missing from `_TRIAL_REGISTRY_NAMES`.
-- **Current branch: `feature/databank-data-deposition`**, six commits
-  (a385161, 11f47ff, b531252, 67e62e5, 381bd98, 440ec84, plus this
-  documentation commit), not yet pushed to `origin` and no PR open. A
-  whole-branch review runs before it merges to `main`.
-- **1087 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **Current branch: `feature/databank-data-deposition`**, open as a PR against
+  `main`. It passed a whole-branch review, whose one Important finding (the
+  manual still claimed a paywalled paper forfeits its data-availability
+  points — the exact case this feature fixes) and seven minor findings were
+  all addressed before the PR opened.
+- **1089 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
