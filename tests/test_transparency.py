@@ -1217,17 +1217,25 @@ class TestUnknownReason:
 def _pubmed_xml(
     *,
     coi: str | None = None,
-    databanks: tuple[tuple[str, tuple[str, ...]], ...] = (),
+    databanks: tuple[tuple[str, tuple[str, ...] | None], ...] = (),
     agencies: tuple[str, ...] = (),
 ) -> str:
     """Build a minimal PubmedArticleSet response.
 
     *databanks* is a tuple of ``(DataBankName, accession numbers)`` pairs.
+    Accessions of ``None`` omit ``<AccessionNumberList>`` altogether; an empty
+    tuple emits it empty. PubMed produces both.
     """
     databank_xml = "".join(
-        f"<DataBank><DataBankName>{name}</DataBankName><AccessionNumberList>"
-        + "".join(f"<AccessionNumber>{a}</AccessionNumber>" for a in accessions)
-        + "</AccessionNumberList></DataBank>"
+        f"<DataBank><DataBankName>{name}</DataBankName>"
+        + (
+            ""
+            if accessions is None
+            else "<AccessionNumberList>"
+            + "".join(f"<AccessionNumber>{a}</AccessionNumber>" for a in accessions)
+            + "</AccessionNumberList>"
+        )
+        + "</DataBank>"
         for name, accessions in databanks
     )
     grant_xml = "".join(
@@ -1415,6 +1423,71 @@ class TestPubMedSignalParsing:
         # silently cost the paper SCORE_TRIAL_REGISTERED.
         signals = _parse_pubmed_signals(_pubmed_xml(databanks=((name, ("X1",)),)))
         assert signals.registration_not_checkable is True
+
+    def test_a_deposition_accession_is_collected(self):
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("GENBANK", ("MN908947",)),)))
+        assert signals.deposition_databanks == ("GENBANK",)
+
+    def test_pubmeds_own_spelling_is_kept(self):
+        # The name is rendered to humans in the indicator line.
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("GenBank", ("MN908947",)),)))
+        assert signals.deposition_databanks == ("GenBank",)
+
+    def test_repository_matching_ignores_case(self):
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("figshare", ("10.6084/m9",)),)))
+        assert signals.deposition_databanks == ("figshare",)
+
+    def test_one_repository_named_twice_is_one_entry(self):
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("GENBANK", ("A1",)), ("GenBank", ("A2",))))
+        )
+        assert signals.deposition_databanks == ("GENBANK",)
+
+    def test_repositories_are_kept_in_document_order(self):
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("PDB", ("1ABC",)), ("SRA", ("SRP000001",))))
+        )
+        assert signals.deposition_databanks == ("PDB", "SRA")
+
+    @pytest.mark.parametrize("accessions", [None, (), ("",), ("   ",)])
+    def test_a_repository_without_a_usable_accession_proves_nothing(self, accessions):
+        # A repository name with no accession is an assertion with no referent
+        # — nothing a reader could go and fetch — so it is not the structured
+        # proof of a deposit this signal claims to be.
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("GENBANK", accessions),)))
+        assert signals.deposition_databanks == ()
+
+    @pytest.mark.parametrize("name", ["OMIM", "RefSeq", "UniProtKB", "PubChem-Compound", "GDB"])
+    def test_a_curated_reference_database_is_not_a_deposit(self, name):
+        # NLM lists these beside the deposition repositories, but an OMIM
+        # number says the paper is about a known condition and a RefSeq
+        # accession names a sequence NCBI curated — neither is evidence that
+        # these authors shared their data.
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=((name, ("X1",)),)))
+        assert signals.deposition_databanks == ()
+
+    def test_a_controlled_access_repository_is_collected_too(self):
+        # dbGaP is genuine deposition; the merge step is what knows it is
+        # controlled-access and worth `on_request` rather than `full_open`.
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("dbGaP", ("phs000001",)),)))
+        assert signals.deposition_databanks == ("dbGaP",)
+
+    def test_a_registry_and_a_repository_in_one_list_feed_both_branches(self):
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(
+                databanks=(
+                    ("ClinicalTrials.gov", ("NCT01234567",)),
+                    ("GENBANK", ("MN908947",)),
+                )
+            )
+        )
+        assert signals.trial_accessions == ("NCT01234567",)
+        assert signals.deposition_databanks == ("GENBANK",)
+
+    def test_an_unrecognised_databank_name_is_ignored(self):
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("SomeNewRegistry", ("X1",)),)))
+        assert signals.deposition_databanks == ()
+        assert signals.registration_not_checkable is False
 
 
 class TestPubMedRequest:

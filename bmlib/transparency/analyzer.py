@@ -200,6 +200,38 @@ _TRIAL_REGISTRY_NAMES = frozenset(
 )
 _CLINICALTRIALS_GOV = "clinicaltrials.gov"
 
+# `DataBankName` values naming a repository authors *deposit into*, lowercased.
+# Curated from the same NLM vocabulary as the registries above, whose second
+# table this splits in half. The other half is deliberately excluded: GDB,
+# OMIM, PIR, PubChem-BioAssay, PubChem-Compound, PubChem-Substance, RefSeq,
+# SWISSPROT, UniMES, UniParc, UniProtKB and UniRef are curated *reference*
+# databases. An OMIM number says the paper is about a known condition; a
+# RefSeq accession names a sequence NCBI curated, not one these authors
+# produced. Neither is evidence that these authors shared their own data,
+# which is what the data-availability component measures — so adding one back
+# would award 20 points for a citation.
+#
+# Zenodo is absent because NLM's vocabulary does not carry it, so PubMed never
+# emits it. `_DATA_PATTERNS` already matches "zenodo" in prose.
+_DEPOSITION_DATABANK_NAMES = frozenset(
+    {
+        "bioproject",
+        "dbvar",
+        "dryad",
+        "figshare",
+        "genbank",
+        "geo",
+        "pdb",
+        "sra",
+    }
+)
+
+# Deposition into a controlled-access repository. The deposit is real,
+# findable and citable, but a reader needs Data Access Committee approval to
+# obtain the data — which is what `on_request` already means, so scoring it
+# `full_open` would overstate what a reader can actually get.
+_CONTROLLED_DEPOSITION_DATABANK_NAMES = frozenset({"dbgap"})
+
 # ---- Indicator strings ----
 # Named rather than inlined because the PubMed step must be able to retract the
 # two COI lines: a structured <CoiStatement> can establish a disclosure that the
@@ -354,12 +386,19 @@ class _PubMedSignals:
         funders: Distinct ``<Grant><Agency>`` names, in document order. PubMed
             emits one ``<Grant>`` per grant number, so a single agency funding
             four grants appears four times in the XML and once here.
+        deposition_databanks: Repository names from ``<DataBankList>`` that
+            carried at least one non-blank accession, in PubMed's own
+            spelling and document order, deduplicated case-insensitively.
+            Names rather than a level: this class reports what the record
+            said, and :func:`_merge_pubmed_signals` decides what it is worth
+            — the same division `funders` already follows.
     """
 
     coi_statement: bool = False
     trial_accessions: tuple[str, ...] = ()
     registration_not_checkable: bool = False
     funders: tuple[str, ...] = ()
+    deposition_databanks: tuple[str, ...] = ()
 
 
 def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
@@ -393,8 +432,25 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
 
     accessions: list[str] = []
     registration_not_checkable = False
+    # Keyed by the lowercased name so a record naming one repository twice —
+    # or once as "GENBANK" and once as "GenBank" — yields one entry. The value
+    # is the first spelling seen, because it is rendered to humans.
+    deposition: dict[str, str] = {}
     for databank in citation.findall("Article/DataBankList/DataBank"):
-        name = (databank.findtext("DataBankName") or "").strip().lower()
+        raw_name = (databank.findtext("DataBankName") or "").strip()
+        name = raw_name.lower()
+
+        if name in _DEPOSITION_DATABANK_NAMES or name in _CONTROLLED_DEPOSITION_DATABANK_NAMES:
+            # A repository name with no accession is an assertion with no
+            # referent — nothing a reader could go and fetch — so it is not
+            # the structured proof of a deposit this signal claims to be.
+            if any(
+                (el.text or "").strip()
+                for el in databank.findall("AccessionNumberList/AccessionNumber")
+            ):
+                deposition.setdefault(name, raw_name)
+            continue
+
         if name not in _TRIAL_REGISTRY_NAMES:
             continue
         # Every accession is publisher-supplied text that would be interpolated
@@ -438,6 +494,7 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
         trial_accessions=tuple(accessions),
         registration_not_checkable=registration_not_checkable,
         funders=funders,
+        deposition_databanks=tuple(deposition.values()),
     )
 
 
