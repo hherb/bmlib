@@ -1,8 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-07-31. **0.6.0 is cut.** `[Unreleased]` now holds one
-change — the `_Analysis` carrier (#37) — and nothing else is in flight.
-1048 tests passing + 32 skipped._
+_Last updated: 2026-08-01. **0.6.0 is cut.** `[Unreleased]` holds the
+`_Analysis` carrier (#37) and data deposition from PubMed's `<DataBankList>`
+— the latter on `feature/databank-data-deposition`, six commits, not yet
+pushed or opened as a PR. 1087 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -35,14 +36,29 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it will
   not see this release until that pin is widened. That is a downstream change,
   not a bmlib one.
-- **Unreleased since 0.6.0:** the `_Analysis` carrier (#37) — `analyze()`'s ten
-  accumulators moved off 4-to-6-element tuples onto one mutable dataclass every
-  sub-step mutates in place. It carries one behaviour change: a funder named
-  repeatedly by CrossRef now yields one `Industry funder: X` indicator instead
-  of one per award record, which is the rule PubMed's grant list already
-  followed. Only `risk_indicators` length moves — no score, no
-  `industry_funding_detected`, no risk level.
-- **1048 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **Unreleased since 0.6.0:** two changes.
+  - The `_Analysis` carrier (#37) — `analyze()`'s ten accumulators moved off
+    4-to-6-element tuples onto one mutable dataclass every sub-step mutates in
+    place. It carries one behaviour change: a funder named repeatedly by
+    CrossRef now yields one `Industry funder: X` indicator instead of one per
+    award record, which is the rule PubMed's grant list already followed.
+    Only `risk_indicators` length moves — no score, no
+    `industry_funding_detected`, no risk level.
+  - **Data deposition from PubMed's `<DataBankList>`** — see "Current branch"
+    below for where it lives. PubMed's deposition repositories (GenBank, PDB,
+    SRA, Dryad, figshare, BioProject, GEO; dbGaP separately) now feed
+    `data_availability_level` alongside the existing full-text prose scan,
+    merged by rank through `_Analysis.note_data_level()` rather than
+    whichever step ran last. Moves four stored values, none behind a flag —
+    see the design doc's "Behaviour changes" section and the CHANGELOG
+    `[Unreleased]` entry for the exact list. A pre-existing bug rode along:
+    three PubMed trial-registry names (`JMACCT`, `REPEC`, `UMIN CTR`) were
+    missing from `_TRIAL_REGISTRY_NAMES`.
+- **Current branch: `feature/databank-data-deposition`**, six commits
+  (a385161, 11f47ff, b531252, 67e62e5, 381bd98, 440ec84, plus this
+  documentation commit), not yet pushed to `origin` and no PR open. A
+  whole-branch review runs before it merges to `main`.
+- **1087 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -67,17 +83,6 @@ so every step would still rebuild and return it — the arity survives).
 
 ### Worth doing, not yet an issue
 
-- **Data-deposition accessions in PubMed's `<DataBankList>`** (GENBANK, PDB,
-  SRA, Dryad, figshare) are structured proof of data sharing, strictly
-  stronger than the current substring scan of the full text. Deliberately left
-  out of the PubMed step to keep the data-availability scoring path out of
-  that change; `_parse_pubmed_signals()` already walks the databanks, so this
-  is a small follow-up rather than a rewrite. **This is now the natural next
-  change to `analyze()`, and #37 was done to clear its way:** add the signal by
-  writing to `_Analysis` — do not reintroduce a threaded value, and if it needs
-  a "has this been scored?" flag, give it a named method beside
-  `award_funder_info()` rather than a bare field two call sites must remember
-  to check.
 - **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume this
   release. Read the three non-comparable behaviour changes above first — the
   transparency ones move stored scores, so a project holding historical
@@ -178,18 +183,42 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   (`TEXT_INDUSTRY_CONFIDENCE` vs. a funder record's 0.8) belongs to the step
   that found it, not to `analyze()`.
 - **A sub-step publishes its own finding to `_Analysis`; it never reads a field
-  back to decide what it found.** `_check_europepmc` collects the data level
-  into a local and assigns it once, and `_check_trial_registration` decides
+  back to decide what it found.** `_check_trial_registration` decides
   `_INDICATOR_NO_POSTED_RESULTS` from the `any()` it just ran rather than from
-  `analysis.results_compliant`. Both read the carrier back at first, which is
-  harmless only while each field has exactly one producer — it is the
-  positional-unpacking hazard the carrier was built to remove, respelled as
-  state, and it would have gone live the moment a second producer appeared.
-  The queued `<DataBankList>` data-deposition signal is that second producer
-  for `data_level`, so it has to bring a merge rule (strongest evidence wins,
-  as `industry_confidence` already does) rather than just assigning the field.
-  Pinned by `test_a_level_this_step_did_not_find_is_not_scored` and
+  `analysis.results_compliant` — reading the carrier back is harmless only
+  while a field has exactly one producer, which is the positional-unpacking
+  hazard the carrier was built to remove, respelled as state. `data_level`
+  was the field this was written expecting a second producer for, and now has
+  one: PubMed's `<DataBankList>` deposition accessions join Europe PMC's
+  full-text prose scan. Neither assigns the field directly — both call
+  `_Analysis.note_data_level()`, which keeps the higher-ranked of the two
+  nominations (`_DATA_LEVEL_RANK`: `unknown` < `not_available` < `on_request`
+  < `full_open`, the same "strongest evidence wins" rule `industry_confidence`
+  already followed). `test_a_level_this_step_did_not_find_is_not_scored`
+  pinned the single-producer world, where `_check_europepmc` assigned
+  `data_level` outright and nominating `"unknown"` had no rule to interact
+  with; with a second producer that premise inverts — finding nothing is not
+  evidence against what another source found — so the test was replaced by
+  `test_a_step_that_found_nothing_does_not_lower_an_established_level`, which
+  pins the merge instead. Pinned by that test and
   `test_an_inbound_results_flag_does_not_stand_in_for_this_check`.
+- **Only the first half of NLM's `DataBankName` vocabulary scores a data
+  deposit; the second half is excluded on purpose.** `_DEPOSITION_DATABANK_NAMES`
+  (BioProject, dbVar, Dryad, figshare, GenBank, GEO, PDB, SRA) and
+  `_CONTROLLED_DEPOSITION_DATABANK_NAMES` (dbGaP) nominate a level; dbSNP,
+  GDB, OMIM, PIR, the three PubChem tables, RefSeq, SWISSPROT, UniMES,
+  UniParc, UniProtKB and UniRef do not, and must not be added without
+  re-deriving the split. Those names are curated *reference* databases — an
+  OMIM number says the paper is about a known condition, a RefSeq accession
+  names a sequence NCBI curated — not proof that *these* authors deposited
+  *their own* data, which is what the data-availability component measures.
+  dbSNP is the sharpest case, since it sits right next to `dbvar` in NLM's
+  table: a dbVar accession is a structural-variant submission, but a dbSNP
+  citation is overwhelmingly an rs-number reference to a variant someone else
+  already catalogued. "Complete the allow-list" by moving OMIM or RefSeq
+  across is the obvious-looking change that gets this wrong. The exclusion is
+  spelled out, member by member, in the source comment above
+  `_DEPOSITION_DATABANK_NAMES`.
 - **`TransparencySettings.filtering_enabled`, `max_concurrent_analyses`,
   `cache_results` are not dead code.** They are orchestration hints for the
   *calling* application. The library analyses one document per call and does
