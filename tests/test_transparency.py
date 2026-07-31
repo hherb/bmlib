@@ -1357,6 +1357,16 @@ class TestPubMedSignalParsing:
     def test_empty_article_set_yields_no_signals(self):
         assert _parse_pubmed_signals("<PubmedArticleSet/>") == _PubMedSignals()
 
+    @pytest.mark.parametrize("name", ["JMACCT", "REPEC", "UMIN CTR"])
+    def test_registries_nlm_publishes_are_all_recognised(self, name):
+        # All three appear in NLM's DataBankName vocabulary and none was in
+        # bmlib's set: JMACCT and REPEC were missing outright, and UMIN's
+        # registry was spelled "umin-ctr" where NLM's table says "UMIN CTR",
+        # so the exact-match test failed on the string PubMed emits. Each
+        # silently cost the paper SCORE_TRIAL_REGISTERED.
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=((name, ("X1",)),)))
+        assert signals.registration_not_checkable is True
+
 
 class TestPubMedRequest:
     """The request itself: identification, the API key, and when it is issued."""

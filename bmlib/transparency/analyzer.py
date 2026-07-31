@@ -163,8 +163,14 @@ EUTILS_TOOL_NAME = "bmlib"
 
 # `DataBankName` values PubMed emits for clinical-trial registries, lowercased
 # for matching. Anything outside this set — GENBANK, PDB, SRA, Dryad, … — is a
-# data-deposition accession, which is a transparency signal of its own but not
-# a trial registration, and is ignored here.
+# data-deposition accession, handled by `_DEPOSITION_DATABANK_NAMES` below.
+#
+# Curated from NLM's published vocabulary:
+# https://www.nlm.nih.gov/bsd/medline_databank_source.html
+# Both spellings of UMIN's registry are kept: NLM's table says "UMIN CTR" but
+# the hyphenated form appears in older records. "jrct" and "iran registry of
+# clinical trials" are not in NLM's table and are kept anyway — they cost
+# nothing, and jRCT is the live successor to Japan's earlier registries.
 _TRIAL_REGISTRY_NAMES = frozenset(
     {
         "clinicaltrials.gov",
@@ -178,15 +184,18 @@ _TRIAL_REGISTRY_NAMES = frozenset(
         "iran registry of clinical trials",
         "irct",
         "japiccti",
+        "jmacct",
         "jprn",
         "jrct",
         "ntr",
         "pactr",
         "rebec",
+        "repec",
         "rpcec",
         "slctr",
         "tctr",
         "umin-ctr",
+        "umin ctr",
     }
 )
 _CLINICALTRIALS_GOV = "clinicaltrials.gov"
