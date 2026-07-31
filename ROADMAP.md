@@ -75,7 +75,7 @@ hold the full story.
 | ✅ Done | Survive a missing abstract | A `None` abstract from a nullable column was sliced unguarded in both LLM tiers, so one record took the whole scoring batch down. With title *and* abstract missing the tiers return `unclassified()` without calling the model (0.6.0) |
 | ✅ Done | Tier 2 token budget is settable | `classify()` repeated `temperature`/`max_tokens` at the call site, silently overriding the constructor; the 256-token ceiling truncated small local models' preamble and lost the JSON with it (0.6.0) |
 | **Quality & maintenance** | | |
-| ✅ Done | Test suite | 1072 tests + 32 skipped; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services. 30 skips are the PostgreSQL parameterisations of `test_backends.py`, which need `BMLIB_TEST_POSTGRESQL_DSN`; 2 need PyMuPDF |
+| ✅ Done | Test suite | 1074 tests + 32 skipped; in-memory SQLite for DB tests, mocked HTTP for API tests, no external services. 30 skips are the PostgreSQL parameterisations of `test_backends.py`, which need `BMLIB_TEST_POSTGRESQL_DSN`; 2 need PyMuPDF |
 | ✅ Done | Reference manual | `docs/manual/` — one page per module |
 | ✅ Done | Documentation refresh for 0.4.0 | CHANGELOG, README, CLAUDE.md and all eight manual pages rewritten against the real source, signatures verified and examples executed |
 | ✅ Done | Deduplicate `docs/manual/fulltext.md` | Issue #31 — the `## PDF Conversion` section appeared twice with overlapping, non-identical content; the two are merged, and the copy that wrongly called the converter standalone is gone (0.6.0) |

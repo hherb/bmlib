@@ -466,7 +466,7 @@ A `<DataBank>` whose name is in `_DATA_ARCHIVE_NAMES` — GENBANK, PDB, figshare
 
   Reading the registry set's complement as archives would couple the two branches — a registry NLM adds later, or one misspelled in the set, would score 20 points of *open data*. It would also credit the ~9,000 records naming a database an author cannot deposit into (RefSeq, OMIM, SWISSPROT, PIR, GDB, the UniProt family, PubChem-Compound); an accession there cites a curated third-party record. A sequence the authors did submit reaches GENBANK, which is in the set, so excluding the derived databases costs no genuine deposition.
 
-  An allowlist does go stale as NLM adds repositories — but it goes stale by *under*-crediting, which is the direction a transparency score should fail in. Same trade-off, same resolution as the [industry funder keywords](#industry-funder-detection).
+  An allowlist does go stale as NLM adds repositories — but it goes stale by *under*-crediting, which is the direction a transparency score should fail in. Same trade-off, same resolution as the [industry funder keywords](#industry-involvement-detection).
 
 ### Text scan — the fallback
 

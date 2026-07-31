@@ -2,7 +2,7 @@
 
 _Last updated: 2026-08-01. **0.6.0 is cut.** `[Unreleased]` holds two changes —
 the `_Analysis` carrier (#37) and the PubMed data-deposition signal (#44) —
-and nothing else is in flight. 1072 tests passing + 32 skipped._
+and nothing else is in flight. 1074 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -51,7 +51,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
      never assigned. The same change added `JMACCT` and `REPEC` to the trial
      registries, which moves stored values for those papers too (registration
      is worth 20 points).
-- **1072 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **1074 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -203,6 +203,14 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   `KeyError`** rather than ranking weakest, so a typo cannot silently drop the
   finding it names (`test_a_level_outside_the_vocabulary_raises`). A third
   producer needs nothing new — that is the point of the method.
+  That raise is right for a caller's typo but wrong as a way to find one of
+  *ours*, so the two level tables are pinned closed against the vocabulary:
+  every level `_DATA_PATTERNS` can produce must be in `_DATA_LEVEL_RANK`, or
+  the `KeyError` escapes `analyze()` — which wraps none of its sub-steps — on
+  every paper matching the pattern; and every `_DATA_LEVEL_SCORES` key must be
+  too, or `.get(level, 0)` awards nothing and takes nothing back, silently.
+  Pinned by `test_every_level_the_text_scan_can_produce_is_in_the_vocabulary`
+  and `test_every_level_that_scores_is_in_the_vocabulary`.
 - **`_DATA_ARCHIVE_NAMES` is an allowlist, not the complement of
   `_TRIAL_REGISTRY_NAMES`, and collapsing it back is a real defect.** Reading
   "not a registry" as "an archive" couples the two branches: a registry NLM

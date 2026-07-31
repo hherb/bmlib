@@ -22,6 +22,9 @@ import pytest
 
 from bmlib.transparency.analyzer import (
     _DATA_ARCHIVE_NAMES,
+    _DATA_LEVEL_RANK,
+    _DATA_LEVEL_SCORES,
+    _DATA_PATTERNS,
     _INDICATOR_COI_IN_PUBMED,
     _INDICATOR_COI_UNKNOWN,
     _INDICATOR_DATA_NOT_AVAILABLE,
@@ -317,6 +320,20 @@ class TestAnalysisCarrier:
         # would swallow a typo and silently drop the finding it names.
         with pytest.raises(KeyError):
             _Analysis().note_data_availability("open-ish")
+
+    def test_every_level_the_text_scan_can_produce_is_in_the_vocabulary(self):
+        # The raise above is the right behaviour for a caller's typo, but
+        # `_DATA_PATTERNS` is *this module's own* producer of level strings and
+        # the only one. A pattern added with a misspelled level would not score
+        # wrongly — it would raise `KeyError` out of `analyze()`, which wraps
+        # none of its sub-steps, on every paper whose text matches it.
+        assert set(_DATA_PATTERNS.values()) <= set(_DATA_LEVEL_RANK)
+
+    def test_every_level_that_scores_is_in_the_vocabulary(self):
+        # This one drifts *silently*: the credit is read with
+        # `.get(level, 0)`, so a scores key that no longer matches a rank key
+        # awards nothing and takes nothing back, with no error to notice.
+        assert set(_DATA_LEVEL_SCORES) <= set(_DATA_LEVEL_RANK)
 
 
 class TestCheckEuropePMC:

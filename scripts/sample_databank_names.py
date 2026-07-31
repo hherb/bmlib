@@ -35,6 +35,10 @@ reports for every candidate name:
 3. **How bmlib currently classifies it**, so a drift shows up as a line
    reading ``unclassified`` with a non-zero count.
 
+A row the script could not measure says ``ERROR`` rather than printing a zero
+or an ``unclassified``: both of those are what a genuine finding looks like,
+and a transient NCBI failure must not be readable as one.
+
 Run it before changing either set:
 
     uv run python scripts/sample_databank_names.py --email you@example.org
@@ -113,11 +117,20 @@ NLM_DATABANK_NAMES = (
 
 
 def _get(url: str, params: dict[str, str]) -> str | None:
-    """Issue one paced E-utilities request; return the body, or None on failure."""
+    """Issue one paced E-utilities request; return the body, or None on failure.
+
+    Deliberately ``urllib`` rather than the ``httpx`` its companion
+    ``scripts/sample_funder_names.py`` guards an import for: this script wants
+    nothing httpx offers, and staying on the standard library keeps it runnable
+    without the optional extras installed. The ``urlopen`` hazards CLAUDE.md
+    documents for ``llm/providers/ollama.py`` do not reach here — the host is a
+    module constant over HTTPS, so no ``file://`` URL is reachable, and no
+    credential rides in a header for a redirect to leak.
+    """
     time.sleep(REQUEST_INTERVAL_SECONDS)
     query = urllib.parse.urlencode(params)
     try:
-        # noqa: S310 - the URL is a module constant; only the query is built here.
+        # The URL is a module constant; only the query is built here.
         with urllib.request.urlopen(f"{url}?{query}", timeout=60) as resp:  # noqa: S310
             return resp.read().decode("utf-8", errors="replace")
     except (urllib.error.URLError, TimeoutError) as e:
@@ -126,7 +139,12 @@ def _get(url: str, params: dict[str, str]) -> str | None:
 
 
 def _record_count_and_ids(name: str, base: dict[str, str]) -> tuple[int, list[str]]:
-    """Return how many PubMed records name *name* as a databank, and a sample of ids."""
+    """Return how many PubMed records name *name* as a databank, and a sample of ids.
+
+    A count of ``-1`` means the question could not be asked. The caller must
+    not print that as a measurement: ``0`` is exactly what a set member that
+    has become dead weight looks like.
+    """
     body = _get(
         ESEARCH,
         {**base, "db": "pubmed", "term": f'"{name}"[si]', "retmax": str(SPELLING_SAMPLE)},
@@ -134,21 +152,32 @@ def _record_count_and_ids(name: str, base: dict[str, str]) -> tuple[int, list[st
     if body is None:
         return -1, []
     count = re.search(r"<Count>(\d+)</Count>", body)
-    return (int(count.group(1)) if count else 0), re.findall(r"<Id>(\d+)</Id>", body)
+    if count is None:
+        # A 200 carrying no <Count> is an NCBI error page, not an empty result
+        # set — reporting it as 0 would read as "this member earns nothing".
+        print(f"  no <Count> in esearch response for {name!r}", file=sys.stderr)
+        return -1, []
+    return int(count.group(1)), re.findall(r"<Id>(\d+)</Id>", body)
 
 
-def _spellings(pmids: list[str], base: dict[str, str]) -> Counter[str]:
-    """Count the literal ``<DataBankName>`` strings carried by *pmids*."""
+def _spellings(pmids: list[str], base: dict[str, str]) -> Counter[str] | None:
+    """Count the literal ``<DataBankName>`` strings carried by *pmids*.
+
+    ``None`` means the records could not be read, which is not the same as
+    reading them and finding no names — the caller classifies by the spellings
+    it sees, and on an empty counter falls back to the candidate's own
+    spelling. Collapsing the two would print a classification nothing measured.
+    """
     if not pmids:
         return Counter()
     body = _get(EFETCH, {**base, "db": "pubmed", "id": ",".join(pmids), "retmode": "xml"})
     if body is None:
-        return Counter()
+        return None
     try:
         root = ET.fromstring(body)  # noqa: S314 - NCBI payload, no entities requested
     except ET.ParseError as e:
         print(f"  unparsable efetch response: {e}", file=sys.stderr)
-        return Counter()
+        return None
     return Counter(
         (el.text or "").strip()
         for el in root.findall(".//Article/DataBankList/DataBank/DataBankName")
@@ -180,6 +209,12 @@ def main() -> int:
             print(f"{name:<34} {'ERROR':>8}")
             continue
         seen = _spellings(pmids, base)
+        if seen is None:
+            # The count is real but the classification would not be: with no
+            # spellings to read, the fallback below reports the candidate's own
+            # name back, which would claim a reading the sample never gave.
+            print(f"{name:<34} {count:>8}  {'ERROR':<20} not measured")
+            continue
         # The sample is fetched by name, so it also carries the *other* banks
         # those records list; keep only spellings that match this candidate
         # once punctuation and case are set aside, which is how PubMed's index
