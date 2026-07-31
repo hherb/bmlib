@@ -235,6 +235,21 @@ SCORE_TRIAL_REGISTERED = 20
 SCORE_RESULTS_POSTED = 15
 MAX_TRANSPARENCY_SCORE = 100
 
+# Data-availability levels ranked by how much data sharing is *established*,
+# so a second producer of `data_level` can be merged rather than having to
+# assume it runs last. An explicit denial outranks silence because it is a
+# finding rather than the absence of one; any positive level outranks the
+# denial. `calculate_risk_level()` accepts two further levels, "restricted"
+# and "not_stated", which the analyzer has never produced — they are for
+# callers computing the level themselves, and are deliberately absent here so
+# that nominating one raises rather than ranking at zero.
+_DATA_LEVEL_RANK = {
+    "unknown": 0,
+    "not_available": 1,
+    "on_request": 2,
+    "full_open": 3,
+}
+
 # ---- Trial lookup ----
 MAX_TRIAL_IDS_TO_CHECK = 3
 DEFAULT_INDUSTRY_CONFIDENCE = 0.8
@@ -447,7 +462,10 @@ class _Analysis:
         industry_funding: Any industry involvement was detected.
         industry_confidence: Confidence in that detection; the strongest
             evidence seen wins, regardless of arrival order.
-        data_level: Data-availability level from :data:`_DATA_PATTERNS`.
+        data_level: Data-availability level from :data:`_DATA_PATTERNS` or a
+            PubMed deposition accession; the strongest evidence seen wins,
+            regardless of arrival order. Set through
+            :meth:`note_data_level`, never assigned.
         coi_disclosed: Tri-state — ``True`` (statement found), ``False`` (full
             text scanned, none found), ``None`` (undeterminable).
         trial_registered: A trial registration was established.
@@ -515,6 +533,26 @@ class _Analysis:
         self.industry_funding = True
         self.industry_confidence = max(self.industry_confidence, TEXT_INDUSTRY_CONFIDENCE)
         self.indicators.append(_INDICATOR_INDUSTRY_COI)
+
+    def note_data_level(self, level: str) -> None:
+        """Nominate *level* as the paper's data availability; the strongest wins.
+
+        Two sources produce this — Europe PMC's full-text pattern scan and
+        PubMed's ``<DataBankList>`` deposition accessions — and neither can
+        know whether the other ran first, so the field is merged by rank
+        rather than assigned. A source that found nothing nominates
+        ``"unknown"``, which is a no-op: finding nothing is not evidence
+        against what another source found.
+
+        Args:
+            level: A key of :data:`_DATA_LEVEL_RANK`.
+
+        Raises:
+            KeyError: If *level* is not a level the analyzer produces. A typo
+                must fail loudly rather than silently rank below everything.
+        """
+        if _DATA_LEVEL_RANK[level] > _DATA_LEVEL_RANK[self.data_level]:
+            self.data_level = level
 
 
 def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:

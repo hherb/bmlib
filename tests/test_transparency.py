@@ -238,6 +238,44 @@ class TestAnalysisCarrier:
         analysis.note_industry_coi()
         assert analysis.industry_confidence == DEFAULT_INDUSTRY_CONFIDENCE
 
+    @pytest.mark.parametrize(
+        ("weaker", "stronger"),
+        [
+            ("unknown", "not_available"),
+            ("unknown", "on_request"),
+            ("unknown", "full_open"),
+            ("not_available", "on_request"),
+            ("not_available", "full_open"),
+            ("on_request", "full_open"),
+        ],
+    )
+    def test_the_stronger_data_level_wins_in_either_arrival_order(self, weaker, stronger):
+        # Two sources produce `data_level` and neither can know which ran
+        # first, so the merge must not depend on order — the same rule
+        # `industry_confidence` follows.
+        forwards, backwards = _Analysis(), _Analysis()
+        forwards.note_data_level(weaker)
+        forwards.note_data_level(stronger)
+        backwards.note_data_level(stronger)
+        backwards.note_data_level(weaker)
+        assert forwards.data_level == stronger
+        assert backwards.data_level == stronger
+
+    def test_an_explicit_denial_outranks_silence(self):
+        # `not_available` is a finding; `unknown` is the absence of one.
+        analysis = _Analysis()
+        analysis.note_data_level("not_available")
+        analysis.note_data_level("unknown")
+        assert analysis.data_level == "not_available"
+
+    def test_a_level_outside_the_ranking_raises(self):
+        # "restricted" is a level `calculate_risk_level` accepts from callers
+        # who compute it themselves, and one the analyzer has never produced.
+        # Ranking an unknown string at zero would silently demote it below
+        # everything; failing loudly is the point.
+        with pytest.raises(KeyError):
+            _Analysis().note_data_level("restricted")
+
 
 class TestCheckEuropePMC:
     """Tests that COI/data-availability are read from full text, not abstract."""
