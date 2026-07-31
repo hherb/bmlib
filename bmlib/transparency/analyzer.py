@@ -162,8 +162,13 @@ EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 EUTILS_TOOL_NAME = "bmlib"
 
 # `DataBankName` values PubMed emits for clinical-trial registries, lowercased
-# for matching. Anything outside this set — GENBANK, PDB, SRA, Dryad, … — is a
-# data-deposition accession, handled by `_DEPOSITION_DATABANK_NAMES` below.
+# for matching. A name outside this set is not necessarily a data-deposition
+# accession: it is one only if it is also in `_DEPOSITION_DATABANK_NAMES` or
+# `_CONTROLLED_DEPOSITION_DATABANK_NAMES` below (GENBANK, PDB, SRA, Dryad, …).
+# A name in neither set — OMIM, RefSeq, dbSNP, PubChem-*, or anything NLM adds
+# that this module has not been updated for — is simply not scored; see the
+# comment above `_DEPOSITION_DATABANK_NAMES` for why those specific names are
+# excluded on purpose rather than by omission.
 #
 # Curated from NLM's published vocabulary:
 # https://www.nlm.nih.gov/bsd/medline_databank_source.html
@@ -696,9 +701,19 @@ def _score_data_availability(analysis: _Analysis) -> None:
     nominated, rather than by the step that finds a level. With two producers
     — Europe PMC's text scan and PubMed's deposition accessions — scoring at
     the point of discovery would either spend the component twice or spend it
-    on a level later beaten; deferring makes both unrepresentable rather than
-    guarded against, which is what :meth:`_Analysis.award_funder_info` does
-    for the funder component.
+    on a level later beaten. Deferring makes double-counting unrepresentable
+    *for the sub-steps*: they only ever call :meth:`_Analysis.note_data_level`,
+    which nominates and cannot itself add points, so neither producer is
+    capable of scoring this component even once, let alone twice.
+
+    That is a weaker guarantee than :meth:`_Analysis.award_funder_info`, which
+    carries its own `funder_info_scored` flag and stays safe even if called
+    more than once. This function has no such flag — nothing stops a second
+    call from awarding the points again. What actually keeps this to one award
+    is that :meth:`TransparencyAnalyzer.analyze` calls it from exactly one
+    place. A future re-score or retry path added to ``analyze()`` would need
+    to reckon with that; it cannot lean on this function the way callers of
+    ``award_funder_info()`` lean on the funder flag.
 
     It is also what keeps :data:`_INDICATOR_DATA_NOT_AVAILABLE` honest: the
     line is written only if that level survived the merge, so it never has to

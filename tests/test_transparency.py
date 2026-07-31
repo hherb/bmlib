@@ -21,6 +21,8 @@ from __future__ import annotations
 import pytest
 
 from bmlib.transparency.analyzer import (
+    _CONTROLLED_DEPOSITION_DATABANK_NAMES,
+    _DEPOSITION_DATABANK_NAMES,
     _INDICATOR_COI_IN_PUBMED,
     _INDICATOR_COI_UNKNOWN,
     _INDICATOR_DATA_DEPOSITED_PREFIX,
@@ -29,6 +31,7 @@ from bmlib.transparency.analyzer import (
     _INDICATOR_NO_COI_IN_FULLTEXT,
     _INDICATOR_NO_POSTED_RESULTS,
     _INDICATOR_RESULTS_NOT_CHECKABLE,
+    _TRIAL_REGISTRY_NAMES,
     DEFAULT_INDUSTRY_CONFIDENCE,
     SCORE_CITED,
     SCORE_COI_DISCLOSED,
@@ -1494,6 +1497,19 @@ class TestPubMedSignalParsing:
         assert signals.deposition_databanks == ()
         assert signals.registration_not_checkable is False
 
+    def test_the_deposition_and_registry_name_sets_are_disjoint(self):
+        # `_parse_pubmed_signals` checks deposition membership first and
+        # `continue`s, so a name in both families would always be read as a
+        # deposit and never reach the registry branch — silently dropping
+        # `trial_registered`, `SCORE_TRIAL_REGISTERED` (20) and the registry
+        # indicator while a deposit scores 20 instead. The total would look
+        # plausible and nothing would raise. Nothing enforces the sets stay
+        # disjoint except this test; if it ever fails, the fix is to remove
+        # the name from whichever set it does not belong in, not to reorder
+        # the branches in the parser.
+        deposition_names = _DEPOSITION_DATABANK_NAMES | _CONTROLLED_DEPOSITION_DATABANK_NAMES
+        assert not deposition_names & _TRIAL_REGISTRY_NAMES
+
 
 class TestPubMedRequest:
     """The request itself: identification, the API key, and when it is issued."""
@@ -1775,10 +1791,14 @@ class TestDataDepositionMerge:
 
     def test_a_controlled_access_deposit_is_only_on_request(self):
         # dbGaP data needs Data Access Committee approval, which is what
-        # `on_request` already means.
+        # `on_request` already means. The design's testing plan promised
+        # "dbGaP alone scores 10" — score it, not just the level, so this
+        # class is self-contained.
         analysis = _Analysis()
         _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("dbGaP",)), analysis)
+        _score_data_availability(analysis)
         assert analysis.data_level == "on_request"
+        assert analysis.score == SCORE_DATA_ON_REQUEST
 
     def test_the_strongest_of_several_deposits_wins(self):
         analysis = _Analysis()
@@ -1837,3 +1857,34 @@ class TestDataDepositionMerge:
         assert result.data_availability_level == "full_open"
         assert result.transparency_score == SCORE_DATA_FULL_OPEN
         assert _INDICATOR_DATA_DEPOSITED_PREFIX + "GENBANK" in result.risk_indicators
+
+    def test_data_not_available_indicator_is_written_last(self, monkeypatch):
+        # `_score_data_availability()` now runs once, in `analyze()`, after
+        # every sub-step — including trial registration — rather than inline
+        # inside `_check_europepmc` as it did before the once-at-the-end
+        # refactor. `_INDICATOR_DATA_NOT_AVAILABLE` is therefore always the
+        # last line appended, not wherever the EuropePMC step happened to sit
+        # in the pipeline. The fixture needs a later indicator to make that
+        # observable: a paper whose abstract denies data availability *and*
+        # whose PubMed record registers a trial PubMed cannot follow up
+        # (`_INDICATOR_RESULTS_NOT_CHECKABLE`, from the trial-registration
+        # step that runs after the data-availability merge). Under the old,
+        # inline-scoring code this fixture produces the data indicator
+        # *before* the trial one, so this assertion would have failed there —
+        # confirmed by running it against the pre-refactor analyzer
+        # (commit 11f47ff), where `risk_indicators` ends with
+        # "Trial registration found; posted-results status could not be
+        # checked", not the data indicator.
+        client = _RecordingClient(
+            epmc=_epmc_payload(
+                abstract="Data are not available due to patient privacy.", pmid="12345678"
+            ),
+            pubmed=_pubmed_xml(databanks=(("ISRCTN", ("ISRCTN12345678",)),)),
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="12345678")
+        assert result.data_availability_level == "not_available"
+        # Proves the fixture actually discriminates: without a later
+        # indicator, the assertion below would pass under any ordering.
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE in result.risk_indicators
+        assert result.risk_indicators[-1] == _INDICATOR_DATA_NOT_AVAILABLE
