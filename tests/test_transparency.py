@@ -669,12 +669,11 @@ class TestCheckTrialRegistration:
                 raise AssertionError("results endpoint must not be queried for a review")
 
         epmc = _epmc_record("We included three trials (NCT01111111, NCT02222222, NCT03333333).")
-        registered, compliant, score, indicators = analyzer._check_trial_registration(
-            _Client(), pmid="123", doi=None, score=0, indicators=[], epmc=epmc
-        )
-        assert registered is False
-        assert compliant is False
-        assert score == 0
+        analysis = _Analysis()
+        analyzer._check_trial_registration(_Client(), "123", None, analysis, epmc=epmc)
+        assert analysis.trial_registered is False
+        assert analysis.results_compliant is False
+        assert analysis.score == 0
 
     def test_registered_rct_credited_registration_score(self):
         analyzer = TransparencyAnalyzer()
@@ -684,11 +683,10 @@ class TestCheckTrialRegistration:
                 return _FakeResponse(status_code=200, json_data={"hasResults": False})
 
         epmc = _epmc_record("ClinicalTrials.gov number, NCT01206062.")
-        registered, _compliant, score, _indicators = analyzer._check_trial_registration(
-            _Client(), pmid="123", doi=None, score=0, indicators=[], epmc=epmc
-        )
-        assert registered is True
-        assert score == 20  # SCORE_TRIAL_REGISTERED
+        analysis = _Analysis()
+        analyzer._check_trial_registration(_Client(), "123", None, analysis, epmc=epmc)
+        assert analysis.trial_registered is True
+        assert analysis.score == 20  # SCORE_TRIAL_REGISTERED
 
 
 class TestDataAvailabilityPatterns:
@@ -1372,6 +1370,19 @@ class TestFunderInfoIsScoredOnce:
         TransparencyAnalyzer()._check_crossref(client, "10.1234/x", analysis)
         assert analysis.indicators == ["Industry funder: Genentech Inc."]
 
+    def test_two_sources_reporting_funders_spend_the_component_once(self, monkeypatch):
+        # CrossRef funder records *and* PubMed grants on the same paper. The
+        # sub-step tests above pin each in isolation; this pins the composition
+        # that analyze() actually runs.
+        client = _RecordingClient(
+            crossref={"message": {"funder": [{"name": "Some Trust"}]}},
+            epmc=_epmc_payload(pmid="1"),
+            pubmed=_pubmed_xml(agencies=("Another Trust",)),
+        )
+        TestPubMedRequest._install(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc1", doi="10.1234/x")
+        assert result.transparency_score == SCORE_FUNDER_INFO
+
 
 class TestPubMedSignalMerge:
     """How PubMed's signals combine with the ones already gathered."""
@@ -1514,21 +1525,20 @@ class TestPubMedSignalMerge:
         result = self._analyze(monkeypatch, client, doi="10.1234/x")
         assert result.risk_indicators.count("Industry funder: Genentech Inc.") == 1
 
-    def test_the_merge_does_not_mutate_the_caller_s_indicators(self):
-        # The COI branch rebinds while the funder branch appends, so a caller
-        # that ignored the return value would previously see a half-applied
-        # merge. Copying on the way in makes the two branches agree.
-        original = ["No funder information in CrossRef"]
+    def test_the_merge_applies_both_of_its_branches_to_one_list(self):
+        # The COI branch retracts lines while the funder branch appends. When
+        # the merge returned a copy, a caller that ignored the return value
+        # saw a half-applied merge; mutating the carrier makes that
+        # unrepresentable. This pins that both branches land together.
+        analysis = _Analysis(indicators=[_INDICATOR_NO_COI_IN_FULLTEXT], coi_disclosed=False)
         _merge_pubmed_signals(
             _PubMedSignals(coi_statement=True, funders=("Genentech Inc.",)),
-            None,
-            0,
-            original,
-            False,
-            0.0,
-            False,
+            analysis,
         )
-        assert original == ["No funder information in CrossRef"]
+        assert _INDICATOR_NO_COI_IN_FULLTEXT not in analysis.indicators
+        assert _INDICATOR_COI_IN_PUBMED in analysis.indicators
+        assert "Industry funder: Genentech Inc." in analysis.indicators
+        assert analysis.coi_disclosed is True
 
     def test_an_unreachable_pubmed_is_survivable(self, monkeypatch):
         client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=None)

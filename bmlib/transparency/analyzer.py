@@ -504,45 +504,31 @@ class _Analysis:
         self.indicators.append(_INDICATOR_INDUSTRY_COI)
 
 
-def _merge_pubmed_signals(
-    pubmed: _PubMedSignals,
-    coi_disclosed: bool | None,
-    score: int,
-    indicators: list[str],
-    industry_funding: bool,
-    industry_confidence: float,
-    funder_info_scored: bool,
-) -> tuple[bool | None, int, list[str], bool, float, bool]:
-    """Fold PubMed's structured signals into the analysis so far.
+def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
+    """Fold PubMed's structured signals into *analysis*.
 
     A module-level function rather than a method because it needs no HTTP
     client; trial registration is handled separately, in
     :meth:`TransparencyAnalyzer._check_trial_registration`, because that step
     does.
 
-    Mutates nothing it is given — ``indicators`` is copied on the way in and
-    the copy is returned — so a caller that ignores a return value is left
-    with exactly what it passed rather than a half-applied merge.
-
     Each score component is awarded at most once. ``coi_disclosed is not
     True`` is a reliable guard rather than an incidental one: the only
     branch that sets ``True`` is the same branch that adds
     ``SCORE_COI_DISCLOSED``.
     """
-    indicators = list(indicators)
-
-    if pubmed.coi_statement and coi_disclosed is not True:
-        coi_disclosed = True
-        score += SCORE_COI_DISCLOSED
+    if pubmed.coi_statement and analysis.coi_disclosed is not True:
+        analysis.coi_disclosed = True
+        analysis.score += SCORE_COI_DISCLOSED
         # Both lines were written before PubMed was consulted and would now
         # contradict the result, so they are retracted rather than left to
         # be reconciled by whoever reads the indicators.
-        indicators = [
+        analysis.indicators = [
             ind
-            for ind in indicators
+            for ind in analysis.indicators
             if ind not in (_INDICATOR_NO_COI_IN_FULLTEXT, _INDICATOR_COI_UNKNOWN)
         ]
-        indicators.append(_INDICATOR_COI_IN_PUBMED)
+        analysis.indicators.append(_INDICATOR_COI_IN_PUBMED)
 
     # A missing <CoiStatement> deliberately does not demote `None` to
     # `False`: it means the publisher supplied no statement to PubMed, not
@@ -550,32 +536,14 @@ def _merge_pubmed_signals(
     # missing-COI downgrade on no evidence.
 
     if pubmed.funders:
-        if not funder_info_scored:
-            score += SCORE_FUNDER_INFO
-            funder_info_scored = True
+        analysis.award_funder_info()
         for agency in pubmed.funders:
             if _is_industry_funder(agency):
-                industry_funding = True
                 # A grant agency is structured metadata, the same class of
                 # evidence as a CrossRef funder record — not the weaker
-                # signal inferred from COI prose.
-                industry_confidence = max(industry_confidence, DEFAULT_INDUSTRY_CONFIDENCE)
-                # CrossRef may already have named this funder. The test is an
-                # exact match on a string this module builds, not a reading of
-                # indicator prose — the list is a set of findings, and one
-                # funder is one finding however many sources report it.
-                line = f"Industry funder: {agency}"
-                if line not in indicators:
-                    indicators.append(line)
-
-    return (
-        coi_disclosed,
-        score,
-        indicators,
-        industry_funding,
-        industry_confidence,
-        funder_info_scored,
-    )
+                # signal inferred from COI prose. CrossRef may already have
+                # named this funder; note_industry_funder() deduplicates.
+                analysis.note_industry_funder(agency)
 
 
 def _extract_tagged_coi_text(full_text: str) -> str:
@@ -779,10 +747,6 @@ class TransparencyAnalyzer:
 
         self._api_reachable = False
         analysis = _Analysis()
-        # Locals for the sub-steps not yet migrated onto the carrier. They go
-        # away as each is converted.
-        trial_registered = False
-        results_compliant = False
 
         with httpx.Client(
             timeout=_HTTP_TIMEOUT_SECONDS,
@@ -802,22 +766,7 @@ class TransparencyAnalyzer:
             # from the record already fetched, and before ClinicalTrials.gov so
             # a structured accession can feed the posted-results check.
             pubmed = self._check_pubmed(client, pmid or _pmid_from_epmc(epmc))
-            (
-                analysis.coi_disclosed,
-                analysis.score,
-                analysis.indicators,
-                analysis.industry_funding,
-                analysis.industry_confidence,
-                analysis.funder_info_scored,
-            ) = _merge_pubmed_signals(
-                pubmed,
-                analysis.coi_disclosed,
-                analysis.score,
-                analysis.indicators,
-                analysis.industry_funding,
-                analysis.industry_confidence,
-                analysis.funder_info_scored,
-            )
+            _merge_pubmed_signals(pubmed, analysis)
 
             # --- OpenAlex (additional metadata) ---
             if doi:
@@ -825,16 +774,8 @@ class TransparencyAnalyzer:
 
             # --- ClinicalTrials.gov (trial registration) ---
             if doi or pmid:
-                trial_registered, results_compliant, analysis.score, analysis.indicators = (
-                    self._check_trial_registration(
-                        client,
-                        pmid,
-                        doi,
-                        analysis.score,
-                        analysis.indicators,
-                        epmc=epmc,
-                        pubmed=pubmed,
-                    )
+                self._check_trial_registration(
+                    client, pmid, doi, analysis, epmc=epmc, pubmed=pubmed
                 )
 
         # If not one external API responded, we measured nothing: report the
@@ -868,8 +809,8 @@ class TransparencyAnalyzer:
             industry_funding_confidence=analysis.industry_confidence,
             data_availability_level=analysis.data_level,
             coi_disclosed=analysis.coi_disclosed,
-            trial_registered=trial_registered,
-            trial_results_compliant=results_compliant,
+            trial_registered=analysis.trial_registered,
+            trial_results_compliant=analysis.results_compliant,
             risk_indicators=analysis.indicators,
             full_text_analyzed=analysis.full_text_analyzed,
             tier_downgrade_applied=(
@@ -1040,12 +981,11 @@ class TransparencyAnalyzer:
         client: Any,
         pmid: str | None,
         doi: str | None,
-        score: int,
-        indicators: list[str],
+        analysis: _Analysis,
         *,
         epmc: dict | None = None,
         pubmed: _PubMedSignals | None = None,
-    ) -> tuple[bool, bool, int, list[str]]:
+    ) -> None:
         """Check trial registration and, where possible, results posting.
 
         PubMed's ``DataBankList`` is preferred over the abstract heuristic when
@@ -1060,26 +1000,22 @@ class TransparencyAnalyzer:
         way.
         """
         pubmed = pubmed or _PubMedSignals()
-        trial_registered = False
-        results_compliant = False
 
         ct_ids = list(pubmed.trial_accessions) or self._find_trial_ids(client, pmid, doi, epmc=epmc)
         if ct_ids or pubmed.registration_not_checkable:
-            trial_registered = True
-            score += SCORE_TRIAL_REGISTERED
+            analysis.trial_registered = True
+            analysis.score += SCORE_TRIAL_REGISTERED
 
         if ct_ids:
             for tid in ct_ids[:MAX_TRIAL_IDS_TO_CHECK]:
                 if self._check_trial_results(client, tid):
-                    results_compliant = True
-                    score += SCORE_RESULTS_POSTED
+                    analysis.results_compliant = True
+                    analysis.score += SCORE_RESULTS_POSTED
                     break
-            if not results_compliant:
-                indicators.append(_INDICATOR_NO_POSTED_RESULTS)
+            if not analysis.results_compliant:
+                analysis.indicators.append(_INDICATOR_NO_POSTED_RESULTS)
         elif pubmed.registration_not_checkable:
-            indicators.append(_INDICATOR_RESULTS_NOT_CHECKABLE)
-
-        return trial_registered, results_compliant, score, indicators
+            analysis.indicators.append(_INDICATOR_RESULTS_NOT_CHECKABLE)
 
     # --- API query helpers ---
 
