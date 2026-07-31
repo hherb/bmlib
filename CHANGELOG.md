@@ -6,6 +6,62 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`transparency`: `<DataBankList>` deposition accessions now score as
+  data-availability evidence.** `bmlib.transparency` decided data availability
+  by scanning full text for seven substrings (`"zenodo"`, `"figshare"`,
+  `"dryad"`, `"github"`, `"available upon request"`, `"upon reasonable
+  request"`, `"not available"`) — a paper that deposited its sequences in
+  GenBank and said so in a structured field earned nothing unless one of
+  those words happened to appear in its prose, and a closed-access paper has
+  no full text to scan at all. `_parse_pubmed_signals()` now also collects
+  `DataBankName` values against a curated allow-list drawn from
+  [NLM's published vocabulary](https://www.nlm.nih.gov/bsd/medline_databank_source.html):
+  `_DEPOSITION_DATABANK_LEVELS` maps each repository to the level a deposit
+  into it establishes — BioProject, dbVar, Dryad, figshare, GenBank, GEO, PDB
+  and SRA nominate `full_open`; dbGaP nominates only `on_request`, since its
+  data needs Data Access Committee approval. A mapping rather than a
+  set-per-level so that adding a repository has to state what a deposit into
+  it is worth instead of inheriting the generous default. NLM's remaining
+  names — dbSNP, GDB, OMIM, PIR,
+  the three PubChem tables, RefSeq, SWISSPROT, UniMES, UniParc, UniProtKB,
+  UniRef — are curated *reference* databases and score nothing (an OMIM
+  number says the paper is about a known condition, not that these authors
+  shared data of their own); a `<DataBank>` entry needs at least one
+  non-blank accession to count.
+
+  `data_level` now has two producers — this one and Europe PMC's existing
+  prose scan — so `_Analysis` gained `note_data_level()`: each sub-step
+  nominates a level and the strongest wins by rank (`_DATA_LEVEL_RANK`:
+  `unknown` < `not_available` < `on_request` < `full_open`), mirroring the
+  rule `industry_confidence` already follows. The winning level's points are
+  now awarded once, by a new `_score_data_availability()` called from
+  `analyze()` after every sub-step has run, rather than by the step that
+  finds the level — with two producers, scoring at the point of discovery
+  would double-count or spend points on a level a later nomination beats.
+  PubMed's deposits are also reported verbatim as a new `risk_indicators`
+  line, `Data deposited: GENBANK, PDB`, written whenever PubMed reported a
+  deposit — even when the level it nominated lost the merge.
+
+  **Moves stored values, not behind a flag:** `transparency_score` rises by
+  10 or 20 for papers whose PubMed record names a deposition repository the
+  prose scan missed. `data_availability_level` can move off
+  `"not_available"`, which can in turn lift a `HIGH` result the
+  industry-funding + restricted-data rule produced — `calculate_risk_level()`
+  treats `"not_available"` as restricted. It can also move off `"unknown"`,
+  but `"unknown"` was never restricted, so that move cannot affect the
+  industry-funding rule; it can still turn a score-threshold `HIGH` into
+  something else, since the added points can carry the score past
+  `score_threshold`. And `"Data explicitly not available"` moves to the end
+  of `risk_indicators` (it is now appended by `_score_data_availability()`
+  after every step has run, rather than by the step that found the level),
+  with `"Data deposited: …"` a new line alongside it. See
+  `docs/superpowers/specs/2026-08-01-databank-data-deposition-design.md` for
+  the rejected alternatives — a fifth `"deposited"` level distinct from
+  `full_open`, scoring inside `note_data_level()` with a refund pass, and
+  PubMed awarding only the diff against Europe PMC.
+
 ### Changed
 
 - **`transparency`: `analyze()`'s accumulators moved onto one `_Analysis`
@@ -25,6 +81,24 @@ All notable changes to bmlib are documented here. The format is based on
   both sources now go through the same `note_industry_funder()` and follow the
   same rule. No score, no `industry_funding_detected` and no risk level moves
   — only the length of `risk_indicators` for affected papers.
+
+### Fixed
+
+- **`transparency`: `_TRIAL_REGISTRY_NAMES` was missing three registry names
+  PubMed actually emits** — `JMACCT`, `REPEC`, and NLM's own spelling of
+  UMIN's registry, `"UMIN CTR"` (bmlib had only the hyphenated
+  `"umin-ctr"`, so the exact-match test failed on the string PubMed sends;
+  both spellings are now kept, since the hyphenated form appears in older
+  records). A paper registered in any of the three silently lost
+  `SCORE_TRIAL_REGISTERED`. **Moves stored values:** `trial_registered`
+  becomes `True` and `transparency_score` rises by 20 for affected papers;
+  a paper registered in one of the three with no NCT id credited in its
+  abstract also gains a new `risk_indicators` line, `"Trial registration
+  found; posted-results status could not be checked"`, from the
+  `_check_trial_registration` branch that `registration_not_checkable` now
+  reaches for these names. Found while curating the deposition allow-lists
+  above against NLM's vocabulary table; it is a pre-existing bug rather than
+  part of that feature, so it gets its own entry.
 
 ## [0.6.0] — 2026-07-30
 

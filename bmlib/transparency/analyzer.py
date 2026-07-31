@@ -162,9 +162,20 @@ EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 EUTILS_TOOL_NAME = "bmlib"
 
 # `DataBankName` values PubMed emits for clinical-trial registries, lowercased
-# for matching. Anything outside this set — GENBANK, PDB, SRA, Dryad, … — is a
-# data-deposition accession, which is a transparency signal of its own but not
-# a trial registration, and is ignored here.
+# for matching. A name outside this set is not necessarily a data-deposition
+# accession: it is one only if it is also a key of
+# `_DEPOSITION_DATABANK_LEVELS` below (GENBANK, PDB, SRA, Dryad, …). A name in
+# neither — OMIM, RefSeq, dbSNP, PubChem-*, or anything NLM adds that this
+# module has not been updated for — is simply not scored; see the comment
+# above `_DEPOSITION_DATABANK_LEVELS` for why those specific names are
+# excluded on purpose rather than by omission.
+#
+# Curated from NLM's published vocabulary:
+# https://www.nlm.nih.gov/bsd/medline_databank_source.html
+# Both spellings of UMIN's registry are kept: NLM's table says "UMIN CTR" but
+# the hyphenated form appears in older records. "jrct" and "iran registry of
+# clinical trials" are not in NLM's table and are kept anyway — they cost
+# nothing, and jRCT is the live successor to Japan's earlier registries.
 _TRIAL_REGISTRY_NAMES = frozenset(
     {
         "clinicaltrials.gov",
@@ -178,18 +189,64 @@ _TRIAL_REGISTRY_NAMES = frozenset(
         "iran registry of clinical trials",
         "irct",
         "japiccti",
+        "jmacct",
         "jprn",
         "jrct",
         "ntr",
         "pactr",
         "rebec",
+        "repec",
         "rpcec",
         "slctr",
         "tctr",
         "umin-ctr",
+        "umin ctr",
     }
 )
 _CLINICALTRIALS_GOV = "clinicaltrials.gov"
+
+# `DataBankName` values naming a repository authors *deposit into*, lowercased,
+# each mapped to the data-availability level a deposit into it establishes.
+# A mapping rather than a set-per-level so that adding a repository cannot
+# silently inherit a default: the level is the value, so there is nowhere to
+# add a name without stating what a deposit into it is worth. That matters
+# because the two levels are not interchangeable — see `dbgap` below — and the
+# generous one feeds a 20-point award.
+#
+# Curated from the same NLM vocabulary as the registries above, whose second
+# table this splits in half. The other half is deliberately excluded: dbSNP,
+# GDB, OMIM, PIR, PubChem-BioAssay, PubChem-Compound, PubChem-Substance,
+# RefSeq, SWISSPROT, UniMES, UniParc, UniProtKB and UniRef are curated
+# *reference* databases. An OMIM number says the paper is about a known
+# condition; a RefSeq accession names a sequence NCBI curated, not one these
+# authors produced. Neither is evidence that these authors shared their own
+# data, which is what the data-availability component measures — so adding
+# one back would award 20 points for a citation.
+#
+# dbSNP is the one exclusion worth spelling out, since dbVar sits right in
+# this map: a dbVar accession is a structural-variant submission, but a dbSNP
+# citation is overwhelmingly an rs-number reference to a variant someone else
+# already catalogued, not a deposit of these authors' own data. Submitters
+# can deposit novel variants as ss accessions, but that is the rare case, and
+# ties go to precision here because this component feeds a HIGH-risk rule.
+#
+# Zenodo is absent because NLM's vocabulary does not carry it, so PubMed never
+# emits it. `_DATA_PATTERNS` already matches "zenodo" in prose.
+_DEPOSITION_DATABANK_LEVELS: dict[str, str] = {
+    "bioproject": "full_open",
+    "dbvar": "full_open",
+    "dryad": "full_open",
+    "figshare": "full_open",
+    "genbank": "full_open",
+    "geo": "full_open",
+    "pdb": "full_open",
+    "sra": "full_open",
+    # Controlled access. The deposit is real, findable and citable, but a
+    # reader needs Data Access Committee approval to obtain the data — which
+    # is what `on_request` already means, so `full_open` would overstate what
+    # a reader can actually get.
+    "dbgap": "on_request",
+}
 
 # ---- Indicator strings ----
 # Named rather than inlined because the PubMed step must be able to retract the
@@ -200,6 +257,12 @@ _INDICATOR_NO_COI_IN_FULLTEXT = "No COI disclosure found in full text"
 _INDICATOR_COI_UNKNOWN = "COI disclosure status unknown (full text unavailable)"
 _INDICATOR_COI_IN_PUBMED = "COI disclosure found in PubMed record"
 _INDICATOR_INDUSTRY_COI = "Industry ties disclosed in COI statement"
+_INDICATOR_DATA_NOT_AVAILABLE = "Data explicitly not available"
+# A prefix, completed with the repository names. `data_availability_level`
+# alone cannot distinguish a hard accession from the word "github" appearing
+# somewhere in the full text, and `risk_indicators` is the only channel the
+# result has for that provenance — the same job `Industry funder: X` does.
+_INDICATOR_DATA_DEPOSITED_PREFIX = "Data deposited: "
 _INDICATOR_NO_POSTED_RESULTS = "Registered trial without posted results"
 # Deliberately does not name a registry. It covers a registration in another
 # registry *and* a ClinicalTrials.gov registration whose accession was missing
@@ -225,6 +288,21 @@ SCORE_CITED = 5
 SCORE_TRIAL_REGISTERED = 20
 SCORE_RESULTS_POSTED = 15
 MAX_TRANSPARENCY_SCORE = 100
+
+# Data-availability levels ranked by how much data sharing is *established*,
+# so a second producer of `data_level` can be merged rather than having to
+# assume it runs last. An explicit denial outranks silence because it is a
+# finding rather than the absence of one; any positive level outranks the
+# denial. `calculate_risk_level()` accepts two further levels, "restricted"
+# and "not_stated", which the analyzer has never produced — they are for
+# callers computing the level themselves, and are deliberately absent here so
+# that nominating one raises rather than ranking at zero.
+_DATA_LEVEL_RANK = {
+    "unknown": 0,
+    "not_available": 1,
+    "on_request": 2,
+    "full_open": 3,
+}
 
 # ---- Trial lookup ----
 MAX_TRIAL_IDS_TO_CHECK = 3
@@ -329,12 +407,19 @@ class _PubMedSignals:
         funders: Distinct ``<Grant><Agency>`` names, in document order. PubMed
             emits one ``<Grant>`` per grant number, so a single agency funding
             four grants appears four times in the XML and once here.
+        deposition_databanks: Repository names from ``<DataBankList>`` that
+            carried at least one non-blank accession, in PubMed's own
+            spelling and document order, deduplicated case-insensitively.
+            Names rather than a level: this class reports what the record
+            said, and :func:`_merge_pubmed_signals` decides what it is worth
+            — the same division `funders` already follows.
     """
 
     coi_statement: bool = False
     trial_accessions: tuple[str, ...] = ()
     registration_not_checkable: bool = False
     funders: tuple[str, ...] = ()
+    deposition_databanks: tuple[str, ...] = ()
 
 
 def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
@@ -368,8 +453,25 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
 
     accessions: list[str] = []
     registration_not_checkable = False
+    # Keyed by the lowercased name so a record naming one repository twice —
+    # or once as "GENBANK" and once as "GenBank" — yields one entry. The value
+    # is the first spelling seen, because it is rendered to humans.
+    deposition: dict[str, str] = {}
     for databank in citation.findall("Article/DataBankList/DataBank"):
-        name = (databank.findtext("DataBankName") or "").strip().lower()
+        raw_name = (databank.findtext("DataBankName") or "").strip()
+        name = raw_name.lower()
+
+        if name in _DEPOSITION_DATABANK_LEVELS:
+            # A repository name with no accession is an assertion with no
+            # referent — nothing a reader could go and fetch — so it is not
+            # the structured proof of a deposit this signal claims to be.
+            if any(
+                (el.text or "").strip()
+                for el in databank.findall("AccessionNumberList/AccessionNumber")
+            ):
+                deposition.setdefault(name, raw_name)
+            continue
+
         if name not in _TRIAL_REGISTRY_NAMES:
             continue
         # Every accession is publisher-supplied text that would be interpolated
@@ -413,6 +515,7 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
         trial_accessions=tuple(accessions),
         registration_not_checkable=registration_not_checkable,
         funders=funders,
+        deposition_databanks=tuple(deposition.values()),
     )
 
 
@@ -438,7 +541,10 @@ class _Analysis:
         industry_funding: Any industry involvement was detected.
         industry_confidence: Confidence in that detection; the strongest
             evidence seen wins, regardless of arrival order.
-        data_level: Data-availability level from :data:`_DATA_PATTERNS`.
+        data_level: Data-availability level from :data:`_DATA_PATTERNS` or a
+            PubMed deposition accession; the strongest evidence seen wins,
+            regardless of arrival order. Set through
+            :meth:`note_data_level`, never assigned.
         coi_disclosed: Tri-state — ``True`` (statement found), ``False`` (full
             text scanned, none found), ``None`` (undeterminable).
         trial_registered: A trial registration was established.
@@ -507,6 +613,26 @@ class _Analysis:
         self.industry_confidence = max(self.industry_confidence, TEXT_INDUSTRY_CONFIDENCE)
         self.indicators.append(_INDICATOR_INDUSTRY_COI)
 
+    def note_data_level(self, level: str) -> None:
+        """Nominate *level* as the paper's data availability; the strongest wins.
+
+        Two sources produce this — Europe PMC's full-text pattern scan and
+        PubMed's ``<DataBankList>`` deposition accessions — and neither can
+        know whether the other ran first, so the field is merged by rank
+        rather than assigned. A source that found nothing nominates
+        ``"unknown"``, which is a no-op: finding nothing is not evidence
+        against what another source found.
+
+        Args:
+            level: A key of :data:`_DATA_LEVEL_RANK`.
+
+        Raises:
+            KeyError: If *level* is not a level the analyzer produces. A typo
+                must fail loudly rather than silently rank below everything.
+        """
+        if _DATA_LEVEL_RANK[level] > _DATA_LEVEL_RANK[self.data_level]:
+            self.data_level = level
+
 
 def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
     """Fold PubMed's structured signals into *analysis*.
@@ -520,6 +646,12 @@ def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
     True`` is a reliable guard rather than an incidental one: the only
     branch that sets ``True`` is the same branch that adds
     ``SCORE_COI_DISCLOSED``.
+
+    ``<DataBankList>`` deposition accessions nominate the data-availability
+    level :data:`_DEPOSITION_DATABANK_LEVELS` maps their repository to,
+    through :meth:`_Analysis.note_data_level`, so the strongest evidence wins
+    whichever source ran first. The component itself is scored later, by
+    :func:`_score_data_availability`.
     """
     if pubmed.coi_statement and analysis.coi_disclosed is not True:
         analysis.coi_disclosed = True
@@ -548,6 +680,49 @@ def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
                 # signal inferred from COI prose. CrossRef may already have
                 # named this funder; note_industry_funder() deduplicates.
                 analysis.note_industry_funder(agency)
+
+    if pubmed.deposition_databanks:
+        for name in pubmed.deposition_databanks:
+            # The parser collected the name; deciding what a deposit into it
+            # is worth is this step's job, which is why the signals carry
+            # names rather than a level. Subscripted rather than defaulted:
+            # the parser admits a name only if it is a key here, so a name
+            # that is not one is a bug in this module and raises, the same
+            # way `note_data_level()` raises on a level outside the ranking.
+            analysis.note_data_level(_DEPOSITION_DATABANK_LEVELS[name.lower()])
+        # Written whether or not the level above won: it reports what PubMed
+        # said, which stays true either way.
+        analysis.indicators.append(
+            _INDICATOR_DATA_DEPOSITED_PREFIX + ", ".join(pubmed.deposition_databanks)
+        )
+
+
+def _score_data_availability(analysis: _Analysis) -> None:
+    """Award the data-availability component once, for the level that won.
+
+    Called by :meth:`TransparencyAnalyzer.analyze` after every sub-step has
+    nominated, rather than by the step that finds a level. With two producers
+    — Europe PMC's text scan and PubMed's deposition accessions — scoring at
+    the point of discovery would either spend the component twice or spend it
+    on a level later beaten. The sub-steps only ever call
+    :meth:`_Analysis.note_data_level`, which nominates and cannot add points,
+    so neither is capable of scoring this component at all.
+
+    Unlike :meth:`_Analysis.award_funder_info`, this carries no
+    "already spent" flag: what holds it to one award is that ``analyze()``
+    calls it from exactly one place, so a re-score or retry path added there
+    would have to bring its own guard.
+
+    Deferring is also what keeps :data:`_INDICATOR_DATA_NOT_AVAILABLE`
+    honest: the line is written only if that level survived the merge, so it
+    never has to be retracted the way the PubMed COI lines are.
+    """
+    if analysis.data_level == "full_open":
+        analysis.score += SCORE_DATA_FULL_OPEN
+    elif analysis.data_level == "on_request":
+        analysis.score += SCORE_DATA_ON_REQUEST
+    elif analysis.data_level == "not_available":
+        analysis.indicators.append(_INDICATOR_DATA_NOT_AVAILABLE)
 
 
 def _extract_tagged_coi_text(full_text: str) -> str:
@@ -795,6 +970,10 @@ class TransparencyAnalyzer:
                 unknown_reason=TransparencyUnknownReason.UNREACHABLE,
             )
 
+        # Awarded here rather than by the step that found the level: two
+        # sources nominate one, and the component is worth its points once.
+        _score_data_availability(analysis)
+
         analysis.score = min(analysis.score, MAX_TRANSPARENCY_SCORE)
 
         risk_level = calculate_risk_level(
@@ -913,24 +1092,18 @@ class TransparencyAnalyzer:
             # Could not inspect full text; status is genuinely unknown.
             analysis.indicators.append(_INDICATOR_COI_UNKNOWN)
 
-        # Data availability. The level is found into a local and published
-        # once, rather than assigned to the carrier and read back to decide the
-        # credit: reading it back would score whatever the field happened to
-        # hold on the way in, which is the positional hazard `_Analysis` exists
-        # to remove, respelled as state. This step is the field's only producer
-        # today; a second one has to bring a merge rule with it.
+        # Data availability. The level is found into a local and nominated
+        # once: this step is one of two producers, and the winner is scored by
+        # `_score_data_availability()` after every step has run. Nominating
+        # unconditionally — including the "unknown" this falls through to —
+        # keeps the step free of a "is this worth reporting?" judgement only
+        # the carrier can make.
         data_level = "unknown"
         for pattern, level in _DATA_PATTERNS.items():
             if pattern in search_text:
                 data_level = level
                 break
-        analysis.data_level = data_level
-        if data_level == "full_open":
-            analysis.score += SCORE_DATA_FULL_OPEN
-        elif data_level == "on_request":
-            analysis.score += SCORE_DATA_ON_REQUEST
-        elif data_level == "not_available":
-            analysis.indicators.append("Data explicitly not available")
+        analysis.note_data_level(data_level)
 
         # Industry ties disclosed in the COI statement itself ("consultant
         # for X", "speaker fees from Y"). Scanned only in full text — an

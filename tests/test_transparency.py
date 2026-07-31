@@ -21,15 +21,23 @@ from __future__ import annotations
 import pytest
 
 from bmlib.transparency.analyzer import (
+    _DATA_LEVEL_RANK,
+    _DATA_PATTERNS,
+    _DEPOSITION_DATABANK_LEVELS,
     _INDICATOR_COI_IN_PUBMED,
     _INDICATOR_COI_UNKNOWN,
+    _INDICATOR_DATA_DEPOSITED_PREFIX,
+    _INDICATOR_DATA_NOT_AVAILABLE,
     _INDICATOR_INDUSTRY_COI,
     _INDICATOR_NO_COI_IN_FULLTEXT,
     _INDICATOR_NO_POSTED_RESULTS,
     _INDICATOR_RESULTS_NOT_CHECKABLE,
+    _TRIAL_REGISTRY_NAMES,
     DEFAULT_INDUSTRY_CONFIDENCE,
     SCORE_CITED,
     SCORE_COI_DISCLOSED,
+    SCORE_DATA_FULL_OPEN,
+    SCORE_DATA_ON_REQUEST,
     SCORE_FUNDER_INFO,
     SCORE_OPEN_ACCESS,
     TEXT_INDUSTRY_CONFIDENCE,
@@ -38,6 +46,7 @@ from bmlib.transparency.analyzer import (
     _merge_pubmed_signals,
     _parse_pubmed_signals,
     _PubMedSignals,
+    _score_data_availability,
 )
 from bmlib.transparency.models import (
     TransparencyResult,
@@ -237,6 +246,44 @@ class TestAnalysisCarrier:
         analysis.note_industry_funder("Genentech Inc.")
         analysis.note_industry_coi()
         assert analysis.industry_confidence == DEFAULT_INDUSTRY_CONFIDENCE
+
+    @pytest.mark.parametrize(
+        ("weaker", "stronger"),
+        [
+            ("unknown", "not_available"),
+            ("unknown", "on_request"),
+            ("unknown", "full_open"),
+            ("not_available", "on_request"),
+            ("not_available", "full_open"),
+            ("on_request", "full_open"),
+        ],
+    )
+    def test_the_stronger_data_level_wins_in_either_arrival_order(self, weaker, stronger):
+        # Two sources produce `data_level` and neither can know which ran
+        # first, so the merge must not depend on order — the same rule
+        # `industry_confidence` follows.
+        forwards, backwards = _Analysis(), _Analysis()
+        forwards.note_data_level(weaker)
+        forwards.note_data_level(stronger)
+        backwards.note_data_level(stronger)
+        backwards.note_data_level(weaker)
+        assert forwards.data_level == stronger
+        assert backwards.data_level == stronger
+
+    def test_an_explicit_denial_outranks_silence(self):
+        # `not_available` is a finding; `unknown` is the absence of one.
+        analysis = _Analysis()
+        analysis.note_data_level("not_available")
+        analysis.note_data_level("unknown")
+        assert analysis.data_level == "not_available"
+
+    def test_a_level_outside_the_ranking_raises(self):
+        # "restricted" is a level `calculate_risk_level` accepts from callers
+        # who compute it themselves, and one the analyzer has never produced.
+        # Ranking an unknown string at zero would silently demote it below
+        # everything; failing loudly is the point.
+        with pytest.raises(KeyError):
+            _Analysis().note_data_level("restricted")
 
 
 class TestCheckEuropePMC:
@@ -745,66 +792,94 @@ class TestCheckOpenAlex:
 class TestDataAvailabilityPatterns:
     """Negated data-availability phrasing must not read as data sharing."""
 
-    def test_not_available_upon_request_is_not_available(self):
+    def _europepmc_level(self, abstract: str) -> _Analysis:
+        """Run the Europe PMC step over *abstract* and return the carrier."""
         analyzer = TransparencyAnalyzer()
-        client = _FakeFullTextClient(None)
         analysis = _Analysis()
         analyzer._check_europepmc(
-            client,
-            _epmc_record("The data are not available upon reasonable request.", in_epmc="N"),
-            analysis,
+            _FakeFullTextClient(None), _epmc_record(abstract, in_epmc="N"), analysis
         )
+        return analysis
+
+    def test_not_available_upon_request_is_not_available(self):
+        analysis = self._europepmc_level("The data are not available upon reasonable request.")
         assert analysis.data_level == "not_available"
+        _score_data_availability(analysis)
         assert analysis.score == 0  # no on_request credit awarded
+        # Membership, not equality: this abstract carries no COI cue phrase
+        # and no full text, so `_check_europepmc` also writes
+        # `_INDICATOR_COI_UNKNOWN` — a real but unrelated finding this test
+        # is not about. Asserting the full list would couple a
+        # data-availability test to COI-detection behaviour.
+        assert _INDICATOR_DATA_NOT_AVAILABLE in analysis.indicators
 
     def test_available_upon_request_still_credited(self):
-        analyzer = TransparencyAnalyzer()
-        client = _FakeFullTextClient(None)
-        analysis = _Analysis()
-        analyzer._check_europepmc(
-            client,
-            _epmc_record(
-                "Data are available from the authors upon reasonable request.", in_epmc="N"
-            ),
-            analysis,
+        analysis = self._europepmc_level(
+            "Data are available from the authors upon reasonable request."
         )
         assert analysis.data_level == "on_request"
-        assert analysis.score == 10  # SCORE_DATA_ON_REQUEST
+        # The step nominates; analyze() scores the winner exactly once.
+        assert analysis.score == 0
+        _score_data_availability(analysis)
+        assert analysis.score == SCORE_DATA_ON_REQUEST
 
     def test_mixed_statement_negation_takes_precedence(self):
         # Deliberate: when an abstract carries both a sharing cue and a
         # negation ("code on GitHub" + "data not available"), the conservative
         # negation-first ordering of _DATA_PATTERNS wins.
-        analyzer = TransparencyAnalyzer()
-        client = _FakeFullTextClient(None)
-        analysis = _Analysis()
-        analyzer._check_europepmc(
-            client,
-            _epmc_record(
-                "Analysis code is available on GitHub; individual patient data are not available.",
-                in_epmc="N",
-            ),
-            analysis,
+        analysis = self._europepmc_level(
+            "Analysis code is available on GitHub; individual patient data are not available."
         )
         assert analysis.data_level == "not_available"
+        _score_data_availability(analysis)
         assert analysis.score == 0
 
-    def test_a_level_this_step_did_not_find_is_not_scored(self):
-        # The step is the only producer of `data_level`, so it publishes what
-        # it found rather than reading the carrier back to decide the credit.
-        # Reading it back would let a level set by some later-added step be
-        # scored here as if EuropePMC's text had shown it — the positional
-        # hazard the carrier was introduced to remove, respelled as state.
-        analyzer = TransparencyAnalyzer()
-        client = _FakeFullTextClient(None)
+    def test_a_step_that_found_nothing_does_not_lower_an_established_level(self):
+        # This replaces `test_a_level_this_step_did_not_find_is_not_scored`,
+        # which pinned the pre-merge rule that this step assigns `data_level`
+        # outright. With a second producer that rule inverts: finding nothing
+        # is not evidence against what another source found, so nominating
+        # "unknown" must be a no-op rather than a demotion. The half that
+        # still holds — this step never scores a level it did not find — now
+        # holds because the step scores nothing at all.
         analysis = _Analysis(data_level="full_open")
+        analyzer = TransparencyAnalyzer()
         analyzer._check_europepmc(
-            client,
+            _FakeFullTextClient(None),
             _epmc_record("This abstract says nothing about data.", in_epmc="N"),
             analysis,
         )
+        assert analysis.data_level == "full_open"
+        assert analysis.score == 0
+
+    def test_the_component_is_awarded_once_however_many_sources_nominated(self):
+        # The hazard deferring the award exists to remove.
+        analysis = _Analysis()
+        analysis.note_data_level("full_open")
+        analysis.note_data_level("full_open")
+        _score_data_availability(analysis)
+        assert analysis.score == SCORE_DATA_FULL_OPEN
+
+    def test_a_level_nobody_established_scores_nothing_and_says_nothing(self):
+        # The branch every other test reaches only by implication: "unknown"
+        # falls off the end of the chain, so it must award no points *and*
+        # write no indicator. Silence is not a finding — an indicator here
+        # would report an absence of evidence as evidence.
+        analysis = _Analysis()
+        _score_data_availability(analysis)
         assert analysis.data_level == "unknown"
         assert analysis.score == 0
+        assert analysis.indicators == []
+
+    def test_every_pattern_maps_to_a_level_the_ranking_knows(self):
+        # `_check_europepmc` feeds these values straight to
+        # `note_data_level()`, which raises on anything outside
+        # `_DATA_LEVEL_RANK`. The trap is baited: "restricted" and
+        # "not_stated" are levels `calculate_risk_level()` genuinely accepts,
+        # so adding a pattern for one reads as reasonable — and would then
+        # throw a KeyError out of `analyze()` for every paper whose text
+        # matched it. Nothing but this test stands between the two maps.
+        assert set(_DATA_PATTERNS.values()) <= set(_DATA_LEVEL_RANK)
 
 
 class TestAnalyzeApiReachability:
@@ -1168,17 +1243,25 @@ class TestUnknownReason:
 def _pubmed_xml(
     *,
     coi: str | None = None,
-    databanks: tuple[tuple[str, tuple[str, ...]], ...] = (),
+    databanks: tuple[tuple[str, tuple[str, ...] | None], ...] = (),
     agencies: tuple[str, ...] = (),
 ) -> str:
     """Build a minimal PubmedArticleSet response.
 
     *databanks* is a tuple of ``(DataBankName, accession numbers)`` pairs.
+    Accessions of ``None`` omit ``<AccessionNumberList>`` altogether; an empty
+    tuple emits it empty. PubMed produces both.
     """
     databank_xml = "".join(
-        f"<DataBank><DataBankName>{name}</DataBankName><AccessionNumberList>"
-        + "".join(f"<AccessionNumber>{a}</AccessionNumber>" for a in accessions)
-        + "</AccessionNumberList></DataBank>"
+        f"<DataBank><DataBankName>{name}</DataBankName>"
+        + (
+            ""
+            if accessions is None
+            else "<AccessionNumberList>"
+            + "".join(f"<AccessionNumber>{a}</AccessionNumber>" for a in accessions)
+            + "</AccessionNumberList>"
+        )
+        + "</DataBank>"
         for name, accessions in databanks
     )
     grant_xml = "".join(
@@ -1356,6 +1439,118 @@ class TestPubMedSignalParsing:
 
     def test_empty_article_set_yields_no_signals(self):
         assert _parse_pubmed_signals("<PubmedArticleSet/>") == _PubMedSignals()
+
+    @pytest.mark.parametrize("name", ["JMACCT", "REPEC", "UMIN CTR"])
+    def test_registries_nlm_publishes_are_all_recognised(self, name):
+        # All three appear in NLM's DataBankName vocabulary and none was in
+        # bmlib's set: JMACCT and REPEC were missing outright, and UMIN's
+        # registry was spelled "umin-ctr" where NLM's table says "UMIN CTR",
+        # so the exact-match test failed on the string PubMed emits. Each
+        # silently cost the paper SCORE_TRIAL_REGISTERED.
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=((name, ("X1",)),)))
+        assert signals.registration_not_checkable is True
+
+    def test_a_deposition_accession_is_collected(self):
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("GENBANK", ("MN908947",)),)))
+        assert signals.deposition_databanks == ("GENBANK",)
+
+    def test_pubmeds_own_spelling_is_kept(self):
+        # The name is rendered to humans in the indicator line.
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("GenBank", ("MN908947",)),)))
+        assert signals.deposition_databanks == ("GenBank",)
+
+    def test_repository_matching_ignores_case(self):
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("figshare", ("10.6084/m9",)),)))
+        assert signals.deposition_databanks == ("figshare",)
+
+    def test_one_repository_named_twice_is_one_entry(self):
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("GENBANK", ("A1",)), ("GenBank", ("A2",))))
+        )
+        assert signals.deposition_databanks == ("GENBANK",)
+
+    def test_repositories_are_kept_in_document_order(self):
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("PDB", ("1ABC",)), ("SRA", ("SRP000001",))))
+        )
+        assert signals.deposition_databanks == ("PDB", "SRA")
+
+    @pytest.mark.parametrize("accessions", [None, (), ("",), ("   ",)])
+    def test_a_repository_without_a_usable_accession_proves_nothing(self, accessions):
+        # A repository name with no accession is an assertion with no referent
+        # — nothing a reader could go and fetch — so it is not the structured
+        # proof of a deposit this signal claims to be.
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("GENBANK", accessions),)))
+        assert signals.deposition_databanks == ()
+
+    @pytest.mark.parametrize(
+        "name", ["OMIM", "RefSeq", "UniProtKB", "PubChem-Compound", "GDB", "dbSNP"]
+    )
+    def test_a_curated_reference_database_is_not_a_deposit(self, name):
+        # NLM lists these beside the deposition repositories, but an OMIM
+        # number says the paper is about a known condition and a RefSeq
+        # accession names a sequence NCBI curated — neither is evidence that
+        # these authors shared their data. dbSNP is the sharpest case: it sits
+        # right beside dbVar in the deposit set, but a dbSNP citation is
+        # overwhelmingly an rs-number reference, not a submission.
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=((name, ("X1",)),)))
+        assert signals.deposition_databanks == ()
+
+    def test_a_controlled_access_repository_is_collected_too(self):
+        # dbGaP is genuine deposition; the merge step is what knows it is
+        # controlled-access and worth `on_request` rather than `full_open`.
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("dbGaP", ("phs000001",)),)))
+        assert signals.deposition_databanks == ("dbGaP",)
+
+    def test_a_registry_and_a_repository_in_one_list_feed_both_branches(self):
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(
+                databanks=(
+                    ("ClinicalTrials.gov", ("NCT01234567",)),
+                    ("GENBANK", ("MN908947",)),
+                )
+            )
+        )
+        assert signals.trial_accessions == ("NCT01234567",)
+        assert signals.deposition_databanks == ("GENBANK",)
+
+    def test_an_unrecognised_databank_name_is_ignored(self):
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("SomeNewRegistry", ("X1",)),)))
+        assert signals.deposition_databanks == ()
+        assert signals.registration_not_checkable is False
+
+    def test_the_deposition_and_registry_name_sets_are_disjoint(self):
+        # `_parse_pubmed_signals` checks deposition membership first and
+        # `continue`s, so a name in both families would always be read as a
+        # deposit and never reach the registry branch — silently dropping
+        # `trial_registered`, `SCORE_TRIAL_REGISTERED` (20) and the registry
+        # indicator while a deposit scores 20 instead. The total would look
+        # plausible and nothing would raise. Nothing enforces the two
+        # vocabularies stay disjoint except this test; if it ever fails, the
+        # fix is to remove the name from whichever of the two it does not
+        # belong in, not to reorder the branches in the parser.
+        assert not set(_DEPOSITION_DATABANK_LEVELS) & _TRIAL_REGISTRY_NAMES
+
+    def test_every_repository_maps_to_a_level_the_ranking_knows(self):
+        # `_merge_pubmed_signals` subscripts `_DEPOSITION_DATABANK_LEVELS` and
+        # feeds the result straight to `note_data_level()`, which raises on a
+        # level outside `_DATA_LEVEL_RANK`. A typo in a value here would
+        # therefore surface as a KeyError escaping `analyze()` for exactly
+        # those papers that deposited data — the ones this feature exists to
+        # credit — rather than at import time.
+        assert set(_DEPOSITION_DATABANK_LEVELS.values()) <= set(_DATA_LEVEL_RANK)
+
+    def test_no_repository_nominates_a_level_weaker_than_on_request(self):
+        # A deposit is positive evidence. Mapping one to "unknown" or
+        # "not_available" would be a contradiction the type system cannot
+        # catch: both are keys of `_DATA_LEVEL_RANK`, so the test above would
+        # still pass and the paper would silently score nothing — or, at
+        # "not_available", earn a "Data explicitly not available" indicator
+        # off the back of an accession proving the opposite.
+        assert all(
+            _DATA_LEVEL_RANK[level] >= _DATA_LEVEL_RANK["on_request"]
+            for level in _DEPOSITION_DATABANK_LEVELS.values()
+        )
 
 
 class TestPubMedRequest:
@@ -1626,3 +1821,112 @@ class TestPubMedSignalMerge:
         client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=None)
         result = self._analyze(monkeypatch, client, pmid="1")
         assert result.risk_level != TransparencyRisk.UNKNOWN
+
+
+class TestDataDepositionMerge:
+    """PubMed's deposition accessions are the second producer of `data_level`."""
+
+    def test_a_deposition_accession_establishes_full_open(self):
+        analysis = _Analysis()
+        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("GENBANK",)), analysis)
+        assert analysis.data_level == "full_open"
+
+    def test_a_controlled_access_deposit_is_only_on_request(self):
+        # dbGaP data needs Data Access Committee approval, which is what
+        # `on_request` already means. The design's testing plan promised
+        # "dbGaP alone scores 10" — score it, not just the level, so this
+        # class is self-contained.
+        analysis = _Analysis()
+        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("dbGaP",)), analysis)
+        _score_data_availability(analysis)
+        assert analysis.data_level == "on_request"
+        assert analysis.score == SCORE_DATA_ON_REQUEST
+
+    def test_the_strongest_of_several_deposits_wins(self):
+        analysis = _Analysis()
+        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("dbGaP", "GENBANK")), analysis)
+        assert analysis.data_level == "full_open"
+
+    def test_an_accession_outranks_a_full_text_denial(self):
+        # The consequential case. A clinical paper's "data are not available"
+        # is routinely about individual patient records, while the accession
+        # is a sequence on a public server right now. Hard evidence of a real
+        # deposit beats a substring match whose subject we cannot determine —
+        # and the denial indicator is never written, so nothing contradicts.
+        analysis = _Analysis()
+        analysis.note_data_level("not_available")
+        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("GENBANK",)), analysis)
+        _score_data_availability(analysis)
+        assert analysis.data_level == "full_open"
+        assert analysis.score == SCORE_DATA_FULL_OPEN
+        assert _INDICATOR_DATA_NOT_AVAILABLE not in analysis.indicators
+
+    def test_a_deposit_never_lowers_a_stronger_established_level(self):
+        analysis = _Analysis()
+        analysis.note_data_level("full_open")
+        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("dbGaP",)), analysis)
+        _score_data_availability(analysis)
+        assert analysis.data_level == "full_open"
+        assert analysis.score == SCORE_DATA_FULL_OPEN  # 20, not 20 + 10
+
+    def test_the_repositories_are_named_in_an_indicator(self):
+        analysis = _Analysis()
+        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("GENBANK", "PDB")), analysis)
+        assert _INDICATOR_DATA_DEPOSITED_PREFIX + "GENBANK, PDB" in analysis.indicators
+
+    def test_the_indicator_is_written_even_when_the_level_it_nominated_lost(self):
+        # The line reports what PubMed said, which stays true regardless of
+        # which level won. A sub-step publishes its own finding; it does not
+        # read the merged field back to decide whether to mention it.
+        analysis = _Analysis()
+        analysis.note_data_level("full_open")
+        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("dbGaP",)), analysis)
+        assert _INDICATOR_DATA_DEPOSITED_PREFIX + "dbGaP" in analysis.indicators
+
+    def test_no_deposits_means_no_indicator_and_no_level(self):
+        analysis = _Analysis()
+        _merge_pubmed_signals(_PubMedSignals(), analysis)
+        assert analysis.data_level == "unknown"
+        assert analysis.indicators == []
+
+    def test_analyze_credits_a_deposition_accession_end_to_end(self, monkeypatch):
+        client = _RecordingClient(
+            epmc=_epmc_payload(abstract="A study of a virus.", pmid="12345678"),
+            pubmed=_pubmed_xml(databanks=(("GENBANK", ("MN908947",)),)),
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="12345678")
+        assert result.data_availability_level == "full_open"
+        assert result.transparency_score == SCORE_DATA_FULL_OPEN
+        assert _INDICATOR_DATA_DEPOSITED_PREFIX + "GENBANK" in result.risk_indicators
+
+    def test_data_not_available_indicator_is_written_last(self, monkeypatch):
+        # `_score_data_availability()` now runs once, in `analyze()`, after
+        # every sub-step — including trial registration — rather than inline
+        # inside `_check_europepmc` as it did before the once-at-the-end
+        # refactor. `_INDICATOR_DATA_NOT_AVAILABLE` is therefore always the
+        # last line appended, not wherever the EuropePMC step happened to sit
+        # in the pipeline. The fixture needs a later indicator to make that
+        # observable: a paper whose abstract denies data availability *and*
+        # whose PubMed record registers a trial PubMed cannot follow up
+        # (`_INDICATOR_RESULTS_NOT_CHECKABLE`, from the trial-registration
+        # step that runs after the data-availability merge). Under the old,
+        # inline-scoring code this fixture produces the data indicator
+        # *before* the trial one, so this assertion would have failed there —
+        # confirmed by running it against the pre-refactor analyzer
+        # (commit 11f47ff), where `risk_indicators` ends with
+        # "Trial registration found; posted-results status could not be
+        # checked", not the data indicator.
+        client = _RecordingClient(
+            epmc=_epmc_payload(
+                abstract="Data are not available due to patient privacy.", pmid="12345678"
+            ),
+            pubmed=_pubmed_xml(databanks=(("ISRCTN", ("ISRCTN12345678",)),)),
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="12345678")
+        assert result.data_availability_level == "not_available"
+        # Proves the fixture actually discriminates: without a later
+        # indicator, the assertion below would pass under any ordering.
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE in result.risk_indicators
+        assert result.risk_indicators[-1] == _INDICATOR_DATA_NOT_AVAILABLE
