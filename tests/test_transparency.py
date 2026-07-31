@@ -23,6 +23,7 @@ import pytest
 from bmlib.transparency.analyzer import (
     _INDICATOR_COI_IN_PUBMED,
     _INDICATOR_COI_UNKNOWN,
+    _INDICATOR_DATA_NOT_AVAILABLE,
     _INDICATOR_INDUSTRY_COI,
     _INDICATOR_NO_COI_IN_FULLTEXT,
     _INDICATOR_NO_POSTED_RESULTS,
@@ -30,6 +31,8 @@ from bmlib.transparency.analyzer import (
     DEFAULT_INDUSTRY_CONFIDENCE,
     SCORE_CITED,
     SCORE_COI_DISCLOSED,
+    SCORE_DATA_FULL_OPEN,
+    SCORE_DATA_ON_REQUEST,
     SCORE_FUNDER_INFO,
     SCORE_OPEN_ACCESS,
     TEXT_INDUSTRY_CONFIDENCE,
@@ -237,6 +240,70 @@ class TestAnalysisCarrier:
         analysis.note_industry_funder("Genentech Inc.")
         analysis.note_industry_coi()
         assert analysis.industry_confidence == DEFAULT_INDUSTRY_CONFIDENCE
+
+    def test_a_deposition_establishes_open_data(self):
+        analysis = _Analysis()
+        analysis.note_data_deposition("GENBANK")
+        assert analysis.data_level == "full_open"
+        assert analysis.score == SCORE_DATA_FULL_OPEN
+        assert analysis.indicators == ["Data deposited in GENBANK"]
+
+    def test_one_archive_is_one_indicator_however_often_it_is_reported(self):
+        analysis = _Analysis()
+        analysis.note_data_deposition("GENBANK")
+        analysis.note_data_deposition("GENBANK")
+        assert analysis.indicators == ["Data deposited in GENBANK"]
+
+    def test_stronger_evidence_swaps_the_credit_rather_than_adding_to_it(self):
+        # The two data-availability awards are documented as mutually
+        # exclusive — that is what makes the best attainable total exactly 100.
+        # A second producer that simply added its own credit would score one
+        # component twice.
+        analysis = _Analysis()
+        analysis.note_data_availability("on_request")
+        analysis.note_data_deposition("GENBANK")
+        assert analysis.data_level == "full_open"
+        assert analysis.score == SCORE_DATA_FULL_OPEN
+
+    def test_a_level_reported_twice_is_credited_once(self):
+        analysis = _Analysis()
+        analysis.note_data_availability("full_open")
+        analysis.note_data_availability("full_open")
+        assert analysis.score == SCORE_DATA_FULL_OPEN
+
+    def test_an_absence_never_erases_a_finding(self):
+        # `unknown` is the absence of a finding, not a weaker one, so a step
+        # that found nothing must leave another step's finding standing.
+        analysis = _Analysis()
+        analysis.note_data_availability("on_request")
+        analysis.note_data_availability("unknown")
+        assert analysis.data_level == "on_request"
+        assert analysis.score == SCORE_DATA_ON_REQUEST
+
+    def test_a_weaker_finding_does_not_displace_a_stronger_one(self):
+        analysis = _Analysis()
+        analysis.note_data_deposition("GENBANK")
+        analysis.note_data_availability("not_available")
+        assert analysis.data_level == "full_open"
+        assert analysis.score == SCORE_DATA_FULL_OPEN
+        assert _INDICATOR_DATA_NOT_AVAILABLE not in analysis.indicators
+
+    def test_the_not_available_line_is_retracted_when_it_is_superseded(self):
+        # A full text can say "individual patient data are not available" while
+        # the sequences went to GenBank. Leaving the line in place would
+        # contradict `data_availability_level` — the situation the COI
+        # indicators are named constants for.
+        analysis = _Analysis()
+        analysis.note_data_availability("not_available")
+        assert _INDICATOR_DATA_NOT_AVAILABLE in analysis.indicators
+        analysis.note_data_deposition("GENBANK")
+        assert _INDICATOR_DATA_NOT_AVAILABLE not in analysis.indicators
+
+    def test_a_level_outside_the_vocabulary_raises(self):
+        # The rank table *is* the vocabulary. Ranking an unlisted level weakest
+        # would swallow a typo and silently drop the finding it names.
+        with pytest.raises(KeyError):
+            _Analysis().note_data_availability("open-ish")
 
 
 class TestCheckEuropePMC:
@@ -790,21 +857,41 @@ class TestDataAvailabilityPatterns:
         assert analysis.score == 0
 
     def test_a_level_this_step_did_not_find_is_not_scored(self):
-        # The step is the only producer of `data_level`, so it publishes what
-        # it found rather than reading the carrier back to decide the credit.
-        # Reading it back would let a level set by some later-added step be
-        # scored here as if EuropePMC's text had shown it — the positional
+        # The step publishes what it found rather than reading the carrier back
+        # to decide the credit. Reading it back would score a level another
+        # step established as if EuropePMC's text had shown it — the positional
         # hazard the carrier was introduced to remove, respelled as state.
+        #
+        # The inbound level survives, which is the half of this that changed
+        # when `<DataBankList>` made PubMed the field's second producer: the
+        # step no longer owns the field outright, so "I found nothing" is a
+        # no-op rather than an erasure.
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(None)
-        analysis = _Analysis(data_level="full_open")
+        analysis = _Analysis(data_level="full_open", score=SCORE_DATA_FULL_OPEN)
         analyzer._check_europepmc(
             client,
             _epmc_record("This abstract says nothing about data.", in_epmc="N"),
             analysis,
         )
-        assert analysis.data_level == "unknown"
-        assert analysis.score == 0
+        assert analysis.data_level == "full_open"
+        assert analysis.score == SCORE_DATA_FULL_OPEN
+
+    def test_this_step_does_not_downgrade_another_producers_finding(self):
+        # A deposition accession is structured publisher metadata; a phrase
+        # matched in running text is not. The stronger finding stands, and the
+        # line that would contradict it is never added.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(None)
+        analysis = _Analysis(data_level="full_open", score=SCORE_DATA_FULL_OPEN)
+        analyzer._check_europepmc(
+            client,
+            _epmc_record("Individual patient data are not available.", in_epmc="N"),
+            analysis,
+        )
+        assert analysis.data_level == "full_open"
+        assert analysis.score == SCORE_DATA_FULL_OPEN
+        assert _INDICATOR_DATA_NOT_AVAILABLE not in analysis.indicators
 
 
 class TestAnalyzeApiReachability:
@@ -1332,11 +1419,45 @@ class TestPubMedSignalParsing:
         assert signals.registration_not_checkable is True
 
     def test_data_deposition_databank_is_not_a_registration(self):
-        # GENBANK/PDB accessions are a data-availability signal, deliberately
-        # out of scope here — they must not be mistaken for trial registration.
+        # GENBANK/PDB accessions are a data-availability signal — they must not
+        # be mistaken for trial registration.
         signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("GENBANK", ("MN908947",)),)))
         assert signals.trial_accessions == ()
         assert signals.registration_not_checkable is False
+
+    def test_a_data_deposition_databank_is_collected(self):
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("GENBANK", ("MN908947",)),)))
+        assert signals.data_banks == ("GENBANK",)
+
+    def test_a_databank_without_accessions_still_counts(self):
+        # <AccessionNumberList> is optional in the MEDLINE DTD, and the name is
+        # the publisher's assertion of deposition. The trial branch beside this
+        # one already treats a registration with no usable accession as
+        # established, so the same rule applies here.
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("Dryad", ()),)))
+        assert signals.data_banks == ("Dryad",)
+
+    def test_a_blank_databank_name_is_not_a_deposition(self):
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=((" ", ("X1",)),)))
+        assert signals.data_banks == ()
+
+    def test_one_archive_named_twice_is_one_deposition(self):
+        # DataBankName is a controlled vocabulary, matched case-insensitively
+        # by the registry branch in the same loop. One archive is one finding
+        # however the publisher spelled it; the first spelling is what a human
+        # is shown.
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("GenBank", ("MN908947",)), ("GENBANK", ("MN908948",))))
+        )
+        assert signals.data_banks == ("GenBank",)
+
+    def test_a_trial_registry_is_never_a_deposition(self):
+        # The two branches partition the databank list; an entry counted as a
+        # registration must not also be counted as data sharing.
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("ClinicalTrials.gov", ("NCT01234567",)), ("SRA", ("SRP1",))))
+        )
+        assert signals.data_banks == ("SRA",)
 
     def test_grant_agencies_collected(self):
         signals = _parse_pubmed_signals(_pubmed_xml(agencies=("NCI NIH HHS", "Wellcome Trust")))
@@ -1606,6 +1727,41 @@ class TestPubMedSignalMerge:
         )
         result = self._analyze(monkeypatch, client, doi="10.1234/x")
         assert result.risk_indicators.count("Industry funder: Genentech Inc.") == 1
+
+    def test_a_deposition_record_establishes_open_data(self):
+        analysis = _Analysis()
+        _merge_pubmed_signals(_PubMedSignals(data_banks=("GENBANK", "PDB")), analysis)
+        assert analysis.data_level == "full_open"
+        assert analysis.score == SCORE_DATA_FULL_OPEN
+        assert "Data deposited in GENBANK" in analysis.indicators
+        assert "Data deposited in PDB" in analysis.indicators
+
+    def test_a_deposition_record_supersedes_the_full_texts_denial(self, monkeypatch):
+        # A paper can say "individual patient data are not available" and still
+        # have deposited its sequences. The structured accession is the harder
+        # evidence, and the line that contradicts it is retracted rather than
+        # left for whoever reads the indicators to reconcile.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1", abstract="The data are not available."),
+            pubmed=_pubmed_xml(databanks=(("GENBANK", ("MN908947",)),)),
+        )
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.data_availability_level == "full_open"
+        assert _INDICATOR_DATA_NOT_AVAILABLE not in result.risk_indicators
+        assert "Data deposited in GENBANK" in result.risk_indicators
+
+    def test_a_closed_access_paper_can_earn_open_data(self, monkeypatch):
+        # The reason for the signal: without full text there is nothing for the
+        # text scan to read, so PubMed's databank list is the only
+        # data-availability evidence such a paper can carry.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1", in_epmc="N"),
+            pubmed=_pubmed_xml(databanks=(("Dryad", ("10.5061/dryad.x",)),)),
+        )
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.full_text_analyzed is False
+        assert result.data_availability_level == "full_open"
+        assert result.transparency_score >= SCORE_DATA_FULL_OPEN
 
     def test_the_merge_applies_both_of_its_branches_to_one_list(self):
         # The COI branch retracts lines while the funder branch appends. When

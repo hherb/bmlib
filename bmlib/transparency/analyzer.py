@@ -163,8 +163,8 @@ EUTILS_TOOL_NAME = "bmlib"
 
 # `DataBankName` values PubMed emits for clinical-trial registries, lowercased
 # for matching. Anything outside this set — GENBANK, PDB, SRA, Dryad, … — is a
-# data-deposition accession, which is a transparency signal of its own but not
-# a trial registration, and is ignored here.
+# data-deposition accession: a transparency signal of its own, read as evidence
+# of data availability rather than of trial registration.
 _TRIAL_REGISTRY_NAMES = frozenset(
     {
         "clinicaltrials.gov",
@@ -201,6 +201,10 @@ _INDICATOR_COI_UNKNOWN = "COI disclosure status unknown (full text unavailable)"
 _INDICATOR_COI_IN_PUBMED = "COI disclosure found in PubMed record"
 _INDICATOR_INDUSTRY_COI = "Industry ties disclosed in COI statement"
 _INDICATOR_NO_POSTED_RESULTS = "Registered trial without posted results"
+# Named for the same reason as the COI lines: a PubMed data-deposition record
+# can establish open data that this line contradicts, so it has to be
+# retractable by the same name that appended it.
+_INDICATOR_DATA_NOT_AVAILABLE = "Data explicitly not available"
 # Deliberately does not name a registry. It covers a registration in another
 # registry *and* a ClinicalTrials.gov registration whose accession was missing
 # or malformed; saying "registered outside ClinicalTrials.gov" would be a plain
@@ -225,6 +229,32 @@ SCORE_CITED = 5
 SCORE_TRIAL_REGISTERED = 20
 SCORE_RESULTS_POSTED = 15
 MAX_TRANSPARENCY_SCORE = 100
+
+# ---- Data-availability levels ----
+# The whole vocabulary `calculate_risk_level()` accepts, including the two
+# levels this module never produces — `restricted` and `not_stated`, which
+# exist for callers computing the level from a richer source. Listing them
+# makes the table the definition of the vocabulary, so a level outside it
+# raises rather than being silently ranked weakest.
+#
+# The rank orders *evidence of openness*, which is what
+# `_Analysis.note_data_availability()` resolves its two producers with. Hence
+# `unknown` below the withheld levels: it is the absence of a finding, and must
+# never overwrite one.
+_DATA_LEVEL_RANK: dict[str, int] = {
+    "unknown": 0,
+    "not_stated": 1,
+    "restricted": 1,
+    "not_available": 1,
+    "on_request": 2,
+    "full_open": 3,
+}
+# Levels absent from this table earn nothing; only the two scoring levels are
+# listed, so the awards stay mutually exclusive by construction.
+_DATA_LEVEL_SCORES: dict[str, int] = {
+    "on_request": SCORE_DATA_ON_REQUEST,
+    "full_open": SCORE_DATA_FULL_OPEN,
+}
 
 # ---- Trial lookup ----
 MAX_TRIAL_IDS_TO_CHECK = 3
@@ -313,7 +343,7 @@ _NON_INDUSTRY_CONTEXT_RE = re.compile(
 class _PubMedSignals:
     """Transparency signals carried by a PubMed record.
 
-    All three are structured publisher-supplied metadata, which is why they
+    All of them are structured publisher-supplied metadata, which is why they
     outrank the text heuristics elsewhere in this module. An empty instance is
     the result of every failure path (no PMID, unreachable, unparsable), so
     callers never have to distinguish "no signals" from "no answer".
@@ -329,12 +359,18 @@ class _PubMedSignals:
         funders: Distinct ``<Grant><Agency>`` names, in document order. PubMed
             emits one ``<Grant>`` per grant number, so a single agency funding
             four grants appears four times in the XML and once here.
+        data_banks: Distinct names of the data archives this article deposited
+            in — every ``<DataBank>`` whose name is not a trial registry — in
+            document order and spelled as PubMed spelled them. Accession
+            numbers are deliberately not carried: nothing fetches them, so
+            they would be validated for no consumer.
     """
 
     coi_statement: bool = False
     trial_accessions: tuple[str, ...] = ()
     registration_not_checkable: bool = False
     funders: tuple[str, ...] = ()
+    data_banks: tuple[str, ...] = ()
 
 
 def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
@@ -368,9 +404,21 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
 
     accessions: list[str] = []
     registration_not_checkable = False
+    # Keyed by the lowercased name so one archive spelled two ways is one
+    # finding, valued by the first spelling because that is what a human is
+    # shown in the indicator.
+    data_banks: dict[str, str] = {}
     for databank in citation.findall("Article/DataBankList/DataBank"):
-        name = (databank.findtext("DataBankName") or "").strip().lower()
+        original = (databank.findtext("DataBankName") or "").strip()
+        name = original.lower()
         if name not in _TRIAL_REGISTRY_NAMES:
+            # Everything the registry set does not name is a data archive:
+            # `DataBankName` is an NLM controlled vocabulary of registries and
+            # archives, so once the registries are named the complement is the
+            # archives. An allowlist of repositories would go stale as NLM adds
+            # them, and would discard the signal rather than record it.
+            if name:
+                data_banks.setdefault(name, original)
             continue
         # Every accession is publisher-supplied text that would be interpolated
         # into a ClinicalTrials.gov URL path, so only a well-formed NCT id is
@@ -413,6 +461,7 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
         trial_accessions=tuple(accessions),
         registration_not_checkable=registration_not_checkable,
         funders=funders,
+        data_banks=tuple(data_banks.values()),
     )
 
 
@@ -438,7 +487,10 @@ class _Analysis:
         industry_funding: Any industry involvement was detected.
         industry_confidence: Confidence in that detection; the strongest
             evidence seen wins, regardless of arrival order.
-        data_level: Data-availability level from :data:`_DATA_PATTERNS`.
+        data_level: Data-availability level, a member of
+            :data:`_DATA_LEVEL_RANK`. Two steps produce it — the Europe PMC
+            text scan and PubMed's ``<DataBankList>`` — so it is written
+            through :meth:`note_data_availability`, never assigned.
         coi_disclosed: Tri-state — ``True`` (statement found), ``False`` (full
             text scanned, none found), ``None`` (undeterminable).
         trial_registered: A trial registration was established.
@@ -496,6 +548,57 @@ class _Analysis:
         if line not in self.indicators:
             self.indicators.append(line)
 
+    def note_data_availability(self, level: str) -> None:
+        """Record *level* as this analysis's data-availability finding.
+
+        The field has two producers — the Europe PMC text scan and PubMed's
+        ``<DataBankList>`` — so it is merged rather than assigned: the level
+        with the strongest evidence of openness wins, whichever arrives first,
+        the way :attr:`industry_confidence` resolves its own two sources. A tie
+        keeps the incumbent, and ``"unknown"`` — the absence of a finding, not
+        a weaker one — never displaces anything.
+
+        The score is *swapped*, not added to: the credit already spent on the
+        superseded level is taken back. The two data-availability awards are
+        mutually exclusive, which is what makes the documented maximum of
+        exactly 100 attainable, and a second producer adding its own credit
+        would score one component twice.
+
+        Args:
+            level: A member of :data:`_DATA_LEVEL_RANK`. Anything else raises
+                ``KeyError`` — ranking an unlisted level weakest would swallow
+                a typo and silently drop the finding it names.
+        """
+        if _DATA_LEVEL_RANK[level] <= _DATA_LEVEL_RANK[self.data_level]:
+            return
+
+        self.score += _DATA_LEVEL_SCORES.get(level, 0) - _DATA_LEVEL_SCORES.get(self.data_level, 0)
+        self.data_level = level
+
+        # Appended and retracted through the same name, so the indicator list
+        # cannot end up contradicting the field above it.
+        if level == "not_available":
+            self.indicators.append(_INDICATOR_DATA_NOT_AVAILABLE)
+        elif _INDICATOR_DATA_NOT_AVAILABLE in self.indicators:
+            self.indicators.remove(_INDICATOR_DATA_NOT_AVAILABLE)
+
+    def note_data_deposition(self, name: str) -> None:
+        """Record a deposit in the data archive *name*, reported by PubMed.
+
+        The level is fixed at ``"full_open"`` inside the method rather than
+        passed in, for the reason :meth:`note_industry_funder` fixes its
+        confidence: "an archive accession is open data" is the rule, and a
+        caller free to choose could blur it.
+
+        The indicator is deduplicated — one archive is one finding — and says
+        which archive, because it is the only thing telling a reader why the
+        level contradicts what the full text said.
+        """
+        line = f"Data deposited in {name}"
+        if line not in self.indicators:
+            self.indicators.append(line)
+        self.note_data_availability("full_open")
+
     def note_industry_coi(self) -> None:
         """Record industry ties disclosed in a full-text COI statement.
 
@@ -538,6 +641,13 @@ def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
     # `False`: it means the publisher supplied no statement to PubMed, not
     # that the paper carries none, and `False` would trigger the
     # missing-COI downgrade on no evidence.
+
+    # A databank entry is the publisher asserting that this article's data went
+    # into a public archive — structured metadata, so it outranks the substring
+    # scan of the retrieved text, and it is the only data-availability evidence
+    # a closed-access paper can carry.
+    for name in pubmed.data_banks:
+        analysis.note_data_deposition(name)
 
     if pubmed.funders:
         analysis.award_funder_info()
@@ -913,24 +1023,19 @@ class TransparencyAnalyzer:
             # Could not inspect full text; status is genuinely unknown.
             analysis.indicators.append(_INDICATOR_COI_UNKNOWN)
 
-        # Data availability. The level is found into a local and published
-        # once, rather than assigned to the carrier and read back to decide the
+        # Data availability. The level is found into a local and reported once,
+        # rather than assigned to the carrier and read back to decide the
         # credit: reading it back would score whatever the field happened to
         # hold on the way in, which is the positional hazard `_Analysis` exists
-        # to remove, respelled as state. This step is the field's only producer
-        # today; a second one has to bring a merge rule with it.
+        # to remove, respelled as state. PubMed's `<DataBankList>` is the
+        # field's second producer, so what this step reports is merged —
+        # scoring and the retractable indicator both belong to the method.
         data_level = "unknown"
         for pattern, level in _DATA_PATTERNS.items():
             if pattern in search_text:
                 data_level = level
                 break
-        analysis.data_level = data_level
-        if data_level == "full_open":
-            analysis.score += SCORE_DATA_FULL_OPEN
-        elif data_level == "on_request":
-            analysis.score += SCORE_DATA_ON_REQUEST
-        elif data_level == "not_available":
-            analysis.indicators.append("Data explicitly not available")
+        analysis.note_data_availability(data_level)
 
         # Industry ties disclosed in the COI statement itself ("consultant
         # for X", "speaker fees from Y"). Scanned only in full text — an
