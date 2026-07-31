@@ -117,6 +117,7 @@ def _get(url: str, params: dict[str, str]) -> str | None:
     time.sleep(REQUEST_INTERVAL_SECONDS)
     query = urllib.parse.urlencode(params)
     try:
+        # noqa: S310 - the URL is a module constant; only the query is built here.
         with urllib.request.urlopen(f"{url}?{query}", timeout=60) as resp:  # noqa: S310
             return resp.read().decode("utf-8", errors="replace")
     except (urllib.error.URLError, TimeoutError) as e:
@@ -144,7 +145,7 @@ def _spellings(pmids: list[str], base: dict[str, str]) -> Counter[str]:
     if body is None:
         return Counter()
     try:
-        root = ET.fromstring(body)
+        root = ET.fromstring(body)  # noqa: S314 - NCBI payload, no entities requested
     except ET.ParseError as e:
         print(f"  unparsable efetch response: {e}", file=sys.stderr)
         return Counter()
