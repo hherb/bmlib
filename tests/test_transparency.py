@@ -28,8 +28,10 @@ from bmlib.transparency.analyzer import (
     _INDICATOR_NO_POSTED_RESULTS,
     _INDICATOR_RESULTS_NOT_CHECKABLE,
     DEFAULT_INDUSTRY_CONFIDENCE,
+    SCORE_CITED,
     SCORE_COI_DISCLOSED,
     SCORE_FUNDER_INFO,
+    SCORE_OPEN_ACCESS,
     TEXT_INDUSTRY_CONFIDENCE,
     TransparencyAnalyzer,
     _Analysis,
@@ -688,6 +690,57 @@ class TestCheckTrialRegistration:
         assert analysis.trial_registered is True
         assert analysis.score == 20  # SCORE_TRIAL_REGISTERED
 
+    def test_an_inbound_results_flag_does_not_stand_in_for_this_check(self):
+        # `_INDICATOR_NO_POSTED_RESULTS` reports what *this* step established:
+        # it asked ClinicalTrials.gov and was told there are no results. A
+        # `results_compliant` that arrived True must not suppress that, or a
+        # later-added step writing the field would silently retract a finding
+        # it knows nothing about.
+        analyzer = TransparencyAnalyzer()
+
+        class _Client:
+            def get(self, url, **kwargs):
+                return _FakeResponse(status_code=200, json_data={"hasResults": False})
+
+        epmc = _epmc_record("ClinicalTrials.gov number, NCT01206062.")
+        analysis = _Analysis(results_compliant=True)
+        analyzer._check_trial_registration(_Client(), "123", None, analysis, epmc=epmc)
+        assert _INDICATOR_NO_POSTED_RESULTS in analysis.indicators
+
+
+class TestCheckOpenAlex:
+    """The one sub-step nothing else in this file calls directly."""
+
+    class _Client:
+        """Serves one OpenAlex payload and records that it was asked."""
+
+        def __init__(self, payload: dict):
+            self._payload = payload
+            self.requested: list[str] = []
+
+        def get(self, url, **kwargs):
+            self.requested.append(url)
+            return _FakeResponse(status_code=200, json_data=self._payload)
+
+    def test_both_credits_add_to_the_score_already_accumulated(self):
+        # This step returned a bare `int` before the carrier, so the migration
+        # hazard is assigning `analysis.score` instead of adding to it — which
+        # a zero starting score would hide.
+        analysis = _Analysis(score=SCORE_FUNDER_INFO)
+        client = self._Client({"open_access": {"is_oa": True}, "cited_by_count": 7})
+        TransparencyAnalyzer()._check_openalex(client, "10.1234/x", analysis)
+        assert analysis.score == SCORE_FUNDER_INFO + SCORE_OPEN_ACCESS + SCORE_CITED
+
+    def test_an_uncited_closed_work_earns_nothing(self):
+        # `_query_openalex` swallows every exception, so an unchanged score on
+        # its own would read the same way if the request had failed outright.
+        # Asserting the query was actually made is what separates the two.
+        analysis = _Analysis()
+        client = self._Client({"open_access": {"is_oa": False}, "cited_by_count": 0})
+        TransparencyAnalyzer()._check_openalex(client, "10.1234/x", analysis)
+        assert any("openalex" in url for url in client.requested)
+        assert analysis.score == 0
+
 
 class TestDataAvailabilityPatterns:
     """Negated data-availability phrasing must not read as data sharing."""
@@ -734,6 +787,23 @@ class TestDataAvailabilityPatterns:
             analysis,
         )
         assert analysis.data_level == "not_available"
+        assert analysis.score == 0
+
+    def test_a_level_this_step_did_not_find_is_not_scored(self):
+        # The step is the only producer of `data_level`, so it publishes what
+        # it found rather than reading the carrier back to decide the credit.
+        # Reading it back would let a level set by some later-added step be
+        # scored here as if EuropePMC's text had shown it — the positional
+        # hazard the carrier was introduced to remove, respelled as state.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(None)
+        analysis = _Analysis(data_level="full_open")
+        analyzer._check_europepmc(
+            client,
+            _epmc_record("This abstract says nothing about data.", in_epmc="N"),
+            analysis,
+        )
+        assert analysis.data_level == "unknown"
         assert analysis.score == 0
 
 
@@ -1186,6 +1256,21 @@ class _RecordingClient:
         raise AssertionError(f"no request matched {fragment!r}")
 
 
+def _install_fake_client(monkeypatch: pytest.MonkeyPatch, client: _RecordingClient) -> None:
+    """Serve *client* to every ``analyze()`` call and drop the rate limit.
+
+    Module-level rather than a helper on one test class, because three classes
+    install a fake client this way and reaching across classes for it couples
+    them for no reason.
+    """
+    import httpx
+
+    from bmlib.transparency import analyzer as analyzer_mod
+
+    monkeypatch.setattr(analyzer_mod, "_MIN_REQUEST_INTERVAL_SECONDS", 0.0)
+    monkeypatch.setattr(httpx, "Client", lambda *a, **k: client)
+
+
 def _epmc_payload(*, abstract: str = "", pmid: str | None = None, in_epmc: str = "N") -> dict:
     record: dict = {"abstractText": abstract, "inEPMC": in_epmc}
     if pmid is not None:
@@ -1312,25 +1397,16 @@ class TestPubMedRequest:
         # PubMed answering alone means the analysis measured something, so the
         # result must be scored rather than reported UNKNOWN.
         client = _RecordingClient(pubmed=_pubmed_xml(coi="None declared."))
-        self._install(monkeypatch, client)
+        _install_fake_client(monkeypatch, client)
         result = TransparencyAnalyzer().analyze("doc1", pmid="12345678")
         assert result.risk_level != TransparencyRisk.UNKNOWN
         assert result.unknown_reason is None
 
     # --- helpers ---
 
-    @staticmethod
-    def _install(monkeypatch, client):
-        import httpx
-
-        from bmlib.transparency import analyzer as analyzer_mod
-
-        monkeypatch.setattr(analyzer_mod, "_MIN_REQUEST_INTERVAL_SECONDS", 0.0)
-        monkeypatch.setattr(httpx, "Client", lambda *a, **k: client)
-
     def _run(self, monkeypatch, analyzer, *, pmid=None, doi=None, epmc=None):
         client = _RecordingClient(epmc=epmc, pubmed=_pubmed_xml())
-        self._install(monkeypatch, client)
+        _install_fake_client(monkeypatch, client)
         analyzer.analyze("doc1", pmid=pmid, doi=doi)
         return client
 
@@ -1374,12 +1450,18 @@ class TestFunderInfoIsScoredOnce:
         # CrossRef funder records *and* PubMed grants on the same paper. The
         # sub-step tests above pin each in isolation; this pins the composition
         # that analyze() actually runs.
+        #
+        # The assertion is on the whole score, which works only because this
+        # fixture scores nothing else: the abstract is empty, the record is not
+        # in EuropePMC, and no OpenAlex or ClinicalTrials.gov response is
+        # served. Keep it that way — a fixture that starts scoring elsewhere
+        # breaks this test for a reason it is not about.
         client = _RecordingClient(
             crossref={"message": {"funder": [{"name": "Some Trust"}]}},
             epmc=_epmc_payload(pmid="1"),
             pubmed=_pubmed_xml(agencies=("Another Trust",)),
         )
-        TestPubMedRequest._install(monkeypatch, client)
+        _install_fake_client(monkeypatch, client)
         result = TransparencyAnalyzer().analyze("doc1", doi="10.1234/x")
         assert result.transparency_score == SCORE_FUNDER_INFO
 
@@ -1388,7 +1470,7 @@ class TestPubMedSignalMerge:
     """How PubMed's signals combine with the ones already gathered."""
 
     def _analyze(self, monkeypatch, client, **kwargs):
-        TestPubMedRequest._install(monkeypatch, client)
+        _install_fake_client(monkeypatch, client)
         return TransparencyAnalyzer().analyze("doc1", **kwargs)
 
     def test_coi_statement_establishes_disclosure_when_full_text_is_unavailable(self, monkeypatch):

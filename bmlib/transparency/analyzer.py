@@ -445,8 +445,12 @@ class _Analysis:
         results_compliant: Posted results were found for a registered trial.
         full_text_analyzed: Findings came from full text, not just an abstract.
         funder_info_scored: :data:`SCORE_FUNDER_INFO` has been spent. Named
-            state rather than a positional bool, so a third funder source
-            cannot award it again by forgetting a convention.
+            state rather than a positional bool, so a third funder source gets
+            the once-only rule from :meth:`award_funder_info` instead of having
+            to remember a convention. The field stays writable — the rule lives
+            in the method, not in the type — so a source that spends the
+            component by hand can still double-score it. Go through
+            ``award_funder_info()``.
     """
 
     score: int = 0
@@ -909,16 +913,23 @@ class TransparencyAnalyzer:
             # Could not inspect full text; status is genuinely unknown.
             analysis.indicators.append(_INDICATOR_COI_UNKNOWN)
 
-        # Data availability
+        # Data availability. The level is found into a local and published
+        # once, rather than assigned to the carrier and read back to decide the
+        # credit: reading it back would score whatever the field happened to
+        # hold on the way in, which is the positional hazard `_Analysis` exists
+        # to remove, respelled as state. This step is the field's only producer
+        # today; a second one has to bring a merge rule with it.
+        data_level = "unknown"
         for pattern, level in _DATA_PATTERNS.items():
             if pattern in search_text:
-                analysis.data_level = level
+                data_level = level
                 break
-        if analysis.data_level == "full_open":
+        analysis.data_level = data_level
+        if data_level == "full_open":
             analysis.score += SCORE_DATA_FULL_OPEN
-        elif analysis.data_level == "on_request":
+        elif data_level == "on_request":
             analysis.score += SCORE_DATA_ON_REQUEST
-        elif analysis.data_level == "not_available":
+        elif data_level == "not_available":
             analysis.indicators.append("Data explicitly not available")
 
         # Industry ties disclosed in the COI statement itself ("consultant
@@ -1007,12 +1018,19 @@ class TransparencyAnalyzer:
             analysis.score += SCORE_TRIAL_REGISTERED
 
         if ct_ids:
-            for tid in ct_ids[:MAX_TRIAL_IDS_TO_CHECK]:
-                if self._check_trial_results(client, tid):
-                    analysis.results_compliant = True
-                    analysis.score += SCORE_RESULTS_POSTED
-                    break
-            if not analysis.results_compliant:
+            # `any()` over a generator stops at the first trial with posted
+            # results, as the loop it replaces did. The outcome is this step's
+            # own finding and deliberately not a read of
+            # `analysis.results_compliant`: the indicator below reports that
+            # ClinicalTrials.gov was asked and said no, which a flag arriving
+            # from elsewhere must not be able to retract.
+            compliant = any(
+                self._check_trial_results(client, tid) for tid in ct_ids[:MAX_TRIAL_IDS_TO_CHECK]
+            )
+            if compliant:
+                analysis.results_compliant = True
+                analysis.score += SCORE_RESULTS_POSTED
+            else:
                 analysis.indicators.append(_INDICATOR_NO_POSTED_RESULTS)
         elif pubmed.registration_not_checkable:
             analysis.indicators.append(_INDICATOR_RESULTS_NOT_CHECKABLE)

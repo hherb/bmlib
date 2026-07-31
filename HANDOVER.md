@@ -2,7 +2,7 @@
 
 _Last updated: 2026-07-31. **0.6.0 is cut.** `[Unreleased]` now holds one
 change — the `_Analysis` carrier (#37) — and nothing else is in flight.
-1044 tests passing + 32 skipped._
+1048 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -42,7 +42,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   of one per award record, which is the rule PubMed's grant list already
   followed. Only `risk_indicators` length moves — no score, no
   `industry_funding_detected`, no risk level.
-- **1044 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **1048 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -177,6 +177,19 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   contributor guess, and the industry-COI confidence
   (`TEXT_INDUSTRY_CONFIDENCE` vs. a funder record's 0.8) belongs to the step
   that found it, not to `analyze()`.
+- **A sub-step publishes its own finding to `_Analysis`; it never reads a field
+  back to decide what it found.** `_check_europepmc` collects the data level
+  into a local and assigns it once, and `_check_trial_registration` decides
+  `_INDICATOR_NO_POSTED_RESULTS` from the `any()` it just ran rather than from
+  `analysis.results_compliant`. Both read the carrier back at first, which is
+  harmless only while each field has exactly one producer — it is the
+  positional-unpacking hazard the carrier was built to remove, respelled as
+  state, and it would have gone live the moment a second producer appeared.
+  The queued `<DataBankList>` data-deposition signal is that second producer
+  for `data_level`, so it has to bring a merge rule (strongest evidence wins,
+  as `industry_confidence` already does) rather than just assigning the field.
+  Pinned by `test_a_level_this_step_did_not_find_is_not_scored` and
+  `test_an_inbound_results_flag_does_not_stand_in_for_this_check`.
 - **`TransparencySettings.filtering_enabled`, `max_concurrent_analyses`,
   `cache_results` are not dead code.** They are orchestration hints for the
   *calling* application. The library analyses one document per call and does
