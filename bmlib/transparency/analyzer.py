@@ -162,9 +162,11 @@ EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 EUTILS_TOOL_NAME = "bmlib"
 
 # `DataBankName` values PubMed emits for clinical-trial registries, lowercased
-# for matching. Anything outside this set — GENBANK, PDB, SRA, Dryad, … — is a
-# data-deposition accession: a transparency signal of its own, read as evidence
-# of data availability rather than of trial registration.
+# for matching. Taken from NLM's published databank-source list; the spellings
+# were confirmed against real records with `scripts/sample_databank_names.py`
+# (the XML says `UMIN-CTR`, not NLM's table spelling `UMIN CTR`).
+# `iran registry of clinical trials` and `jrct` are unindexed in PubMed today
+# and are kept as harmless spellings the list has carried since #35.
 _TRIAL_REGISTRY_NAMES = frozenset(
     {
         "clinicaltrials.gov",
@@ -178,11 +180,13 @@ _TRIAL_REGISTRY_NAMES = frozenset(
         "iran registry of clinical trials",
         "irct",
         "japiccti",
+        "jmacct",
         "jprn",
         "jrct",
         "ntr",
         "pactr",
         "rebec",
+        "repec",
         "rpcec",
         "slctr",
         "tctr",
@@ -190,6 +194,53 @@ _TRIAL_REGISTRY_NAMES = frozenset(
     }
 )
 _CLINICALTRIALS_GOV = "clinicaltrials.gov"
+
+# `DataBankName` values that mean the authors deposited this article's data in
+# a public archive — the data-availability signal, disjoint from the registries
+# above.
+#
+# AN ALLOWLIST, NOT THE COMPLEMENT OF THE REGISTRY SET, AND THE DIFFERENCE IS
+# LOAD-BEARING. Reading "not a registry" as "an archive" couples the two
+# branches: a registry NLM adds after this release, or one misspelled in the
+# set, would be scored as open data — a false `full_open`, worth 20 points and
+# able to lift a paper out of HIGH risk. An allowlist fails the other way, by
+# under-crediting an archive it does not yet name, which is the direction a
+# transparency score should fail in.
+#
+# Membership was measured, not assumed: `scripts/sample_databank_names.py`
+# counts PubMed records per name. The members below carry ~324,500 records
+# between them (GENBANK 205,864 · PDB 35,097 · figshare 31,197 · Dryad 22,478 ·
+# GEO 19,181 · BioProject 5,164 · SRA 4,099 · PubChem-Substance 1,133 ·
+# dbGaP 276 · dbSNP 26 · PubChem-BioAssay 6 · dbVar 2).
+#
+# Deliberately absent — all on NLM's list, ~9,000 records between them, and
+# every one a database an author *cannot deposit into*. An accession there
+# cites a curated or derived third-party record, which is not evidence that
+# this article shared anything:
+#   RefSeq 4,159 · OMIM 2,412 · SWISSPROT 1,482 · PIR 545 · GDB 308 (ceased
+#   2008) · UniProtKB 42 · UniRef 3 · PubChem-Compound 2 · UniMES 1 · UniParc 0
+# A protein or sequence the authors did submit reaches GENBANK, which is in the
+# set — so excluding the derived databases costs no genuine deposition.
+#
+# dbGaP and EGA-style controlled access are *included*: a documented,
+# enforceable access process is not weaker evidence than "available from the
+# authors on request", which already scores.
+_DATA_ARCHIVE_NAMES = frozenset(
+    {
+        "genbank",
+        "pdb",
+        "figshare",
+        "dryad",
+        "geo",
+        "bioproject",
+        "sra",
+        "dbgap",
+        "dbsnp",
+        "dbvar",
+        "pubchem-substance",
+        "pubchem-bioassay",
+    }
+)
 
 # ---- Indicator strings ----
 # Named rather than inlined because the PubMed step must be able to retract the
@@ -411,14 +462,12 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
     for databank in citation.findall("Article/DataBankList/DataBank"):
         original = (databank.findtext("DataBankName") or "").strip()
         name = original.lower()
+        # Two independent lookups over disjoint sets, not one branch and its
+        # complement: a name in neither set is credited as neither, which is
+        # what keeps a vocabulary gap from being read as open data.
+        if name in _DATA_ARCHIVE_NAMES:
+            data_banks.setdefault(name, original)
         if name not in _TRIAL_REGISTRY_NAMES:
-            # Everything the registry set does not name is a data archive:
-            # `DataBankName` is an NLM controlled vocabulary of registries and
-            # archives, so once the registries are named the complement is the
-            # archives. An allowlist of repositories would go stale as NLM adds
-            # them, and would discard the signal rather than record it.
-            if name:
-                data_banks.setdefault(name, original)
             continue
         # Every accession is publisher-supplied text that would be interpolated
         # into a ClinicalTrials.gov URL path, so only a well-formed NCT id is

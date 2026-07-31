@@ -458,12 +458,15 @@ Two sources produce `data_availability_level`, and the structured one wins.
 
 ### PubMed `<DataBankList>` — a deposition accession
 
-Every `<DataBank>` PubMed lists whose name is *not* a trial registry (see [Trial Registration Detection](#trial-registration-detection) for the registry set) is a data-deposition record: GENBANK, PDB, SRA, GEO, Dryad, figshare. `DataBankName` is an NLM controlled vocabulary of registries and archives, so once the registries are named, the complement is the archives — no repository allowlist to go stale.
-
-Any such entry sets the level to `full_open` and appends `"Data deposited in {name}"`, one line per distinct archive (matched case-insensitively, shown in the publisher's spelling). Two consequences worth knowing:
+A `<DataBank>` whose name is in `_DATA_ARCHIVE_NAMES` — GENBANK, PDB, figshare, Dryad, GEO, BioProject, SRA, dbGaP, dbSNP, dbVar, PubChem-Substance, PubChem-BioAssay — sets the level to `full_open` and appends `"Data deposited in {name}"`, one line per distinct archive (matched case-insensitively, shown in the publisher's spelling). Three things worth knowing:
 
 - **A closed-access paper can earn it.** The text scan below needs Europe PMC full text; a paywalled paper has none, so before this signal existed such a paper could only ever read `unknown`.
 - **The accession numbers are not read.** The databank *name* is the publisher's assertion of deposition, and `<AccessionNumberList>` is optional in the MEDLINE DTD. Nothing fetches a deposition accession, so — unlike an NCT id, which is interpolated into a ClinicalTrials.gov URL — there is nothing for validation to protect.
+- **It is an allowlist, not "everything that is not a registry".** That distinction is load-bearing, and `scripts/sample_databank_names.py` is what maintains it: it counts PubMed records per `DataBankName` and flags any name bmlib classifies as neither.
+
+  Reading the registry set's complement as archives would couple the two branches — a registry NLM adds later, or one misspelled in the set, would score 20 points of *open data*. It would also credit the ~9,000 records naming a database an author cannot deposit into (RefSeq, OMIM, SWISSPROT, PIR, GDB, the UniProt family, PubChem-Compound); an accession there cites a curated third-party record. A sequence the authors did submit reaches GENBANK, which is in the set, so excluding the derived databases costs no genuine deposition.
+
+  An allowlist does go stale as NLM adds repositories — but it goes stale by *under*-crediting, which is the direction a transparency score should fail in. Same trade-off, same resolution as the [industry funder keywords](#industry-funder-detection).
 
 ### Text scan — the fallback
 
@@ -496,7 +499,7 @@ Registration is established from two sources, and the structured one wins.
 
 ### PubMed `<DataBankList>` — preferred
 
-When the PubMed record lists a trial-registry databank, that is the publisher asserting *this* paper's registration, so it is trusted directly and the abstract heuristic below is not consulted at all. `DataBankName` is matched case-insensitively against a curated set of registry names PubMed emits — ClinicalTrials.gov, ISRCTN, EudraCT, ANZCTR, ChiCTR, CRiS, CTRI, DRKS, IRCT, JapicCTI, JPRN, jRCT, NTR, PACTR, ReBec, RPCEC, SLCTR, TCTR, UMIN-CTR. Anything else in `DataBankList` is a data-deposition accession (GENBANK, PDB, SRA, Dryad, …): a real transparency signal, but not a trial registration, so it is read by [Data Availability Detection](#data-availability-detection) instead. The two branches partition the list — no entry is counted as both.
+When the PubMed record lists a trial-registry databank, that is the publisher asserting *this* paper's registration, so it is trusted directly and the abstract heuristic below is not consulted at all. `DataBankName` is matched case-insensitively against the registry names PubMed emits, taken from [NLM's databank-source list](https://www.nlm.nih.gov/bsd/medline_databank_source.html) — ClinicalTrials.gov, ISRCTN, EudraCT, ANZCTR, ChiCTR, CRiS, CTRI, DRKS, IRCT, JapicCTI, JMACCT, JPRN, jRCT, NTR, PACTR, ReBec, REPEC, RPCEC, SLCTR, TCTR, UMIN-CTR. A databank naming a public data archive instead is read by [Data Availability Detection](#data-availability-detection); the two sets are disjoint, and a name in neither is credited as neither.
 
 Two consequences worth knowing:
 

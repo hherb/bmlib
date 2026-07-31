@@ -21,6 +21,7 @@ from __future__ import annotations
 import pytest
 
 from bmlib.transparency.analyzer import (
+    _DATA_ARCHIVE_NAMES,
     _INDICATOR_COI_IN_PUBMED,
     _INDICATOR_COI_UNKNOWN,
     _INDICATOR_DATA_NOT_AVAILABLE,
@@ -28,6 +29,7 @@ from bmlib.transparency.analyzer import (
     _INDICATOR_NO_COI_IN_FULLTEXT,
     _INDICATOR_NO_POSTED_RESULTS,
     _INDICATOR_RESULTS_NOT_CHECKABLE,
+    _TRIAL_REGISTRY_NAMES,
     DEFAULT_INDUSTRY_CONFIDENCE,
     SCORE_CITED,
     SCORE_COI_DISCLOSED,
@@ -270,6 +272,17 @@ class TestAnalysisCarrier:
         analysis.note_data_availability("full_open")
         analysis.note_data_availability("full_open")
         assert analysis.score == SCORE_DATA_FULL_OPEN
+
+    def test_a_level_reported_twice_records_one_indicator(self):
+        # The score assertion above cannot see a broken tie rule: the credit
+        # swap is self-cancelling on a tie (+20 − 20 == 0). The indicator is
+        # what shows it — and a re-appended line would survive the retraction
+        # below, because `list.remove()` drops one occurrence.
+        analysis = _Analysis()
+        analysis.note_data_availability("not_available")
+        analysis.note_data_availability("not_available")
+        analysis.note_data_deposition("GENBANK")
+        assert _INDICATOR_DATA_NOT_AVAILABLE not in analysis.indicators
 
     def test_an_absence_never_erases_a_finding(self):
         # `unknown` is the absence of a finding, not a weaker one, so a step
@@ -1452,12 +1465,39 @@ class TestPubMedSignalParsing:
         assert signals.data_banks == ("GenBank",)
 
     def test_a_trial_registry_is_never_a_deposition(self):
-        # The two branches partition the databank list; an entry counted as a
-        # registration must not also be counted as data sharing.
+        # No entry may be counted as both a registration and data sharing.
         signals = _parse_pubmed_signals(
             _pubmed_xml(databanks=(("ClinicalTrials.gov", ("NCT01234567",)), ("SRA", ("SRP1",))))
         )
         assert signals.data_banks == ("SRA",)
+
+    def test_the_two_databank_sets_are_disjoint(self):
+        # Nothing may be classified as both, and the sets are what decides it.
+        assert not (_TRIAL_REGISTRY_NAMES & _DATA_ARCHIVE_NAMES)
+
+    def test_a_curated_database_is_not_a_deposition(self):
+        # OMIM, RefSeq, SWISSPROT and the UniProt family are curated or
+        # derived: an author cannot deposit into them, so an accession there
+        # cites a third-party record rather than evidencing data sharing.
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("OMIM", ("143890",)), ("RefSeq", ("NM_000546",))))
+        )
+        assert signals.data_banks == ()
+
+    def test_a_databank_in_neither_set_is_credited_as_neither(self):
+        # The decisive property: a name NLM adds after this release is not
+        # silently read as open data. The deposition branch is an allowlist
+        # precisely so a vocabulary gap under-credits rather than over-credits.
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("SomeNewBank", ("X1",)),)))
+        assert signals.data_banks == ()
+        assert signals.trial_accessions == ()
+        assert signals.registration_not_checkable is False
+
+    def test_a_japan_medical_association_registration_counts(self):
+        # JMACCT is on NLM's registry list and was missing from the set.
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("JMACCT", ("JMA-IIA00123",)),)))
+        assert signals.registration_not_checkable is True
+        assert signals.data_banks == ()
 
     def test_grant_agencies_collected(self):
         signals = _parse_pubmed_signals(_pubmed_xml(agencies=("NCI NIH HHS", "Wellcome Trust")))

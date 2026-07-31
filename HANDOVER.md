@@ -2,7 +2,7 @@
 
 _Last updated: 2026-08-01. **0.6.0 is cut.** `[Unreleased]` holds two changes —
 the `_Analysis` carrier (#37) and the PubMed data-deposition signal (#44) —
-and nothing else is in flight. 1065 tests passing + 32 skipped._
+and nothing else is in flight. 1070 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -49,7 +49,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
      industry-funded paper can leave HIGH. `data_availability_level` now has
      two producers and is merged through `note_data_availability()`, never
      assigned.
-- **1065 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **1070 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -199,15 +199,27 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   `KeyError`** rather than ranking weakest, so a typo cannot silently drop the
   finding it names (`test_a_level_outside_the_vocabulary_raises`). A third
   producer needs nothing new — that is the point of the method.
-- **Every non-trial `<DataBank>` name counts as a deposition, with no
-  repository allowlist and no carve-out for controlled-access archives.**
-  `DataBankName` is an NLM controlled vocabulary of registries *and* archives,
-  so once the registries are named the complement is the archives; an
-  allowlist would go stale as NLM adds repositories and would discard the
-  signal rather than record it. dbGaP and EGA were considered for an
-  `on_request` carve-out and rejected: `on_request` here means "email the
-  authors", and a documented, enforceable access process is not weaker than
-  that, so the carve-out would understate them.
+- **`_DATA_ARCHIVE_NAMES` is an allowlist, not the complement of
+  `_TRIAL_REGISTRY_NAMES`, and collapsing it back is a real defect.** Reading
+  "not a registry" as "an archive" couples the two branches: a registry NLM
+  adds later — or one misspelled in the set — scores 20 points of *open data*,
+  retracts an accurate `Data explicitly not available` line, and can lift a
+  paper out of HIGH. It also credits the ~9,000 PubMed records naming a
+  database an author cannot deposit into (RefSeq 4,159 · OMIM 2,412 ·
+  SWISSPROT 1,482 · PIR 545 · GDB 308 · UniProt family · PubChem-Compound),
+  where an accession cites a curated third-party record; a sequence the
+  authors did submit reaches GENBANK, which is in the set. The allowlist goes
+  stale by *under*-crediting, which is the direction a transparency score
+  should fail in — the same trade-off `_INDUSTRY_STEMS` resolves the same way.
+  Both sets are measured with `scripts/sample_databank_names.py`; run it
+  before changing either. Pinned by
+  `test_a_databank_in_neither_set_is_credited_as_neither`,
+  `test_a_curated_database_is_not_a_deposition` and
+  `test_the_two_databank_sets_are_disjoint`.
+- **dbGaP stays in the archive set rather than mapping to `on_request`.**
+  `on_request` here means "email the authors"; a documented, enforceable
+  access process is not weaker than that, so the carve-out would understate
+  it.
 - **A deposition needs only a non-blank `DataBankName`; the accession numbers
   are not carried.** `<AccessionNumberList>` is optional in the MEDLINE DTD,
   and the trial branch beside it already treats a registration with an

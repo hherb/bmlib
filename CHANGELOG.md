@@ -9,15 +9,30 @@ All notable changes to bmlib are documented here. The format is based on
 ### Added
 
 - **`transparency`: data deposition from PubMed's `<DataBankList>` now sets
-  `data_availability_level`.** Every `<DataBank>` whose name is not a trial
-  registry — GENBANK, PDB, SRA, GEO, Dryad, figshare — is the publisher
-  asserting that this article's data went into a public archive. It was parsed
-  past and discarded; it now yields `full_open` and a
-  `Data deposited in {name}` indicator. Structured metadata, so it outranks
-  the substring scan of the retrieved text that was the level's only source,
-  and it reaches papers that scan cannot: a closed-access paper has no full
-  text to scan, so this is the first data-availability evidence it can carry
+  `data_availability_level`.** A `<DataBank>` naming a public archive —
+  GENBANK, PDB, figshare, Dryad, GEO, BioProject, SRA, dbGaP, dbSNP, dbVar,
+  PubChem-Substance, PubChem-BioAssay — is the publisher asserting that this
+  article's data went into one. It was parsed past and discarded; it now
+  yields `full_open` and a `Data deposited in {name}` indicator. Structured
+  metadata, so it outranks the substring scan of the retrieved text that was
+  the level's only source, and it reaches papers that scan cannot: a
+  closed-access paper has no full text to scan, so this is the first
+  data-availability evidence it can carry
   ([#44](https://github.com/hherb/bmlib/issues/44)).
+
+  The archive names are an **allowlist**, measured with the new
+  `scripts/sample_databank_names.py`, not the complement of the trial-registry
+  set. The complement would score a registry NLM adds later as open data, and
+  would credit the ~9,000 PubMed records naming a database an author cannot
+  deposit into (RefSeq, OMIM, SWISSPROT, PIR, GDB, the UniProt family,
+  PubChem-Compound), where an accession cites a curated third-party record. An
+  allowlist goes stale by under-crediting instead, which is the direction a
+  transparency score should fail in.
+
+- **`transparency`: `JMACCT` and `REPEC` recognised as trial registries.** Both
+  are on NLM's databank-source list and neither was in
+  `_TRIAL_REGISTRY_NAMES`, so a paper registered with the Japan Medical
+  Association's centre missed its 20 registration points.
 
   **Stored results are not comparable across this change.** For a paper with a
   deposition accession `transparency_score` rises by up to 20 and

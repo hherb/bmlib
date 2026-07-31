@@ -61,7 +61,7 @@ there is one producer. This change adds the second, so it has to bring:
 
 | Decision | Chosen | Rejected |
 |---|---|---|
-| Which databanks count | **Every non-trial-registry entry** | An allowlist of known repositories (GENBANK, PDB, SRA, …). `DataBankName` is an NLM controlled vocabulary of registries *and* archives; once the registries are named, the complement is the archives. An allowlist would go stale as NLM adds repositories, and would silently discard the very signal being added |
+| Which databanks count | **A measured allowlist of archive names** (see the revision below — this reverses the decision this document originally recorded) | Every non-trial-registry entry, i.e. the complement of the registry set |
 | Controlled-access archives (dbGaP, EGA) | **`full_open`, like the rest** | A carve-out mapping them to `on_request`. `on_request` in this module means "email the authors" — a documented, enforceable access process is not weaker than that, so the carve-out would *understate* them. It would also be an unmeasured keyword list, which this module has one standing rule against |
 | Evidence required | **A non-blank `DataBankName`** | Requiring at least one `<AccessionNumber>`. `AccessionNumberList` is optional in the MEDLINE DTD, and the trial branch beside it already treats a registration as established when the accession is missing or unusable. Same rule, one line of code, no new concept |
 | Accession numbers | **Not carried** | Carrying and validating them, as the NCT ids are. Validation there exists because the accession is interpolated into a ClinicalTrials.gov URL; nothing fetches a deposition accession, so validating it would be ceremony with no consumer |
@@ -79,14 +79,15 @@ One new field on the frozen signals dataclass, declared last:
 data_banks: tuple[str, ...] = ()
 ```
 
-Distinct non-blank `DataBankName` values that are **not** trial registries, in
-document order, spelled as PubMed spelled them (the indicator shows the name to
-a human). Deduplication is case-insensitive, keeping the first spelling: the
-name is a controlled vocabulary the loop beside it already matches
-case-insensitively, so `GENBANK` and `GenBank` are one finding, not two.
+Distinct `DataBankName` values naming a **public data archive**
+(`_DATA_ARCHIVE_NAMES`), in document order, spelled as PubMed spelled them (the
+indicator shows the name to a human). Deduplication is case-insensitive,
+keeping the first spelling: the name is a controlled vocabulary the loop beside
+it already matches case-insensitively, so `GENBANK` and `GenBank` are one
+finding, not two.
 
-The existing loop gains one branch. Its `continue` becomes the collection
-point, so nothing about trial-registry handling moves.
+The existing loop gains one lookup, independent of the registry lookup rather
+than its `else` branch. A name in neither set is credited as neither.
 
 ### Merging — `_Analysis.note_data_availability()`
 
@@ -180,3 +181,64 @@ end-to-end `analyze()` through the recording client.
 | A second `full_open` re-report scores once | the tie case |
 | `unknown` does not erase an established finding | the rank floor (replaces the assertion in `test_a_level_this_step_did_not_find_is_not_scored`, whose premise — one producer — this change ends) |
 | A closed-access paper with a deposition accession earns `full_open` end to end | the reason for the change |
+
+---
+
+## Revision, 2026-08-01: the complement is not the archives
+
+Code review challenged the "which databanks count" decision above, and
+measuring it showed the review was right. The decision is **reversed**: the
+deposition branch is an allowlist, `_DATA_ARCHIVE_NAMES`.
+
+### What the measurement found
+
+`scripts/sample_databank_names.py` (written for this) counts PubMed records per
+`DataBankName` and reads the literal spelling off the XML. Two defects in the
+complement approach, neither visible without the data:
+
+1. **The registry set was incomplete, and the complement made that unsafe.**
+   NLM lists `JMACCT` and `REPEC`; `_TRIAL_REGISTRY_NAMES` had neither.
+   Before this change an unlisted registry was discarded — an under-credit.
+   Under the complement it would have been scored `full_open`: 20 points, an
+   indicator saying data were deposited in a *trial registry*, and the
+   retraction of an accurate `Data explicitly not available` line. Three live
+   records (`JMACCT`) — but the coupling is permanent, and every registry NLM
+   adds would inherit it.
+2. **~9,000 records name a database an author cannot deposit into.** RefSeq
+   (4,159), OMIM (2,412), SWISSPROT (1,482), PIR (545), GDB (308, ceased 2008),
+   UniProtKB (42), UniRef (3), PubChem-Compound (2), UniMES (1), UniParc (0)
+   are curated or derived. An accession there *cites* a third-party record. The
+   complement scored all of them as data sharing — about 2.7% of everything the
+   branch credited. A sequence the authors did submit reaches GENBANK, which is
+   in the allowlist, so excluding the derived databases costs no genuine
+   deposition.
+
+The measurement also corrected a spelling: NLM's table says `UMIN CTR`, records
+say `UMIN-CTR`, and bmlib matches the records (1,309 of them).
+
+### Why an allowlist, given the original objection
+
+The objection was that an allowlist goes stale as NLM adds repositories. It
+does — but that is the *direction a transparency score should fail in*. An
+allowlist that has not caught up under-credits an archive it does not name; the
+complement over-credits every name it has never heard of, and a false
+`full_open` is worth 20 points and can lift a paper out of HIGH risk. The
+module already resolves this trade-off the same way for industry funders:
+"ties go to precision, because a false positive costs more."
+
+The allowlist also **decouples the two branches**. Under the complement, the
+registry set's completeness was load-bearing for the data-availability signal;
+now a gap in either set means a name is credited as neither, which is the
+pre-existing safe failure. Pinned by
+`test_a_databank_in_neither_set_is_credited_as_neither`.
+
+### Also fixed
+
+- `JMACCT` and `REPEC` added to `_TRIAL_REGISTRY_NAMES` — an independent
+  under-credit now that it is no longer a safety coupling.
+- The tie rule (`<=`, not `<`) had no test: the credit swap is self-cancelling
+  on a tie, so the score assertion could not see it, and a repeated
+  `not_available` would re-append an indicator that `list.remove()` then only
+  half-retracts. Pinned by `test_a_level_reported_twice_records_one_indicator`.
+  Both this and the allowlist were confirmed by mutating the production code
+  and watching the new tests fail.
