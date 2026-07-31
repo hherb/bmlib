@@ -249,6 +249,11 @@ _INDICATOR_COI_UNKNOWN = "COI disclosure status unknown (full text unavailable)"
 _INDICATOR_COI_IN_PUBMED = "COI disclosure found in PubMed record"
 _INDICATOR_INDUSTRY_COI = "Industry ties disclosed in COI statement"
 _INDICATOR_DATA_NOT_AVAILABLE = "Data explicitly not available"
+# A prefix, completed with the repository names. `data_availability_level`
+# alone cannot distinguish a hard accession from the word "github" appearing
+# somewhere in the full text, and `risk_indicators` is the only channel the
+# result has for that provenance — the same job `Industry funder: X` does.
+_INDICATOR_DATA_DEPOSITED_PREFIX = "Data deposited: "
 _INDICATOR_NO_POSTED_RESULTS = "Registered trial without posted results"
 # Deliberately does not name a registry. It covers a registration in another
 # registry *and* a ClinicalTrials.gov registration whose accession was missing
@@ -632,6 +637,12 @@ def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
     True`` is a reliable guard rather than an incidental one: the only
     branch that sets ``True`` is the same branch that adds
     ``SCORE_COI_DISCLOSED``.
+
+    ``<DataBankList>`` deposition accessions nominate a data-availability
+    level — ``on_request`` for a controlled-access repository, ``full_open``
+    otherwise — through :meth:`_Analysis.note_data_level`, so the strongest
+    evidence wins whichever source ran first. The component itself is scored
+    later, by :func:`_score_data_availability`.
     """
     if pubmed.coi_statement and analysis.coi_disclosed is not True:
         analysis.coi_disclosed = True
@@ -660,6 +671,22 @@ def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
                 # signal inferred from COI prose. CrossRef may already have
                 # named this funder; note_industry_funder() deduplicates.
                 analysis.note_industry_funder(agency)
+
+    if pubmed.deposition_databanks:
+        for name in pubmed.deposition_databanks:
+            # The parser collected the name; deciding what a deposit into it
+            # is worth is this step's job, which is why the signals carry
+            # names rather than a level.
+            analysis.note_data_level(
+                "on_request"
+                if name.lower() in _CONTROLLED_DEPOSITION_DATABANK_NAMES
+                else "full_open"
+            )
+        # Written whether or not the level above won: it reports what PubMed
+        # said, which stays true either way.
+        analysis.indicators.append(
+            _INDICATOR_DATA_DEPOSITED_PREFIX + ", ".join(pubmed.deposition_databanks)
+        )
 
 
 def _score_data_availability(analysis: _Analysis) -> None:

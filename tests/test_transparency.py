@@ -23,6 +23,7 @@ import pytest
 from bmlib.transparency.analyzer import (
     _INDICATOR_COI_IN_PUBMED,
     _INDICATOR_COI_UNKNOWN,
+    _INDICATOR_DATA_DEPOSITED_PREFIX,
     _INDICATOR_DATA_NOT_AVAILABLE,
     _INDICATOR_INDUSTRY_COI,
     _INDICATOR_NO_COI_IN_FULLTEXT,
@@ -1762,3 +1763,77 @@ class TestPubMedSignalMerge:
         client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=None)
         result = self._analyze(monkeypatch, client, pmid="1")
         assert result.risk_level != TransparencyRisk.UNKNOWN
+
+
+class TestDataDepositionMerge:
+    """PubMed's deposition accessions are the second producer of `data_level`."""
+
+    def test_a_deposition_accession_establishes_full_open(self):
+        analysis = _Analysis()
+        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("GENBANK",)), analysis)
+        assert analysis.data_level == "full_open"
+
+    def test_a_controlled_access_deposit_is_only_on_request(self):
+        # dbGaP data needs Data Access Committee approval, which is what
+        # `on_request` already means.
+        analysis = _Analysis()
+        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("dbGaP",)), analysis)
+        assert analysis.data_level == "on_request"
+
+    def test_the_strongest_of_several_deposits_wins(self):
+        analysis = _Analysis()
+        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("dbGaP", "GENBANK")), analysis)
+        assert analysis.data_level == "full_open"
+
+    def test_an_accession_outranks_a_full_text_denial(self):
+        # The consequential case. A clinical paper's "data are not available"
+        # is routinely about individual patient records, while the accession
+        # is a sequence on a public server right now. Hard evidence of a real
+        # deposit beats a substring match whose subject we cannot determine —
+        # and the denial indicator is never written, so nothing contradicts.
+        analysis = _Analysis()
+        analysis.note_data_level("not_available")
+        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("GENBANK",)), analysis)
+        _score_data_availability(analysis)
+        assert analysis.data_level == "full_open"
+        assert analysis.score == SCORE_DATA_FULL_OPEN
+        assert _INDICATOR_DATA_NOT_AVAILABLE not in analysis.indicators
+
+    def test_a_deposit_never_lowers_a_stronger_established_level(self):
+        analysis = _Analysis()
+        analysis.note_data_level("full_open")
+        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("dbGaP",)), analysis)
+        _score_data_availability(analysis)
+        assert analysis.data_level == "full_open"
+        assert analysis.score == SCORE_DATA_FULL_OPEN  # 20, not 20 + 10
+
+    def test_the_repositories_are_named_in_an_indicator(self):
+        analysis = _Analysis()
+        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("GENBANK", "PDB")), analysis)
+        assert _INDICATOR_DATA_DEPOSITED_PREFIX + "GENBANK, PDB" in analysis.indicators
+
+    def test_the_indicator_is_written_even_when_the_level_it_nominated_lost(self):
+        # The line reports what PubMed said, which stays true regardless of
+        # which level won. A sub-step publishes its own finding; it does not
+        # read the merged field back to decide whether to mention it.
+        analysis = _Analysis()
+        analysis.note_data_level("full_open")
+        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("dbGaP",)), analysis)
+        assert _INDICATOR_DATA_DEPOSITED_PREFIX + "dbGaP" in analysis.indicators
+
+    def test_no_deposits_means_no_indicator_and_no_level(self):
+        analysis = _Analysis()
+        _merge_pubmed_signals(_PubMedSignals(), analysis)
+        assert analysis.data_level == "unknown"
+        assert analysis.indicators == []
+
+    def test_analyze_credits_a_deposition_accession_end_to_end(self, monkeypatch):
+        client = _RecordingClient(
+            epmc=_epmc_payload(abstract="A study of a virus.", pmid="12345678"),
+            pubmed=_pubmed_xml(databanks=(("GENBANK", ("MN908947",)),)),
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="12345678")
+        assert result.data_availability_level == "full_open"
+        assert result.transparency_score == SCORE_DATA_FULL_OPEN
+        assert _INDICATOR_DATA_DEPOSITED_PREFIX + "GENBANK" in result.risk_indicators
