@@ -245,31 +245,28 @@ class TestCheckEuropePMC:
         client = _FakeFullTextClient(
             "<article>The authors declare no conflict of interest.</article>"
         )
-        coi, _level, score, _ind, ft, _ind_coi = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert coi is True
-        assert ft is True
-        assert score == 10  # SCORE_COI_DISCLOSED
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is True
+        assert analysis.full_text_analyzed is True
+        assert analysis.score == 10  # SCORE_COI_DISCLOSED
 
     def test_coi_absent_in_full_text(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient("<article>No disclosure section here.</article>")
-        coi, _level, _score, _ind, ft, _ind_coi = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert coi is False  # full text scanned, explicitly absent
-        assert ft is True
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is False  # full text scanned, explicitly absent
+        assert analysis.full_text_analyzed is True
 
     def test_coi_unknown_when_no_full_text(self):
         analyzer = TransparencyAnalyzer()
         # inEPMC == "N" so no full text is fetched, abstract has no COI signal.
         client = _FakeFullTextClient(None)
-        coi, _level, _score, _ind, ft, _ind_coi = analyzer._check_europepmc(
-            client, _epmc_record(in_epmc="N"), score=0, indicators=[]
-        )
-        assert coi is None  # undeterminable, not "absent"
-        assert ft is False
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(in_epmc="N"), analysis)
+        assert analysis.coi_disclosed is None  # undeterminable, not "absent"
+        assert analysis.full_text_analyzed is False
 
 
 class TestStructuralCOIDetection:
@@ -287,13 +284,12 @@ class TestStructuralCOIDetection:
     def test_tagged_section_without_cue_phrase_counts_as_disclosed(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(self._TAGGED_CUELESS_XML)
-        coi, _level, score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert coi is True  # the tag is structural proof of a disclosure
-        assert industry is True  # and its content discloses industry ties
-        assert score == 10  # SCORE_COI_DISCLOSED credited exactly once
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.coi_disclosed is True  # the tag is structural proof of a disclosure
+        assert analysis.industry_funding is True  # and its content discloses industry ties
+        assert analysis.score == 10  # SCORE_COI_DISCLOSED credited exactly once
 
     def test_tagged_section_with_cue_phrase_scores_exactly_once(self):
         # Structural and cue-phrase evidence together must not double-credit.
@@ -302,11 +298,10 @@ class TestStructuralCOIDetection:
             '<article><back><fn-group><fn fn-type="COI-statement"><p>The authors '
             "declare no competing interests.</p></fn></fn-group></back></article>"
         )
-        coi, _level, score, _ind, ft, _industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert coi is True
-        assert score == 10  # SCORE_COI_DISCLOSED, once
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is True
+        assert analysis.score == 10  # SCORE_COI_DISCLOSED, once
 
     def test_empty_tagged_section_is_not_a_disclosure(self):
         # A COI container with no statement text proves nothing.
@@ -315,12 +310,11 @@ class TestStructuralCOIDetection:
             '<article><back><fn-group><fn fn-type="COI-statement"><p> </p></fn>'
             "</fn-group></back></article>"
         )
-        coi, _level, score, _ind, ft, _industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert coi is False
-        assert score == 0
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.coi_disclosed is False
+        assert analysis.score == 0
 
     def test_empty_tagged_section_does_not_mask_untagged_disclosure(self):
         # A whitespace-only COI container must not stop the cue-phrase
@@ -332,13 +326,12 @@ class TestStructuralCOIDetection:
             "</fn-group><p>Conflict of interest: Dr X received speaker fees "
             "from Pfizer.</p></back></article>"
         )
-        coi, _level, score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert coi is True
-        assert industry is True
-        assert score == 10
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.coi_disclosed is True
+        assert analysis.industry_funding is True
+        assert analysis.score == 10
 
 
 class TestIndustryCOIDetection:
@@ -360,11 +353,10 @@ class TestIndustryCOIDetection:
     def test_industry_coi_in_tagged_statement_detected(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(self._TAGGED_COI_XML)
-        coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is True
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is True
 
     def test_untagged_prose_coi_statement_detected(self):
         analyzer = TransparencyAnalyzer()
@@ -372,23 +364,21 @@ class TestIndustryCOIDetection:
             "<article><p>Competing interests: Dr Y is an employee of AcmePharma "
             "and serves on the advisory board of BioCorp.</p></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is True
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is True
 
     def test_neutral_coi_statement_not_flagged(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(
             "<article>The authors declare no conflict of interest.</article>"
         )
-        coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert coi is True
-        assert ft is True
-        assert industry is False
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is True
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is False
 
     def test_keywords_outside_coi_section_not_flagged(self):
         # "advisory board" in the methods of a community-engagement study must
@@ -400,11 +390,10 @@ class TestIndustryCOIDetection:
             '<back><fn-group><fn fn-type="COI-statement"><p>The authors declare no '
             "competing interests.</p></fn></fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is False
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is False
 
     def test_enumerated_denial_not_flagged(self):
         # ICMJE-style disclosures often enumerate the relationship types they
@@ -415,11 +404,10 @@ class TestIndustryCOIDetection:
             "authors served as a consultant for, received speaker fees from, or "
             "sat on the advisory board of any company.</p></fn></fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is False
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is False
 
     def test_mixed_disclosure_still_flagged(self):
         # A denial sentence next to a genuine disclosure sentence must still flag.
@@ -429,11 +417,10 @@ class TestIndustryCOIDetection:
             "consultant for Pfizer. The remaining authors declare no competing "
             "interests.</p></fn></fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is True
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is True
 
     def test_non_industry_employee_not_flagged(self):
         # "Employee of" a government body is a genuine disclosure but not an
@@ -444,11 +431,10 @@ class TestIndustryCOIDetection:
             "employee of the National Institutes of Health.</p></fn>"
             "</fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is False
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is False
 
     def test_academic_employee_not_flagged(self):
         # University employment disclosed in a COI statement is not industry.
@@ -458,11 +444,10 @@ class TestIndustryCOIDetection:
             "employee of the University of Melbourne.</p></fn>"
             "</fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is False
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is False
 
     def test_editorial_advisory_board_not_flagged(self):
         # Journal editorial advisory board membership is not an industry tie.
@@ -472,11 +457,10 @@ class TestIndustryCOIDetection:
             "the editorial advisory board of the Journal of Cardiology.</p></fn>"
             "</fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is False
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is False
 
     def test_industry_tie_alongside_non_industry_employment_still_flagged(self):
         # The non-industry guard must not swallow a genuine industry tie in
@@ -487,11 +471,10 @@ class TestIndustryCOIDetection:
             "employee of the National Institutes of Health. TR has served on the "
             "advisory board of AcmePharma.</p></fn></fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is True
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is True
 
     def test_single_quoted_jats_attribute_detected(self):
         # JATS attributes may be single-quoted; the tagged-section route must
@@ -502,25 +485,24 @@ class TestIndustryCOIDetection:
             "<article><back><fn-group><fn fn-type='COI-statement'><p>Dr X has "
             "served as a consultant for Pfizer.</p></fn></fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is True
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is True
 
     def test_no_full_text_means_no_industry_signal(self):
         # Text-derived industry detection requires the full text; an abstract
         # alone (rarely carrying a real COI statement) must not trigger it.
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(None)
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
+        analysis = _Analysis()
+        analyzer._check_europepmc(
             client,
             _epmc_record(in_epmc="N", abstract="Conflict of interest: consultant for Pfizer."),
-            score=0,
-            indicators=[],
+            analysis,
         )
-        assert ft is False
-        assert industry is False
+        assert analysis.full_text_analyzed is False
+        assert analysis.industry_funding is False
 
     def test_analyze_ors_fulltext_signal_into_result(self, monkeypatch):
         import httpx
@@ -715,28 +697,28 @@ class TestDataAvailabilityPatterns:
     def test_not_available_upon_request_is_not_available(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(None)
-        _coi, level, score, _ind, _ft, _ind_coi = analyzer._check_europepmc(
+        analysis = _Analysis()
+        analyzer._check_europepmc(
             client,
             _epmc_record("The data are not available upon reasonable request.", in_epmc="N"),
-            score=0,
-            indicators=[],
+            analysis,
         )
-        assert level == "not_available"
-        assert score == 0  # no on_request credit awarded
+        assert analysis.data_level == "not_available"
+        assert analysis.score == 0  # no on_request credit awarded
 
     def test_available_upon_request_still_credited(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(None)
-        _coi, level, score, _ind, _ft, _ind_coi = analyzer._check_europepmc(
+        analysis = _Analysis()
+        analyzer._check_europepmc(
             client,
             _epmc_record(
                 "Data are available from the authors upon reasonable request.", in_epmc="N"
             ),
-            score=0,
-            indicators=[],
+            analysis,
         )
-        assert level == "on_request"
-        assert score == 10  # SCORE_DATA_ON_REQUEST
+        assert analysis.data_level == "on_request"
+        assert analysis.score == 10  # SCORE_DATA_ON_REQUEST
 
     def test_mixed_statement_negation_takes_precedence(self):
         # Deliberate: when an abstract carries both a sharing cue and a
@@ -744,17 +726,17 @@ class TestDataAvailabilityPatterns:
         # negation-first ordering of _DATA_PATTERNS wins.
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(None)
-        _coi, level, score, _ind, _ft, _ind_coi = analyzer._check_europepmc(
+        analysis = _Analysis()
+        analyzer._check_europepmc(
             client,
             _epmc_record(
                 "Analysis code is available on GitHub; individual patient data are not available.",
                 in_epmc="N",
             ),
-            score=0,
-            indicators=[],
+            analysis,
         )
-        assert level == "not_available"
-        assert score == 0
+        assert analysis.data_level == "not_available"
+        assert analysis.score == 0
 
 
 class TestAnalyzeApiReachability:

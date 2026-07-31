@@ -781,11 +781,8 @@ class TransparencyAnalyzer:
         analysis = _Analysis()
         # Locals for the sub-steps not yet migrated onto the carrier. They go
         # away as each is converted.
-        coi_disclosed: bool | None = None
-        data_level = "unknown"
         trial_registered = False
         results_compliant = False
-        full_text_analyzed = False
 
         with httpx.Client(
             timeout=_HTTP_TIMEOUT_SECONDS,
@@ -798,16 +795,7 @@ class TransparencyAnalyzer:
             # --- EuropePMC (full text / abstract, COI, data availability) ---
             epmc = self._fetch_europepmc(client, pmid, doi)
             if epmc:
-                (
-                    coi_disclosed,
-                    data_level,
-                    analysis.score,
-                    analysis.indicators,
-                    full_text_analyzed,
-                    industry_coi,
-                ) = self._check_europepmc(client, epmc, analysis.score, analysis.indicators)
-                if industry_coi:
-                    analysis.note_industry_coi()
+                self._check_europepmc(client, epmc, analysis)
 
             # --- PubMed (structured COI, trial registration, grants) ---
             # Placed after Europe PMC so a DOI-only analysis can reuse the PMID
@@ -815,7 +803,7 @@ class TransparencyAnalyzer:
             # a structured accession can feed the posted-results check.
             pubmed = self._check_pubmed(client, pmid or _pmid_from_epmc(epmc))
             (
-                coi_disclosed,
+                analysis.coi_disclosed,
                 analysis.score,
                 analysis.indicators,
                 analysis.industry_funding,
@@ -823,7 +811,7 @@ class TransparencyAnalyzer:
                 analysis.funder_info_scored,
             ) = _merge_pubmed_signals(
                 pubmed,
-                coi_disclosed,
+                analysis.coi_disclosed,
                 analysis.score,
                 analysis.indicators,
                 analysis.industry_funding,
@@ -867,8 +855,8 @@ class TransparencyAnalyzer:
         risk_level = calculate_risk_level(
             score=analysis.score,
             industry_funding=analysis.industry_funding,
-            data_availability=data_level,
-            coi_disclosed=coi_disclosed,
+            data_availability=analysis.data_level,
+            coi_disclosed=analysis.coi_disclosed,
             settings=self.settings,
         )
 
@@ -878,12 +866,12 @@ class TransparencyAnalyzer:
             risk_level=risk_level,
             industry_funding_detected=analysis.industry_funding,
             industry_funding_confidence=analysis.industry_confidence,
-            data_availability_level=data_level,
-            coi_disclosed=coi_disclosed,
+            data_availability_level=analysis.data_level,
+            coi_disclosed=analysis.coi_disclosed,
             trial_registered=trial_registered,
             trial_results_compliant=results_compliant,
             risk_indicators=analysis.indicators,
-            full_text_analyzed=full_text_analyzed,
+            full_text_analyzed=analysis.full_text_analyzed,
             tier_downgrade_applied=(
                 self.settings.tier_downgrade_amount if risk_level == TransparencyRisk.HIGH else 0
             ),
@@ -924,36 +912,28 @@ class TransparencyAnalyzer:
             return self._query_europepmc(client, f"EXT_ID:{pmid}")
         return None
 
-    def _check_europepmc(
-        self,
-        client: Any,
-        epmc: dict,
-        score: int,
-        indicators: list[str],
-    ) -> tuple[bool | None, str, int, list[str], bool, bool]:
-        """Extract COI and data-availability signals from EuropePMC.
+    def _check_europepmc(self, client: Any, epmc: dict, analysis: _Analysis) -> None:
+        """Fold COI and data-availability signals from EuropePMC into *analysis*.
 
         COI and data-availability statements live in a paper's full text, not
         its abstract.  We therefore fetch the full text from EuropePMC when it
         is available (open-access articles) and scan that; we fall back to the
         abstract only when full text cannot be retrieved.
 
-        Returns ``(coi_disclosed, data_level, score, indicators,
-        full_text_analyzed, industry_coi)`` where ``coi_disclosed`` is
-        tri-state: ``True`` (statement found), ``False`` (full text scanned,
-        none found), or ``None`` (undeterminable — full text unavailable and
-        no abstract signal). ``industry_coi`` is ``True`` when the full-text
-        COI/disclosure statement discloses industry ties (consultancies,
-        speaker fees, …); it is only ever set when full text was analyzed.
-        """
-        coi_disclosed: bool | None = None
-        data_level = "unknown"
-        full_text_analyzed = False
-        industry_coi = False
+        Sets ``coi_disclosed`` tri-state: ``True`` (statement found), ``False``
+        (full text scanned, none found), or — left as it was — ``None``
+        (undeterminable: full text unavailable and no abstract signal).
 
+        Industry ties disclosed in the COI statement itself (consultancies,
+        speaker fees, …) are recorded through
+        :meth:`_Analysis.note_industry_coi`, which is why this step needs no
+        return value: it is only ever reached when full text was analyzed, and
+        the confidence that belongs to a prose signal is the method's business
+        rather than the caller's.
+        """
         result_list = epmc.get("resultList", {}).get("result", [])
         if not result_list:
-            return coi_disclosed, data_level, score, indicators, full_text_analyzed, industry_coi
+            return
 
         record = result_list[0]
         abstract_text = (record.get("abstractText") or "").lower()
@@ -969,7 +949,7 @@ class TransparencyAnalyzer:
             )
             if full_text:
                 search_text = full_text.lower()
-                full_text_analyzed = True
+                analysis.full_text_analyzed = True
 
         # COI detection (a COI/disclosure statement counts as "disclosed",
         # including a statement that there is nothing to declare). A non-blank
@@ -978,39 +958,38 @@ class TransparencyAnalyzer:
         # scan remains the fallback for untagged text.
         tagged_coi = _extract_tagged_coi_text(search_text)
         if tagged_coi.strip() or any(pat in search_text for pat in _COI_PATTERNS):
-            coi_disclosed = True
-            score += SCORE_COI_DISCLOSED
-        elif full_text_analyzed:
+            analysis.coi_disclosed = True
+            analysis.score += SCORE_COI_DISCLOSED
+        elif analysis.full_text_analyzed:
             # Full text inspected and no COI statement found -> explicitly absent.
-            coi_disclosed = False
-            indicators.append(_INDICATOR_NO_COI_IN_FULLTEXT)
+            analysis.coi_disclosed = False
+            analysis.indicators.append(_INDICATOR_NO_COI_IN_FULLTEXT)
         else:
             # Could not inspect full text; status is genuinely unknown.
-            indicators.append(_INDICATOR_COI_UNKNOWN)
+            analysis.indicators.append(_INDICATOR_COI_UNKNOWN)
+
+        # Data availability
+        for pattern, level in _DATA_PATTERNS.items():
+            if pattern in search_text:
+                analysis.data_level = level
+                break
+        if analysis.data_level == "full_open":
+            analysis.score += SCORE_DATA_FULL_OPEN
+        elif analysis.data_level == "on_request":
+            analysis.score += SCORE_DATA_ON_REQUEST
+        elif analysis.data_level == "not_available":
+            analysis.indicators.append("Data explicitly not available")
 
         # Industry ties disclosed in the COI statement itself ("consultant
         # for X", "speaker fees from Y"). Scanned only in full text — an
         # abstract rarely carries a real disclosure statement — and only
         # within the COI/disclosure region to avoid false positives from
-        # references or affiliations.
-        if full_text_analyzed:
-            industry_coi = _discloses_industry_ties(
-                _extract_coi_text(search_text, tagged=tagged_coi)
-            )
-
-        # Data availability
-        for pattern, level in _DATA_PATTERNS.items():
-            if pattern in search_text:
-                data_level = level
-                break
-        if data_level == "full_open":
-            score += SCORE_DATA_FULL_OPEN
-        elif data_level == "on_request":
-            score += SCORE_DATA_ON_REQUEST
-        elif data_level == "not_available":
-            indicators.append("Data explicitly not available")
-
-        return coi_disclosed, data_level, score, indicators, full_text_analyzed, industry_coi
+        # references or affiliations. Folded in last so the indicator order
+        # stays COI, then data availability, then this.
+        if analysis.full_text_analyzed and _discloses_industry_ties(
+            _extract_coi_text(search_text, tagged=tagged_coi)
+        ):
+            analysis.note_industry_coi()
 
     def _fetch_europepmc_fulltext(
         self,
