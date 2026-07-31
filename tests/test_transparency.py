@@ -23,6 +23,7 @@ import pytest
 from bmlib.transparency.analyzer import (
     _INDICATOR_COI_IN_PUBMED,
     _INDICATOR_COI_UNKNOWN,
+    _INDICATOR_DATA_NOT_AVAILABLE,
     _INDICATOR_INDUSTRY_COI,
     _INDICATOR_NO_COI_IN_FULLTEXT,
     _INDICATOR_NO_POSTED_RESULTS,
@@ -30,6 +31,8 @@ from bmlib.transparency.analyzer import (
     DEFAULT_INDUSTRY_CONFIDENCE,
     SCORE_CITED,
     SCORE_COI_DISCLOSED,
+    SCORE_DATA_FULL_OPEN,
+    SCORE_DATA_ON_REQUEST,
     SCORE_FUNDER_INFO,
     SCORE_OPEN_ACCESS,
     TEXT_INDUSTRY_CONFIDENCE,
@@ -38,6 +41,7 @@ from bmlib.transparency.analyzer import (
     _merge_pubmed_signals,
     _parse_pubmed_signals,
     _PubMedSignals,
+    _score_data_availability,
 )
 from bmlib.transparency.models import (
     TransparencyResult,
@@ -783,66 +787,73 @@ class TestCheckOpenAlex:
 class TestDataAvailabilityPatterns:
     """Negated data-availability phrasing must not read as data sharing."""
 
-    def test_not_available_upon_request_is_not_available(self):
+    def _europepmc_level(self, abstract: str) -> _Analysis:
+        """Run the Europe PMC step over *abstract* and return the carrier."""
         analyzer = TransparencyAnalyzer()
-        client = _FakeFullTextClient(None)
         analysis = _Analysis()
         analyzer._check_europepmc(
-            client,
-            _epmc_record("The data are not available upon reasonable request.", in_epmc="N"),
-            analysis,
+            _FakeFullTextClient(None), _epmc_record(abstract, in_epmc="N"), analysis
         )
+        return analysis
+
+    def test_not_available_upon_request_is_not_available(self):
+        analysis = self._europepmc_level("The data are not available upon reasonable request.")
         assert analysis.data_level == "not_available"
+        _score_data_availability(analysis)
         assert analysis.score == 0  # no on_request credit awarded
+        # Membership, not equality: this abstract carries no COI cue phrase
+        # and no full text, so `_check_europepmc` also writes
+        # `_INDICATOR_COI_UNKNOWN` — a real but unrelated finding this test
+        # is not about. Asserting the full list would couple a
+        # data-availability test to COI-detection behaviour.
+        assert _INDICATOR_DATA_NOT_AVAILABLE in analysis.indicators
 
     def test_available_upon_request_still_credited(self):
-        analyzer = TransparencyAnalyzer()
-        client = _FakeFullTextClient(None)
-        analysis = _Analysis()
-        analyzer._check_europepmc(
-            client,
-            _epmc_record(
-                "Data are available from the authors upon reasonable request.", in_epmc="N"
-            ),
-            analysis,
+        analysis = self._europepmc_level(
+            "Data are available from the authors upon reasonable request."
         )
         assert analysis.data_level == "on_request"
-        assert analysis.score == 10  # SCORE_DATA_ON_REQUEST
+        # The step nominates; analyze() scores the winner exactly once.
+        assert analysis.score == 0
+        _score_data_availability(analysis)
+        assert analysis.score == SCORE_DATA_ON_REQUEST
 
     def test_mixed_statement_negation_takes_precedence(self):
         # Deliberate: when an abstract carries both a sharing cue and a
         # negation ("code on GitHub" + "data not available"), the conservative
         # negation-first ordering of _DATA_PATTERNS wins.
-        analyzer = TransparencyAnalyzer()
-        client = _FakeFullTextClient(None)
-        analysis = _Analysis()
-        analyzer._check_europepmc(
-            client,
-            _epmc_record(
-                "Analysis code is available on GitHub; individual patient data are not available.",
-                in_epmc="N",
-            ),
-            analysis,
+        analysis = self._europepmc_level(
+            "Analysis code is available on GitHub; individual patient data are not available."
         )
         assert analysis.data_level == "not_available"
+        _score_data_availability(analysis)
         assert analysis.score == 0
 
-    def test_a_level_this_step_did_not_find_is_not_scored(self):
-        # The step is the only producer of `data_level`, so it publishes what
-        # it found rather than reading the carrier back to decide the credit.
-        # Reading it back would let a level set by some later-added step be
-        # scored here as if EuropePMC's text had shown it — the positional
-        # hazard the carrier was introduced to remove, respelled as state.
-        analyzer = TransparencyAnalyzer()
-        client = _FakeFullTextClient(None)
+    def test_a_step_that_found_nothing_does_not_lower_an_established_level(self):
+        # This replaces `test_a_level_this_step_did_not_find_is_not_scored`,
+        # which pinned the pre-merge rule that this step assigns `data_level`
+        # outright. With a second producer that rule inverts: finding nothing
+        # is not evidence against what another source found, so nominating
+        # "unknown" must be a no-op rather than a demotion. The half that
+        # still holds — this step never scores a level it did not find — now
+        # holds because the step scores nothing at all.
         analysis = _Analysis(data_level="full_open")
+        analyzer = TransparencyAnalyzer()
         analyzer._check_europepmc(
-            client,
+            _FakeFullTextClient(None),
             _epmc_record("This abstract says nothing about data.", in_epmc="N"),
             analysis,
         )
-        assert analysis.data_level == "unknown"
+        assert analysis.data_level == "full_open"
         assert analysis.score == 0
+
+    def test_the_component_is_awarded_once_however_many_sources_nominated(self):
+        # The hazard deferring the award exists to remove.
+        analysis = _Analysis()
+        analysis.note_data_level("full_open")
+        analysis.note_data_level("full_open")
+        _score_data_availability(analysis)
+        assert analysis.score == SCORE_DATA_FULL_OPEN
 
 
 class TestAnalyzeApiReachability:

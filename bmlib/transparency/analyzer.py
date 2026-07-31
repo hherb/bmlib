@@ -209,6 +209,7 @@ _INDICATOR_NO_COI_IN_FULLTEXT = "No COI disclosure found in full text"
 _INDICATOR_COI_UNKNOWN = "COI disclosure status unknown (full text unavailable)"
 _INDICATOR_COI_IN_PUBMED = "COI disclosure found in PubMed record"
 _INDICATOR_INDUSTRY_COI = "Industry ties disclosed in COI statement"
+_INDICATOR_DATA_NOT_AVAILABLE = "Data explicitly not available"
 _INDICATOR_NO_POSTED_RESULTS = "Registered trial without posted results"
 # Deliberately does not name a registry. It covers a registration in another
 # registry *and* a ClinicalTrials.gov registration whose accession was missing
@@ -597,6 +598,29 @@ def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
                 analysis.note_industry_funder(agency)
 
 
+def _score_data_availability(analysis: _Analysis) -> None:
+    """Award the data-availability component once, for the level that won.
+
+    Called by :meth:`TransparencyAnalyzer.analyze` after every sub-step has
+    nominated, rather than by the step that finds a level. With two producers
+    — Europe PMC's text scan and PubMed's deposition accessions — scoring at
+    the point of discovery would either spend the component twice or spend it
+    on a level later beaten; deferring makes both unrepresentable rather than
+    guarded against, which is what :meth:`_Analysis.award_funder_info` does
+    for the funder component.
+
+    It is also what keeps :data:`_INDICATOR_DATA_NOT_AVAILABLE` honest: the
+    line is written only if that level survived the merge, so it never has to
+    be retracted the way the PubMed COI lines are.
+    """
+    if analysis.data_level == "full_open":
+        analysis.score += SCORE_DATA_FULL_OPEN
+    elif analysis.data_level == "on_request":
+        analysis.score += SCORE_DATA_ON_REQUEST
+    elif analysis.data_level == "not_available":
+        analysis.indicators.append(_INDICATOR_DATA_NOT_AVAILABLE)
+
+
 def _extract_tagged_coi_text(full_text: str) -> str:
     """Return the text of JATS-tagged COI containers, tag-stripped and lowercased.
 
@@ -842,6 +866,10 @@ class TransparencyAnalyzer:
                 unknown_reason=TransparencyUnknownReason.UNREACHABLE,
             )
 
+        # Awarded here rather than by the step that found the level: two
+        # sources nominate one, and the component is worth its points once.
+        _score_data_availability(analysis)
+
         analysis.score = min(analysis.score, MAX_TRANSPARENCY_SCORE)
 
         risk_level = calculate_risk_level(
@@ -960,24 +988,18 @@ class TransparencyAnalyzer:
             # Could not inspect full text; status is genuinely unknown.
             analysis.indicators.append(_INDICATOR_COI_UNKNOWN)
 
-        # Data availability. The level is found into a local and published
-        # once, rather than assigned to the carrier and read back to decide the
-        # credit: reading it back would score whatever the field happened to
-        # hold on the way in, which is the positional hazard `_Analysis` exists
-        # to remove, respelled as state. This step is the field's only producer
-        # today; a second one has to bring a merge rule with it.
+        # Data availability. The level is found into a local and nominated
+        # once: this step is one of two producers, and the winner is scored by
+        # `_score_data_availability()` after every step has run. Nominating
+        # unconditionally — including the "unknown" this falls through to —
+        # keeps the step free of a "is this worth reporting?" judgement only
+        # the carrier can make.
         data_level = "unknown"
         for pattern, level in _DATA_PATTERNS.items():
             if pattern in search_text:
                 data_level = level
                 break
-        analysis.data_level = data_level
-        if data_level == "full_open":
-            analysis.score += SCORE_DATA_FULL_OPEN
-        elif data_level == "on_request":
-            analysis.score += SCORE_DATA_ON_REQUEST
-        elif data_level == "not_available":
-            analysis.indicators.append("Data explicitly not available")
+        analysis.note_data_level(data_level)
 
         # Industry ties disclosed in the COI statement itself ("consultant
         # for X", "speaker fees from Y"). Scanned only in full text — an
