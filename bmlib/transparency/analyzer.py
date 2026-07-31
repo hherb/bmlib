@@ -202,14 +202,21 @@ _CLINICALTRIALS_GOV = "clinicaltrials.gov"
 
 # `DataBankName` values naming a repository authors *deposit into*, lowercased.
 # Curated from the same NLM vocabulary as the registries above, whose second
-# table this splits in half. The other half is deliberately excluded: GDB,
-# OMIM, PIR, PubChem-BioAssay, PubChem-Compound, PubChem-Substance, RefSeq,
-# SWISSPROT, UniMES, UniParc, UniProtKB and UniRef are curated *reference*
-# databases. An OMIM number says the paper is about a known condition; a
-# RefSeq accession names a sequence NCBI curated, not one these authors
-# produced. Neither is evidence that these authors shared their own data,
-# which is what the data-availability component measures — so adding one back
-# would award 20 points for a citation.
+# table this splits in half. The other half is deliberately excluded: dbSNP,
+# GDB, OMIM, PIR, PubChem-BioAssay, PubChem-Compound, PubChem-Substance,
+# RefSeq, SWISSPROT, UniMES, UniParc, UniProtKB and UniRef are curated
+# *reference* databases. An OMIM number says the paper is about a known
+# condition; a RefSeq accession names a sequence NCBI curated, not one these
+# authors produced. Neither is evidence that these authors shared their own
+# data, which is what the data-availability component measures — so adding
+# one back would award 20 points for a citation.
+#
+# dbSNP is the one exclusion worth spelling out, since dbVar sits right below
+# it in this set: a dbVar accession is a structural-variant submission, but a
+# dbSNP citation is overwhelmingly an rs-number reference to a variant someone
+# else already catalogued, not a deposit of these authors' own data. Submitters
+# can deposit novel variants as ss accessions, but that is the rare case, and
+# ties go to precision here because this component feeds a HIGH-risk rule.
 #
 # Zenodo is absent because NLM's vocabulary does not carry it, so PubMed never
 # emits it. `_DATA_PATTERNS` already matches "zenodo" in prose.

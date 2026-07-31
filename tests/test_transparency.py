@@ -1457,12 +1457,16 @@ class TestPubMedSignalParsing:
         signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("GENBANK", accessions),)))
         assert signals.deposition_databanks == ()
 
-    @pytest.mark.parametrize("name", ["OMIM", "RefSeq", "UniProtKB", "PubChem-Compound", "GDB"])
+    @pytest.mark.parametrize(
+        "name", ["OMIM", "RefSeq", "UniProtKB", "PubChem-Compound", "GDB", "dbSNP"]
+    )
     def test_a_curated_reference_database_is_not_a_deposit(self, name):
         # NLM lists these beside the deposition repositories, but an OMIM
         # number says the paper is about a known condition and a RefSeq
         # accession names a sequence NCBI curated — neither is evidence that
-        # these authors shared their data.
+        # these authors shared their data. dbSNP is the sharpest case: it sits
+        # right beside dbVar in the deposit set, but a dbSNP citation is
+        # overwhelmingly an rs-number reference, not a submission.
         signals = _parse_pubmed_signals(_pubmed_xml(databanks=((name, ("X1",)),)))
         assert signals.deposition_databanks == ()
 
