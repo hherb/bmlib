@@ -2,7 +2,7 @@
 
 _Last updated: 2026-08-01. **0.6.0 is cut.** `[Unreleased]` holds two changes —
 the `_Analysis` carrier (#37) and the PubMed data-deposition signal (#44) —
-and nothing else is in flight. 1070 tests passing + 32 skipped._
+and nothing else is in flight. 1072 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -42,14 +42,16 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
      yields one `Industry funder: X` indicator instead of one per award record,
      which is the rule PubMed's grant list already followed. Only
      `risk_indicators` length moves.
-  2. The PubMed data-deposition signal (#44) — a `<DataBank>` that is not a
-     trial registry sets `data_availability_level` to `full_open`. **This one
-     moves stored values**: score up to +20, the level itself, and — because
-     rule 2 of `calculate_risk_level()` fires on withheld data — an
-     industry-funded paper can leave HIGH. `data_availability_level` now has
-     two producers and is merged through `note_data_availability()`, never
-     assigned.
-- **1070 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+  2. The PubMed data-deposition signal (#44) — a `<DataBank>` naming a public
+     archive (`_DATA_ARCHIVE_NAMES`) sets `data_availability_level` to
+     `full_open`. **This one moves stored values**: score up to +20, the level
+     itself, and — because rule 2 of `calculate_risk_level()` fires on withheld
+     data — an industry-funded paper can leave HIGH. `data_availability_level`
+     now has two producers and is merged through `note_data_availability()`,
+     never assigned. The same change added `JMACCT` and `REPEC` to the trial
+     registries, which moves stored values for those papers too (registration
+     is worth 20 points).
+- **1072 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -71,8 +73,10 @@ closed design stays in `docs/superpowers/specs/` as the record of what was
 rejected and why: for #33, raising unconditionally on a non-dict; for #36,
 word-boundary matching applied uniformly across the keyword list; for #37, a
 `NamedTuple` carrier (immutable, so every step would still rebuild and return
-it — the arity survives); for #44, an allowlist of known repositories and an
-`on_request` carve-out for controlled-access archives.
+it — the arity survives); for #44, reading the registry set's *complement* as
+data archives (measured and reversed mid-review — the spec's revision section
+carries the numbers) and an `on_request` carve-out for controlled-access
+archives.
 
 ### Worth doing, not yet an issue
 
@@ -212,10 +216,19 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   stale by *under*-crediting, which is the direction a transparency score
   should fail in — the same trade-off `_INDUSTRY_STEMS` resolves the same way.
   Both sets are measured with `scripts/sample_databank_names.py`; run it
-  before changing either. Pinned by
+  before changing either — and note it reports on the candidates it is told
+  about (NLM's list, hand-copied into `NLM_DATABANK_NAMES`, plus the sets
+  themselves), so a repository NLM adds has to be added there first. Pinned by
   `test_a_databank_in_neither_set_is_credited_as_neither`,
   `test_a_curated_database_is_not_a_deposition` and
   `test_the_two_databank_sets_are_disjoint`.
+- **Every member of both databank sets must be written all-lowercase.** The
+  lookup compares against `name.lower()`, so a member with capitals never
+  matches and is dead — silently, with no error and no failing test. Six
+  archive names have canonical spellings with internal capitals (`dbGaP`,
+  `dbSNP`, `dbVar`, `BioProject`, `PubChem-Substance`, `PubChem-BioAssay`),
+  which is exactly what gets pasted from NLM's table when adding the next one.
+  Pinned by `test_both_databank_sets_are_lowercased`.
 - **dbGaP stays in the archive set rather than mapping to `on_request`.**
   `on_request` here means "email the authors"; a documented, enforceable
   access process is not weaker than that, so the carve-out would understate

@@ -1473,7 +1473,18 @@ class TestPubMedSignalParsing:
 
     def test_the_two_databank_sets_are_disjoint(self):
         # Nothing may be classified as both, and the sets are what decides it.
+        # Before the allowlist, the `if/continue` guaranteed this structurally.
         assert not (_TRIAL_REGISTRY_NAMES & _DATA_ARCHIVE_NAMES)
+
+    def test_both_databank_sets_are_lowercased(self):
+        # The lookup compares against `name.lower()`, so a member written with
+        # capitals never matches and is silently dead — no error, no missed
+        # test, just a signal that stops being read. Six archive names have
+        # canonical spellings with internal capitals (dbGaP, dbSNP, dbVar,
+        # BioProject, PubChem-Substance, PubChem-BioAssay), which is exactly
+        # what gets pasted from NLM's table when the next one is added.
+        for name in _TRIAL_REGISTRY_NAMES | _DATA_ARCHIVE_NAMES:
+            assert name == name.lower(), f"{name!r} can never match"
 
     def test_a_curated_database_is_not_a_deposition(self):
         # OMIM, RefSeq, SWISSPROT and the UniProt family are curated or
@@ -1493,9 +1504,15 @@ class TestPubMedSignalParsing:
         assert signals.trial_accessions == ()
         assert signals.registration_not_checkable is False
 
-    def test_a_japan_medical_association_registration_counts(self):
-        # JMACCT is on NLM's registry list and was missing from the set.
-        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("JMACCT", ("JMA-IIA00123",)),)))
+    @pytest.mark.parametrize(
+        ("registry", "accession"),
+        [("JMACCT", "JMA-IIA00123"), ("REPEC", "PER-001-19")],
+    )
+    def test_a_registry_nlm_lists_is_recognised(self, registry, accession):
+        # Both are on NLM's list and neither was in the set. REPEC has no
+        # PubMed records today, so only this test stands between it and a
+        # silent deletion.
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=((registry, (accession,)),)))
         assert signals.registration_not_checkable is True
         assert signals.data_banks == ()
 

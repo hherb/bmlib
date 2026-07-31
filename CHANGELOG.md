@@ -29,17 +29,23 @@ All notable changes to bmlib are documented here. The format is based on
   allowlist goes stale by under-crediting instead, which is the direction a
   transparency score should fail in.
 
-- **`transparency`: `JMACCT` and `REPEC` recognised as trial registries.** Both
-  are on NLM's databank-source list and neither was in
-  `_TRIAL_REGISTRY_NAMES`, so a paper registered with the Japan Medical
-  Association's centre missed its 20 registration points.
-
   **Stored results are not comparable across this change.** For a paper with a
   deposition accession `transparency_score` rises by up to 20 and
   `data_availability_level` moves to `full_open`, which can also lift an
   industry-funded paper out of HIGH risk — rule 2 of `calculate_risk_level()`
   fires on withheld data. That is the intended effect: an archive accession is
   hard evidence and should outrank a phrase matched in running text.
+
+- **`transparency`: `JMACCT` and `REPEC` recognised as trial registries.** Both
+  are on NLM's databank-source list and neither was in
+  `_TRIAL_REGISTRY_NAMES`, so a paper registered with the Japan Medical
+  Association's centre missed its 20 registration points. **Stored results move
+  for those papers too:** `trial_registered` becomes `True`,
+  `SCORE_TRIAL_REGISTERED` is awarded, and `Trial registration found;
+  posted-results status could not be checked` joins the indicators. Three
+  PubMed records carry `JMACCT` today and none carries `REPEC`, so the
+  practical blast radius is small — but a stored score that moves is a stored
+  score that moves.
 
 ### Changed
 

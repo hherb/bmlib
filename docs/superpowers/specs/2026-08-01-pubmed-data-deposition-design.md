@@ -242,3 +242,9 @@ pre-existing safe failure. Pinned by
   half-retracts. Pinned by `test_a_level_reported_twice_records_one_indicator`.
   Both this and the allowlist were confirmed by mutating the production code
   and watching the new tests fail.
+- Two guards a second review pass found unpinned, each confirmed the same way:
+  every member of both sets must be all-lowercase, or it never matches
+  `name.lower()` and is silently dead (`test_both_databank_sets_are_lowercased`
+  — six archive names have canonical spellings with internal capitals); and
+  `REPEC`, which has no PubMed records, needed a test or nothing stood between
+  it and a silent deletion (`test_a_registry_nlm_lists_is_recognised`).
