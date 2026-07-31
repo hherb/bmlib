@@ -327,15 +327,15 @@ All requests go through one `httpx.Client` with a 15-second timeout and the head
 | 1 | CrossRef | `https://api.crossref.org/works/{doi}` | `doi` | Funder records; structured industry-funder detection. |
 | 2 | Europe PMC search | `https://www.ebi.ac.uk/europepmc/webservices/rest/search` | `doi` or `pmid` | Record lookup by `DOI:"{doi}"` (preferred) or `EXT_ID:{pmid}`; abstract text; the PMID for step 4. |
 | 3 | Europe PMC full text | `https://www.ebi.ac.uk/europepmc/webservices/rest/{source}/{ext_id}/fullTextXML` | step 2 record with `inEPMC == "Y"` | COI statement, industry-COI detection, data-availability statement. |
-| 4 | PubMed E-utilities | `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi` (`db=pubmed&retmode=xml`) | `pmid`, or a PMID in the step-2 record | `<CoiStatement>`, `<DataBankList>` trial registrations, `<GrantList>` funders. |
+| 4 | PubMed E-utilities | `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi` (`db=pubmed&retmode=xml`) | `pmid`, or a PMID in the step-2 record | `<CoiStatement>`, `<DataBankList>` trial registrations *and* data depositions, `<GrantList>` funders. |
 | 5 | OpenAlex | `https://api.openalex.org/works/doi:{doi}` | `doi` | Open-access status, citation count. |
 | 6 | ClinicalTrials.gov v2 | `https://clinicaltrials.gov/api/v2/studies/{nct_id}` (`fields=hasResults`) | an NCT id from step 4, else one credited in step 2's abstract | Posted-results check. |
 
 The step-2 search is issued **once** per document: the record is threaded into the PubMed and trial-registration steps rather than re-queried, halving Europe PMC traffic compared to earlier releases.
 
-Step 3 is the difference between a real data-availability reading and a guess. COI and data-availability statements live in a paper's full text, never its abstract, so when `inEPMC != "Y"` (no open-access full text at Europe PMC) the analyzer falls back to scanning the abstract, `full_text_analyzed` stays `False`, and industry-COI detection does not run at all. COI *disclosure* is the exception: step 4 can establish it from PubMed's structured metadata whether or not full text was reachable.
+Step 3 is the difference between a real data-availability reading and a guess. COI and data-availability statements live in a paper's full text, never its abstract, so when `inEPMC != "Y"` (no open-access full text at Europe PMC) the analyzer falls back to scanning the abstract, `full_text_analyzed` stays `False`, and industry-COI detection does not run at all. Two signals are the exceptions, and both come from step 4's structured metadata whether or not full text was reachable: COI *disclosure*, and a data *deposition*.
 
-Step 4's ordering is deliberate. It sits after Europe PMC so a DOI-only analysis can reuse the PMID from the record already fetched, and before ClinicalTrials.gov so a structured registry accession can feed the posted-results check. It costs one request at most, and none at all when no PMID is available. Its three signals are all publisher-supplied structured metadata, which is why they outrank the text heuristics elsewhere in the module. A PubMed record that is missing, unreachable, or unparsable yields no signals and changes nothing.
+Step 4's ordering is deliberate. It sits after Europe PMC so a DOI-only analysis can reuse the PMID from the record already fetched, and before ClinicalTrials.gov so a structured registry accession can feed the posted-results check. It costs one request at most, and none at all when no PMID is available. All four of its signals are publisher-supplied structured metadata, which is why they outrank the text heuristics elsewhere in the module. A PubMed record that is missing, unreachable, or unparsable yields no signals and changes nothing.
 
 ### Scoring components
 
@@ -345,7 +345,7 @@ Weights are module-level constants in `bmlib.transparency.analyzer`:
 |----------|--------|--------------|
 | `SCORE_FUNDER_INFO` | 15 | CrossRef returned at least one funder record, **or** PubMed returned a non-empty `<GrantList>`. Awarded once, never twice. |
 | `SCORE_COI_DISCLOSED` | 10 | A COI/disclosure statement was found, by any of the three routes. Awarded once. |
-| `SCORE_DATA_FULL_OPEN` | 20 | `data_availability_level == "full_open"`. |
+| `SCORE_DATA_FULL_OPEN` | 20 | `data_availability_level == "full_open"` — a PubMed deposition accession, or a repository named in the text. |
 | `SCORE_DATA_ON_REQUEST` | 10 | `data_availability_level == "on_request"`. |
 | `SCORE_OPEN_ACCESS` | 15 | OpenAlex reports `open_access.is_oa`. |
 | `SCORE_CITED` | 5 | OpenAlex reports `cited_by_count > 0`. |
@@ -353,7 +353,7 @@ Weights are module-level constants in `bmlib.transparency.analyzer`:
 | `SCORE_RESULTS_POSTED` | 15 | One of the registered trials has posted results. Only reachable for a ClinicalTrials.gov registration. |
 | **Maximum** | **100** | `MAX_TRANSPARENCY_SCORE`, applied as `min(score, 100)`. |
 
-The two data-availability awards are mutually exclusive, so the best attainable total is exactly 100: `15 + 10 + 20 + 15 + 5 + 20 + 15`. The `min()` cap is therefore defensive rather than load-bearing — but it is applied, so a future weight change cannot overflow the documented range.
+The two data-availability awards are mutually exclusive — enforced by the credit swap described under [How the two are merged](#how-the-two-are-merged), not merely by the levels being distinct — so the best attainable total is exactly 100: `15 + 10 + 20 + 15 + 5 + 20 + 15`. The `min()` cap is therefore defensive rather than load-bearing — but it is applied, so a future weight change cannot overflow the documented range.
 
 Note that the score is a *transparency* measure, not a quality measure, and it is heavily influenced by article type: a non-trial paper can never earn the 35 trial-related points, and a paywalled paper forfeits the 15 open-access points and (via step 3) the data-availability points. Compare scores within an article class, not across.
 
@@ -454,7 +454,20 @@ The employer nouns are curated rather than generic on purpose: a catch-all like 
 
 ## Data Availability Detection
 
-`_DATA_PATTERNS` is an **ordered** dict scanned against the search text; the first hit wins and scanning stops.
+Two sources produce `data_availability_level`, and the structured one wins.
+
+### PubMed `<DataBankList>` — a deposition accession
+
+Every `<DataBank>` PubMed lists whose name is *not* a trial registry (see [Trial Registration Detection](#trial-registration-detection) for the registry set) is a data-deposition record: GENBANK, PDB, SRA, GEO, Dryad, figshare. `DataBankName` is an NLM controlled vocabulary of registries and archives, so once the registries are named, the complement is the archives — no repository allowlist to go stale.
+
+Any such entry sets the level to `full_open` and appends `"Data deposited in {name}"`, one line per distinct archive (matched case-insensitively, shown in the publisher's spelling). Two consequences worth knowing:
+
+- **A closed-access paper can earn it.** The text scan below needs Europe PMC full text; a paywalled paper has none, so before this signal existed such a paper could only ever read `unknown`.
+- **The accession numbers are not read.** The databank *name* is the publisher's assertion of deposition, and `<AccessionNumberList>` is optional in the MEDLINE DTD. Nothing fetches a deposition accession, so — unlike an NCT id, which is interpolated into a ClinicalTrials.gov URL — there is nothing for validation to protect.
+
+### Text scan — the fallback
+
+`_DATA_PATTERNS` is an **ordered** dict scanned against the search text (full text when step 3 retrieved it, the abstract otherwise); the first hit wins and scanning stops.
 
 | Pattern | Level | Points |
 |---------|-------|--------|
@@ -465,7 +478,15 @@ The employer nouns are curated rather than generic on purpose: a catch-all like 
 
 **The order is load-bearing.** The negated form is tested first so that a statement like *"data are not available upon reasonable request"* resolves to `not_available` rather than matching `"upon reasonable request"` and being scored as if data sharing were offered. Preserve this ordering if you fork the dict — Python dicts iterate in insertion order, which is what the first-hit-wins loop relies on.
 
-Two further levels, `"restricted"` and `"not_stated"`, are recognised by [`calculate_risk_level()`](#calculate_risk_level) but are **never produced** by the analyzer. They exist for callers who compute `data_availability` themselves from a richer source and then call the risk function directly.
+### How the two are merged
+
+Both sources report through `_Analysis.note_data_availability()`, which keeps the level carrying the **strongest evidence of openness** — `full_open` > `on_request` > `not_available` / `restricted` / `not_stated` > `unknown` — whichever arrives first. Three properties follow, and each is a deliberate choice:
+
+- **The credit is swapped, not added.** Superseding a level takes back the points already awarded for it, so a paper whose full text says "upon reasonable request" and whose PubMed record lists a GenBank accession scores 20 for data availability, not 30. This is what keeps the two awards mutually exclusive, and with them the maximum of exactly 100.
+- **`unknown` never displaces a finding.** It is the absence of a finding, not a weaker one, so a step that read a text with no data-availability statement leaves the other step's finding standing.
+- **`"Data explicitly not available"` is retracted when superseded.** A paper can withhold individual patient data and still have deposited its sequences; leaving the line in place would contradict `data_availability_level`. It is appended and removed through the same constant, `_INDICATOR_DATA_NOT_AVAILABLE`, for exactly that reason.
+
+Two further levels, `"restricted"` and `"not_stated"`, are recognised by [`calculate_risk_level()`](#calculate_risk_level) and ranked alongside `not_available`, but are **never produced** by the analyzer. They exist for callers who compute `data_availability` themselves from a richer source and then call the risk function directly.
 
 ---
 
@@ -475,7 +496,7 @@ Registration is established from two sources, and the structured one wins.
 
 ### PubMed `<DataBankList>` — preferred
 
-When the PubMed record lists a trial-registry databank, that is the publisher asserting *this* paper's registration, so it is trusted directly and the abstract heuristic below is not consulted at all. `DataBankName` is matched case-insensitively against a curated set of registry names PubMed emits — ClinicalTrials.gov, ISRCTN, EudraCT, ANZCTR, ChiCTR, CRiS, CTRI, DRKS, IRCT, JapicCTI, JPRN, jRCT, NTR, PACTR, ReBec, RPCEC, SLCTR, TCTR, UMIN-CTR. Anything else in `DataBankList` is a data-deposition accession (GENBANK, PDB, SRA, Dryad, …) and is ignored: a real transparency signal, but not a trial registration.
+When the PubMed record lists a trial-registry databank, that is the publisher asserting *this* paper's registration, so it is trusted directly and the abstract heuristic below is not consulted at all. `DataBankName` is matched case-insensitively against a curated set of registry names PubMed emits — ClinicalTrials.gov, ISRCTN, EudraCT, ANZCTR, ChiCTR, CRiS, CTRI, DRKS, IRCT, JapicCTI, JPRN, jRCT, NTR, PACTR, ReBec, RPCEC, SLCTR, TCTR, UMIN-CTR. Anything else in `DataBankList` is a data-deposition accession (GENBANK, PDB, SRA, Dryad, …): a real transparency signal, but not a trial registration, so it is read by [Data Availability Detection](#data-availability-detection) instead. The two branches partition the list — no entry is counted as both.
 
 Two consequences worth knowing:
 

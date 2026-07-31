@@ -1,8 +1,8 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-07-31. **0.6.0 is cut.** `[Unreleased]` now holds one
-change — the `_Analysis` carrier (#37) — and nothing else is in flight.
-1048 tests passing + 32 skipped._
+_Last updated: 2026-08-01. **0.6.0 is cut.** `[Unreleased]` holds two changes —
+the `_Analysis` carrier (#37) and the PubMed data-deposition signal (#44) —
+and nothing else is in flight. 1065 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -35,14 +35,21 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it will
   not see this release until that pin is widened. That is a downstream change,
   not a bmlib one.
-- **Unreleased since 0.6.0:** the `_Analysis` carrier (#37) — `analyze()`'s ten
-  accumulators moved off 4-to-6-element tuples onto one mutable dataclass every
-  sub-step mutates in place. It carries one behaviour change: a funder named
-  repeatedly by CrossRef now yields one `Industry funder: X` indicator instead
-  of one per award record, which is the rule PubMed's grant list already
-  followed. Only `risk_indicators` length moves — no score, no
-  `industry_funding_detected`, no risk level.
-- **1048 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **Unreleased since 0.6.0, two changes:**
+  1. The `_Analysis` carrier (#37) — `analyze()`'s ten accumulators moved off
+     4-to-6-element tuples onto one mutable dataclass every sub-step mutates in
+     place. One behaviour change: a funder named repeatedly by CrossRef now
+     yields one `Industry funder: X` indicator instead of one per award record,
+     which is the rule PubMed's grant list already followed. Only
+     `risk_indicators` length moves.
+  2. The PubMed data-deposition signal (#44) — a `<DataBank>` that is not a
+     trial registry sets `data_availability_level` to `full_open`. **This one
+     moves stored values**: score up to +20, the level itself, and — because
+     rule 2 of `calculate_risk_level()` fires on withheld data — an
+     industry-funded paper can leave HIGH. `data_availability_level` now has
+     two producers and is merged through `note_data_availability()`, never
+     assigned.
+- **1065 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -58,26 +65,17 @@ Nothing is blocked on anything else.
 
 ### Open GitHub issues
 
-**None.** #18 and #21 closed with PR #35, #33 with PR #39, #36 with PR #40, and
-#37 with the `_Analysis` carrier. Every closed design stays in
-`docs/superpowers/specs/` as the record of what was rejected and why: for #33,
-raising unconditionally on a non-dict; for #36, word-boundary matching applied
-uniformly across the keyword list; for #37, a `NamedTuple` carrier (immutable,
-so every step would still rebuild and return it — the arity survives).
+**None.** #18 and #21 closed with PR #35, #33 with PR #39, #36 with PR #40, #37
+with the `_Analysis` carrier, and #44 with the data-deposition signal. Every
+closed design stays in `docs/superpowers/specs/` as the record of what was
+rejected and why: for #33, raising unconditionally on a non-dict; for #36,
+word-boundary matching applied uniformly across the keyword list; for #37, a
+`NamedTuple` carrier (immutable, so every step would still rebuild and return
+it — the arity survives); for #44, an allowlist of known repositories and an
+`on_request` carve-out for controlled-access archives.
 
 ### Worth doing, not yet an issue
 
-- **Data-deposition accessions in PubMed's `<DataBankList>`** (GENBANK, PDB,
-  SRA, Dryad, figshare) are structured proof of data sharing, strictly
-  stronger than the current substring scan of the full text. Deliberately left
-  out of the PubMed step to keep the data-availability scoring path out of
-  that change; `_parse_pubmed_signals()` already walks the databanks, so this
-  is a small follow-up rather than a rewrite. **This is now the natural next
-  change to `analyze()`, and #37 was done to clear its way:** add the signal by
-  writing to `_Analysis` — do not reintroduce a threaded value, and if it needs
-  a "has this been scored?" flag, give it a named method beside
-  `award_funder_info()` rather than a bare field two call sites must remember
-  to check.
 - **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume this
   release. Read the three non-comparable behaviour changes above first — the
   transparency ones move stored scores, so a project holding historical
@@ -179,17 +177,44 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   that found it, not to `analyze()`.
 - **A sub-step publishes its own finding to `_Analysis`; it never reads a field
   back to decide what it found.** `_check_europepmc` collects the data level
-  into a local and assigns it once, and `_check_trial_registration` decides
+  into a local and reports it once, and `_check_trial_registration` decides
   `_INDICATOR_NO_POSTED_RESULTS` from the `any()` it just ran rather than from
   `analysis.results_compliant`. Both read the carrier back at first, which is
   harmless only while each field has exactly one producer — it is the
   positional-unpacking hazard the carrier was built to remove, respelled as
-  state, and it would have gone live the moment a second producer appeared.
-  The queued `<DataBankList>` data-deposition signal is that second producer
-  for `data_level`, so it has to bring a merge rule (strongest evidence wins,
-  as `industry_confidence` already does) rather than just assigning the field.
-  Pinned by `test_a_level_this_step_did_not_find_is_not_scored` and
+  state, and it went live the moment a second producer appeared. Pinned by
+  `test_a_level_this_step_did_not_find_is_not_scored` and
   `test_an_inbound_results_flag_does_not_stand_in_for_this_check`.
+- **`data_availability_level` is written through
+  `_Analysis.note_data_availability()`, never assigned** — it has two
+  producers (the Europe PMC text scan and PubMed's `<DataBankList>`). Three
+  properties of that method are each load-bearing, and each has a test:
+  the credit is **swapped, not added** — superseding a level takes back its
+  points, which is the only thing keeping the two data awards mutually
+  exclusive and the maximum at exactly 100
+  (`test_stronger_evidence_swaps_the_credit_rather_than_adding_to_it`);
+  **`unknown` ranks below the withheld levels**, because it is the absence of
+  a finding and must not erase one
+  (`test_an_absence_never_erases_a_finding`); and **an unlisted level raises
+  `KeyError`** rather than ranking weakest, so a typo cannot silently drop the
+  finding it names (`test_a_level_outside_the_vocabulary_raises`). A third
+  producer needs nothing new — that is the point of the method.
+- **Every non-trial `<DataBank>` name counts as a deposition, with no
+  repository allowlist and no carve-out for controlled-access archives.**
+  `DataBankName` is an NLM controlled vocabulary of registries *and* archives,
+  so once the registries are named the complement is the archives; an
+  allowlist would go stale as NLM adds repositories and would discard the
+  signal rather than record it. dbGaP and EGA were considered for an
+  `on_request` carve-out and rejected: `on_request` here means "email the
+  authors", and a documented, enforceable access process is not weaker than
+  that, so the carve-out would understate them.
+- **A deposition needs only a non-blank `DataBankName`; the accession numbers
+  are not carried.** `<AccessionNumberList>` is optional in the MEDLINE DTD,
+  and the trial branch beside it already treats a registration with an
+  unusable accession as established. Nothing fetches a deposition accession —
+  the NCT validation exists because that id is interpolated into a
+  ClinicalTrials.gov URL — so validating one would be ceremony with no
+  consumer. Pinned by `test_a_databank_without_accessions_still_counts`.
 - **`TransparencySettings.filtering_enabled`, `max_concurrent_analyses`,
   `cache_results` are not dead code.** They are orchestration hints for the
   *calling* application. The library analyses one document per call and does

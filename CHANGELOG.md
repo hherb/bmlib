@@ -6,7 +6,42 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`transparency`: data deposition from PubMed's `<DataBankList>` now sets
+  `data_availability_level`.** Every `<DataBank>` whose name is not a trial
+  registry — GENBANK, PDB, SRA, GEO, Dryad, figshare — is the publisher
+  asserting that this article's data went into a public archive. It was parsed
+  past and discarded; it now yields `full_open` and a
+  `Data deposited in {name}` indicator. Structured metadata, so it outranks
+  the substring scan of the retrieved text that was the level's only source,
+  and it reaches papers that scan cannot: a closed-access paper has no full
+  text to scan, so this is the first data-availability evidence it can carry
+  ([#44](https://github.com/hherb/bmlib/issues/44)).
+
+  **Stored results are not comparable across this change.** For a paper with a
+  deposition accession `transparency_score` rises by up to 20 and
+  `data_availability_level` moves to `full_open`, which can also lift an
+  industry-funded paper out of HIGH risk — rule 2 of `calculate_risk_level()`
+  fires on withheld data. That is the intended effect: an archive accession is
+  hard evidence and should outrank a phrase matched in running text.
+
 ### Changed
+
+- **`transparency`: `data_availability_level` is merged, not assigned.** It has
+  two producers as of the change above, so both report through
+  `_Analysis.note_data_availability()`, which keeps the level carrying the
+  strongest evidence of openness whichever arrives first. The credit is
+  *swapped* rather than added to — a paper whose full text says "upon
+  reasonable request" and whose PubMed record lists a GenBank accession scores
+  20 for data availability, not 30 — which is what keeps the two awards
+  mutually exclusive and the documented maximum at exactly 100. `unknown`
+  ranks below the withheld levels because it is the absence of a finding, so a
+  step that found nothing no longer erases another step's finding.
+  `Data explicitly not available` became the module constant
+  `_INDICATOR_DATA_NOT_AVAILABLE` so the method that appends it can retract it:
+  a paper can withhold individual patient data and still have deposited its
+  sequences, and the line would otherwise contradict the field.
 
 - **`transparency`: `analyze()`'s accumulators moved onto one `_Analysis`
   carrier.** Ten values were passed into each sub-step and unpacked back out of

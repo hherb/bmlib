@@ -39,7 +39,7 @@ uv pip install -e ".[all,dev]"
 | **bmlib.templates** | Jinja2-based prompt template engine with user-override directory fallback |
 | **bmlib.agents** | Base agent class for LLM-driven tasks with template rendering and JSON parsing |
 | **bmlib.quality** | 3-tier quality assessment pipeline for biomedical publications (metadata → LLM classifier → deep assessment), plus Cochrane risk-of-bias models and rule-based extractors |
-| **bmlib.transparency** | Multi-API transparency and bias analysis (CrossRef, Europe PMC, OpenAlex, ClinicalTrials.gov) |
+| **bmlib.transparency** | Multi-API transparency and bias analysis (CrossRef, Europe PMC, PubMed, OpenAlex, ClinicalTrials.gov) |
 | **bmlib.publications** | Publication ingestion from PubMed, bioRxiv, medRxiv, and OpenAlex with deduplication and sync |
 | **bmlib.fulltext** | Full-text retrieval (Europe PMC → Unpaywall → DOI), JATS XML parsing, PDF → text conversion, and disk-based caching |
 
