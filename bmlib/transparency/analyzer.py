@@ -29,7 +29,7 @@ import re
 import threading
 import time
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from bmlib import __version__
@@ -199,6 +199,7 @@ _CLINICALTRIALS_GOV = "clinicaltrials.gov"
 _INDICATOR_NO_COI_IN_FULLTEXT = "No COI disclosure found in full text"
 _INDICATOR_COI_UNKNOWN = "COI disclosure status unknown (full text unavailable)"
 _INDICATOR_COI_IN_PUBMED = "COI disclosure found in PubMed record"
+_INDICATOR_INDUSTRY_COI = "Industry ties disclosed in COI statement"
 _INDICATOR_NO_POSTED_RESULTS = "Registered trial without posted results"
 # Deliberately does not name a registry. It covers a registration in another
 # registry *and* a ClinicalTrials.gov registration whose accession was missing
@@ -415,45 +416,123 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
     )
 
 
-def _merge_pubmed_signals(
-    pubmed: _PubMedSignals,
-    coi_disclosed: bool | None,
-    score: int,
-    indicators: list[str],
-    industry_funding: bool,
-    industry_confidence: float,
-    funder_info_scored: bool,
-) -> tuple[bool | None, int, list[str], bool, float, bool]:
-    """Fold PubMed's structured signals into the analysis so far.
+@dataclass
+class _Analysis:
+    """Everything :meth:`TransparencyAnalyzer.analyze` accumulates.
+
+    Passed to each sub-step and mutated in place. The alternative — passing
+    each value in and unpacking a tuple back out — bound a value to its name by
+    position alone, so a mis-ordered unpacking was a silent, type-compatible
+    swap (``industry_funding`` and ``funder_info_scored`` are both ``bool``;
+    ``score`` is interchangeable with any other ``int``) and adding one signal
+    meant widening several signatures.
+
+    Mutable by design, and private: it never leaves this module, which is why
+    it carries no ``to_dict()``/``from_dict()`` — the same reasoning as the
+    frozen :class:`_PubMedSignals` beside it, which is a message from one
+    source rather than shared state.
+
+    Attributes:
+        score: Running transparency score, uncapped until ``analyze()`` ends.
+        indicators: Human-readable findings, in the order they were made.
+        industry_funding: Any industry involvement was detected.
+        industry_confidence: Confidence in that detection; the strongest
+            evidence seen wins, regardless of arrival order.
+        data_level: Data-availability level from :data:`_DATA_PATTERNS`.
+        coi_disclosed: Tri-state — ``True`` (statement found), ``False`` (full
+            text scanned, none found), ``None`` (undeterminable).
+        trial_registered: A trial registration was established.
+        results_compliant: Posted results were found for a registered trial.
+        full_text_analyzed: Findings came from full text, not just an abstract.
+        funder_info_scored: :data:`SCORE_FUNDER_INFO` has been spent. Named
+            state rather than a positional bool, so a third funder source gets
+            the once-only rule from :meth:`award_funder_info` instead of having
+            to remember a convention. The field stays writable — the rule lives
+            in the method, not in the type — so a source that spends the
+            component by hand can still double-score it. Go through
+            ``award_funder_info()``.
+    """
+
+    score: int = 0
+    indicators: list[str] = field(default_factory=list)
+    industry_funding: bool = False
+    industry_confidence: float = 0.0
+    data_level: str = "unknown"
+    coi_disclosed: bool | None = None
+    trial_registered: bool = False
+    results_compliant: bool = False
+    full_text_analyzed: bool = False
+    funder_info_scored: bool = False
+
+    def award_funder_info(self) -> None:
+        """Award :data:`SCORE_FUNDER_INFO` the first time any source reports funders.
+
+        Two sources can report them — CrossRef funder records and PubMed's
+        ``<GrantList>`` — and the component is worth 15 points once, not twice.
+        Neither caller has to know whether the other ran first, which is what
+        makes a third source safe to add.
+        """
+        if not self.funder_info_scored:
+            self.score += SCORE_FUNDER_INFO
+            self.funder_info_scored = True
+
+    def note_industry_funder(self, name: str) -> None:
+        """Record *name* as an industry funder named in structured metadata.
+
+        The confidence is fixed at :data:`DEFAULT_INDUSTRY_CONFIDENCE` rather
+        than passed in: "structured metadata" — a CrossRef funder record or a
+        PubMed ``<Grant><Agency>`` — is exactly what distinguishes this from
+        the weaker prose signal in :meth:`note_industry_coi`, and a caller free
+        to choose the number could blur the two.
+
+        The indicator is deduplicated. One funder is one finding however many
+        sources report it, and however often a single source repeats it: both
+        registries emit one record per award, so an organisation funding four
+        awards on one paper appears four times upstream.
+        """
+        self.industry_funding = True
+        self.industry_confidence = max(self.industry_confidence, DEFAULT_INDUSTRY_CONFIDENCE)
+        line = f"Industry funder: {name}"
+        if line not in self.indicators:
+            self.indicators.append(line)
+
+    def note_industry_coi(self) -> None:
+        """Record industry ties disclosed in a full-text COI statement.
+
+        Weaker evidence than a funder record — an inference from prose rather
+        than a structured field — so it raises the confidence only to
+        :data:`TEXT_INDUSTRY_CONFIDENCE` and never lowers a stronger one.
+        """
+        self.industry_funding = True
+        self.industry_confidence = max(self.industry_confidence, TEXT_INDUSTRY_CONFIDENCE)
+        self.indicators.append(_INDICATOR_INDUSTRY_COI)
+
+
+def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
+    """Fold PubMed's structured signals into *analysis*.
 
     A module-level function rather than a method because it needs no HTTP
     client; trial registration is handled separately, in
     :meth:`TransparencyAnalyzer._check_trial_registration`, because that step
     does.
 
-    Mutates nothing it is given — ``indicators`` is copied on the way in and
-    the copy is returned — so a caller that ignores a return value is left
-    with exactly what it passed rather than a half-applied merge.
-
     Each score component is awarded at most once. ``coi_disclosed is not
     True`` is a reliable guard rather than an incidental one: the only
     branch that sets ``True`` is the same branch that adds
     ``SCORE_COI_DISCLOSED``.
     """
-    indicators = list(indicators)
-
-    if pubmed.coi_statement and coi_disclosed is not True:
-        coi_disclosed = True
-        score += SCORE_COI_DISCLOSED
+    if pubmed.coi_statement and analysis.coi_disclosed is not True:
+        analysis.coi_disclosed = True
+        analysis.score += SCORE_COI_DISCLOSED
         # Both lines were written before PubMed was consulted and would now
         # contradict the result, so they are retracted rather than left to
         # be reconciled by whoever reads the indicators.
-        indicators = [
+        analysis.indicators = [
             ind
-            for ind in indicators
+            for ind in analysis.indicators
             if ind not in (_INDICATOR_NO_COI_IN_FULLTEXT, _INDICATOR_COI_UNKNOWN)
         ]
-        indicators.append(_INDICATOR_COI_IN_PUBMED)
+        analysis.indicators.append(_INDICATOR_COI_IN_PUBMED)
 
     # A missing <CoiStatement> deliberately does not demote `None` to
     # `False`: it means the publisher supplied no statement to PubMed, not
@@ -461,32 +540,14 @@ def _merge_pubmed_signals(
     # missing-COI downgrade on no evidence.
 
     if pubmed.funders:
-        if not funder_info_scored:
-            score += SCORE_FUNDER_INFO
-            funder_info_scored = True
+        analysis.award_funder_info()
         for agency in pubmed.funders:
             if _is_industry_funder(agency):
-                industry_funding = True
                 # A grant agency is structured metadata, the same class of
                 # evidence as a CrossRef funder record — not the weaker
-                # signal inferred from COI prose.
-                industry_confidence = max(industry_confidence, DEFAULT_INDUSTRY_CONFIDENCE)
-                # CrossRef may already have named this funder. The test is an
-                # exact match on a string this module builds, not a reading of
-                # indicator prose — the list is a set of findings, and one
-                # funder is one finding however many sources report it.
-                line = f"Industry funder: {agency}"
-                if line not in indicators:
-                    indicators.append(line)
-
-    return (
-        coi_disclosed,
-        score,
-        indicators,
-        industry_funding,
-        industry_confidence,
-        funder_info_scored,
-    )
+                # signal inferred from COI prose. CrossRef may already have
+                # named this funder; note_industry_funder() deduplicates.
+                analysis.note_industry_funder(agency)
 
 
 def _extract_tagged_coi_text(full_text: str) -> str:
@@ -689,21 +750,7 @@ class TransparencyAnalyzer:
             )
 
         self._api_reachable = False
-        score = 0
-        indicators: list[str] = []
-        industry_funding = False
-        industry_confidence = 0.0
-        data_level = "unknown"
-        coi_disclosed: bool | None = None
-        trial_registered = False
-        results_compliant = False
-        full_text_analyzed = False
-        # Two sources can award funder information (CrossRef funders, PubMed
-        # grants), and the score component is worth 15 points once, not twice.
-        # Tracked explicitly: "CrossRef found funders" is otherwise recoverable
-        # only from an indicator string, and branching on indicator prose is
-        # the very thing `unknown_reason` exists to avoid.
-        funder_info_scored = False
+        analysis = _Analysis()
 
         with httpx.Client(
             timeout=_HTTP_TIMEOUT_SECONDS,
@@ -711,76 +758,28 @@ class TransparencyAnalyzer:
         ) as client:
             # --- CrossRef (funder info) ---
             if doi:
-                (
-                    score,
-                    industry_funding,
-                    industry_confidence,
-                    indicators,
-                    funder_info_scored,
-                ) = self._check_crossref(
-                    client,
-                    doi,
-                    score,
-                    industry_funding,
-                    industry_confidence,
-                    indicators,
-                    funder_info_scored,
-                )
+                self._check_crossref(client, doi, analysis)
 
             # --- EuropePMC (full text / abstract, COI, data availability) ---
             epmc = self._fetch_europepmc(client, pmid, doi)
             if epmc:
-                (
-                    coi_disclosed,
-                    data_level,
-                    score,
-                    indicators,
-                    full_text_analyzed,
-                    industry_coi,
-                ) = self._check_europepmc(client, epmc, score, indicators)
-                if industry_coi:
-                    industry_funding = True
-                    industry_confidence = max(industry_confidence, TEXT_INDUSTRY_CONFIDENCE)
-                    indicators.append("Industry ties disclosed in COI statement")
+                self._check_europepmc(client, epmc, analysis)
 
             # --- PubMed (structured COI, trial registration, grants) ---
             # Placed after Europe PMC so a DOI-only analysis can reuse the PMID
             # from the record already fetched, and before ClinicalTrials.gov so
             # a structured accession can feed the posted-results check.
             pubmed = self._check_pubmed(client, pmid or _pmid_from_epmc(epmc))
-            (
-                coi_disclosed,
-                score,
-                indicators,
-                industry_funding,
-                industry_confidence,
-                funder_info_scored,
-            ) = _merge_pubmed_signals(
-                pubmed,
-                coi_disclosed,
-                score,
-                indicators,
-                industry_funding,
-                industry_confidence,
-                funder_info_scored,
-            )
+            _merge_pubmed_signals(pubmed, analysis)
 
             # --- OpenAlex (additional metadata) ---
             if doi:
-                score = self._check_openalex(client, doi, score)
+                self._check_openalex(client, doi, analysis)
 
             # --- ClinicalTrials.gov (trial registration) ---
             if doi or pmid:
-                trial_registered, results_compliant, score, indicators = (
-                    self._check_trial_registration(
-                        client,
-                        pmid,
-                        doi,
-                        score,
-                        indicators,
-                        epmc=epmc,
-                        pubmed=pubmed,
-                    )
+                self._check_trial_registration(
+                    client, pmid, doi, analysis, epmc=epmc, pubmed=pubmed
                 )
 
         # If not one external API responded, we measured nothing: report the
@@ -796,28 +795,28 @@ class TransparencyAnalyzer:
                 unknown_reason=TransparencyUnknownReason.UNREACHABLE,
             )
 
-        score = min(score, MAX_TRANSPARENCY_SCORE)
+        analysis.score = min(analysis.score, MAX_TRANSPARENCY_SCORE)
 
         risk_level = calculate_risk_level(
-            score=score,
-            industry_funding=industry_funding,
-            data_availability=data_level,
-            coi_disclosed=coi_disclosed,
+            score=analysis.score,
+            industry_funding=analysis.industry_funding,
+            data_availability=analysis.data_level,
+            coi_disclosed=analysis.coi_disclosed,
             settings=self.settings,
         )
 
         return TransparencyResult(
             document_id=document_id,
-            transparency_score=score,
+            transparency_score=analysis.score,
             risk_level=risk_level,
-            industry_funding_detected=industry_funding,
-            industry_funding_confidence=industry_confidence,
-            data_availability_level=data_level,
-            coi_disclosed=coi_disclosed,
-            trial_registered=trial_registered,
-            trial_results_compliant=results_compliant,
-            risk_indicators=indicators,
-            full_text_analyzed=full_text_analyzed,
+            industry_funding_detected=analysis.industry_funding,
+            industry_funding_confidence=analysis.industry_confidence,
+            data_availability_level=analysis.data_level,
+            coi_disclosed=analysis.coi_disclosed,
+            trial_registered=analysis.trial_registered,
+            trial_results_compliant=analysis.results_compliant,
+            risk_indicators=analysis.indicators,
+            full_text_analyzed=analysis.full_text_analyzed,
             tier_downgrade_applied=(
                 self.settings.tier_downgrade_amount if risk_level == TransparencyRisk.HIGH else 0
             ),
@@ -825,43 +824,25 @@ class TransparencyAnalyzer:
 
     # --- Analysis sub-steps ---
 
-    def _check_crossref(
-        self,
-        client: Any,
-        doi: str,
-        score: int,
-        industry_funding: bool,
-        industry_confidence: float,
-        indicators: list[str],
-        funder_info_scored: bool,
-    ) -> tuple[int, bool, float, list[str], bool]:
-        """Query CrossRef for funder information.
+    def _check_crossref(self, client: Any, doi: str, analysis: _Analysis) -> None:
+        """Query CrossRef for funder information and fold it into *analysis*.
 
-        Returns ``(score, industry_funding, industry_confidence, indicators,
-        funder_info_scored)``. The last element tells the caller whether
-        ``SCORE_FUNDER_INFO`` has been spent, so the PubMed grant list cannot
-        award it a second time.
-
-        It is threaded *in* as well as out, like every other accumulator here.
-        Computing it fresh would be correct only for as long as this stays the
-        first funder source consulted, and would silently double-score the
-        component the day a second one is added ahead of it.
+        ``SCORE_FUNDER_INFO`` is spent through
+        :meth:`_Analysis.award_funder_info`, so it stays a once-per-analysis
+        component however many funder sources run and in whatever order — this
+        step is merely the first one today.
         """
         cr = self._query_crossref(client, doi)
         if cr:
             funders = cr.get("message", {}).get("funder", [])
             if funders:
-                if not funder_info_scored:
-                    score += SCORE_FUNDER_INFO
-                    funder_info_scored = True
+                analysis.award_funder_info()
                 for funder in funders:
-                    if _is_industry_funder(funder.get("name") or ""):
-                        industry_funding = True
-                        industry_confidence = max(industry_confidence, DEFAULT_INDUSTRY_CONFIDENCE)
-                        indicators.append(f"Industry funder: {funder.get('name')}")
+                    name = funder.get("name") or ""
+                    if _is_industry_funder(name):
+                        analysis.note_industry_funder(name)
             else:
-                indicators.append("No funder information in CrossRef")
-        return score, industry_funding, industry_confidence, indicators, funder_info_scored
+                analysis.indicators.append("No funder information in CrossRef")
 
     def _fetch_europepmc(
         self,
@@ -876,36 +857,28 @@ class TransparencyAnalyzer:
             return self._query_europepmc(client, f"EXT_ID:{pmid}")
         return None
 
-    def _check_europepmc(
-        self,
-        client: Any,
-        epmc: dict,
-        score: int,
-        indicators: list[str],
-    ) -> tuple[bool | None, str, int, list[str], bool, bool]:
-        """Extract COI and data-availability signals from EuropePMC.
+    def _check_europepmc(self, client: Any, epmc: dict, analysis: _Analysis) -> None:
+        """Fold COI and data-availability signals from EuropePMC into *analysis*.
 
         COI and data-availability statements live in a paper's full text, not
         its abstract.  We therefore fetch the full text from EuropePMC when it
         is available (open-access articles) and scan that; we fall back to the
         abstract only when full text cannot be retrieved.
 
-        Returns ``(coi_disclosed, data_level, score, indicators,
-        full_text_analyzed, industry_coi)`` where ``coi_disclosed`` is
-        tri-state: ``True`` (statement found), ``False`` (full text scanned,
-        none found), or ``None`` (undeterminable — full text unavailable and
-        no abstract signal). ``industry_coi`` is ``True`` when the full-text
-        COI/disclosure statement discloses industry ties (consultancies,
-        speaker fees, …); it is only ever set when full text was analyzed.
-        """
-        coi_disclosed: bool | None = None
-        data_level = "unknown"
-        full_text_analyzed = False
-        industry_coi = False
+        Sets ``coi_disclosed`` tri-state: ``True`` (statement found), ``False``
+        (full text scanned, none found), or — left as it was — ``None``
+        (undeterminable: full text unavailable and no abstract signal).
 
+        Industry ties disclosed in the COI statement itself (consultancies,
+        speaker fees, …) are recorded through
+        :meth:`_Analysis.note_industry_coi`, which is why this step needs no
+        return value: it is only ever reached when full text was analyzed, and
+        the confidence that belongs to a prose signal is the method's business
+        rather than the caller's.
+        """
         result_list = epmc.get("resultList", {}).get("result", [])
         if not result_list:
-            return coi_disclosed, data_level, score, indicators, full_text_analyzed, industry_coi
+            return
 
         record = result_list[0]
         abstract_text = (record.get("abstractText") or "").lower()
@@ -921,7 +894,7 @@ class TransparencyAnalyzer:
             )
             if full_text:
                 search_text = full_text.lower()
-                full_text_analyzed = True
+                analysis.full_text_analyzed = True
 
         # COI detection (a COI/disclosure statement counts as "disclosed",
         # including a statement that there is nothing to declare). A non-blank
@@ -930,39 +903,45 @@ class TransparencyAnalyzer:
         # scan remains the fallback for untagged text.
         tagged_coi = _extract_tagged_coi_text(search_text)
         if tagged_coi.strip() or any(pat in search_text for pat in _COI_PATTERNS):
-            coi_disclosed = True
-            score += SCORE_COI_DISCLOSED
-        elif full_text_analyzed:
+            analysis.coi_disclosed = True
+            analysis.score += SCORE_COI_DISCLOSED
+        elif analysis.full_text_analyzed:
             # Full text inspected and no COI statement found -> explicitly absent.
-            coi_disclosed = False
-            indicators.append(_INDICATOR_NO_COI_IN_FULLTEXT)
+            analysis.coi_disclosed = False
+            analysis.indicators.append(_INDICATOR_NO_COI_IN_FULLTEXT)
         else:
             # Could not inspect full text; status is genuinely unknown.
-            indicators.append(_INDICATOR_COI_UNKNOWN)
+            analysis.indicators.append(_INDICATOR_COI_UNKNOWN)
+
+        # Data availability. The level is found into a local and published
+        # once, rather than assigned to the carrier and read back to decide the
+        # credit: reading it back would score whatever the field happened to
+        # hold on the way in, which is the positional hazard `_Analysis` exists
+        # to remove, respelled as state. This step is the field's only producer
+        # today; a second one has to bring a merge rule with it.
+        data_level = "unknown"
+        for pattern, level in _DATA_PATTERNS.items():
+            if pattern in search_text:
+                data_level = level
+                break
+        analysis.data_level = data_level
+        if data_level == "full_open":
+            analysis.score += SCORE_DATA_FULL_OPEN
+        elif data_level == "on_request":
+            analysis.score += SCORE_DATA_ON_REQUEST
+        elif data_level == "not_available":
+            analysis.indicators.append("Data explicitly not available")
 
         # Industry ties disclosed in the COI statement itself ("consultant
         # for X", "speaker fees from Y"). Scanned only in full text — an
         # abstract rarely carries a real disclosure statement — and only
         # within the COI/disclosure region to avoid false positives from
-        # references or affiliations.
-        if full_text_analyzed:
-            industry_coi = _discloses_industry_ties(
-                _extract_coi_text(search_text, tagged=tagged_coi)
-            )
-
-        # Data availability
-        for pattern, level in _DATA_PATTERNS.items():
-            if pattern in search_text:
-                data_level = level
-                break
-        if data_level == "full_open":
-            score += SCORE_DATA_FULL_OPEN
-        elif data_level == "on_request":
-            score += SCORE_DATA_ON_REQUEST
-        elif data_level == "not_available":
-            indicators.append("Data explicitly not available")
-
-        return coi_disclosed, data_level, score, indicators, full_text_analyzed, industry_coi
+        # references or affiliations. Folded in last so the indicator order
+        # stays COI, then data availability, then this.
+        if analysis.full_text_analyzed and _discloses_industry_ties(
+            _extract_coi_text(search_text, tagged=tagged_coi)
+        ):
+            analysis.note_industry_coi()
 
     def _fetch_europepmc_fulltext(
         self,
@@ -998,33 +977,26 @@ class TransparencyAnalyzer:
             return _PubMedSignals()
         return _parse_pubmed_signals(xml_text)
 
-    def _check_openalex(
-        self,
-        client: Any,
-        doi: str,
-        score: int,
-    ) -> int:
-        """Check open-access status and citation count via OpenAlex."""
+    def _check_openalex(self, client: Any, doi: str, analysis: _Analysis) -> None:
+        """Fold open-access status and citation count from OpenAlex into *analysis*."""
         oa = self._query_openalex(client, doi)
         if oa:
             oa_info = oa.get("open_access", {})
             if oa_info.get("is_oa"):
-                score += SCORE_OPEN_ACCESS
+                analysis.score += SCORE_OPEN_ACCESS
             if oa.get("cited_by_count", 0) > 0:
-                score += SCORE_CITED
-        return score
+                analysis.score += SCORE_CITED
 
     def _check_trial_registration(
         self,
         client: Any,
         pmid: str | None,
         doi: str | None,
-        score: int,
-        indicators: list[str],
+        analysis: _Analysis,
         *,
         epmc: dict | None = None,
         pubmed: _PubMedSignals | None = None,
-    ) -> tuple[bool, bool, int, list[str]]:
+    ) -> None:
         """Check trial registration and, where possible, results posting.
 
         PubMed's ``DataBankList`` is preferred over the abstract heuristic when
@@ -1039,26 +1011,29 @@ class TransparencyAnalyzer:
         way.
         """
         pubmed = pubmed or _PubMedSignals()
-        trial_registered = False
-        results_compliant = False
 
         ct_ids = list(pubmed.trial_accessions) or self._find_trial_ids(client, pmid, doi, epmc=epmc)
         if ct_ids or pubmed.registration_not_checkable:
-            trial_registered = True
-            score += SCORE_TRIAL_REGISTERED
+            analysis.trial_registered = True
+            analysis.score += SCORE_TRIAL_REGISTERED
 
         if ct_ids:
-            for tid in ct_ids[:MAX_TRIAL_IDS_TO_CHECK]:
-                if self._check_trial_results(client, tid):
-                    results_compliant = True
-                    score += SCORE_RESULTS_POSTED
-                    break
-            if not results_compliant:
-                indicators.append(_INDICATOR_NO_POSTED_RESULTS)
+            # `any()` over a generator stops at the first trial with posted
+            # results, as the loop it replaces did. The outcome is this step's
+            # own finding and deliberately not a read of
+            # `analysis.results_compliant`: the indicator below reports that
+            # ClinicalTrials.gov was asked and said no, which a flag arriving
+            # from elsewhere must not be able to retract.
+            compliant = any(
+                self._check_trial_results(client, tid) for tid in ct_ids[:MAX_TRIAL_IDS_TO_CHECK]
+            )
+            if compliant:
+                analysis.results_compliant = True
+                analysis.score += SCORE_RESULTS_POSTED
+            else:
+                analysis.indicators.append(_INDICATOR_NO_POSTED_RESULTS)
         elif pubmed.registration_not_checkable:
-            indicators.append(_INDICATOR_RESULTS_NOT_CHECKABLE)
-
-        return trial_registered, results_compliant, score, indicators
+            analysis.indicators.append(_INDICATOR_RESULTS_NOT_CHECKABLE)
 
     # --- API query helpers ---
 

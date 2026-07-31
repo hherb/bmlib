@@ -23,13 +23,18 @@ import pytest
 from bmlib.transparency.analyzer import (
     _INDICATOR_COI_IN_PUBMED,
     _INDICATOR_COI_UNKNOWN,
+    _INDICATOR_INDUSTRY_COI,
     _INDICATOR_NO_COI_IN_FULLTEXT,
     _INDICATOR_NO_POSTED_RESULTS,
     _INDICATOR_RESULTS_NOT_CHECKABLE,
     DEFAULT_INDUSTRY_CONFIDENCE,
+    SCORE_CITED,
     SCORE_COI_DISCLOSED,
     SCORE_FUNDER_INFO,
+    SCORE_OPEN_ACCESS,
+    TEXT_INDUSTRY_CONFIDENCE,
     TransparencyAnalyzer,
+    _Analysis,
     _merge_pubmed_signals,
     _parse_pubmed_signals,
     _PubMedSignals,
@@ -163,6 +168,77 @@ def _epmc_record(abstract="", in_epmc="Y"):
     }
 
 
+class TestAnalysisCarrier:
+    """The accumulator carrier's own semantics, before anything uses it."""
+
+    def test_defaults_match_a_fresh_analysis(self):
+        analysis = _Analysis()
+        assert analysis.score == 0
+        assert analysis.indicators == []
+        assert analysis.industry_funding is False
+        assert analysis.industry_confidence == 0.0
+        assert analysis.data_level == "unknown"
+        assert analysis.coi_disclosed is None
+        assert analysis.trial_registered is False
+        assert analysis.results_compliant is False
+        assert analysis.full_text_analyzed is False
+        assert analysis.funder_info_scored is False
+
+    def test_each_carrier_gets_its_own_indicator_list(self):
+        # A mutable default shared across instances would leak one analysis's
+        # findings into the next.
+        first, second = _Analysis(), _Analysis()
+        first.indicators.append("x")
+        assert second.indicators == []
+
+    def test_funder_info_is_awarded_once(self):
+        analysis = _Analysis()
+        analysis.award_funder_info()
+        analysis.award_funder_info()
+        assert analysis.score == SCORE_FUNDER_INFO
+        assert analysis.funder_info_scored is True
+
+    def test_funder_info_is_not_awarded_when_already_spent(self):
+        # The hazard the method exists for: whichever source runs first spends
+        # the component, and the second must not spend it again.
+        analysis = _Analysis(funder_info_scored=True)
+        analysis.award_funder_info()
+        assert analysis.score == 0
+
+    def test_an_industry_funder_is_recorded_with_structured_confidence(self):
+        analysis = _Analysis()
+        analysis.note_industry_funder("Genentech Inc.")
+        assert analysis.industry_funding is True
+        assert analysis.industry_confidence == DEFAULT_INDUSTRY_CONFIDENCE
+        assert analysis.indicators == ["Industry funder: Genentech Inc."]
+
+    def test_one_funder_is_one_indicator_however_often_it_is_reported(self):
+        analysis = _Analysis()
+        analysis.note_industry_funder("Genentech Inc.")
+        analysis.note_industry_funder("Genentech Inc.")
+        assert analysis.indicators == ["Industry funder: Genentech Inc."]
+
+    def test_a_funder_never_lowers_an_established_confidence(self):
+        analysis = _Analysis(industry_confidence=0.95)
+        analysis.note_industry_funder("Genentech Inc.")
+        assert analysis.industry_confidence == 0.95
+
+    def test_an_industry_coi_is_weaker_evidence_than_a_funder_record(self):
+        analysis = _Analysis()
+        analysis.note_industry_coi()
+        assert analysis.industry_funding is True
+        assert analysis.industry_confidence == TEXT_INDUSTRY_CONFIDENCE
+        assert analysis.indicators == [_INDICATOR_INDUSTRY_COI]
+
+    def test_a_coi_signal_never_lowers_a_funder_record_s_confidence(self):
+        # Arrival order must not decide the confidence: a structured funder
+        # record outranks COI prose whichever is seen first.
+        analysis = _Analysis()
+        analysis.note_industry_funder("Genentech Inc.")
+        analysis.note_industry_coi()
+        assert analysis.industry_confidence == DEFAULT_INDUSTRY_CONFIDENCE
+
+
 class TestCheckEuropePMC:
     """Tests that COI/data-availability are read from full text, not abstract."""
 
@@ -171,31 +247,28 @@ class TestCheckEuropePMC:
         client = _FakeFullTextClient(
             "<article>The authors declare no conflict of interest.</article>"
         )
-        coi, _level, score, _ind, ft, _ind_coi = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert coi is True
-        assert ft is True
-        assert score == 10  # SCORE_COI_DISCLOSED
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is True
+        assert analysis.full_text_analyzed is True
+        assert analysis.score == 10  # SCORE_COI_DISCLOSED
 
     def test_coi_absent_in_full_text(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient("<article>No disclosure section here.</article>")
-        coi, _level, _score, _ind, ft, _ind_coi = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert coi is False  # full text scanned, explicitly absent
-        assert ft is True
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is False  # full text scanned, explicitly absent
+        assert analysis.full_text_analyzed is True
 
     def test_coi_unknown_when_no_full_text(self):
         analyzer = TransparencyAnalyzer()
         # inEPMC == "N" so no full text is fetched, abstract has no COI signal.
         client = _FakeFullTextClient(None)
-        coi, _level, _score, _ind, ft, _ind_coi = analyzer._check_europepmc(
-            client, _epmc_record(in_epmc="N"), score=0, indicators=[]
-        )
-        assert coi is None  # undeterminable, not "absent"
-        assert ft is False
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(in_epmc="N"), analysis)
+        assert analysis.coi_disclosed is None  # undeterminable, not "absent"
+        assert analysis.full_text_analyzed is False
 
 
 class TestStructuralCOIDetection:
@@ -213,13 +286,12 @@ class TestStructuralCOIDetection:
     def test_tagged_section_without_cue_phrase_counts_as_disclosed(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(self._TAGGED_CUELESS_XML)
-        coi, _level, score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert coi is True  # the tag is structural proof of a disclosure
-        assert industry is True  # and its content discloses industry ties
-        assert score == 10  # SCORE_COI_DISCLOSED credited exactly once
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.coi_disclosed is True  # the tag is structural proof of a disclosure
+        assert analysis.industry_funding is True  # and its content discloses industry ties
+        assert analysis.score == 10  # SCORE_COI_DISCLOSED credited exactly once
 
     def test_tagged_section_with_cue_phrase_scores_exactly_once(self):
         # Structural and cue-phrase evidence together must not double-credit.
@@ -228,11 +300,10 @@ class TestStructuralCOIDetection:
             '<article><back><fn-group><fn fn-type="COI-statement"><p>The authors '
             "declare no competing interests.</p></fn></fn-group></back></article>"
         )
-        coi, _level, score, _ind, ft, _industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert coi is True
-        assert score == 10  # SCORE_COI_DISCLOSED, once
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is True
+        assert analysis.score == 10  # SCORE_COI_DISCLOSED, once
 
     def test_empty_tagged_section_is_not_a_disclosure(self):
         # A COI container with no statement text proves nothing.
@@ -241,12 +312,11 @@ class TestStructuralCOIDetection:
             '<article><back><fn-group><fn fn-type="COI-statement"><p> </p></fn>'
             "</fn-group></back></article>"
         )
-        coi, _level, score, _ind, ft, _industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert coi is False
-        assert score == 0
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.coi_disclosed is False
+        assert analysis.score == 0
 
     def test_empty_tagged_section_does_not_mask_untagged_disclosure(self):
         # A whitespace-only COI container must not stop the cue-phrase
@@ -258,13 +328,12 @@ class TestStructuralCOIDetection:
             "</fn-group><p>Conflict of interest: Dr X received speaker fees "
             "from Pfizer.</p></back></article>"
         )
-        coi, _level, score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert coi is True
-        assert industry is True
-        assert score == 10
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.coi_disclosed is True
+        assert analysis.industry_funding is True
+        assert analysis.score == 10
 
 
 class TestIndustryCOIDetection:
@@ -286,11 +355,10 @@ class TestIndustryCOIDetection:
     def test_industry_coi_in_tagged_statement_detected(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(self._TAGGED_COI_XML)
-        coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is True
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is True
 
     def test_untagged_prose_coi_statement_detected(self):
         analyzer = TransparencyAnalyzer()
@@ -298,23 +366,21 @@ class TestIndustryCOIDetection:
             "<article><p>Competing interests: Dr Y is an employee of AcmePharma "
             "and serves on the advisory board of BioCorp.</p></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is True
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is True
 
     def test_neutral_coi_statement_not_flagged(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(
             "<article>The authors declare no conflict of interest.</article>"
         )
-        coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert coi is True
-        assert ft is True
-        assert industry is False
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is True
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is False
 
     def test_keywords_outside_coi_section_not_flagged(self):
         # "advisory board" in the methods of a community-engagement study must
@@ -326,11 +392,10 @@ class TestIndustryCOIDetection:
             '<back><fn-group><fn fn-type="COI-statement"><p>The authors declare no '
             "competing interests.</p></fn></fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is False
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is False
 
     def test_enumerated_denial_not_flagged(self):
         # ICMJE-style disclosures often enumerate the relationship types they
@@ -341,11 +406,10 @@ class TestIndustryCOIDetection:
             "authors served as a consultant for, received speaker fees from, or "
             "sat on the advisory board of any company.</p></fn></fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is False
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is False
 
     def test_mixed_disclosure_still_flagged(self):
         # A denial sentence next to a genuine disclosure sentence must still flag.
@@ -355,11 +419,10 @@ class TestIndustryCOIDetection:
             "consultant for Pfizer. The remaining authors declare no competing "
             "interests.</p></fn></fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is True
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is True
 
     def test_non_industry_employee_not_flagged(self):
         # "Employee of" a government body is a genuine disclosure but not an
@@ -370,11 +433,10 @@ class TestIndustryCOIDetection:
             "employee of the National Institutes of Health.</p></fn>"
             "</fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is False
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is False
 
     def test_academic_employee_not_flagged(self):
         # University employment disclosed in a COI statement is not industry.
@@ -384,11 +446,10 @@ class TestIndustryCOIDetection:
             "employee of the University of Melbourne.</p></fn>"
             "</fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is False
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is False
 
     def test_editorial_advisory_board_not_flagged(self):
         # Journal editorial advisory board membership is not an industry tie.
@@ -398,11 +459,10 @@ class TestIndustryCOIDetection:
             "the editorial advisory board of the Journal of Cardiology.</p></fn>"
             "</fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is False
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is False
 
     def test_industry_tie_alongside_non_industry_employment_still_flagged(self):
         # The non-industry guard must not swallow a genuine industry tie in
@@ -413,11 +473,10 @@ class TestIndustryCOIDetection:
             "employee of the National Institutes of Health. TR has served on the "
             "advisory board of AcmePharma.</p></fn></fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is True
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is True
 
     def test_single_quoted_jats_attribute_detected(self):
         # JATS attributes may be single-quoted; the tagged-section route must
@@ -428,25 +487,24 @@ class TestIndustryCOIDetection:
             "<article><back><fn-group><fn fn-type='COI-statement'><p>Dr X has "
             "served as a consultant for Pfizer.</p></fn></fn-group></back></article>"
         )
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
-            client, _epmc_record(), score=0, indicators=[]
-        )
-        assert ft is True
-        assert industry is True
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.industry_funding is True
 
     def test_no_full_text_means_no_industry_signal(self):
         # Text-derived industry detection requires the full text; an abstract
         # alone (rarely carrying a real COI statement) must not trigger it.
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(None)
-        _coi, _level, _score, _ind, ft, industry = analyzer._check_europepmc(
+        analysis = _Analysis()
+        analyzer._check_europepmc(
             client,
             _epmc_record(in_epmc="N", abstract="Conflict of interest: consultant for Pfizer."),
-            score=0,
-            indicators=[],
+            analysis,
         )
-        assert ft is False
-        assert industry is False
+        assert analysis.full_text_analyzed is False
+        assert analysis.industry_funding is False
 
     def test_analyze_ors_fulltext_signal_into_result(self, monkeypatch):
         import httpx
@@ -613,12 +671,11 @@ class TestCheckTrialRegistration:
                 raise AssertionError("results endpoint must not be queried for a review")
 
         epmc = _epmc_record("We included three trials (NCT01111111, NCT02222222, NCT03333333).")
-        registered, compliant, score, indicators = analyzer._check_trial_registration(
-            _Client(), pmid="123", doi=None, score=0, indicators=[], epmc=epmc
-        )
-        assert registered is False
-        assert compliant is False
-        assert score == 0
+        analysis = _Analysis()
+        analyzer._check_trial_registration(_Client(), "123", None, analysis, epmc=epmc)
+        assert analysis.trial_registered is False
+        assert analysis.results_compliant is False
+        assert analysis.score == 0
 
     def test_registered_rct_credited_registration_score(self):
         analyzer = TransparencyAnalyzer()
@@ -628,11 +685,61 @@ class TestCheckTrialRegistration:
                 return _FakeResponse(status_code=200, json_data={"hasResults": False})
 
         epmc = _epmc_record("ClinicalTrials.gov number, NCT01206062.")
-        registered, _compliant, score, _indicators = analyzer._check_trial_registration(
-            _Client(), pmid="123", doi=None, score=0, indicators=[], epmc=epmc
-        )
-        assert registered is True
-        assert score == 20  # SCORE_TRIAL_REGISTERED
+        analysis = _Analysis()
+        analyzer._check_trial_registration(_Client(), "123", None, analysis, epmc=epmc)
+        assert analysis.trial_registered is True
+        assert analysis.score == 20  # SCORE_TRIAL_REGISTERED
+
+    def test_an_inbound_results_flag_does_not_stand_in_for_this_check(self):
+        # `_INDICATOR_NO_POSTED_RESULTS` reports what *this* step established:
+        # it asked ClinicalTrials.gov and was told there are no results. A
+        # `results_compliant` that arrived True must not suppress that, or a
+        # later-added step writing the field would silently retract a finding
+        # it knows nothing about.
+        analyzer = TransparencyAnalyzer()
+
+        class _Client:
+            def get(self, url, **kwargs):
+                return _FakeResponse(status_code=200, json_data={"hasResults": False})
+
+        epmc = _epmc_record("ClinicalTrials.gov number, NCT01206062.")
+        analysis = _Analysis(results_compliant=True)
+        analyzer._check_trial_registration(_Client(), "123", None, analysis, epmc=epmc)
+        assert _INDICATOR_NO_POSTED_RESULTS in analysis.indicators
+
+
+class TestCheckOpenAlex:
+    """The one sub-step nothing else in this file calls directly."""
+
+    class _Client:
+        """Serves one OpenAlex payload and records that it was asked."""
+
+        def __init__(self, payload: dict):
+            self._payload = payload
+            self.requested: list[str] = []
+
+        def get(self, url, **kwargs):
+            self.requested.append(url)
+            return _FakeResponse(status_code=200, json_data=self._payload)
+
+    def test_both_credits_add_to_the_score_already_accumulated(self):
+        # This step returned a bare `int` before the carrier, so the migration
+        # hazard is assigning `analysis.score` instead of adding to it — which
+        # a zero starting score would hide.
+        analysis = _Analysis(score=SCORE_FUNDER_INFO)
+        client = self._Client({"open_access": {"is_oa": True}, "cited_by_count": 7})
+        TransparencyAnalyzer()._check_openalex(client, "10.1234/x", analysis)
+        assert analysis.score == SCORE_FUNDER_INFO + SCORE_OPEN_ACCESS + SCORE_CITED
+
+    def test_an_uncited_closed_work_earns_nothing(self):
+        # `_query_openalex` swallows every exception, so an unchanged score on
+        # its own would read the same way if the request had failed outright.
+        # Asserting the query was actually made is what separates the two.
+        analysis = _Analysis()
+        client = self._Client({"open_access": {"is_oa": False}, "cited_by_count": 0})
+        TransparencyAnalyzer()._check_openalex(client, "10.1234/x", analysis)
+        assert any("openalex" in url for url in client.requested)
+        assert analysis.score == 0
 
 
 class TestDataAvailabilityPatterns:
@@ -641,28 +748,28 @@ class TestDataAvailabilityPatterns:
     def test_not_available_upon_request_is_not_available(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(None)
-        _coi, level, score, _ind, _ft, _ind_coi = analyzer._check_europepmc(
+        analysis = _Analysis()
+        analyzer._check_europepmc(
             client,
             _epmc_record("The data are not available upon reasonable request.", in_epmc="N"),
-            score=0,
-            indicators=[],
+            analysis,
         )
-        assert level == "not_available"
-        assert score == 0  # no on_request credit awarded
+        assert analysis.data_level == "not_available"
+        assert analysis.score == 0  # no on_request credit awarded
 
     def test_available_upon_request_still_credited(self):
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(None)
-        _coi, level, score, _ind, _ft, _ind_coi = analyzer._check_europepmc(
+        analysis = _Analysis()
+        analyzer._check_europepmc(
             client,
             _epmc_record(
                 "Data are available from the authors upon reasonable request.", in_epmc="N"
             ),
-            score=0,
-            indicators=[],
+            analysis,
         )
-        assert level == "on_request"
-        assert score == 10  # SCORE_DATA_ON_REQUEST
+        assert analysis.data_level == "on_request"
+        assert analysis.score == 10  # SCORE_DATA_ON_REQUEST
 
     def test_mixed_statement_negation_takes_precedence(self):
         # Deliberate: when an abstract carries both a sharing cue and a
@@ -670,17 +777,34 @@ class TestDataAvailabilityPatterns:
         # negation-first ordering of _DATA_PATTERNS wins.
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(None)
-        _coi, level, score, _ind, _ft, _ind_coi = analyzer._check_europepmc(
+        analysis = _Analysis()
+        analyzer._check_europepmc(
             client,
             _epmc_record(
                 "Analysis code is available on GitHub; individual patient data are not available.",
                 in_epmc="N",
             ),
-            score=0,
-            indicators=[],
+            analysis,
         )
-        assert level == "not_available"
-        assert score == 0
+        assert analysis.data_level == "not_available"
+        assert analysis.score == 0
+
+    def test_a_level_this_step_did_not_find_is_not_scored(self):
+        # The step is the only producer of `data_level`, so it publishes what
+        # it found rather than reading the carrier back to decide the credit.
+        # Reading it back would let a level set by some later-added step be
+        # scored here as if EuropePMC's text had shown it — the positional
+        # hazard the carrier was introduced to remove, respelled as state.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(None)
+        analysis = _Analysis(data_level="full_open")
+        analyzer._check_europepmc(
+            client,
+            _epmc_record("This abstract says nothing about data.", in_epmc="N"),
+            analysis,
+        )
+        assert analysis.data_level == "unknown"
+        assert analysis.score == 0
 
 
 class TestAnalyzeApiReachability:
@@ -1132,6 +1256,21 @@ class _RecordingClient:
         raise AssertionError(f"no request matched {fragment!r}")
 
 
+def _install_fake_client(monkeypatch: pytest.MonkeyPatch, client: _RecordingClient) -> None:
+    """Serve *client* to every ``analyze()`` call and drop the rate limit.
+
+    Module-level rather than a helper on one test class, because three classes
+    install a fake client this way and reaching across classes for it couples
+    them for no reason.
+    """
+    import httpx
+
+    from bmlib.transparency import analyzer as analyzer_mod
+
+    monkeypatch.setattr(analyzer_mod, "_MIN_REQUEST_INTERVAL_SECONDS", 0.0)
+    monkeypatch.setattr(httpx, "Client", lambda *a, **k: client)
+
+
 def _epmc_payload(*, abstract: str = "", pmid: str | None = None, in_epmc: str = "N") -> dict:
     record: dict = {"abstractText": abstract, "inEPMC": in_epmc}
     if pmid is not None:
@@ -1258,25 +1397,16 @@ class TestPubMedRequest:
         # PubMed answering alone means the analysis measured something, so the
         # result must be scored rather than reported UNKNOWN.
         client = _RecordingClient(pubmed=_pubmed_xml(coi="None declared."))
-        self._install(monkeypatch, client)
+        _install_fake_client(monkeypatch, client)
         result = TransparencyAnalyzer().analyze("doc1", pmid="12345678")
         assert result.risk_level != TransparencyRisk.UNKNOWN
         assert result.unknown_reason is None
 
     # --- helpers ---
 
-    @staticmethod
-    def _install(monkeypatch, client):
-        import httpx
-
-        from bmlib.transparency import analyzer as analyzer_mod
-
-        monkeypatch.setattr(analyzer_mod, "_MIN_REQUEST_INTERVAL_SECONDS", 0.0)
-        monkeypatch.setattr(httpx, "Client", lambda *a, **k: client)
-
     def _run(self, monkeypatch, analyzer, *, pmid=None, doi=None, epmc=None):
         client = _RecordingClient(epmc=epmc, pubmed=_pubmed_xml())
-        self._install(monkeypatch, client)
+        _install_fake_client(monkeypatch, client)
         analyzer.analyze("doc1", pmid=pmid, doi=doi)
         return client
 
@@ -1284,35 +1414,63 @@ class TestPubMedRequest:
 class TestFunderInfoIsScoredOnce:
     """`SCORE_FUNDER_INFO` is worth 15 points once, across every funder source.
 
-    CrossRef happens to run first today, which is what makes the flag safe to
-    compute fresh there. Threading it in as well as out is what keeps it safe
+    CrossRef happens to run first today, which is what made the flag safe to
+    compute fresh there. `_Analysis.award_funder_info()` is what keeps it safe
     when it no longer does.
     """
 
     def test_crossref_respects_an_already_spent_component(self):
         client = _RecordingClient(crossref={"message": {"funder": [{"name": "Some Trust"}]}})
-        analyzer = TransparencyAnalyzer()
-        score, _, _, _, funder_info_scored = analyzer._check_crossref(
-            client, "10.1234/x", 0, False, 0.0, [], True
-        )
-        assert score == 0
-        assert funder_info_scored is True
+        analysis = _Analysis(funder_info_scored=True)
+        TransparencyAnalyzer()._check_crossref(client, "10.1234/x", analysis)
+        assert analysis.score == 0
+        assert analysis.funder_info_scored is True
 
     def test_crossref_spends_it_when_nothing_has(self):
         client = _RecordingClient(crossref={"message": {"funder": [{"name": "Some Trust"}]}})
-        analyzer = TransparencyAnalyzer()
-        score, _, _, _, funder_info_scored = analyzer._check_crossref(
-            client, "10.1234/x", 0, False, 0.0, [], False
+        analysis = _Analysis()
+        TransparencyAnalyzer()._check_crossref(client, "10.1234/x", analysis)
+        assert analysis.score == SCORE_FUNDER_INFO
+        assert analysis.funder_info_scored is True
+
+    def test_a_repeated_crossref_funder_is_one_indicator(self):
+        # CrossRef lists one record per award, so an organisation funding two
+        # awards on one paper appears twice. The indicator list is a set of
+        # findings: one funder is one finding.
+        client = _RecordingClient(
+            crossref={
+                "message": {"funder": [{"name": "Genentech Inc."}, {"name": "Genentech Inc."}]}
+            }
         )
-        assert score == SCORE_FUNDER_INFO
-        assert funder_info_scored is True
+        analysis = _Analysis()
+        TransparencyAnalyzer()._check_crossref(client, "10.1234/x", analysis)
+        assert analysis.indicators == ["Industry funder: Genentech Inc."]
+
+    def test_two_sources_reporting_funders_spend_the_component_once(self, monkeypatch):
+        # CrossRef funder records *and* PubMed grants on the same paper. The
+        # sub-step tests above pin each in isolation; this pins the composition
+        # that analyze() actually runs.
+        #
+        # The assertion is on the whole score, which works only because this
+        # fixture scores nothing else: the abstract is empty, the record is not
+        # in EuropePMC, and no OpenAlex or ClinicalTrials.gov response is
+        # served. Keep it that way — a fixture that starts scoring elsewhere
+        # breaks this test for a reason it is not about.
+        client = _RecordingClient(
+            crossref={"message": {"funder": [{"name": "Some Trust"}]}},
+            epmc=_epmc_payload(pmid="1"),
+            pubmed=_pubmed_xml(agencies=("Another Trust",)),
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc1", doi="10.1234/x")
+        assert result.transparency_score == SCORE_FUNDER_INFO
 
 
 class TestPubMedSignalMerge:
     """How PubMed's signals combine with the ones already gathered."""
 
     def _analyze(self, monkeypatch, client, **kwargs):
-        TestPubMedRequest._install(monkeypatch, client)
+        _install_fake_client(monkeypatch, client)
         return TransparencyAnalyzer().analyze("doc1", **kwargs)
 
     def test_coi_statement_establishes_disclosure_when_full_text_is_unavailable(self, monkeypatch):
@@ -1449,21 +1607,20 @@ class TestPubMedSignalMerge:
         result = self._analyze(monkeypatch, client, doi="10.1234/x")
         assert result.risk_indicators.count("Industry funder: Genentech Inc.") == 1
 
-    def test_the_merge_does_not_mutate_the_caller_s_indicators(self):
-        # The COI branch rebinds while the funder branch appends, so a caller
-        # that ignored the return value would previously see a half-applied
-        # merge. Copying on the way in makes the two branches agree.
-        original = ["No funder information in CrossRef"]
+    def test_the_merge_applies_both_of_its_branches_to_one_list(self):
+        # The COI branch retracts lines while the funder branch appends. When
+        # the merge returned a copy, a caller that ignored the return value
+        # saw a half-applied merge; mutating the carrier makes that
+        # unrepresentable. This pins that both branches land together.
+        analysis = _Analysis(indicators=[_INDICATOR_NO_COI_IN_FULLTEXT], coi_disclosed=False)
         _merge_pubmed_signals(
             _PubMedSignals(coi_statement=True, funders=("Genentech Inc.",)),
-            None,
-            0,
-            original,
-            False,
-            0.0,
-            False,
+            analysis,
         )
-        assert original == ["No funder information in CrossRef"]
+        assert _INDICATOR_NO_COI_IN_FULLTEXT not in analysis.indicators
+        assert _INDICATOR_COI_IN_PUBMED in analysis.indicators
+        assert "Industry funder: Genentech Inc." in analysis.indicators
+        assert analysis.coi_disclosed is True
 
     def test_an_unreachable_pubmed_is_survivable(self, monkeypatch):
         client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=None)

@@ -380,7 +380,7 @@ Note that the score is a *transparency* measure, not a quality measure, and it i
 
 ### Signal 1 — structured CrossRef funders (confidence 0.8)
 
-Each CrossRef funder `name` is passed to `_is_industry_funder()`, the single predicate behind both structured funder sources. A hit appends the indicator `f"Industry funder: {name}"` and sets `industry_funding_confidence` to `DEFAULT_INDUSTRY_CONFIDENCE` (0.8). It is applied **only** to funder names — short org strings, never running prose.
+Each CrossRef funder `name` is passed to `_is_industry_funder()`, the single predicate behind both structured funder sources. A hit is recorded through `_Analysis.note_industry_funder()`, which appends the indicator `f"Industry funder: {name}"` and sets `industry_funding_confidence` to `DEFAULT_INDUSTRY_CONFIDENCE` (0.8). It is applied **only** to funder names — short org strings, never running prose.
 
 **The vocabulary is two kinds of thing, and merging them back into one is a bug.**
 
@@ -421,7 +421,7 @@ Rejected, each for a recorded reason: `"co"` (4 TP / 1 FP — it collides with t
 
 In practice PubMed's `GrantList` is dominated by public funders, so this signal fires rarely. Its real value is the funder *information* it supplies for papers CrossRef cannot be asked about — a PMID-only analysis had no funder signal at all before it.
 
-Agencies are deduplicated twice over, because PubMed emits one `<Grant>` element per *grant number*: an agency funding four grants on one paper appears four times in the XML. `_parse_pubmed_signals()` collapses those to one entry, and the merge step also skips a funder CrossRef has already named. One funder is one indicator line, however many grants and sources report it.
+Agencies are deduplicated twice over, because PubMed emits one `<Grant>` element per *grant number*: an agency funding four grants on one paper appears four times in the XML. `_parse_pubmed_signals()` collapses those to one entry, and `_Analysis.note_industry_funder()` skips a line already present — so a funder CrossRef has already named is not repeated. **That dedup is now symmetric (unreleased):** CrossRef also lists one record per award, and its own repeats used to produce one indicator line each. One funder is one indicator line, however many awards and sources report it.
 
 ### Signal 3 — industry ties in the COI statement (confidence 0.5) — *new in 0.4.0*
 

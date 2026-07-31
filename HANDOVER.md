@@ -1,7 +1,8 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-07-30. **0.6.0 is cut** — `[Unreleased]` is empty and every
-body of work listed below has shipped. 1033 tests passing + 32 skipped._
+_Last updated: 2026-07-31. **0.6.0 is cut.** `[Unreleased]` now holds one
+change — the `_Analysis` carrier (#37) — and nothing else is in flight.
+1048 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -34,7 +35,14 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it will
   not see this release until that pin is widened. That is a downstream change,
   not a bmlib one.
-- **1033 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **Unreleased since 0.6.0:** the `_Analysis` carrier (#37) — `analyze()`'s ten
+  accumulators moved off 4-to-6-element tuples onto one mutable dataclass every
+  sub-step mutates in place. It carries one behaviour change: a funder named
+  repeatedly by CrossRef now yields one `Industry funder: X` indicator instead
+  of one per award record, which is the rule PubMed's grant list already
+  followed. Only `risk_indicators` length moves — no score, no
+  `industry_funding_detected`, no risk level.
+- **1048 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -50,17 +58,12 @@ Nothing is blocked on anything else.
 
 ### Open GitHub issues
 
-- **#37 — `analyze()` threads eight accumulators through 4-to-6-element
-  tuples.** Nothing is broken; a mis-ordered unpacking would be a silent
-  type-compatible swap, and adding one boolean meant widening two signatures.
-  A mutable `_Analysis` dataclass mutated in place would remove the arity
-  entirely. Worth doing before the next signal source lands in `analyze()`.
-
-#37 is the only issue still open. #18 and #21 closed with PR #35, #33 with
-PR #39, and #36 with PR #40 (merged 2026-07-30). Both closed designs stay in
+**None.** #18 and #21 closed with PR #35, #33 with PR #39, #36 with PR #40, and
+#37 with the `_Analysis` carrier. Every closed design stays in
 `docs/superpowers/specs/` as the record of what was rejected and why: for #33,
 raising unconditionally on a non-dict; for #36, word-boundary matching applied
-uniformly across the keyword list.
+uniformly across the keyword list; for #37, a `NamedTuple` carrier (immutable,
+so every step would still rebuild and return it — the arity survives).
 
 ### Worth doing, not yet an issue
 
@@ -69,7 +72,12 @@ uniformly across the keyword list.
   stronger than the current substring scan of the full text. Deliberately left
   out of the PubMed step to keep the data-availability scoring path out of
   that change; `_parse_pubmed_signals()` already walks the databanks, so this
-  is a small follow-up rather than a rewrite.
+  is a small follow-up rather than a rewrite. **This is now the natural next
+  change to `analyze()`, and #37 was done to clear its way:** add the signal by
+  writing to `_Analysis` — do not reintroduce a threaded value, and if it needs
+  a "has this been scored?" flag, give it a named method beside
+  `award_funder_info()` rather than a bare field two call sites must remember
+  to check.
 - **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume this
   release. Read the three non-comparable behaviour changes above first — the
   transparency ones move stored scores, so a project holding historical
@@ -154,6 +162,34 @@ Each was investigated and closed as correct. Reopening them wastes a session.
 - **`_is_industry_funder()` is deliberately not applied to COI prose.**
   `_INDUSTRY_COI_KEYWORDS` stays separate: the org suffixes match far too freely
   in running text, and those phrases never occur in a funder name.
+- **`_merge_pubmed_signals()` mutates the `_Analysis` it is given and returns
+  nothing.** It used to copy `indicators` on the way in and return the copy,
+  because its COI branch rebinds the list while its funder branch appends — so
+  a caller that ignored the return value got a half-applied merge. With no
+  return value that is unrepresentable, and restoring the copy would silently
+  discard the whole merge. Pinned by
+  `test_the_merge_applies_both_of_its_branches_to_one_list`.
+- **Every `analyze()` sub-step takes `_Analysis` and returns `None`, including
+  the two that carry a single value.** `_check_openalex` only ever accumulated
+  `score`, and `_check_europepmc`'s industry-COI finding could plausibly be
+  handed back for the caller to fold. Both are on the carrier anyway: one step
+  threading a value while four mutate is the inconsistency that makes the next
+  contributor guess, and the industry-COI confidence
+  (`TEXT_INDUSTRY_CONFIDENCE` vs. a funder record's 0.8) belongs to the step
+  that found it, not to `analyze()`.
+- **A sub-step publishes its own finding to `_Analysis`; it never reads a field
+  back to decide what it found.** `_check_europepmc` collects the data level
+  into a local and assigns it once, and `_check_trial_registration` decides
+  `_INDICATOR_NO_POSTED_RESULTS` from the `any()` it just ran rather than from
+  `analysis.results_compliant`. Both read the carrier back at first, which is
+  harmless only while each field has exactly one producer — it is the
+  positional-unpacking hazard the carrier was built to remove, respelled as
+  state, and it would have gone live the moment a second producer appeared.
+  The queued `<DataBankList>` data-deposition signal is that second producer
+  for `data_level`, so it has to bring a merge rule (strongest evidence wins,
+  as `industry_confidence` already does) rather than just assigning the field.
+  Pinned by `test_a_level_this_step_did_not_find_is_not_scored` and
+  `test_an_inbound_results_flag_does_not_stand_in_for_this_check`.
 - **`TransparencySettings.filtering_enabled`, `max_concurrent_analyses`,
   `cache_results` are not dead code.** They are orchestration hints for the
   *calling* application. The library analyses one document per call and does
