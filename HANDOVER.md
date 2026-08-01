@@ -1,9 +1,10 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-01. **0.6.0 is cut.** `[Unreleased]` holds the
-`_Analysis` carrier (#37) and data deposition from PubMed's `<DataBankList>`
-— the latter on `feature/databank-data-deposition`, open as a PR against
-`main`. 1114 tests passing + 32 skipped._
+_Last updated: 2026-08-02. **0.6.0 is cut.** `main` is clean — PR #43 (data
+deposition from PubMed's `<DataBankList>`) and PR #46 (the sampler script that
+keeps its allow-lists answerable) are both merged. `[Unreleased]` holds the
+`_Analysis` carrier (#37) and the deposition work. 1114 tests passing + 32
+skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -36,34 +37,28 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it will
   not see this release until that pin is widened. That is a downstream change,
   not a bmlib one.
-- **Unreleased since 0.6.0:** two changes.
-  - The `_Analysis` carrier (#37) — `analyze()`'s ten accumulators moved off
-    4-to-6-element tuples onto one mutable dataclass every sub-step mutates in
-    place. It carries one behaviour change: a funder named repeatedly by
-    CrossRef now yields one `Industry funder: X` indicator instead of one per
-    award record, which is the rule PubMed's grant list already followed.
-    Only `risk_indicators` length moves — no score, no
+- **Unreleased since 0.6.0:** three changes, all merged to `main`.
+  - The `_Analysis` carrier (#37, PR #42) — `analyze()`'s ten accumulators
+    moved off 4-to-6-element tuples onto one mutable dataclass every sub-step
+    mutates in place. It carries one behaviour change: a funder named
+    repeatedly by CrossRef now yields one `Industry funder: X` indicator
+    instead of one per award record, which is the rule PubMed's grant list
+    already followed. Only `risk_indicators` length moves — no score, no
     `industry_funding_detected`, no risk level.
-  - **Data deposition from PubMed's `<DataBankList>`** — see "Current branch"
-    below for where it lives. PubMed's deposition repositories (GenBank, PDB,
-    SRA, Dryad, figshare, BioProject, GEO; dbGaP separately) now feed
-    `data_availability_level` alongside the existing full-text prose scan,
-    merged by rank through `_Analysis.note_data_level()` rather than
-    whichever step ran last. Moves four stored values, none behind a flag —
-    see the design doc's "Behaviour changes" section and the CHANGELOG
-    `[Unreleased]` entry for the exact list. A pre-existing bug rode along:
-    three PubMed trial-registry names (`JMACCT`, `REPEC`, `UMIN CTR`) were
-    missing from `_TRIAL_REGISTRY_NAMES`.
-- **Current branch: `feature/databank-data-deposition`**, open as PR #43
-  against `main`. It passed a whole-branch review, whose one Important finding
-  (the manual still claimed a paywalled paper forfeits its data-availability
-  points — the exact case this feature fixes) and seven minor findings were
-  all addressed before the PR opened. A second review, of the PR itself,
-  raised four more, all fixed on the branch: the deposition allow-lists became
-  one name→level mapping (see "Deliberate non-fixes" below), two
-  cross-map invariants gained tests, the `_score_data_availability` fallthrough
-  gained a direct one, and that function's docstring lost two paragraphs that
-  were answering a reviewer rather than the next reader.
+  - **Data deposition from PubMed's `<DataBankList>`** (PR #43). PubMed's
+    deposition repositories (GenBank, PDB, SRA, Dryad, figshare, BioProject,
+    GEO; dbGaP separately) now feed `data_availability_level` alongside the
+    existing full-text prose scan, merged by rank through
+    `_Analysis.note_data_level()` rather than whichever step ran last. Moves
+    four stored values, none behind a flag — see the design doc's "Behaviour
+    changes" section and the CHANGELOG `[Unreleased]` entry for the exact
+    list. A pre-existing bug rode along: three PubMed trial-registry names
+    (`JMACCT`, `REPEC`, `UMIN CTR`) were missing from
+    `_TRIAL_REGISTRY_NAMES`.
+  - **`scripts/sample_databank_names.py`** (PR #46) — the live runner that
+    measures `_TRIAL_REGISTRY_NAMES` and `_DEPOSITION_DATABANK_LEVELS`
+    against real PubMed records. No library code changed. **Run it before
+    editing either list**; see CLAUDE.md for what its columns mean.
 - **1114 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
@@ -80,7 +75,17 @@ Nothing is blocked on anything else.
 
 ### Open GitHub issues
 
-**None.** #18 and #21 closed with PR #35, #33 with PR #39, #36 with PR #40, and
+- **#47 — `fulltext`: PMC ID resolution has a single source, gated on Europe
+  PMC's `inEPMC` flag.** `_resolve_pmc_id_and_pdf_url()` reads
+  `hit["pmcid"] if hit["inEPMC"] == "Y"`, so a paper in PMC that Europe PMC
+  has not indexed, or has indexed without flagging full text, resolves to no
+  PMC ID and skips Tiers 1a/1b. The issue proposes NCBI's ID Converter as a
+  fallback **only when the Europe PMC search yields no `pmcid`** — the reverse
+  order is the tempting one and is wrong, because Europe PMC's single request
+  also returns the free-PDF URL that feeds Tier 1c. The issue body records
+  what a deleted prior branch got wrong; read it before starting.
+
+#18 and #21 closed with PR #35, #33 with PR #39, #36 with PR #40, and
 #37 with the `_Analysis` carrier. Every closed design stays in
 `docs/superpowers/specs/` as the record of what was rejected and why: for #33,
 raising unconditionally on a non-dict; for #36, word-boundary matching applied
