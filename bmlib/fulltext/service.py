@@ -18,7 +18,9 @@
 
 Tier 1a: Europe PMC XML -> JATS parser -> HTML
 Tier 1b: Discover PMC ID via search, then Europe PMC XML
-Tier 1c: Europe PMC PDF render URL (when XML unavailable but free PDF exists)
+Tier 1b': Discover PMC ID via NCBI's ID Converter when the search found none
+Tier 1c: NCBI PMC efetch for whichever PMC ID was resolved
+Tier 1d: Europe PMC PDF render URL (when XML unavailable but free PDF exists)
 Tier 2:  Unpaywall -> open-access PDF URL
 Tier 3:  DOI resolution -> publisher website URL
 """
@@ -185,7 +187,10 @@ class FullTextService:
           0.  Known sources from fetcher (JATS XML > PDF > HTML)
           1a. Europe PMC XML (known PMC ID)
           1b. Discover PMC ID via Europe PMC search, then fetch XML
-          1c. Europe PMC PDF render URL (free PDF when XML unavailable)
+          1b'. Discover PMC ID via NCBI's ID Converter when the search
+               reported none, then fetch XML
+          1c. NCBI PMC efetch for whichever PMC ID was resolved
+          1d. Europe PMC PDF render URL (free PDF when XML unavailable)
           2.  Unpaywall PDF URL
           3.  DOI / PubMed URL fallback
         """
@@ -210,6 +215,10 @@ class FullTextService:
 
         # Tier 1a: Europe PMC with known PMC ID
         xml_failed = False
+        # Whichever PMC ID we end up holding — the caller's or a resolved one.
+        # NCBI's tier below spends it, so it is set before the fetch that may
+        # raise, not after.
+        resolved_pmc_id: str | None = pmc_id
         if pmc_id:
             try:
                 html, has_body = self._fetch_europepmc(pmc_id)
@@ -235,7 +244,14 @@ class FullTextService:
                 discovered_pmc_id, pdf_render_url = self._resolve_pmc_id_and_pdf_url(
                     doi=doi, pmid=pmid
                 )
+                # Tier 1b′: the search reports a PMC ID only for what Europe PMC
+                # both indexed and holds. NCBI's converter depends on neither,
+                # and is asked second because that one search also returned the
+                # free-PDF URL Tier 1d needs.
+                if not discovered_pmc_id:
+                    discovered_pmc_id = self._resolve_pmc_id_via_idconv(doi=doi, pmid=pmid)
                 if discovered_pmc_id:
+                    resolved_pmc_id = discovered_pmc_id
                     html, has_body = self._fetch_europepmc(discovered_pmc_id)
                     if has_body:
                         logger.info(
@@ -261,6 +277,26 @@ class FullTextService:
                     pmid,
                     exc_info=True,
                 )
+
+        # Tier 1c: NCBI's own copy, for whichever PMC ID we hold. Reaching here
+        # means Europe PMC gave no body for it — it serves the corpus its
+        # inEPMC flag describes, and NCBI serves PMC itself. Ahead of the PDF
+        # tier because structured JATS beats a PDF that needs bmlib[pdf] to
+        # read at all.
+        if resolved_pmc_id:
+            try:
+                html, has_body = self._fetch_ncbi_pmc(resolved_pmc_id)
+                if has_body:
+                    logger.info("Full text retrieved from NCBI PMC for %s", resolved_pmc_id)
+                    self._cache_html(html, cache_id)
+                    return FullTextResult(source="ncbi_pmc", html=html, content_kind="fulltext")
+                logger.info("NCBI PMC XML for %s has no body — looking further", resolved_pmc_id)
+                if abstract_only is None:
+                    abstract_only = FullTextResult(
+                        source="ncbi_pmc", html=html, content_kind="abstract"
+                    )
+            except Exception:
+                logger.debug("NCBI PMC failed for %s", resolved_pmc_id, exc_info=True)
 
         # When XML failed with a known PMC ID, search for PDF render URL
         if xml_failed and not pdf_render_url and (doi or pmid):
