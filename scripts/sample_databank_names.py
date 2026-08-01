@@ -185,6 +185,19 @@ def _spellings(pmids: list[str], base: dict[str, str]) -> Counter[str] | None:
     )
 
 
+def _candidates(matched: frozenset[str]) -> list[str]:
+    """Every name to measure: NLM's published list, plus anything *matched* it omits.
+
+    *matched* is the union of bmlib's two databank sets, folded in rather than
+    assumed to be covered by ``NLM_DATABANK_NAMES``: a set member missing from
+    the table would be a name bmlib matches and nobody measures, which is the
+    one blind spot this script exists to not have.
+    """
+    names = list(NLM_DATABANK_NAMES)
+    known = {name.lower() for name in names}
+    return names + sorted(matched - known)
+
+
 def main() -> int:
     """Measure every candidate name and print the table."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -198,9 +211,7 @@ def main() -> int:
 
     from bmlib.transparency.analyzer import _DATA_ARCHIVE_NAMES, _TRIAL_REGISTRY_NAMES
 
-    candidates = list(NLM_DATABANK_NAMES)
-    known = {name.lower() for name in candidates}
-    candidates += sorted((_TRIAL_REGISTRY_NAMES | _DATA_ARCHIVE_NAMES) - known)
+    candidates = _candidates(_TRIAL_REGISTRY_NAMES | _DATA_ARCHIVE_NAMES)
 
     print(f"{'candidate':<34} {'records':>8}  {'spelling in XML':<20} bmlib reads it as")
     for name in candidates:

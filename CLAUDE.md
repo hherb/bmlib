@@ -227,5 +227,8 @@ CI runs this against a `postgres:16` service on every matrix entry and also sets
 | `transparency/`      | `test_transparency.py`                                     |
 | `publications/`      | `test_publications.py`, `test_sync.py`, `test_backends.py`, `test_pubmed_fetcher.py`, `test_openalex_fetcher.py`, `test_registry.py` |
 | `fulltext/`          | `test_fulltext_cache.py`, `test_fulltext_models.py`, `test_fulltext_service.py`, `test_jats_parser.py`, `test_pdf_converter.py` |
+| `scripts/`           | `test_databank_sampler.py` (`sample_databank_names.py` only)                    |
 
 `scripts/smoke_test_tool_calling.py` is an end-to-end integration runner for tool calling. It hits live providers, so it is not part of the pytest suite — run it manually when changing provider tool-call code.
+
+`scripts/sample_databank_names.py` is a live runner too, but its *reading* is the evidence for changing `_TRIAL_REGISTRY_NAMES` or `_DATA_ARCHIVE_NAMES`, so `tests/test_databank_sampler.py` covers it offline through a stubbed `_get`. What those tests pin is that a failed request never prints as a finding: a zero count and an `unclassified` are what a dead set member and a vocabulary drift look like, and NCBI returning nothing must not be readable as either. The module is loaded by path — `scripts/` is not a package.

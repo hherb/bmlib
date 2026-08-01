@@ -2,7 +2,7 @@
 
 _Last updated: 2026-08-01. **0.6.0 is cut.** `[Unreleased]` holds two changes —
 the `_Analysis` carrier (#37) and the PubMed data-deposition signal (#44) —
-and nothing else is in flight. 1074 tests passing + 32 skipped._
+and nothing else is in flight. 1094 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -51,7 +51,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
      never assigned. The same change added `JMACCT` and `REPEC` to the trial
      registries, which moves stored values for those papers too (registration
      is worth 20 points).
-- **1074 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **1094 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
