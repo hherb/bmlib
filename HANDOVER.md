@@ -3,7 +3,7 @@
 _Last updated: 2026-08-01. **0.6.0 is cut.** `[Unreleased]` holds the
 `_Analysis` carrier (#37) and data deposition from PubMed's `<DataBankList>`
 — the latter on `feature/databank-data-deposition`, open as a PR against
-`main`. 1093 tests passing + 32 skipped._
+`main`. 1114 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -64,7 +64,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   cross-map invariants gained tests, the `_score_data_availability` fallthrough
   gained a direct one, and that function's docstring lost two paragraphs that
   were answering a reviewer rather than the next reader.
-- **1093 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **1114 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.

@@ -227,5 +227,8 @@ CI runs this against a `postgres:16` service on every matrix entry and also sets
 | `transparency/`      | `test_transparency.py`                                     |
 | `publications/`      | `test_publications.py`, `test_sync.py`, `test_backends.py`, `test_pubmed_fetcher.py`, `test_openalex_fetcher.py`, `test_registry.py` |
 | `fulltext/`          | `test_fulltext_cache.py`, `test_fulltext_models.py`, `test_fulltext_service.py`, `test_jats_parser.py`, `test_pdf_converter.py` |
+| `scripts/`           | `test_databank_sampler.py` (`sample_databank_names.py` only)                    |
 
 `scripts/smoke_test_tool_calling.py` is an end-to-end integration runner for tool calling. It hits live providers, so it is not part of the pytest suite — run it manually when changing provider tool-call code.
+
+`scripts/sample_databank_names.py` is a live runner too — it measures PubMed's `DataBankName` vocabulary against `_TRIAL_REGISTRY_NAMES` and `_DEPOSITION_DATABANK_LEVELS`, and is what keeps those curated lists answerable to the records. **Run it before changing either.** Its *reading* is a maintainer's evidence, so `tests/test_databank_sampler.py` covers it offline through a stubbed `_get`: what those tests pin is that a request that failed never prints as a finding, since a zero count is what a dead list member looks like and an `unclassified` is what a vocabulary drift looks like. The module is loaded by path — `scripts/` is not a package.

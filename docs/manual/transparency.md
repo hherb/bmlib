@@ -503,6 +503,8 @@ NLM's remaining `DataBankName` values — dbSNP, GDB, OMIM, PIR, PubChem-BioAssa
 
 A `<DataBank>` entry only counts if at least one `<AccessionNumberList>/<AccessionNumber>` is non-blank. A repository name with no accession is an assertion with no referent — nothing a reader could go and fetch.
 
+**Keeping the curation honest.** Both this map and the [registry set](#pubmed-databanklist--preferred) are hand-curated from NLM's page, which is the part that goes stale — NLM adds repositories, and the spelling in the records is not always the spelling in the table. `scripts/sample_databank_names.py` is what answers that: it counts PubMed records per candidate name, reads the literal `DataBankName` off the XML, and prints how bmlib classifies each one, including the level a deposit establishes. **Run it before changing either list.** A repository NLM added shows up as `unclassified` with a non-zero count; a member earning nothing shows up as dead weight; and the exclusions above stay candidates on purpose, because their counts are the evidence for excluding them. It reports only on names it has been told about — NLM's list, hand-copied into `NLM_DATABANK_NAMES`, plus whatever the two lists already hold — so a genuinely new repository has to be added there before the script can see it.
+
 Every collected repository name is reported in `risk_indicators` as one line, in PubMed's own spelling and document order, whatever level it nominates:
 
 ```
