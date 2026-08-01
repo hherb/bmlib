@@ -86,6 +86,31 @@ def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
     return None
 
 
+def _normalise_pmc_id(pmc_id: str) -> str:
+    """Prefix a bare numeric PMC ID and validate the result.
+
+    A PMC ID is interpolated into a URL path by both PMC fetch helpers, and
+    reaches them from three places: the caller, Europe PMC's search response
+    and NCBI's ID Converter. Only the first is under bmlib's control, so the
+    check lives at the point of use and covers all three.
+
+    Args:
+        pmc_id: A PMC ID, with or without the ``PMC`` prefix.
+
+    Returns:
+        The prefixed, validated ID.
+
+    Raises:
+        FullTextError: If the value is not ``PMC`` followed by digits. Every
+            tier already catches this and moves on, so a malformed ID costs a
+            log line rather than a request.
+    """
+    normalized = pmc_id if pmc_id.startswith("PMC") else f"PMC{pmc_id}"
+    if not _PMC_ID_RE.match(normalized):
+        raise FullTextError(f"Not a usable PMC ID: {pmc_id!r}")
+    return normalized
+
+
 class FullTextService:
     """Retrieves full text from multiple sources with fallback."""
 
@@ -668,7 +693,7 @@ class FullTextService:
             A tuple of the rendered HTML and whether the document had a body,
             as for :meth:`_fetch_jats_xml`.
         """
-        normalized = pmc_id if pmc_id.startswith("PMC") else f"PMC{pmc_id}"
+        normalized = _normalise_pmc_id(pmc_id)
         url = f"{EUROPE_PMC_BASE}/{normalized}/fullTextXML"
 
         resp = self._http_get(url, headers={"Accept": "application/xml"})
@@ -679,6 +704,44 @@ class FullTextService:
 
         parser = JATSParser(resp.content, known_pmc_id=normalized)
         article, html = parser.parse_with_html()
+        return html, article.has_body
+
+    def _fetch_ncbi_pmc(self, pmc_id: str) -> tuple[str, bool]:
+        """Fetch a PMC article from NCBI's own copy via E-utilities ``efetch``.
+
+        Europe PMC's ``fullTextXML`` serves the corpus its ``inEPMC`` flag
+        describes; NCBI serves PMC itself. For an article PMC holds and Europe
+        PMC does not, this is the only source that answers.
+
+        Returns:
+            A tuple of the rendered HTML and whether the document had a body,
+            as for :meth:`_fetch_europepmc`.
+
+        Raises:
+            FullTextError: On a bad ID, a non-200 response, or a reply
+                carrying no article at all. That last case is efetch's answer
+                for an article whose publisher does not release XML: it is
+                HTTP 200 and parses cleanly into a document with no body *and*
+                no abstract. Returned rather than raised, it would be promoted
+                to the last-resort abstract and become near-empty HTML
+                labelled as one.
+        """
+        normalized = _normalise_pmc_id(pmc_id)
+        resp = self._http_get(
+            EUTILS_EFETCH_URL,
+            params=self._ncbi_params(
+                db="pmc",
+                id=normalized.removeprefix("PMC"),
+                retmode="xml",
+            ),
+            headers={"Accept": "application/xml"},
+        )
+        if resp.status_code != 200:
+            raise FullTextError(f"NCBI PMC HTTP {resp.status_code}")
+
+        article, html = JATSParser(resp.content, known_pmc_id=normalized).parse_with_html()
+        if not article.has_body and not article.abstract_sections:
+            raise FullTextError(f"NCBI PMC returned no article content for {normalized}")
         return html, article.has_body
 
     def _fetch_unpaywall(self, doi: str) -> str:

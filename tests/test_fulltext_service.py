@@ -24,7 +24,12 @@ import pytest
 from bmlib.fulltext.cache import FullTextCache
 from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.fulltext.pdf_converter import ConversionResult
-from bmlib.fulltext.service import FullTextError, FullTextService, _sanitize_identifier
+from bmlib.fulltext.service import (
+    FullTextError,
+    FullTextService,
+    _normalise_pmc_id,
+    _sanitize_identifier,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -1091,3 +1096,142 @@ class TestIDConverter:
         params = mock_get.call_args.kwargs["params"]
         assert params["tool"] == "bmlib"
         assert params["email"] == "test@example.com"
+
+
+class TestNCBIPMCFetch:
+    """NCBI's own copy of a PMC article, via ``efetch db=pmc``.
+
+    Europe PMC's ``fullTextXML`` endpoint serves the corpus its ``inEPMC``
+    flag describes. When that flag says no — or the article store simply does
+    not have it — NCBI is the source that does, and it is reachable with the
+    same PMC ID.
+    """
+
+    def test_full_text_is_parsed(self):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "sample_article.xml").read_bytes()
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=resp):
+            html, has_body = service._fetch_ncbi_pmc("PMC123")
+
+        assert has_body is True
+        assert "<h1>" in html
+
+    def test_the_numeric_id_is_sent(self):
+        """efetch's documented form for db=pmc is the digits alone."""
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "sample_article.xml").read_bytes()
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=resp) as mock_get:
+            service._fetch_ncbi_pmc("PMC123")
+
+        params = mock_get.call_args.kwargs["params"]
+        assert params["id"] == "123"
+        assert params["db"] == "pmc"
+
+    def test_a_bare_numeric_id_is_accepted(self):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "sample_article.xml").read_bytes()
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=resp) as mock_get:
+            service._fetch_ncbi_pmc("123")
+
+        assert mock_get.call_args.kwargs["params"]["id"] == "123"
+
+    def test_a_malformed_pmc_id_never_reaches_a_url(self):
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get") as mock_get:
+            with pytest.raises(FullTextError):
+                service._fetch_ncbi_pmc("../../etc/passwd")
+            mock_get.assert_not_called()
+
+    def test_a_stub_with_no_article_raises(self):
+        """A non-OA reply parses cleanly into nothing.
+
+        Returned rather than raised, it would be promoted to the last-resort
+        abstract — near-empty HTML labelled ``content_kind="abstract"``, worse
+        than the DOI link it displaced and permanent for a caller that
+        persists results.
+        """
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "ncbi_pmc_stub.xml").read_bytes()
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=resp):
+            with pytest.raises(FullTextError):
+                service._fetch_ncbi_pmc("PMC123")
+
+    def test_a_body_less_article_with_an_abstract_is_returned(self):
+        """Front matter carrying a real abstract is worth having.
+
+        This is the case the stub guard must not swallow: it is the same
+        body-less document Europe PMC serves, and the caller holds it back as
+        a last resort exactly as it does there.
+        """
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "abstract_only_article.xml").read_bytes()
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=resp):
+            html, has_body = service._fetch_ncbi_pmc("PMC123")
+
+        assert has_body is False
+        assert html
+
+    def test_a_failed_request_raises(self):
+        resp = MagicMock()
+        resp.status_code = 503
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=resp):
+            with pytest.raises(FullTextError):
+                service._fetch_ncbi_pmc("PMC123")
+
+    def test_the_api_key_is_sent_only_when_configured(self):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "sample_article.xml").read_bytes()
+
+        without = FullTextService(email="test@example.com")
+        with patch.object(without, "_http_get", return_value=resp) as mock_get:
+            without._fetch_ncbi_pmc("PMC123")
+        assert "api_key" not in mock_get.call_args.kwargs["params"]
+
+        with_key = FullTextService(email="test@example.com", ncbi_api_key="secret")
+        with patch.object(with_key, "_http_get", return_value=resp) as mock_get:
+            with_key._fetch_ncbi_pmc("PMC123")
+        assert mock_get.call_args.kwargs["params"]["api_key"] == "secret"
+
+
+class TestPMCIDValidation:
+    """``PMC\\d+`` enforced where the id becomes a URL, not where it arrives."""
+
+    def test_a_bare_number_is_prefixed(self):
+        assert _normalise_pmc_id("123") == "PMC123"
+
+    def test_a_prefixed_id_is_unchanged(self):
+        assert _normalise_pmc_id("PMC123") == "PMC123"
+
+    @pytest.mark.parametrize(
+        "value",
+        ["", "PMC", "PMC12a", "pmc123", "PMC123/../etc", "PMC 123", "http://x/PMC123"],
+    )
+    def test_anything_else_raises(self, value):
+        with pytest.raises(FullTextError):
+            _normalise_pmc_id(value)
+
+    def test_europe_pmc_validates_too(self):
+        """One guard, both fetch helpers — Europe PMC's id is third-party too."""
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get") as mock_get:
+            with pytest.raises(FullTextError):
+                service._fetch_europepmc("../../etc/passwd")
+            mock_get.assert_not_called()
