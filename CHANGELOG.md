@@ -8,6 +8,48 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **`fulltext`: a second source for PMC ID resolution, and NCBI as a full-text
+  tier.** `FullTextService` could reach a PMC ID exactly one way — Europe PMC's
+  search, gated on `inEPMC == "Y"`, which requires Europe PMC *both* to have
+  indexed the paper and to hold its full text. A paper in PMC failing either
+  condition skipped Tiers 1a/1b and fell through to Unpaywall or a bare DOI
+  link. Two changes close that:
+
+  `_resolve_pmc_id_via_idconv()` asks NCBI's ID Converter — the authoritative
+  DOI/PMID→PMCID mapping, which depends on neither condition — but only when
+  the Europe PMC search reported no PMC ID. Second, never first: that one
+  search also returns the free-PDF URL the render tier needs, so asking the
+  converter first would cost a request on every lookup or forfeit that URL. It
+  is asked by PMID when there is one, DOI otherwise, and never raises.
+
+  `_fetch_ncbi_pmc()` becomes a new **Tier 1c**, reading NCBI's own copy via
+  E-utilities `efetch` for whichever PMC ID is in hand — the caller's or a
+  discovered one. Europe PMC serves the corpus its `inEPMC` flag describes;
+  NCBI serves PMC itself, so this answers where Europe PMC cannot. It sits
+  ahead of the free-PDF tier (renumbered to **1d**) because structured JATS
+  beats a PDF that needs the optional `bmlib[pdf]` extra to read at all. An
+  efetch reply carrying neither body nor abstract — what a publisher who does
+  not release XML produces — raises rather than becoming a near-empty
+  last-resort abstract.
+
+  A PMC ID is now validated as `PMC\d+` in both PMC fetch helpers, at the point
+  where it becomes a URL path rather than at each of the three places it
+  arrives from.
+
+  New constructor parameter `ncbi_api_key`, **declared last** for positional
+  stability, sent with both NCBI requests. As with
+  `TransparencyAnalyzer.pubmed_api_key` it changes which NCBI allowance the
+  requests draw on, not bmlib's own pacing — the package still throttles
+  nothing.
+
+  **Moves stored values, not behind a flag:** `FullTextResult.source` gains
+  `"ncbi_pmc"`, and results that were `content_kind="abstract"` or a bare
+  `web_url` can now be `"fulltext"`. A caller who supplies `pmc_id` whose
+  Europe PMC XML fails, or looks up an identifier Europe PMC cannot resolve,
+  pays one or two extra requests in exactly the cases that previously ended at
+  Unpaywall or Tier 3. Closes #47. Design:
+  `docs/superpowers/specs/2026-08-02-pmc-id-resolution-fallback-design.md`.
+
 - **`transparency`: `<DataBankList>` deposition accessions now score as
   data-availability evidence.** `bmlib.transparency` decided data availability
   by scanning full text for seven substrings (`"zenodo"`, `"figshare"`,

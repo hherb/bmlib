@@ -308,7 +308,7 @@ class FullTextService:
             except Exception:
                 logger.debug("PDF URL resolution failed", exc_info=True)
 
-        # Tier 1c: Europe PMC PDF render (when XML unavailable but free PDF exists)
+        # Tier 1d: Europe PMC PDF render (when XML unavailable but free PDF exists)
         if pdf_render_url:
             logger.info("PDF available from Europe PMC render: %s", pdf_render_url)
             result = FullTextResult(source="europepmc_pdf", pdf_url=pdf_render_url)

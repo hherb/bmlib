@@ -1,6 +1,6 @@
 # bmlib.fulltext — Full-Text Retrieval, JATS Parsing & PDF Conversion
 
-Full-text retrieval for biomedical literature. Provides a multi-tier retrieval chain (caller-supplied sources → Europe PMC → Unpaywall → DOI/PubMed), a SAX-based JATS parser that converts PubMed Central XML to structured data or HTML, a disk cache for downloaded content, and a pluggable PDF-to-text converter that the retrieval chain uses to make a PDF-only article readable inline.
+Full-text retrieval for biomedical literature. Provides a multi-tier retrieval chain (caller-supplied sources → Europe PMC → NCBI PMC → Unpaywall → DOI/PubMed), a SAX-based JATS parser that converts PubMed Central XML to structured data or HTML, a disk cache for downloaded content, and a pluggable PDF-to-text converter that the retrieval chain uses to make a PDF-only article readable inline.
 
 ## Installation
 
@@ -191,6 +191,7 @@ class FullTextService:
 | `timeout` | `float` | HTTP request timeout in seconds (default `30.0`) |
 | `cache` | `FullTextCache \| None` | Cache instance. When `None`, a default `FullTextCache()` is constructed, so a cache always exists |
 | `convert_pdfs` | `bool` | Extract a retrieved PDF's text into `html` (default `True`). Requires `bmlib[pdf]`, and only applies once the PDF is cached — so `fetch_fulltext()` must be given an `identifier`. `pdf_url` and `file_path` stay set either way |
+| `ncbi_api_key` | `str \| None` | Optional NCBI API key (default `None`), sent with the Tier 1b′ and Tier 1c requests. Moves them into the key's 10 requests/second allowance instead of the 3/s shared by everything on the IP. It does **not** change bmlib's pacing — the package still throttles nothing. Declared last, so positional construction stays stable |
 
 ### `fetch_fulltext()`
 
@@ -199,9 +200,9 @@ All arguments are **keyword-only**.
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `fulltext_sources` | `list[FullTextSourceEntry] \| None` | Known source URLs from a publication fetcher — tried first (Tier 0) |
-| `pmc_id` | `str \| None` | PubMed Central ID (e.g. `"PMC7614751"`) — triggers Tier 1a. A bare numeric ID is prefixed with `PMC` |
-| `doi` | `str \| None` | Digital Object Identifier — drives Tiers 1b, 2 and 3 |
-| `pmid` | `str` | PubMed ID — used for Tier 1b lookup and as the final fallback URL |
+| `pmc_id` | `str \| None` | PubMed Central ID (e.g. `"PMC7614751"`) — triggers Tier 1a, and Tier 1c if Europe PMC gives no body for it. A bare numeric ID is prefixed with `PMC`; anything that is not then `PMC` followed by digits is rejected before it reaches a URL |
+| `doi` | `str \| None` | Digital Object Identifier — drives Tiers 1b, 1b′, 2 and 3 |
+| `pmid` | `str` | PubMed ID — used for the Tier 1b and 1b′ lookups (the converter prefers it over the DOI) and as the final fallback URL |
 | `identifier` | `str \| None` | Cache key, typically the DOI. **Disk caching only happens when this is supplied**; without it nothing is read from or written to the cache |
 
 **Returns:** `FullTextResult` — always populated with at least a `source` and one of `html` / `pdf_url` / `web_url` / `file_path`.
@@ -218,8 +219,10 @@ The chain is longer than three tiers. In order:
 | Tier 0 | `fulltext_sources` given | Try entries in priority order `xml` (0) > `pdf` (1) > `html` (2), unknown formats last (99) | `entry.source` (e.g. `"biorxiv"`) |
 | Tier 1a | `pmc_id` given | `GET .../{PMCxxxx}/fullTextXML`, parsed to HTML by `JATSParser` | `"europepmc"` |
 | Tier 1b | `pmc_id` **not** given, and `doi` or `pmid` given | Europe PMC search (`resultType=core&pageSize=1`, query `DOI:{doi}` else `EXT_ID:{pmid}`); the PMC ID is used only if `inEPMC == "Y"`, then fetched as in 1a | `"europepmc"` |
+| Tier 1b′ | The search reported no PMC ID | NCBI's [ID Converter](https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/), asked by PMID when there is one and DOI otherwise. Consulted *second* — the Europe PMC search returns the PMC ID and the free-PDF URL in one request, so asking the converter first would cost a request on every lookup or forfeit that URL. A record that is `status: error`, not `live`, or carries a PMC ID failing `PMC\d+` resolves to nothing | — |
+| Tier 1c | A PMC ID is in hand — the caller's, or one either resolver found — and Europe PMC gave no body for it | `GET eutils…/efetch.fcgi?db=pmc&id={digits}&retmode=xml`, parsed by `JATSParser`. Europe PMC serves the corpus its `inEPMC` flag describes; NCBI serves PMC itself. A reply carrying neither body nor abstract — efetch's answer for an article whose publisher does not release XML — is treated as a failure, not as an abstract | `"ncbi_pmc"` |
 | PDF-URL recovery | Tier 1a failed and no render URL known yet | Re-run the same search purely to obtain a PDF URL | — |
-| Tier 1c | A free PDF render URL was found | Take the `fullTextUrlList` entry with `documentStyle == "pdf"` and `availability == "Free"`; download and cache it | `"europepmc_pdf"` |
+| Tier 1d | A free PDF render URL was found | Take the `fullTextUrlList` entry with `documentStyle == "pdf"` and `availability == "Free"`; download and cache it | `"europepmc_pdf"` |
 | Tier 2 | `doi` given | Unpaywall `GET .../{doi}?email=...`; picks `best_oa_location.url_for_pdf` or `.url`, else iterates `oa_locations`; downloads and caches | `"unpaywall"` |
 | Tier 3 | `doi` given | Return `https://doi.org/{doi}` | `"doi"` |
 | Final | `pmid` given | Return `https://pubmed.ncbi.nlm.nih.gov/{pmid}/` | `"pubmed"` |
@@ -279,11 +282,12 @@ The `source` values the service can emit:
 | *fetcher name* | A Tier 0 `FullTextSourceEntry` — the entry's own `source` string, e.g. `"biorxiv"`, `"medrxiv"`, `"pmc"`, `"publisher"` | `html`, or `pdf_url` (+ `file_path`), or `web_url` |
 | `"europepmc"` | JATS XML from Europe PMC, rendered to HTML | `html` |
 | `"europepmc_pdf"` | Free PDF render URL from Europe PMC | `pdf_url` (+ `file_path` if cached) |
+| `"ncbi_pmc"` | Tier 1c — NCBI's own copy of the PMC article, via E-utilities `efetch`. Distinct from a Tier 0 entry whose fetcher named itself `"pmc"` | `html` |
 | `"unpaywall"` | Open-access PDF located via Unpaywall | `pdf_url` (+ `file_path` if cached) |
 | `"doi"` | DOI resolution fallback | `web_url` |
 | `"pubmed"` | PubMed landing-page fallback | `web_url` |
 
-The dataclass comment lists only `europepmc`, `unpaywall`, `doi`, `pubmed`, `cached`; treat the table above as authoritative, since Tier 0 and Tier 1c also emit values.
+The dataclass comment lists only `europepmc`, `unpaywall`, `doi`, `pubmed`, `cached`; treat the table above as authoritative, since Tier 0, Tier 1c and Tier 1d also emit values.
 
 ---
 
