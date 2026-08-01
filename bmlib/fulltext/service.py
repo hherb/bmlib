@@ -26,6 +26,7 @@ Tier 3:  DOI resolution -> publisher website URL
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from urllib.parse import quote
 
@@ -48,7 +49,16 @@ EUROPE_PMC_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 UNPAYWALL_BASE = "https://api.unpaywall.org/v2"
 DOI_BASE = "https://doi.org"
 PUBMED_BASE = "https://pubmed.ncbi.nlm.nih.gov"
+NCBI_IDCONV_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/"
+EUTILS_EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+EUTILS_TOOL_NAME = "bmlib"
 TIMEOUT = 30.0
+
+# A PMC ID reaches a URL path in two fetch helpers, and one of its sources is
+# third-party JSON. Validated where it is used rather than where it arrives,
+# so caller-supplied, Europe-PMC-supplied and converter-supplied ids are
+# covered by one guard.
+_PMC_ID_RE = re.compile(r"^PMC\d+$")
 
 
 class FullTextError(Exception):
@@ -85,6 +95,7 @@ class FullTextService:
         timeout: float = TIMEOUT,
         cache: FullTextCache | None = None,
         convert_pdfs: bool = True,
+        ncbi_api_key: str | None = None,
     ) -> None:
         """Initialise the service.
 
@@ -104,11 +115,18 @@ class FullTextService:
                 :meth:`fetch_fulltext` was given an ``identifier`` and a cache
                 is configured. Without one there is no file to extract from
                 and this setting has no effect.
+            ncbi_api_key: Optional NCBI API key, sent with the ID Converter and
+                ``efetch`` requests. It does not change this service's pacing —
+                bmlib throttles nothing — but it moves those requests into the
+                key's 10 requests/second allowance instead of the 3
+                requests/second shared by everything on the IP. Declared last
+                so positional construction stays stable.
         """
         self.email = email
         self.timeout = timeout
         self.cache = cache if cache is not None else FullTextCache()
         self.convert_pdfs = convert_pdfs
+        self.ncbi_api_key = ncbi_api_key
         # Guards the one-off warning in _attach_pdf_text when the bmlib[pdf]
         # extra is missing: worth saying once, not once per article.
         self._pdf_extra_warned = False
@@ -565,6 +583,83 @@ class FullTextService:
         pdf_render_url = _extract_free_pdf_url(hit)
 
         return pmc_id, pdf_render_url
+
+    def _ncbi_params(self, **params: str) -> dict[str, str]:
+        """Add the identification NCBI asks of every caller.
+
+        ``tool`` and ``email`` identify bmlib; ``api_key`` is sent only when
+        configured, and moves the request into the key's allowance rather than
+        the 3 requests/second shared by everything on the IP.
+        """
+        params.update(tool=EUTILS_TOOL_NAME, email=self.email)
+        if self.ncbi_api_key:
+            params["api_key"] = self.ncbi_api_key
+        return params
+
+    def _resolve_pmc_id_via_idconv(
+        self,
+        *,
+        doi: str | None = None,
+        pmid: str = "",
+    ) -> str | None:
+        """Resolve a PMC ID through NCBI's ID Converter.
+
+        The second source for a PMC ID, consulted only when the Europe PMC
+        search returned none. Europe PMC reports one only when it both indexed
+        the paper and flagged its full text as available there; the converter
+        depends on neither.
+
+        Asked by PMID when there is one — an exact numeric key — and by DOI
+        otherwise, since a DOI-formatting miss is one of the divergences this
+        recovers.
+
+        Returns:
+            The PMC ID, or ``None`` if the converter has no live record for the
+            identifier, reports an error, answers with something unusable, or
+            cannot be reached. It never raises: the caller has a free-PDF URL
+            in hand by this point, and an exception would cost it.
+        """
+        if pmid:
+            ids = pmid
+        elif doi:
+            ids = doi
+        else:
+            return None
+
+        try:
+            resp = self._http_get(
+                NCBI_IDCONV_URL,
+                params=self._ncbi_params(ids=ids, format="json"),
+                headers={"Accept": "application/json"},
+            )
+            if resp.status_code != 200:
+                logger.debug("ID Converter HTTP %s for %s", resp.status_code, ids)
+                return None
+
+            records = resp.json().get("records") or []
+            if not records:
+                return None
+
+            record = records[0]
+            if record.get("status") == "error":
+                logger.debug("ID Converter has no record for %s: %s", ids, record.get("errmsg"))
+                return None
+            # Reported as the string "false" for a record PMC no longer serves.
+            if str(record.get("live", "true")).lower() == "false":
+                logger.debug("ID Converter record for %s is no longer live", ids)
+                return None
+
+            pmc_id = record.get("pmcid")
+            if not isinstance(pmc_id, str) or not _PMC_ID_RE.match(pmc_id):
+                if pmc_id:
+                    logger.warning("ID Converter returned an unusable PMC ID: %r", pmc_id)
+                return None
+
+            logger.info("PMC ID %s resolved via NCBI ID Converter for %s", pmc_id, ids)
+            return pmc_id
+        except Exception:
+            logger.debug("ID Converter lookup failed for %s", ids, exc_info=True)
+            return None
 
     def _fetch_europepmc(self, pmc_id: str) -> tuple[str, bool]:
         """Fetch JATS XML from Europe PMC and parse to HTML.

@@ -966,3 +966,128 @@ class TestPDFTextExtraction:
         result = service.fetch_fulltext(identifier="10.1234/test")
 
         assert result.content_kind == "fulltext"
+
+
+class TestIDConverter:
+    """NCBI's ID Converter — the second source for a PMC ID.
+
+    Europe PMC's search only reports a PMC ID when it *both* indexed the paper
+    and flagged its full text as available there. The converter depends on
+    neither, so it is what rescues a paper Europe PMC's index missed. It is
+    third-party text on the way to a URL, and it is consulted on a path that
+    already holds a free-PDF URL, so the two properties that matter are that a
+    malformed id never reaches a URL and that a failure here costs nothing
+    that was already found.
+    """
+
+    @staticmethod
+    def _reply(**fields: object) -> MagicMock:
+        """One converter record, as the API returns it."""
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"status": "ok", "records": [fields]}
+        return resp
+
+    def test_a_pmcid_is_returned(self):
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC7614751")):
+            assert service._resolve_pmc_id_via_idconv(doi="10.1/test") == "PMC7614751"
+
+    def test_the_pmid_is_preferred_when_both_are_known(self):
+        """A PMID is an exact key; a DOI is text whose formatting is what missed."""
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
+            service._resolve_pmc_id_via_idconv(doi="10.1/test", pmid="12345")
+
+        assert mock_get.call_args.kwargs["params"]["ids"] == "12345"
+
+    def test_the_doi_is_used_when_there_is_no_pmid(self):
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
+            service._resolve_pmc_id_via_idconv(doi="10.1/test")
+
+        assert mock_get.call_args.kwargs["params"]["ids"] == "10.1/test"
+
+    def test_no_identifier_makes_no_request(self):
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get") as mock_get:
+            assert service._resolve_pmc_id_via_idconv() is None
+            mock_get.assert_not_called()
+
+    def test_an_error_record_resolves_to_nothing(self):
+        """``status: error`` is how the converter reports an id it cannot map."""
+        service = FullTextService(email="test@example.com")
+        reply = self._reply(status="error", errmsg="invalid article id")
+        with patch.object(service, "_http_get", return_value=reply):
+            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+
+    def test_a_record_no_longer_live_resolves_to_nothing(self):
+        """``live: "false"`` means PMC no longer serves it — the fetch would fail."""
+        service = FullTextService(email="test@example.com")
+        reply = self._reply(pmcid="PMC123", live="false")
+        with patch.object(service, "_http_get", return_value=reply):
+            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+
+    def test_a_malformed_pmcid_is_refused(self):
+        """It would otherwise be interpolated into a URL path unchecked."""
+        service = FullTextService(email="test@example.com")
+        reply = self._reply(pmcid="../../etc/passwd")
+        with patch.object(service, "_http_get", return_value=reply):
+            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+
+    def test_an_empty_record_list_resolves_to_nothing(self):
+        service = FullTextService(email="test@example.com")
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"status": "ok", "records": []}
+        with patch.object(service, "_http_get", return_value=resp):
+            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+
+    def test_a_failed_request_resolves_to_nothing(self):
+        service = FullTextService(email="test@example.com")
+        resp = MagicMock()
+        resp.status_code = 500
+        with patch.object(service, "_http_get", return_value=resp):
+            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+
+    def test_a_transport_failure_is_not_raised(self):
+        """It is called where a free-PDF URL is already in hand.
+
+        Letting the exception out would leave the enclosing ``except`` to
+        swallow it and skip the rest of the block — trading a working PDF tier
+        for a failed converter lookup.
+        """
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", side_effect=RuntimeError("connection reset")):
+            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+
+    def test_unparseable_json_resolves_to_nothing(self):
+        service = FullTextService(email="test@example.com")
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.side_effect = ValueError("not json")
+        with patch.object(service, "_http_get", return_value=resp):
+            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+
+    def test_the_api_key_is_sent_only_when_configured(self):
+        without = FullTextService(email="test@example.com")
+        with patch.object(without, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
+            without._resolve_pmc_id_via_idconv(pmid="99")
+        assert "api_key" not in mock_get.call_args.kwargs["params"]
+
+        with_key = FullTextService(email="test@example.com", ncbi_api_key="secret")
+        with patch.object(
+            with_key, "_http_get", return_value=self._reply(pmcid="PMC1")
+        ) as mock_get:
+            with_key._resolve_pmc_id_via_idconv(pmid="99")
+        assert mock_get.call_args.kwargs["params"]["api_key"] == "secret"
+
+    def test_the_caller_is_identified_to_ncbi(self):
+        """NCBI asks for tool and email on every request."""
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
+            service._resolve_pmc_id_via_idconv(pmid="99")
+
+        params = mock_get.call_args.kwargs["params"]
+        assert params["tool"] == "bmlib"
+        assert params["email"] == "test@example.com"
