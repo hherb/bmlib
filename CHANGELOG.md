@@ -62,6 +62,21 @@ All notable changes to bmlib are documented here. The format is based on
   `full_open`, scoring inside `note_data_level()` with a refund pass, and
   PubMed awarding only the diff against Europe PMC.
 
+- **`scripts/sample_databank_names.py` — measures the two `DataBankName`
+  allow-lists against real PubMed records.** `_TRIAL_REGISTRY_NAMES` and
+  `_DEPOSITION_DATABANK_LEVELS` are curated from NLM's published vocabulary,
+  and curation is the part that goes stale: the script counts records per
+  candidate name, reads the literal spelling off the XML, and reports how
+  bmlib classifies each — so a repository NLM adds shows up as `unclassified`
+  with a non-zero count, and a member earning nothing shows up as dead weight.
+  It also reports the *level* a deposit establishes, since that is a mapping
+  rather than a membership test. Candidates include the deliberate exclusions
+  (OMIM, RefSeq, dbSNP, PubChem-\*, the UniProt family): their counts are the
+  evidence for leaving them out. A live runner like
+  `scripts/sample_funder_names.py`, but covered offline by
+  `tests/test_databank_sampler.py`, which pins the one property that makes its
+  table trustworthy — a failed request never prints as a finding.
+
 ### Changed
 
 - **`transparency`: `analyze()`'s accumulators moved onto one `_Analysis`
