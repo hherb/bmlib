@@ -88,6 +88,19 @@ gives up.
 An earlier unmerged branch (recorded in issue #47, since deleted) tried the
 converter first. That ordering is the one this design deliberately inverts.
 
+### The converter is asked by PMID when there is one, DOI otherwise
+
+Europe PMC's search prefers the DOI. The converter inverts that, because a PMID
+is an exact numeric key while a DOI is text — and DOI-formatting misses are one
+of the divergences the converter is being added to recover. Preferring the PMID
+avoids re-running the lookup on the identifier whose formatting is the likelier
+culprit. With only one of the two in hand, that one is used; with neither, no
+request is made.
+
+One identifier per request, not both: the converter accepts a comma-separated
+list, but a multi-id response is a list of records to disambiguate for no gain
+here.
+
 ### `_resolve_pmc_id_and_pdf_url()` keeps its name, its job and its arity
 
 The issue proposed extending that method to consult the converter. It is called
