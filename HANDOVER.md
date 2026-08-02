@@ -2,9 +2,9 @@
 
 _Last updated: 2026-08-02. **0.6.0 is cut.** `[Unreleased]` holds the
 `_Analysis` carrier (#37), the `<DataBankList>` deposition work (#43, #46),
-the PMC ID resolution fallback (#47) — all merged to `main` — and the
-`context_processor` port (#49, on `feature/context-processor`).
-1300 tests passing + 32 skipped._
+the PMC ID resolution fallback (#47) and the `context_processor` port (#49) —
+all merged to `main`. Nothing is in flight: no open issues, no open PRs, and
+`main` is clean. 1300 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -30,8 +30,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it will
   not see this release until that pin is widened. That is a downstream change,
   not a bmlib one.
-- **Unreleased since 0.6.0:** five changes; the first four are merged to
-  `main`, the fifth is the current branch.
+- **Unreleased since 0.6.0:** five changes, all merged to `main`. Enough has
+  accumulated for a 0.7.0 — see "Worth doing" below.
   - The `_Analysis` carrier (#37, PR #42) — `analyze()`'s ten accumulators
     moved off 4-to-6-element tuples onto one mutable dataclass every sub-step
     mutates in place. It carries one behaviour change: a funder named
@@ -59,8 +59,9 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
     abstract-only or a bare link can now be full text. New `ncbi_api_key`,
     declared last. Design and plan: `docs/superpowers/{specs,plans}/2026-08-02-*`.
     Merged as PR #48.
-  - **`bmlib.context_processor`** (#49) — Phase 1 item 2 of the bmlibrarian
-    port. Hierarchical map-reduce for content exceeding one context window.
+  - **`bmlib.context_processor`** (#49, PR #50) — Phase 1 item 2 of the
+    bmlibrarian port. Hierarchical map-reduce for content exceeding one
+    context window.
     Purely additive: a new top-level package, nothing existing changed, so no
     stored value moves. Four upstream defects were fixed in the port and each
     is pinned by a named regression test — see the CHANGELOG entry and the
@@ -90,9 +91,8 @@ Nothing is blocked on anything else.
 
 ### Open GitHub issues
 
-**None.** #49 is answered by the current branch, which closes it on merge.
-#47 closed with PR #48, #18 and #21 with PR #35, #33 with PR #39, #36 with
-PR #40, and #37 with the `_Analysis` carrier. Every closed design stays in
+**None.** #49 closed with PR #50, #47 with PR #48, #18 and #21 with PR #35,
+#33 with PR #39, #36 with PR #40, and #37 with the `_Analysis` carrier. Every closed design stays in
 `docs/superpowers/specs/` as the record of what was rejected and why: for #33,
 raising unconditionally on a non-dict; for #36, word-boundary matching applied
 uniformly across the keyword list; for #37, a `NamedTuple` carrier (immutable,
@@ -100,6 +100,9 @@ so every step would still rebuild and return it — the arity survives).
 
 ### Worth doing, not yet an issue
 
+- **Cut 0.7.0.** `[Unreleased]` now holds five merged changes, two of which
+  move stored values (the `<DataBankList>` deposition work and the NCBI
+  full-text tier). The release recipe is at the end of this file.
 - **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume this
   release. Read the three non-comparable behaviour changes above first — the
   transparency ones move stored scores, so a project holding historical
@@ -139,11 +142,14 @@ left in the app as planned, and upstream's `SemanticChunkProcessor` was
 rewritten rather than copied — it called the raw Ollama client, which is the
 coupling the port existed to sever.
 
-**Phase 2 — the next port.** Independent and parallelisable, so pick any:
-#4 citations, #8 PDF segmenter, #9 Cochrane assessor, #10 Retraction Watch,
-#11 PubMed-metadata graft. The Cochrane assessor (#9) is the one that would
-also answer the standing "wire the new quality tools into the pipeline"
-roadmap item, since `quality/cochrane_models.py` is still standalone.
+**Phase 2 — the next port.** Independent and parallelisable, so pick any.
+The numbers below are **rows in the analysis doc's master priority table, not
+GitHub issues** — GitHub #8 and #9 exist and are about something else
+entirely: #4 citations, #8 PDF section segmenter, #9 Cochrane assessor,
+#10 Retraction Watch fetcher, #11 PubMed-metadata graft. The Cochrane
+assessor (row 9) is the one that would also answer the standing "wire the new
+quality tools into the pipeline" roadmap item, since
+`quality/cochrane_models.py` is still standalone.
 Phases 3–4 (discovery, pubmed_search, MeSH, the prompt-driven agent family,
 paper_weight) are in the analysis doc.
 
