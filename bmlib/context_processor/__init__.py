@@ -38,6 +38,8 @@ Example::
     print(result.content)
 """
 
+from typing import TYPE_CHECKING, Any
+
 from bmlib.context_processor.base import IterativeContextProcessor, ProgressCallback
 from bmlib.context_processor.data_types import (
     DEFAULT_MAX_CONTEXT_CHARS,
@@ -49,19 +51,56 @@ from bmlib.context_processor.data_types import (
     ConsolidatedItem,
     ConsolidationStrategy,
     ExtractionResult,
+    OversizedItemError,
     OversizedItemStrategy,
     ProcessingConfig,
     ProcessingResult,
     ProcessingStatus,
     ProgressInfo,
 )
-from bmlib.context_processor.llm_processor import (
-    DEFAULT_CONSOLIDATION_PROMPT,
-    DEFAULT_EXTRACTION_PROMPT,
-    STRUCTURED_EXTRACTION_PROMPT,
-    LLMChunkProcessor,
-    ScoredChunk,
+
+if TYPE_CHECKING:  # Names a type checker needs eagerly; see __getattr__ below.
+    from bmlib.context_processor.llm_processor import (
+        DEFAULT_CONSOLIDATION_PROMPT,
+        DEFAULT_EXTRACTION_PROMPT,
+        STRUCTURED_EXTRACTION_PROMPT,
+        LLMChunkProcessor,
+        ScoredChunk,
+    )
+
+#: Names living in ``llm_processor``, resolved on first access.
+_LAZY_EXPORTS = frozenset(
+    {
+        "DEFAULT_CONSOLIDATION_PROMPT",
+        "DEFAULT_EXTRACTION_PROMPT",
+        "STRUCTURED_EXTRACTION_PROMPT",
+        "LLMChunkProcessor",
+        "ScoredChunk",
+    }
 )
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve the LLM-backed exports on first use (:pep:`562`).
+
+    The harness has no LLM dependency — that is why this is a top-level
+    package rather than part of ``agents/`` — but importing it eagerly
+    pulled in ``BaseAgent``, and through it ``bmlib.templates`` and jinja2:
+    half the package's import cost, paid by every caller who only wanted
+    :class:`IterativeContextProcessor`. Deferring keeps the claim true of
+    the package and not merely of the module.
+    """
+    if name in _LAZY_EXPORTS:
+        from bmlib.context_processor import llm_processor
+
+        return getattr(llm_processor, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """List the lazy exports too, which the default would omit."""
+    return sorted(__all__)
+
 
 __all__ = [
     "DEFAULT_CONSOLIDATION_PROMPT",
@@ -78,6 +117,7 @@ __all__ = [
     "ExtractionResult",
     "IterativeContextProcessor",
     "LLMChunkProcessor",
+    "OversizedItemError",
     "OversizedItemStrategy",
     "ProcessingConfig",
     "ProcessingResult",

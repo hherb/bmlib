@@ -57,6 +57,7 @@ from bmlib.context_processor.data_types import (
     ConsolidatedItem,
     ConsolidationStrategy,
     ExtractionResult,
+    OversizedItemError,
     OversizedItemStrategy,
     ProcessingConfig,
     ProcessingResult,
@@ -75,6 +76,17 @@ ProgressCallback = Callable[[ProgressInfo], None]
 # the budget by exactly that much, so one retry is normally enough; the bound
 # guards a ``format_item`` whose decoration grows as its content shrinks.
 _MAX_SPLIT_ATTEMPTS = 4
+
+
+def _error_result(message: str) -> ExtractionResult:
+    """Build the stand-in result a failed run reports instead of raising."""
+    return ExtractionResult(
+        content="",
+        metadata={"error": message},
+        confidence=0.0,
+        is_error=True,
+        error_message=message,
+    )
 
 
 @dataclass
@@ -107,7 +119,6 @@ class IterativeContextProcessor(ABC):
     ) -> None:
         self.config = config or ProcessingConfig()
         self.progress_callback = progress_callback
-        self._processing_stats: dict[str, Any] = {}
 
     # --- Subclass extension points ---
 
@@ -261,7 +272,9 @@ class IterativeContextProcessor(ABC):
             The batches, in input order.
 
         Raises:
-            ValueError: If an item is oversized and the strategy is FAIL.
+            OversizedItemError: If an item is oversized and the strategy is
+                FAIL. A :class:`ValueError`, as that strategy has always
+                documented.
         """
         batches: list[Batch] = []
         current_items: list[Any] = []
@@ -356,7 +369,7 @@ class IterativeContextProcessor(ABC):
             item was skipped.
 
         Raises:
-            ValueError: If the strategy is FAIL.
+            OversizedItemError: If the strategy is FAIL.
         """
         strategy = config.oversized_item_strategy
         limit = config.max_context_chars
@@ -368,7 +381,7 @@ class IterativeContextProcessor(ABC):
             return []
 
         if strategy is OversizedItemStrategy.FAIL:
-            raise ValueError(
+            raise OversizedItemError(
                 f"Item {original_idx} is oversized (needs more than {limit} chars). "
                 f"Use a different oversized_item_strategy to handle this."
             )
@@ -468,7 +481,15 @@ class IterativeContextProcessor(ABC):
         if len(valid) == 1:
             # Report the level it was merged at, without disturbing the
             # caller's result — ``intermediate_results`` may still hold it.
-            return dataclasses.replace(valid[0], recursion_level=recursion_level)
+            # ``replace()`` copies shallowly, so the mutable fields are
+            # copied too; otherwise the "copy" shares them with the original
+            # and mutating either rewrites both.
+            return dataclasses.replace(
+                valid[0],
+                metadata=dict(valid[0].metadata),
+                source_indices=list(valid[0].source_indices),
+                recursion_level=recursion_level,
+            )
 
         strategy = config.consolidation_strategy
         if strategy is ConsolidationStrategy.WEIGHTED:
@@ -492,8 +513,11 @@ class IterativeContextProcessor(ABC):
             else:
                 contents = [r.content for r in valid]
             content = config.separator.join(contents)
-            scored = [r.confidence for r in valid if r.confidence > 0]
-            confidence = sum(scored) / len(scored) if scored else 0.0
+            # Every valid result counts, including one that reported 0.0.
+            # Excluding those would make a batch the model had no confidence
+            # in *raise* the merged confidence, and would disagree with the
+            # weighted branch above about what the same inputs are worth.
+            confidence = sum(r.confidence for r in valid) / len(valid)
 
         metadata: dict[str, Any] = {}
         if config.preserve_metadata:
@@ -524,7 +548,7 @@ class IterativeContextProcessor(ABC):
             return
         try:
             self.progress_callback(ProgressInfo(stage=stage, **fields))
-        except Exception as exc:  # noqa: BLE001 — a broken UI must not lose work
+        except Exception as exc:  # a broken UI must not lose the work
             logger.warning("Progress callback failed: %s", exc)
 
     # --- Processing ---
@@ -550,11 +574,19 @@ class IterativeContextProcessor(ABC):
         Raises:
             RuntimeError: On the first failed batch when
                 ``continue_on_error`` is false.
+            OversizedItemError: From the batcher, when an item is oversized
+                and the strategy is FAIL.
         """
+        skipped_before = len(skipped_items)
         batches = self._create_batches(items, config, skipped_items)
+        # An item dropped during packing will never reach an extraction, so a
+        # progress count that waited for it would never reach the end.  It is
+        # accounted for the moment the batcher drops it.
+        items_done = len(skipped_items) - skipped_before
 
         self._report_progress(
             "batching",
+            current_item=items_done,
             total_items=len(items),
             total_batches=len(batches),
             recursion_level=recursion_level,
@@ -567,6 +599,8 @@ class IterativeContextProcessor(ABC):
         for batch in batches:
             self._report_progress(
                 "extracting",
+                current_item=items_done,
+                total_items=len(items),
                 current_batch=batch.batch_index + 1,
                 total_batches=len(batches),
                 recursion_level=recursion_level,
@@ -576,7 +610,9 @@ class IterativeContextProcessor(ABC):
                 "batch_index": batch.batch_index,
                 "item_count": batch.size,
                 "total_chars": batch.total_chars,
-                "item_indices": batch.item_indices,
+                # Copied: the subclass is free to keep or mutate what it is
+                # handed, and this list is also the batch's own.
+                "item_indices": list(batch.item_indices),
                 "recursion_level": recursion_level,
             }
             try:
@@ -602,7 +638,7 @@ class IterativeContextProcessor(ABC):
                     ExtractionResult(
                         content="",
                         metadata={"error": message},
-                        source_indices=batch.item_indices,
+                        source_indices=list(batch.item_indices),
                         confidence=0.0,
                         batch_index=batch.batch_index,
                         recursion_level=recursion_level,
@@ -610,13 +646,17 @@ class IterativeContextProcessor(ABC):
                         error_message=message,
                     )
                 )
-                continue
+            else:
+                result.batch_index = batch.batch_index
+                result.recursion_level = recursion_level
+                # Copied, not aliased: the batch's list outlives this call
+                # inside ``Batch``, and a caller sorting or clearing one
+                # would otherwise silently rewrite the other.
+                result.source_indices = list(batch.item_indices)
+                results.append(result)
+                successful += 1
 
-            result.batch_index = batch.batch_index
-            result.recursion_level = recursion_level
-            result.source_indices = batch.item_indices
-            results.append(result)
-            successful += 1
+            items_done += batch.size
 
         if intermediate_results is not None:
             intermediate_results.append(results)
@@ -654,7 +694,10 @@ class IterativeContextProcessor(ABC):
         skipped_items: list[int] = []
         successful = 0
 
-        self._processing_stats = {
+        # Local, not instance state: two concurrent ``process()`` calls on one
+        # processor would otherwise append their per-level counts into
+        # whichever dict the later call installed.
+        stats: dict[str, Any] = {
             "total_items": len(items),
             "batches_per_level": [],
             "items_per_level": [len(items)],
@@ -668,7 +711,7 @@ class IterativeContextProcessor(ABC):
                 batches_created=0,
                 recursion_levels_used=0,
                 intermediate_results=intermediate,
-                processing_stats=self._processing_stats,
+                processing_stats=stats,
             )
 
         self._report_progress(
@@ -695,7 +738,7 @@ class IterativeContextProcessor(ABC):
                     skipped_items=skipped_items,
                 )
                 successful += level_successful
-                self._processing_stats["batches_per_level"].append(batch_count)
+                stats["batches_per_level"].append(batch_count)
                 total_batches += batch_count
 
                 if not needs_recursion:
@@ -747,31 +790,26 @@ class IterativeContextProcessor(ABC):
                     )
                     for r in valid
                 ]
-                self._processing_stats["items_per_level"].append(len(current_items))
+                stats["items_per_level"].append(len(current_items))
                 recursion_level += 1
 
+        except OversizedItemError as exc:
+            # The strict oversized strategy raising is the configuration
+            # doing what it was asked, not a defect: no traceback.
+            logger.error("Processing stopped: %s", exc)
+            status = ProcessingStatus.FAILED
+            error_message = str(exc)
+            final_result = _error_result(error_message)
         except RuntimeError as exc:
             logger.error("Processing failed: %s", exc)
             status = ProcessingStatus.FAILED
             error_message = str(exc)
-            final_result = ExtractionResult(
-                content="",
-                metadata={"error": error_message},
-                confidence=0.0,
-                is_error=True,
-                error_message=error_message,
-            )
-        except Exception as exc:  # noqa: BLE001 — reported on the result
+            final_result = _error_result(error_message)
+        except Exception as exc:  # reported on the result rather than raised
             logger.exception("Unexpected error during processing")
             status = ProcessingStatus.FAILED
             error_message = f"Unexpected error: {exc}"
-            final_result = ExtractionResult(
-                content="",
-                metadata={"error": error_message},
-                confidence=0.0,
-                is_error=True,
-                error_message=error_message,
-            )
+            final_result = _error_result(error_message)
 
         if status is ProcessingStatus.COMPLETED and (failed_batches or skipped_items):
             if successful > 0:
@@ -782,11 +820,20 @@ class IterativeContextProcessor(ABC):
                     len(skipped_items),
                 )
             else:
+                # Naming both counts matters: a run where every item was
+                # dropped as oversized created no batch at all, and
+                # reporting that as "all batches failed" sends the reader
+                # looking for an extraction error that never happened.
                 status = ProcessingStatus.FAILED
-                error_message = "All batches failed"
+                error_message = (
+                    f"No batch produced a result: {len(failed_batches)} failed, "
+                    f"{len(skipped_items)} items skipped"
+                )
 
         self._report_progress(
             "complete",
+            current_item=len(items),
+            total_items=len(items),
             recursion_level=recursion_level,
             message=(
                 f"Processing complete after {recursion_level} recursion levels "
@@ -802,7 +849,7 @@ class IterativeContextProcessor(ABC):
             recursion_levels_used=recursion_level,
             intermediate_results=intermediate,
             error_message=error_message,
-            processing_stats=self._processing_stats,
+            processing_stats=stats,
             failed_batches=failed_batches,
             skipped_items=skipped_items,
             successful_batches=successful,

@@ -36,6 +36,17 @@ DEFAULT_MIN_ITEMS_FOR_RECURSION = 2
 DEFAULT_SEPARATOR = "\n\n---\n\n"
 
 
+class OversizedItemError(ValueError):
+    """An item did not fit and ``OversizedItemStrategy.FAIL`` was in force.
+
+    A :class:`ValueError`, because that is what the strict strategy has
+    always documented itself as raising. It has a type of its own so
+    :meth:`~bmlib.context_processor.IterativeContextProcessor.process` can
+    tell the configuration doing exactly what it was asked apart from a
+    genuine defect, and report it without a traceback.
+    """
+
+
 class ProcessingStatus(Enum):
     """Outcome of a processing run."""
 
@@ -78,7 +89,8 @@ class ProcessingConfig:
             content. This is the promise the whole module makes: no batch
             handed to ``extract_from_batch`` exceeds it.
         overlap_chars: Characters of overlap between pieces when an
-            oversized item is split. Zero for discrete items.
+            oversized item is split. Zero for discrete items. At most half
+            of ``max_context_chars``, so that a split advances.
         max_recursion_depth: Levels of recursive consolidation allowed
             before the run gives up and returns ``TRUNCATED``.
         min_items_for_recursion: Below this many results, consolidation is
@@ -117,11 +129,18 @@ class ProcessingConfig:
         if self.overlap_chars < 0:
             raise ValueError(f"overlap_chars must be non-negative, got {self.overlap_chars}")
         # An overlap at or above the window leaves no room to advance, so a
-        # split would emit the same leading piece forever.
-        if self.overlap_chars >= self.max_context_chars:
+        # split would emit the same leading piece forever.  Short of that,
+        # the stride is ``max_context_chars - overlap_chars`` and the piece
+        # count grows as it shrinks: at an overlap one below the window, a
+        # split advances one character at a time, so a megabyte-long item
+        # becomes a million batches and a million model calls.  Half the
+        # window is the largest overlap that keeps the piece count within
+        # twice its minimum.
+        if self.overlap_chars * 2 > self.max_context_chars:
             raise ValueError(
-                f"overlap_chars ({self.overlap_chars}) must be less than "
-                f"max_context_chars ({self.max_context_chars})"
+                f"overlap_chars ({self.overlap_chars}) must be at most half of "
+                f"max_context_chars ({self.max_context_chars}), so that a split "
+                f"advances far enough to terminate in a sane number of pieces"
             )
         if self.max_recursion_depth < 0:
             raise ValueError(
@@ -292,9 +311,16 @@ class ProcessingResult:
 
     @property
     def success_rate(self) -> float:
-        """Fraction of batches that produced a result; 1.0 when none ran."""
+        """Fraction of batches that produced a result.
+
+        A run with no batches has no ratio to report, and the two ways of
+        arriving there are opposites: an empty input had nothing that could
+        fail (1.0), while a run whose every item was dropped as oversized
+        produced nothing at all (0.0). Reporting 1.0 for both would have a
+        total loss read as a clean run.
+        """
         if self.batches_created == 0:
-            return 1.0
+            return 0.0 if self.has_failures else 1.0
         return self.successful_batches / self.batches_created
 
     def __repr__(self) -> str:
@@ -319,7 +345,10 @@ class ProgressInfo:
     Attributes:
         stage: One of ``starting``, ``batching``, ``extracting``,
             ``recursing``, ``complete``.
-        current_item: Item index reached.
+        current_item: Items of this level accounted for so far — extracted,
+            or dropped by the oversized strategy. An item dropped during
+            packing counts immediately, since no extraction will ever
+            reach it and a bar waiting for one would never fill.
         total_items: Items at this level.
         current_batch: Batch index reached (1-based, for display).
         total_batches: Batches at this level.

@@ -29,6 +29,7 @@ of bmlib uses.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from bmlib.agents import BaseAgent
@@ -99,6 +100,21 @@ Response format (JSON only):
 Respond ONLY with valid JSON."""
 
 _REQUIRED_PLACEHOLDERS = ("{query}", "{content}")
+
+#: The placeholders :meth:`LLMChunkProcessor._render` fills, in one pass.
+_PLACEHOLDER_PATTERN = re.compile(r"\{(query|content)\}")
+
+
+def _is_scored_chunk(item: Any) -> bool:
+    """True when *item* is a ``(text, score)`` pair.
+
+    ``bool`` is rejected although it is an ``int``: ``("text", True)`` is a
+    caller's mistake, and rendering it as ``score 1.00`` hides that.
+    """
+    if not (isinstance(item, tuple) and len(item) == 2):
+        return False
+    text, score = item
+    return isinstance(text, str) and isinstance(score, (int, float)) and not isinstance(score, bool)
 
 
 class LLMChunkProcessor(IterativeContextProcessor):
@@ -177,8 +193,15 @@ class LLMChunkProcessor(IterativeContextProcessor):
         Substitution is by replacement, not :meth:`str.format`, so a
         template may contain literal braces — a JSON example, a regex, a
         LaTeX fragment — without doubling them.
+
+        One pass, not two chained :meth:`str.replace` calls: a second pass
+        runs over what the first substituted, so a query containing the
+        literal ``{content}`` would have the whole batch spliced into it —
+        doubling a prompt that was sized to fit exactly, which is the
+        context overflow this module exists to prevent.
         """
-        return template.replace("{query}", query).replace("{content}", content)
+        values = {"query": query, "content": content}
+        return _PLACEHOLDER_PATTERN.sub(lambda match: values[match.group(1)], template)
 
     # --- Item rendering ---
 
@@ -192,10 +215,9 @@ class LLMChunkProcessor(IterativeContextProcessor):
         Returns:
             The chunk's text under a one-line header.
         """
-        if isinstance(item, tuple) and len(item) == 2:
+        if _is_scored_chunk(item):
             text, score = item
-            if isinstance(text, str) and isinstance(score, (int, float)):
-                return f"[Chunk {index + 1}, score {float(score):.2f}]\n{text}"
+            return f"[Chunk {index + 1}, score {float(score):.2f}]\n{text}"
 
         if isinstance(item, str):
             return f"[Item {index + 1}]\n{item}"
@@ -219,10 +241,9 @@ class LLMChunkProcessor(IterativeContextProcessor):
         Returns:
             Pieces of the same shape as the input.
         """
-        if isinstance(item, tuple) and len(item) == 2:
+        if _is_scored_chunk(item):
             text, score = item
-            if isinstance(text, str) and isinstance(score, (int, float)):
-                return [(piece, score) for piece in self._split_string(text, max_chars, overlap)]
+            return [(piece, score) for piece in self._split_string(text, max_chars, overlap)]
 
         return super().split_oversized_item(item, max_chars, overlap)
 

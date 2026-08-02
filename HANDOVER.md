@@ -4,7 +4,7 @@ _Last updated: 2026-08-02. **0.6.0 is cut.** `[Unreleased]` holds the
 `_Analysis` carrier (#37), the `<DataBankList>` deposition work (#43, #46),
 the PMC ID resolution fallback (#47) — all merged to `main` — and the
 `context_processor` port (#49, on `feature/context-processor`).
-1251 tests passing + 32 skipped._
+1300 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -64,9 +64,17 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
     Purely additive: a new top-level package, nothing existing changed, so no
     stored value moves. Four upstream defects were fixed in the port and each
     is pinned by a named regression test — see the CHANGELOG entry and the
-    non-fixes below. Design:
+    non-fixes below. Review of PR #50 closed a second round (progress that
+    could never leave 0%, a query containing `{content}` splicing the batch
+    into itself, a batch-less run reporting "All batches failed" at a 1.0
+    success rate, the strict `FAIL` strategy filed as an unexpected error,
+    two consolidation strategies disagreeing about the same confidences,
+    per-run statistics living on the instance, lists shared between the
+    batch and the result, and the package `__init__` importing the LLM
+    stack it claims not to need) — all in the CHANGELOG, all mutation-
+    verified. Design:
     `docs/superpowers/specs/2026-08-02-context-processor-design.md`.
-- **1251 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **1300 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -428,6 +436,21 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   and `test_a_boundary_item_is_measured_where_it_lands`. Each of the three has
   its own named test that fails when the fix is reverted — verified by
   mutation, not by inspection.
+- **Four more things in `context_processor` look like they want simplifying,
+  and each is load-bearing.** (1) `_render()` substitutes in one regex pass;
+  the obvious `template.replace("{query}", …).replace("{content}", …)` runs
+  its second pass over what the first substituted, so a query containing the
+  literal `{content}` gets the whole batch spliced into it — doubling a
+  prompt sized to fit exactly. (2) The package `__init__` reaches
+  `llm_processor` through a PEP 562 `__getattr__`; a plain re-export pulls
+  `BaseAgent`, `bmlib.templates` and jinja2 into every import of the LLM-free
+  harness, which is the reason the package is top-level at all. (3)
+  `process()` keeps its statistics in a local, not on `self` — as instance
+  state, two concurrent runs on one processor each returned the other's
+  counts. (4) `success_rate` cannot just return 1.0 for a batch-less run: an
+  empty input had nothing to lose, but a run whose every item was dropped as
+  oversized lost everything, and one number covering both reads a total loss
+  as a clean run. Each has a named test that fails when the fix is reverted.
 - **`estimate_item_size()` was deliberately not ported**, though it is in the
   upstream ABC and looks like a free performance win. The batcher calls
   `format_item()` on every item anyway to pack it, so the estimate saves

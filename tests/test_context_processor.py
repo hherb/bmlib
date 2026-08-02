@@ -19,6 +19,9 @@
 from __future__ import annotations
 
 import dataclasses
+import subprocess
+import sys
+import threading
 from typing import Any
 
 import pytest
@@ -29,6 +32,7 @@ from bmlib.context_processor import (
     ConsolidationStrategy,
     ExtractionResult,
     IterativeContextProcessor,
+    OversizedItemError,
     OversizedItemStrategy,
     ProcessingConfig,
     ProcessingResult,
@@ -136,6 +140,17 @@ class TestProcessingConfig:
         with pytest.raises(ValueError, match="overlap_chars"):
             ProcessingConfig(max_context_chars=100, overlap_chars=100)
 
+    def test_an_overlap_above_half_the_window_is_rejected(self) -> None:
+        """The stride is ``max_context_chars - overlap_chars``, and the piece
+        count grows without bound as it shrinks: one below the window, a split
+        advances a character at a time, so a megabyte item becomes a million
+        batches — a million model calls — with nothing to warn the caller."""
+        with pytest.raises(ValueError, match="at most half"):
+            ProcessingConfig(max_context_chars=100, overlap_chars=51)
+
+    def test_exactly_half_the_window_is_allowed(self) -> None:
+        assert ProcessingConfig(max_context_chars=100, overlap_chars=50).overlap_chars == 50
+
     def test_the_config_is_frozen(self) -> None:
         """Batching decisions read the config; mutating it mid-run would make
         the recorded statistics describe a configuration that never ran."""
@@ -190,6 +205,20 @@ class TestDataTypes:
             recursion_levels_used=0,
         )
         assert result.success_rate == 1.0
+
+    def test_success_rate_of_a_run_that_lost_everything_is_zero(self) -> None:
+        """The other way to create no batches: every item dropped as
+        oversized. Reporting 1.0 there would have a total loss read as a
+        clean run, since the ratio cannot tell the two apart on its own."""
+        result = ProcessingResult(
+            final_result=ExtractionResult(content=""),
+            status=ProcessingStatus.FAILED,
+            total_items_processed=3,
+            batches_created=0,
+            recursion_levels_used=0,
+            skipped_items=[0, 1, 2],
+        )
+        assert result.success_rate == 0.0
 
     def test_content_reaches_through_to_the_final_result(self) -> None:
         result = ProcessingResult(
@@ -367,6 +396,88 @@ class TestOversizedItems:
         assert "".join(pieces) == sentences
 
 
+class TestTheContextLimitIsNeverExceeded:
+    """The promise the whole module makes, checked where it is delivered.
+
+    Every other batching test calls ``_create_batches`` directly, at level 0,
+    with one strategy. This one asserts from inside ``extract_from_batch`` —
+    the only place that sees what a model would actually be sent — across
+    every oversized strategy, several separators, and the recursion levels
+    where ``format_consolidated_item``'s decoration applies instead of
+    ``format_item``'s.
+    """
+
+    class StrictProcessor(IterativeContextProcessor):
+        """Fails the run if it is ever handed more than it asked for."""
+
+        def __init__(self, limit: int, **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            self.limit = limit
+            self.batches_seen = 0
+
+        def format_item(self, item: Any, index: int) -> str:
+            return f"[item {index + 1}] {item}"
+
+        def format_consolidated_item(self, item: ConsolidatedItem, index: int) -> str:
+            level = item.metadata.get("recursion_level", 0)
+            return f"[Consolidated level {level}, item {index + 1}]\n{item.content}"
+
+        def extract_from_batch(
+            self, batch_content: str, query: str, batch_metadata: dict[str, Any]
+        ) -> ExtractionResult:
+            self.batches_seen += 1
+            assert len(batch_content) <= self.limit, (
+                f"batch of {len(batch_content)} chars exceeds the {self.limit}-char "
+                f"limit at level {batch_metadata['recursion_level']}"
+            )
+            assert batch_metadata["total_chars"] == len(batch_content), (
+                f"total_chars says {batch_metadata['total_chars']}, "
+                f"the content is {len(batch_content)}"
+            )
+            # Shrink, so the recursion converges rather than hitting the ceiling.
+            return ExtractionResult(content=batch_content[: int(len(batch_content) * 0.7)])
+
+    @pytest.mark.parametrize("limit", [60, 100, 250])
+    @pytest.mark.parametrize(
+        "strategy",
+        [
+            OversizedItemStrategy.SPLIT,
+            OversizedItemStrategy.TRUNCATE,
+            OversizedItemStrategy.SKIP,
+        ],
+    )
+    @pytest.mark.parametrize("separator", ["", "\n", "\n\n---\n\n"])
+    def test_no_batch_ever_exceeds_the_limit(
+        self, limit: int, strategy: OversizedItemStrategy, separator: str
+    ) -> None:
+        config = ProcessingConfig(
+            max_context_chars=limit,
+            separator=separator,
+            oversized_item_strategy=strategy,
+            max_recursion_depth=4,
+        )
+        processor = self.StrictProcessor(limit, config=config)
+        # A mix of items that fit, items needing a split, and one far over.
+        items = ["w" * 5, "w" * (limit // 2), "w" * (limit * 3), "w" * 2, "w" * (limit * 8)]
+        # Fail-fast, so a breached assertion surfaces as the run's error
+        # rather than being recorded as one failed batch among many.
+        result = processor.process(
+            items, query="q", config=dataclasses.replace(config, continue_on_error=False)
+        )
+        assert processor.batches_seen > 0
+        assert "exceeds" not in (result.error_message or "")
+        assert "total_chars says" not in (result.error_message or "")
+
+    def test_the_assertion_would_catch_a_breach(self) -> None:
+        """A guard that cannot fail proves nothing: hand the processor one
+        char less than the batcher packs to, and the run must report it."""
+        config = ProcessingConfig(max_context_chars=100, separator="\n", continue_on_error=False)
+        processor = self.StrictProcessor(99, config=config)
+        result = processor.process(["w" * 40] * 8, query="q")
+        assert result.status is ProcessingStatus.FAILED
+        assert "exceeds the 99-char limit" in (result.error_message or "")
+
+
 class TestBinPackingRunsOnce:
     """Defect 1: upstream re-ran the whole bin-packing purely to count it."""
 
@@ -515,6 +626,69 @@ class TestProcess:
         )
         assert len(processor.extract_calls) > 1
 
+    def test_the_indices_handed_out_are_copies_not_the_batch_s_own_list(self) -> None:
+        """``batch_metadata["item_indices"]`` and the result's
+        ``source_indices`` were both the ``Batch``'s one list, so a subclass
+        that kept or sorted what it was handed silently rewrote the result.
+
+        Both copies are made, and either alone would break the chain — so
+        this fails when both are reverted, which is the state it was written
+        for, and not when only one is.
+        """
+        captured: list[list[int]] = []
+
+        class CapturingProcessor(EchoProcessor):
+            def extract_from_batch(
+                self, batch_content: str, query: str, batch_metadata: dict[str, Any]
+            ) -> ExtractionResult:
+                captured.append(batch_metadata["item_indices"])
+                return ExtractionResult(content=self.reply)
+
+        result = CapturingProcessor().process(["a", "b", "c"], query="q", store_intermediate=True)
+        assert result.intermediate_results is not None
+        extracted = result.intermediate_results[0][0]
+
+        assert captured[0] == [0, 1, 2]
+        assert extracted.source_indices == [0, 1, 2]
+        assert extracted.source_indices is not captured[0]
+        # And mutating what the extractor was handed changes nothing else.
+        captured[0].clear()
+        assert extracted.source_indices == [0, 1, 2]
+
+    def test_two_concurrent_runs_do_not_share_statistics(self) -> None:
+        """``processing_stats`` was instance state: whichever run started
+        second installed its own dict, and the first then appended into it
+        and handed it back to its caller as its own report."""
+        both_started = threading.Barrier(2)
+
+        class BlockingProcessor(EchoProcessor):
+            def extract_from_batch(
+                self, batch_content: str, query: str, batch_metadata: dict[str, Any]
+            ) -> ExtractionResult:
+                # Hold at the first batch until the other run has started —
+                # and so has already installed its own statistics.
+                if batch_metadata["batch_index"] == 0:
+                    both_started.wait(timeout=10)
+                return ExtractionResult(content=self.reply)
+
+        config = ProcessingConfig(max_context_chars=20, separator="")
+        processor = BlockingProcessor(config=config)
+        results: dict[int, ProcessingResult] = {}
+
+        def run(count: int) -> None:
+            results[count] = processor.process(["a" * 10] * count, query="q")
+
+        threads = [threading.Thread(target=run, args=(count,)) for count in (4, 8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        assert set(results) == {4, 8}
+        for count, result in results.items():
+            assert result.processing_stats["total_items"] == count
+            assert sum(result.processing_stats["batches_per_level"]) == result.batches_created
+
     def test_statistics_describe_the_run(self) -> None:
         config = ProcessingConfig(max_context_chars=100, separator="\n")
         processor = CountingProcessor(config=config)
@@ -625,6 +799,48 @@ class TestFailureHandling:
         assert result.status is ProcessingStatus.FAILED
         assert "oversized" in (result.error_message or "")
 
+    def test_the_fail_strategy_is_not_reported_as_an_unexpected_error(self) -> None:
+        """It is the configuration doing exactly what it was asked. Filing it
+        under "unexpected", with a traceback, sends the reader hunting for a
+        defect in the harness instead of reading their own config."""
+        config = ProcessingConfig(
+            max_context_chars=50,
+            oversized_item_strategy=OversizedItemStrategy.FAIL,
+        )
+        result = EchoProcessor(config=config).process(["x" * 400], query="q")
+        assert "Unexpected error" not in (result.error_message or "")
+
+    def test_the_oversized_error_is_still_a_value_error(self) -> None:
+        """``OversizedItemStrategy.FAIL`` has always documented itself as
+        raising ``ValueError``; the dedicated type must not break that."""
+        config = ProcessingConfig(
+            max_context_chars=50,
+            oversized_item_strategy=OversizedItemStrategy.FAIL,
+        )
+        processor = EchoProcessor(config=config)
+        with pytest.raises(ValueError, match="oversized"):
+            processor._create_batches(["x" * 400], config)
+        with pytest.raises(OversizedItemError):
+            processor._create_batches(["x" * 400], config)
+
+    def test_losing_every_item_is_not_reported_as_failed_batches(self) -> None:
+        """With every item dropped as oversized, no batch was ever built.
+        Saying "all batches failed" sends the reader looking for an
+        extraction error that never happened."""
+        config = ProcessingConfig(
+            max_context_chars=20,
+            oversized_item_strategy=OversizedItemStrategy.SKIP,
+        )
+        result = EchoProcessor(config=config).process(["x" * 500, "y" * 500], query="q")
+        assert result.status is ProcessingStatus.FAILED
+        assert result.batches_created == 0
+        assert result.skipped_items == [0, 1]
+        assert result.failed_batches == []
+        assert "2 items skipped" in (result.error_message or "")
+        assert "0 failed" in (result.error_message or "")
+        # And the ratio must not read as a clean run.
+        assert result.success_rate == 0.0
+
     def test_an_unexpected_error_is_reported_not_raised(self) -> None:
         class BrokenProcessor(EchoProcessor):
             def format_item(self, item: Any, index: int) -> str:
@@ -708,6 +924,33 @@ class TestConsolidation:
         EchoProcessor()._merge_results(results, ProcessingConfig(), recursion_level=3)
         assert results[0].recursion_level == 0
 
+    def test_a_lone_result_is_copied_not_aliased(self) -> None:
+        """``dataclasses.replace`` copies shallowly, so the "copy" would share
+        its mutable fields with the original — and ``intermediate_results``
+        may still be holding that original."""
+        original = ExtractionResult(content="only", metadata={"k": 1}, source_indices=[0, 1])
+        merged = EchoProcessor()._merge_results([original], ProcessingConfig(), recursion_level=1)
+        merged.metadata["k"] = 2
+        merged.source_indices.append(2)
+        assert original.metadata == {"k": 1}
+        assert original.source_indices == [0, 1]
+
+    def test_a_zero_confidence_result_counts_towards_the_average(self) -> None:
+        """Skipping it would let a batch the extractor had no confidence in
+        *raise* the merged confidence, and would make CONCATENATE and
+        WEIGHTED disagree about what the same two results are worth."""
+        results = [
+            ExtractionResult(content="a", confidence=0.0),
+            ExtractionResult(content="b", confidence=1.0),
+        ]
+        concatenated = EchoProcessor()._merge_results(results, ProcessingConfig(separator="|"))
+        weighted = EchoProcessor()._merge_results(
+            results,
+            ProcessingConfig(separator="|", consolidation_strategy=ConsolidationStrategy.WEIGHTED),
+        )
+        assert concatenated.confidence == pytest.approx(0.5)
+        assert weighted.confidence == pytest.approx(0.5)
+
     def test_source_metadata_is_preserved_when_asked(self) -> None:
         config = ProcessingConfig(preserve_metadata=True)
         results = [
@@ -723,6 +966,49 @@ class TestConsolidation:
         results = [ExtractionResult(content="a", metadata={"k": 1})]
         merged = EchoProcessor()._merge_results([*results, ExtractionResult(content="b")], config)
         assert merged.metadata == {}
+
+
+class TestPackageImports:
+    """What importing the package costs, and what it still offers."""
+
+    def test_the_harness_imports_without_the_llm_stack(self) -> None:
+        """The harness has no LLM dependency — that is the reason this is a
+        top-level package rather than part of ``agents/``. Re-exporting
+        ``LLMChunkProcessor`` eagerly pulled in ``BaseAgent``, and through it
+        ``bmlib.templates`` and jinja2, making the claim true of the module
+        but not of the package anyone actually imports.
+
+        A subprocess, because ``sys.modules`` is already populated here.
+        """
+        code = (
+            "import sys\n"
+            "from bmlib.context_processor import IterativeContextProcessor\n"
+            "print(sorted(m for m in ('bmlib.agents', 'jinja2') if m in sys.modules))\n"
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, check=False
+        )
+        assert completed.returncode == 0, completed.stderr
+        assert completed.stdout.strip() == "[]"
+
+    def test_the_llm_processor_is_still_reachable_from_the_package(self) -> None:
+        """Deferred, not removed: the import path callers use must not change."""
+        from bmlib.context_processor import LLMChunkProcessor
+
+        assert LLMChunkProcessor.__module__ == "bmlib.context_processor.llm_processor"
+
+    def test_a_name_the_package_does_not_have_still_raises(self) -> None:
+        import bmlib.context_processor as package
+
+        with pytest.raises(AttributeError, match="no attribute 'not_a_real_name'"):
+            package.not_a_real_name
+
+    def test_dir_lists_the_deferred_names_too(self) -> None:
+        import bmlib.context_processor as package
+
+        listed = dir(package)
+        assert "LLMChunkProcessor" in listed
+        assert "IterativeContextProcessor" in listed
 
 
 class TestProgressReporting:
@@ -744,3 +1030,42 @@ class TestProgressReporting:
         result = processor.process(["a"], query="q")
         assert result.status is ProcessingStatus.COMPLETED
         assert result.content == "fine"
+
+    def test_the_reported_progress_actually_advances(self) -> None:
+        """``current_item`` was never set by any caller, so every
+        ``progress_percent`` a run reported was 0.0 — a progress bar that
+        could not move, demonstrated as such in the manual."""
+        seen: list[ProgressInfo] = []
+        config = ProcessingConfig(max_context_chars=100, separator="\n")
+        processor = CountingProcessor(config=config, progress_callback=seen.append)
+        processor.process([f"item {i} " * 5 for i in range(20)], query="q")
+
+        level_zero = [
+            info.progress_percent
+            for info in seen
+            if info.stage == "extracting" and info.recursion_level == 0
+        ]
+        assert len(level_zero) > 1, "not enough batches at level 0 to show movement"
+        assert level_zero == sorted(level_zero), "progress went backwards"
+        assert max(level_zero) > 0.0, "progress never left zero"
+
+    def test_progress_ends_at_a_hundred_percent(self) -> None:
+        seen: list[ProgressInfo] = []
+        processor = EchoProcessor(progress_callback=seen.append)
+        processor.process(["a", "b", "c"], query="q")
+        assert seen[-1].stage == "complete"
+        assert seen[-1].progress_percent == 100.0
+
+    def test_a_dropped_item_is_accounted_for_the_moment_it_is_dropped(self) -> None:
+        """No extraction will ever reach it, so a count that waited for one
+        would leave the bar short of the end for the rest of the run."""
+        seen: list[ProgressInfo] = []
+        config = ProcessingConfig(
+            max_context_chars=60,
+            oversized_item_strategy=OversizedItemStrategy.SKIP,
+        )
+        processor = EchoProcessor(config=config, progress_callback=seen.append)
+        processor.process(["fine", "x" * 500], query="q")
+        batching = next(info for info in seen if info.stage == "batching")
+        assert batching.current_item == 1
+        assert batching.total_items == 2

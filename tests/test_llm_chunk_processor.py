@@ -73,6 +73,26 @@ class TestPromptTemplates:
         processor = LLMChunkProcessor(make_agent(), use_structured_output=True)
         assert "JSON" in processor.extraction_prompt
 
+    def test_a_placeholder_inside_the_query_is_not_expanded(self) -> None:
+        """Two chained ``str.replace`` calls run the second pass over what the
+        first substituted, so a query containing the literal ``{content}``
+        had the whole batch spliced into it — doubling a prompt that was
+        sized to fit exactly, which is the overflow this module prevents."""
+        agent = make_agent("done")
+        processor = LLMChunkProcessor(agent)
+        processor.process(["THE-CHUNK-BODY"], query="what does {content} mean?")
+        prompt = agent.llm.chat.call_args.kwargs["messages"][0].content
+        assert prompt.count("THE-CHUNK-BODY") == 1
+        assert "what does {content} mean?" in prompt
+
+    def test_a_placeholder_inside_a_chunk_is_not_expanded_either(self) -> None:
+        agent = make_agent("done")
+        processor = LLMChunkProcessor(agent)
+        processor.process(["a chunk mentioning {query} in passing"], query="THE-QUESTION")
+        prompt = agent.llm.chat.call_args.kwargs["messages"][0].content
+        assert prompt.count("THE-QUESTION") == 1
+        assert "{query} in passing" in prompt
+
 
 class TestItemFormatting:
     """How chunks are rendered into a batch."""
@@ -93,6 +113,14 @@ class TestItemFormatting:
     def test_an_unexpected_type_is_rendered_not_dropped(self) -> None:
         processor = LLMChunkProcessor(make_agent())
         assert "42" in processor.format_item(42, 0)
+
+    def test_a_boolean_is_not_mistaken_for_a_score(self) -> None:
+        """``bool`` is an ``int``, so ``("text", True)`` would render as
+        ``score 1.00`` — a caller's mistake dressed up as a search result."""
+        processor = LLMChunkProcessor(make_agent())
+        rendered = processor.format_item(("the text", True), 0)
+        assert "score" not in rendered
+        assert "the text" in rendered
 
     def test_a_consolidated_item_names_its_level(self) -> None:
         processor = LLMChunkProcessor(make_agent())

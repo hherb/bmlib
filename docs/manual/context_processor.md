@@ -34,13 +34,16 @@ from bmlib.context_processor import (
     ExtractionResult,
     ConsolidatedItem,
     OversizedItemStrategy,
+    OversizedItemError,          # raised by the FAIL strategy
     ConsolidationStrategy,
     ProgressInfo,
 )
 ```
 
 No optional dependency: the core is pure Python. `LLMChunkProcessor` needs
-whatever provider extra its agent's model uses.
+whatever provider extra its agent's model uses, and is resolved only when
+you name it — importing the package for `IterativeContextProcessor` alone
+does not pull in `BaseAgent`, `bmlib.templates` or jinja2.
 
 ## Quick start
 
@@ -60,8 +63,12 @@ result = processor.process(chunks, query="What outcomes were reported?")
 
 print(result.content)          # the consolidated answer
 print(result.status)           # COMPLETED / PARTIAL / TRUNCATED / FAILED
-print(result.batches_created)  # model calls made, across all levels
+print(result.batches_created)  # batches extracted, across all levels
 ```
+
+`batches_created` counts batches, not model calls: with
+`use_structured_output` a batch whose JSON needs repairing costs the agent
+more than one call. Read `agent.metrics.total_requests` for that.
 
 ## The algorithm
 
@@ -103,7 +110,7 @@ class AbstractProcessor(IterativeContextProcessor):
         return ExtractionResult(content=answer, confidence=0.8)
 ```
 
-Three more are optional:
+Two more are optional:
 
 | Method | Default | Override when |
 |--------|---------|---------------|
@@ -140,7 +147,7 @@ Pass `config=` to `process()` to vary it per call.
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `max_context_chars` | 4000 | Characters allowed in one batch's formatted content |
-| `overlap_chars` | 0 | Overlap between pieces of a split item. Must be less than `max_context_chars` |
+| `overlap_chars` | 0 | Overlap between pieces of a split item. At most half of `max_context_chars`: the stride is the difference, and the piece count grows without bound as it shrinks |
 | `max_recursion_depth` | 5 | Consolidation levels before giving up with `TRUNCATED` |
 | `min_items_for_recursion` | 2 | Below this many results, stop rather than re-summarise |
 | `separator` | `"\n\n---\n\n"` | Joins items in a batch, and results in a merge |
@@ -160,7 +167,7 @@ What to do with an item that does not fit **on its own**, measured after
 | `SPLIT` | Cut it into pieces that fit. The budget passed to `split_oversized_item()` already allows for the decoration, measured rather than guessed |
 | `TRUNCATE` | Keep the leading part; the remainder is lost. The kept part is *not* decorated a second time |
 | `SKIP` | Drop it, recording its index on `ProcessingResult.skipped_items` |
-| `FAIL` | Raise `ValueError`. Through `process()` that surfaces as status `FAILED` with the reason on `error_message`, like every other failure |
+| `FAIL` | Raise `OversizedItemError` (a `ValueError`). Through `process()` that surfaces as status `FAILED` with the reason on `error_message`, like every other failure — but reported as the configuration working, not as an unexpected error with a traceback |
 
 ### `ConsolidationStrategy`
 
@@ -185,6 +192,11 @@ result.skipped_items          # item indices dropped as oversized
 result.recursion_levels_used
 result.processing_stats       # per-level batch and item counts
 ```
+
+A run with no batches has no ratio to report, so `success_rate` answers
+from what was lost: 1.0 for an empty input, which had nothing that could
+fail, and 0.0 when every item was dropped as oversized before a batch
+could be built.
 
 ### Status
 
@@ -258,6 +270,13 @@ Stages are `starting`, `batching`, `extracting`, `recursing`, `complete`.
 An exception raised by the callback is logged and swallowed — a broken
 progress bar must not lose the work.
 
+`progress_percent` is `current_item / total_items` **within the current
+level**, so it restarts at each `recursing` step — `recursion_level` says
+which level a given update belongs to. An item dropped by the oversized
+strategy counts as accounted for the moment the batcher drops it: no
+extraction will ever reach it, and a bar waiting for one would never
+fill.
+
 ## Notes for maintainers
 
 The port from bmlibrarian fixed four defects; each has a regression test
@@ -276,6 +295,15 @@ named for it in `tests/test_context_processor.py`.
 - **Items are measured where they land.** An item that starts a new batch
   is re-measured at index 0 of that batch, so `total_chars` equals the
   length of the content the extractor actually receives.
+
+Two further properties are pinned by tests rather than left to reading:
+`tests/test_context_processor.py::TestTheContextLimitIsNeverExceeded`
+asserts the limit from *inside* `extract_from_batch` — the only place that
+sees what a model would actually be sent — across every oversized strategy
+and the recursion levels where `format_consolidated_item()` decorates
+instead of `format_item()`, and includes a negative control proving the
+assertion can fail. `TestPackageImports` pins that importing the package
+does not pull in the LLM stack.
 
 `estimate_item_size()` from upstream was deliberately **not** ported: the
 batcher must call `format_item()` on every item anyway, so the estimate
