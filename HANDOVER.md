@@ -3,7 +3,7 @@
 _Last updated: 2026-08-02. **0.6.0 is cut.** `[Unreleased]` holds the
 `_Analysis` carrier (#37), the `<DataBankList>` deposition work (#43, #46) and
 the PMC ID resolution fallback (#47, on `feature/pmc-id-resolution-fallback`).
-1153 tests passing + 32 skipped._
+1157 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -67,7 +67,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
     stored values — `source` gains `"ncbi_pmc"`, and results that were
     abstract-only or a bare link can now be full text. New `ncbi_api_key`,
     declared last. Design and plan: `docs/superpowers/{specs,plans}/2026-08-02-*`.
-- **1114 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+- **1157 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -407,6 +407,16 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   prior branch did exactly that, which is why issue #47 recorded the ordering
   as the part to invert. Pinned by
   `test_the_converter_is_not_consulted_when_the_search_found_an_id`.
+- **…but it sits *outside* the search's `except`, in its own statement.** The
+  Tier 1b block is three pieces — search, converter, fetch — with the search
+  and the fetch each carrying their own handler and the converter between
+  them, deliberately bare. Tidying the three back into one `try` reads as an
+  obvious simplification and silently costs the feature its best case: a
+  search that *raised* is exactly when a second, independent resolver is worth
+  its request, and one enclosing handler would swallow the error and leave the
+  block before the converter was ever reached. `_resolve_pmc_id_via_idconv()`
+  never raises, so it needs no handler of its own. Pinned by
+  `test_the_converter_is_consulted_when_the_search_itself_failed`.
 - **A converter-discovered PMC ID is tried at Europe PMC even when the search
   hit said `inEPMC="N"`.** For that sub-case Europe PMC has already said it
   lacks the full text, so the attempt is near-certainly a 404 before NCBI gets

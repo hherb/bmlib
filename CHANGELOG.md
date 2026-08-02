@@ -17,10 +17,13 @@ All notable changes to bmlib are documented here. The format is based on
 
   `_resolve_pmc_id_via_idconv()` asks NCBI's ID Converter — the authoritative
   DOI/PMID→PMCID mapping, which depends on neither condition — but only when
-  the Europe PMC search reported no PMC ID. Second, never first: that one
-  search also returns the free-PDF URL the render tier needs, so asking the
-  converter first would cost a request on every lookup or forfeit that URL. It
-  is asked by PMID when there is one, DOI otherwise, and never raises.
+  the Europe PMC search reported no PMC ID or could not be reached at all.
+  Second, never first: that one search also returns the free-PDF URL the
+  render tier needs, so asking the converter first would cost a request on
+  every lookup or forfeit that URL. But it is consulted even when that search
+  raised — a search that failed is when a second, independent resolver is
+  worth most. It is asked by PMID when there is one, DOI otherwise, and never
+  raises.
 
   `_fetch_ncbi_pmc()` becomes a new **Tier 1c**, reading NCBI's own copy via
   E-utilities `efetch` for whichever PMC ID is in hand — the caller's or a

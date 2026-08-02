@@ -59,8 +59,10 @@ TIMEOUT = 30.0
 # A PMC ID reaches a URL path in two fetch helpers, and one of its sources is
 # third-party JSON. Validated where it is used rather than where it arrives,
 # so caller-supplied, Europe-PMC-supplied and converter-supplied ids are
-# covered by one guard.
-_PMC_ID_RE = re.compile(r"^PMC\d+$")
+# covered by one guard. Matched with fullmatch(), never match(): `$` also
+# matches before a trailing newline, so an anchored match() would accept
+# "PMC123\n" — the same reason _NCT_ID_RE in transparency uses fullmatch.
+_PMC_ID_RE = re.compile(r"PMC\d+")
 
 
 class FullTextError(Exception):
@@ -108,7 +110,7 @@ def _normalise_pmc_id(pmc_id: str) -> str:
             log line rather than a request.
     """
     normalized = pmc_id if pmc_id.startswith("PMC") else f"PMC{pmc_id}"
-    if not _PMC_ID_RE.match(normalized):
+    if not _PMC_ID_RE.fullmatch(normalized):
         raise FullTextError(f"Not a usable PMC ID: {pmc_id!r}")
     return normalized
 
@@ -240,18 +242,32 @@ class FullTextService:
         # Tier 1b: Discover PMC ID via Europe PMC search, then fetch XML
         pdf_render_url: str | None = None
         if not pmc_id and (doi or pmid):
+            discovered_pmc_id: str | None = None
             try:
                 discovered_pmc_id, pdf_render_url = self._resolve_pmc_id_and_pdf_url(
                     doi=doi, pmid=pmid
                 )
-                # Tier 1b′: the search reports a PMC ID only for what Europe PMC
-                # both indexed and holds. NCBI's converter depends on neither,
-                # and is asked second because that one search also returned the
-                # free-PDF URL Tier 1d needs.
-                if not discovered_pmc_id:
-                    discovered_pmc_id = self._resolve_pmc_id_via_idconv(doi=doi, pmid=pmid)
-                if discovered_pmc_id:
-                    resolved_pmc_id = discovered_pmc_id
+            except Exception:
+                logger.debug(
+                    "Europe PMC search failed for doi=%s pmid=%s",
+                    doi,
+                    pmid,
+                    exc_info=True,
+                )
+
+            # Tier 1b′: the search reports a PMC ID only for what Europe PMC
+            # both indexed and holds. NCBI's converter depends on neither, and
+            # is asked second because that one search also returned the
+            # free-PDF URL Tier 1d needs. It sits outside the search's `except`
+            # deliberately: a search that raised is precisely when a second,
+            # independent resolver is worth having, and folding this back into
+            # that block would skip it there.
+            if not discovered_pmc_id:
+                discovered_pmc_id = self._resolve_pmc_id_via_idconv(doi=doi, pmid=pmid)
+
+            if discovered_pmc_id:
+                resolved_pmc_id = discovered_pmc_id
+                try:
                     html, has_body = self._fetch_europepmc(discovered_pmc_id)
                     if has_body:
                         logger.info(
@@ -270,13 +286,12 @@ class FullTextService:
                         abstract_only = FullTextResult(
                             source="europepmc", html=html, content_kind="abstract"
                         )
-            except Exception:
-                logger.debug(
-                    "Europe PMC discovery failed for doi=%s pmid=%s",
-                    doi,
-                    pmid,
-                    exc_info=True,
-                )
+                except Exception:
+                    logger.debug(
+                        "Europe PMC fetch failed for discovered %s",
+                        discovered_pmc_id,
+                        exc_info=True,
+                    )
 
         # Tier 1c: NCBI's own copy, for whichever PMC ID we hold. Reaching here
         # means Europe PMC gave no body for it — it serves the corpus its
@@ -711,7 +726,7 @@ class FullTextService:
                 return None
 
             pmc_id = record.get("pmcid")
-            if not isinstance(pmc_id, str) or not _PMC_ID_RE.match(pmc_id):
+            if not isinstance(pmc_id, str) or not _PMC_ID_RE.fullmatch(pmc_id):
                 if pmc_id:
                     logger.warning("ID Converter returned an unusable PMC ID: %r", pmc_id)
                 return None

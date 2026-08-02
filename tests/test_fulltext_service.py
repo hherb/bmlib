@@ -1057,10 +1057,16 @@ class TestIDConverter:
         with patch.object(service, "_http_get", return_value=reply):
             assert service._resolve_pmc_id_via_idconv(pmid="99") is None
 
-    def test_a_malformed_pmcid_is_refused(self):
-        """It would otherwise be interpolated into a URL path unchecked."""
+    @pytest.mark.parametrize("pmcid", ["../../etc/passwd", "PMC123\n"])
+    def test_a_malformed_pmcid_is_refused(self, pmcid):
+        """It would otherwise be interpolated into a URL path unchecked.
+
+        The trailing newline is the case an anchored ``match()`` misses: ``$``
+        matches before it. This site checks the regex directly rather than
+        through ``_normalise_pmc_id``, so it needs its own coverage.
+        """
         service = FullTextService(email="test@example.com")
-        reply = self._reply(pmcid="../../etc/passwd")
+        reply = self._reply(pmcid=pmcid)
         with patch.object(service, "_http_get", return_value=reply):
             assert service._resolve_pmc_id_via_idconv(pmid="99") is None
 
@@ -1246,7 +1252,18 @@ class TestPMCIDValidation:
 
     @pytest.mark.parametrize(
         "value",
-        ["", "PMC", "PMC12a", "pmc123", "PMC123/../etc", "PMC 123", "http://x/PMC123"],
+        [
+            "",
+            "PMC",
+            "PMC12a",
+            "pmc123",
+            "PMC123/../etc",
+            "PMC 123",
+            "http://x/PMC123",
+            # `$` matches before a trailing newline, so an anchored match()
+            # would let this through into a URL path.
+            "PMC123\n",
+        ],
     )
     def test_anything_else_raises(self, value):
         with pytest.raises(FullTextError):
@@ -1412,6 +1429,57 @@ class TestPMCIDFallbackChain:
 
         assert result.source == "doi"
         assert result.html is None
+
+    def test_the_converter_is_consulted_when_the_search_itself_failed(self):
+        """A transport failure at Europe PMC must not suppress the second source.
+
+        A search that raised is exactly when an independent resolver earns its
+        request. Folding the converter back inside the search's ``except``
+        would skip it here — the enclosing handler would swallow the error and
+        leave the block before the converter was reached.
+        """
+        service = FullTextService(email="test@example.com")
+        with patch.object(
+            service,
+            "_http_get",
+            side_effect=[RuntimeError("connection reset"), self._idconv("PMC999"), self._xml()],
+        ):
+            result = service.fetch_fulltext(doi="10.1/test")
+
+        assert result.source == "europepmc"
+        assert result.content_kind == "fulltext"
+
+    def test_an_ncbi_abstract_becomes_the_last_resort(self):
+        """A body-less NCBI reply carrying a real abstract is worth holding back.
+
+        ``("ncbi_pmc", "abstract")`` is a new pair a caller can persist, so it
+        is pinned through the chain and not only at ``_fetch_ncbi_pmc``. It is
+        reachable only when Europe PMC *raised* rather than returning body-less
+        — otherwise ``abstract_only`` is already filled from there.
+        """
+        epmc_404 = MagicMock()
+        epmc_404.status_code = 404
+        unpaywall_404 = MagicMock()
+        unpaywall_404.status_code = 404
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(
+            service,
+            "_http_get",
+            side_effect=[
+                epmc_404,
+                self._xml("abstract_only_article.xml"),
+                self._search(),
+                unpaywall_404,
+            ],
+        ):
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test")
+
+        assert result.source == "ncbi_pmc"
+        assert result.content_kind == "abstract"
+        assert result.html
+        # The DOI link is hung off the abstract rather than displacing it.
+        assert result.web_url == "https://doi.org/10.1/test"
 
     def test_ncbi_is_not_tried_without_a_pmc_id(self):
         """Neither the caller nor either resolver produced one."""
