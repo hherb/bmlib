@@ -1,9 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-01. **0.6.0 is cut.** `[Unreleased]` holds the
-`_Analysis` carrier (#37) and data deposition from PubMed's `<DataBankList>`
-— the latter on `feature/databank-data-deposition`, open as a PR against
-`main`. 1114 tests passing + 32 skipped._
+_Last updated: 2026-08-02. **0.6.0 is cut.** `[Unreleased]` holds the
+`_Analysis` carrier (#37), the `<DataBankList>` deposition work (#43, #46) and
+the PMC ID resolution fallback (#47, on `feature/pmc-id-resolution-fallback`).
+1157 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -36,35 +36,38 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it will
   not see this release until that pin is widened. That is a downstream change,
   not a bmlib one.
-- **Unreleased since 0.6.0:** two changes.
-  - The `_Analysis` carrier (#37) — `analyze()`'s ten accumulators moved off
-    4-to-6-element tuples onto one mutable dataclass every sub-step mutates in
-    place. It carries one behaviour change: a funder named repeatedly by
-    CrossRef now yields one `Industry funder: X` indicator instead of one per
-    award record, which is the rule PubMed's grant list already followed.
-    Only `risk_indicators` length moves — no score, no
+- **Unreleased since 0.6.0:** four changes; the first three are merged to
+  `main`, the fourth is the current branch.
+  - The `_Analysis` carrier (#37, PR #42) — `analyze()`'s ten accumulators
+    moved off 4-to-6-element tuples onto one mutable dataclass every sub-step
+    mutates in place. It carries one behaviour change: a funder named
+    repeatedly by CrossRef now yields one `Industry funder: X` indicator
+    instead of one per award record, which is the rule PubMed's grant list
+    already followed. Only `risk_indicators` length moves — no score, no
     `industry_funding_detected`, no risk level.
-  - **Data deposition from PubMed's `<DataBankList>`** — see "Current branch"
-    below for where it lives. PubMed's deposition repositories (GenBank, PDB,
-    SRA, Dryad, figshare, BioProject, GEO; dbGaP separately) now feed
-    `data_availability_level` alongside the existing full-text prose scan,
-    merged by rank through `_Analysis.note_data_level()` rather than
-    whichever step ran last. Moves four stored values, none behind a flag —
-    see the design doc's "Behaviour changes" section and the CHANGELOG
-    `[Unreleased]` entry for the exact list. A pre-existing bug rode along:
-    three PubMed trial-registry names (`JMACCT`, `REPEC`, `UMIN CTR`) were
-    missing from `_TRIAL_REGISTRY_NAMES`.
-- **Current branch: `feature/databank-data-deposition`**, open as PR #43
-  against `main`. It passed a whole-branch review, whose one Important finding
-  (the manual still claimed a paywalled paper forfeits its data-availability
-  points — the exact case this feature fixes) and seven minor findings were
-  all addressed before the PR opened. A second review, of the PR itself,
-  raised four more, all fixed on the branch: the deposition allow-lists became
-  one name→level mapping (see "Deliberate non-fixes" below), two
-  cross-map invariants gained tests, the `_score_data_availability` fallthrough
-  gained a direct one, and that function's docstring lost two paragraphs that
-  were answering a reviewer rather than the next reader.
-- **1114 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+  - **Data deposition from PubMed's `<DataBankList>`** (PR #43). PubMed's
+    deposition repositories (GenBank, PDB, SRA, Dryad, figshare, BioProject,
+    GEO; dbGaP separately) now feed `data_availability_level` alongside the
+    existing full-text prose scan, merged by rank through
+    `_Analysis.note_data_level()` rather than whichever step ran last. Moves
+    four stored values, none behind a flag — see the design doc's "Behaviour
+    changes" section and the CHANGELOG `[Unreleased]` entry for the exact
+    list. A pre-existing bug rode along: three PubMed trial-registry names
+    (`JMACCT`, `REPEC`, `UMIN CTR`) were missing from
+    `_TRIAL_REGISTRY_NAMES`.
+  - **`scripts/sample_databank_names.py`** (PR #46) — the live runner that
+    measures `_TRIAL_REGISTRY_NAMES` and `_DEPOSITION_DATABANK_LEVELS`
+    against real PubMed records. No library code changed. **Run it before
+    editing either list**; see CLAUDE.md for what its columns mean.
+  - **PMC ID resolution fallback, and NCBI as a full-text tier** (#47) —
+    `fulltext` could reach a PMC ID only through Europe PMC's search, gated on
+    `inEPMC == "Y"`. NCBI's ID Converter is now consulted when that search
+    reports none, and a new Tier 1c reads NCBI's own copy via `efetch` for
+    whichever PMC ID is in hand; the free-PDF tier renumbers to 1d. Moves
+    stored values — `source` gains `"ncbi_pmc"`, and results that were
+    abstract-only or a bare link can now be full text. New `ncbi_api_key`,
+    declared last. Design and plan: `docs/superpowers/{specs,plans}/2026-08-02-*`.
+- **1157 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -80,7 +83,8 @@ Nothing is blocked on anything else.
 
 ### Open GitHub issues
 
-**None.** #18 and #21 closed with PR #35, #33 with PR #39, #36 with PR #40, and
+**None.** #47 is answered by the current branch, which closes it on merge.
+#18 and #21 closed with PR #35, #33 with PR #39, #36 with PR #40, and
 #37 with the `_Analysis` carrier. Every closed design stays in
 `docs/superpowers/specs/` as the record of what was rejected and why: for #33,
 raising unconditionally on a non-dict; for #36, word-boundary matching applied
@@ -396,6 +400,40 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   a disclosure they contradict, and appending and filtering through the same
   name is what keeps that honest. Pinned by
   `test_a_pubmed_statement_retracts_the_full_text_absence_indicator`.
+- **NCBI's ID Converter is consulted *after* the Europe PMC search, not
+  before.** The search returns the PMC ID **and** the free-PDF URL that feeds
+  Tier 1d in a single request. Querying the converter first would either cost
+  a second HTTP request on every lookup or forfeit that URL — and a deleted
+  prior branch did exactly that, which is why issue #47 recorded the ordering
+  as the part to invert. Pinned by
+  `test_the_converter_is_not_consulted_when_the_search_found_an_id`.
+- **…but it sits *outside* the search's `except`, in its own statement.** The
+  Tier 1b block is three pieces — search, converter, fetch — with the search
+  and the fetch each carrying their own handler and the converter between
+  them, deliberately bare. Tidying the three back into one `try` reads as an
+  obvious simplification and silently costs the feature its best case: a
+  search that *raised* is exactly when a second, independent resolver is worth
+  its request, and one enclosing handler would swallow the error and leave the
+  block before the converter was ever reached. `_resolve_pmc_id_via_idconv()`
+  never raises, so it needs no handler of its own. Pinned by
+  `test_the_converter_is_consulted_when_the_search_itself_failed`.
+- **A converter-discovered PMC ID is tried at Europe PMC even when the search
+  hit said `inEPMC="N"`.** For that sub-case Europe PMC has already said it
+  lacks the full text, so the attempt is near-certainly a 404 before NCBI gets
+  the ID. Believing the flag needs a third value out of
+  `_resolve_pmc_id_and_pdf_url()` — the multi-element tuple PR #42 spent a
+  whole change removing from this module's neighbour — plus the state to carry
+  it, and a stale flag is one of the reasons the converter exists. Deferred
+  deliberately: revisit only if it measures as a real cost in a bulk run.
+- **`_fetch_ncbi_pmc()` raises on a reply with neither body nor abstract.**
+  efetch answers an article whose publisher does not release XML with a stub
+  that is HTTP 200 and parses cleanly. Returned rather than raised, the
+  body-less machinery promotes it to `abstract_only` and the caller gets
+  near-empty HTML labelled `content_kind="abstract"` — worse than the DOI link
+  it displaced, and permanent for anything persisting results. A genuine
+  body-less article carrying a real abstract still returns. Pinned by
+  `test_a_stub_with_no_article_raises` and
+  `test_a_body_less_article_with_an_abstract_is_returned`.
 - **`_JATSHandler.endElement` tests `in_figure or in_table_wrap` before any
   prose branch, for both `<p>` and `<title>`, and routes on `in_caption`
   rather than on which `in_*` flag is set.** JATS reuses `<p>` for caption

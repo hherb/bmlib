@@ -18,7 +18,9 @@
 
 Tier 1a: Europe PMC XML -> JATS parser -> HTML
 Tier 1b: Discover PMC ID via search, then Europe PMC XML
-Tier 1c: Europe PMC PDF render URL (when XML unavailable but free PDF exists)
+Tier 1b': Discover PMC ID via NCBI's ID Converter when the search found none
+Tier 1c: NCBI PMC efetch for whichever PMC ID was resolved
+Tier 1d: Europe PMC PDF render URL (when XML unavailable but free PDF exists)
 Tier 2:  Unpaywall -> open-access PDF URL
 Tier 3:  DOI resolution -> publisher website URL
 """
@@ -26,6 +28,7 @@ Tier 3:  DOI resolution -> publisher website URL
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from urllib.parse import quote
 
@@ -48,7 +51,18 @@ EUROPE_PMC_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 UNPAYWALL_BASE = "https://api.unpaywall.org/v2"
 DOI_BASE = "https://doi.org"
 PUBMED_BASE = "https://pubmed.ncbi.nlm.nih.gov"
+NCBI_IDCONV_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/"
+EUTILS_EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+EUTILS_TOOL_NAME = "bmlib"
 TIMEOUT = 30.0
+
+# A PMC ID reaches a URL path in two fetch helpers, and one of its sources is
+# third-party JSON. Validated where it is used rather than where it arrives,
+# so caller-supplied, Europe-PMC-supplied and converter-supplied ids are
+# covered by one guard. Matched with fullmatch(), never match(): `$` also
+# matches before a trailing newline, so an anchored match() would accept
+# "PMC123\n" — the same reason _NCT_ID_RE in transparency uses fullmatch.
+_PMC_ID_RE = re.compile(r"PMC\d+")
 
 
 class FullTextError(Exception):
@@ -76,6 +90,31 @@ def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
     return None
 
 
+def _normalise_pmc_id(pmc_id: str) -> str:
+    """Prefix a bare numeric PMC ID and validate the result.
+
+    A PMC ID is interpolated into a URL path by both PMC fetch helpers, and
+    reaches them from three places: the caller, Europe PMC's search response
+    and NCBI's ID Converter. Only the first is under bmlib's control, so the
+    check lives at the point of use and covers all three.
+
+    Args:
+        pmc_id: A PMC ID, with or without the ``PMC`` prefix.
+
+    Returns:
+        The prefixed, validated ID.
+
+    Raises:
+        FullTextError: If the value is not ``PMC`` followed by digits. Every
+            tier already catches this and moves on, so a malformed ID costs a
+            log line rather than a request.
+    """
+    normalized = pmc_id if pmc_id.startswith("PMC") else f"PMC{pmc_id}"
+    if not _PMC_ID_RE.fullmatch(normalized):
+        raise FullTextError(f"Not a usable PMC ID: {pmc_id!r}")
+    return normalized
+
+
 class FullTextService:
     """Retrieves full text from multiple sources with fallback."""
 
@@ -85,6 +124,7 @@ class FullTextService:
         timeout: float = TIMEOUT,
         cache: FullTextCache | None = None,
         convert_pdfs: bool = True,
+        ncbi_api_key: str | None = None,
     ) -> None:
         """Initialise the service.
 
@@ -104,11 +144,18 @@ class FullTextService:
                 :meth:`fetch_fulltext` was given an ``identifier`` and a cache
                 is configured. Without one there is no file to extract from
                 and this setting has no effect.
+            ncbi_api_key: Optional NCBI API key, sent with the ID Converter and
+                ``efetch`` requests. It does not change this service's pacing —
+                bmlib throttles nothing — but it moves those requests into the
+                key's 10 requests/second allowance instead of the 3
+                requests/second shared by everything on the IP. Declared last
+                so positional construction stays stable.
         """
         self.email = email
         self.timeout = timeout
         self.cache = cache if cache is not None else FullTextCache()
         self.convert_pdfs = convert_pdfs
+        self.ncbi_api_key = ncbi_api_key
         # Guards the one-off warning in _attach_pdf_text when the bmlib[pdf]
         # extra is missing: worth saying once, not once per article.
         self._pdf_extra_warned = False
@@ -142,7 +189,10 @@ class FullTextService:
           0.  Known sources from fetcher (JATS XML > PDF > HTML)
           1a. Europe PMC XML (known PMC ID)
           1b. Discover PMC ID via Europe PMC search, then fetch XML
-          1c. Europe PMC PDF render URL (free PDF when XML unavailable)
+          1b'. Discover PMC ID via NCBI's ID Converter when the search
+               reported none, then fetch XML
+          1c. NCBI PMC efetch for whichever PMC ID was resolved
+          1d. Europe PMC PDF render URL (free PDF when XML unavailable)
           2.  Unpaywall PDF URL
           3.  DOI / PubMed URL fallback
         """
@@ -167,6 +217,10 @@ class FullTextService:
 
         # Tier 1a: Europe PMC with known PMC ID
         xml_failed = False
+        # Whichever PMC ID we end up holding — the caller's or a resolved one.
+        # NCBI's tier below spends it, so it is set before the fetch that may
+        # raise, not after.
+        resolved_pmc_id: str | None = pmc_id
         if pmc_id:
             try:
                 html, has_body = self._fetch_europepmc(pmc_id)
@@ -188,11 +242,32 @@ class FullTextService:
         # Tier 1b: Discover PMC ID via Europe PMC search, then fetch XML
         pdf_render_url: str | None = None
         if not pmc_id and (doi or pmid):
+            discovered_pmc_id: str | None = None
             try:
                 discovered_pmc_id, pdf_render_url = self._resolve_pmc_id_and_pdf_url(
                     doi=doi, pmid=pmid
                 )
-                if discovered_pmc_id:
+            except Exception:
+                logger.debug(
+                    "Europe PMC search failed for doi=%s pmid=%s",
+                    doi,
+                    pmid,
+                    exc_info=True,
+                )
+
+            # Tier 1b′: the search reports a PMC ID only for what Europe PMC
+            # both indexed and holds. NCBI's converter depends on neither, and
+            # is asked second because that one search also returned the
+            # free-PDF URL Tier 1d needs. It sits outside the search's `except`
+            # deliberately: a search that raised is precisely when a second,
+            # independent resolver is worth having, and folding this back into
+            # that block would skip it there.
+            if not discovered_pmc_id:
+                discovered_pmc_id = self._resolve_pmc_id_via_idconv(doi=doi, pmid=pmid)
+
+            if discovered_pmc_id:
+                resolved_pmc_id = discovered_pmc_id
+                try:
                     html, has_body = self._fetch_europepmc(discovered_pmc_id)
                     if has_body:
                         logger.info(
@@ -211,13 +286,32 @@ class FullTextService:
                         abstract_only = FullTextResult(
                             source="europepmc", html=html, content_kind="abstract"
                         )
+                except Exception:
+                    logger.debug(
+                        "Europe PMC fetch failed for discovered %s",
+                        discovered_pmc_id,
+                        exc_info=True,
+                    )
+
+        # Tier 1c: NCBI's own copy, for whichever PMC ID we hold. Reaching here
+        # means Europe PMC gave no body for it — it serves the corpus its
+        # inEPMC flag describes, and NCBI serves PMC itself. Ahead of the PDF
+        # tier because structured JATS beats a PDF that needs bmlib[pdf] to
+        # read at all.
+        if resolved_pmc_id:
+            try:
+                html, has_body = self._fetch_ncbi_pmc(resolved_pmc_id)
+                if has_body:
+                    logger.info("Full text retrieved from NCBI PMC for %s", resolved_pmc_id)
+                    self._cache_html(html, cache_id)
+                    return FullTextResult(source="ncbi_pmc", html=html, content_kind="fulltext")
+                logger.info("NCBI PMC XML for %s has no body — looking further", resolved_pmc_id)
+                if abstract_only is None:
+                    abstract_only = FullTextResult(
+                        source="ncbi_pmc", html=html, content_kind="abstract"
+                    )
             except Exception:
-                logger.debug(
-                    "Europe PMC discovery failed for doi=%s pmid=%s",
-                    doi,
-                    pmid,
-                    exc_info=True,
-                )
+                logger.debug("NCBI PMC failed for %s", resolved_pmc_id, exc_info=True)
 
         # When XML failed with a known PMC ID, search for PDF render URL
         if xml_failed and not pdf_render_url and (doi or pmid):
@@ -229,7 +323,7 @@ class FullTextService:
             except Exception:
                 logger.debug("PDF URL resolution failed", exc_info=True)
 
-        # Tier 1c: Europe PMC PDF render (when XML unavailable but free PDF exists)
+        # Tier 1d: Europe PMC PDF render (when XML unavailable but free PDF exists)
         if pdf_render_url:
             logger.info("PDF available from Europe PMC render: %s", pdf_render_url)
             result = FullTextResult(source="europepmc_pdf", pdf_url=pdf_render_url)
@@ -566,6 +660,83 @@ class FullTextService:
 
         return pmc_id, pdf_render_url
 
+    def _ncbi_params(self, **params: str) -> dict[str, str]:
+        """Add the identification NCBI asks of every caller.
+
+        ``tool`` and ``email`` identify bmlib; ``api_key`` is sent only when
+        configured, and moves the request into the key's allowance rather than
+        the 3 requests/second shared by everything on the IP.
+        """
+        params.update(tool=EUTILS_TOOL_NAME, email=self.email)
+        if self.ncbi_api_key:
+            params["api_key"] = self.ncbi_api_key
+        return params
+
+    def _resolve_pmc_id_via_idconv(
+        self,
+        *,
+        doi: str | None = None,
+        pmid: str = "",
+    ) -> str | None:
+        """Resolve a PMC ID through NCBI's ID Converter.
+
+        The second source for a PMC ID, consulted only when the Europe PMC
+        search returned none. Europe PMC reports one only when it both indexed
+        the paper and flagged its full text as available there; the converter
+        depends on neither.
+
+        Asked by PMID when there is one — an exact numeric key — and by DOI
+        otherwise, since a DOI-formatting miss is one of the divergences this
+        recovers.
+
+        Returns:
+            The PMC ID, or ``None`` if the converter has no live record for the
+            identifier, reports an error, answers with something unusable, or
+            cannot be reached. It never raises: the caller has a free-PDF URL
+            in hand by this point, and an exception would cost it.
+        """
+        if pmid:
+            ids = pmid
+        elif doi:
+            ids = doi
+        else:
+            return None
+
+        try:
+            resp = self._http_get(
+                NCBI_IDCONV_URL,
+                params=self._ncbi_params(ids=ids, format="json"),
+                headers={"Accept": "application/json"},
+            )
+            if resp.status_code != 200:
+                logger.debug("ID Converter HTTP %s for %s", resp.status_code, ids)
+                return None
+
+            records = resp.json().get("records") or []
+            if not records:
+                return None
+
+            record = records[0]
+            if record.get("status") == "error":
+                logger.debug("ID Converter has no record for %s: %s", ids, record.get("errmsg"))
+                return None
+            # Reported as the string "false" for a record PMC no longer serves.
+            if str(record.get("live", "true")).lower() == "false":
+                logger.debug("ID Converter record for %s is no longer live", ids)
+                return None
+
+            pmc_id = record.get("pmcid")
+            if not isinstance(pmc_id, str) or not _PMC_ID_RE.fullmatch(pmc_id):
+                if pmc_id:
+                    logger.warning("ID Converter returned an unusable PMC ID: %r", pmc_id)
+                return None
+
+            logger.info("PMC ID %s resolved via NCBI ID Converter for %s", pmc_id, ids)
+            return pmc_id
+        except Exception:
+            logger.debug("ID Converter lookup failed for %s", ids, exc_info=True)
+            return None
+
     def _fetch_europepmc(self, pmc_id: str) -> tuple[str, bool]:
         """Fetch JATS XML from Europe PMC and parse to HTML.
 
@@ -573,7 +744,7 @@ class FullTextService:
             A tuple of the rendered HTML and whether the document had a body,
             as for :meth:`_fetch_jats_xml`.
         """
-        normalized = pmc_id if pmc_id.startswith("PMC") else f"PMC{pmc_id}"
+        normalized = _normalise_pmc_id(pmc_id)
         url = f"{EUROPE_PMC_BASE}/{normalized}/fullTextXML"
 
         resp = self._http_get(url, headers={"Accept": "application/xml"})
@@ -584,6 +755,44 @@ class FullTextService:
 
         parser = JATSParser(resp.content, known_pmc_id=normalized)
         article, html = parser.parse_with_html()
+        return html, article.has_body
+
+    def _fetch_ncbi_pmc(self, pmc_id: str) -> tuple[str, bool]:
+        """Fetch a PMC article from NCBI's own copy via E-utilities ``efetch``.
+
+        Europe PMC's ``fullTextXML`` serves the corpus its ``inEPMC`` flag
+        describes; NCBI serves PMC itself. For an article PMC holds and Europe
+        PMC does not, this is the only source that answers.
+
+        Returns:
+            A tuple of the rendered HTML and whether the document had a body,
+            as for :meth:`_fetch_europepmc`.
+
+        Raises:
+            FullTextError: On a bad ID, a non-200 response, or a reply
+                carrying no article at all. That last case is efetch's answer
+                for an article whose publisher does not release XML: it is
+                HTTP 200 and parses cleanly into a document with no body *and*
+                no abstract. Returned rather than raised, it would be promoted
+                to the last-resort abstract and become near-empty HTML
+                labelled as one.
+        """
+        normalized = _normalise_pmc_id(pmc_id)
+        resp = self._http_get(
+            EUTILS_EFETCH_URL,
+            params=self._ncbi_params(
+                db="pmc",
+                id=normalized.removeprefix("PMC"),
+                retmode="xml",
+            ),
+            headers={"Accept": "application/xml"},
+        )
+        if resp.status_code != 200:
+            raise FullTextError(f"NCBI PMC HTTP {resp.status_code}")
+
+        article, html = JATSParser(resp.content, known_pmc_id=normalized).parse_with_html()
+        if not article.has_body and not article.abstract_sections:
+            raise FullTextError(f"NCBI PMC returned no article content for {normalized}")
         return html, article.has_body
 
     def _fetch_unpaywall(self, doi: str) -> str:

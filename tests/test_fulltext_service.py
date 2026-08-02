@@ -24,9 +24,29 @@ import pytest
 from bmlib.fulltext.cache import FullTextCache
 from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.fulltext.pdf_converter import ConversionResult
-from bmlib.fulltext.service import FullTextError, FullTextService, _sanitize_identifier
+from bmlib.fulltext.service import (
+    FullTextError,
+    FullTextService,
+    _normalise_pmc_id,
+    _sanitize_identifier,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _idconv_miss() -> MagicMock:
+    """NCBI's ID Converter with no record for the identifier."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {"status": "ok", "records": []}
+    return resp
+
+
+def _ncbi_miss() -> MagicMock:
+    """NCBI's efetch with nothing for this PMC ID."""
+    resp = MagicMock()
+    resp.status_code = 404
+    return resp
 
 
 class TestFetchEuropePMC:
@@ -57,11 +77,11 @@ class TestFetchEuropePMC:
         mock_unpaywall_404.status_code = 404
 
         service = FullTextService(email="test@example.com")
-        # PMC XML 404 -> search (no PDF) -> Unpaywall 404 -> DOI fallback
+        # PMC XML 404 -> NCBI 404 -> search (no PDF) -> Unpaywall 404 -> DOI
         with patch.object(
             service,
             "_http_get",
-            side_effect=[mock_404, mock_search_no_pdf, mock_unpaywall_404],
+            side_effect=[mock_404, _ncbi_miss(), mock_search_no_pdf, mock_unpaywall_404],
         ):
             result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test", pmid="456")
 
@@ -126,7 +146,7 @@ class TestDiscoverPMCID:
         with patch.object(
             service,
             "_http_get",
-            side_effect=[mock_search, mock_unpaywall_404],
+            side_effect=[mock_search, _idconv_miss(), mock_unpaywall_404],
         ):
             result = service.fetch_fulltext(pmc_id=None, doi="10.1/test", pmid="")
 
@@ -162,7 +182,7 @@ class TestFetchUnpaywall:
         with patch.object(
             service,
             "_http_get",
-            side_effect=[mock_pmc_404, mock_search_no_pdf, mock_unpaywall],
+            side_effect=[mock_pmc_404, _ncbi_miss(), mock_search_no_pdf, mock_unpaywall],
         ):
             result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test", pmid="456")
 
@@ -183,7 +203,7 @@ class TestFetchDOIFallback:
         with patch.object(
             service,
             "_http_get",
-            side_effect=[mock_search_empty, mock_unpaywall_404],
+            side_effect=[mock_search_empty, _idconv_miss(), mock_unpaywall_404],
         ):
             result = service.fetch_fulltext(pmc_id=None, doi="10.1/test", pmid="456")
         assert result.source == "doi"
@@ -430,7 +450,7 @@ class TestCacheIntegration:
         with patch.object(
             service,
             "_http_get",
-            side_effect=[mock_search_empty, mock_unpaywall, mock_pdf],
+            side_effect=[mock_search_empty, _idconv_miss(), mock_unpaywall, mock_pdf],
         ):
             result = service.fetch_fulltext(
                 doi="10.1234/test",
@@ -466,7 +486,7 @@ class TestCacheIntegration:
         with patch.object(
             service,
             "_http_get",
-            side_effect=[mock_search_empty, mock_unpaywall, mock_pdf],
+            side_effect=[mock_search_empty, _idconv_miss(), mock_unpaywall, mock_pdf],
         ):
             result = service.fetch_fulltext(
                 doi="10.1234/test",
@@ -636,7 +656,9 @@ class TestBodylessJATS:
         mock_search = MagicMock()
         mock_search.status_code = 200
         mock_search.json.return_value = {"resultList": {"result": []}}
-        with patch.object(service, "_http_get", side_effect=[mock_xml, mock_search, mock_search]):
+        with patch.object(
+            service, "_http_get", side_effect=[mock_xml, mock_search, _idconv_miss(), mock_search]
+        ):
             result = service.fetch_fulltext(
                 fulltext_sources=xml_only,
                 doi="10.1234/test",
@@ -663,7 +685,9 @@ class TestBodylessJATS:
         mock_search.json.return_value = {"resultList": {"result": []}}
 
         service = FullTextService(email="test@example.com", cache=FullTextCache(cache_dir=tmp_path))
-        with patch.object(service, "_http_get", side_effect=[mock_xml, mock_search, mock_search]):
+        with patch.object(
+            service, "_http_get", side_effect=[mock_xml, mock_search, _idconv_miss(), mock_search]
+        ):
             result = service.fetch_fulltext(
                 fulltext_sources=xml_only, doi="10.1234/test", identifier="10.1234/test"
             )
@@ -687,7 +711,9 @@ class TestBodylessJATS:
 
         cache = FullTextCache(cache_dir=tmp_path)
         service = FullTextService(email="test@example.com", cache=cache)
-        with patch.object(service, "_http_get", side_effect=[mock_xml, mock_search, mock_search]):
+        with patch.object(
+            service, "_http_get", side_effect=[mock_xml, mock_search, _idconv_miss(), mock_search]
+        ):
             service.fetch_fulltext(
                 fulltext_sources=xml_only, doi="10.1234/test", identifier="10.1234/test"
             )
@@ -763,6 +789,7 @@ class TestBodylessEuropePMC:
             "_http_get",
             side_effect=[
                 self._bodyless(),
+                _ncbi_miss(),
                 self._search(pdf_url="https://europepmc.org/x.pdf"),
                 pdf,
             ],
@@ -779,7 +806,9 @@ class TestBodylessEuropePMC:
         cache = FullTextCache(cache_dir=tmp_path)
         service = FullTextService(email="test@example.com", cache=cache)
         with patch.object(
-            service, "_http_get", side_effect=[self._bodyless(), self._search(), self._search()]
+            service,
+            "_http_get",
+            side_effect=[self._bodyless(), _ncbi_miss(), self._search(), self._search()],
         ):
             result = service.fetch_fulltext(
                 pmc_id="PMC123", doi="10.1234/test", identifier="10.1234/test"
@@ -798,7 +827,7 @@ class TestBodylessEuropePMC:
         with patch.object(
             service,
             "_http_get",
-            side_effect=[self._search(pmcid="PMC999"), self._bodyless(), unpaywall],
+            side_effect=[self._search(pmcid="PMC999"), self._bodyless(), _ncbi_miss(), unpaywall],
         ):
             result = service.fetch_fulltext(doi="10.1234/test", identifier="10.1234/test")
 
@@ -966,3 +995,504 @@ class TestPDFTextExtraction:
         result = service.fetch_fulltext(identifier="10.1234/test")
 
         assert result.content_kind == "fulltext"
+
+
+class TestIDConverter:
+    """NCBI's ID Converter — the second source for a PMC ID.
+
+    Europe PMC's search only reports a PMC ID when it *both* indexed the paper
+    and flagged its full text as available there. The converter depends on
+    neither, so it is what rescues a paper Europe PMC's index missed. It is
+    third-party text on the way to a URL, and it is consulted on a path that
+    already holds a free-PDF URL, so the two properties that matter are that a
+    malformed id never reaches a URL and that a failure here costs nothing
+    that was already found.
+    """
+
+    @staticmethod
+    def _reply(**fields: object) -> MagicMock:
+        """One converter record, as the API returns it."""
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"status": "ok", "records": [fields]}
+        return resp
+
+    def test_a_pmcid_is_returned(self):
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC7614751")):
+            assert service._resolve_pmc_id_via_idconv(doi="10.1/test") == "PMC7614751"
+
+    def test_the_pmid_is_preferred_when_both_are_known(self):
+        """A PMID is an exact key; a DOI is text whose formatting is what missed."""
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
+            service._resolve_pmc_id_via_idconv(doi="10.1/test", pmid="12345")
+
+        assert mock_get.call_args.kwargs["params"]["ids"] == "12345"
+
+    def test_the_doi_is_used_when_there_is_no_pmid(self):
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
+            service._resolve_pmc_id_via_idconv(doi="10.1/test")
+
+        assert mock_get.call_args.kwargs["params"]["ids"] == "10.1/test"
+
+    def test_no_identifier_makes_no_request(self):
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get") as mock_get:
+            assert service._resolve_pmc_id_via_idconv() is None
+            mock_get.assert_not_called()
+
+    def test_an_error_record_resolves_to_nothing(self):
+        """``status: error`` is how the converter reports an id it cannot map."""
+        service = FullTextService(email="test@example.com")
+        reply = self._reply(status="error", errmsg="invalid article id")
+        with patch.object(service, "_http_get", return_value=reply):
+            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+
+    def test_a_record_no_longer_live_resolves_to_nothing(self):
+        """``live: "false"`` means PMC no longer serves it — the fetch would fail."""
+        service = FullTextService(email="test@example.com")
+        reply = self._reply(pmcid="PMC123", live="false")
+        with patch.object(service, "_http_get", return_value=reply):
+            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+
+    @pytest.mark.parametrize("pmcid", ["../../etc/passwd", "PMC123\n"])
+    def test_a_malformed_pmcid_is_refused(self, pmcid):
+        """It would otherwise be interpolated into a URL path unchecked.
+
+        The trailing newline is the case an anchored ``match()`` misses: ``$``
+        matches before it. This site checks the regex directly rather than
+        through ``_normalise_pmc_id``, so it needs its own coverage.
+        """
+        service = FullTextService(email="test@example.com")
+        reply = self._reply(pmcid=pmcid)
+        with patch.object(service, "_http_get", return_value=reply):
+            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+
+    def test_an_empty_record_list_resolves_to_nothing(self):
+        service = FullTextService(email="test@example.com")
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"status": "ok", "records": []}
+        with patch.object(service, "_http_get", return_value=resp):
+            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+
+    def test_a_failed_request_resolves_to_nothing(self):
+        service = FullTextService(email="test@example.com")
+        resp = MagicMock()
+        resp.status_code = 500
+        with patch.object(service, "_http_get", return_value=resp):
+            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+
+    def test_a_transport_failure_is_not_raised(self):
+        """It is called where a free-PDF URL is already in hand.
+
+        Letting the exception out would leave the enclosing ``except`` to
+        swallow it and skip the rest of the block — trading a working PDF tier
+        for a failed converter lookup.
+        """
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", side_effect=RuntimeError("connection reset")):
+            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+
+    def test_unparseable_json_resolves_to_nothing(self):
+        service = FullTextService(email="test@example.com")
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.side_effect = ValueError("not json")
+        with patch.object(service, "_http_get", return_value=resp):
+            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+
+    def test_the_api_key_is_sent_only_when_configured(self):
+        without = FullTextService(email="test@example.com")
+        with patch.object(without, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
+            without._resolve_pmc_id_via_idconv(pmid="99")
+        assert "api_key" not in mock_get.call_args.kwargs["params"]
+
+        with_key = FullTextService(email="test@example.com", ncbi_api_key="secret")
+        with patch.object(
+            with_key, "_http_get", return_value=self._reply(pmcid="PMC1")
+        ) as mock_get:
+            with_key._resolve_pmc_id_via_idconv(pmid="99")
+        assert mock_get.call_args.kwargs["params"]["api_key"] == "secret"
+
+    def test_the_caller_is_identified_to_ncbi(self):
+        """NCBI asks for tool and email on every request."""
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
+            service._resolve_pmc_id_via_idconv(pmid="99")
+
+        params = mock_get.call_args.kwargs["params"]
+        assert params["tool"] == "bmlib"
+        assert params["email"] == "test@example.com"
+
+
+class TestNCBIPMCFetch:
+    """NCBI's own copy of a PMC article, via ``efetch db=pmc``.
+
+    Europe PMC's ``fullTextXML`` endpoint serves the corpus its ``inEPMC``
+    flag describes. When that flag says no — or the article store simply does
+    not have it — NCBI is the source that does, and it is reachable with the
+    same PMC ID.
+    """
+
+    def test_full_text_is_parsed(self):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "sample_article.xml").read_bytes()
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=resp):
+            html, has_body = service._fetch_ncbi_pmc("PMC123")
+
+        assert has_body is True
+        assert "<h1>" in html
+
+    def test_the_numeric_id_is_sent(self):
+        """efetch's documented form for db=pmc is the digits alone."""
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "sample_article.xml").read_bytes()
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=resp) as mock_get:
+            service._fetch_ncbi_pmc("PMC123")
+
+        params = mock_get.call_args.kwargs["params"]
+        assert params["id"] == "123"
+        assert params["db"] == "pmc"
+
+    def test_a_bare_numeric_id_is_accepted(self):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "sample_article.xml").read_bytes()
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=resp) as mock_get:
+            service._fetch_ncbi_pmc("123")
+
+        assert mock_get.call_args.kwargs["params"]["id"] == "123"
+
+    def test_a_malformed_pmc_id_never_reaches_a_url(self):
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get") as mock_get:
+            with pytest.raises(FullTextError):
+                service._fetch_ncbi_pmc("../../etc/passwd")
+            mock_get.assert_not_called()
+
+    def test_a_stub_with_no_article_raises(self):
+        """A non-OA reply parses cleanly into nothing.
+
+        Returned rather than raised, it would be promoted to the last-resort
+        abstract — near-empty HTML labelled ``content_kind="abstract"``, worse
+        than the DOI link it displaced and permanent for a caller that
+        persists results.
+        """
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "ncbi_pmc_stub.xml").read_bytes()
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=resp):
+            with pytest.raises(FullTextError):
+                service._fetch_ncbi_pmc("PMC123")
+
+    def test_a_body_less_article_with_an_abstract_is_returned(self):
+        """Front matter carrying a real abstract is worth having.
+
+        This is the case the stub guard must not swallow: it is the same
+        body-less document Europe PMC serves, and the caller holds it back as
+        a last resort exactly as it does there.
+        """
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "abstract_only_article.xml").read_bytes()
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=resp):
+            html, has_body = service._fetch_ncbi_pmc("PMC123")
+
+        assert has_body is False
+        assert html
+
+    def test_a_failed_request_raises(self):
+        resp = MagicMock()
+        resp.status_code = 503
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", return_value=resp):
+            with pytest.raises(FullTextError):
+                service._fetch_ncbi_pmc("PMC123")
+
+    def test_the_api_key_is_sent_only_when_configured(self):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "sample_article.xml").read_bytes()
+
+        without = FullTextService(email="test@example.com")
+        with patch.object(without, "_http_get", return_value=resp) as mock_get:
+            without._fetch_ncbi_pmc("PMC123")
+        assert "api_key" not in mock_get.call_args.kwargs["params"]
+
+        with_key = FullTextService(email="test@example.com", ncbi_api_key="secret")
+        with patch.object(with_key, "_http_get", return_value=resp) as mock_get:
+            with_key._fetch_ncbi_pmc("PMC123")
+        assert mock_get.call_args.kwargs["params"]["api_key"] == "secret"
+
+
+class TestPMCIDValidation:
+    """``PMC\\d+`` enforced where the id becomes a URL, not where it arrives."""
+
+    def test_a_bare_number_is_prefixed(self):
+        assert _normalise_pmc_id("123") == "PMC123"
+
+    def test_a_prefixed_id_is_unchanged(self):
+        assert _normalise_pmc_id("PMC123") == "PMC123"
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "",
+            "PMC",
+            "PMC12a",
+            "pmc123",
+            "PMC123/../etc",
+            "PMC 123",
+            "http://x/PMC123",
+            # `$` matches before a trailing newline, so an anchored match()
+            # would let this through into a URL path.
+            "PMC123\n",
+        ],
+    )
+    def test_anything_else_raises(self, value):
+        with pytest.raises(FullTextError):
+            _normalise_pmc_id(value)
+
+    def test_europe_pmc_validates_too(self):
+        """One guard, both fetch helpers — Europe PMC's id is third-party too."""
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get") as mock_get:
+            with pytest.raises(FullTextError):
+                service._fetch_europepmc("../../etc/passwd")
+            mock_get.assert_not_called()
+
+
+class TestPMCIDFallbackChain:
+    """Where the two new steps sit in the chain, and what they must not cost.
+
+    The order is the load-bearing part. Europe PMC's search returns the PMC ID
+    *and* the free-PDF URL in one request, so the converter is consulted only
+    after that search comes back without an id — never before it.
+    """
+
+    @staticmethod
+    def _search(pmcid: str | None = None, pdf_url: str | None = None) -> MagicMock:
+        hit: dict = {}
+        if pmcid:
+            hit["pmcid"] = pmcid
+            hit["inEPMC"] = "Y"
+        if pdf_url:
+            hit["fullTextUrlList"] = {
+                "fullTextUrl": [{"documentStyle": "pdf", "availability": "Free", "url": pdf_url}]
+            }
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"resultList": {"result": [hit] if hit else []}}
+        return resp
+
+    @staticmethod
+    def _idconv(pmcid: str | None = None) -> MagicMock:
+        resp = MagicMock()
+        resp.status_code = 200
+        records = [{"pmcid": pmcid}] if pmcid else []
+        resp.json.return_value = {"status": "ok", "records": records}
+        return resp
+
+    @staticmethod
+    def _xml(name: str = "sample_article.xml") -> MagicMock:
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / name).read_bytes()
+        return resp
+
+    def test_the_converter_rescues_a_search_that_found_nothing(self):
+        """Europe PMC's index missed it; NCBI's mapping did not."""
+        service = FullTextService(email="test@example.com")
+        with patch.object(
+            service,
+            "_http_get",
+            side_effect=[self._search(), self._idconv("PMC999"), self._xml()],
+        ):
+            result = service.fetch_fulltext(doi="10.1/test")
+
+        assert result.source == "europepmc"
+        assert result.content_kind == "fulltext"
+
+    def test_the_converter_is_not_consulted_when_the_search_found_an_id(self):
+        """It costs a request, so it is spent only where the service gave up."""
+        service = FullTextService(email="test@example.com")
+        with patch.object(
+            service, "_http_get", side_effect=[self._search(pmcid="PMC1"), self._xml()]
+        ) as mock_get:
+            result = service.fetch_fulltext(doi="10.1/test")
+
+        assert result.source == "europepmc"
+        assert mock_get.call_count == 2
+
+    def test_a_converter_failure_does_not_cost_the_free_pdf_url(self):
+        """The search already paid for that URL before the converter ran.
+
+        No ``identifier``, so there is no cache and ``_download_and_cache_pdf``
+        returns before making a request — two mocks, not three.
+        """
+        service = FullTextService(email="test@example.com")
+        with patch.object(
+            service,
+            "_http_get",
+            side_effect=[
+                self._search(pdf_url="https://europepmc.org/x.pdf"),
+                RuntimeError("connection reset"),
+            ],
+        ):
+            result = service.fetch_fulltext(doi="10.1/test")
+
+        assert result.source == "europepmc_pdf"
+        assert result.pdf_url == "https://europepmc.org/x.pdf"
+
+    def test_ncbi_is_tried_for_a_caller_supplied_id(self):
+        """The gap is the same whoever found the id — Tier 1a gets it too."""
+        epmc_404 = MagicMock()
+        epmc_404.status_code = 404
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(service, "_http_get", side_effect=[epmc_404, self._xml()]):
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test")
+
+        assert result.source == "ncbi_pmc"
+        assert result.content_kind == "fulltext"
+
+    def test_ncbi_is_tried_for_a_converter_discovered_id(self):
+        epmc_404 = MagicMock()
+        epmc_404.status_code = 404
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(
+            service,
+            "_http_get",
+            side_effect=[self._search(), self._idconv("PMC999"), epmc_404, self._xml()],
+        ):
+            result = service.fetch_fulltext(doi="10.1/test")
+
+        assert result.source == "ncbi_pmc"
+
+    def test_ncbi_full_text_beats_the_free_pdf_beneath_it(self):
+        """Structured JATS outranks a PDF that needs an optional extra to read."""
+        epmc_404 = MagicMock()
+        epmc_404.status_code = 404
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(
+            service,
+            "_http_get",
+            side_effect=[
+                epmc_404,
+                self._xml(),
+                self._search(pdf_url="https://europepmc.org/x.pdf"),
+            ],
+        ) as mock_get:
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test")
+
+        assert result.source == "ncbi_pmc"
+        # The PDF-recovery search was never reached: NCBI answered first.
+        assert mock_get.call_count == 2
+
+    def test_an_ncbi_stub_does_not_become_the_last_resort_abstract(self):
+        """The stub carries no text; the DOI link it would displace is better."""
+        epmc_404 = MagicMock()
+        epmc_404.status_code = 404
+        unpaywall_404 = MagicMock()
+        unpaywall_404.status_code = 404
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(
+            service,
+            "_http_get",
+            side_effect=[
+                epmc_404,
+                self._xml("ncbi_pmc_stub.xml"),
+                self._search(),
+                unpaywall_404,
+            ],
+        ):
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test")
+
+        assert result.source == "doi"
+        assert result.html is None
+
+    def test_the_converter_is_consulted_when_the_search_itself_failed(self):
+        """A transport failure at Europe PMC must not suppress the second source.
+
+        A search that raised is exactly when an independent resolver earns its
+        request. Folding the converter back inside the search's ``except``
+        would skip it here — the enclosing handler would swallow the error and
+        leave the block before the converter was reached.
+        """
+        service = FullTextService(email="test@example.com")
+        with patch.object(
+            service,
+            "_http_get",
+            side_effect=[RuntimeError("connection reset"), self._idconv("PMC999"), self._xml()],
+        ):
+            result = service.fetch_fulltext(doi="10.1/test")
+
+        assert result.source == "europepmc"
+        assert result.content_kind == "fulltext"
+
+    def test_an_ncbi_abstract_becomes_the_last_resort(self):
+        """A body-less NCBI reply carrying a real abstract is worth holding back.
+
+        ``("ncbi_pmc", "abstract")`` is a new pair a caller can persist, so it
+        is pinned through the chain and not only at ``_fetch_ncbi_pmc``. It is
+        reachable only when Europe PMC *raised* rather than returning body-less
+        — otherwise ``abstract_only`` is already filled from there.
+        """
+        epmc_404 = MagicMock()
+        epmc_404.status_code = 404
+        unpaywall_404 = MagicMock()
+        unpaywall_404.status_code = 404
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(
+            service,
+            "_http_get",
+            side_effect=[
+                epmc_404,
+                self._xml("abstract_only_article.xml"),
+                self._search(),
+                unpaywall_404,
+            ],
+        ):
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test")
+
+        assert result.source == "ncbi_pmc"
+        assert result.content_kind == "abstract"
+        assert result.html
+        # The DOI link is hung off the abstract rather than displacing it.
+        assert result.web_url == "https://doi.org/10.1/test"
+
+    def test_ncbi_is_not_tried_without_a_pmc_id(self):
+        """Neither the caller nor either resolver produced one."""
+        unpaywall_404 = MagicMock()
+        unpaywall_404.status_code = 404
+
+        service = FullTextService(email="test@example.com")
+        with patch.object(
+            service,
+            "_http_get",
+            side_effect=[self._search(), self._idconv(), unpaywall_404],
+        ) as mock_get:
+            result = service.fetch_fulltext(doi="10.1/test")
+
+        assert result.source == "doi"
+        assert mock_get.call_count == 3
