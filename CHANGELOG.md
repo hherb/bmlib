@@ -8,6 +8,114 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **`context_processor`: process more content than one context window holds.**
+  Ported from bmlibrarian (Phase 1 item 2, issue #49). Hierarchical
+  map-reduce: batch the items to fit, extract from each batch, then feed the
+  extractions back in as items and repeat until what remains fits in a single
+  context. The alternative — truncating — loses information silently and
+  leaves no way to tell an answer drawn from everything apart from one drawn
+  from the first 4,000 characters.
+
+  `IterativeContextProcessor` is the harness and has **no LLM dependency**: it
+  is batching, recursion, consolidation, progress and failure accounting over
+  caller-supplied items. Subclasses supply `format_item()` and
+  `extract_from_batch()`. `LLMChunkProcessor` is a ready-made subclass that
+  runs every model call through a `BaseAgent`, so token accounting, retries
+  and JSON repair are the ones the rest of bmlib uses; it accepts plain
+  strings or `(text, score)` tuples, the shape a semantic search returns.
+  Upstream's equivalent called the raw Ollama client directly and was
+  rewritten rather than copied. `create_prisma_chunk_processor` was
+  deliberately not ported: PRISMA 2020 is an application concept.
+
+  `bmlib.llm.text_utils.process_with_map_reduce()` is the shallow case of this
+  — one map, one reduce, over one string — and stays. The processor uses
+  `TextChunker` from that module when it has to split an oversized item, so
+  pieces break on paragraph and sentence boundaries instead of mid-word.
+
+  Four defects in the upstream implementation are fixed in the port, each
+  pinned by a regression test named for it:
+
+  1. **The bin-packing ran twice per level.** `process()` re-ran the whole
+     packing purely to record the batch count in its statistics —
+     re-formatting every item, re-splitting every oversized one, and
+     re-emitting every skip and split log line, so the logs claimed twice the
+     skips that happened. `_process_level()` now returns the count it has.
+  2. **Split pieces were measured before formatting.** Pieces were cut to
+     `max_chars` of *raw* content but measured after `format_item()` added its
+     decoration, so a piece cut to exactly the limit exceeded it — breaking
+     the one guarantee `max_context_chars` makes. The overflow is now measured
+     and the budget reduced by exactly that much, then verified.
+  3. **`OversizedItemStrategy.TRUNCATE` double-decorated.** It truncated the
+     *formatted* item and returned it as an ordinary item, which the batcher
+     then decorated again — over the limit once more, by the width of the
+     second decoration.
+  4. **Boundary items were measured at the wrong index.** The item that
+     *starts* a new batch was measured with the outgoing batch's index, so
+     `total_chars` under-counted wherever `format_item()` renders the index.
+     Items are now measured at the position they land in, and `total_chars`
+     equals the length of the content the extractor receives.
+
+  Two upstream shapes were changed rather than carried over.
+  `estimate_item_size()` is not ported — the batcher must call `format_item()`
+  on every item anyway, so the estimate saved nothing while letting the
+  oversized decision and the packing measurement disagree, which is how an
+  underestimated item was never split and silently overflowed its batch. And
+  the recursion now wraps results in a `ConsolidatedItem` instead of an
+  anonymous `(content, metadata)` tuple, which makes upstream's
+  `format_consolidated_item()` live code: it was defined and never called, so
+  every subclass had to sniff tuple shapes inside `format_item()` to tell a
+  consolidated result from one of its own items.
+
+  `ProcessingConfig` is frozen, and rejects an `overlap_chars` above half of
+  `max_context_chars`. The stride of a split is the difference between them,
+  and the piece count grows without bound as it shrinks: one below the
+  window, a split advances a character at a time, so a megabyte-long item
+  becomes a million batches and a million model calls with nothing to warn
+  the caller. Half is the largest overlap keeping the piece count within
+  twice its minimum.
+
+  Review of the port closed a further set of defects, each with a regression
+  test verified by reverting the fix:
+
+  - **`ProgressInfo.progress_percent` could never be anything but 0.0.**
+    Nothing ever set `current_item`. `_process_level()` now counts items off
+    as their batch completes — and counts an item dropped by the oversized
+    strategy the moment the batcher drops it, since no extraction will reach
+    it and a bar waiting for one would never fill.
+  - **A query containing the literal `{content}` had the batch spliced into
+    it.** Prompt rendering chained two `str.replace` calls, so the second ran
+    over what the first substituted — doubling a prompt sized to fit exactly,
+    which is the overflow the module exists to prevent. Substitution is now
+    a single pass.
+  - **A run that lost every item reported "All batches failed" and a
+    `success_rate` of 1.0.** With every item dropped as oversized, no batch
+    was ever built: the message named a failure that had not happened, and
+    the ratio read as a clean run. The message now names both counts, and
+    `success_rate` answers 0.0 when a batch-less run lost something and 1.0
+    only when there was nothing to lose.
+  - **The strict `FAIL` strategy was reported as an unexpected error**, with
+    a full traceback, though it is the configuration doing exactly what it
+    was asked. It raises `OversizedItemError` — still a `ValueError`, as
+    documented — which `process()` reports plainly.
+  - **`CONCATENATE` and `WEIGHTED` disagreed about the same results.** The
+    former averaged only confidences above zero, so a batch the extractor had
+    no confidence in *raised* the merged confidence. Every valid result now
+    counts under both.
+  - **`process()` kept its statistics on the instance**, so two concurrent
+    runs on one processor interleaved and each could return the other's
+    counts. They are a local.
+  - `batch_metadata["item_indices"]` and the result's `source_indices` were
+    both the `Batch`'s own list, and merging a lone result copied it
+    shallowly. Nothing handed to a caller now shares a list with anything
+    else.
+  - Importing the package eagerly re-exported `LLMChunkProcessor`, and with
+    it `BaseAgent`, `bmlib.templates` and jinja2 — over half the import cost
+    for callers wanting only the LLM-free harness. A :pep:`562` `__getattr__`
+    defers it, making the "no LLM dependency" claim true of the package and
+    not merely of `base.py`.
+  - `("text", True)` rendered as `score 1.00`, `bool` being an `int`. A
+    boolean is no longer taken for a relevance score.
+
 - **`fulltext`: a second source for PMC ID resolution, and NCBI as a full-text
   tier.** `FullTextService` could reach a PMC ID exactly one way — Europe PMC's
   search, gated on `inEPMC == "Y"`, which requires Europe PMC *both* to have

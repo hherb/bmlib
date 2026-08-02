@@ -38,6 +38,7 @@ uv pip install -e ".[all,dev]"
 | **bmlib.llm** | Unified LLM client with pluggable providers (Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini) — chat, tool calling, embeddings, JSON repair, and text chunking |
 | **bmlib.templates** | Jinja2-based prompt template engine with user-override directory fallback |
 | **bmlib.agents** | Base agent class for LLM-driven tasks with template rendering and JSON parsing |
+| **bmlib.context_processor** | Hierarchical map-reduce over content that exceeds one LLM context window — batch, extract, consolidate recursively |
 | **bmlib.quality** | 3-tier quality assessment pipeline for biomedical publications (metadata → LLM classifier → deep assessment), plus Cochrane risk-of-bias models and rule-based extractors |
 | **bmlib.transparency** | Multi-API transparency and bias analysis (CrossRef, Europe PMC, OpenAlex, ClinicalTrials.gov) |
 | **bmlib.publications** | Publication ingestion from PubMed, bioRxiv, medRxiv, and OpenAlex with deduplication and sync |
