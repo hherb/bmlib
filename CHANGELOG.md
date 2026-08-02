@@ -8,6 +8,68 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **`context_processor`: process more content than one context window holds.**
+  Ported from bmlibrarian (Phase 1 item 2, issue #49). Hierarchical
+  map-reduce: batch the items to fit, extract from each batch, then feed the
+  extractions back in as items and repeat until what remains fits in a single
+  context. The alternative — truncating — loses information silently and
+  leaves no way to tell an answer drawn from everything apart from one drawn
+  from the first 4,000 characters.
+
+  `IterativeContextProcessor` is the harness and has **no LLM dependency**: it
+  is batching, recursion, consolidation, progress and failure accounting over
+  caller-supplied items. Subclasses supply `format_item()` and
+  `extract_from_batch()`. `LLMChunkProcessor` is a ready-made subclass that
+  runs every model call through a `BaseAgent`, so token accounting, retries
+  and JSON repair are the ones the rest of bmlib uses; it accepts plain
+  strings or `(text, score)` tuples, the shape a semantic search returns.
+  Upstream's equivalent called the raw Ollama client directly and was
+  rewritten rather than copied. `create_prisma_chunk_processor` was
+  deliberately not ported: PRISMA 2020 is an application concept.
+
+  `bmlib.llm.text_utils.process_with_map_reduce()` is the shallow case of this
+  — one map, one reduce, over one string — and stays. The processor uses
+  `TextChunker` from that module when it has to split an oversized item, so
+  pieces break on paragraph and sentence boundaries instead of mid-word.
+
+  Four defects in the upstream implementation are fixed in the port, each
+  pinned by a regression test named for it:
+
+  1. **The bin-packing ran twice per level.** `process()` re-ran the whole
+     packing purely to record the batch count in its statistics —
+     re-formatting every item, re-splitting every oversized one, and
+     re-emitting every skip and split log line, so the logs claimed twice the
+     skips that happened. `_process_level()` now returns the count it has.
+  2. **Split pieces were measured before formatting.** Pieces were cut to
+     `max_chars` of *raw* content but measured after `format_item()` added its
+     decoration, so a piece cut to exactly the limit exceeded it — breaking
+     the one guarantee `max_context_chars` makes. The overflow is now measured
+     and the budget reduced by exactly that much, then verified.
+  3. **`OversizedItemStrategy.TRUNCATE` double-decorated.** It truncated the
+     *formatted* item and returned it as an ordinary item, which the batcher
+     then decorated again — over the limit once more, by the width of the
+     second decoration.
+  4. **Boundary items were measured at the wrong index.** The item that
+     *starts* a new batch was measured with the outgoing batch's index, so
+     `total_chars` under-counted wherever `format_item()` renders the index.
+     Items are now measured at the position they land in, and `total_chars`
+     equals the length of the content the extractor receives.
+
+  Two upstream shapes were changed rather than carried over.
+  `estimate_item_size()` is not ported — the batcher must call `format_item()`
+  on every item anyway, so the estimate saved nothing while letting the
+  oversized decision and the packing measurement disagree, which is how an
+  underestimated item was never split and silently overflowed its batch. And
+  the recursion now wraps results in a `ConsolidatedItem` instead of an
+  anonymous `(content, metadata)` tuple, which makes upstream's
+  `format_consolidated_item()` live code: it was defined and never called, so
+  every subclass had to sniff tuple shapes inside `format_item()` to tell a
+  consolidated result from one of its own items.
+
+  `ProcessingConfig` is frozen, and rejects an `overlap_chars` at or above
+  `max_context_chars` — a stride of zero would emit the same leading piece
+  forever.
+
 - **`fulltext`: a second source for PMC ID resolution, and NCBI as a full-text
   tier.** `FullTextService` could reach a PMC ID exactly one way — Europe PMC's
   search, gated on `inEPMC == "Y"`, which requires Europe PMC *both* to have

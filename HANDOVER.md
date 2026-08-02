@@ -1,9 +1,10 @@
 # HANDOVER — bmlib development
 
 _Last updated: 2026-08-02. **0.6.0 is cut.** `[Unreleased]` holds the
-`_Analysis` carrier (#37), the `<DataBankList>` deposition work (#43, #46) and
-the PMC ID resolution fallback (#47, on `feature/pmc-id-resolution-fallback`).
-1157 tests passing + 32 skipped._
+`_Analysis` carrier (#37), the `<DataBankList>` deposition work (#43, #46),
+the PMC ID resolution fallback (#47) — all merged to `main` — and the
+`context_processor` port (#49, on `feature/context-processor`).
+1251 tests passing + 32 skipped._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -18,15 +19,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   but never released; its changes shipped inside 0.4.0. The version lives in
   **four** places — `pyproject.toml`, `bmlib/__init__.py`, the README version
   line, `CLAUDE.md`'s header — and all four agree.
-- **What 0.6.0 shipped** (full detail in `CHANGELOG.md`, do not re-narrate it
-  here): `bmlib.publications` on PostgreSQL (#28); PDF→text wired into
-  `FullTextService`; body-less and unsectioned JATS handled, plus figure and
-  table captions in every document shape (#29, #30, #31); `BaseAgent` metrics,
-  embeddings and `retry_context`, with the two JSON extractors consolidated
-  onto one locator (#34, closed #17); the transparency PubMed step and
-  `unknown_reason` (#35, closed #18 and #21); `parse_json`'s `dict | list`
-  contract and the two silent truncations it hid (#38/#39, closed #33);
-  measured industry-funder matching (#40, closed #36).
+- **What 0.6.0 shipped** is in `CHANGELOG.md` — do not re-narrate it here.
+  Closed #17, #18, #21, #28–#31, #33, #36.
 - **Three behaviour changes in 0.6.0 make stored results non-comparable**, and
   none is behind a flag: transparency scores can rise (the PubMed step),
   `industry_funding_detected` moves in *both* directions (the funder matcher),
@@ -36,8 +30,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it will
   not see this release until that pin is widened. That is a downstream change,
   not a bmlib one.
-- **Unreleased since 0.6.0:** four changes; the first three are merged to
-  `main`, the fourth is the current branch.
+- **Unreleased since 0.6.0:** five changes; the first four are merged to
+  `main`, the fifth is the current branch.
   - The `_Analysis` carrier (#37, PR #42) — `analyze()`'s ten accumulators
     moved off 4-to-6-element tuples onto one mutable dataclass every sub-step
     mutates in place. It carries one behaviour change: a funder named
@@ -45,16 +39,13 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
     instead of one per award record, which is the rule PubMed's grant list
     already followed. Only `risk_indicators` length moves — no score, no
     `industry_funding_detected`, no risk level.
-  - **Data deposition from PubMed's `<DataBankList>`** (PR #43). PubMed's
-    deposition repositories (GenBank, PDB, SRA, Dryad, figshare, BioProject,
-    GEO; dbGaP separately) now feed `data_availability_level` alongside the
-    existing full-text prose scan, merged by rank through
-    `_Analysis.note_data_level()` rather than whichever step ran last. Moves
-    four stored values, none behind a flag — see the design doc's "Behaviour
-    changes" section and the CHANGELOG `[Unreleased]` entry for the exact
-    list. A pre-existing bug rode along: three PubMed trial-registry names
-    (`JMACCT`, `REPEC`, `UMIN CTR`) were missing from
-    `_TRIAL_REGISTRY_NAMES`.
+  - **Data deposition from PubMed's `<DataBankList>`** (PR #43). Deposition
+    repositories now feed `data_availability_level` alongside the full-text
+    prose scan, merged by rank through `_Analysis.note_data_level()` rather
+    than whichever step ran last. Moves four stored values, none behind a
+    flag — the CHANGELOG `[Unreleased]` entry lists them. A pre-existing bug
+    rode along: three PubMed trial-registry names (`JMACCT`, `REPEC`,
+    `UMIN CTR`) were missing from `_TRIAL_REGISTRY_NAMES`.
   - **`scripts/sample_databank_names.py`** (PR #46) — the live runner that
     measures `_TRIAL_REGISTRY_NAMES` and `_DEPOSITION_DATABANK_LEVELS`
     against real PubMed records. No library code changed. **Run it before
@@ -67,7 +58,15 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
     stored values — `source` gains `"ncbi_pmc"`, and results that were
     abstract-only or a bare link can now be full text. New `ncbi_api_key`,
     declared last. Design and plan: `docs/superpowers/{specs,plans}/2026-08-02-*`.
-- **1157 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
+    Merged as PR #48.
+  - **`bmlib.context_processor`** (#49) — Phase 1 item 2 of the bmlibrarian
+    port. Hierarchical map-reduce for content exceeding one context window.
+    Purely additive: a new top-level package, nothing existing changed, so no
+    stored value moves. Four upstream defects were fixed in the port and each
+    is pinned by a named regression test — see the CHANGELOG entry and the
+    non-fixes below. Design:
+    `docs/superpowers/specs/2026-08-02-context-processor-design.md`.
+- **1251 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
   the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
   when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install.
@@ -83,9 +82,9 @@ Nothing is blocked on anything else.
 
 ### Open GitHub issues
 
-**None.** #47 is answered by the current branch, which closes it on merge.
-#18 and #21 closed with PR #35, #33 with PR #39, #36 with PR #40, and
-#37 with the `_Analysis` carrier. Every closed design stays in
+**None.** #49 is answered by the current branch, which closes it on merge.
+#47 closed with PR #48, #18 and #21 with PR #35, #33 with PR #39, #36 with
+PR #40, and #37 with the `_Analysis` carrier. Every closed design stays in
 `docs/superpowers/specs/` as the record of what was rejected and why: for #33,
 raising unconditionally on a non-dict; for #36, word-boundary matching applied
 uniformly across the keyword list; for #37, a `NamedTuple` carrier (immutable,
@@ -97,13 +96,11 @@ so every step would still rebuild and return it — the arity survives).
   release. Read the three non-comparable behaviour changes above first — the
   transparency ones move stored scores, so a project holding historical
   assessments wants to know before it upgrades.
-- **Repo housekeeping is done (2026-07-30).** The three stale worktrees under
-  `.claude/worktrees/` — which shadowed every repo-wide `grep` — are removed,
-  and 29 merged local branches are deleted (the last two, `fix/parse-json-
-  contract-impl` and `fix/industry-funder-matching`, on 2026-07-30 after their
-  PRs merged). Only `main` and any in-flight branch remain. `git branch -r`
-  still lists several merged branches on `origin`; those are untouched, since
-  deleting shared refs is a separate decision.
+- **Repo housekeeping is done.** Stale worktrees under `.claude/worktrees/`
+  (which shadowed every repo-wide `grep`) and 31 merged local branches are
+  deleted; only `main` and any in-flight branch remain. `git branch -r` still
+  lists several merged branches on `origin` — untouched, since deleting shared
+  refs is a separate decision.
 
 ### bmlibrarian → bmlib porting (paused, Phase 1 next)
 
@@ -126,18 +123,21 @@ already regenerates on parse failure. Issue #17 closed in the same PR.
 Design and plan: `docs/superpowers/specs/2026-07-28-*` and
 `docs/superpowers/plans/2026-07-28-*`.
 
-**Phase 1 item 2 — the next port:**
+**Phase 1 item 2 — `context_processor` — is done** (#49, this branch), which
+completes Phase 1. It landed as the top-level `bmlib/context_processor/`, not
+under `agents/`, because the harness has no LLM dependency at all; only
+`LLMChunkProcessor` imports `BaseAgent`. `create_prisma_chunk_processor` was
+left in the app as planned, and upstream's `SemanticChunkProcessor` was
+rewritten rather than copied — it called the raw Ollama client, which is the
+coupling the port existed to sever.
 
-1. **`context_processor`.** Source:
-   `~/src/bmlibrarian/src/bmlibrarian/agents/context_processor/` (~840 lines,
-   already callback-injected — clean). Target: `bmlib/context_processor/` or
-   under `bmlib/agents/`. It batches oversized items across an LLM context
-   window and consolidates results. `create_prisma_chunk_processor` is
-   PRISMA-specific — leave that factory in the app, port the generic core. It
-   can build on `bmlib/llm/text_utils.py`.
-
-Later phases (2–4: citations, discovery, pubmed_search, MeSH, the
-prompt-driven agent family, paper_weight) are in the analysis doc.
+**Phase 2 — the next port.** Independent and parallelisable, so pick any:
+#4 citations, #8 PDF segmenter, #9 Cochrane assessor, #10 Retraction Watch,
+#11 PubMed-metadata graft. The Cochrane assessor (#9) is the one that would
+also answer the standing "wire the new quality tools into the pipeline"
+roadmap item, since `quality/cochrane_models.py` is still standalone.
+Phases 3–4 (discovery, pubmed_search, MeSH, the prompt-driven agent family,
+paper_weight) are in the analysis doc.
 
 ### The port recipe (how Phase 0 was done — repeat it)
 
@@ -166,13 +166,12 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   list**, and neither may be extended without re-running the measurement. The
   stems have to reach inside longer words; the whole words must not, or `"inc"`
   matches `"Lincoln"`. Every member was decided against
-  `tests/data/funder_names.json`, and two intuitive members were *removed* by
-  that data: `"pharma"` as a substring scored 3 true positives to 5 false ones
-  (it reaches `"Pharmacy"`, `"Pharmacogenetics"`), and `"biotech"` scored 0 to 4
-  (`"Department of Biotechnology"`, `"…Research Council"` — it names a field, not
-  a company type). `"co"`, `"corporation"`, `"ab"` and `"labs"` were rejected for
-  reasons recorded in the source comment. Regenerate the corpus with
-  `scripts/sample_funder_names.py` before changing any of it; the metric test is
+  `tests/data/funder_names.json`, which *removed* two intuitive ones —
+  `"pharma"` as a substring (3 true positives to 5 false: "Pharmacy",
+  "Pharmacogenetics") and `"biotech"` (0 to 4: it names a field, not a company
+  type) — and rejected `"co"`, `"corporation"`, `"ab"`, `"labs"` for reasons in
+  the source comment. Regenerate with `scripts/sample_funder_names.py` before
+  changing any of it; the metric test is
   `tests/test_funder_matching.py::TestAgainstTheLabelledCorpus`.
 - **`_is_industry_funder()` is deliberately not applied to COI prose.**
   `_INDUSTRY_COI_KEYWORDS` stays separate: the org suffixes match far too freely
@@ -197,21 +196,19 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   `_INDICATOR_NO_POSTED_RESULTS` from the `any()` it just ran rather than from
   `analysis.results_compliant` — reading the carrier back is harmless only
   while a field has exactly one producer, which is the positional-unpacking
-  hazard the carrier was built to remove, respelled as state. `data_level`
-  was the field this was written expecting a second producer for, and now has
-  one: PubMed's `<DataBankList>` deposition accessions join Europe PMC's
-  full-text prose scan. Neither assigns the field directly — both call
-  `_Analysis.note_data_level()`, which keeps the higher-ranked of the two
-  nominations (`_DATA_LEVEL_RANK`: `unknown` < `not_available` < `on_request`
-  < `full_open`, the same "strongest evidence wins" rule `industry_confidence`
-  already followed). `test_a_level_this_step_did_not_find_is_not_scored`
-  pinned the single-producer world, where `_check_europepmc` assigned
-  `data_level` outright and nominating `"unknown"` had no rule to interact
-  with; with a second producer that premise inverts — finding nothing is not
-  evidence against what another source found — so the test was replaced by
-  `test_a_step_that_found_nothing_does_not_lower_an_established_level`, which
-  pins the merge instead. Pinned by that test and
-  `test_an_inbound_results_flag_does_not_stand_in_for_this_check`.
+  hazard the carrier was built to remove, respelled as state. `data_level` is
+  the field this anticipated a second producer for, and now has one: PubMed's
+  `<DataBankList>` accessions join Europe PMC's prose scan. Neither assigns
+  the field — both call `_Analysis.note_data_level()`, which keeps the
+  higher-ranked nomination (`_DATA_LEVEL_RANK`: `unknown` < `not_available` <
+  `on_request` < `full_open`, the "strongest evidence wins" rule
+  `industry_confidence` already followed). The old
+  `test_a_level_this_step_did_not_find_is_not_scored` pinned the
+  single-producer world and its premise inverts with two producers — finding
+  nothing is not evidence against what another source found — so it was
+  replaced by
+  `test_a_step_that_found_nothing_does_not_lower_an_established_level`. Pinned
+  by that and `test_an_inbound_results_flag_does_not_stand_in_for_this_check`.
 - **Every level either producer can nominate must be a key of
   `_DATA_LEVEL_RANK`.** `note_data_level()` raises `KeyError` by design rather
   than ranking an unrecognised level at zero, so a level that reaches it from
@@ -226,20 +223,16 @@ Each was investigated and closed as correct. Reopening them wastes a session.
 - **Only the first half of NLM's `DataBankName` vocabulary scores a data
   deposit; the second half is excluded on purpose.**
   `_DEPOSITION_DATABANK_LEVELS` maps BioProject, dbVar, Dryad, figshare,
-  GenBank, GEO, PDB and SRA to `full_open` and dbGaP to `on_request`; dbSNP,
-  GDB, OMIM, PIR, the three PubChem tables, RefSeq, SWISSPROT, UniMES,
-  UniParc, UniProtKB and UniRef are absent, and must not be added without
-  re-deriving the split. Those names are curated *reference* databases — an
-  OMIM number says the paper is about a known condition, a RefSeq accession
-  names a sequence NCBI curated — not proof that *these* authors deposited
-  *their own* data, which is what the data-availability component measures.
-  dbSNP is the sharpest case, since it sits right next to `dbvar` in the map:
-  a dbVar accession is a structural-variant submission, but a dbSNP citation
-  is overwhelmingly an rs-number reference to a variant someone else already
-  catalogued. "Complete the allow-list" by moving OMIM or RefSeq across is the
-  obvious-looking change that gets this wrong. The exclusion is spelled out,
-  member by member, in the source comment above
-  `_DEPOSITION_DATABANK_LEVELS`.
+  GenBank, GEO, PDB and SRA to `full_open`, dbGaP to `on_request`. dbSNP, GDB,
+  OMIM, PIR, PubChem, RefSeq, SWISSPROT and the UniProt family are absent and
+  must not be added without re-deriving the split: they are curated
+  *reference* databases, so citing one does not show *these* authors deposited
+  *their own* data, which is what the component measures. dbSNP is the
+  sharpest case, sitting right next to `dbvar`: a dbVar accession is a
+  submission, a dbSNP citation is almost always an rs-number reference to
+  someone else's variant. "Completing the allow-list" is the obvious-looking
+  change that gets this wrong; the exclusion is argued member by member in the
+  source comment.
 - **It is a mapping, not a set-per-level, and `_merge_pubmed_signals()`
   subscripts it.** The earlier shape was two frozensets with the merge reading
   `"on_request" if name in controlled else "full_open"` — correct, but the
@@ -276,45 +269,32 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   redirects, `"<word>:<digits>"` read as host:port). Simplifying any of these
   back to the obvious one-liner reintroduces a real defect; each has a
   regression test naming it.
-- **`extract_json()` lets a fenced candidate win on parse alone, ahead of its
-  dict preference.** A fence is the model's own delimitation of its answer, so
-  it must not lose to an object found elsewhere in the response — a fenced
-  `[1, 2]` alongside a later top-level `{"a": 1}` returns the fenced array.
-  Since the whole-span policy landed, the fence rule is no longer the *only*
-  thing keeping a fenced array of objects intact (the ranked fallback would
-  also return it), but it is still what makes a fence outrank a competing
-  top-level dict. Pinned by `test_fenced_array_of_objects_is_returned_whole`.
-- **`extract_json()` runs its acceptance policy twice, and its non-dict
-  fallback is ranked.** Collapsing the two walks back into one restores the
-  silent truncation #33 fixed: dict preference is satisfied by the object
-  `iter_json_spans()` digs out of an array, so `'[{"a": 1}, {"b": 2}]'` in
-  prose returns `{"a": 1}` and the sibling vanishes. Reducing the ranked
-  fallback to first-parseable is the *other* way to restore it, and a worse
-  one: the first walk would accept an incidental `[]`, the second walk would
-  never run, and the caller would get unrelated data that parses cleanly and
-  passes every downstream check. `extract_and_repair_json()` deliberately has
-  no equivalent second walk (next entry). Pinned by
-  `TestExtractJsonPrefersWholeSpans`.
-- **`extract_and_repair_json()` passes `nested_objects=False`.** It *repairs*
-  candidates, and repairing an object nested inside a span it already rejected
-  discards the structure around it — `'[{"a": 1}, invalid junk]'` would return
-  `{"a": 1}` where it should raise. `extract_json()` keeps the nested stage,
-  but as a **last resort only**: the asymmetry between the two is that
-  validating a fragment reports what is there, while repairing one fabricates a
-  structure the model never emitted — not that validation has a general licence
-  to prefer fragments. Pinned by
-  `test_raises_rather_than_returning_a_fragment_of_a_broken_array`.
-- **`BaseAgent.parse_json()` asks `extract_json()` for whole spans first and
-  re-asks with fragments only after repair has failed.** Collapsing the two
-  calls back into one `extract_json(text)` at stage 2 looks like an obvious
-  simplification and reintroduces a silent data loss: a *truncated* array of
-  objects never balances, so the only span extraction can offer is the first
-  object, and taking it drops the sibling and skips the repair stage's
-  possibly-truncated WARNING. Repair closes the bracket and recovers the whole
-  array, which is why it must go first. The fragment is still reachable —
-  `'[{"a": 1}, invalid junk]'` neither parses nor repairs — just last. Pinned
-  by `test_a_truncated_array_of_objects_is_repaired_whole` and
-  `test_a_fragment_is_still_the_last_resort`.
+- **The JSON extractors prefer a *whole span* to a nested fragment, and the
+  three places that enforce it look like redundant complexity.** All three
+  guard the silent truncation #33 fixed — an array of objects reduced to its
+  first element, siblings gone, on a path both the Anthropic and
+  OpenAI-compatible providers run for every `json_mode` response.
+  (1) `extract_json()` runs its acceptance policy **twice** — whole spans
+  first, the nested-object stage only if nothing at the top level parsed —
+  because dict preference is otherwise satisfied by the object
+  `iter_json_spans()` digs out of an array. Its non-dict fallback is
+  **ranked**, not first-parseable, or the first walk would accept an
+  incidental `[]` and substitute unrelated data that parses cleanly and
+  passes every downstream check (`TestExtractJsonPrefersWholeSpans`).
+  (2) `extract_and_repair_json()` gets **no** second walk
+  (`nested_objects=False`): validating a fragment reports what is there,
+  while *repairing* one fabricates structure the model never emitted, so
+  `'[{"a": 1}, invalid junk]'` must raise
+  (`test_raises_rather_than_returning_a_fragment_of_a_broken_array`).
+  (3) `BaseAgent.parse_json()` asks for whole spans, tries repair, and only
+  then re-asks allowing fragments — a *truncated* array never balances, so
+  taking the fragment first drops the sibling and skips repair's
+  possibly-truncated WARNING (`test_a_truncated_array_of_objects_is_repaired_whole`,
+  `test_a_fragment_is_still_the_last_resort`).
+- **A fenced candidate wins on parse alone, ahead of the dict preference.** A
+  fence is the model's own delimitation of its answer, so a fenced `[1, 2]`
+  beats a later top-level `{"a": 1}`. Pinned by
+  `test_fenced_array_of_objects_is_returned_whole`.
 - **`parse_json()` enforces `dict | list` rather than only annotating it.** A
   bare scalar — `42`, `"done"`, `true`, `null` — raises. Letting it through
   would make the annotation a lie again (which is what #33 was about) and only
@@ -329,28 +309,24 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   way to satisfy it. Verified with mypy 1.14 — CI runs ruff only, so nothing in
   the build will catch its removal.
 - **`salvage_json_fields()` bounds *both* of its passes.** Every failed
-  `raw_decode()` scans forward to the end of the document, so an unbounded
-  pass is quadratic in the response length, and a repetition-looping model —
-  the failure mode salvage exists for — is what produces thousands of
-  matches. Repair runs at most once per key, at the last match, because
-  repair exists to close a value truncated at the end of the document and
-  earlier matches cannot need it (3000 matches: 135 s → 0.19 s). The fast
+  `raw_decode()` scans to the end of the document, so an unbounded pass is
+  quadratic — and a repetition-looping model, the failure mode salvage exists
+  for, is what produces thousands of matches. Repair runs at most once per
+  key, at the last match, since repair closes a value truncated at the *end*
+  and earlier matches cannot need it (3000 matches: 135 s → 0.19 s); the fast
   pass stops after `MAX_SALVAGE_MATCHES`, which is what makes the whole
   function linear (50,000 matches: ~1.0 s → ~0.08 s). Pinned by
-  `test_repair_is_attempted_at_most_once_per_key` and
-  `test_fast_pass_is_bounded_to_the_match_cap`; the last match staying
-  reachable past the cap is pinned by
+  `test_repair_is_attempted_at_most_once_per_key`,
+  `test_fast_pass_is_bounded_to_the_match_cap` and
   `test_the_last_match_is_still_reached_beyond_the_cap`.
 - **`RecursionError` is caught wherever a JSON candidate is decoded.**
-  `json.loads()` / `raw_decode()` descend recursively, so text nested past
-  the interpreter's stack limit blows the stack instead of raising
-  `ValueError` — and `'{"j": ' * 20000` is a shape repetition-looping models
-  actually emit. `extract_json()` is the one that matters: it is documented
-  never to raise and runs unconditionally on every `json_mode` response in
-  the Anthropic and OpenAI-compatible providers, so an escape takes out the
-  provider call. Narrowing any of these back to `except json.JSONDecodeError`
-  reintroduces it. Pinned by
-  `test_deep_nesting_returns_the_text_rather_than_raising`,
+  `json.loads()` / `raw_decode()` descend recursively, so text nested past the
+  stack limit blows the stack instead of raising `ValueError` — and
+  `'{"j": ' * 20000` is a shape repetition-looping models actually emit.
+  `extract_json()` is the one that matters: documented never to raise, and run
+  on every `json_mode` response in two providers, so an escape takes out the
+  provider call. Narrowing to `except json.JSONDecodeError` reintroduces it.
+  Pinned by `test_deep_nesting_returns_the_text_rather_than_raising`,
   `test_deep_nesting_raises_valueerror_not_recursionerror` (×2) and
   `test_deeply_nested_text_raises_valueerror_not_recursionerror`.
 - **`iter_json_spans()` dedupes candidates by text, not position.** Stages 4
@@ -434,6 +410,55 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   body-less article carrying a real abstract still returns. Pinned by
   `test_a_stub_with_no_article_raises` and
   `test_a_body_less_article_with_an_abstract_is_returned`.
+- **`context_processor` measures the string it will actually send; it never
+  assumes a size.** Three parts of the batcher look like they could be
+  simplified into an arithmetic shortcut, and each shortcut is a way
+  `max_context_chars` was already broken upstream. (1) `_split_to_fit()` runs
+  a trial split, *measures* the formatted overflow, and reduces the budget by
+  exactly that before re-splitting — because `split_oversized_item()` cuts raw
+  content while the batcher measures decorated content, so a piece cut to the
+  limit exceeds it. (2) `TRUNCATE` returns `_Preformatted`, which
+  `_format_one()` renders as-is; handing the truncated string back as an
+  ordinary item decorates it twice. (3) Each item is measured at the index it
+  will occupy, and re-measured at index 0 when it starts a fresh batch,
+  because a `format_item()` that renders the index changes width with it. The
+  invariant all three protect is
+  `Batch.total_chars == len(_format_batch_content(batch, config))`, and it is
+  asserted directly by `test_every_batch_reports_the_size_it_actually_formats_to`
+  and `test_a_boundary_item_is_measured_where_it_lands`. Each of the three has
+  its own named test that fails when the fix is reverted — verified by
+  mutation, not by inspection.
+- **`estimate_item_size()` was deliberately not ported**, though it is in the
+  upstream ABC and looks like a free performance win. The batcher calls
+  `format_item()` on every item anyway to pack it, so the estimate saves
+  nothing — and it is the reason upstream could deem an item small enough
+  while the packing measurement disagreed, leaving an oversized item unsplit
+  and its batch silently over the limit. Re-adding it re-opens that gap.
+- **The recursion wraps results in `ConsolidatedItem`, not a
+  `(content, metadata)` tuple.** The tuple is what made upstream's
+  `format_consolidated_item()` dead code — defined and never called, so
+  `SemanticChunkProcessor.format_item()` had to `isinstance`-sniff whether a
+  2-tuple was its own `(text, score)` or the harness's. With a declared type
+  `_format_one()` routes it, and `format_item()` only ever sees the caller's
+  own items. The harness writes `recursion_level` into that metadata itself
+  rather than trusting the extractor to have copied its batch metadata
+  forward. Pinned by `test_a_recursion_level_receives_consolidated_items` and
+  `test_consolidated_items_route_to_their_own_formatter`.
+- **`min_items_for_recursion` stopping the run at one result is correct, not
+  an early exit to remove.** One result has nothing to be consolidated
+  *with*, so recursing re-summarises it once per level until the ceiling —
+  burning `max_recursion_depth` model calls to make the answer shorter and no
+  better. Pinned by
+  `test_too_few_results_to_consolidate_returns_what_there_is`.
+- **`LLMChunkProcessor` renders prompts with `str.replace`, not
+  `str.format`, and clamps a structured-output confidence to 0.0–1.0.** A
+  caller's template may legitimately hold literal braces — a JSON example, a
+  regex — which `format()` would reject or demand be doubled; only `{query}`
+  and `{content}` are substituted, both checked present at construction. The
+  clamp matters because `min_confidence_threshold` and the weighted merge
+  both assume the range, so a model reporting 1.4 would outrank every honest
+  result. Pinned by `test_literal_braces_survive_rendering` and
+  `test_a_confidence_outside_the_range_is_clamped`.
 - **`_JATSHandler.endElement` tests `in_figure or in_table_wrap` before any
   prose branch, for both `<p>` and `<title>`, and routes on `in_caption`
   rather than on which `in_*` flag is set.** JATS reuses `<p>` for caption
@@ -454,15 +479,10 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   explicit SQL (no ORM), optional dependencies guarded with a helpful
   `ImportError`.
 - `uv` only (never pip). Tests: `uv run pytest tests/ -v`.
-- **Lint with the CI-pinned ruff, not the one in `.venv`.** CI pins
-  **ruff 0.15.20** (`.github/workflows/ci.yml`); the `.venv` currently holds
-  0.6.5, which false-flags `UP038` on `ollama.py` — a rule newer ruff removed.
-  Use:
-
-  ```bash
-  uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
-  ```
-
+- **Lint with the CI-pinned ruff, not the one in `.venv`** — CI pins
+  **0.15.20** (`.github/workflows/ci.yml`), while `.venv` holds 0.6.5, which
+  false-flags `UP038` on `ollama.py`, a rule newer ruff removed:
+  `uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .`
 - Tests use in-memory SQLite (`connect_sqlite(":memory:")`) and mocked HTTP;
   no external services. To run the PostgreSQL half of `test_backends.py`, set
   `BMLIB_TEST_POSTGRESQL_DSN` to a database the tests may drop every table in.
@@ -470,16 +490,15 @@ Each was investigated and closed as correct. Reopening them wastes a session.
 - Session workflow lives in the `nextsession` skill
   (`.claude/skills/nextsession/`); the post-review fix-up workflow lives in
   the `fixall` skill (`.claude/skills/fixall/`).
-- **Cutting a release** (0.4.0, 0.5.0, 0.5.1 and 0.6.0 were all cut this way):
-  bump the version in the **four** places that carry it — `pyproject.toml`,
+- **Cutting a release** (0.4.0 through 0.6.0 were all cut this way): bump the
+  version in the **four** places that carry it — `pyproject.toml`,
   `bmlib/__init__.py`, the README version line, `CLAUDE.md`'s header — promote
-  the CHANGELOG's `[Unreleased]` body under a dated `## [X.Y.Z]` heading while
-  leaving `## [Unreleased]` in place above it, promote any `(unreleased)`
-  markers in `docs/manual/` and `ROADMAP.md` to the version, then commit on a
-  `release/X.Y.Z` branch and open a PR. After CI is green, merge with
-  `--merge` (**not** squash) so the tag lands on main's first-parent line, tag
-  the *merge commit*, push the tag, `uv build`, and publish with
-  **`uvx twine upload`** — *not* `uv publish`, which cannot read the
-  credentials in `~/.pypirc`. Finally create the GitHub release. PyPI's JSON
-  API serves a stale CDN cache for a while afterwards; verify against
+  the CHANGELOG's `[Unreleased]` body under a dated `## [X.Y.Z]` heading
+  (leaving `## [Unreleased]` above it), promote any `(unreleased)` markers in
+  `docs/manual/` and `ROADMAP.md`, then commit on a `release/X.Y.Z` branch and
+  open a PR. After CI is green merge with `--merge` (**not** squash) so the
+  tag lands on main's first-parent line, tag the *merge commit*, push the tag,
+  `uv build`, and publish with **`uvx twine upload`** — *not* `uv publish`,
+  which cannot read `~/.pypirc`. Finally create the GitHub release. PyPI's
+  JSON API serves a stale CDN cache afterwards; verify against
   `https://pypi.org/simple/bmlib/`, which is what installers actually read.

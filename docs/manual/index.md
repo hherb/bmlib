@@ -30,7 +30,7 @@ pip install -e ".[all,dev]"
 
 ## Module Overview
 
-bmlib is organised into eight modules, each with a focused responsibility:
+bmlib is organised into nine modules, each with a focused responsibility:
 
 | Module | Description | Documentation |
 |--------|-------------|---------------|
@@ -38,6 +38,7 @@ bmlib is organised into eight modules, each with a focused responsibility:
 | [`bmlib.llm`](llm.md) | Unified LLM client with pluggable providers — chat, tool calling, embeddings, JSON repair, text chunking | [llm.md](llm.md) |
 | [`bmlib.templates`](templates.md) | Jinja2-based prompt template engine with directory fallback | [templates.md](templates.md) |
 | [`bmlib.agents`](agents.md) | Base class for LLM-driven tasks | [agents.md](agents.md) |
+| [`bmlib.context_processor`](context_processor.md) | Hierarchical map-reduce over content that exceeds one context window | [context_processor.md](context_processor.md) |
 | [`bmlib.quality`](quality.md) | 3-tier quality assessment pipeline, Cochrane risk-of-bias models, rule-based extractors | [quality.md](quality.md) |
 | [`bmlib.transparency`](transparency.md) | Multi-API transparency analysis (CrossRef, Europe PMC, OpenAlex, ClinicalTrials.gov) | [transparency.md](transparency.md) |
 | [`bmlib.publications`](publications.md) | Publication ingestion, deduplication, storage, and multi-source sync | [publications.md](publications.md) |
