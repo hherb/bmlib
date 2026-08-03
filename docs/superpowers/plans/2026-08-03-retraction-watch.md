@@ -1,4 +1,4 @@
-# Retraction Watch Implementation Plan
+1# Retraction Watch Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -541,7 +541,16 @@ def _parse_date(value: str | None) -> str | None:
     return None
 ```
 
-> Note: the imports of `csv`, `codecs`, `io`, `json`, `Callable`, `Iterable`, `Iterator`, `Sequence`, `IO`, `Path`, `Any`, and the `bmlib.db` / storage names are used by Tasks 3–5. If ruff's F401 flags them at this point, add them in the task that first uses them instead of all at once.
+> **Import only what this task uses.** The block above lists every import the
+> finished module needs, but `csv`, `codecs`, `io`, `json`, `Callable`,
+> `Iterable`, `Iterator`, `Sequence`, `IO`, `Path`, and the `bmlib.db` /
+> storage names are first used in Tasks 3–6. Ruff's F401 is enabled and will
+> fail the lint gate on them. Add each import in the task that first uses it;
+> for **this** task, keep only: `from __future__ import annotations`,
+> `logging`, `from collections.abc import Mapping`, `from datetime import
+> datetime`, and `from bmlib.publications.models import RetractionNature,
+> RetractionNotice` (the models are used by `_row_to_notice` in Task 3 — if
+> F401 flags them here, add them in Task 3 instead).
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -1061,7 +1070,19 @@ In `tests/test_backends.py`, find `TestSchema::test_ensure_schema_creates_all_ta
             ("rw-1", "retraction", "[]", "2026-01-01", "2026-01-01"),
         )
 
-        with pytest.raises(Exception):  # noqa: B017 -- dialect-specific class
+        # The two drivers raise unrelated IntegrityError classes with no
+        # shared base, so the expected class is selected per backend rather
+        # than weakened to a bare Exception.
+        if is_sqlite(backend_conn):
+            import sqlite3
+
+            expected: type[Exception] = sqlite3.IntegrityError
+        else:
+            import psycopg2
+
+            expected = psycopg2.IntegrityError
+
+        with pytest.raises(expected):
             execute(
                 backend_conn,
                 f"INSERT INTO retraction_notices {columns} VALUES {values}",
