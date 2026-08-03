@@ -8,6 +8,79 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **Retraction Watch notices: answer "is this paper retracted?"** Ported from
+  bmlibrarian (Phase 2 row 10 of the porting analysis). A biomedical
+  literature tool must not present a retracted paper as evidence, and bmlib
+  had no way to tell. `parse_retraction_watch_csv()` streams the
+  Crossref-distributed export (65 MB, 71,306 rows) into `RetractionNotice`
+  records; `store_retraction_notices()` upserts them on Retraction Watch's own
+  `record_id`, so re-importing the monthly file updates rather than
+  duplicates; `lookup_retractions()` returns every notice about one paper,
+  newest first, and the pure `is_retracted()` reduces them to a boolean.
+
+  Purely additive — a new table and a new module, nothing existing changed, so
+  no stored value moves.
+
+  This is deliberately **not** a registered source fetcher. Fetchers are a
+  date-keyed feed protocol producing publications; a retraction notice
+  annotates a paper that is usually not in the caller's `publications` table
+  at all.
+
+  A row describes **two** papers, so both identifier pairs are kept under
+  names that say which is which: `doi`/`pmid` are always the retracted paper,
+  `notice_doi`/`notice_pmid` the notice.
+
+  Five defects in the upstream implementation are fixed, each pinned by a
+  regression test named for it:
+
+  1. **The PMID match path was dead.** Its candidate column tuple contained
+     none of the export's real names (`OriginalPaperPubMedID`,
+     `RetractionPubMedID`), so every row matched `None`.
+  2. **A failed encoding attempt duplicated every row already read.** The row
+     accumulator was created outside the encoding retry loop and never
+     cleared, so `utf-8` failing part-way through left those rows in place and
+     the next encoding appended the whole file again. The port scans the
+     whole file through an incremental decoder before committing to an
+     encoding, then streams it once with that choice — so a decode failure
+     is caught before the first row is ever yielded, and a partially-read
+     accumulator can no longer exist to be duplicated.
+  3. **A byte-order mark hid the first column.** `utf-8` was tried before
+     `utf-8-sig`; on a BOM'd file it succeeds and glues the BOM to the first
+     field name, so `Record ID` became unfindable.
+  4. **Every row was stored as retracted** — including Corrections,
+     Expressions of Concern, and Reinstatements, which are the opposite.
+  5. **Missing identifiers are truthy sentinels.** The export writes `0` for
+     an absent PubMed ID (46.04% of rows) and `Unavailable`/`unavailable` for
+     an absent DOI, none of them falsy, so a truthiness test accepts them and
+     collapses tens of thousands of unrelated notices onto a single fake key.
+
+  The retraction rule is deliberately not "latest notice wins": scanning
+  newest-first, only a Retraction or a Reinstatement decides, because a
+  correction does not undo a retraction. 52 papers in the live export are
+  retracted while carrying a later Correction or Expression of Concern.
+
+  Every way this feature can degrade rather than fail is reported, because
+  each one degrades into an import that looks successful:
+
+  - `lookup_retractions()` rejects the same sentinels the parser does, so
+    `pmid="0"` or `doi="Unavailable"` raises rather than returning `[]` — a
+    caller whose own PMID column stores `"0"` for "absent" would otherwise
+    read a paper it knows nothing about as not retracted.
+  - Falling back off `utf-8-sig` to `cp1252` or `latin-1` logs at `WARNING`.
+    Neither fallback can fail, so one corrupt byte would otherwise re-read
+    the whole export under an encoding that mis-renders every non-ASCII
+    character in 66,000 rows, in silence.
+  - A `RetractionNature` value this version cannot map logs at `WARNING`,
+    once per distinct value. `is_retracted()` reads `OTHER` as evidence of
+    nothing, so a reworded `"Retraction"` upstream would answer "not
+    retracted" for every paper in the file.
+  - A malformed CSV raises `ValueError` naming the last line read whole,
+    rather than a bare `csv.Error` reading as a bmlib bug.
+  - A stream that is text rather than binary, or not seekable, raises at the
+    call rather than at the first iteration — which for the documented usage
+    means at the caller's mistake rather than from inside
+    `store_retraction_notices()`'s open transaction.
+
 - **`context_processor`: process more content than one context window holds.**
   Ported from bmlibrarian (Phase 1 item 2, issue #49). Hierarchical
   map-reduce: batch the items to fit, extract from each batch, then feed the

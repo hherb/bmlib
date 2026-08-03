@@ -1,10 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-02. **0.6.0 is cut.** `[Unreleased]` holds the
+_Last updated: 2026-08-03. **0.6.0 is cut.** `[Unreleased]` holds the
 `_Analysis` carrier (#37), the `<DataBankList>` deposition work (#43, #46),
-the PMC ID resolution fallback (#47) — all merged to `main` — and the
-`context_processor` port (#49, on `feature/context-processor`).
-1300 tests passing + 32 skipped._
+the PMC ID resolution fallback (#47) and the `context_processor` port (#49) —
+all merged to `main`. One thing is in flight: `feature/retraction-watch`
+(Phase 2 row 10) is done, reviewed, and post-review-fixed on its own branch —
+not yet merged, no PR opened yet. No open issues. 1358 tests passing + 44
+skipped on that branch (`main` itself is a few tests behind — see "Test
+suite" in ROADMAP.md for the current split)._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -30,54 +33,51 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it will
   not see this release until that pin is widened. That is a downstream change,
   not a bmlib one.
-- **Unreleased since 0.6.0:** five changes; the first four are merged to
-  `main`, the fifth is the current branch.
-  - The `_Analysis` carrier (#37, PR #42) — `analyze()`'s ten accumulators
-    moved off 4-to-6-element tuples onto one mutable dataclass every sub-step
-    mutates in place. It carries one behaviour change: a funder named
-    repeatedly by CrossRef now yields one `Industry funder: X` indicator
-    instead of one per award record, which is the rule PubMed's grant list
-    already followed. Only `risk_indicators` length moves — no score, no
-    `industry_funding_detected`, no risk level.
-  - **Data deposition from PubMed's `<DataBankList>`** (PR #43). Deposition
-    repositories now feed `data_availability_level` alongside the full-text
-    prose scan, merged by rank through `_Analysis.note_data_level()` rather
-    than whichever step ran last. Moves four stored values, none behind a
-    flag — the CHANGELOG `[Unreleased]` entry lists them. A pre-existing bug
-    rode along: three PubMed trial-registry names (`JMACCT`, `REPEC`,
-    `UMIN CTR`) were missing from `_TRIAL_REGISTRY_NAMES`.
-  - **`scripts/sample_databank_names.py`** (PR #46) — the live runner that
-    measures `_TRIAL_REGISTRY_NAMES` and `_DEPOSITION_DATABANK_LEVELS`
-    against real PubMed records. No library code changed. **Run it before
-    editing either list**; see CLAUDE.md for what its columns mean.
-  - **PMC ID resolution fallback, and NCBI as a full-text tier** (#47) —
-    `fulltext` could reach a PMC ID only through Europe PMC's search, gated on
-    `inEPMC == "Y"`. NCBI's ID Converter is now consulted when that search
-    reports none, and a new Tier 1c reads NCBI's own copy via `efetch` for
-    whichever PMC ID is in hand; the free-PDF tier renumbers to 1d. Moves
-    stored values — `source` gains `"ncbi_pmc"`, and results that were
-    abstract-only or a bare link can now be full text. New `ncbi_api_key`,
-    declared last. Design and plan: `docs/superpowers/{specs,plans}/2026-08-02-*`.
-    Merged as PR #48.
-  - **`bmlib.context_processor`** (#49) — Phase 1 item 2 of the bmlibrarian
-    port. Hierarchical map-reduce for content exceeding one context window.
-    Purely additive: a new top-level package, nothing existing changed, so no
-    stored value moves. Four upstream defects were fixed in the port and each
-    is pinned by a named regression test — see the CHANGELOG entry and the
-    non-fixes below. Review of PR #50 closed a second round (progress that
-    could never leave 0%, a query containing `{content}` splicing the batch
-    into itself, a batch-less run reporting "All batches failed" at a 1.0
-    success rate, the strict `FAIL` strategy filed as an unexpected error,
-    two consolidation strategies disagreeing about the same confidences,
-    per-run statistics living on the instance, lists shared between the
-    batch and the result, and the package `__init__` importing the LLM
-    stack it claims not to need) — all in the CHANGELOG, all mutation-
-    verified. Design:
+- **Unreleased since 0.6.0:** six changes. Five are merged to `main`; the
+  sixth (retraction watch) is done and reviewed on `feature/retraction-watch`,
+  not yet merged. Enough has accumulated for a 0.7.0 — see "Worth doing"
+  below. Full detail is in `CHANGELOG.md`'s `[Unreleased]` section; this is a
+  one-line-each index, not a second copy of it.
+  - The `_Analysis` carrier (#37, PR #42) — ten accumulator tuples → one
+    mutable dataclass every sub-step mutates in place. One behaviour change:
+    a funder CrossRef names repeatedly now yields one indicator, not one per
+    award record.
+  - Data deposition from PubMed's `<DataBankList>` (PR #43) — moves four
+    stored `data_availability_level` values; fixed three trial-registry
+    names missing from `_TRIAL_REGISTRY_NAMES` in passing.
+  - `scripts/sample_databank_names.py` (PR #46) — the live runner that
+    measures the two curated allow-lists above against real PubMed records.
+    No library code changed. **Run it before editing either list.**
+  - PMC ID resolution fallback + NCBI as a full-text tier (#47, PR #48) —
+    NCBI's ID Converter backs up Europe PMC's search; moves stored values
+    (`source` gains `"ncbi_pmc"`). Design/plan:
+    `docs/superpowers/{specs,plans}/2026-08-02-*`.
+  - `bmlib.context_processor` (#49, PR #50) — hierarchical map-reduce
+    harness for oversized content, purely additive. Design:
     `docs/superpowers/specs/2026-08-02-context-processor-design.md`.
-- **1300 tests passing + 32 skipped** (`uv run pytest tests/ -q`). 30 skips are
-  the PostgreSQL parameterisations of `tests/test_backends.py`, which run only
-  when `BMLIB_TEST_POSTGRESQL_DSN` is set; the other 2 are `test_pdf_converter`
-  tests needing PyMuPDF, which the dev venv does not install.
+  - **Retraction Watch notices** (Phase 2 row 10, `feature/retraction-watch`,
+    **not yet merged**) — `parse_retraction_watch_csv()` streams the
+    Crossref-distributed export into `RetractionNotice`s;
+    `store_retraction_notices()` upserts them idempotently on Retraction
+    Watch's own `record_id`; `lookup_retractions()` + the pure
+    `is_retracted()` answer "is this paper retracted?". Purely additive.
+    Deliberately **not** a fetcher — see the design doc's "Why this is not a
+    fetcher" and the non-fixes below. Design:
+    `docs/superpowers/specs/2026-08-02-retraction-watch-design.md`.
+    Post-review hardening: every path that degrades rather than raises now
+    reports itself, because each degraded into an import that *looked*
+    successful — the encoding fallback and an unmappable
+    `RetractionNature` warn, `lookup_retractions()` rejects the export's own
+    `"0"`/`"Unavailable"` sentinels instead of returning `[]`, a malformed
+    CSV names where it broke, and a bad stream raises at the call rather
+    than from inside a transaction.
+- **1372 tests passing + 50 skipped** on `feature/retraction-watch`
+  (`uv run pytest tests/ -q`); `main` itself is a few tests behind, pending
+  the merge. 47 skips are the PostgreSQL parameterisations of
+  `tests/test_backends.py`, which run only when `BMLIB_TEST_POSTGRESQL_DSN`
+  is set; 2 are `test_pdf_converter` tests needing PyMuPDF, which the dev
+  venv does not install; 1 is a PostgreSQL-only schema test that does not
+  apply to SQLite. With a DSN set it is **1419 passing + 3 skipped**.
 - **Documentation was rewritten for 0.4.0 and kept current through 0.6.0.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` were promoted to `0.6.0` at release;
@@ -90,9 +90,8 @@ Nothing is blocked on anything else.
 
 ### Open GitHub issues
 
-**None.** #49 is answered by the current branch, which closes it on merge.
-#47 closed with PR #48, #18 and #21 with PR #35, #33 with PR #39, #36 with
-PR #40, and #37 with the `_Analysis` carrier. Every closed design stays in
+**None.** #49 closed with PR #50, #47 with PR #48, #18 and #21 with PR #35,
+#33 with PR #39, #36 with PR #40, and #37 with the `_Analysis` carrier. Every closed design stays in
 `docs/superpowers/specs/` as the record of what was rejected and why: for #33,
 raising unconditionally on a non-dict; for #36, word-boundary matching applied
 uniformly across the keyword list; for #37, a `NamedTuple` carrier (immutable,
@@ -100,6 +99,11 @@ so every step would still rebuild and return it — the arity survives).
 
 ### Worth doing, not yet an issue
 
+- **Merge `feature/retraction-watch`**, then **cut 0.7.0.** `[Unreleased]`
+  holds five changes already merged to `main`, two of which move stored
+  values (the `<DataBankList>` deposition work and the NCBI full-text tier),
+  plus retraction watch on its own branch, purely additive. The release
+  recipe is at the end of this file.
 - **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume this
   release. Read the three non-comparable behaviour changes above first — the
   transparency ones move stored scores, so a project holding historical
@@ -139,11 +143,17 @@ left in the app as planned, and upstream's `SemanticChunkProcessor` was
 rewritten rather than copied — it called the raw Ollama client, which is the
 coupling the port existed to sever.
 
-**Phase 2 — the next port.** Independent and parallelisable, so pick any:
-#4 citations, #8 PDF segmenter, #9 Cochrane assessor, #10 Retraction Watch,
-#11 PubMed-metadata graft. The Cochrane assessor (#9) is the one that would
-also answer the standing "wire the new quality tools into the pipeline"
-roadmap item, since `quality/cochrane_models.py` is still standalone.
+**Phase 2 — the next port.** Independent and parallelisable, so pick any.
+The numbers below are **rows in the analysis doc's master priority table, not
+GitHub issues** — GitHub #8 and #9 exist and are about something else
+entirely: #4 citations, #8 PDF section segmenter, #9 Cochrane assessor,
+#11 PubMed-metadata graft. **Row 10, Retraction Watch, is done** (see
+"Unreleased since 0.6.0" above) — and shipped deliberately as notice
+storage plus a pure rule, not a fetcher; see the design doc's "Why this is
+not a fetcher" for why that word doesn't belong here. The Cochrane
+assessor (row 9) is the one that would also answer the standing "wire the new
+quality tools into the pipeline" roadmap item, since
+`quality/cochrane_models.py` is still standalone.
 Phases 3–4 (discovery, pubmed_search, MeSH, the prompt-driven agent family,
 paper_weight) are in the analysis doc.
 
@@ -199,60 +209,18 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   contributor guess, and the industry-COI confidence
   (`TEXT_INDUSTRY_CONFIDENCE` vs. a funder record's 0.8) belongs to the step
   that found it, not to `analyze()`.
-- **A sub-step publishes its own finding to `_Analysis`; it never reads a field
-  back to decide what it found.** `_check_trial_registration` decides
-  `_INDICATOR_NO_POSTED_RESULTS` from the `any()` it just ran rather than from
-  `analysis.results_compliant` — reading the carrier back is harmless only
-  while a field has exactly one producer, which is the positional-unpacking
-  hazard the carrier was built to remove, respelled as state. `data_level` is
-  the field this anticipated a second producer for, and now has one: PubMed's
-  `<DataBankList>` accessions join Europe PMC's prose scan. Neither assigns
-  the field — both call `_Analysis.note_data_level()`, which keeps the
-  higher-ranked nomination (`_DATA_LEVEL_RANK`: `unknown` < `not_available` <
-  `on_request` < `full_open`, the "strongest evidence wins" rule
-  `industry_confidence` already followed). The old
-  `test_a_level_this_step_did_not_find_is_not_scored` pinned the
-  single-producer world and its premise inverts with two producers — finding
-  nothing is not evidence against what another source found — so it was
-  replaced by
-  `test_a_step_that_found_nothing_does_not_lower_an_established_level`. Pinned
-  by that and `test_an_inbound_results_flag_does_not_stand_in_for_this_check`.
-- **Every level either producer can nominate must be a key of
-  `_DATA_LEVEL_RANK`.** `note_data_level()` raises `KeyError` by design rather
-  than ranking an unrecognised level at zero, so a level that reaches it from
-  outside the map is not a wrong score but an uncaught exception out of
-  `analyze()` — and only for the papers that matched, so a green suite proves
-  nothing. The trap is baited: `"restricted"` and `"not_stated"` are levels
-  `calculate_risk_level()` genuinely accepts from callers who compute the
-  level themselves, so adding a `_DATA_PATTERNS` entry for one reads as
-  completing a set. `test_every_pattern_maps_to_a_level_the_ranking_knows` and
-  `test_every_repository_maps_to_a_level_the_ranking_knows` pin the two
-  producers' vocabularies against the map.
-- **Only the first half of NLM's `DataBankName` vocabulary scores a data
-  deposit; the second half is excluded on purpose.**
-  `_DEPOSITION_DATABANK_LEVELS` maps BioProject, dbVar, Dryad, figshare,
-  GenBank, GEO, PDB and SRA to `full_open`, dbGaP to `on_request`. dbSNP, GDB,
-  OMIM, PIR, PubChem, RefSeq, SWISSPROT and the UniProt family are absent and
-  must not be added without re-deriving the split: they are curated
-  *reference* databases, so citing one does not show *these* authors deposited
-  *their own* data, which is what the component measures. dbSNP is the
-  sharpest case, sitting right next to `dbvar`: a dbVar accession is a
-  submission, a dbSNP citation is almost always an rs-number reference to
-  someone else's variant. "Completing the allow-list" is the obvious-looking
-  change that gets this wrong; the exclusion is argued member by member in the
-  source comment.
-- **It is a mapping, not a set-per-level, and `_merge_pubmed_signals()`
-  subscripts it.** The earlier shape was two frozensets with the merge reading
-  `"on_request" if name in controlled else "full_open"` — correct, but the
-  level was a default, so the next controlled-access repository (EGA, say)
-  added to the deposit set and not the controlled one would silently earn 20
-  points as fully open. With the level as the value there is nowhere to add a
-  name without stating its worth, and the subscript raises on a name the
-  parser should never have admitted rather than scoring it generously. Three
-  tests hold the shape:
-  `test_every_repository_maps_to_a_level_the_ranking_knows`,
-  `test_no_repository_nominates_a_level_weaker_than_on_request` and
-  `test_the_deposition_and_registry_name_sets_are_disjoint`.
+- **The data-deposition rank-merge machinery (`_DATA_LEVEL_RANK`,
+  `_Analysis.note_data_level()`, `_DEPOSITION_DATABANK_LEVELS`) is argued in
+  full inline in `transparency/analyzer.py`'s own comments — not re-narrated
+  here.** Two rules worth knowing before opening the source: (1) every level
+  a producer can nominate must be a key of `_DATA_LEVEL_RANK`, or
+  `note_data_level()` raises by design rather than scoring a wrong level at
+  zero (`test_every_pattern_maps_to_a_level_the_ranking_knows`,
+  `test_every_repository_maps_to_a_level_the_ranking_knows`); (2)
+  `_DEPOSITION_DATABANK_LEVELS` deliberately excludes reference-only
+  databases (dbSNP, OMIM, RefSeq, …) since citing one does not show *these*
+  authors deposited *their own* data — argued member-by-member in the source
+  comment, and pinned by `test_the_deposition_and_registry_name_sets_are_disjoint`.
 - **`TransparencySettings.filtering_enabled`, `max_concurrent_analyses`,
   `cache_results` are not dead code.** They are orchestration hints for the
   *calling* application. The library analyses one document per call and does
@@ -277,28 +245,15 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   redirects, `"<word>:<digits>"` read as host:port). Simplifying any of these
   back to the obvious one-liner reintroduces a real defect; each has a
   regression test naming it.
-- **The JSON extractors prefer a *whole span* to a nested fragment, and the
-  three places that enforce it look like redundant complexity.** All three
-  guard the silent truncation #33 fixed — an array of objects reduced to its
-  first element, siblings gone, on a path both the Anthropic and
-  OpenAI-compatible providers run for every `json_mode` response.
-  (1) `extract_json()` runs its acceptance policy **twice** — whole spans
-  first, the nested-object stage only if nothing at the top level parsed —
-  because dict preference is otherwise satisfied by the object
-  `iter_json_spans()` digs out of an array. Its non-dict fallback is
-  **ranked**, not first-parseable, or the first walk would accept an
-  incidental `[]` and substitute unrelated data that parses cleanly and
-  passes every downstream check (`TestExtractJsonPrefersWholeSpans`).
-  (2) `extract_and_repair_json()` gets **no** second walk
-  (`nested_objects=False`): validating a fragment reports what is there,
-  while *repairing* one fabricates structure the model never emitted, so
-  `'[{"a": 1}, invalid junk]'` must raise
-  (`test_raises_rather_than_returning_a_fragment_of_a_broken_array`).
-  (3) `BaseAgent.parse_json()` asks for whole spans, tries repair, and only
-  then re-asks allowing fragments — a *truncated* array never balances, so
-  taking the fragment first drops the sibling and skips repair's
-  possibly-truncated WARNING (`test_a_truncated_array_of_objects_is_repaired_whole`,
-  `test_a_fragment_is_still_the_last_resort`).
+- **The JSON extractors prefer a *whole span* to a nested fragment in three
+  places, argued inline in `llm/utils.py`, `llm/json_repair.py` and
+  `agents/base.py` — not re-narrated here.** All three guard the silent
+  truncation #33 fixed (an array of objects reduced to its first element, run
+  on every `json_mode` response). Each has a named test that fails if the
+  guard is removed: `TestExtractJsonPrefersWholeSpans`,
+  `test_raises_rather_than_returning_a_fragment_of_a_broken_array`,
+  `test_a_truncated_array_of_objects_is_repaired_whole` +
+  `test_a_fragment_is_still_the_last_resort`.
 - **A fenced candidate wins on parse alone, ahead of the dict preference.** A
   fence is the model's own delimitation of its answer, so a fenced `[1, 2]`
   beats a later top-level `{"a": 1}`. Pinned by
@@ -316,33 +271,18 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   writing `require_dict=self.strict` gets "no overload variant matches" with no
   way to satisfy it. Verified with mypy 1.14 — CI runs ruff only, so nothing in
   the build will catch its removal.
-- **`salvage_json_fields()` bounds *both* of its passes.** Every failed
-  `raw_decode()` scans to the end of the document, so an unbounded pass is
-  quadratic — and a repetition-looping model, the failure mode salvage exists
-  for, is what produces thousands of matches. Repair runs at most once per
-  key, at the last match, since repair closes a value truncated at the *end*
-  and earlier matches cannot need it (3000 matches: 135 s → 0.19 s); the fast
-  pass stops after `MAX_SALVAGE_MATCHES`, which is what makes the whole
-  function linear (50,000 matches: ~1.0 s → ~0.08 s). Pinned by
+- **`salvage_json_fields()` bounds *both* of its passes, and `RecursionError`
+  is caught wherever a JSON candidate is decoded** — both argued inline in
+  `llm/json_repair.py` and `llm/utils.py`, with the profiling numbers that
+  justify the bound in the source comment, not here. Pinned by
   `test_repair_is_attempted_at_most_once_per_key`,
-  `test_fast_pass_is_bounded_to_the_match_cap` and
-  `test_the_last_match_is_still_reached_beyond_the_cap`.
-- **`RecursionError` is caught wherever a JSON candidate is decoded.**
-  `json.loads()` / `raw_decode()` descend recursively, so text nested past the
-  stack limit blows the stack instead of raising `ValueError` — and
-  `'{"j": ' * 20000` is a shape repetition-looping models actually emit.
-  `extract_json()` is the one that matters: documented never to raise, and run
-  on every `json_mode` response in two providers, so an escape takes out the
-  provider call. Narrowing to `except json.JSONDecodeError` reintroduces it.
-  Pinned by `test_deep_nesting_returns_the_text_rather_than_raising`,
-  `test_deep_nesting_raises_valueerror_not_recursionerror` (×2) and
+  `test_fast_pass_is_bounded_to_the_match_cap`,
+  `test_the_last_match_is_still_reached_beyond_the_cap`,
+  `test_deep_nesting_returns_the_text_rather_than_raising`, and
   `test_deeply_nested_text_raises_valueerror_not_recursionerror`.
-- **`iter_json_spans()` dedupes candidates by text, not position.** Stages 4
+- **`iter_json_spans()` dedupes candidates by text, not position** — stages 4
   and 5 rescan fence interiors as plain text, so without it every fenced body
-  is offered twice and an unrepairable one pays `repair_json()`'s attempt
-  loop twice. `balanced_found` is set *before* the dedup check — a span that
-  repeats one already yielded still means the text balanced, so the stage-6
-  truncation tail must not fire.
+  is offered twice. Argued inline in `llm/utils.py`.
 - **`PerformanceMetrics.elapsed_time_seconds` reads `time.monotonic()`, not
   the `time.time()` timestamps it stores.** `start_time` / `end_time` stay
   absolute so a caller can render them as dates, but a wall-clock difference
@@ -493,6 +433,44 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   letting it through duplicates cells and footnotes into the prose and counts
   them towards `has_body`. Pinned by `TestJATSParserCaptionScoping` and
   `TestJATSParserUnsectionedBodyFurniture`.
+- **`bmlib.publications.retractions` has no downloader.**
+  `parse_retraction_watch_csv()` takes a path or an open binary stream;
+  acquiring the Crossref export is the caller's problem, not this module's.
+  The endpoint is also slow enough to make that the right call regardless of
+  taste: it returned `504 Gateway Time-out` on three attempts before serving
+  the full file, which is a fair warning about owning that dependency inside
+  a library.
+- **Retraction Watch is not registered as a fetcher, and never will be
+  without a protocol change.** Every registered fetcher is a date-keyed feed
+  of `FetchedRecord`s that `store_publication()` upserts; Retraction Watch is
+  one bulk file with no date to iterate, annotating papers that are usually
+  not in the caller's `publications` table at all. Forcing it through the
+  registry means either a fake `target_date` loop or a second, divergent
+  protocol behind the same name — argued in full in the design doc's "Why
+  this is not a fetcher".
+- **No wiring into `transparency/` or `quality/`.** A retracted paper
+  arguably belongs in a transparency score or as a quality veto, but both are
+  scoring changes that move stored values for existing users, and neither is
+  needed to deliver the lookup. A separate decision, not an oversight here.
+- **No `is_paper_retracted(conn, doi=...)` convenience wrapper.** It would be
+  exactly `is_retracted(lookup_retractions(conn, doi=...))` — two named steps
+  that keep the pure rule (`is_retracted()`, no connection) separable from
+  the I/O (`lookup_retractions()`), which is what makes the rule testable and
+  re-derivable without a database.
+- **The `%m/%d/%Y` / `%d/%m/%Y` date ambiguity in the Retraction Watch export
+  is real and is deliberately left unresolved, not a bug to disambiguate
+  further.** For any day <= 12 both formats parse and disagree, and nothing
+  in the row says which was meant. US-first is kept because Retraction Watch
+  is a US publication — confirmed correct for this export by same-file dates
+  whose day exceeds 12, not merely assumed. Pinned by
+  `test_an_ambiguous_date_resolves_month_first`.
+- **`_ABSENT_IDENTIFIER_VALUES` holds exactly `{"0", "unavailable"}`, and
+  adding a third sentinel needs its own measurement, not a guess.** Each was
+  measured against the live 2026-08-03 export — `"0"` in 46.04% of PubMed ID
+  cells, `"unavailable"` (either casing) in 4.80% of DOI cells — because a
+  truthiness test accepts both and each collapses tens of thousands of
+  unrelated notices onto one fake key. Pinned by the `TestIdentifierSentinels`
+  class in `tests/test_retractions.py`.
 
 ## Conventions and gotchas for the next session
 

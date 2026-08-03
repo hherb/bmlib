@@ -44,7 +44,20 @@ from bmlib.db import (
     transaction,
     transaction_depth,
 )
-from bmlib.publications.models import FetchedRecord, FetchResult, FullTextSource, Publication
+from bmlib.publications.models import (
+    FetchedRecord,
+    FetchResult,
+    FullTextSource,
+    Publication,
+    RetractionNature,
+    RetractionNotice,
+)
+from bmlib.publications.retractions import (
+    _UPSERT_CHUNK_ROWS,
+    is_retracted,
+    lookup_retractions,
+    store_retraction_notices,
+)
 from bmlib.publications.schema import ensure_schema
 from bmlib.publications.storage import (
     add_fulltext_source,
@@ -77,8 +90,48 @@ class TestSchema:
     def test_ensure_schema_creates_all_tables(self, backend_conn):
         ensure_schema(backend_conn)
 
-        for table in ("publications", "fulltext_sources", "download_days"):
+        for table in ("publications", "fulltext_sources", "download_days", "retraction_notices"):
             assert table_exists(backend_conn, table)
+
+    def test_the_record_id_is_unique(self, backend_conn):
+        # A full UNIQUE constraint, not the partial index publications uses
+        # for doi/pmid: ON CONFLICT cannot infer a partial index without
+        # repeating its predicate, and a retraction notice always has a
+        # Record ID so there is no reason to accept a null.
+        ensure_schema(backend_conn)
+        ph = placeholder(backend_conn)
+        columns = "(record_id, nature, reasons, created_at, updated_at)"
+        values = f"({', '.join([ph] * 5)})"
+
+        execute(
+            backend_conn,
+            f"INSERT INTO retraction_notices {columns} VALUES {values}",
+            ("rw-1", "retraction", "[]", "2026-01-01", "2026-01-01"),
+        )
+
+        # The two drivers raise unrelated IntegrityError classes with no
+        # shared base, so the expected class is selected per backend rather
+        # than weakened to a bare Exception.
+        if is_sqlite(backend_conn):
+            import sqlite3
+
+            expected: type[Exception] = sqlite3.IntegrityError
+        else:
+            import psycopg2
+
+            expected = psycopg2.IntegrityError
+
+        with pytest.raises(expected):
+            execute(
+                backend_conn,
+                f"INSERT INTO retraction_notices {columns} VALUES {values}",
+                ("rw-1", "retraction", "[]", "2026-01-01", "2026-01-01"),
+            )
+
+        # PostgreSQL leaves the transaction aborted after an integrity error,
+        # so every later statement on this connection -- including the
+        # fixture's teardown -- fails until it is rolled back.
+        backend_conn.rollback()
 
     def test_ensure_schema_is_idempotent(self, backend_conn):
         ensure_schema(backend_conn)
@@ -531,3 +584,302 @@ class TestSync:
         backend_conn.rollback()
         assert _count(backend_conn, "publications") == 5
         assert _count(backend_conn, "download_days") == 1
+
+
+# ---------------------------------------------------------------------------
+# Retraction notices
+# ---------------------------------------------------------------------------
+
+
+def _notice(record_id, nature, date, doi="10.1/paper", pmid=None):
+    """Build a RetractionNotice with the fields these tests care about."""
+    return RetractionNotice(
+        record_id=record_id,
+        nature=nature,
+        doi=doi,
+        pmid=pmid,
+        retraction_date=date,
+        reasons=["Rogue Editor"],
+    )
+
+
+class TestRetractionStorage:
+    def test_a_notice_round_trips(self, backend_conn):
+        # Every field gets its own, distinct, recognisable value -- two
+        # fields sharing a value cannot expose a transposition between them.
+        # This test is mutation-tested: swapping notice_doi<->notice_pmid or
+        # title<->journal in store_retraction_notices()'s values tuple must
+        # make it fail (see CLAUDE.md / the retraction-watch design doc).
+        ensure_schema(backend_conn)
+        stored = RetractionNotice(
+            record_id="rw-1",
+            nature=RetractionNature.RETRACTION,
+            doi="10.1111/original-paper-doi",
+            pmid="10001001",
+            notice_doi="10.2222/Notice-DOI",
+            notice_pmid="20002002",
+            title="Original Paper Title",
+            journal="Original Paper Journal",
+            retraction_date="2020-05-01",
+            original_paper_date="2019-01-15",
+            reasons=["Rogue Editor"],
+            raw_nature="Retraction",
+        )
+
+        assert store_retraction_notices(backend_conn, [stored]) == 1
+
+        (loaded,) = lookup_retractions(backend_conn, doi="10.1111/original-paper-doi")
+        assert loaded.record_id == "rw-1"
+        assert loaded.nature is RetractionNature.RETRACTION
+        assert loaded.doi == "10.1111/original-paper-doi"
+        assert loaded.pmid == "10001001"
+        # _normalize_doi lower-cases, so notice_doi comes back lower-cased --
+        # that transformation is intended, not a bug in this assertion.
+        assert loaded.notice_doi == "10.2222/notice-doi"
+        assert loaded.notice_pmid == "20002002"
+        assert loaded.title == "Original Paper Title"
+        assert loaded.journal == "Original Paper Journal"
+        assert loaded.retraction_date == "2020-05-01"
+        assert loaded.original_paper_date == "2019-01-15"
+        assert loaded.reasons == ["Rogue Editor"]
+        assert loaded.raw_nature == "Retraction"
+
+    def test_reimporting_the_same_file_does_not_duplicate_notices(self, backend_conn):
+        ensure_schema(backend_conn)
+        notices = [_notice("rw-1", RetractionNature.RETRACTION, "2020-05-01")]
+
+        store_retraction_notices(backend_conn, notices)
+        store_retraction_notices(backend_conn, notices)
+
+        assert _count(backend_conn, "retraction_notices") == 1
+
+    def test_a_record_id_repeated_within_one_call_updates_rather_than_duplicating(
+        self, backend_conn
+    ):
+        # The documented return contract -- notices *processed*, not rows left
+        # behind -- and the guard on batching: both drivers run an executemany
+        # statement once per parameter set, so ON CONFLICT still resolves row
+        # by row inside a chunk. Collapsing the batch into one multi-row
+        # VALUES instead would fail here on PostgreSQL with "ON CONFLICT DO
+        # UPDATE command cannot affect row a second time".
+        ensure_schema(backend_conn)
+
+        processed = store_retraction_notices(
+            backend_conn,
+            [
+                _notice("rw-1", RetractionNature.EXPRESSION_OF_CONCERN, "2020-05-01"),
+                _notice("rw-1", RetractionNature.RETRACTION, "2021-06-02"),
+            ],
+        )
+
+        assert processed == 2
+        assert _count(backend_conn, "retraction_notices") == 1
+        (loaded,) = lookup_retractions(backend_conn, doi="10.1/paper")
+        assert loaded.nature is RetractionNature.RETRACTION
+
+    def test_an_import_larger_than_one_chunk_stores_every_notice(self, backend_conn):
+        # The real export is 66,117 notices against a 1,000-row chunk, so the
+        # boundary is crossed 66 times on every import. One past the chunk
+        # size exercises both a full flush and the remainder.
+        ensure_schema(backend_conn)
+        total = _UPSERT_CHUNK_ROWS + 1
+        notices = [
+            _notice(f"rw-{i}", RetractionNature.RETRACTION, "2020-05-01", doi=f"10.1/p{i}")
+            for i in range(total)
+        ]
+
+        assert store_retraction_notices(backend_conn, notices) == total
+
+        assert _count(backend_conn, "retraction_notices") == total
+        # The last notice is in the remainder, the first in the opening chunk.
+        assert lookup_retractions(backend_conn, doi=f"10.1/p{total - 1}")[0].record_id == (
+            f"rw-{total - 1}"
+        )
+        assert lookup_retractions(backend_conn, doi="10.1/p0")[0].record_id == "rw-0"
+
+    def test_a_chunk_is_written_before_the_rest_is_generated(self, backend_conn):
+        # store_retraction_notices() takes an Iterable and every documented
+        # caller hands it parse_retraction_watch_csv()'s generator, so
+        # draining that into a list before writing would undo the streaming
+        # the parser exists for. Reading the table from inside the generator
+        # is what makes this falsifiable: the read runs on the same
+        # connection, inside store's own transaction, so it sees the first
+        # chunk's uncommitted rows -- and reports 0 if the implementation
+        # materialised the input or deferred every write to the end.
+        ensure_schema(backend_conn)
+        rows_visible_at_boundary = None
+
+        def _generate():
+            nonlocal rows_visible_at_boundary
+            for i in range(_UPSERT_CHUNK_ROWS + 1):
+                if i == _UPSERT_CHUNK_ROWS:
+                    rows_visible_at_boundary = _count(backend_conn, "retraction_notices")
+                yield _notice(
+                    f"rw-{i}", RetractionNature.RETRACTION, "2020-05-01", doi=f"10.1/p{i}"
+                )
+
+        assert store_retraction_notices(backend_conn, _generate()) == _UPSERT_CHUNK_ROWS + 1
+        assert rows_visible_at_boundary == _UPSERT_CHUNK_ROWS
+
+    def test_a_reimport_refreshes_a_changed_notice(self, backend_conn):
+        ensure_schema(backend_conn)
+        store_retraction_notices(
+            backend_conn, [_notice("rw-1", RetractionNature.EXPRESSION_OF_CONCERN, "2020-05-01")]
+        )
+
+        store_retraction_notices(
+            backend_conn, [_notice("rw-1", RetractionNature.RETRACTION, "2021-06-02")]
+        )
+
+        (loaded,) = lookup_retractions(backend_conn, doi="10.1/paper")
+        assert loaded.nature is RetractionNature.RETRACTION
+        assert loaded.retraction_date == "2021-06-02"
+
+    def test_a_prefixed_uppercase_doi_matches_a_stored_notice(self, backend_conn):
+        # Stored and looked up through the same normalisers store_publication
+        # uses; a second normaliser that drifts is a lookup that silently
+        # misses a paper that is in fact retracted.
+        ensure_schema(backend_conn)
+        store_retraction_notices(
+            backend_conn,
+            [_notice("rw-1", RetractionNature.RETRACTION, "2020-05-01", doi="10.1016/J.ABC")],
+        )
+
+        found = lookup_retractions(backend_conn, doi="https://doi.org/10.1016/j.abc")
+
+        assert len(found) == 1
+
+    def test_notices_come_back_newest_first(self, backend_conn):
+        ensure_schema(backend_conn)
+        store_retraction_notices(
+            backend_conn,
+            [
+                _notice("rw-old", RetractionNature.RETRACTION, "2011-09-08"),
+                _notice("rw-new", RetractionNature.CORRECTION, "2017-12-14"),
+            ],
+        )
+
+        found = lookup_retractions(backend_conn, doi="10.1/paper")
+
+        assert [n.record_id for n in found] == ["rw-new", "rw-old"]
+        assert is_retracted(found) is True
+
+    def test_an_undated_notice_sorts_after_a_dated_one_on_both_backends(self, backend_conn):
+        # SQLite and PostgreSQL disagree about where NULLs land in a DESC
+        # sort, so the ORDER BY has to say explicitly. Without that, the
+        # "newest" notice differs by backend and is_retracted() follows it.
+        ensure_schema(backend_conn)
+        store_retraction_notices(
+            backend_conn,
+            [
+                _notice("rw-dated", RetractionNature.RETRACTION, "2020-01-01"),
+                _notice("rw-undated", RetractionNature.REINSTATEMENT, None),
+            ],
+        )
+
+        found = lookup_retractions(backend_conn, doi="10.1/paper")
+
+        assert found[0].record_id == "rw-dated"
+        assert is_retracted(found) is True
+
+    def test_a_lookup_by_pmid_finds_a_notice_stored_without_a_doi(self, backend_conn):
+        ensure_schema(backend_conn)
+        store_retraction_notices(
+            backend_conn,
+            [_notice("rw-1", RetractionNature.RETRACTION, "2020-05-01", doi=None, pmid="99")],
+        )
+
+        found = lookup_retractions(backend_conn, pmid="99")
+
+        assert [n.record_id for n in found] == ["rw-1"]
+
+    def test_a_lookup_with_no_identifier_is_a_programming_error(self, backend_conn):
+        ensure_schema(backend_conn)
+
+        with pytest.raises(ValueError):
+            lookup_retractions(backend_conn)
+
+    def test_a_lookup_by_a_sentinel_identifier_is_also_a_programming_error(self, backend_conn):
+        # "0" and "Unavailable"/"unavailable" are what the export itself
+        # writes for "there is no identifier here" -- 46.04% of its PubMed ID
+        # cells and 4.80% of its DOI cells. The parse path already refuses to
+        # store them; the lookup path must refuse to query for them, or a
+        # caller whose own PMID column carries "0" for "absent" gets [] back
+        # and reads a paper it knows nothing about as not retracted.
+        ensure_schema(backend_conn)
+
+        for kwargs in (
+            {"pmid": "0"},
+            {"doi": "Unavailable"},
+            {"doi": "unavailable"},
+            {"doi": "https://doi.org/Unavailable"},
+        ):
+            with pytest.raises(ValueError):
+                lookup_retractions(backend_conn, **kwargs)
+
+    def test_a_real_identifier_that_merely_contains_a_sentinel_still_works(self, backend_conn):
+        # The negative control for the check above: rejecting anything
+        # *containing* "0" would reject most real PMIDs.
+        ensure_schema(backend_conn)
+        store_retraction_notices(
+            backend_conn,
+            [_notice("rw-1", RetractionNature.RETRACTION, "2020-05-01", doi=None, pmid="30104061")],
+        )
+
+        assert len(lookup_retractions(backend_conn, pmid="30104061")) == 1
+
+    def test_a_stored_nature_this_version_cannot_map_raises_rather_than_reads_as_clean(
+        self, backend_conn
+    ):
+        # The deliberate asymmetry with the parse path, pinned. A nature in
+        # the CSV comes from a vocabulary bmlib does not own, so an unknown
+        # one costs a row rather than the import. A nature in this column was
+        # written by bmlib, so an unknown one means a newer version wrote it
+        # -- and mapping it to OTHER would make is_retracted() read it as
+        # evidence of nothing and answer "not retracted".
+        ensure_schema(backend_conn)
+        store_retraction_notices(
+            backend_conn, [_notice("rw-1", RetractionNature.RETRACTION, "2020-05-01")]
+        )
+        ph = placeholder(backend_conn)
+        execute(
+            backend_conn, f"UPDATE retraction_notices SET nature = {ph}", ("partial_retraction",)
+        )
+
+        with pytest.raises(ValueError):
+            lookup_retractions(backend_conn, doi="10.1/paper")
+
+    def test_a_lookup_with_only_unusable_identifiers_is_also_a_programming_error(
+        self, backend_conn
+    ):
+        # doi="" / "   " / "https://doi.org/" and pmid="" all normalise away
+        # to nothing -- the same "no usable identifier" situation as passing
+        # None, and must raise rather than silently returning []. A caller
+        # reading a TEXT column that stores "" instead of NULL hits exactly
+        # this, and a silent [] there reads a retracted paper as clean.
+        ensure_schema(backend_conn)
+
+        with pytest.raises(ValueError):
+            lookup_retractions(backend_conn, doi="")
+        with pytest.raises(ValueError):
+            lookup_retractions(backend_conn, doi="   ")
+        with pytest.raises(ValueError):
+            lookup_retractions(backend_conn, doi="https://doi.org/")
+        with pytest.raises(ValueError):
+            lookup_retractions(backend_conn, pmid="")
+
+    def test_an_unknown_paper_has_no_notices(self, backend_conn):
+        ensure_schema(backend_conn)
+
+        assert lookup_retractions(backend_conn, doi="10.1/never-retracted") == []
+
+    def test_a_caller_transaction_owns_the_commit(self, backend_conn):
+        ensure_schema(backend_conn)
+
+        with transaction(backend_conn):
+            store_retraction_notices(
+                backend_conn, [_notice("rw-1", RetractionNature.RETRACTION, "2020-05-01")]
+            )
+            assert not owns_commit(backend_conn)
+
+        assert _count(backend_conn, "retraction_notices") == 1

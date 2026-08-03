@@ -14,10 +14,11 @@ Requires `httpx` for HTTP requests to external APIs.
 
 | Submodule | Contents | Role |
 |-----------|----------|------|
-| `models` | `Publication`, `FullTextSource`, `DownloadDay`, `FetchResult`, `SyncProgress`, `SyncReport`, `FetchedRecord`, `SourceDescriptor`, `SourceParam` | Data models |
+| `models` | `Publication`, `FullTextSource`, `DownloadDay`, `FetchResult`, `SyncProgress`, `SyncReport`, `FetchedRecord`, `SourceDescriptor`, `SourceParam`, `RetractionNature`, `RetractionNotice` | Data models |
 | `schema` | `SCHEMA_SQL`, `ensure_schema()` | Table definitions |
 | `storage` | `store_publication()`, `get_publication_by_doi()`, `get_publication_by_pmid()`, `add_fulltext_source()` | De-duplicating writes and lookups |
 | `sync` | `sync()` | The sole orchestration entry point |
+| `retractions` | `parse_retraction_watch_csv()`, `store_retraction_notices()`, `lookup_retractions()`, `is_retracted()` | Retraction Watch notices — see [Retractions](#retractions) |
 | `fetchers.registry` | `register_source()`, `list_sources()`, `get_source()`, `get_fetcher()`, `source_names()` | Pluggable source registry |
 | `fetchers.pubmed` / `.biorxiv` / `.openalex` | `fetch_pubmed()`, `fetch_biorxiv()`, `fetch_openalex()` | Built-in fetchers |
 
@@ -70,6 +71,14 @@ from bmlib.publications import (
 
     # Schema
     ensure_schema,
+
+    # Retraction Watch notices
+    RetractionNature,
+    RetractionNotice,
+    parse_retraction_watch_csv,
+    store_retraction_notices,
+    lookup_retractions,
+    is_retracted,
 )
 ```
 
@@ -992,9 +1001,295 @@ data goes in `extras`.
 
 ---
 
+## Retractions
+
+A biomedical literature tool must not present a retracted paper as evidence.
+`bmlib.publications.retractions` answers "is this paper retracted?" against
+the Retraction Watch database, which Crossref distributes as a CC0 CSV at
+`https://api.labs.crossref.org/data/retractionwatch?<mailto>`.
+
+> **Not a registered source fetcher.** Every fetcher in this module produces
+> `FetchedRecord`s for a single date, feeding `sync()`'s date-keyed loop. A
+> Retraction Watch export is one bulk file with no date to iterate, and its
+> rows are annotations about papers that are usually **not** in your
+> `publications` table at all. `retractions.py` is deliberately a separate,
+> standalone module — call its functions directly rather than through `sync()`.
+
+> **Get the file yourself; give it minutes.** `parse_retraction_watch_csv()`
+> takes a path or an already-open file — it does not download anything.
+> Crossref's endpoint is CC0 but slow: the file is 65 MB (71,306 real rows,
+> followed by 190 entirely empty ones), and it has been observed to take
+> several minutes and to occasionally return a `504 Gateway Time-out`. Fetch
+> it with a client that has a generous timeout, save it to disk, then hand
+> the path to `parse_retraction_watch_csv()`.
+
+### Two identifier pairs, named as such
+
+A Retraction Watch row describes **two** papers — the paper that was
+retracted, and the notice announcing it — and the export carries a column
+pair for each. `RetractionNotice` keeps them apart by name:
+
+| Attribute | Means |
+|---|---|
+| `doi`, `pmid` | The **retracted paper** (the export's `OriginalPaperDOI` / `OriginalPaperPubMedID`). This is what you look a paper up by. |
+| `notice_doi`, `notice_pmid` | The **retraction notice itself** (`RetractionDOI` / `RetractionPubMedID`). Sometimes equal to the paper's own identifiers, sometimes not. |
+
+### `RetractionNature`
+
+```python
+class RetractionNature(StrEnum):
+    RETRACTION = "retraction"
+    CORRECTION = "correction"
+    EXPRESSION_OF_CONCERN = "expression_of_concern"
+    REINSTATEMENT = "reinstatement"
+    OTHER = "other"
+
+    @classmethod
+    def from_raw(cls, value: str | None) -> RetractionNature: ...
+```
+
+`from_raw()` maps the export's `RetractionNature` cell (e.g. `"Expression of
+concern"`, lower-case `c` in the live file) case-insensitively onto the enum.
+An unrecognised or empty value maps to `OTHER` rather than raising —
+Retraction Watch's vocabulary can grow, and the current export exercises only
+the first four values (Retraction 66,062 / Expression of concern 3,585 /
+Correction 1,499 / Reinstatement 160, measured against the 2026-08-03 export;
+no row falls outside them). The original string survives regardless, in
+`RetractionNotice.raw_nature`.
+
+**An unrecognised value is logged at `WARNING`, once per distinct value.**
+`is_retracted()` treats `OTHER` as evidence of neither retraction nor
+reinstatement, so if Retraction Watch ever reworded `"Retraction"`, an import
+would succeed, store all 66,062 of them as `OTHER`, and answer "not
+retracted" for every paper in the file. That is the worst failure this
+feature can have, and the warning is what makes it visible. It is emitted per
+distinct value rather than per row, so vocabulary drift costs a handful of
+log lines rather than 66,000.
+
+Note the asymmetry with the *read* path: `RetractionNotice.from_dict()` and
+`lookup_retractions()` use the strict `RetractionNature(...)` constructor and
+**raise** on a value they do not know. That is deliberate. A value in the CSV
+comes from a vocabulary bmlib does not own, so an unknown one must cost a row
+rather than the import; a value in the `nature` column was written by bmlib
+itself, so an unknown one means the database was written by a newer version —
+and mapping it to `OTHER` there would turn a loud, accurate error into a
+silent "not retracted".
+
+### `RetractionNotice`
+
+```python
+@dataclass
+class RetractionNotice:
+    record_id: str
+    nature: RetractionNature
+
+    doi: str | None = None
+    pmid: str | None = None
+    notice_doi: str | None = None
+    notice_pmid: str | None = None
+    title: str | None = None
+    journal: str | None = None
+    retraction_date: str | None = None
+    original_paper_date: str | None = None
+    reasons: list[str] = field(default_factory=list)
+    raw_nature: str | None = None
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `record_id` | `str` | Retraction Watch's own primary key (the export's `Record ID`). *(required)* |
+| `nature` | `RetractionNature` | The typed kind of notice. *(required)* |
+| `doi` / `pmid` | `str \| None` | The retracted paper's identifiers. |
+| `notice_doi` / `notice_pmid` | `str \| None` | The notice's own identifiers. |
+| `title` / `journal` | `str \| None` | The retracted paper's title and journal. |
+| `retraction_date` / `original_paper_date` | `str \| None` | ISO `yyyy-mm-dd` strings, matching `Publication.publication_date`. |
+| `reasons` | `list[str]` | Individual reasons from the `Reason` cell. |
+| `raw_nature` | `str \| None` | The export's own wording for `nature`, unmodified. |
+
+Serialisable via `to_dict()` / `from_dict()`, same convention as every other
+model in this module.
+
+### `parse_retraction_watch_csv`
+
+```python
+def parse_retraction_watch_csv(
+    source: str | Path | IO[bytes],
+    *,
+    on_skip: Callable[[int, str], None] | None = None,
+) -> Iterator[RetractionNotice]
+```
+
+Stream `RetractionNotice` records from a Retraction Watch CSV. The file is
+read lazily — 71,306 rows is not worth materialising as dicts — and `source`
+may be a path or an already-open **seekable binary** stream.
+
+A text stream (`open(path)` without the `"b"`) or a non-seekable one raises
+`ValueError` **at the call**, not at the first iteration:
+`parse_retraction_watch_csv()` is deliberately not itself a generator, since
+the documented usage feeds its iterator straight to
+`store_retraction_notices()` and a deferred raise would surface from inside
+that function's open transaction rather than at the call that got the
+argument wrong. Opening a *path* stays lazy, so that a caller who never
+iterates does not leak a file handle.
+
+**Encoding.** The encoding is not guessed from a leading sample. Choosing one
+that way can decode a leading chunk cleanly and still hit a single bad byte
+tens of megabytes later, which a streaming `TextIOWrapper` cannot retry once
+rows have already been handed to the caller. Instead, `parse_retraction_watch_csv()`
+scans the **whole file** once through an incremental decoder — in fixed-size
+chunks, so memory use does not scale with file size — trying `utf-8-sig`,
+then `cp1252`, and falling back to `latin-1` if neither decodes it
+end-to-end. `latin-1` accepts every byte, so this fallback is guaranteed to
+succeed: the whole-file scan means an encoding is committed to only once it
+is known to decode every row, so the mid-stream `UnicodeDecodeError` failure
+mode cannot occur. The scan costs one extra read pass (well under a second
+for a 65 MB file).
+
+Plain `utf-8` is deliberately **not** in that chain. `utf-8-sig` decodes a
+BOM'd file by stripping the BOM and a non-BOM'd file identically to plain
+`utf-8`, so as a yes/no decodability test the two are equivalent and trying
+`utf-8` after it could only ever lose. The ordering matters because on a
+BOM'd file plain `utf-8` does not fail — it *succeeds* and glues the BOM onto
+the first field name, silently hiding `Record ID`.
+
+**Any fallback off `utf-8-sig` is logged at `WARNING`.** Because `cp1252` and
+`latin-1` decode bytes that are not valid UTF-8 rather than rejecting them, a
+single corrupt byte in an otherwise-UTF-8 export causes the whole file to be
+re-read under an encoding that mis-renders every non-ASCII character in
+66,000 titles, journals and reasons — an import that looks completely
+successful. The warning is the only thing that distinguishes it from one.
+
+**Malformed CSV.** An unclosed quote makes the `csv` module read to EOF
+hunting for its close and trip the field-size limit, tens of thousands of
+rows in. This raises `ValueError` naming the last line read whole, rather
+than a bare `csv.Error` whose "field larger than field limit" reads as a
+bmlib bug rather than a corrupt download.
+
+**Skipped rows.** `on_skip`, if given, is called as `on_skip(line_number, reason)`
+for every row that cannot be used: no `Record ID` (the export's 190 trailing
+empty rows), or no usable identifier for the retracted paper. Skips are also
+logged at `DEBUG`. Measured against the live 2026-08-03 export, 5,189 of
+71,306 real rows (7.28%) carry no usable identifier and are skipped; 66,117
+are usable. Two sentinel values are recognised and treated as absent rather
+than as real identifiers, because neither is falsy and a plain truthiness
+check would collapse tens of thousands of unrelated rows onto one key:
+`OriginalPaperPubMedID` of `"0"` (46.04% of rows) and `OriginalPaperDOI` of
+`Unavailable` / `unavailable` in either casing (4.80% of rows).
+
+**Example:**
+
+```python
+skipped = []
+notices = list(
+    parse_retraction_watch_csv(
+        "retraction_watch.csv",
+        on_skip=lambda line, reason: skipped.append((line, reason)),
+    )
+)
+print(f"{len(notices)} usable notices, {len(skipped)} rows skipped")
+```
+
+### `store_retraction_notices`
+
+```python
+def store_retraction_notices(conn: Any, notices: Iterable[RetractionNotice]) -> int
+```
+
+Insert or refresh retraction notices, keyed by `record_id`. **Re-importing
+the monthly export is idempotent**: `record_id` is Retraction Watch's own
+primary key and carries a `UNIQUE` constraint, so writing the same file a
+second time updates existing rows (`ON CONFLICT (record_id) DO UPDATE`)
+rather than duplicating them — every column except `record_id` and
+`created_at` is overwritten from the new file, since the CSV is the source of
+truth. Identifiers are normalised with the same functions
+`store_publication()` uses, so a DOI stored here matches any case or prefix
+variant looked up later.
+
+Runs inside one `transaction(conn)`: called standalone it commits once;
+called inside a caller's open `transaction(conn)` block it joins that block
+via a savepoint, as every other write in this module does.
+
+**Returns:** the number of notices written.
+
+### `lookup_retractions`
+
+```python
+def lookup_retractions(
+    conn: Any,
+    *,
+    doi: str | None = None,
+    pmid: str | None = None,
+) -> list[RetractionNotice]
+```
+
+Return every stored notice about one paper, newest first (undated notices
+last). A paper can have more than one notice — 2,354 papers do, in the live
+export — so this returns a list; pass it to `is_retracted()` for the
+boolean. Both `doi` and `pmid` are normalised before lookup, matching any
+case or prefix variant, and supplying both matches a notice on **either**.
+
+Raises `ValueError` if neither is given, **or if neither reduces to anything
+usable**: blank, whitespace, a bare `https://doi.org/` prefix, or one of the
+export's own "no identifier here" sentinels (`pmid="0"`, `doi="Unavailable"`
+— the values 46.04% and 4.80% of the file's own cells carry). A lookup with
+no usable identifier is a programming error, not an empty result: returning
+`[]` would let a caller whose PMID column stores `"0"` for "absent" read a
+paper it knows nothing about as not retracted, which is the worst failure
+this feature can have.
+
+### `is_retracted`
+
+```python
+def is_retracted(notices: Sequence[RetractionNotice]) -> bool
+```
+
+Decide whether a paper is currently retracted, from all its notices. Pure —
+it takes notices, not a connection — so the rule is testable without a
+database and re-derivable without re-importing 71,306 rows if it ever
+changes.
+
+**The rule:** scan the notices newest first; **only a Retraction or a
+Reinstatement decides** — a Retraction makes the answer `True`, a
+Reinstatement makes it `False`, and anything else (a Correction, an
+Expression of Concern) is not evidence either way and is skipped over. No
+decisive notice at all means not retracted.
+
+This is deliberately *not* "the latest notice wins": a Correction issued
+years after a Retraction does not undo it. In the live export, 52 papers are
+retracted while carrying a later Correction or Expression of Concern as their
+newest notice — a flat latest-wins reading would call every one of them
+clean.
+
+### Complete example
+
+```python
+from bmlib.db import connect_sqlite
+from bmlib.publications import (
+    ensure_schema,
+    is_retracted,
+    lookup_retractions,
+    parse_retraction_watch_csv,
+    store_retraction_notices,
+)
+
+conn = connect_sqlite("literature.db")
+ensure_schema(conn)
+
+skipped = []
+notices = parse_retraction_watch_csv(
+    "retraction_watch.csv", on_skip=lambda n, why: skipped.append((n, why))
+)
+print(f"stored {store_retraction_notices(conn, notices)} notices, skipped {len(skipped)} rows")
+
+if is_retracted(lookup_retractions(conn, doi="10.1016/j.anbehav.2009.11.027")):
+    print("retracted — do not cite as evidence")
+```
+
+---
+
 ## Database Schema
 
-The publications module creates three tables. Types are given for both backends where they differ; the constraints are identical.
+The publications module creates four tables. Types are given for both backends where they differ; the constraints are identical.
 
 ### `publications`
 
@@ -1048,3 +1343,29 @@ Indexes: `idx_publications_doi` (unique, partial), `idx_publications_pmid` (uniq
 | | | `UNIQUE(source, date)` |
 
 Rows are upserted by `sync()` inside the day's transaction, with `ON CONFLICT (source, date) DO UPDATE`. `record_count` records how many records were **stored** (added + merged), which can be lower than the number fetched if individual records failed.
+
+### `retraction_notices`
+
+| Column | Type (SQLite) | Type (PostgreSQL) | Constraints |
+|--------|---------------|-------------------|-------------|
+| `id` | `INTEGER` | `SERIAL` | `PRIMARY KEY` (`AUTOINCREMENT` on SQLite) |
+| `record_id` | `TEXT` | `TEXT` | `NOT NULL UNIQUE` — Retraction Watch's own key, not partial like `publications.doi`/`.pmid` |
+| `doi` | `TEXT` | `TEXT` | The retracted paper's DOI. Indexed, not unique — a paper can carry more than one notice. |
+| `pmid` | `TEXT` | `TEXT` | The retracted paper's PMID. Indexed, not unique. |
+| `notice_doi` | `TEXT` | `TEXT` | The notice's own DOI. |
+| `notice_pmid` | `TEXT` | `TEXT` | The notice's own PMID. |
+| `nature` | `TEXT` | `TEXT` | `NOT NULL` — the `RetractionNature` value. |
+| `raw_nature` | `TEXT` | `TEXT` | The export's original wording. |
+| `title` | `TEXT` | `TEXT` | |
+| `journal` | `TEXT` | `TEXT` | |
+| `retraction_date` | `TEXT` | `TEXT` | |
+| `original_paper_date` | `TEXT` | `TEXT` | |
+| `reasons` | `TEXT` | `TEXT` | JSON array, `NOT NULL`, default `'[]'` |
+| `created_at` | `TEXT` | `TEXT` | `NOT NULL` |
+| `updated_at` | `TEXT` | `TEXT` | `NOT NULL` |
+
+Indexes: `idx_retraction_notices_doi`, `idx_retraction_notices_pmid` (both plain,
+non-unique). Rows are upserted by `store_retraction_notices()` with
+`ON CONFLICT (record_id) DO UPDATE`, the same full-`UNIQUE`-constraint
+mechanism `download_days` uses — unlike `publications.doi`/`.pmid`, which are
+nullable partial indexes and therefore looked up and merged by hand instead.
