@@ -28,6 +28,7 @@ from bmlib.publications.retractions import (
     _find_column,
     _parse_date,
     _split_reasons,
+    is_retracted,
     parse_retraction_watch_csv,
 )
 
@@ -387,3 +388,72 @@ class TestParsingTheExport:
 
         with pytest.raises(ValueError, match="seekable"):
             list(parse_retraction_watch_csv(_Unseekable()))
+
+
+def _notice(nature, date, record_id="x"):
+    return RetractionNotice(
+        record_id=record_id, nature=nature, doi="10.1/paper", retraction_date=date
+    )
+
+
+class TestTheRetractionRule:
+    def test_no_notices_means_not_retracted(self):
+        assert is_retracted([]) is False
+
+    def test_a_single_retraction_reads_as_retracted(self):
+        assert is_retracted([_notice(RetractionNature.RETRACTION, "2020-01-01")]) is True
+
+    def test_a_reinstatement_does_not_read_as_retracted(self):
+        # A Reinstatement is the opposite of a retraction. Upstream stored
+        # every row as is_retracted=TRUE, including these.
+        notices = [
+            _notice(RetractionNature.REINSTATEMENT, "2022-10-28"),
+            _notice(RetractionNature.RETRACTION, "2020-05-01"),
+        ]
+
+        assert is_retracted(notices) is False
+
+    def test_a_later_correction_does_not_clear_an_earlier_retraction(self):
+        # 10.1016/j.anbehav.2009.11.027 in the live export: retracted
+        # 2011-09-08, corrected 2017-12-14. A flat "latest notice wins" reads
+        # this retracted paper as clean, and 51 other papers with it.
+        notices = [
+            _notice(RetractionNature.CORRECTION, "2017-12-14"),
+            _notice(RetractionNature.RETRACTION, "2011-09-08"),
+        ]
+
+        assert is_retracted(notices) is True
+
+    def test_an_expression_of_concern_after_a_retraction_does_not_clear_it(self):
+        notices = [
+            _notice(RetractionNature.EXPRESSION_OF_CONCERN, "2024-10-02"),
+            _notice(RetractionNature.RETRACTION, "2024-09-30"),
+        ]
+
+        assert is_retracted(notices) is True
+
+    def test_a_retraction_after_a_reinstatement_reads_as_retracted(self):
+        notices = [
+            _notice(RetractionNature.RETRACTION, "2024-01-01"),
+            _notice(RetractionNature.REINSTATEMENT, "2022-01-01"),
+        ]
+
+        assert is_retracted(notices) is True
+
+    def test_an_expression_of_concern_alone_is_not_a_retraction(self):
+        notice = _notice(RetractionNature.EXPRESSION_OF_CONCERN, "2021-01-01")
+        assert is_retracted([notice]) is False
+
+    def test_the_order_notices_arrive_in_does_not_change_the_answer(self):
+        newest = _notice(RetractionNature.CORRECTION, "2017-12-14")
+        oldest = _notice(RetractionNature.RETRACTION, "2011-09-08")
+
+        assert is_retracted([newest, oldest]) is is_retracted([oldest, newest])
+
+    def test_a_dateless_notice_does_not_outrank_a_dated_one(self):
+        notices = [
+            _notice(RetractionNature.RETRACTION, "2020-01-01"),
+            _notice(RetractionNature.REINSTATEMENT, None),
+        ]
+
+        assert is_retracted(notices) is True

@@ -33,7 +33,7 @@ import codecs
 import csv
 import io
 import logging
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import IO
@@ -318,3 +318,43 @@ def parse_retraction_watch_csv(
         return
     with open(source, "rb") as handle:
         yield from _parse_stream(handle, on_skip)
+
+
+# ---------------------------------------------------------------------------
+# The retraction rule
+# ---------------------------------------------------------------------------
+
+
+def _newest_first(notices: Sequence[RetractionNotice]) -> list[RetractionNotice]:
+    """Order notices newest first, with undated ones last.
+
+    ``""`` sorts below any ISO date, so a notice with no date never displaces
+    a dated one. The sort is stable, so the order
+    :func:`lookup_retractions` returned is preserved within a tie.
+    """
+    return sorted(notices, key=lambda notice: notice.retraction_date or "", reverse=True)
+
+
+def is_retracted(notices: Sequence[RetractionNotice]) -> bool:
+    """Decide whether a paper is currently retracted, from all its notices.
+
+    Scans newest first; the first :attr:`RetractionNature.RETRACTION` or
+    :attr:`RetractionNature.REINSTATEMENT` decides. A Correction or an
+    Expression of Concern is **not** evidence either way, which is what makes
+    this different from a flat "latest notice wins": a paper retracted in 2011
+    and corrected in 2017 is still retracted, and 52 papers in the live export
+    have exactly that shape.
+
+    Pure by design -- it takes the notices, not a connection -- so the rule is
+    testable without a database and re-derivable without re-importing 71,306
+    rows if it ever changes. Pair it with :func:`lookup_retractions`::
+
+        if is_retracted(lookup_retractions(conn, doi=doi)):
+            ...
+    """
+    for notice in _newest_first(notices):
+        if notice.nature is RetractionNature.RETRACTION:
+            return True
+        if notice.nature is RetractionNature.REINSTATEMENT:
+            return False
+    return False
