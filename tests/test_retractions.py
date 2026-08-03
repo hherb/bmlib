@@ -444,11 +444,19 @@ class TestTheRetractionRule:
         notice = _notice(RetractionNature.EXPRESSION_OF_CONCERN, "2021-01-01")
         assert is_retracted([notice]) is False
 
-    def test_the_order_notices_arrive_in_does_not_change_the_answer(self):
-        newest = _notice(RetractionNature.CORRECTION, "2017-12-14")
-        oldest = _notice(RetractionNature.RETRACTION, "2011-09-08")
+    def test_sorting_by_date_is_required_for_correct_decision(self):
+        # Without sorting, scanning arrival order [RETRACTION(2020), REINSTATEMENT(2022)]
+        # hits RETRACTION first and returns True — wrong. The correct answer is False
+        # because REINSTATEMENT is newest and decides. This test verifies both orderings
+        # return False, which means sorting must have happened.
+        retraction_2020 = _notice(RetractionNature.RETRACTION, "2020-01-01")
+        reinstatement_2022 = _notice(RetractionNature.REINSTATEMENT, "2022-01-01")
 
-        assert is_retracted([newest, oldest]) is is_retracted([oldest, newest])
+        # Unsorted arrival order: RETRACTION, REINSTATEMENT
+        assert is_retracted([retraction_2020, reinstatement_2022]) is False
+
+        # Reversed arrival order: REINSTATEMENT, RETRACTION
+        assert is_retracted([reinstatement_2022, retraction_2020]) is False
 
     def test_a_dateless_notice_does_not_outrank_a_dated_one(self):
         notices = [
