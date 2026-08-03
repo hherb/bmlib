@@ -59,6 +59,28 @@ All notable changes to bmlib are documented here. The format is based on
   correction does not undo a retraction. 52 papers in the live export are
   retracted while carrying a later Correction or Expression of Concern.
 
+  Every way this feature can degrade rather than fail is reported, because
+  each one degrades into an import that looks successful:
+
+  - `lookup_retractions()` rejects the same sentinels the parser does, so
+    `pmid="0"` or `doi="Unavailable"` raises rather than returning `[]` — a
+    caller whose own PMID column stores `"0"` for "absent" would otherwise
+    read a paper it knows nothing about as not retracted.
+  - Falling back off `utf-8-sig` to `cp1252` or `latin-1` logs at `WARNING`.
+    Neither fallback can fail, so one corrupt byte would otherwise re-read
+    the whole export under an encoding that mis-renders every non-ASCII
+    character in 66,000 rows, in silence.
+  - A `RetractionNature` value this version cannot map logs at `WARNING`,
+    once per distinct value. `is_retracted()` reads `OTHER` as evidence of
+    nothing, so a reworded `"Retraction"` upstream would answer "not
+    retracted" for every paper in the file.
+  - A malformed CSV raises `ValueError` naming the last line read whole,
+    rather than a bare `csv.Error` reading as a bmlib bug.
+  - A stream that is text rather than binary, or not seekable, raises at the
+    call rather than at the first iteration — which for the documented usage
+    means at the caller's mistake rather than from inside
+    `store_retraction_notices()`'s open transaction.
+
 - **`context_processor`: process more content than one context window holds.**
   Ported from bmlibrarian (Phase 1 item 2, issue #49). Hierarchical
   map-reduce: batch the items to fit, extract from each batch, then feed the

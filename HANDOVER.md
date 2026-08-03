@@ -64,13 +64,20 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
     Deliberately **not** a fetcher — see the design doc's "Why this is not a
     fetcher" and the non-fixes below. Design:
     `docs/superpowers/specs/2026-08-02-retraction-watch-design.md`.
-- **1358 tests passing + 44 skipped** on `feature/retraction-watch`
+    Post-review hardening: every path that degrades rather than raises now
+    reports itself, because each degraded into an import that *looked*
+    successful — the encoding fallback and an unmappable
+    `RetractionNature` warn, `lookup_retractions()` rejects the export's own
+    `"0"`/`"Unavailable"` sentinels instead of returning `[]`, a malformed
+    CSV names where it broke, and a bad stream raises at the call rather
+    than from inside a transaction.
+- **1372 tests passing + 50 skipped** on `feature/retraction-watch`
   (`uv run pytest tests/ -q`); `main` itself is a few tests behind, pending
-  the merge. 41 skips are the PostgreSQL parameterisations of
+  the merge. 47 skips are the PostgreSQL parameterisations of
   `tests/test_backends.py`, which run only when `BMLIB_TEST_POSTGRESQL_DSN`
   is set; 2 are `test_pdf_converter` tests needing PyMuPDF, which the dev
   venv does not install; 1 is a PostgreSQL-only schema test that does not
-  apply to SQLite.
+  apply to SQLite. With a DSN set it is **1419 passing + 3 skipped**.
 - **Documentation was rewritten for 0.4.0 and kept current through 0.6.0.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` were promoted to `0.6.0` at release;

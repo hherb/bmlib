@@ -1057,6 +1057,24 @@ Correction 1,499 / Reinstatement 160, measured against the 2026-08-03 export;
 no row falls outside them). The original string survives regardless, in
 `RetractionNotice.raw_nature`.
 
+**An unrecognised value is logged at `WARNING`, once per distinct value.**
+`is_retracted()` treats `OTHER` as evidence of neither retraction nor
+reinstatement, so if Retraction Watch ever reworded `"Retraction"`, an import
+would succeed, store all 66,062 of them as `OTHER`, and answer "not
+retracted" for every paper in the file. That is the worst failure this
+feature can have, and the warning is what makes it visible. It is emitted per
+distinct value rather than per row, so vocabulary drift costs a handful of
+log lines rather than 66,000.
+
+Note the asymmetry with the *read* path: `RetractionNotice.from_dict()` and
+`lookup_retractions()` use the strict `RetractionNature(...)` constructor and
+**raise** on a value they do not know. That is deliberate. A value in the CSV
+comes from a vocabulary bmlib does not own, so an unknown one must cost a row
+rather than the import; a value in the `nature` column was written by bmlib
+itself, so an unknown one means the database was written by a newer version —
+and mapping it to `OTHER` there would turn a loud, accurate error into a
+silent "not retracted".
+
 ### `RetractionNotice`
 
 ```python
@@ -1103,8 +1121,16 @@ def parse_retraction_watch_csv(
 
 Stream `RetractionNotice` records from a Retraction Watch CSV. The file is
 read lazily — 71,306 rows is not worth materialising as dicts — and `source`
-may be a path or an already-open **seekable binary** stream; a non-seekable
-stream raises `ValueError`.
+may be a path or an already-open **seekable binary** stream.
+
+A text stream (`open(path)` without the `"b"`) or a non-seekable one raises
+`ValueError` **at the call**, not at the first iteration:
+`parse_retraction_watch_csv()` is deliberately not itself a generator, since
+the documented usage feeds its iterator straight to
+`store_retraction_notices()` and a deferred raise would surface from inside
+that function's open transaction rather than at the call that got the
+argument wrong. Opening a *path* stays lazy, so that a caller who never
+iterates does not leak a file handle.
 
 **Encoding.** The encoding is not guessed from a leading sample. Choosing one
 that way can decode a leading chunk cleanly and still hit a single bad byte
@@ -1112,15 +1138,32 @@ tens of megabytes later, which a streaming `TextIOWrapper` cannot retry once
 rows have already been handed to the caller. Instead, `parse_retraction_watch_csv()`
 scans the **whole file** once through an incremental decoder — in fixed-size
 chunks, so memory use does not scale with file size — trying `utf-8-sig`,
-then `utf-8`, then `cp1252`, and falling back to `latin-1` if none of those
-decode it end-to-end. `latin-1` accepts every byte, so this fallback is
-guaranteed to succeed: the whole-file scan means an encoding is committed to
-only once it is known to decode every row, so the mid-stream
-`UnicodeDecodeError` failure mode cannot occur. `utf-8-sig` is tried before
-plain `utf-8` deliberately — on a BOM'd file, plain `utf-8` does not fail, it
-succeeds and glues the BOM onto the first field name, silently hiding
-`Record ID`. The scan costs one extra read pass (well under a second for a
-65 MB file).
+then `cp1252`, and falling back to `latin-1` if neither decodes it
+end-to-end. `latin-1` accepts every byte, so this fallback is guaranteed to
+succeed: the whole-file scan means an encoding is committed to only once it
+is known to decode every row, so the mid-stream `UnicodeDecodeError` failure
+mode cannot occur. The scan costs one extra read pass (well under a second
+for a 65 MB file).
+
+Plain `utf-8` is deliberately **not** in that chain. `utf-8-sig` decodes a
+BOM'd file by stripping the BOM and a non-BOM'd file identically to plain
+`utf-8`, so as a yes/no decodability test the two are equivalent and trying
+`utf-8` after it could only ever lose. The ordering matters because on a
+BOM'd file plain `utf-8` does not fail — it *succeeds* and glues the BOM onto
+the first field name, silently hiding `Record ID`.
+
+**Any fallback off `utf-8-sig` is logged at `WARNING`.** Because `cp1252` and
+`latin-1` decode bytes that are not valid UTF-8 rather than rejecting them, a
+single corrupt byte in an otherwise-UTF-8 export causes the whole file to be
+re-read under an encoding that mis-renders every non-ASCII character in
+66,000 titles, journals and reasons — an import that looks completely
+successful. The warning is the only thing that distinguishes it from one.
+
+**Malformed CSV.** An unclosed quote makes the `csv` module read to EOF
+hunting for its close and trip the field-size limit, tens of thousands of
+rows in. This raises `ValueError` naming the last line read whole, rather
+than a bare `csv.Error` whose "field larger than field limit" reads as a
+bmlib bug rather than a corrupt download.
 
 **Skipped rows.** `on_skip`, if given, is called as `on_skip(line_number, reason)`
 for every row that cannot be used: no `Record ID` (the export's 190 trailing
@@ -1184,8 +1227,15 @@ last). A paper can have more than one notice — 2,354 papers do, in the live
 export — so this returns a list; pass it to `is_retracted()` for the
 boolean. Both `doi` and `pmid` are normalised before lookup, matching any
 case or prefix variant, and supplying both matches a notice on **either**.
-Raises `ValueError` if neither is given — a lookup with no identifier is a
-programming error, not an empty result.
+
+Raises `ValueError` if neither is given, **or if neither reduces to anything
+usable**: blank, whitespace, a bare `https://doi.org/` prefix, or one of the
+export's own "no identifier here" sentinels (`pmid="0"`, `doi="Unavailable"`
+— the values 46.04% and 4.80% of the file's own cells carry). A lookup with
+no usable identifier is a programming error, not an empty result: returning
+`[]` would let a caller whose PMID column stores `"0"` for "absent" read a
+paper it knows nothing about as not retracted, which is the worst failure
+this feature can have.
 
 ### `is_retracted`
 

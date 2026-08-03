@@ -18,7 +18,9 @@
 
 from __future__ import annotations
 
+import csv
 import io
+import logging
 
 import pytest
 
@@ -425,6 +427,128 @@ class TestParsingTheExport:
         with open(path) as text_handle:
             with pytest.raises(ValueError, match="binary"):
                 list(parse_retraction_watch_csv(text_handle))
+
+    def test_a_bad_stream_is_rejected_at_the_call_not_at_the_first_row(self, tmp_path):
+        # Note the absent list(): if parse_retraction_watch_csv() were itself
+        # a generator, its body would not run until the first next() and this
+        # call would return an iterator instead of raising. The documented
+        # usage feeds that iterator straight to store_retraction_notices(),
+        # so a deferred raise surfaces from inside an open transaction rather
+        # than at the call that got the argument wrong.
+        path = tmp_path / "rw.csv"
+        path.write_bytes((_HEADER + _row()).encode("utf-8"))
+
+        with open(path) as text_handle:
+            with pytest.raises(ValueError, match="binary"):
+                parse_retraction_watch_csv(text_handle)
+
+        class _Unseekable(io.RawIOBase):
+            def readable(self):
+                return True
+
+            def seekable(self):
+                return False
+
+        with pytest.raises(ValueError, match="seekable"):
+            parse_retraction_watch_csv(_Unseekable())
+
+    def test_a_malformed_csv_says_where_it_broke(self):
+        # The one mid-stream abort the whole-file encoding scan cannot cover:
+        # an unclosed quote makes csv read to EOF hunting for its close and
+        # trip the field-size limit. A bare csv.Error names neither the file
+        # nor a position, and "field larger than field limit" reads as a bmlib
+        # bug rather than a corrupt download.
+        oversized = "x" * (csv.field_size_limit() + 1000)
+        document = (_HEADER + f'1,"{oversized}\n').encode("utf-8")
+
+        with pytest.raises(ValueError, match="Malformed Retraction Watch CSV after line 1"):
+            list(parse_retraction_watch_csv(io.BytesIO(document)))
+
+
+class TestTheImportIsNotSilentlyWrong:
+    """A fallback that cannot fail must say it fired.
+
+    Both of these degrade rather than raise, deliberately -- but each one
+    degrades into a *plausible-looking* import. An unlogged encoding fallback
+    mis-renders every non-ASCII character in 66,000 rows, and an unlogged
+    nature fallback makes is_retracted() answer "not retracted" for every
+    paper in the file. Neither is distinguishable from success without a log
+    line, which is why these tests assert on one.
+    """
+
+    def test_falling_back_off_utf_8_is_warned_about(self, caplog):
+        # \xe9 is not valid UTF-8 but is valid cp1252, so detection falls to
+        # cp1252 -- which decodes every remaining byte too, silently, unless
+        # this warning fires.
+        document = _document_with_a_bad_byte_past(0, row_count=2)
+
+        with caplog.at_level(logging.WARNING, logger="bmlib.publications.retractions"):
+            notices = list(parse_retraction_watch_csv(io.BytesIO(document)))
+
+        assert len(notices) == 2
+        assert "cp1252" in caplog.text
+
+    def test_falling_all_the_way_to_latin_1_is_warned_about(self, caplog):
+        # 0x81 is undefined in cp1252 as well as invalid UTF-8, so neither
+        # candidate decodes the file and the total fallback is used.
+        document = _document_with_a_bad_byte_past(0, row_count=2).replace(b"\xe9", b"\x81")
+
+        with caplog.at_level(logging.WARNING, logger="bmlib.publications.retractions"):
+            notices = list(parse_retraction_watch_csv(io.BytesIO(document)))
+
+        assert len(notices) == 2
+        assert "latin-1" in caplog.text
+
+    def test_a_clean_utf_8_file_warns_about_nothing(self, caplog):
+        # The negative control: without it, a warning that fired
+        # unconditionally would pass both tests above while telling a reader
+        # nothing.
+        with caplog.at_level(logging.WARNING, logger="bmlib.publications.retractions"):
+            notices = list(parse_retraction_watch_csv(_csv(_row())))
+
+        assert len(notices) == 1
+        assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+    def test_an_unknown_nature_is_warned_about_once_per_distinct_value(self, caplog):
+        # Once per *value*, not per row: if Retraction Watch reworded
+        # "Retraction", a per-row warning would emit 66,062 lines.
+        rows = (
+            _row(record_id="1", nature="Partial Retraction"),
+            _row(record_id="2", nature="Partial Retraction"),
+            _row(record_id="3", nature="Retraction"),
+            _row(record_id="4", nature="Removal"),
+        )
+
+        with caplog.at_level(logging.WARNING, logger="bmlib.publications.retractions"):
+            notices = list(parse_retraction_watch_csv(_csv(*rows)))
+
+        assert len(notices) == 4
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 2
+        assert "Partial Retraction" in caplog.text
+        assert "Removal" in caplog.text
+
+    def test_a_blank_nature_cell_is_not_warned_about(self, caplog):
+        # An absent nature is not vocabulary drift, and the export's trailing
+        # empty rows must not read as it.
+        with caplog.at_level(logging.WARNING, logger="bmlib.publications.retractions"):
+            (notice,) = list(parse_retraction_watch_csv(_csv(_row(nature=""))))
+
+        assert notice.nature is RetractionNature.OTHER
+        assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+    def test_the_warned_set_does_not_outlive_one_parse(self, caplog):
+        # Scoped to the parse, not the module: a second import of a still-bad
+        # file must warn again rather than be muted by the first.
+        rows = (_row(record_id="1", nature="Partial Retraction"),)
+
+        with caplog.at_level(logging.WARNING, logger="bmlib.publications.retractions"):
+            list(parse_retraction_watch_csv(_csv(*rows)))
+            first = len(caplog.records)
+            list(parse_retraction_watch_csv(_csv(*rows)))
+
+        assert first == 1
+        assert len(caplog.records) == 2
 
 
 def _notice(nature, date, record_id="x"):

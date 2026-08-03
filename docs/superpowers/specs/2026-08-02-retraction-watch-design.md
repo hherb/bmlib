@@ -310,6 +310,14 @@ after it.
    > `retractions.py`), which is what "still streams rather than raising
    > mid-parse" now actually rests on. `test_an_invalid_byte_past_the_old_probe_window_does_not_crash_mid_stream`
    > in `tests/test_retractions.py` is the regression test for this.
+   >
+   > Two further deltas from the text above. The shipped `_ENCODINGS` is
+   > `("utf-8-sig", "cp1252")` — plain `utf-8` is **absent**, not merely
+   > ordered after `utf-8-sig`: as a yes/no decodability test the two are
+   > equivalent, so trying `utf-8` second could only ever lose. And
+   > `latin-1` is not the last member of that chain but a separate
+   > `_FALLBACK_ENCODING` returned after it, because it structurally cannot
+   > fail and listing it as a candidate that "might" would misdescribe it.
 
 4. **Every row is stored as `is_retracted = TRUE`.** Upstream hardcodes it in
    the INSERT, so a Correction, an Expression of Concern, and a Reinstatement
