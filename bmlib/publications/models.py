@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -328,3 +329,112 @@ class SourceDescriptor:
     display_name: str
     description: str
     params: list[SourceParam] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Retraction notices
+# ---------------------------------------------------------------------------
+
+
+class RetractionNature(StrEnum):
+    """The kind of notice a Retraction Watch row records.
+
+    ``OTHER`` is forward-compatibility, not a case the current export
+    exercises: every one of the 71,306 real rows in the 2026-08-03 Crossref
+    export carries one of the four named values. The vocabulary belongs to
+    Retraction Watch, so a value this enum does not know must cost one row of
+    fidelity rather than abort the import — the raw string is kept in
+    :attr:`RetractionNotice.raw_nature`.
+    """
+
+    RETRACTION = "retraction"
+    CORRECTION = "correction"
+    EXPRESSION_OF_CONCERN = "expression_of_concern"
+    REINSTATEMENT = "reinstatement"
+    OTHER = "other"
+
+    @classmethod
+    def from_raw(cls, value: str | None) -> RetractionNature:
+        """Map an export's ``RetractionNature`` cell onto this enum.
+
+        Matching is case-insensitive on a stripped value: the export writes
+        ``"Expression of concern"`` with a lower-case ``c``. An unrecognised
+        or empty value maps to :attr:`OTHER`.
+        """
+        return _NATURE_BY_RAW.get((value or "").strip().lower(), cls.OTHER)
+
+
+# Keyed by the *file's* wording (spaces, any case), which is a different
+# vocabulary from the enum's own values (underscores). ``from_dict`` reads the
+# latter, ``from_raw`` the former; conflating them silently maps every
+# expression of concern to OTHER.
+_NATURE_BY_RAW: dict[str, RetractionNature] = {
+    "retraction": RetractionNature.RETRACTION,
+    "correction": RetractionNature.CORRECTION,
+    "expression of concern": RetractionNature.EXPRESSION_OF_CONCERN,
+    "reinstatement": RetractionNature.REINSTATEMENT,
+}
+
+
+@dataclass
+class RetractionNotice:
+    """One Retraction Watch notice about one paper.
+
+    A row of the export describes **two** papers, so both identifier pairs are
+    carried under names that say which is which: :attr:`doi`/:attr:`pmid` are
+    always the **retracted paper** (the export's ``OriginalPaper*`` columns),
+    and :attr:`notice_doi`/:attr:`notice_pmid` are the retraction notice
+    itself (its ``Retraction*`` columns). They are sometimes equal.
+
+    Dates are ISO ``yyyy-mm-dd`` strings, matching
+    :attr:`Publication.publication_date`.
+    """
+
+    record_id: str
+    nature: RetractionNature
+
+    doi: str | None = None
+    pmid: str | None = None
+    notice_doi: str | None = None
+    notice_pmid: str | None = None
+    title: str | None = None
+    journal: str | None = None
+    retraction_date: str | None = None
+    original_paper_date: str | None = None
+    reasons: list[str] = field(default_factory=list)
+    raw_nature: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a JSON-safe dictionary."""
+        return {
+            "record_id": self.record_id,
+            "nature": self.nature.value,
+            "doi": self.doi,
+            "pmid": self.pmid,
+            "notice_doi": self.notice_doi,
+            "notice_pmid": self.notice_pmid,
+            "title": self.title,
+            "journal": self.journal,
+            "retraction_date": self.retraction_date,
+            "original_paper_date": self.original_paper_date,
+            "reasons": list(self.reasons),
+            "raw_nature": self.raw_nature,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RetractionNotice:
+        """Deserialise from a dictionary produced by :meth:`to_dict`."""
+        return cls(
+            record_id=data["record_id"],
+            nature=RetractionNature(data["nature"]),
+            doi=data.get("doi"),
+            pmid=data.get("pmid"),
+            notice_doi=data.get("notice_doi"),
+            notice_pmid=data.get("notice_pmid"),
+            title=data.get("title"),
+            journal=data.get("journal"),
+            retraction_date=data.get("retraction_date"),
+            original_paper_date=data.get("original_paper_date"),
+            reasons=list(data.get("reasons", [])),
+            raw_nature=data.get("raw_nature"),
+        )
