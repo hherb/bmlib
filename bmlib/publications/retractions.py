@@ -29,9 +29,16 @@ at all. See ``docs/superpowers/specs/2026-08-02-retraction-watch-design.md``.
 
 from __future__ import annotations
 
+import codecs
+import csv
+import io
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
 from datetime import datetime
+from pathlib import Path
+from typing import IO
+
+from bmlib.publications.models import RetractionNature, RetractionNotice
 
 logger = logging.getLogger(__name__)
 
@@ -140,3 +147,137 @@ def _parse_date(value: str | None) -> str | None:
             except ValueError:
                 continue
     return None
+
+
+# ---------------------------------------------------------------------------
+# Parsing
+# ---------------------------------------------------------------------------
+
+# How much of the file to decode before choosing an encoding.
+_PROBE_BYTES = 1 << 16
+
+# ``utf-8-sig`` must precede ``utf-8``: on a BOM'd file plain utf-8 does not
+# fail, it succeeds and glues the BOM to the first field name, so the first
+# column becomes unfindable. ``latin-1`` is last and makes the chain total --
+# every byte is valid Latin-1 -- which is what lets the reader stream without
+# a mid-file decode failure it could not retry.
+_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
+
+
+def _detect_encoding(head: bytes) -> str:
+    """Choose an encoding by decoding a leading chunk of the file.
+
+    An *incremental* decoder is used because the probe almost certainly cuts
+    a multi-byte character in half; a plain ``bytes.decode`` would call that a
+    UnicodeDecodeError and fall through to a wrong encoding.
+    """
+    for encoding in _ENCODINGS:
+        decoder = codecs.getincrementaldecoder(encoding)()
+        try:
+            decoder.decode(head, final=False)
+        except UnicodeDecodeError:
+            continue
+        return encoding
+    return "latin-1"
+
+
+def _report_skip(on_skip: Callable[[int, str], None] | None, line_number: int, reason: str) -> None:
+    """Log a skipped row and hand it to the caller's callback, if any."""
+    logger.debug("Skipping Retraction Watch row %d: %s", line_number, reason)
+    if on_skip is not None:
+        on_skip(line_number, reason)
+
+
+def _row_to_notice(
+    row: Mapping[str, str | None],
+    line_number: int,
+    on_skip: Callable[[int, str], None] | None,
+) -> RetractionNotice | None:
+    """Build a notice from one CSV row, or ``None`` if the row is unusable."""
+    record_id = _find_column(row, _RECORD_ID_COLUMNS)
+    if record_id is None:
+        _report_skip(on_skip, line_number, "no Record ID")
+        return None
+
+    doi = _clean_identifier(_find_column(row, _DOI_COLUMNS))
+    pmid = _clean_identifier(_find_column(row, _PMID_COLUMNS))
+    if doi is None and pmid is None:
+        _report_skip(on_skip, line_number, "no usable DOI or PMID for the retracted paper")
+        return None
+
+    raw_nature = _find_column(row, _NATURE_COLUMNS)
+    return RetractionNotice(
+        record_id=record_id,
+        nature=RetractionNature.from_raw(raw_nature),
+        doi=doi,
+        pmid=pmid,
+        notice_doi=_clean_identifier(_find_column(row, _NOTICE_DOI_COLUMNS)),
+        notice_pmid=_clean_identifier(_find_column(row, _NOTICE_PMID_COLUMNS)),
+        title=_find_column(row, _TITLE_COLUMNS),
+        journal=_find_column(row, _JOURNAL_COLUMNS),
+        retraction_date=_parse_date(_find_column(row, _RETRACTION_DATE_COLUMNS)),
+        original_paper_date=_parse_date(_find_column(row, _ORIGINAL_DATE_COLUMNS)),
+        reasons=_split_reasons(_find_column(row, _REASON_COLUMNS)),
+        raw_nature=raw_nature,
+    )
+
+
+def _parse_stream(
+    handle: IO[bytes], on_skip: Callable[[int, str], None] | None
+) -> Iterator[RetractionNotice]:
+    """Yield notices from an open, seekable binary stream."""
+    if not handle.seekable():
+        raise ValueError(
+            "parse_retraction_watch_csv() needs a seekable binary stream: the"
+            " encoding is chosen from a leading probe, which must then be"
+            " re-read. Save the download to a file first."
+        )
+    head = handle.read(_PROBE_BYTES)
+    handle.seek(0)
+    text = io.TextIOWrapper(handle, encoding=_detect_encoding(head), newline="")
+    try:
+        reader = csv.DictReader(text)
+        # start=2: line 1 is the header, so the number matches what an editor shows.
+        for line_number, row in enumerate(reader, start=2):
+            notice = _row_to_notice(row, line_number, on_skip)
+            if notice is not None:
+                yield notice
+    finally:
+        # A TextIOWrapper closes the stream it wraps when it is finalised.
+        # Detaching leaves a caller-supplied stream open and theirs to close,
+        # which is what a library taking an open handle owes its caller.
+        text.detach()
+
+
+def parse_retraction_watch_csv(
+    source: str | Path | IO[bytes],
+    *,
+    on_skip: Callable[[int, str], None] | None = None,
+) -> Iterator[RetractionNotice]:
+    """Stream :class:`RetractionNotice` records from a Retraction Watch CSV.
+
+    The file is read lazily rather than materialised: the Crossref export is
+    65 MB and 71,306 rows, which is not worth holding in memory as dicts.
+
+    Args:
+        source: Path to the CSV, or an open **seekable binary** stream. The
+            encoding is detected from a leading probe (``utf-8-sig`` before
+            ``utf-8``, falling back through ``cp1252`` to ``latin-1``), so the
+            stream must support ``seek``.
+        on_skip: Called as ``on_skip(line_number, reason)`` for each row that
+            cannot be used -- one with no ``Record ID`` (the export ends with
+            190 entirely empty rows) or no usable identifier for the retracted
+            paper (5,189 rows carry only sentinels). Skips are also logged at
+            DEBUG, so a short import is diagnosable rather than silent.
+
+    Yields:
+        One :class:`RetractionNotice` per usable row.
+
+    Raises:
+        ValueError: If *source* is a stream that is not seekable.
+    """
+    if hasattr(source, "read"):
+        yield from _parse_stream(source, on_skip)  # type: ignore[arg-type]
+        return
+    with open(source, "rb") as handle:
+        yield from _parse_stream(handle, on_skip)

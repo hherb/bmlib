@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import io
+
 import pytest
 
 from bmlib.publications.models import RetractionNature, RetractionNotice
@@ -26,6 +28,7 @@ from bmlib.publications.retractions import (
     _find_column,
     _parse_date,
     _split_reasons,
+    parse_retraction_watch_csv,
 )
 
 
@@ -197,3 +200,155 @@ class TestDateParsing:
         assert _parse_date("not a date") is None
         assert _parse_date("") is None
         assert _parse_date(None) is None
+
+
+_HEADER = (
+    "Record ID,Title,Subject,Institution,Journal,Publisher,Country,Author,URLS,"
+    "ArticleType,RetractionDate,RetractionDOI,RetractionPubMedID,OriginalPaperDate,"
+    "OriginalPaperDOI,OriginalPaperPubMedID,RetractionNature,Reason,Paywalled,Notes,\n"
+)
+
+
+def _row(
+    record_id="1",
+    retraction_date="3/9/2026 0:00",
+    retraction_doi="10.1/notice",
+    retraction_pmid="87654321",
+    original_date="5/6/2023 0:00",
+    original_doi="10.1/paper",
+    original_pmid="12345678",
+    nature="Retraction",
+    reason="Rogue Editor;",
+    title="A paper",
+    journal="Soft Computing",
+):
+    """Build one CSV data row matching the live export's 21-field shape."""
+    return (
+        f"{record_id},{title},Subject,Inst,{journal},Pub,AU,Author,URL,Article,"
+        f"{retraction_date},{retraction_doi},{retraction_pmid},{original_date},"
+        f"{original_doi},{original_pmid},{nature},{reason},No,Notes,\n"
+    )
+
+
+def _csv(*rows, header=_HEADER, encoding="utf-8"):
+    """Return a seekable binary stream of a CSV document."""
+    return io.BytesIO((header + "".join(rows)).encode(encoding))
+
+
+class TestParsingTheExport:
+    def test_a_row_becomes_a_notice_with_both_identifier_pairs(self):
+        (notice,) = list(parse_retraction_watch_csv(_csv(_row())))
+
+        assert notice.record_id == "1"
+        assert notice.nature is RetractionNature.RETRACTION
+        assert notice.doi == "10.1/paper"
+        assert notice.pmid == "12345678"
+        assert notice.notice_doi == "10.1/notice"
+        assert notice.notice_pmid == "87654321"
+        assert notice.title == "A paper"
+        assert notice.journal == "Soft Computing"
+        assert notice.retraction_date == "2026-03-09"
+        assert notice.original_paper_date == "2023-05-06"
+        assert notice.reasons == ["Rogue Editor"]
+        assert notice.raw_nature == "Retraction"
+
+    def test_a_zero_pubmed_id_is_not_stored_as_a_pmid(self):
+        (notice,) = list(parse_retraction_watch_csv(_csv(_row(original_pmid="0"))))
+
+        assert notice.pmid is None
+        assert notice.doi == "10.1/paper"
+
+    def test_an_unavailable_doi_is_not_stored_as_a_doi(self):
+        rows = (
+            _row(record_id="1", original_doi="Unavailable"),
+            _row(record_id="2", original_doi="unavailable"),
+        )
+
+        notices = list(parse_retraction_watch_csv(_csv(*rows)))
+
+        assert [n.doi for n in notices] == [None, None]
+        assert [n.pmid for n in notices] == ["12345678", "12345678"]
+
+    def test_a_row_with_no_usable_identifier_is_reported_not_stored(self):
+        skipped: list[tuple[int, str]] = []
+        row = _row(original_doi="Unavailable", original_pmid="0")
+
+        # on_skip is called as on_skip(line_number, reason) -- two positional
+        # args, per the Callable[[int, str], None] contract -- so a plain
+        # list.append (arity one) needs a lambda wrapper, as the design doc's
+        # own worked example does.
+        notices = list(
+            parse_retraction_watch_csv(_csv(row), on_skip=lambda n, why: skipped.append((n, why)))
+        )
+
+        assert notices == []
+        assert len(skipped) == 1
+        assert skipped[0][0] == 2
+
+    def test_the_trailing_empty_rows_are_skipped_not_stored(self):
+        # The live export ends with 190 entirely empty rows.
+        empty = "," * 20 + "\n"
+        skipped: list[tuple[int, str]] = []
+
+        notices = list(
+            parse_retraction_watch_csv(
+                _csv(_row(), empty, empty),
+                on_skip=lambda n, why: skipped.append((n, why)),
+            )
+        )
+
+        assert len(notices) == 1
+        assert len(skipped) == 2
+
+    def test_a_byte_order_mark_does_not_hide_the_first_column(self):
+        # Decoded as plain utf-8, a BOM glues itself to the first field name,
+        # so "Record ID" becomes unfindable and every row is skipped.
+        stream = _csv(_row(), encoding="utf-8-sig")
+
+        (notice,) = list(parse_retraction_watch_csv(stream))
+
+        assert notice.record_id == "1"
+
+    def test_a_failed_encoding_attempt_does_not_duplicate_rows(self):
+        # Upstream accumulated into a list created outside its encoding retry
+        # loop and never cleared it, so a decode failure part-way through left
+        # the rows already read in place and the next attempt appended them
+        # all again.
+        rows = [_row(record_id=str(i)) for i in range(1, 21)]
+        # A cp1252 byte that is not valid UTF-8, inside a later row's title.
+        document = (_HEADER + "".join(rows)).encode("utf-8").replace(b"A paper", b"caf\xe9", 1)
+
+        notices = list(parse_retraction_watch_csv(io.BytesIO(document)))
+
+        assert len(notices) == 20
+        assert [n.record_id for n in notices] == [str(i) for i in range(1, 21)]
+
+    def test_an_unknown_nature_does_not_stop_the_parse(self):
+        rows = (_row(record_id="1", nature="Partial Retraction"), _row(record_id="2"))
+
+        notices = list(parse_retraction_watch_csv(_csv(*rows)))
+
+        assert [n.nature for n in notices] == [
+            RetractionNature.OTHER,
+            RetractionNature.RETRACTION,
+        ]
+        assert notices[0].raw_nature == "Partial Retraction"
+
+    def test_a_path_is_accepted_as_well_as_a_stream(self, tmp_path):
+        path = tmp_path / "rw.csv"
+        path.write_bytes((_HEADER + _row()).encode("utf-8"))
+
+        (notice,) = list(parse_retraction_watch_csv(path))
+
+        assert notice.record_id == "1"
+
+    def test_a_non_seekable_stream_is_rejected_clearly(self):
+        class _Unseekable(io.RawIOBase):
+            def readable(self):
+                return True
+
+            def seekable(self):
+                return False
+
+        with pytest.raises(ValueError, match="seekable"):
+            list(parse_retraction_watch_csv(_Unseekable()))
