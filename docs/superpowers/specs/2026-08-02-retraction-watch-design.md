@@ -285,6 +285,13 @@ after it.
    being held in memory as 71,306 dicts, which is the other reason to
    restructure.
 
+   > **Superseded:** the leading-chunk probe described above did not survive
+   > review — see defect 3's note below for why. The shipped code scans the
+   > *whole* file (`_decodes_whole_file()` / `_detect_encoding()` in
+   > `retractions.py`) before choosing an encoding, then rewinds and streams
+   > it. This paragraph's "probes a leading chunk" is history, not current
+   > behaviour.
+
 3. **A byte-order mark hides the first column.** Upstream tries `utf-8`
    *before* `utf-8-sig`. On a BOM'd file `utf-8` does not fail — it succeeds
    and glues `﻿` to the first field name, so `DictReader` yields
@@ -293,6 +300,16 @@ after it.
    makes the chain total: every byte is valid Latin-1, so a file that
    defeats the earlier candidates still streams rather than raising
    mid-parse, which a streaming reader cannot retry.
+
+   > **Superseded:** a 64 KiB leading-chunk probe can decode cleanly and
+   > still leave a single bad byte tens of megabytes later — a real failure
+   > mode a streaming `TextIOWrapper`/`DictReader` cannot recover from once
+   > rows have already reached the caller. The shipped code scans the whole
+   > file up front instead of probing a leading chunk (see
+   > `_ENCODING_SCAN_CHUNK_BYTES` and `_decodes_whole_file()` in
+   > `retractions.py`), which is what "still streams rather than raising
+   > mid-parse" now actually rests on. `test_an_invalid_byte_past_the_old_probe_window_does_not_crash_mid_stream`
+   > in `tests/test_retractions.py` is the regression test for this.
 
 4. **Every row is stored as `is_retracted = TRUE`.** Upstream hardcodes it in
    the INSERT, so a Correction, an Expression of Concern, and a Reinstatement
