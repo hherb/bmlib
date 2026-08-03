@@ -604,17 +604,44 @@ def _notice(record_id, nature, date, doi="10.1/paper", pmid=None):
 
 class TestRetractionStorage:
     def test_a_notice_round_trips(self, backend_conn):
+        # Every field gets its own, distinct, recognisable value -- two
+        # fields sharing a value cannot expose a transposition between them.
+        # This test is mutation-tested: swapping notice_doi<->notice_pmid or
+        # title<->journal in store_retraction_notices()'s values tuple must
+        # make it fail (see CLAUDE.md / the retraction-watch design doc).
         ensure_schema(backend_conn)
-        stored = _notice("rw-1", RetractionNature.RETRACTION, "2020-05-01", pmid="123")
+        stored = RetractionNotice(
+            record_id="rw-1",
+            nature=RetractionNature.RETRACTION,
+            doi="10.1111/original-paper-doi",
+            pmid="10001001",
+            notice_doi="10.2222/Notice-DOI",
+            notice_pmid="20002002",
+            title="Original Paper Title",
+            journal="Original Paper Journal",
+            retraction_date="2020-05-01",
+            original_paper_date="2019-01-15",
+            reasons=["Rogue Editor"],
+            raw_nature="Retraction",
+        )
 
         assert store_retraction_notices(backend_conn, [stored]) == 1
 
-        (loaded,) = lookup_retractions(backend_conn, doi="10.1/paper")
+        (loaded,) = lookup_retractions(backend_conn, doi="10.1111/original-paper-doi")
         assert loaded.record_id == "rw-1"
         assert loaded.nature is RetractionNature.RETRACTION
+        assert loaded.doi == "10.1111/original-paper-doi"
+        assert loaded.pmid == "10001001"
+        # _normalize_doi lower-cases, so notice_doi comes back lower-cased --
+        # that transformation is intended, not a bug in this assertion.
+        assert loaded.notice_doi == "10.2222/notice-doi"
+        assert loaded.notice_pmid == "20002002"
+        assert loaded.title == "Original Paper Title"
+        assert loaded.journal == "Original Paper Journal"
         assert loaded.retraction_date == "2020-05-01"
+        assert loaded.original_paper_date == "2019-01-15"
         assert loaded.reasons == ["Rogue Editor"]
-        assert loaded.pmid == "123"
+        assert loaded.raw_nature == "Retraction"
 
     def test_reimporting_the_same_file_does_not_duplicate_notices(self, backend_conn):
         ensure_schema(backend_conn)
@@ -702,6 +729,25 @@ class TestRetractionStorage:
 
         with pytest.raises(ValueError):
             lookup_retractions(backend_conn)
+
+    def test_a_lookup_with_only_unusable_identifiers_is_also_a_programming_error(
+        self, backend_conn
+    ):
+        # doi="" / "   " / "https://doi.org/" and pmid="" all normalise away
+        # to nothing -- the same "no usable identifier" situation as passing
+        # None, and must raise rather than silently returning []. A caller
+        # reading a TEXT column that stores "" instead of NULL hits exactly
+        # this, and a silent [] there reads a retracted paper as clean.
+        ensure_schema(backend_conn)
+
+        with pytest.raises(ValueError):
+            lookup_retractions(backend_conn, doi="")
+        with pytest.raises(ValueError):
+            lookup_retractions(backend_conn, doi="   ")
+        with pytest.raises(ValueError):
+            lookup_retractions(backend_conn, doi="https://doi.org/")
+        with pytest.raises(ValueError):
+            lookup_retractions(backend_conn, pmid="")
 
     def test_an_unknown_paper_has_no_notices(self, backend_conn):
         ensure_schema(backend_conn)

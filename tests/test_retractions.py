@@ -110,14 +110,14 @@ class TestColumnResolution:
     def test_the_pmid_column_of_the_real_export_is_found(self):
         # Upstream's candidate tuple contained none of the export's real PMID
         # column names, so its PMID branch never fired on a real file.
-        from bmlib.publications.retractions import _PMID_COLUMNS  # noqa: E402
+        from bmlib.publications.retractions import _PMID_COLUMNS
 
         row = {"OriginalPaperPubMedID": "12345678", "RetractionPubMedID": "87654321"}
 
         assert _find_column(row, _PMID_COLUMNS) == "12345678"
 
     def test_the_retracted_paper_is_preferred_to_the_notice(self):
-        from bmlib.publications.retractions import (  # noqa: E402
+        from bmlib.publications.retractions import (
             _DOI_COLUMNS,
             _NOTICE_DOI_COLUMNS,
         )
@@ -194,8 +194,12 @@ class TestDateParsing:
     def test_an_iso_date_is_parsed(self):
         assert _parse_date("2026-03-09") == "2026-03-09"
 
-    def test_a_day_above_twelve_disambiguates_to_month_first(self):
-        assert _parse_date("5/31/2024 0:00") == "2024-05-31"
+    def test_an_ambiguous_date_resolves_month_first(self):
+        # "5/6/2024" parses under both %m/%d/%Y (May 6) and %d/%m/%Y (6 May)
+        # -- both fields are <= 12, so nothing in the row disambiguates them.
+        # This pins the documented US-first decision: only %m/%d/%Y-first
+        # produces "2024-05-06"; %d/%m/%Y-first would produce "2024-06-05".
+        assert _parse_date("5/6/2024 0:00") == "2024-05-06"
 
     def test_an_unparseable_date_becomes_none_rather_than_failing(self):
         assert _parse_date("not a date") is None
@@ -301,6 +305,27 @@ class TestParsingTheExport:
         assert len(skipped) == 1
         assert skipped[0][0] == 2
 
+    def test_a_reported_line_number_accounts_for_an_embedded_newline(self):
+        # A quoted field holding a literal newline makes that CSV "row" span
+        # two physical lines. A plain per-row counter (enumerate()) would
+        # report every later row one line short of what an editor shows;
+        # csv.DictReader.line_num tracks the true physical line instead.
+        multiline_row = _row(record_id="2", title='"multi\nline title"')
+        unusable_row = _row(record_id="3", original_doi="Unavailable", original_pmid="0")
+        skipped: list[tuple[int, str]] = []
+
+        notices = list(
+            parse_retraction_watch_csv(
+                _csv(_row(record_id="1"), multiline_row, unusable_row),
+                on_skip=lambda n, why: skipped.append((n, why)),
+            )
+        )
+
+        assert len(notices) == 2
+        # Physical lines: 1 header, 2 row 1, 3-4 the two-line row 2, 5 row 3.
+        # A naive enumerate(reader, start=2) would report 4, not 5.
+        assert skipped == [(5, "no usable DOI or PMID for the retracted paper")]
+
     def test_the_trailing_empty_rows_are_skipped_not_stored(self):
         # The live export ends with 190 entirely empty rows.
         empty = "," * 20 + "\n"
@@ -388,6 +413,18 @@ class TestParsingTheExport:
 
         with pytest.raises(ValueError, match="seekable"):
             list(parse_retraction_watch_csv(_Unseekable()))
+
+    def test_a_text_stream_is_rejected_clearly_rather_than_with_a_codecs_typeerror(self, tmp_path):
+        # open(path) -- text mode, no "b" -- is a plausible slip, since the
+        # signature also accepts a bare path. Left unguarded this dies deep
+        # inside `codecs` with "can't concat str to bytes", which gives no
+        # hint that the fix is opening in binary mode.
+        path = tmp_path / "rw.csv"
+        path.write_bytes((_HEADER + _row()).encode("utf-8"))
+
+        with open(path) as text_handle:
+            with pytest.raises(ValueError, match="binary"):
+                list(parse_retraction_watch_csv(text_handle))
 
 
 def _notice(nature, date, record_id="x"):
