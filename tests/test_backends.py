@@ -77,8 +77,48 @@ class TestSchema:
     def test_ensure_schema_creates_all_tables(self, backend_conn):
         ensure_schema(backend_conn)
 
-        for table in ("publications", "fulltext_sources", "download_days"):
+        for table in ("publications", "fulltext_sources", "download_days", "retraction_notices"):
             assert table_exists(backend_conn, table)
+
+    def test_the_record_id_is_unique(self, backend_conn):
+        # A full UNIQUE constraint, not the partial index publications uses
+        # for doi/pmid: ON CONFLICT cannot infer a partial index without
+        # repeating its predicate, and a retraction notice always has a
+        # Record ID so there is no reason to accept a null.
+        ensure_schema(backend_conn)
+        ph = placeholder(backend_conn)
+        columns = "(record_id, nature, reasons, created_at, updated_at)"
+        values = f"({', '.join([ph] * 5)})"
+
+        execute(
+            backend_conn,
+            f"INSERT INTO retraction_notices {columns} VALUES {values}",
+            ("rw-1", "retraction", "[]", "2026-01-01", "2026-01-01"),
+        )
+
+        # The two drivers raise unrelated IntegrityError classes with no
+        # shared base, so the expected class is selected per backend rather
+        # than weakened to a bare Exception.
+        if is_sqlite(backend_conn):
+            import sqlite3
+
+            expected: type[Exception] = sqlite3.IntegrityError
+        else:
+            import psycopg2
+
+            expected = psycopg2.IntegrityError
+
+        with pytest.raises(expected):
+            execute(
+                backend_conn,
+                f"INSERT INTO retraction_notices {columns} VALUES {values}",
+                ("rw-1", "retraction", "[]", "2026-01-01", "2026-01-01"),
+            )
+
+        # PostgreSQL leaves the transaction aborted after an integrity error,
+        # so every later statement on this connection -- including the
+        # fixture's teardown -- fails until it is rolled back.
+        backend_conn.rollback()
 
     def test_ensure_schema_is_idempotent(self, backend_conn):
         ensure_schema(backend_conn)
