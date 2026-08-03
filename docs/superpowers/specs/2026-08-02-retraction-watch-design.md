@@ -11,9 +11,9 @@ library carries retraction status, and every consumer that wants it builds
 its own table over the same public dataset.
 
 The Retraction Watch database is that dataset. Crossref distributes it as a
-CSV under CC0 at `https://api.labs.crossref.org/data/retractionwatch?<mailto>`,
-roughly 60,000 rows covering retractions, corrections, expressions of concern
-and reinstatements.
+CSV under CC0 at `https://api.labs.crossref.org/data/retractionwatch?<mailto>`
+— 65 MB and **71,306 rows** in the 2026-08-03 export, covering retractions,
+corrections, expressions of concern and reinstatements.
 
 ## Source and scope
 
@@ -119,8 +119,19 @@ cannot say which paper an identifier refers to.
 
 `RetractionNature` maps an unrecognised value to `OTHER` and preserves the
 file's own string in `raw_nature`. The vocabulary belongs to Retraction Watch
-and can grow; one new notice type must not abort a 60,000-row import, and
+and can grow; one new notice type must not abort a 71,000-row import, and
 nothing is lost.
+
+To be precise about the evidence: **every one of the 71,306 real rows in the
+2026-08-03 export maps to one of the four known values** (Retraction 92.65%,
+Expression of concern 5.03%, Correction 2.10%, Reinstatement 0.22%). `OTHER`
+is forward-compatibility, not a case the current file exercises — it exists
+so that the *next* notice type Retraction Watch introduces costs a row of
+reduced fidelity instead of a failed import.
+
+Matching is case-insensitive on a stripped value, because the file writes
+`Expression of concern` (lower-case `c`) against the enum's
+`EXPRESSION_OF_CONCERN`.
 
 This deliberately differs from `_Analysis.note_data_level()`, which raises
 `KeyError` on an unknown level (see HANDOVER.md). That guards an **internal**
@@ -206,7 +217,7 @@ fact retracted, which is the worst failure this feature can have.
 
 `is_retracted()` is **pure** — it takes the notices, not a connection. The
 rule is therefore testable without a database, and re-derivable without
-re-importing 60,000 rows if it ever changes.
+re-importing 71,306 rows if it ever changes.
 
 > Scan notices newest first. The first `RETRACTION` or `REINSTATEMENT`
 > decides: `RETRACTION` → `True`, `REINSTATEMENT` → `False`. Any other
@@ -216,6 +227,19 @@ The subtlety is that a flat "latest notice wins" is wrong. A paper retracted
 in 2020 and *corrected* in 2021 would read as not-retracted, because the
 correction is the latest notice. A correction does not undo a retraction;
 only a reinstatement does.
+
+**This is not hypothetical.** In the 2026-08-03 export, 2,354 papers carry
+more than one notice and 2,297 of those have notices of differing natures —
+so multi-notice papers are ordinary, not an edge case. Of them, **52 papers
+have a Correction or Expression of Concern as their newest notice while
+having been retracted earlier**; flat latest-wins reports every one of those
+retracted papers as clean. `10.1016/j.anbehav.2009.11.027` is the starkest —
+retracted 2011-09-08, corrected 2017-12-14, six years apart — and is used as
+a test fixture.
+
+The rule also handles the converse correctly, which the same data exercises:
+`10.1161/CIRCRESAHA.116.308301` was reinstated 2022-10-28 and corrected
+2023-03-23, and reads as not retracted.
 
 `lookup_retractions()` orders by `retraction_date DESC, id DESC`. The
 secondary key matters because `retraction_date` is nullable and ties are
@@ -255,10 +279,10 @@ after it.
    ```
 
    `utf-8` failing at row 40,000 leaves those 40,000 rows in the list, and
-   `utf-8-sig` then appends all 60,000 again — 40,000 of them twice, with no
+   `utf-8-sig` then appends all 71,306 again — 40,000 of them twice, with no
    error anywhere. The port **probes** a leading chunk to choose the
-   encoding, then **streams** with it. Streaming also stops a 100 MB file
-   being held in memory as ~60,000 dicts, which is the other reason to
+   encoding, then **streams** with it. Streaming also stops the 65 MB file
+   being held in memory as 71,306 dicts, which is the other reason to
    restructure.
 
 3. **A byte-order mark hides the first column.** Upstream tries `utf-8`
@@ -275,23 +299,61 @@ after it.
    — which is the *opposite* of a retraction — all mark the paper retracted.
    The port types the nature and applies the rule above.
 
+5. **Missing identifiers are written as truthy sentinels, not empty cells.**
+   This is the sharpest defect, and it is invisible without looking at the
+   data. `_find_column()` returns the first candidate whose value is truthy —
+   and neither sentinel is falsy:
+
+   | Column | Sentinel for "absent" | Rows | Share |
+   |---|---|---|---|
+   | `OriginalPaperPubMedID`, `RetractionPubMedID` | `0` | 32,831 | **46.04%** |
+   | `OriginalPaperDOI` | `Unavailable` / `unavailable` | 3,419 | **4.80%** |
+
+   Upstream would therefore store a PMID of `"0"` for nearly half the
+   database and a DOI of `"Unavailable"` for 3,419 rows. Each sentinel
+   collapses those rows onto a single fake key: `lookup_retractions(pmid="0")`
+   would return thirty-two thousand unrelated notices. Both are stripped to
+   `None` before `storage._normalize_doi` / `_normalize_pmid` ever see them.
+
+   The DOI sentinel appears in **two casings** in the same file
+   (`Unavailable` 2,235, `unavailable` 1,184), so the check is
+   case-insensitive. A case-sensitive check would leak 1,184 rows — the kind
+   of partial fix that looks like it works.
+
+   Once both sentinels and genuinely empty cells are accounted for,
+   **5,189 rows (7.28%) carry no usable identifier for the retracted paper at
+   all** and are skipped, since nothing could ever look them up.
+
 ## Parsing details
 
-- **Reasons.** Semicolon-separated within the cell, per Crossref's
-  documentation, each item conventionally `+`-prefixed
-  (`+Concerns/Issues About Data;+Investigation by Journal/Publisher;`). Split
-  on `;`, strip whitespace, strip **one** leading `+`, drop empties.
-- **Dates.** ISO first, then `%m/%d/%Y`, `%d/%m/%Y`, `%Y/%m/%d`, each also
-  accepted with a trailing time component (Retraction Watch emits `0:00`).
-  Output is an ISO `yyyy-mm-dd` string, matching
+All of the following are measured against the live Crossref export
+downloaded 2026-08-03 (see "Evidence" below), not inferred from
+documentation.
+
+- **Reasons.** Semicolon-separated within the cell, with a **trailing
+  semicolon on every one of the 71,306 real rows** — so a naive `split(";")`
+  always yields an empty final item. Split on `;`, strip whitespace, drop
+  empties. There is **no `+` prefix** in the Crossref export (0 rows of
+  71,306); that convention belongs to Retraction Watch's own export. One
+  leading `+` is stripped anyway, as a cheap accommodation for the other
+  variant, but it is not what this file looks like.
+- **Dates.** `M/D/YYYY H:MM` — US month-first, unpadded, with a time
+  component present on **all 71,306** dated rows (`3/9/2026 0:00`). Parsed
+  by trying ISO first, then `%m/%d/%Y`, `%d/%m/%Y`, `%Y/%m/%d`, each with and
+  without a trailing time. Output is an ISO `yyyy-mm-dd` string, matching
   `Publication.publication_date`. An unparseable date becomes `None` rather
   than failing the row.
 - **The `%m/%d/%Y` / `%d/%m/%Y` ambiguity is real and is not resolved.** For
   any day ≤ 12 the two formats both parse and disagree, and nothing in the
-  row says which was meant. US-first is kept (Retraction Watch is a US
-  publication) and **documented in the function's docstring** rather than
-  presented as settled. Callers needing certainty should read
-  `original_paper_date`/`retraction_date` as approximate to the month.
+  row says which was meant. US-first is kept — confirmed correct for this
+  export by `3/9/2026`-style values whose day exceeds 12 elsewhere in the
+  file — and **documented in the function's docstring** rather than presented
+  as settled, since the format is Retraction Watch's to change.
+- **The export has an unnamed 21st column.** The header row ends in a comma,
+  so `csv.DictReader` yields a `""` key holding an empty string on every row.
+  Harmless — `_find_column()` only ever asks for named columns — but it is
+  why the fieldname list has 21 entries for 20 documented fields, and worth
+  knowing before someone "fixes" a header-count assertion.
 - **Rows are skipped**, not yielded, when they carry no `Record ID` (nothing
   to make re-import idempotent against — and `RetractionNotice` requires one,
   so the check necessarily precedes construction) or no identifier at all for
@@ -299,14 +361,25 @@ after it.
   through the optional `on_skip(row_number, reason)` callback and logged at
   DEBUG, so a malformed export is diagnosable rather than silently short.
 
+  Both branches fire on the real file, which is why neither is theoretical.
+  **The export ends with 190 entirely empty rows** (lines 71,308–71,497 —
+  every field blank, including `Record ID`), and 5,189 further rows carry
+  only sentinel identifiers. A parser that trusted the row count would report
+  71,496; the honest figure is 71,306 real rows, of which 66,117 are usable.
+  This is also why `Record ID` can be required without qualification: it is
+  present on every real row, and absent only on padding that must be dropped
+  regardless.
+
 ## What this does *not* do
 
 Recorded so a later reader does not mistake an absence for an oversight.
 
 - **No downloader.** `parse_retraction_watch_csv()` takes a path or an open
   binary stream; acquiring the CSV is the caller's. Crossref's endpoint
-  returned `504 Gateway Time-out` on both attempts while this was designed,
-  which is a fair warning about owning that dependency.
+  returned `504 Gateway Time-out` on three attempts on 2026-08-02 and served
+  the full file on 2026-08-03 — it works, but it is slow enough to time out
+  a default client, which is a fair warning about owning that dependency
+  inside a library.
 - **No fetcher-registry entry**, for the protocol reasons above.
 - **No wiring into `transparency/` or `quality/`.** A retracted paper
   arguably belongs in a transparency score or as a quality veto, but both are
@@ -315,6 +388,41 @@ Recorded so a later reader does not mistake an absence for an oversight.
 - **No `is_paper_retracted(conn, doi=...)` convenience.** It would be
   `is_retracted(lookup_retractions(conn, doi=...))` — two named steps that
   keep the pure rule separable from the I/O.
+
+## Evidence
+
+Every quantitative claim above is measured against the live Crossref export,
+not taken from documentation. Provenance, so a later reader can re-derive or
+challenge them:
+
+- **File:** `https://api.labs.crossref.org/data/retractionwatch?<mailto>`,
+  downloaded **2026-08-03**, HTTP 200, 65,634,375 bytes, UTF-8, no BOM.
+  The same URL returned `504 Gateway Time-out` three times on 2026-08-02; it
+  takes several minutes to serve, so a short client timeout reads as an
+  outage.
+- **Shape:** 21 header fields for 20 documented columns (the header line ends
+  in a comma, so `csv.DictReader` carries a `""` key). 71,496 parsed rows,
+  of which the last **190 are entirely empty**; 71,306 real rows.
+
+| Measurement | Value |
+|---|---|
+| Nature: Retraction / EoC / Correction / Reinstatement | 66,062 / 3,585 / 1,499 / 160 |
+| Nature values outside those four | 0 |
+| `OriginalPaperPubMedID == "0"` | 32,831 (46.04%) |
+| `OriginalPaperDOI` ∈ {`Unavailable`, `unavailable`} | 3,419 (2,235 / 1,184) |
+| Rows with no usable DOI **and** no usable PMID | 5,189 (7.28%) |
+| `Reason` containing `+` | 0 |
+| `Reason` with a trailing `;` | 71,306 (100%) |
+| `RetractionDate` carrying a time component | 71,306 (100%) |
+| Papers (real DOI) with >1 notice | 2,354 |
+| …whose notices differ in nature | 2,297 |
+| …newest is Correction/EoC yet retracted earlier | 52 |
+
+The download is **not** committed — it is 65 MB and belongs to Retraction
+Watch. Test fixtures are small hand-built CSVs reproducing these shapes,
+including the `0` and `Unavailable` sentinels, the trailing `;`, the trailing
+empty rows, and the `10.1016/j.anbehav.2009.11.027` retraction-then-correction
+sequence.
 
 ## Testing
 
@@ -334,6 +442,10 @@ Named regression tests, one per defect and per decision that could be
 | `test_a_failed_encoding_attempt_does_not_duplicate_rows` | Defect 2 |
 | `test_a_byte_order_mark_does_not_hide_the_first_column` | Defect 3 |
 | `test_a_reinstatement_does_not_read_as_retracted` | Defect 4 |
+| `test_a_zero_pubmed_id_is_not_stored_as_a_pmid` | Defect 5 — the 46% sentinel |
+| `test_an_unavailable_doi_is_not_stored_as_a_doi` | Defect 5 — both casings |
+| `test_the_trailing_empty_rows_are_skipped_not_stored` | The export's 190 rows of padding |
+| `test_the_trailing_semicolon_does_not_become_an_empty_reason` | Reason splitting |
 | `test_a_later_correction_does_not_clear_an_earlier_retraction` | The rule's subtlety |
 | `test_an_unknown_nature_is_preserved_rather_than_rejected` | `OTHER` over a raise |
 | `test_reimporting_the_same_file_does_not_duplicate_notices` | `UNIQUE(record_id)` + the upsert |
