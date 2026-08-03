@@ -465,3 +465,21 @@ class TestTheRetractionRule:
         ]
 
         assert is_retracted(notices) is True
+
+
+class TestPublicSurface:
+    def test_every_public_name_is_exported_from_the_package(self):
+        import bmlib.publications as publications
+
+        expected = {
+            "RetractionNature",
+            "RetractionNotice",
+            "parse_retraction_watch_csv",
+            "store_retraction_notices",
+            "lookup_retractions",
+            "is_retracted",
+        }
+
+        assert expected <= set(publications.__all__)
+        for name in expected:
+            assert hasattr(publications, name), name

@@ -29,10 +29,18 @@ from bmlib.publications.models import (
     FetchResult,
     FullTextSource,
     Publication,
+    RetractionNature,
+    RetractionNotice,
     SourceDescriptor,
     SourceParam,
     SyncProgress,
     SyncReport,
+)
+from bmlib.publications.retractions import (
+    is_retracted,
+    lookup_retractions,
+    parse_retraction_watch_csv,
+    store_retraction_notices,
 )
 from bmlib.publications.schema import ensure_schema
 from bmlib.publications.storage import (
@@ -64,4 +72,10 @@ __all__ = [
     "get_publication_by_pmid",
     "add_fulltext_source",
     "ensure_schema",
+    "RetractionNature",
+    "RetractionNotice",
+    "parse_retraction_watch_csv",
+    "store_retraction_notices",
+    "lookup_retractions",
+    "is_retracted",
 ]
