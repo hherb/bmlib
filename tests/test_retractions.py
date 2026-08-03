@@ -21,6 +21,12 @@ from __future__ import annotations
 import pytest
 
 from bmlib.publications.models import RetractionNature, RetractionNotice
+from bmlib.publications.retractions import (
+    _clean_identifier,
+    _find_column,
+    _parse_date,
+    _split_reasons,
+)
 
 
 class TestRetractionNature:
@@ -94,3 +100,100 @@ class TestRetractionNoticeModel:
     def test_record_id_is_required(self):
         with pytest.raises(TypeError):
             RetractionNotice(nature=RetractionNature.RETRACTION)  # type: ignore[call-arg]
+
+
+class TestColumnResolution:
+    def test_the_pmid_column_of_the_real_export_is_found(self):
+        # Upstream's candidate tuple contained none of the export's real PMID
+        # column names, so its PMID branch never fired on a real file.
+        from bmlib.publications.retractions import _PMID_COLUMNS  # noqa: E402
+
+        row = {"OriginalPaperPubMedID": "12345678", "RetractionPubMedID": "87654321"}
+
+        assert _find_column(row, _PMID_COLUMNS) == "12345678"
+
+    def test_the_retracted_paper_is_preferred_to_the_notice(self):
+        from bmlib.publications.retractions import (  # noqa: E402
+            _DOI_COLUMNS,
+            _NOTICE_DOI_COLUMNS,
+        )
+
+        row = {"RetractionDOI": "10.1/notice", "OriginalPaperDOI": "10.1/paper"}
+
+        assert _find_column(row, _DOI_COLUMNS) == "10.1/paper"
+        assert _find_column(row, _NOTICE_DOI_COLUMNS) == "10.1/notice"
+
+    def test_a_blank_cell_falls_through_to_the_next_candidate(self):
+        row = {"A": "   ", "B": "value"}
+
+        assert _find_column(row, ("A", "B")) == "value"
+
+    def test_no_candidate_present_returns_none(self):
+        assert _find_column({"X": "y"}, ("A", "B")) is None
+
+
+class TestIdentifierSentinels:
+    def test_a_zero_pubmed_id_is_not_an_identifier(self):
+        # 46.04% of rows in the live export write "0" for an absent PMID.
+        # It is a non-empty string, so a truthiness test accepts it and every
+        # one of those rows collapses onto a single fake key.
+        assert _clean_identifier("0") is None
+
+    def test_an_unavailable_doi_is_not_an_identifier_in_either_casing(self):
+        # The same file carries both casings: "Unavailable" 2,235, and
+        # "unavailable" 1,184. A case-sensitive check leaks 1,184 rows.
+        assert _clean_identifier("Unavailable") is None
+        assert _clean_identifier("unavailable") is None
+
+    def test_blank_and_missing_values_are_not_identifiers(self):
+        assert _clean_identifier("") is None
+        assert _clean_identifier("   ") is None
+        assert _clean_identifier(None) is None
+
+    def test_a_real_identifier_survives_and_is_stripped(self):
+        assert _clean_identifier("  10.1/abc  ") == "10.1/abc"
+        assert _clean_identifier("12345678") == "12345678"
+
+    def test_a_zero_inside_a_real_identifier_is_untouched(self):
+        assert _clean_identifier("10.1016/j.0000") == "10.1016/j.0000"
+        assert _clean_identifier("101") == "101"
+
+
+class TestReasonSplitting:
+    def test_the_trailing_semicolon_does_not_become_an_empty_reason(self):
+        # Every populated row in the live export ends its Reason cell with
+        # ";", so a naive split always yields an empty final item.
+        value = "Concerns/Issues about Peer Review;Rogue Editor;"
+
+        assert _split_reasons(value) == ["Concerns/Issues about Peer Review", "Rogue Editor"]
+
+    def test_a_leading_plus_is_stripped_for_the_other_export_variant(self):
+        # The Crossref export carries no "+" prefix (0 rows of 71,306); the
+        # Retraction Watch native export does.
+        assert _split_reasons("+Falsification of Data;+Rogue Editor;") == [
+            "Falsification of Data",
+            "Rogue Editor",
+        ]
+
+    def test_a_blank_cell_yields_no_reasons(self):
+        assert _split_reasons("") == []
+        assert _split_reasons(None) == []
+        assert _split_reasons(";;;") == []
+
+
+class TestDateParsing:
+    def test_the_export_format_with_a_trailing_time_is_parsed(self):
+        # The live export writes M/D/YYYY H:MM on 100% of dated rows.
+        assert _parse_date("3/9/2026 0:00") == "2026-03-09"
+        assert _parse_date("12/25/2021 0:00") == "2021-12-25"
+
+    def test_an_iso_date_is_parsed(self):
+        assert _parse_date("2026-03-09") == "2026-03-09"
+
+    def test_a_day_above_twelve_disambiguates_to_month_first(self):
+        assert _parse_date("5/31/2024 0:00") == "2024-05-31"
+
+    def test_an_unparseable_date_becomes_none_rather_than_failing(self):
+        assert _parse_date("not a date") is None
+        assert _parse_date("") is None
+        assert _parse_date(None) is None
