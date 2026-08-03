@@ -235,6 +235,21 @@ def _csv(*rows, header=_HEADER, encoding="utf-8"):
     return io.BytesIO((header + "".join(rows)).encode(encoding))
 
 
+def _document_with_a_bad_byte_past(offset: int, row_count: int = 1000) -> bytes:
+    """Return `row_count` encoded rows with one invalid UTF-8 byte past `offset`.
+
+    Corrupts the first row whose default ``"A paper"`` title starts at or
+    after `offset`, so callers can place the bad byte on either side of the
+    old, now-retired 64 KiB probe window to distinguish "caught during
+    detection" from "hit while actually streaming the file".
+    """
+    rows = [_row(record_id=str(i)) for i in range(1, row_count + 1)]
+    document = (_HEADER + "".join(rows)).encode("utf-8")
+    bad_byte_offset = document.index(b"A paper", offset)
+    assert bad_byte_offset >= offset
+    return document[:bad_byte_offset] + b"caf\xe9" + document[bad_byte_offset + len(b"A paper") :]
+
+
 class TestParsingTheExport:
     def test_a_row_becomes_a_notice_with_both_identifier_pairs(self):
         (notice,) = list(parse_retraction_watch_csv(_csv(_row())))
@@ -313,15 +328,35 @@ class TestParsingTheExport:
         # Upstream accumulated into a list created outside its encoding retry
         # loop and never cleared it, so a decode failure part-way through left
         # the rows already read in place and the next attempt appended them
-        # all again.
-        rows = [_row(record_id=str(i)) for i in range(1, 21)]
-        # A cp1252 byte that is not valid UTF-8, inside a later row's title.
-        document = (_HEADER + "".join(rows)).encode("utf-8").replace(b"A paper", b"caf\xe9", 1)
+        # all again. The bad byte must sit past the old 64 KiB probe window:
+        # inside it, the probe itself failed and detection fell through to
+        # the next encoding before any row was ever read, so the retry loop
+        # the defect actually lived in never ran.
+        document = _document_with_a_bad_byte_past(1 << 16, row_count=1000)
 
         notices = list(parse_retraction_watch_csv(io.BytesIO(document)))
 
-        assert len(notices) == 20
-        assert [n.record_id for n in notices] == [str(i) for i in range(1, 21)]
+        assert len(notices) == 1000
+        assert [n.record_id for n in notices] == [str(i) for i in range(1, 1001)]
+
+    def test_an_invalid_byte_past_the_old_probe_window_does_not_crash_mid_stream(self):
+        # A 64 KiB probe can decode cleanly and still leave a single bad byte
+        # tens of megabytes later. The old probe-based detector would commit
+        # to that encoding and then stream the rest of the file through a
+        # TextIOWrapper that could not retry: hitting the bad byte raised an
+        # uncaught UnicodeDecodeError after tens of thousands of rows had
+        # already been yielded, with no way for the caller to resume.
+        # Scanning the whole file before choosing an encoding closes that
+        # gap -- this test fails with that UnicodeDecodeError against the
+        # old probe-based detector and only passes against the whole-file
+        # scan.
+        document = _document_with_a_bad_byte_past(1 << 16, row_count=1000)
+        assert document[: 1 << 16].decode("utf-8")  # the probe window itself is clean UTF-8
+
+        notices = list(parse_retraction_watch_csv(io.BytesIO(document)))
+
+        assert len(notices) == 1000
+        assert notices[-1].record_id == "1000"
 
     def test_an_unknown_nature_does_not_stop_the_parse(self):
         rows = (_row(record_id="1", nature="Partial Retraction"), _row(record_id="2"))

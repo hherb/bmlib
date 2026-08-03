@@ -153,32 +153,64 @@ def _parse_date(value: str | None) -> str | None:
 # Parsing
 # ---------------------------------------------------------------------------
 
-# How much of the file to decode before choosing an encoding.
-_PROBE_BYTES = 1 << 16
+# Chunk size used while scanning the whole file to test an encoding. A probe
+# of the leading bytes is not enough: it can decode cleanly and still leave a
+# single bad byte tens of megabytes later, which a streaming
+# ``TextIOWrapper``/``csv.DictReader`` cannot retry once rows have already
+# been yielded to the caller. Scanning to EOF up front costs one extra read
+# pass (well under a second for a 65 MB file) and turns that documented
+# failure mode into a guarantee instead. 1 MiB keeps exactly one chunk in
+# memory at a time regardless of file size.
+_ENCODING_SCAN_CHUNK_BYTES = 1 << 20
 
-# ``utf-8-sig`` must precede ``utf-8``: on a BOM'd file plain utf-8 does not
-# fail, it succeeds and glues the BOM to the first field name, so the first
-# column becomes unfindable. ``latin-1`` is last and makes the chain total --
-# every byte is valid Latin-1 -- which is what lets the reader stream without
-# a mid-file decode failure it could not retry.
-_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
+# Tried in this order because ``utf-8-sig`` must precede ``utf-8``: on a
+# BOM'd file plain utf-8 does not fail, it succeeds and glues the BOM to the
+# first field name, so the first column becomes unfindable. Neither of these
+# nor ``cp1252`` is guaranteed to succeed -- see ``_FALLBACK_ENCODING``.
+_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252")
+
+# The guaranteed-total fallback: every byte 0x00-0xFF is a valid Latin-1 code
+# point, so decoding under it can never raise. It is deliberately not a
+# member of ``_ENCODINGS`` and not tried inside the loop below -- doing
+# either would make it a candidate that "might fail" like the others, which
+# it structurally cannot, and would leave a final return after the loop
+# unreachable.
+_FALLBACK_ENCODING = "latin-1"
 
 
-def _detect_encoding(head: bytes) -> str:
-    """Choose an encoding by decoding a leading chunk of the file.
+def _decodes_whole_file(handle: IO[bytes], encoding: str) -> bool:
+    """Return whether *encoding* can decode *handle* end-to-end.
 
-    An *incremental* decoder is used because the probe almost certainly cuts
-    a multi-byte character in half; a plain ``bytes.decode`` would call that a
-    UnicodeDecodeError and fall through to a wrong encoding.
+    Reads from the start of *handle* in fixed-size chunks through an
+    *incremental* decoder: a plain ``bytes.decode`` per chunk would treat a
+    multi-byte character split across a chunk boundary as a UnicodeDecodeError,
+    rejecting an encoding that in fact decodes the file correctly. The final
+    ``decode(b"", final=True)`` catches a file truncated mid-character, which
+    no non-final chunk decode would.
+    """
+    handle.seek(0)
+    decoder = codecs.getincrementaldecoder(encoding)()
+    try:
+        while True:
+            chunk = handle.read(_ENCODING_SCAN_CHUNK_BYTES)
+            if not chunk:
+                decoder.decode(b"", final=True)
+                return True
+            decoder.decode(chunk, final=False)
+    except UnicodeDecodeError:
+        return False
+
+
+def _detect_encoding(handle: IO[bytes]) -> str:
+    """Choose an encoding able to decode *handle* end-to-end.
+
+    Leaves *handle*'s position at EOF; the caller is responsible for
+    rewinding before actually reading the file with the chosen encoding.
     """
     for encoding in _ENCODINGS:
-        decoder = codecs.getincrementaldecoder(encoding)()
-        try:
-            decoder.decode(head, final=False)
-        except UnicodeDecodeError:
-            continue
-        return encoding
-    return "latin-1"
+        if _decodes_whole_file(handle, encoding):
+            return encoding
+    return _FALLBACK_ENCODING
 
 
 def _report_skip(on_skip: Callable[[int, str], None] | None, line_number: int, reason: str) -> None:
@@ -228,13 +260,14 @@ def _parse_stream(
     """Yield notices from an open, seekable binary stream."""
     if not handle.seekable():
         raise ValueError(
-            "parse_retraction_watch_csv() needs a seekable binary stream: the"
-            " encoding is chosen from a leading probe, which must then be"
-            " re-read. Save the download to a file first."
+            "parse_retraction_watch_csv() needs a seekable binary stream: an"
+            " encoding is chosen only once it has been shown to decode the"
+            " whole file, which means scanning it once and then rewinding to"
+            " actually read it. Save the download to a file first."
         )
-    head = handle.read(_PROBE_BYTES)
+    encoding = _detect_encoding(handle)
     handle.seek(0)
-    text = io.TextIOWrapper(handle, encoding=_detect_encoding(head), newline="")
+    text = io.TextIOWrapper(handle, encoding=encoding, newline="")
     try:
         reader = csv.DictReader(text)
         # start=2: line 1 is the header, so the number matches what an editor shows.
@@ -261,9 +294,13 @@ def parse_retraction_watch_csv(
 
     Args:
         source: Path to the CSV, or an open **seekable binary** stream. The
-            encoding is detected from a leading probe (``utf-8-sig`` before
-            ``utf-8``, falling back through ``cp1252`` to ``latin-1``), so the
-            stream must support ``seek``.
+            encoding is chosen by scanning the whole file for one that
+            decodes it end-to-end (``utf-8-sig`` before ``utf-8``, falling
+            back through ``cp1252`` to ``latin-1``, which always succeeds),
+            so a single bad byte anywhere in the file is caught before any
+            row is yielded rather than raising mid-stream. The stream must
+            support ``seek``: the scan rewinds to actually read the file
+            afterwards.
         on_skip: Called as ``on_skip(line_number, reason)`` for each row that
             cannot be used -- one with no ``Record ID`` (the export ends with
             190 entirely empty rows) or no usable identifier for the retracted
