@@ -32,13 +32,16 @@ from __future__ import annotations
 import codecs
 import csv
 import io
+import json
 import logging
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import IO
+from typing import IO, Any
 
+from bmlib.db import execute, fetch_all, placeholder, transaction
 from bmlib.publications.models import RetractionNature, RetractionNotice
+from bmlib.publications.storage import _normalize_doi, _normalize_pmid, _now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -358,3 +361,169 @@ def is_retracted(notices: Sequence[RetractionNotice]) -> bool:
         if notice.nature is RetractionNature.REINSTATEMENT:
             return False
     return False
+
+
+# ---------------------------------------------------------------------------
+# Storage and lookup
+# ---------------------------------------------------------------------------
+
+_NOTICE_COLUMNS = (
+    "record_id",
+    "doi",
+    "pmid",
+    "notice_doi",
+    "notice_pmid",
+    "nature",
+    "raw_nature",
+    "title",
+    "journal",
+    "retraction_date",
+    "original_paper_date",
+    "reasons",
+    "created_at",
+    "updated_at",
+)
+
+# Everything except the key and the creation stamp is replaced on re-import:
+# the CSV is the source of truth, so a notice whose reasons or nature changed
+# upstream must change here too. This is the opposite of store_publication()'s
+# merge, where several sources contribute to one row.
+_NOTICE_UPDATE_COLUMNS = tuple(
+    column for column in _NOTICE_COLUMNS if column not in ("record_id", "created_at")
+)
+
+
+def store_retraction_notices(conn: Any, notices: Iterable[RetractionNotice]) -> int:
+    """Insert or refresh retraction notices, keyed by ``record_id``.
+
+    Re-importing the monthly export is idempotent: ``record_id`` is Retraction
+    Watch's own primary key and carries a ``UNIQUE`` constraint, so a second
+    import of the same file updates rather than duplicates.
+
+    Identifiers are normalised with the same functions
+    :func:`~bmlib.publications.storage.store_publication` uses, so a DOI
+    stored here matches one looked up in any case or prefix variant.
+
+    The whole batch is one transaction: called with no transaction open it
+    commits once; called inside a caller's ``transaction(conn)`` block it
+    joins that block and leaves the commit to the caller.
+
+    Args:
+        conn: A DB-API connection (SQLite or PostgreSQL).
+        notices: The notices to write.
+
+    Returns:
+        The number of notices written.
+    """
+    ph = placeholder(conn)
+    now = _now_iso()
+    values_sql = ", ".join([ph] * len(_NOTICE_COLUMNS))
+    update_sql = ", ".join(f"{column} = excluded.{column}" for column in _NOTICE_UPDATE_COLUMNS)
+    statement = (
+        f"INSERT INTO retraction_notices ({', '.join(_NOTICE_COLUMNS)})"
+        f" VALUES ({values_sql})"
+        f" ON CONFLICT (record_id) DO UPDATE SET {update_sql}"
+    )
+
+    count = 0
+    with transaction(conn):
+        for notice in notices:
+            execute(
+                conn,
+                statement,
+                (
+                    notice.record_id,
+                    _normalize_doi(notice.doi),
+                    _normalize_pmid(notice.pmid),
+                    _normalize_doi(notice.notice_doi),
+                    _normalize_pmid(notice.notice_pmid),
+                    notice.nature.value,
+                    notice.raw_nature,
+                    notice.title,
+                    notice.journal,
+                    notice.retraction_date,
+                    notice.original_paper_date,
+                    json.dumps(notice.reasons),
+                    now,
+                    now,
+                ),
+            )
+            count += 1
+    return count
+
+
+def _row_to_notice_model(row: Any) -> RetractionNotice:
+    """Build a :class:`RetractionNotice` from a database row."""
+    return RetractionNotice(
+        record_id=row["record_id"],
+        nature=RetractionNature(row["nature"]),
+        doi=row["doi"],
+        pmid=row["pmid"],
+        notice_doi=row["notice_doi"],
+        notice_pmid=row["notice_pmid"],
+        title=row["title"],
+        journal=row["journal"],
+        retraction_date=row["retraction_date"],
+        original_paper_date=row["original_paper_date"],
+        reasons=json.loads(row["reasons"]) if row["reasons"] else [],
+        raw_nature=row["raw_nature"],
+    )
+
+
+def lookup_retractions(
+    conn: Any,
+    *,
+    doi: str | None = None,
+    pmid: str | None = None,
+) -> list[RetractionNotice]:
+    """Return every stored notice about one paper, newest first.
+
+    A paper may have several notices -- 2,354 papers in the live export do --
+    so this returns a list. Pass it to :func:`is_retracted` for the boolean.
+
+    Identifiers are normalised before lookup, so any case or prefix variant of
+    a DOI matches the canonical stored form. Supplying both ``doi`` and
+    ``pmid`` matches a notice on **either**.
+
+    Args:
+        conn: A DB-API connection (SQLite or PostgreSQL).
+        doi: The retracted paper's DOI, in any case or prefix variant.
+        pmid: The retracted paper's PMID.
+
+    Returns:
+        The matching notices, newest first (undated notices last -- see the
+        ``ORDER BY`` below).
+
+    Raises:
+        ValueError: If neither ``doi`` nor ``pmid`` is given -- a lookup with
+            no identifier is a programming error, not an empty result.
+    """
+    if doi is None and pmid is None:
+        raise ValueError("lookup_retractions() needs a doi or a pmid")
+
+    ph = placeholder(conn)
+    clauses: list[str] = []
+    params: list[str] = []
+    normalised_doi = _normalize_doi(doi)
+    if normalised_doi:
+        clauses.append(f"doi = {ph}")
+        params.append(normalised_doi)
+    normalised_pmid = _normalize_pmid(pmid)
+    if normalised_pmid:
+        clauses.append(f"pmid = {ph}")
+        params.append(normalised_pmid)
+    if not clauses:
+        return []
+
+    rows = fetch_all(
+        conn,
+        f"SELECT * FROM retraction_notices WHERE {' OR '.join(clauses)}"
+        # SQLite sorts NULLs last in a DESC order, PostgreSQL sorts them
+        # first. Ordering on the IS NULL flag first pins undated notices last
+        # on both, so "newest" means the same thing on either backend --
+        # is_retracted() reads the first decisive row, so a backend-dependent
+        # order is a backend-dependent answer.
+        " ORDER BY (retraction_date IS NULL), retraction_date DESC, id DESC",
+        tuple(params),
+    )
+    return [_row_to_notice_model(row) for row in rows]

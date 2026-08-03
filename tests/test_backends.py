@@ -44,7 +44,19 @@ from bmlib.db import (
     transaction,
     transaction_depth,
 )
-from bmlib.publications.models import FetchedRecord, FetchResult, FullTextSource, Publication
+from bmlib.publications.models import (
+    FetchedRecord,
+    FetchResult,
+    FullTextSource,
+    Publication,
+    RetractionNature,
+    RetractionNotice,
+)
+from bmlib.publications.retractions import (
+    is_retracted,
+    lookup_retractions,
+    store_retraction_notices,
+)
 from bmlib.publications.schema import ensure_schema
 from bmlib.publications.storage import (
     add_fulltext_source,
@@ -571,3 +583,138 @@ class TestSync:
         backend_conn.rollback()
         assert _count(backend_conn, "publications") == 5
         assert _count(backend_conn, "download_days") == 1
+
+
+# ---------------------------------------------------------------------------
+# Retraction notices
+# ---------------------------------------------------------------------------
+
+
+def _notice(record_id, nature, date, doi="10.1/paper", pmid=None):
+    """Build a RetractionNotice with the fields these tests care about."""
+    return RetractionNotice(
+        record_id=record_id,
+        nature=nature,
+        doi=doi,
+        pmid=pmid,
+        retraction_date=date,
+        reasons=["Rogue Editor"],
+    )
+
+
+class TestRetractionStorage:
+    def test_a_notice_round_trips(self, backend_conn):
+        ensure_schema(backend_conn)
+        stored = _notice("rw-1", RetractionNature.RETRACTION, "2020-05-01", pmid="123")
+
+        assert store_retraction_notices(backend_conn, [stored]) == 1
+
+        (loaded,) = lookup_retractions(backend_conn, doi="10.1/paper")
+        assert loaded.record_id == "rw-1"
+        assert loaded.nature is RetractionNature.RETRACTION
+        assert loaded.retraction_date == "2020-05-01"
+        assert loaded.reasons == ["Rogue Editor"]
+        assert loaded.pmid == "123"
+
+    def test_reimporting_the_same_file_does_not_duplicate_notices(self, backend_conn):
+        ensure_schema(backend_conn)
+        notices = [_notice("rw-1", RetractionNature.RETRACTION, "2020-05-01")]
+
+        store_retraction_notices(backend_conn, notices)
+        store_retraction_notices(backend_conn, notices)
+
+        assert _count(backend_conn, "retraction_notices") == 1
+
+    def test_a_reimport_refreshes_a_changed_notice(self, backend_conn):
+        ensure_schema(backend_conn)
+        store_retraction_notices(
+            backend_conn, [_notice("rw-1", RetractionNature.EXPRESSION_OF_CONCERN, "2020-05-01")]
+        )
+
+        store_retraction_notices(
+            backend_conn, [_notice("rw-1", RetractionNature.RETRACTION, "2021-06-02")]
+        )
+
+        (loaded,) = lookup_retractions(backend_conn, doi="10.1/paper")
+        assert loaded.nature is RetractionNature.RETRACTION
+        assert loaded.retraction_date == "2021-06-02"
+
+    def test_a_prefixed_uppercase_doi_matches_a_stored_notice(self, backend_conn):
+        # Stored and looked up through the same normalisers store_publication
+        # uses; a second normaliser that drifts is a lookup that silently
+        # misses a paper that is in fact retracted.
+        ensure_schema(backend_conn)
+        store_retraction_notices(
+            backend_conn,
+            [_notice("rw-1", RetractionNature.RETRACTION, "2020-05-01", doi="10.1016/J.ABC")],
+        )
+
+        found = lookup_retractions(backend_conn, doi="https://doi.org/10.1016/j.abc")
+
+        assert len(found) == 1
+
+    def test_notices_come_back_newest_first(self, backend_conn):
+        ensure_schema(backend_conn)
+        store_retraction_notices(
+            backend_conn,
+            [
+                _notice("rw-old", RetractionNature.RETRACTION, "2011-09-08"),
+                _notice("rw-new", RetractionNature.CORRECTION, "2017-12-14"),
+            ],
+        )
+
+        found = lookup_retractions(backend_conn, doi="10.1/paper")
+
+        assert [n.record_id for n in found] == ["rw-new", "rw-old"]
+        assert is_retracted(found) is True
+
+    def test_an_undated_notice_sorts_after_a_dated_one_on_both_backends(self, backend_conn):
+        # SQLite and PostgreSQL disagree about where NULLs land in a DESC
+        # sort, so the ORDER BY has to say explicitly. Without that, the
+        # "newest" notice differs by backend and is_retracted() follows it.
+        ensure_schema(backend_conn)
+        store_retraction_notices(
+            backend_conn,
+            [
+                _notice("rw-dated", RetractionNature.RETRACTION, "2020-01-01"),
+                _notice("rw-undated", RetractionNature.REINSTATEMENT, None),
+            ],
+        )
+
+        found = lookup_retractions(backend_conn, doi="10.1/paper")
+
+        assert found[0].record_id == "rw-dated"
+        assert is_retracted(found) is True
+
+    def test_a_lookup_by_pmid_finds_a_notice_stored_without_a_doi(self, backend_conn):
+        ensure_schema(backend_conn)
+        store_retraction_notices(
+            backend_conn,
+            [_notice("rw-1", RetractionNature.RETRACTION, "2020-05-01", doi=None, pmid="99")],
+        )
+
+        found = lookup_retractions(backend_conn, pmid="99")
+
+        assert [n.record_id for n in found] == ["rw-1"]
+
+    def test_a_lookup_with_no_identifier_is_a_programming_error(self, backend_conn):
+        ensure_schema(backend_conn)
+
+        with pytest.raises(ValueError):
+            lookup_retractions(backend_conn)
+
+    def test_an_unknown_paper_has_no_notices(self, backend_conn):
+        ensure_schema(backend_conn)
+
+        assert lookup_retractions(backend_conn, doi="10.1/never-retracted") == []
+
+    def test_a_caller_transaction_owns_the_commit(self, backend_conn):
+        ensure_schema(backend_conn)
+
+        with transaction(backend_conn):
+            store_retraction_notices(
+                backend_conn, [_notice("rw-1", RetractionNature.RETRACTION, "2020-05-01")]
+            )
+            assert not owns_commit(backend_conn)
+
+        assert _count(backend_conn, "retraction_notices") == 1
