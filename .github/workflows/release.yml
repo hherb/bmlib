@@ -93,7 +93,7 @@ jobs:
       # Pinned to a commit, not the mutable release/v1 tag: this step runs
       # with id-token: write, so a hijacked tag could mint attestations in
       # bmlib's name. Bump the SHA deliberately when updating.
-      - uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # v1.14.1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           repository-url: https://test.pypi.org/legacy/
           # TestPyPI accumulates rehearsal uploads; don't fail a rerun.
@@ -118,4 +118,4 @@ jobs:
           name: dist
           path: dist/
       # Same SHA as the TestPyPI job above — keep the two in lockstep.
-      - uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # v1.14.1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
