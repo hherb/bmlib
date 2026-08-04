@@ -389,7 +389,8 @@ class TestStatistics:
         assert stats["failed_assessments"] == 1
         assert stats["success_rate"] == 0.5
 
-    def test_successes_and_failures_account_for_every_attempt(self) -> None:
+    @patch("bmlib.agents.base.time.sleep")
+    def test_successes_and_failures_account_for_every_attempt(self, mock_sleep: MagicMock) -> None:
         assessor = make_assessor("not json")
         assessor.assess("T", "text")
         assessor.assess(None, None)
