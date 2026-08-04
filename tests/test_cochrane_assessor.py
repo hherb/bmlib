@@ -22,6 +22,7 @@ import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from bmlib.context_processor import ProcessingConfig
 from bmlib.llm.data_types import LLMResponse
 from bmlib.quality.cochrane_assessor import CochraneAssessor
 from bmlib.quality.cochrane_models import (
@@ -261,3 +262,78 @@ class TestAnUnusableResponse:
     @patch("bmlib.agents.base.time.sleep")
     def test_a_top_level_array_returns_none(self, mock_sleep: MagicMock) -> None:
         assert make_assessor("[1, 2, 3]").assess("T", "text") is None
+
+
+class TestCondensingOversizedText:
+    """Text larger than one context is reduced to an evidence digest first, so
+    the nine-domain judgement is made once, over content that fits."""
+
+    @staticmethod
+    def _tiny_config() -> ProcessingConfig:
+        return ProcessingConfig(max_context_chars=200)
+
+    def test_text_below_the_threshold_is_not_condensed(self) -> None:
+        assessor = make_assessor(condense_config=self._tiny_config())
+        assessment = assessor.assess("T", "x" * 100)
+
+        assert assessment.condensed_from_chars is None
+        assert assessor.llm.chat.call_count == 1
+
+    def test_oversized_text_is_condensed_and_says_so(self) -> None:
+        # ``_condense`` is stubbed for the same reason as the test below: a
+        # real run's call count depends on the chunking, and every reply it
+        # consumes off the queue advances what the *assessment* call receives.
+        # Worse, the stub queue repeats its last reply — the assessment JSON —
+        # so a real run feeds ~1.5k of JSON back in as digest content, which
+        # balloons into recursion levels and exhausts the queue. The real
+        # condensation is exercised by the two tests below, against replies
+        # short enough to converge.
+        assessor = make_assessor(json.dumps(_full_response()), condense_config=self._tiny_config())
+        assessor._condense = lambda text, label: ("a digest", [])  # type: ignore[method-assign]
+        text = "x " * 400
+        assessment = assessor.assess("T", text)
+
+        assert assessment is not None
+        # ``assess()`` strips the text before this branch ever sees it, so the
+        # recorded length is of the stripped text, not the caller's literal.
+        assert assessment.condensed_from_chars == len(text.strip())
+
+    def test_condensation_reduces_every_chunk_of_the_paper(self) -> None:
+        """The real harness run, against a reply short enough that the
+        extractions fit one context and no recursion is needed."""
+        assessor = make_assessor("short evidence", condense_config=self._tiny_config())
+
+        condensed = assessor._condense("x " * 400, "a study")
+
+        assert condensed is not None
+        digest, notes = condensed
+        assert "short evidence" in digest
+        assert assessor.llm.chat.call_count > 1  # the paper really was chunked
+        assert notes == []  # a clean run records nothing
+
+    def test_the_digest_reaches_the_model_instead_of_the_paper(self) -> None:
+        # ``_condense`` is stubbed rather than run: how many model calls a
+        # real condensation consumes depends on the chunking, so asserting on
+        # the *last* call's content while the stub queue advances underneath
+        # makes the assertion depend on that count.  What this test is for is
+        # the wiring — that the digest replaces the paper in the prompt.
+        assessor = make_assessor(json.dumps(_full_response()), condense_config=self._tiny_config())
+        assessor._condense = lambda text, label: ("DIGEST-MARKER", [])  # type: ignore[method-assign]
+        assessor.assess("T", "ORIGINAL-MARKER " * 40)
+
+        final_prompt = assessor.llm.chat.call_args.kwargs["messages"][-1].content
+        assert "DIGEST-MARKER" in final_prompt
+        assert "ORIGINAL-MARKER" not in final_prompt
+
+    def test_an_empty_digest_returns_none_rather_than_judging_nothing(self) -> None:
+        """Running the Cochrane prompt over an empty string returns a
+        confident nine-domain assessment of no paper at all."""
+        assessor = make_assessor("", "", condense_config=self._tiny_config())
+
+        assert assessor.assess("T", "x " * 400) is None
+
+    def test_the_assessment_is_never_made_from_a_failed_condensation(self) -> None:
+        assessor = make_assessor(json.dumps(_full_response()), condense_config=self._tiny_config())
+        assessor._condense = lambda text, label: None  # type: ignore[method-assign]
+
+        assert assessor.assess("T", "x " * 400) is None

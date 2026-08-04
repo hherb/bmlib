@@ -36,7 +36,7 @@ import logging
 from typing import Any
 
 from bmlib.agents.base import BaseAgent
-from bmlib.context_processor import ProcessingConfig
+from bmlib.context_processor import LLMChunkProcessor, ProcessingConfig, ProcessingStatus
 from bmlib.llm import LLMClient
 from bmlib.quality.cochrane_models import (
     ROB_JUDGEMENT_UNCLEAR,
@@ -213,6 +213,55 @@ Use null for any field the text does not report. Every one of the nine
 risk_of_bias domains must be present. Respond ONLY with valid JSON."""
 
 
+#: What the digest must preserve.  A digest that drops these is a digest the
+#: assessment pass cannot judge from.
+CONDENSE_QUERY = (
+    "Everything needed for a Cochrane assessment: the study design; the "
+    "setting, population and group sizes; the interventions and controls; the "
+    "outcomes measured and when; funding, conflicts of interest, ethical "
+    "approval and trial registration; and the reported detail behind each risk "
+    "of bias domain — how the randomisation sequence was generated, how "
+    "allocation was concealed, whether groups were comparable at baseline, who "
+    "was blinded to what, how much outcome data was missing and how it was "
+    "handled, and whether every pre-specified outcome was reported."
+)
+
+CONDENSE_EXTRACTION_PROMPT = """\
+Extract, verbatim where possible, every passage of this paper that bears on \
+the following.
+
+Needed: {query}
+
+Paper section:
+{content}
+
+INSTRUCTIONS:
+- Quote or closely paraphrase what the text actually says
+- Keep numbers, group sizes, timepoints and named funders exactly
+- Say nothing about what the text does not report — omissions are recorded by
+  the assessment step, not invented here
+- Return plain text
+
+Extracted evidence:"""
+
+CONDENSE_CONSOLIDATION_PROMPT = """\
+Merge these extracted passages into one evidence summary.
+
+Needed: {query}
+
+Extracted evidence:
+{content}
+
+INSTRUCTIONS:
+- Merge overlapping passages, keeping every distinct detail
+- Preserve numbers, group sizes, timepoints and named funders exactly
+- Keep the methodological detail even where it seems minor: it is what the
+  risk of bias judgements rest on
+- Return plain text
+
+Consolidated evidence:"""
+
+
 class CochraneAssessor(BaseAgent):
     """Produces Cochrane-aligned assessments of individual studies.
 
@@ -328,6 +377,14 @@ class CochraneAssessor(BaseAgent):
         notes: list[str] = []
         condensed_from: int | None = None
 
+        if len(text) > self.condense_config.max_context_chars:
+            condensed = self._condense(text, label)
+            if condensed is None:
+                self._stats["failed_assessments"] += 1
+                return None
+            condensed_from = len(text)
+            text, notes = condensed
+
         assessment = self._attempt_assessment(title, text, label, notes, condensed_from)
         if assessment is None:
             return None
@@ -417,6 +474,50 @@ class CochraneAssessor(BaseAgent):
         if document_id is not None:
             return f"Study {document_id}"
         return title or "Unknown study"
+
+    def _condense(self, text: str, label: str) -> tuple[str, list[str]] | None:
+        """Reduce oversized text to an evidence digest that fits one context.
+
+        Runs :class:`~bmlib.context_processor.LLMChunkProcessor` with this
+        agent, so token accounting, retries and JSON repair are the ones the
+        rest of bmlib uses.  The judgement is made once, afterwards, over the
+        digest — no per-chunk judgements are made and none are merged.
+
+        Args:
+            text: The oversized text.
+            label: Names the study in log lines.
+
+        Returns:
+            ``(digest, notes)``, or ``None`` when the run failed or produced
+            nothing to judge.
+        """
+        processor = LLMChunkProcessor(
+            agent=self,
+            extraction_prompt=CONDENSE_EXTRACTION_PROMPT,
+            consolidation_prompt=CONDENSE_CONSOLIDATION_PROMPT,
+            config=self.condense_config,
+        )
+        result = processor.process([text], query=CONDENSE_QUERY)
+
+        if result.status is ProcessingStatus.FAILED:
+            logger.error("Could not condense the text of %s: %s", label, result.error_message)
+            return None
+
+        digest = result.final_result.content.strip()
+        if not digest:
+            # The Cochrane prompt over an empty string returns a confident
+            # nine-domain assessment of no paper at all.
+            logger.error("Condensing the text of %s produced an empty digest", label)
+            return None
+
+        notes: list[str] = []
+        if result.status is not ProcessingStatus.COMPLETED:
+            notes.append(
+                f"Source text was condensed before assessment; the condensation "
+                f"finished with status {result.status.value}, so the digest may be "
+                f"incomplete."
+            )
+        return digest, notes
 
     # --- Parsing ---
 
