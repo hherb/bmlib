@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from bmlib.llm.data_types import LLMResponse
 from bmlib.quality.cochrane_assessor import CochraneAssessor
@@ -206,6 +206,13 @@ class TestConfidence:
         assessor = make_assessor(json.dumps(_full_response(overall_confidence=0.0)))
         assert assessor.assess("T", "text") is not None
 
+    def test_an_unreported_confidence_is_not_treated_as_a_low_one(self) -> None:
+        """Absence of evidence is not negative evidence: a model that garbled
+        its confidence has still produced a usable assessment."""
+        assessor = make_assessor(json.dumps(_full_response(overall_confidence="high")))
+
+        assert assessor.assess("T", "text", min_confidence=0.9) is not None
+
 
 class TestAMissingRiskOfBiasSection:
     """A Cochrane assessment without any risk-of-bias section is not a
@@ -223,7 +230,8 @@ class TestAMissingRiskOfBiasSection:
             make_assessor(json.dumps(_full_response(risk_of_bias={}))).assess("T", "text") is None
         )
 
-    def test_it_is_retried_once_before_giving_up(self) -> None:
+    @patch("bmlib.agents.base.time.sleep")
+    def test_it_is_retried_once_before_giving_up(self, mock_sleep: MagicMock) -> None:
         """Two whole attempts, not three: a model that omits the section twice
         has misread the prompt, and the bound keeps the worst case at six
         model calls rather than nine."""
@@ -246,8 +254,10 @@ class TestAMissingRiskOfBiasSection:
 
 
 class TestAnUnusableResponse:
-    def test_an_unparseable_response_returns_none(self) -> None:
+    @patch("bmlib.agents.base.time.sleep")
+    def test_an_unparseable_response_returns_none(self, mock_sleep: MagicMock) -> None:
         assert make_assessor("not json at all").assess("T", "text") is None
 
-    def test_a_top_level_array_returns_none(self) -> None:
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_top_level_array_returns_none(self, mock_sleep: MagicMock) -> None:
         assert make_assessor("[1, 2, 3]").assess("T", "text") is None

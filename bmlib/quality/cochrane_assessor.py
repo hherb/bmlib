@@ -33,6 +33,7 @@ Reference: Cochrane Handbook for Systematic Reviews of Interventions
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from bmlib.agents.base import BaseAgent
 from bmlib.context_processor import ProcessingConfig
@@ -297,7 +298,14 @@ class CochraneAssessor(BaseAgent):
             doi: DOI, recorded on the characteristics table.
             document_id: The caller's own row id.
             min_confidence: Reject an assessment whose ``overall_confidence``
-                falls below this.  Zero, the default, rejects nothing.
+                falls below this.  Zero, the default, rejects nothing.  Only
+                a *reported* confidence below the bar is rejected — an
+                assessment whose confidence could not be parsed
+                (``overall_confidence`` is ``None``) is kept regardless of
+                how high *min_confidence* is set.  An unknown confidence is
+                not a low one: the same rule keeps
+                :func:`bmlib.transparency.models.calculate_risk_level` from
+                treating an undetermined COI disclosure as a missing one.
 
         Returns:
             The assessment, or ``None`` if it could not be made.  ``None``
@@ -414,7 +422,7 @@ class CochraneAssessor(BaseAgent):
 
     def _parse_assessment(
         self,
-        data: dict,
+        data: dict[str, Any],
         notes: list[str],
         condensed_from: int | None,
     ) -> CochraneStudyAssessment:
@@ -489,7 +497,7 @@ def _clamped_confidence(value: object) -> float | None:
         return None
 
 
-def _parse_risk_of_bias(rob_data: dict) -> CochraneRiskOfBias:
+def _parse_risk_of_bias(rob_data: dict[str, Any]) -> CochraneRiskOfBias:
     """Build the nine-domain assessment from the model's ``risk_of_bias``.
 
     Every judgement is normalised through
