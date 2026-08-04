@@ -16,15 +16,22 @@ analyzer credits data deposition that PubMed reports in a structured field
 rather than only what a paper's prose happens to say.
 
 No public signature changed incompatibly and nothing was removed, so the bump
-is minor. **Three changes move stored values**, none of them behind a flag:
-`transparency_score` and `data_availability_level` move for papers whose
-PubMed record names a deposition repository, and `trial_registered` /
-`transparency_score` move for papers registered in one of three registries
-bmlib did not recognise; `risk_indicators` collapses a funder CrossRef names
-repeatedly to a single line; and `FullTextResult.source` gains `"ncbi_pmc"`
-for papers that previously fell through to a bare DOI link. Each entry below
-says exactly who is affected. Retraction Watch and `context_processor` are
-purely additive — a new module each, nothing existing changed.
+is minor. **Four changes move stored values**, none of them behind a flag:
+
+- `transparency_score` rises and `data_availability_level` strengthens — the
+  two sources are merged by rank, so it can only move up — for papers whose
+  PubMed record names a deposition repository.
+- `trial_registered` becomes `True` and `transparency_score` rises by 20 for
+  papers registered in `JMACCT`, `REPEC` or `UMIN CTR`, which
+  `_TRIAL_REGISTRY_NAMES` did not recognise.
+- `risk_indicators` collapses a funder CrossRef names repeatedly to a single
+  line; no score and no risk level moves with it.
+- `FullTextResult.source` gains `"ncbi_pmc"`, and papers that previously fell
+  through to a bare DOI link can now return real full text.
+
+Each entry below says exactly who is affected. Retraction Watch and
+`context_processor` are purely additive — a new module each, nothing existing
+changed.
 
 ### Added
 

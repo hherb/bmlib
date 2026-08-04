@@ -1,8 +1,8 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-04. **0.7.0 is cut on `release/0.7.0` and its PR is
-open — not yet merged, tagged, or published to PyPI.** Everything it contains
-is already on `main`; the branch carries only the version bump, the CHANGELOG
+_Last updated: 2026-08-04. **0.7.0 is cut but not yet published to PyPI.**
+Everything it contains was on `main` before the release branch was cut, so
+that branch carries no library code — only the version bump, the CHANGELOG
 promotion and these docs. `[Unreleased]` is empty. No open issues. 1372 tests
 passing + 50 skipped, ruff clean. **The next session's first job is to finish
 the release** — see "Next up"._
@@ -15,7 +15,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ## Current state
 
-- **Version 0.7.0**, cut 2026-08-04, **PR open and not yet merged**. Release
+- **Version 0.7.0**, cut 2026-08-04, **not yet published**. Release
   history: 0.4.0 (2026-07-19) → 0.5.0 (2026-07-20) → 0.5.1 (2026-07-21) →
   0.6.0 (2026-07-30) → 0.7.0. 0.3.0 was bumped in-tree but never released;
   its changes shipped inside 0.4.0. The version lives in **four** places —
@@ -29,14 +29,16 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   `bmlib.context_processor` (#49, PR #50), and Retraction Watch notices
   (Phase 2 row 10, PR #51). Designs for all of them are in
   `docs/superpowers/specs/`.
-- **Three behaviour changes in 0.7.0 move stored values**, none behind a
-  flag: `transparency_score` / `data_availability_level` move for papers
-  whose PubMed record names a deposition repository, and `trial_registered` /
-  `transparency_score` for papers in three registries bmlib did not
-  recognise; a funder CrossRef repeats collapses to one `risk_indicators`
-  line; `FullTextResult.source` gains `"ncbi_pmc"`. 0.6.0's three
-  non-comparable changes are separate and still apply to anyone upgrading
-  across both. Anything persisting these values needs to know.
+- **Four behaviour changes in 0.7.0 move stored values**, none behind a
+  flag: `transparency_score` rises and `data_availability_level` strengthens
+  for papers whose PubMed record names a deposition repository;
+  `trial_registered` becomes `True` and `transparency_score` rises by 20 for
+  papers in the three registries `_TRIAL_REGISTRY_NAMES` did not recognise
+  (`JMACCT`, `REPEC`, `UMIN CTR`); a funder CrossRef repeats
+  collapses to one `risk_indicators` line; and `FullTextResult.source` gains
+  `"ncbi_pmc"`. 0.6.0's three non-comparable changes are separate and still
+  apply to anyone upgrading across both. Anything persisting these values
+  needs to know.
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed two releases. Widening it is a downstream change, not a bmlib
   one.
@@ -57,13 +59,12 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Finish the 0.7.0 release
 
-The release branch is prepared and its PR is open; **everything after the
-merge is still to do.** Once CI is green: merge with `--merge` (**not**
-squash) so the tag lands on main's first-parent line, tag the *merge commit*
-`v0.7.0`, push the tag, `uv build`, publish with **`uvx twine upload`** (*not*
-`uv publish`, which cannot read `~/.pypirc`), then create the GitHub release.
-PyPI's JSON API serves a stale CDN cache afterwards; verify against
-`https://pypi.org/simple/bmlib/`, which is what installers actually read.
+The branch is prepared; **everything from the merge on is still to do.** Once
+CI is green, follow "Cutting a release" at the end of this file from the merge
+step: merge with `--merge`, tag the *merge commit* `v0.7.0`, push the tag,
+create the GitHub release, and approve the `pypi` environment gate so the
+Release workflow publishes. The steps are not repeated here — one copy, at the
+end of the file, is the one to keep correct.
 
 ### Open GitHub issues
 
@@ -471,7 +472,15 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   `docs/manual/` and `ROADMAP.md`, then commit on a `release/X.Y.Z` branch and
   open a PR. After CI is green merge with `--merge` (**not** squash) so the
   tag lands on main's first-parent line, tag the *merge commit*, push the tag,
-  `uv build`, and publish with **`uvx twine upload`** — *not* `uv publish`,
-  which cannot read `~/.pypirc`. Finally create the GitHub release. PyPI's
+  and create the GitHub release. **The workflow publishes to PyPI, not you** —
+  creating the release fires `.github/workflows/release.yml`, which rebuilds,
+  refuses to go on unless the tag matches `bmlib.__version__`, runs
+  `twine check --strict`, asserts `py.typed` survived packaging, and uploads
+  via Trusted Publishing with no stored token. Approve the `pypi` environment
+  gate to let it through. **Do not also upload by hand:** the publish job has
+  no `skip-existing`, so a manual upload first makes it fail on a duplicate —
+  which is why v0.5.0's and v0.6.0's runs are still sitting unapproved, those
+  two having been published from a laptop instead. Rehearse the whole path
+  any time with a `workflow_dispatch` run, which targets TestPyPI only. PyPI's
   JSON API serves a stale CDN cache afterwards; verify against
   `https://pypi.org/simple/bmlib/`, which is what installers actually read.
