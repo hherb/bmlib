@@ -11,3 +11,6 @@ uv.lock
 .coverage
 htmlcov/
 coverage.xml
+
+# Subagent-driven-development scratch workspace (ledgers, briefs, review packages)
+.superpowers/
