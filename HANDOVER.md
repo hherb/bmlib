@@ -1,11 +1,8 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-04. **0.7.0 is cut but not yet published to PyPI.**
-Everything it contains was on `main` before the release branch was cut, so
-that branch carries no library code — only the version bump, the CHANGELOG
-promotion and these docs. `[Unreleased]` is empty. No open issues. 1372 tests
-passing + 50 skipped, ruff clean. **The next session's first job is to finish
-the release** — see "Next up"._
+_Last updated: 2026-08-04. **0.7.0 is released and on PyPI.** `[Unreleased]`
+is empty. No open issues, no open PRs. 1372 tests passing + 50 skipped, ruff
+clean. **The next piece of work is a Phase 2 port** — see "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -15,7 +12,10 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ## Current state
 
-- **Version 0.7.0**, cut 2026-08-04, **not yet published**. Release
+- **Version 0.7.0**, released 2026-08-04 and live on PyPI — the **first
+  release published by the Release workflow** rather than by hand, so that
+  path is now proven end to end (tag → GitHub release → `pypi` environment
+  gate → Trusted Publishing upload). Release
   history: 0.4.0 (2026-07-19) → 0.5.0 (2026-07-20) → 0.5.1 (2026-07-21) →
   0.6.0 (2026-07-30) → 0.7.0. 0.3.0 was bumped in-tree but never released;
   its changes shipped inside 0.4.0. The version lives in **four** places —
@@ -56,15 +56,6 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   a plan said at the time — leave them alone.
 
 ## Next up
-
-### Finish the 0.7.0 release
-
-The branch is prepared; **everything from the merge on is still to do.** Once
-CI is green, follow "Cutting a release" at the end of this file from the merge
-step: merge with `--merge`, tag the *merge commit* `v0.7.0`, push the tag,
-create the GitHub release, and approve the `pypi` environment gate so the
-Release workflow publishes. The steps are not repeated here — one copy, at the
-end of the file, is the one to keep correct.
 
 ### Open GitHub issues
 
@@ -480,7 +471,13 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   gate to let it through. **Do not also upload by hand:** the publish job has
   no `skip-existing`, so a manual upload first makes it fail on a duplicate —
   which is why v0.5.0's and v0.6.0's runs are still sitting unapproved, those
-  two having been published from a laptop instead. Rehearse the whole path
+  two having been published from a laptop instead. **v0.7.0 was the first
+  release to go the whole way through the workflow, and it worked** — so the
+  hand-upload habit has no remaining excuse. The tag may sit on any merge
+  commit on main's first-parent line that contains the version bump; v0.7.0's
+  landed on a dependabot merge that followed the release merge, which the
+  workflow's `tag == bmlib.__version__` check accepts and which is fine.
+  Rehearse the whole path
   any time with a `workflow_dispatch` run, which targets TestPyPI only. PyPI's
   JSON API serves a stale CDN cache afterwards; verify against
   `https://pypi.org/simple/bmlib/`, which is what installers actually read.
