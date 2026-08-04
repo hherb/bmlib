@@ -233,6 +233,13 @@ class QualityAssessment:
     original_quality_tier: QualityTier | None = None
     transparency_adjusted: bool = False
 
+    # Cochrane integration.  Typed ``Any`` for the same reason
+    # ``transparency_result`` is: naming the type here would make
+    # ``data_models`` import ``cochrane_models``, which imports this module
+    # for ``BiasRisk``.  Declared last — downstream projects construct this
+    # positionally.
+    cochrane_assessment: Any = None
+
     # --- Factories ---
 
     @classmethod
@@ -315,6 +322,8 @@ class QualityAssessment:
         }
         if self.bias_risk:
             d["bias_risk"] = self.bias_risk.to_dict()
+        if self.cochrane_assessment is not None:
+            d["cochrane_assessment"] = self.cochrane_assessment.to_dict()
         return d
 
     @classmethod
@@ -322,6 +331,11 @@ class QualityAssessment:
         design_str = data.get("study_design", "unknown")
         design = STUDY_DESIGN_MAPPING.get(design_str, StudyDesign.UNKNOWN)
         bias = BiasRisk.from_dict(data["bias_risk"]) if "bias_risk" in data else None
+        cochrane = None
+        if "cochrane_assessment" in data:
+            from bmlib.quality.cochrane_models import CochraneStudyAssessment
+
+            cochrane = CochraneStudyAssessment.from_dict(data["cochrane_assessment"])
         return cls(
             assessment_tier=data.get("assessment_tier", 0),
             extraction_method=data.get("extraction_method", "none"),
@@ -340,6 +354,7 @@ class QualityAssessment:
             strengths=data.get("strengths", []),
             limitations=data.get("limitations", []),
             transparency_adjusted=data.get("transparency_adjusted", False),
+            cochrane_assessment=cochrane,
         )
 
 
@@ -359,3 +374,4 @@ class QualityFilter:
     use_metadata_only: bool = False
     use_llm_classification: bool = True
     use_detailed_assessment: bool = False
+    use_cochrane_assessment: bool = False

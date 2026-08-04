@@ -525,3 +525,162 @@ class TestArrayResponseIsRetried:
 
         assert result.study_design == StudyDesign.RCT
         assert llm.chat.call_count == 2
+
+
+class TestTheCochraneRoute:
+    """The tiered pipeline can produce Cochrane data, not merely represent it."""
+
+    @staticmethod
+    def _manager_with_cochrane(assessment=None):
+        from unittest.mock import MagicMock
+
+        from bmlib.quality.manager import QualityManager
+
+        mgr = QualityManager(llm=MagicMock(), classifier_model="o:x", assessor_model="o:y")
+        mgr.classifier = MagicMock()
+        mgr.assessor = MagicMock()
+        mgr.cochrane = MagicMock()
+        mgr.cochrane.assess.return_value = assessment
+        return mgr
+
+    @staticmethod
+    def _cochrane_assessment():
+        from unittest.mock import MagicMock
+
+        from bmlib.quality.cochrane_models import (
+            ROB_JUDGEMENT_HIGH,
+            CochraneStudyAssessment,
+            create_default_cochrane_risk_of_bias,
+        )
+
+        rob = create_default_cochrane_risk_of_bias()
+        rob.selective_reporting.judgement = ROB_JUDGEMENT_HIGH
+        chars = MagicMock()
+        return CochraneStudyAssessment(
+            study_characteristics=chars,
+            risk_of_bias=rob,
+            overall_confidence=0.85,
+            evidence_level="Level 2 (moderate-high)",
+        )
+
+    def test_the_flag_routes_to_the_cochrane_assessor(self):
+        mgr = self._manager_with_cochrane(self._cochrane_assessment())
+        f = QualityFilter(use_cochrane_assessment=True)
+
+        result = mgr.assess("Title", "Abstract", filter_settings=f)
+
+        assert result.assessment_tier == 4
+        assert result.extraction_method == "llm_cochrane_assessment"
+        assert result.cochrane_assessment is not None
+        mgr.cochrane.assess.assert_called_once()
+
+    def test_the_five_domain_bias_risk_is_populated_from_the_nine(self):
+        mgr = self._manager_with_cochrane(self._cochrane_assessment())
+        f = QualityFilter(use_cochrane_assessment=True)
+
+        result = mgr.assess("Title", "Abstract", filter_settings=f)
+
+        assert result.bias_risk is not None
+        assert result.bias_risk.reporting == "high"
+        assert result.bias_risk.selection == "unclear"
+
+    def test_the_tier_1_classification_survives(self):
+        """Cochrane produces no study design, so the free metadata tier still
+        supplies it rather than being thrown away."""
+        mgr = self._manager_with_cochrane(self._cochrane_assessment())
+        f = QualityFilter(use_cochrane_assessment=True)
+
+        result = mgr.assess(
+            "Title",
+            "Abstract",
+            publication_types=["Randomized Controlled Trial"],
+            filter_settings=f,
+        )
+
+        assert result.study_design == StudyDesign.RCT
+        assert result.quality_tier == QualityTier.TIER_4_EXPERIMENTAL
+
+    def test_the_full_text_is_preferred_over_the_abstract(self):
+        mgr = self._manager_with_cochrane(self._cochrane_assessment())
+        f = QualityFilter(use_cochrane_assessment=True)
+
+        mgr.assess("Title", "Abstract", full_text="The whole paper", filter_settings=f)
+
+        assert mgr.cochrane.assess.call_args.args[1] == "The whole paper"
+
+    def test_the_abstract_is_used_when_there_is_no_full_text(self):
+        mgr = self._manager_with_cochrane(self._cochrane_assessment())
+        f = QualityFilter(use_cochrane_assessment=True)
+
+        mgr.assess("Title", "Abstract", filter_settings=f)
+
+        assert mgr.cochrane.assess.call_args.args[1] == "Abstract"
+
+    def test_cochrane_supersedes_tier_3(self):
+        """Deeper than Tier 3, so the shallower tier is skipped rather than
+        run and discarded — as Tier 3 already supersedes Tier 2."""
+        mgr = self._manager_with_cochrane(self._cochrane_assessment())
+        f = QualityFilter(use_cochrane_assessment=True, use_detailed_assessment=True)
+
+        result = mgr.assess("Title", "Abstract", filter_settings=f)
+
+        assert result.assessment_tier == 4
+        mgr.assessor.assess.assert_not_called()
+        mgr.classifier.classify.assert_not_called()
+
+    def test_confident_metadata_does_not_short_circuit_the_cochrane_pass(self):
+        mgr = self._manager_with_cochrane(self._cochrane_assessment())
+        f = QualityFilter(use_cochrane_assessment=True)
+
+        mgr.assess(
+            "Title",
+            "Abstract",
+            publication_types=["Randomized Controlled Trial"],
+            filter_settings=f,
+        )
+
+        mgr.cochrane.assess.assert_called_once()
+
+    def test_a_failed_pass_degrades_to_the_tier_1_result(self):
+        """Not to nothing — and the two are distinguishable."""
+        mgr = self._manager_with_cochrane(None)
+        f = QualityFilter(use_cochrane_assessment=True)
+
+        result = mgr.assess(
+            "Title",
+            "Abstract",
+            publication_types=["Randomized Controlled Trial"],
+            filter_settings=f,
+        )
+
+        assert result.assessment_tier == 1
+        assert result.cochrane_assessment is None
+        assert result.study_design == StudyDesign.RCT
+
+    def test_the_evidence_level_vocabularies_are_not_mixed(self):
+        """CochraneStudyAssessment.evidence_level is free-form model text
+        ("Level 2 (moderate-high)"); QualityAssessment.evidence_level is
+        Oxford CEBM ("1a"…"5").  Copying one into the other puts a foreign
+        vocabulary in a field callers parse."""
+        mgr = self._manager_with_cochrane(self._cochrane_assessment())
+        f = QualityFilter(use_cochrane_assessment=True)
+
+        result = mgr.assess("Title", "Abstract", filter_settings=f)
+
+        assert result.evidence_level != "Level 2 (moderate-high)"
+        assert result.cochrane_assessment.evidence_level == "Level 2 (moderate-high)"
+
+    def test_the_model_confidence_is_carried_across(self):
+        mgr = self._manager_with_cochrane(self._cochrane_assessment())
+        f = QualityFilter(use_cochrane_assessment=True)
+
+        result = mgr.assess("Title", "Abstract", filter_settings=f)
+
+        assert result.confidence == 0.85
+
+    def test_the_flag_is_off_by_default(self):
+        mgr = self._manager_with_cochrane(self._cochrane_assessment())
+
+        mgr.assess("Title", "Abstract", filter_settings=QualityFilter())
+
+        mgr.cochrane.assess.assert_not_called()
