@@ -134,6 +134,13 @@ carrying `{query}` and `{content}`. Condensation runs only when
 `len(text) > condense_config.max_context_chars`; below that the text goes to
 the model whole.
 
+The assessor's default is `ProcessingConfig(max_context_chars=48_000)`, not
+the harness's own 4000. Roughly 12k tokens, so a whole research paper usually
+passes through uncondensed while still leaving room in a 32k-token window for
+a ~4k-character prompt and a 4096-token answer. The harness's 4000 would
+condense almost every full text and most long abstracts. A caller whose model
+is larger or smaller passes its own config.
+
 The `query` handed to the harness names what the digest must preserve: the
 methods, participants, interventions, outcomes and notes the characteristics
 table needs, and the reported detail behind each of the nine bias domains —
@@ -284,11 +291,20 @@ Each gets a named regression test that fails if the fix is reverted.
 5. **A response missing the entire `risk_of_bias` block is accepted**, and
    `_parse_risk_of_bias({})` fabricates nine "Unclear risk" defaults from
    nothing. A Cochrane assessment without any risk-of-bias section is not a
-   Cochrane assessment; it becomes a bad response, which `chat_json()` retries,
-   and `None` if it never arrives. A *single missing domain* still defaults to
-   Unclear with "Not reported or insufficient information" — that is honest
-   per-domain degradation of an otherwise good answer, not fabrication of the
-   whole.
+   Cochrane assessment; it is rejected, and `None` is returned rather than the
+   fabrication.
+
+   `chat_json()` cannot do this retry itself — it validates JSON shape, not
+   the schema underneath, and its loop has closed by the time the assessment
+   is parsed. The assessor therefore makes **at most two** whole attempts
+   (`_ASSESSMENT_ATTEMPTS = 2`), each with `chat_json()`'s own transport
+   retries inside it. Two, not three: a model that omits the risk-of-bias
+   section twice is answering a prompt it has misread, and the bound keeps the
+   worst case at six model calls rather than nine.
+
+   A *single missing domain* still defaults to Unclear with "Not reported or
+   insufficient information" — that is honest per-domain degradation of an
+   otherwise good answer, not fabrication of the whole.
 
 6. **Dead imports.** `create_default_cochrane_risk_of_bias`,
    `ROB_JUDGEMENT_LOW` and `ROB_JUDGEMENT_HIGH` are imported and never used.
