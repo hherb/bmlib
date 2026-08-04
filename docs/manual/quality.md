@@ -1,15 +1,16 @@
 # bmlib.quality — Quality Assessment Pipeline
 
-Three-tier quality assessment pipeline for biomedical publications, inspired by the Oxford Centre for Evidence-Based Medicine (CEBM) evidence hierarchy. The pipeline escalates from free metadata checks to increasingly capable LLM assessments:
+Tiered quality assessment pipeline for biomedical publications, inspired by the Oxford Centre for Evidence-Based Medicine (CEBM) evidence hierarchy. The pipeline escalates from free metadata checks to increasingly capable LLM assessments:
 
 - **Tier 1:** PubMed metadata classification (free, instant)
 - **Tier 2:** LLM study-design classification (cheap model, ~$0.001/doc)
 - **Tier 3:** Deep methodological assessment (capable model, ~$0.003/doc)
+- **Tier 4:** Cochrane-aligned assessment — nine-domain risk of bias plus the study-characteristics table (capable model; opt in via `QualityFilter(use_cochrane_assessment=True)`, off by default)
 
-Alongside the pipeline, the module ships three **standalone** toolkits: Cochrane-aligned assessment models, Cochrane table formatters, and rule-based (LLM-free) extractors with an audit-trail scoring model.
+Tier 2 runs by default when Tier 1's metadata result is not confident enough (`use_llm_classification=True`); Tiers 3 and 4 are opt-in via [`QualityFilter`](#qualityfilter) and each supersedes every shallower tier when requested, rather than running alongside it. Alongside the pipeline, the module ships two toolkits that remain **standalone**: Cochrane table formatters, and rule-based (LLM-free) extractors with an audit-trail scoring model.
 
-> **The standalone toolkits are not wired into the tiered pipeline.**
-> `QualityManager` imports only `data_models`, `metadata_filter`, `study_classifier`, and `quality_agent`. Tier 3 (`QualityAgent`) produces the five-domain [`BiasRisk`](#biasrisk) — never a [`CochraneRiskOfBias`](#cochraneriskofbias). There is **no** conversion function between `BiasRisk` and `CochraneRiskOfBias`, and none between [`DimensionScore`](#dimensionscore) and [`QualityAssessment`](#qualityassessment). The Cochrane models are documented as "a strict superset of `BiasRisk`" and the extractors as "a cheap pre-filter or fallback for the LLM-based tiers", but that is a statement of intent: no code connects them. Populate the Cochrane models and call the extractors yourself.
+> **The Cochrane half is wired in; the formatters and extractors are not.**
+> `QualityManager` now imports `cochrane_assessor` and `cochrane_models` alongside `data_models`, `metadata_filter`, `study_classifier`, and `quality_agent`. Tier 3 (`QualityAgent`) still produces only the five-domain [`BiasRisk`](#biasrisk) — never a [`CochraneRiskOfBias`](#cochraneriskofbias) — but Tier 4 (`CochraneAssessor`) produces the nine-domain table directly, and [`collapse_risk_of_bias()`](#collapse_risk_of_bias) is the conversion function from `CochraneRiskOfBias` to `BiasRisk` that used not to exist. See [Cochrane assessment](#cochrane-assessment) below. `cochrane_formatter` and `extractors` remain untouched: no tier calls them, and there is still no conversion between [`DimensionScore`](#dimensionscore) and [`QualityAssessment`](#qualityassessment). Render Cochrane tables and call the extractors yourself.
 
 ## Module layout
 
@@ -19,8 +20,9 @@ Alongside the pipeline, the module ships three **standalone** toolkits: Cochrane
 | `metadata_filter` | Tier 1 — `classify_from_metadata()` | Yes |
 | `study_classifier` | Tier 2 — `StudyClassifier` | Yes |
 | `quality_agent` | Tier 3 — `QualityAgent` | Yes |
+| `cochrane_assessor` | Tier 4 — `CochraneAssessor` | Yes |
 | `manager` | `QualityManager` orchestrator | Yes |
-| `cochrane_models` | Nine-domain RoB + study-characteristics dataclasses | **No — standalone** |
+| `cochrane_models` | Nine-domain RoB + study-characteristics dataclasses, plus `collapse_risk_of_bias()` | **Yes — produced by `cochrane_assessor`, bridged onto `BiasRisk`** |
 | `cochrane_formatter` | Markdown / HTML Cochrane table renderers | **No — standalone** |
 | `extractors` | Rule-based, LLM-free extraction functions | **No — standalone** |
 | `scoring_models` | `AssessmentDetail`, `DimensionScore` audit trail | **No — standalone** |
@@ -38,6 +40,7 @@ from bmlib.quality import (
     DESIGN_TO_TIER,
     DESIGN_TO_SCORE,
     # Cochrane-aligned models
+    CochraneAssessor,
     CochraneStudyAssessment,
     CochraneStudyCharacteristics,
     CochraneRiskOfBias,
@@ -47,6 +50,7 @@ from bmlib.quality import (
     CochraneNotes,
     RiskOfBiasItem,
     RiskOfBiasJudgement,
+    collapse_risk_of_bias,
     create_default_cochrane_risk_of_bias,
     create_default_risk_of_bias_item,
     # Rule-based extractors + audit-trail scoring models
@@ -235,7 +239,10 @@ class QualityAssessment:
     transparency_result: Any = None
     original_quality_tier: QualityTier | None = None
     transparency_adjusted: bool = False
+    cochrane_assessment: Any = None      # CochraneStudyAssessment, set by Tier 4
 ```
+
+`cochrane_assessment` is typed `Any` rather than `CochraneStudyAssessment | None` for the same reason `transparency_result` is: naming the type here would make `data_models` import `cochrane_models`, which imports `data_models` back for `BiasRisk`. Declared last, so positional construction stays stable.
 
 #### Factory Methods
 
@@ -253,7 +260,7 @@ class QualityAssessment:
 | `to_dict() -> dict[str, Any]` | Serialise to a JSON-safe dictionary. |
 | `from_dict(data: dict) -> QualityAssessment` | Deserialise from a dictionary. |
 
-`to_dict()` is **lossy**: it omits `extraction_details`, `transparency_result`, and `original_quality_tier`, and includes `"bias_risk"` only when `bias_risk` is set. A `from_dict(to_dict(x))` round-trip therefore drops those three fields.
+`to_dict()` is **lossy**: it omits `extraction_details`, `transparency_result`, and `original_quality_tier`, and includes `"bias_risk"` and `"cochrane_assessment"` only when each is set (via their own `to_dict()`). A `from_dict(to_dict(x))` round-trip therefore drops those three always-omitted fields, but does carry a set `cochrane_assessment` through — `from_dict()` rebuilds it with `CochraneStudyAssessment.from_dict()`, and a dict without the key loads it back as `None`.
 
 `passes_filter()` skips the `min_sample_size` check when `sample_size` is `None` — an assessment with an unknown sample size passes a size filter rather than failing it.
 
@@ -273,6 +280,7 @@ class QualityFilter:
     use_metadata_only: bool = False
     use_llm_classification: bool = True
     use_detailed_assessment: bool = False
+    use_cochrane_assessment: bool = False
 ```
 
 | Field | Type | Default | Description |
@@ -284,6 +292,7 @@ class QualityFilter:
 | `use_metadata_only` | `bool` | `False` | Stop at Tier 1 (metadata only). |
 | `use_llm_classification` | `bool` | `True` | Enable Tier 2 (LLM classifier). |
 | `use_detailed_assessment` | `bool` | `False` | Enable Tier 3 (deep assessment). |
+| `use_cochrane_assessment` | `bool` | `False` | Enable Tier 4 (Cochrane assessment). Supersedes Tier 3 when both are set — see [Cochrane assessment](#cochrane-assessment). |
 
 **Example:**
 
@@ -323,9 +332,9 @@ class QualityManager:
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `llm` | `LLMClient` | *(required)* | LLM client for Tier 2 and Tier 3 assessments. |
+| `llm` | `LLMClient` | *(required)* | LLM client for Tier 2, Tier 3 and Tier 4 assessments. |
 | `classifier_model` | `str` | *(required)* | Model string for Tier 2 classification (cheap/fast, e.g. `"anthropic:claude-3-haiku-20240307"`). |
-| `assessor_model` | `str` | *(required)* | Model string for Tier 3 deep assessment (capable, e.g. `"anthropic:claude-sonnet-4-20250514"`). |
+| `assessor_model` | `str` | *(required)* | Model string for Tier 3 deep assessment *and* Tier 4 Cochrane assessment (capable, e.g. `"anthropic:claude-sonnet-4-20250514"`). One model parameter serves both — a second buys nothing until someone needs the two to differ. |
 | `template_engine` | `TemplateEngine \| None` | `None` | Optional template engine for custom prompts. |
 
 ---
@@ -335,11 +344,12 @@ class QualityManager:
 ```python
 def assess(
     self,
-    title: str,
-    abstract: str,
+    title: str | None,
+    abstract: str | None,
     *,
     publication_types: Sequence[str] = (),
     filter_settings: QualityFilter | None = None,
+    full_text: str | None = None,
 ) -> QualityAssessment
 ```
 
@@ -349,21 +359,23 @@ Run the tiered assessment pipeline for a single paper.
 
 1. **Tier 1 (metadata)** always runs first, via `classify_from_metadata(publication_types)`. Free and instant.
 2. If `use_metadata_only` is `True`, the Tier 1 result is returned immediately — no LLM call.
-3. The Tier 1 result is *confident* when its `confidence >= 0.9` (`METADATA_ACCEPTANCE_THRESHOLD`) **and** its `quality_tier` is not `UNCLASSIFIED`. A confident result is returned as-is unless `use_detailed_assessment` is `True`.
-4. **Tier 3 (deep assessment):** if `use_detailed_assessment` is `True`, `QualityAgent.assess()` runs and its result is returned. **Tier 2 is skipped entirely** — the detailed assessment supersedes the classifier, so the cheap-but-not-free call is never made.
-5. **Tier 2 (classifier):** otherwise, if `use_llm_classification` is `True` (the default), `StudyClassifier.classify()` runs and its result is returned.
-6. Otherwise the Tier 1 result is returned as a fallback.
+3. The Tier 1 result is *confident* when its `confidence >= 0.9` (`METADATA_ACCEPTANCE_THRESHOLD`) **and** its `quality_tier` is not `UNCLASSIFIED`. A confident result is returned as-is unless `use_detailed_assessment` or `use_cochrane_assessment` is `True`.
+4. **Tier 4 (Cochrane assessment):** if `use_cochrane_assessment` is `True`, `CochraneAssessor.assess()` runs against `full_text` (falling back to `abstract` when `full_text` is absent) and *enriches* the Tier 1 result rather than replacing it — see [Cochrane assessment](#cochrane-assessment) for what that means. **Both Tier 2 and Tier 3 are skipped entirely** — Tier 4 is deeper than Tier 3 exactly as Tier 3 is deeper than Tier 2, so the shallower tiers are never run and discarded.
+5. **Tier 3 (deep assessment):** otherwise, if `use_detailed_assessment` is `True`, `QualityAgent.assess()` runs and its result is returned. **Tier 2 is skipped entirely** — the detailed assessment supersedes the classifier, so the cheap-but-not-free call is never made.
+6. **Tier 2 (classifier):** otherwise, if `use_llm_classification` is `True` (the default), `StudyClassifier.classify()` runs and its result is returned.
+7. Otherwise the Tier 1 result is returned as a fallback.
 
-Note that Tier 2 and Tier 3 never run together, and that a tier's result *replaces* the previous tier's rather than merging with it.
+Tiers 2, 3 and 4 never run together. Tiers 2 and 3 *replace* the Tier 1 result outright; Tier 4 *merges* into it (see below) — the one tier that does not discard the metadata pass's `study_design`.
 
 **Parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `title` | `str` | *(required)* | Paper title. |
-| `abstract` | `str` | *(required)* | Paper abstract. |
+| `title` | `str \| None` | *(required)* | Paper title. May be `None`. |
+| `abstract` | `str \| None` | *(required)* | Paper abstract. May be `None` — sources omit it often enough that the LLM tiers work around the gap rather than raising. |
 | `publication_types` | `Sequence[str]` | `()` | PubMed publication type strings (e.g. `["Randomized Controlled Trial"]`). |
 | `filter_settings` | `QualityFilter \| None` | `None` | Controls which tiers are enabled. Defaults to `QualityFilter()`. |
+| `full_text` | `str \| None` | `None` | The paper's full text, for the Cochrane pass (Tier 4 only). Falls back to `abstract` when absent — a weak risk-of-bias assessment beats none. |
 
 **Returns:** `QualityAssessment`
 
@@ -400,6 +412,14 @@ result = manager.assess(
     abstract="...",
     filter_settings=QualityFilter(use_detailed_assessment=True),
 )
+
+# Tier 4 Cochrane assessment (supersedes Tier 3 — see "Cochrane assessment" below)
+result = manager.assess(
+    title="...",
+    abstract="...",
+    full_text="...",
+    filter_settings=QualityFilter(use_cochrane_assessment=True),
+)
 ```
 
 ---
@@ -416,7 +436,7 @@ def assess_batch(
 ) -> list[QualityAssessment]
 ```
 
-Assess a batch of papers. Each dict in `papers` should have `"title"` and `"abstract"` keys, and optionally `"publication_types"`.
+Assess a batch of papers. Each dict in `papers` should have `"title"` and `"abstract"` keys, and optionally `"publication_types"` and `"full_text"` (read for the Tier 4 Cochrane pass).
 
 **Parameters:**
 
@@ -544,7 +564,7 @@ Both agents override `BaseAgent`'s generic `temperature=0.3, max_tokens=4096` wi
 
 `bmlib.quality.cochrane_models` provides dataclasses matching the Cochrane Handbook's *Characteristics of included studies* and *Risk of bias* tables. These are the **classic RoB 1 / Cochrane Handbook domains** — selection, performance, detection, attrition, and reporting bias. They are **not** RoB 2 signalling questions, **not** ROBINS-I, and **not** GRADE.
 
-> **Standalone.** Nothing in the tiered pipeline produces or consumes these types, and no conversion to or from [`BiasRisk`](#biasrisk) exists. Build them yourself (typically from your own extraction step) and render them with the [formatters](#cochrane-formatters).
+> **No longer standalone.** [`CochraneAssessor`](#cochrane-assessment) (Tier 4) produces these types from a title and text, and [`collapse_risk_of_bias()`](#collapse_risk_of_bias) converts a `CochraneRiskOfBias` to a [`BiasRisk`](#biasrisk) — the conversion this note used to say did not exist. You can still build the models yourself from your own extraction step (nothing requires going through the assessor) and render them with the [formatters](#cochrane-formatters), which remain a separate, standalone toolkit.
 
 ### Judgement Constants
 
@@ -705,6 +725,7 @@ class CochraneStudyAssessment:
     evidence_level: str | None = None            # e.g. "Level 2 (moderate-high)"
     assessment_notes: list[str] | None = None
     assessment_version: str = "2.0.0"
+    condensed_from_chars: int | None = None      # original length, if condensed before assessment
 ```
 
 | Member | Description |
@@ -714,6 +735,8 @@ class CochraneStudyAssessment:
 | `study_id` *(property)* | Delegates to `study_characteristics.study_id`. |
 | `document_id` *(property)* | Delegates to `study_characteristics.document_id`. |
 
+`condensed_from_chars` is set by [`CochraneAssessor`](#cochrane-assessment) to the original character count when the text was reduced to an evidence digest before assessment, and left `None` when the paper went to the model whole — see [Cochrane assessment](#cochrane-assessment). Declared last, so positional construction stays stable across versions.
+
 ### Factory Functions
 
 | Function | Description |
@@ -722,6 +745,147 @@ class CochraneStudyAssessment:
 | `create_default_cochrane_risk_of_bias() -> CochraneRiskOfBias` | All nine domains `"Unclear risk"`, with the canonical domain names and bias types. |
 
 Start from `create_default_cochrane_risk_of_bias()` and overwrite the domains you can actually judge — this guarantees the nine required fields are present and correctly labelled.
+
+---
+
+## Cochrane assessment
+
+`bmlib.quality.cochrane_assessor` is the producer `cochrane_models.py` was missing: `CochraneAssessor`, a `BaseAgent` subclass that turns a title and text into a `CochraneStudyAssessment` — the Handbook's five-section study-characteristics table plus a judgement and supporting text for each of the nine Risk of Bias domains. It is Tier 4 of the pipeline, reachable through `QualityManager` behind `QualityFilter(use_cochrane_assessment=True)`.
+
+### `CochraneAssessor`
+
+```python
+class CochraneAssessor(BaseAgent):
+    def __init__(
+        self,
+        llm: LLMClient,
+        model: str,
+        template_engine: TemplateEngine | None = None,
+        temperature: float = 0.1,
+        max_tokens: int = 4096,
+        condense_config: ProcessingConfig | None = None,
+    ) -> None
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `llm` | `LLMClient` | *(required)* | The LLM client to use. |
+| `model` | `str` | *(required)* | Full model string (`"provider:model_name"`). A capable model — the reply carries a nine-domain judgement plus a five-section extraction in one pass. |
+| `template_engine` | `TemplateEngine \| None` | `None` | For parity with the other quality agents. This agent's prompts are module constants, not templates. |
+| `temperature` | `float` | `0.1` | Low by default, for consistency between runs. |
+| `max_tokens` | `int` | `4096` | Output ceiling. Larger than Tier 3's, since the reply carries nine judgements with their supporting text plus the whole characteristics table. |
+| `condense_config` | `ProcessingConfig \| None` | `None` | Governs the map-reduce pass that runs when *text* is larger than one context. See "Condensing oversized text" below. |
+
+### `CochraneAssessor.assess`
+
+```python
+def assess(
+    self,
+    title: str | None,
+    text: str | None,
+    *,
+    study_id: str | None = None,
+    pmid: str | None = None,
+    doi: str | None = None,
+    document_id: int | None = None,
+    min_confidence: float = 0.0,
+) -> CochraneStudyAssessment | None
+```
+
+Assess one study against the Cochrane template. Either `title` or `text` may be `None`; with **both** missing there is nothing to assess and no model call is made — left to itself, the model returns a fully-formed nine-domain judgement for a paper it was told nothing about.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `title` | `str \| None` | *(required)* | The paper's title. |
+| `text` | `str \| None` | *(required)* | The text to assess — full text or abstract. Full text gives a real risk-of-bias assessment; an abstract gives a weak one. |
+| `study_id` | `str \| None` | `None` | Cochrane's "Author Year" study label. Unset, it falls back to `"Study {document_id}"` and then to the title — no surname is guessed from an author list. |
+| `pmid` | `str \| None` | `None` | PubMed id, recorded on the characteristics table. |
+| `doi` | `str \| None` | `None` | DOI, recorded on the characteristics table. |
+| `document_id` | `int \| None` | `None` | The caller's own row id. |
+| `min_confidence` | `float` | `0.0` | Reject an assessment whose `overall_confidence` falls below this. Zero rejects nothing. Only a *reported* confidence below the bar is rejected — an assessment whose confidence could not be parsed (`overall_confidence is None`) is kept regardless of `min_confidence`; an unknown confidence is not treated as a low one. |
+
+**Returns:** the assessment, or `None` if it could not be made. `None` rather than an all-"Unclear risk" stand-in: that would be indistinguishable from a real assessment in which the model genuinely judged every domain unclear, and anything persisting results would store the fabrication permanently. `assess()` returns `None` when: both `title` and `text` are empty; condensing oversized text fails or produces an empty digest; the model call itself fails (a transport error, or a reply that still will not parse as JSON after `chat_json()`'s own retries); the model's reply parses but carries no `risk_of_bias` section, after both of `assess()`'s own attempts; or a reported `overall_confidence` falls below `min_confidence`.
+
+**Example:**
+
+```python
+from bmlib.llm import get_llm_client
+from bmlib.quality import CochraneAssessor, collapse_risk_of_bias
+
+assessor = CochraneAssessor(
+    llm=get_llm_client(),
+    model="anthropic:claude-sonnet-4-20250514",
+)
+
+assessment = assessor.assess(
+    title="Hospital at home for chronic heart failure",
+    text=full_text,                 # or the abstract, if that is all there is
+    study_id="Andrei 2011",
+    pmid="21234567",
+    doi="10.1000/example",
+)
+
+if assessment is None:
+    ...                             # nothing was assessed; see the log
+else:
+    print(assessment.risk_of_bias.get_summary_counts())
+    print(collapse_risk_of_bias(assessment.risk_of_bias))
+    if assessment.condensed_from_chars:
+        print(f"judged from a digest of {assessment.condensed_from_chars} chars")
+```
+
+`CochraneAssessor` also has `assess_batch(studies, *, min_confidence=0.0, progress_callback=None) -> list[CochraneStudyAssessment]` — a convenience loop over `assess()` that takes a dict per study (keyed by `assess()`'s own parameter names) and returns only the studies that succeeded — and `get_stats() -> dict[str, Any]`, which reports `total_assessments`, `successful_assessments`, `failed_assessments`, `parse_failures` and a derived `success_rate`; `successful_assessments + failed_assessments == total_assessments` always holds, so a batch that failed outright reports `success_rate=0.0` rather than the `1.0` an increment-on-success-only counter would give.
+
+### Condensing oversized text
+
+Text longer than `condense_config.max_context_chars` is reduced to an evidence digest by `bmlib.context_processor.LLMChunkProcessor` before assessment, so the nine-domain judgement is always made **once**, over content that fits — no per-chunk judgements are made and none have to be merged. Truncating instead was rejected: allocation concealment and blinding live in Methods and attrition in Results, so a head-of-string cut drops exactly the evidence the domains rest on.
+
+Left unset, `condense_config` defaults to `ProcessingConfig(max_context_chars=DEFAULT_CONDENSE_THRESHOLD_CHARS)`, where `DEFAULT_CONDENSE_THRESHOLD_CHARS` is **48,000 characters** — roughly 12k tokens, chosen so a whole research paper usually passes through uncondensed while still leaving room in a 32k-token window for the ~4k-character prompt and a 4096-token answer. `ProcessingConfig`'s own default (4,000 characters — see `bmlib.context_processor`) would condense almost every full text and most long abstracts, which is why the assessor overrides it rather than taking the harness default.
+
+When condensation ran, `CochraneStudyAssessment.condensed_from_chars` is set to the original character count; it is `None` when the paper went to the model whole. A judgement made over an LLM-condensed digest is weaker evidence than one made over the paper, so the result says so rather than leaving the caller to infer it.
+
+### `collapse_risk_of_bias()`
+
+```python
+def collapse_risk_of_bias(rob: CochraneRiskOfBias) -> BiasRisk
+```
+
+Reduces the nine Cochrane domains to the five [`BiasRisk`](#biasrisk) domains — the conversion the "Cochrane-Aligned Models" section above used to say did not exist. The grouping is read off each [`RiskOfBiasItem`](#riskofbiasitem)'s own `bias_type` rather than written out per domain: four domains feed `selection`, two feed `detection`, and one each feeds `performance`, `attrition` and `reporting`.
+
+Where several domains collapse onto one field, **the worst wins**, ranked `high` > `unclear` > `low` — `unclear` outranks `low` because an unreported domain is not a clean bill of health; you cannot claim low selection-bias risk when allocation concealment was never described. Judgements are normalised through `RiskOfBiasJudgement.from_string()` first, so an item carrying `"low"` rather than `"Low risk"` is not miscounted as unclear.
+
+Raises `ValueError` if any item's `bias_type` is not one of the five Cochrane categories — silently dropping it would return a `BiasRisk` that looks complete and is not.
+
+### Wired into `QualityManager` — Tier 4
+
+`QualityFilter(use_cochrane_assessment=True)` routes `QualityManager.assess()` through `CochraneAssessor` instead of Tier 2 or Tier 3 — both are skipped entirely, exactly as Tier 3 already skips Tier 2 when requested. `QualityManager.assess()` gained a `full_text: str | None = None` keyword for this: the Cochrane pass reads `full_text`, falling back to `abstract` when it is absent (a weak risk-of-bias assessment beats none).
+
+The Cochrane pass **enriches** the free Tier 1 metadata result rather than replacing it: the metadata tier supplies `study_design`, `quality_tier` and `quality_score`, which a Cochrane assessment does not produce; the Cochrane pass supplies `bias_risk` (via `collapse_risk_of_bias()`) and the full `cochrane_assessment` object, which the metadata tier cannot see. On success the returned `QualityAssessment` carries `assessment_tier=4`, `extraction_method="llm_cochrane_assessment"`, and `cochrane_assessment` set to the `CochraneStudyAssessment`. `evidence_level` is deliberately **not** copied across — Cochrane's is free-form model text, the metadata tier's is an Oxford CEBM level, and the Cochrane value stays reachable at `result.cochrane_assessment.evidence_level`. If `CochraneAssessor.assess()` returns `None`, `QualityManager.assess()` degrades to the Tier 1 result rather than to nothing — `assessment_tier` staying at whatever Tier 1 produced (`0` unclassified, `1` classified) rather than becoming `4` is what tells the two outcomes apart.
+
+**Example:**
+
+```python
+from bmlib.quality import QualityFilter, QualityManager
+
+manager = QualityManager(
+    llm=get_llm_client(),
+    classifier_model="anthropic:claude-haiku-4-5-20251001",
+    assessor_model="anthropic:claude-sonnet-4-20250514",
+)
+
+result = manager.assess(
+    title=paper["title"],
+    abstract=paper["abstract"],
+    full_text=paper["full_text"],
+    publication_types=paper["publication_types"],
+    filter_settings=QualityFilter(use_cochrane_assessment=True),
+)
+
+result.assessment_tier        # 4 (on success)
+result.study_design           # from the free Tier 1 metadata pass
+result.bias_risk              # five domains, collapsed from the nine
+result.cochrane_assessment    # the full table + RoB, or None if Tier 4 failed
+```
 
 ---
 

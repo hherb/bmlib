@@ -6,6 +6,51 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Cochrane assessment agent** (`bmlib.quality.CochraneAssessor`) — Phase 2
+  row 9 of the bmlibrarian port, and the producer `cochrane_models.py` has
+  been waiting for since 0.4.0. `assess()` turns a title and text into a
+  `CochraneStudyAssessment`: the Cochrane Handbook's five-section
+  study-characteristics table plus a judgement and supporting text for each of
+  the nine Risk-of-Bias domains. Text larger than the configured context is
+  first reduced to an evidence digest by `bmlib.context_processor`, so the
+  nine-domain judgement is always made once, over content that fits — and
+  `condensed_from_chars` says when that happened, because a judgement made
+  over a digest is weaker evidence than one made over the paper. Truncating
+  instead was rejected: allocation concealment and blinding live in Methods
+  and attrition in Results, so a head-of-string cut drops exactly the evidence
+  the domains rest on. Failure returns `None`, not an all-"Unclear risk"
+  stand-in that would be indistinguishable from a real assessment.
+- **`collapse_risk_of_bias()`** — the nine Cochrane domains reduced to the
+  five `BiasRisk` domains, closing the `BiasRisk` ↔ `CochraneRiskOfBias` gap.
+  The grouping is derived from each item's own `bias_type` rather than written
+  out per domain; where several collapse onto one field the worst wins, with
+  `unclear` outranking `low` because an unreported domain is not a clean bill
+  of health. An unrecognised `bias_type` raises rather than returning a
+  `BiasRisk` that looks complete.
+- **`QualityFilter(use_cochrane_assessment=True)`** and a `full_text=` keyword
+  on `QualityManager.assess()`. The Cochrane pass *enriches* the free Tier 1
+  metadata result rather than replacing it — the metadata tier supplies the
+  study design a Cochrane assessment does not produce, the Cochrane pass
+  supplies the bias detail the metadata tier cannot see — and attaches the
+  full assessment to the new `QualityAssessment.cochrane_assessment`. It
+  supersedes Tier 3 when both are requested, and a failed pass degrades to the
+  Tier 1 result rather than to nothing. Additive: `assessment_tier=4` is new,
+  the flag is off by default, and no stored value moves.
+
+  Six upstream defects were fixed in the port, each with a named regression
+  test: `min_confidence` was accepted and never read; `success_rate` could
+  only ever report 1.0, because the attempt total was incremented on the
+  success path alone; judgement strings bypassed
+  `RiskOfBiasJudgement.from_string()`, so a model answering `"low"` rather
+  than `"Low risk"` stored an invalid value that `get_summary_counts()` then
+  skipped, silently reporting eight domains of nine; `overall_confidence` was
+  unclamped, so a model reporting 1.4 outranked every honest result; a reply
+  carrying no `risk_of_bias` section at all was accepted and turned into nine
+  fabricated defaults; and the study label was derived by
+  `first_author.split()[-1]`, which reads "van der Berg" as "Berg".
+
 ## [0.7.0] — 2026-08-04
 
 Two new capabilities and two widened ones. `bmlib.publications` can answer

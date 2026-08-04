@@ -403,3 +403,12 @@ class TestStatistics:
 
     def test_an_empty_run_reports_a_zero_rate(self) -> None:
         assert make_assessor().get_stats()["success_rate"] == 0.0
+
+
+class TestPublicExports:
+    def test_the_assessor_and_the_collapse_are_public(self) -> None:
+        import bmlib.quality as quality
+
+        assert "CochraneAssessor" in quality.__all__
+        assert "collapse_risk_of_bias" in quality.__all__
+        assert quality.CochraneAssessor is CochraneAssessor

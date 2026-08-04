@@ -143,6 +143,66 @@ class TestQualityAssessment:
         assert a2.quality_score == 8.0
         assert a2.bias_risk.selection == "low"
 
+    def test_an_attached_cochrane_assessment_survives_the_round_trip_and_its_absence_loads_as_none(
+        self,
+    ) -> None:
+        """``to_dict()``/``from_dict()`` gained a ``cochrane_assessment`` branch
+        alongside ``bias_risk`` — this round-trips a *real* Cochrane object
+        (not a mock) through the container's own serialisation, then checks
+        the other side of the same branch: a dict with no key at all (what
+        ``to_dict()`` produces when the field is unset) must load back as
+        ``None`` rather than raising on the missing key."""
+        from bmlib.quality.cochrane_models import (
+            ROB_JUDGEMENT_HIGH,
+            CochraneInterventions,
+            CochraneNotes,
+            CochraneOutcomes,
+            CochraneParticipants,
+            CochraneStudyAssessment,
+            CochraneStudyCharacteristics,
+            create_default_cochrane_risk_of_bias,
+        )
+
+        rob = create_default_cochrane_risk_of_bias()
+        rob.selective_reporting.judgement = ROB_JUDGEMENT_HIGH
+        characteristics = CochraneStudyCharacteristics(
+            study_id="Andrei 2011",
+            methods="Parallel randomised trial",
+            participants=CochraneParticipants(
+                setting="Romania",
+                population="Chronic heart failure",
+                total_participants=45,
+            ),
+            interventions=CochraneInterventions(description="Hospital at home"),
+            outcomes=CochraneOutcomes(description="Mortality, cost"),
+            notes=CochraneNotes(funding_source="None declared"),
+        )
+        cochrane = CochraneStudyAssessment(
+            study_characteristics=characteristics,
+            risk_of_bias=rob,
+            overall_confidence=0.8,
+        )
+        a = QualityAssessment(
+            assessment_tier=4,
+            extraction_method="llm_cochrane_assessment",
+            study_design=StudyDesign.RCT,
+            quality_tier=QualityTier.TIER_4_EXPERIMENTAL,
+            cochrane_assessment=cochrane,
+        )
+
+        rebuilt = QualityAssessment.from_dict(a.to_dict())
+
+        assert rebuilt.cochrane_assessment is not None
+        assert rebuilt.cochrane_assessment.study_id == "Andrei 2011"
+        assert (
+            rebuilt.cochrane_assessment.risk_of_bias.selective_reporting.judgement
+            == ROB_JUDGEMENT_HIGH
+        )
+
+        without_cochrane = QualityAssessment.unclassified()
+        assert "cochrane_assessment" not in without_cochrane.to_dict()
+        assert QualityAssessment.from_dict(without_cochrane.to_dict()).cochrane_assessment is None
+
 
 class TestMetadataFilter:
     def test_rct_classification(self):
