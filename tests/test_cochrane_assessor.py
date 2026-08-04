@@ -337,3 +337,68 @@ class TestCondensingOversizedText:
         assessor._condense = lambda text, label: None  # type: ignore[method-assign]
 
         assert assessor.assess("T", "x " * 400) is None
+
+
+class TestBatchAssessment:
+    def test_it_returns_one_assessment_per_successful_study(self) -> None:
+        assessor = make_assessor()
+        results = assessor.assess_batch(
+            [
+                {"title": "First", "text": "text one", "study_id": "A 2020"},
+                {"title": "Second", "text": "text two", "study_id": "B 2021"},
+            ]
+        )
+
+        assert [a.study_id for a in results] == ["A 2020", "B 2021"]
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_failed_study_is_skipped_and_the_rest_are_kept(self, mock_sleep: MagicMock) -> None:
+        assessor = make_assessor("not json", "not json", "not json", json.dumps(_full_response()))
+        results = assessor.assess_batch(
+            [
+                {"title": "First", "text": "text one", "study_id": "A 2020"},
+                {"title": "Second", "text": "text two", "study_id": "B 2021"},
+            ]
+        )
+
+        assert [a.study_id for a in results] == ["B 2021"]
+
+    def test_progress_is_reported_for_every_study(self) -> None:
+        seen: list[tuple[int, int, str]] = []
+        make_assessor().assess_batch(
+            [{"title": "First", "text": "t"}, {"title": "Second", "text": "t"}],
+            progress_callback=lambda current, total, title: seen.append((current, total, title)),
+        )
+
+        assert seen == [(1, 2, "First"), (2, 2, "Second")]
+
+
+class TestStatistics:
+    """Upstream incremented ``total_assessments`` only on the success path,
+    after every failure had already returned — so ``success_rate`` was
+    ``successful / successful`` and could only ever be 1.0."""
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_the_success_rate_reports_failures(self, mock_sleep: MagicMock) -> None:
+        assessor = make_assessor("not json", "not json", "not json", json.dumps(_full_response()))
+        assessor.assess_batch([{"title": "First", "text": "t"}, {"title": "Second", "text": "t"}])
+
+        stats = assessor.get_stats()
+        assert stats["total_assessments"] == 2
+        assert stats["successful_assessments"] == 1
+        assert stats["failed_assessments"] == 1
+        assert stats["success_rate"] == 0.5
+
+    def test_successes_and_failures_account_for_every_attempt(self) -> None:
+        assessor = make_assessor("not json")
+        assessor.assess("T", "text")
+        assessor.assess(None, None)
+
+        stats = assessor.get_stats()
+        assert (
+            stats["successful_assessments"] + stats["failed_assessments"]
+            == stats["total_assessments"]
+        )
+
+    def test_an_empty_run_reports_a_zero_rate(self) -> None:
+        assert make_assessor().get_stats()["success_rate"] == 0.0

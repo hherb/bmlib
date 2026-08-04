@@ -33,6 +33,7 @@ Reference: Cochrane Handbook for Systematic Reviews of Interventions
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from bmlib.agents.base import BaseAgent
@@ -410,6 +411,72 @@ class CochraneAssessor(BaseAgent):
 
         self._stats["successful_assessments"] += 1
         return assessment
+
+    def assess_batch(
+        self,
+        studies: list[dict[str, Any]],
+        *,
+        min_confidence: float = 0.0,
+        progress_callback: Callable[[int, int, str], None] | None = None,
+    ) -> list[CochraneStudyAssessment]:
+        """Assess several studies, keeping the ones that succeeded.
+
+        A convenience loop over :meth:`assess`, so it does take dicts — each
+        keyed by that method's own parameter names (``title``, ``text``,
+        ``study_id``, ``pmid``, ``doi``, ``document_id``).  That is a batch
+        helper mapping a caller's records onto a typed call, not the typed
+        call itself.
+
+        Args:
+            studies: One dict per study.
+            min_confidence: Passed to each :meth:`assess` call.
+            progress_callback: Called ``(current, total, title)`` before each
+                study.
+
+        Returns:
+            The assessments that succeeded, in input order.  A study that
+            could not be assessed is absent; :meth:`get_stats` counts it.
+        """
+        assessments: list[CochraneStudyAssessment] = []
+        total = len(studies)
+
+        for index, study in enumerate(studies):
+            title = study.get("title") or ""
+            if progress_callback:
+                progress_callback(index + 1, total, title)
+
+            assessment = self.assess(
+                title,
+                study.get("text"),
+                study_id=study.get("study_id"),
+                pmid=study.get("pmid"),
+                doi=study.get("doi"),
+                document_id=study.get("document_id"),
+                min_confidence=min_confidence,
+            )
+            if assessment is not None:
+                assessments.append(assessment)
+
+        logger.info("Assessed %d of %d studies", len(assessments), total)
+        return assessments
+
+    def get_stats(self) -> dict[str, Any]:
+        """Report what this assessor has done.
+
+        ``total_assessments`` counts every :meth:`assess` call, so
+        ``successful_assessments + failed_assessments == total_assessments``
+        and ``success_rate`` can report a failure.  ``parse_failures`` is a
+        *subset* of the failures, naming the ones that were an unusable reply
+        rather than a transport error or a rejected confidence.
+
+        Returns:
+            The counters plus the derived ``success_rate``.
+        """
+        total = self._stats["total_assessments"]
+        return {
+            **self._stats,
+            "success_rate": self._stats["successful_assessments"] / total if total else 0.0,
+        }
 
     def _attempt_assessment(
         self,
