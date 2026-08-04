@@ -1149,18 +1149,35 @@ class TestCondensingOversizedText:
         assert assessor.llm.chat.call_count == 1
 
     def test_oversized_text_is_condensed_and_says_so(self) -> None:
-        # Two condensation batches, then the assessment itself.
+        # ``_condense`` is stubbed for the same reason as the test below: a
+        # real run's call count depends on the chunking, and every reply it
+        # consumes off the queue advances what the *assessment* call receives.
+        # Worse, the stub queue repeats its last reply — the assessment JSON —
+        # so a real run feeds ~1.5k of JSON back in as digest content, which
+        # balloons into recursion levels and exhausts the queue. The real
+        # condensation is exercised by the two tests below, against replies
+        # short enough to converge.
         assessor = make_assessor(
-            "evidence from the first half",
-            "evidence from the second half",
-            json.dumps(_full_response()),
-            condense_config=self._tiny_config(),
+            json.dumps(_full_response()), condense_config=self._tiny_config()
         )
+        assessor._condense = lambda text, label: ("a digest", [])  # type: ignore[method-assign]
         assessment = assessor.assess("T", "x " * 400)
 
         assert assessment is not None
         assert assessment.condensed_from_chars == len("x " * 400)
-        assert assessor.llm.chat.call_count > 1
+
+    def test_condensation_reduces_every_chunk_of_the_paper(self) -> None:
+        """The real harness run, against a reply short enough that the
+        extractions fit one context and no recursion is needed."""
+        assessor = make_assessor("short evidence", condense_config=self._tiny_config())
+
+        condensed = assessor._condense("x " * 400, "a study")
+
+        assert condensed is not None
+        digest, notes = condensed
+        assert "short evidence" in digest
+        assert assessor.llm.chat.call_count > 1  # the paper really was chunked
+        assert notes == []  # a clean run records nothing
 
     def test_the_digest_reaches_the_model_instead_of_the_paper(self) -> None:
         # ``_condense`` is stubbed rather than run: how many model calls a
