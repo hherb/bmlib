@@ -1163,12 +1163,15 @@ class TestCondensingOversizedText:
         assert assessor.llm.chat.call_count > 1
 
     def test_the_digest_reaches_the_model_instead_of_the_paper(self) -> None:
+        # ``_condense`` is stubbed rather than run: how many model calls a
+        # real condensation consumes depends on the chunking, so asserting on
+        # the *last* call's content while the stub queue advances underneath
+        # makes the assertion depend on that count.  What this test is for is
+        # the wiring — that the digest replaces the paper in the prompt.
         assessor = make_assessor(
-            "DIGEST-MARKER",
-            "DIGEST-MARKER",
-            json.dumps(_full_response()),
-            condense_config=self._tiny_config(),
+            json.dumps(_full_response()), condense_config=self._tiny_config()
         )
+        assessor._condense = lambda text, label: ("DIGEST-MARKER", [])  # type: ignore[method-assign]
         assessor.assess("T", "ORIGINAL-MARKER " * 40)
 
         final_prompt = assessor.llm.chat.call_args.kwargs["messages"][-1].content
