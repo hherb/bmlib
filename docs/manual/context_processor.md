@@ -8,7 +8,7 @@ The alternative — truncating the input — loses information silently, and
 gives no way to tell an answer drawn from everything apart from one drawn
 from the first 4,000 characters.
 
-**Available since (unreleased).**
+**Available since 0.7.0.**
 
 ## When to use this rather than `bmlib.llm.text_utils`
 

@@ -1,13 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-03. **0.6.0 is cut.** `[Unreleased]` holds the
-`_Analysis` carrier (#37), the `<DataBankList>` deposition work (#43, #46),
-the PMC ID resolution fallback (#47) and the `context_processor` port (#49) —
-all merged to `main`. One thing is in flight: `feature/retraction-watch`
-(Phase 2 row 10) is done, reviewed, and post-review-fixed on its own branch —
-not yet merged, no PR opened yet. No open issues. 1358 tests passing + 44
-skipped on that branch (`main` itself is a few tests behind — see "Test
-suite" in ROADMAP.md for the current split)._
+_Last updated: 2026-08-04. **0.7.0 is cut on `release/0.7.0` and its PR is
+open — not yet merged, tagged, or published to PyPI.** Everything it contains
+is already on `main`; the branch carries only the version bump, the CHANGELOG
+promotion and these docs. `[Unreleased]` is empty. No open issues. 1372 tests
+passing + 50 skipped, ruff clean. **The next session's first job is to finish
+the release** — see "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -17,76 +15,55 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ## Current state
 
-- **Released: 0.6.0** (2026-07-30). Release history: 0.4.0 (2026-07-19) →
-  0.5.0 (2026-07-20) → 0.5.1 (2026-07-21) → 0.6.0. 0.3.0 was bumped in-tree
-  but never released; its changes shipped inside 0.4.0. The version lives in
-  **four** places — `pyproject.toml`, `bmlib/__init__.py`, the README version
-  line, `CLAUDE.md`'s header — and all four agree.
-- **What 0.6.0 shipped** is in `CHANGELOG.md` — do not re-narrate it here.
-  Closed #17, #18, #21, #28–#31, #33, #36.
-- **Three behaviour changes in 0.6.0 make stored results non-comparable**, and
-  none is behind a flag: transparency scores can rise (the PubMed step),
-  `industry_funding_detected` moves in *both* directions (the funder matcher),
-  and an unfenced or truncated array of objects now extracts whole where it
-  arrived as its first element. Anything persisting those values across the
-  upgrade needs to know.
-- **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it will
-  not see this release until that pin is widened. That is a downstream change,
-  not a bmlib one.
-- **Unreleased since 0.6.0:** six changes. Five are merged to `main`; the
-  sixth (retraction watch) is done and reviewed on `feature/retraction-watch`,
-  not yet merged. Enough has accumulated for a 0.7.0 — see "Worth doing"
-  below. Full detail is in `CHANGELOG.md`'s `[Unreleased]` section; this is a
-  one-line-each index, not a second copy of it.
-  - The `_Analysis` carrier (#37, PR #42) — ten accumulator tuples → one
-    mutable dataclass every sub-step mutates in place. One behaviour change:
-    a funder CrossRef names repeatedly now yields one indicator, not one per
-    award record.
-  - Data deposition from PubMed's `<DataBankList>` (PR #43) — moves four
-    stored `data_availability_level` values; fixed three trial-registry
-    names missing from `_TRIAL_REGISTRY_NAMES` in passing.
-  - `scripts/sample_databank_names.py` (PR #46) — the live runner that
-    measures the two curated allow-lists above against real PubMed records.
-    No library code changed. **Run it before editing either list.**
-  - PMC ID resolution fallback + NCBI as a full-text tier (#47, PR #48) —
-    NCBI's ID Converter backs up Europe PMC's search; moves stored values
-    (`source` gains `"ncbi_pmc"`). Design/plan:
-    `docs/superpowers/{specs,plans}/2026-08-02-*`.
-  - `bmlib.context_processor` (#49, PR #50) — hierarchical map-reduce
-    harness for oversized content, purely additive. Design:
-    `docs/superpowers/specs/2026-08-02-context-processor-design.md`.
-  - **Retraction Watch notices** (Phase 2 row 10, `feature/retraction-watch`,
-    **not yet merged**) — `parse_retraction_watch_csv()` streams the
-    Crossref-distributed export into `RetractionNotice`s;
-    `store_retraction_notices()` upserts them idempotently on Retraction
-    Watch's own `record_id`; `lookup_retractions()` + the pure
-    `is_retracted()` answer "is this paper retracted?". Purely additive.
-    Deliberately **not** a fetcher — see the design doc's "Why this is not a
-    fetcher" and the non-fixes below. Design:
-    `docs/superpowers/specs/2026-08-02-retraction-watch-design.md`.
-    Post-review hardening: every path that degrades rather than raises now
-    reports itself, because each degraded into an import that *looked*
-    successful — the encoding fallback and an unmappable
-    `RetractionNature` warn, `lookup_retractions()` rejects the export's own
-    `"0"`/`"Unavailable"` sentinels instead of returning `[]`, a malformed
-    CSV names where it broke, and a bad stream raises at the call rather
-    than from inside a transaction.
-- **1372 tests passing + 50 skipped** on `feature/retraction-watch`
-  (`uv run pytest tests/ -q`); `main` itself is a few tests behind, pending
-  the merge. 47 skips are the PostgreSQL parameterisations of
-  `tests/test_backends.py`, which run only when `BMLIB_TEST_POSTGRESQL_DSN`
-  is set; 2 are `test_pdf_converter` tests needing PyMuPDF, which the dev
-  venv does not install; 1 is a PostgreSQL-only schema test that does not
-  apply to SQLite. With a DSN set it is **1419 passing + 3 skipped**.
-- **Documentation was rewritten for 0.4.0 and kept current through 0.6.0.**
+- **Version 0.7.0**, cut 2026-08-04, **PR open and not yet merged**. Release
+  history: 0.4.0 (2026-07-19) → 0.5.0 (2026-07-20) → 0.5.1 (2026-07-21) →
+  0.6.0 (2026-07-30) → 0.7.0. 0.3.0 was bumped in-tree but never released;
+  its changes shipped inside 0.4.0. The version lives in **four** places —
+  `pyproject.toml`, `bmlib/__init__.py`, the README version line,
+  `CLAUDE.md`'s header — and all four agree.
+- **What each release shipped is in `CHANGELOG.md`** — do not re-narrate it
+  here. 0.7.0 carries six changes, all merged to `main` before the release
+  branch was cut: the `_Analysis` carrier (#37, PR #42), `<DataBankList>`
+  deposition (PR #43) plus `scripts/sample_databank_names.py` (PR #46), the
+  PMC ID resolution fallback and NCBI full-text tier (#47, PR #48),
+  `bmlib.context_processor` (#49, PR #50), and Retraction Watch notices
+  (Phase 2 row 10, PR #51). Designs for all of them are in
+  `docs/superpowers/specs/`.
+- **Three behaviour changes in 0.7.0 move stored values**, none behind a
+  flag: `transparency_score` / `data_availability_level` move for papers
+  whose PubMed record names a deposition repository, and `trial_registered` /
+  `transparency_score` for papers in three registries bmlib did not
+  recognise; a funder CrossRef repeats collapses to one `risk_indicators`
+  line; `FullTextResult.source` gains `"ncbi_pmc"`. 0.6.0's three
+  non-comparable changes are separate and still apply to anyone upgrading
+  across both. Anything persisting these values needs to know.
+- **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
+  now missed two releases. Widening it is a downstream change, not a bmlib
+  one.
+- **1372 tests passing + 50 skipped** (`uv run pytest tests/ -q`). 47 skips
+  are the PostgreSQL parameterisations of `tests/test_backends.py`, which run
+  only when `BMLIB_TEST_POSTGRESQL_DSN` is set; 2 are `test_pdf_converter`
+  tests needing PyMuPDF, which the dev venv does not install; 1 is a
+  PostgreSQL-only schema test that does not apply to SQLite. With a DSN set
+  it is **1419 passing + 3 skipped**.
+- **Documentation was rewritten for 0.4.0 and kept current through 0.7.0.**
   Treat drift as a regression worth fixing, not expected staleness. The
-  `(unreleased)` markers in `docs/manual/` were promoted to `0.6.0` at release;
-  if you add one, it is the next release's job to promote it.
+  `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` were promoted to
+  `0.7.0` at release; if you add one, it is the next release's job to promote
+  it. Markers inside `docs/superpowers/plans/` are historical records of what
+  a plan said at the time — leave them alone.
 
 ## Next up
 
-Pick from the open issues below, or resume the bmlibrarian porting effort.
-Nothing is blocked on anything else.
+### Finish the 0.7.0 release
+
+The release branch is prepared and its PR is open; **everything after the
+merge is still to do.** Once CI is green: merge with `--merge` (**not**
+squash) so the tag lands on main's first-parent line, tag the *merge commit*
+`v0.7.0`, push the tag, `uv build`, publish with **`uvx twine upload`** (*not*
+`uv publish`, which cannot read `~/.pypirc`), then create the GitHub release.
+PyPI's JSON API serves a stale CDN cache afterwards; verify against
+`https://pypi.org/simple/bmlib/`, which is what installers actually read.
 
 ### Open GitHub issues
 
@@ -99,13 +76,8 @@ so every step would still rebuild and return it — the arity survives).
 
 ### Worth doing, not yet an issue
 
-- **Merge `feature/retraction-watch`**, then **cut 0.7.0.** `[Unreleased]`
-  holds five changes already merged to `main`, two of which move stored
-  values (the `<DataBankList>` deposition work and the NCBI full-text tier),
-  plus retraction watch on its own branch, purely additive. The release
-  recipe is at the end of this file.
-- **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume this
-  release. Read the three non-comparable behaviour changes above first — the
+- **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume 0.6.0
+  and 0.7.0. Read both releases' non-comparable behaviour changes first — the
   transparency ones move stored scores, so a project holding historical
   assessments wants to know before it upgrades.
 - **Repo housekeeping is done.** Stale worktrees under `.claude/worktrees/`
@@ -147,10 +119,10 @@ coupling the port existed to sever.
 The numbers below are **rows in the analysis doc's master priority table, not
 GitHub issues** — GitHub #8 and #9 exist and are about something else
 entirely: #4 citations, #8 PDF section segmenter, #9 Cochrane assessor,
-#11 PubMed-metadata graft. **Row 10, Retraction Watch, is done** (see
-"Unreleased since 0.6.0" above) — and shipped deliberately as notice
-storage plus a pure rule, not a fetcher; see the design doc's "Why this is
-not a fetcher" for why that word doesn't belong here. The Cochrane
+#11 PubMed-metadata graft. **Row 10, Retraction Watch, is done** (PR #51,
+shipping in 0.7.0) — and shipped deliberately as notice storage plus a pure
+rule, not a fetcher; see the design doc's "Why this is not a fetcher" for why
+that word doesn't belong here. The Cochrane
 assessor (row 9) is the one that would also answer the standing "wire the new
 quality tools into the pipeline" roadmap item, since
 `quality/cochrane_models.py` is still standalone.
@@ -491,7 +463,7 @@ Each was investigated and closed as correct. Reopening them wastes a session.
 - Session workflow lives in the `nextsession` skill
   (`.claude/skills/nextsession/`); the post-review fix-up workflow lives in
   the `fixall` skill (`.claude/skills/fixall/`).
-- **Cutting a release** (0.4.0 through 0.6.0 were all cut this way): bump the
+- **Cutting a release** (0.4.0 through 0.7.0 were all cut this way): bump the
   version in the **four** places that carry it — `pyproject.toml`,
   `bmlib/__init__.py`, the README version line, `CLAUDE.md`'s header — promote
   the CHANGELOG's `[Unreleased]` body under a dated `## [X.Y.Z]` heading

@@ -6,6 +6,26 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-08-04
+
+Two new capabilities and two widened ones. `bmlib.publications` can answer
+"is this paper retracted?"; the new `bmlib.context_processor` works through
+more content than one context window holds; `bmlib.fulltext` reaches PMC
+through a second resolver and reads NCBI's own copy; and the transparency
+analyzer credits data deposition that PubMed reports in a structured field
+rather than only what a paper's prose happens to say.
+
+No public signature changed incompatibly and nothing was removed, so the bump
+is minor. **Three changes move stored values**, none of them behind a flag:
+`transparency_score` and `data_availability_level` move for papers whose
+PubMed record names a deposition repository, and `trial_registered` /
+`transparency_score` move for papers registered in one of three registries
+bmlib did not recognise; `risk_indicators` collapses a funder CrossRef names
+repeatedly to a single line; and `FullTextResult.source` gains `"ncbi_pmc"`
+for papers that previously fell through to a bare DOI link. Each entry below
+says exactly who is affected. Retraction Watch and `context_processor` are
+purely additive — a new module each, nothing existing changed.
+
 ### Added
 
 - **Retraction Watch notices: answer "is this paper retracted?"** Ported from
