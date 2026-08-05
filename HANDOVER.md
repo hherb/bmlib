@@ -1,9 +1,8 @@
 # HANDOVER — bmlib development
 
 _Last updated: 2026-08-06. **0.7.0 is released and on PyPI.** `[Unreleased]`
-carries two Phase 2 ports: the Cochrane assessment agent (row 9, PR #54,
-**merged to main**) and the PDF section segmenter (row 8, on
-`feature/pdf-section-segmenter`, open as PR #55 and not yet merged). Two open
+carries two Phase 2 ports, both **merged to main**: the Cochrane assessment
+agent (row 9, PR #54) and the PDF section segmenter (row 8, PR #55). Two open
 issues (#56, #57), both minor `fulltext` refinements deferred from PR #55's
 review. 1513 tests passing + 49 skipped, ruff clean. **The next piece of work
 is another Phase 2 port** — see "Next up"._
@@ -42,14 +41,15 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   bridges its nine domains onto the five-domain `BiasRisk`;
   `QualityFilter(use_cochrane_assessment=True)` plus `full_text=` on
   `QualityManager.assess()` wire it in, enriching a classification rather
-  than replacing it. (2) The **PDF section segmenter** (row 8, PR #55, open):
+  than replacing it. (2) The **PDF section segmenter** (row 8, PR #55,
+  merged):
   `SectionSegmenter` turns the `TextBlock` lines from the new
   `PyMuPDFConverter.extract_blocks()` (behind the `LayoutExtractor`
   protocol) into a `SegmentedDocument` of typed sections — standalone,
   nothing wires it into `FullTextService` or `quality/` yet. See
   `CHANGELOG.md` for both full entries and the upstream defects each port
   fixed.
-- **1508 tests passing + 49 skipped** (`uv run pytest tests/ -q`). 47 skips
+- **1513 tests passing + 49 skipped** (`uv run pytest tests/ -q`). 47 skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`, which run
   only when `BMLIB_TEST_POSTGRESQL_DSN` is set; 1 is a PostgreSQL-only schema
   test; 1 is `test_pymupdf_requires_dependency`, which runs only when
@@ -76,18 +76,6 @@ returns `success=True` with empty text; `is_complete` already says `False`,
 and `extract_blocks()` already raises for the same file). Every closed
 design stays in `docs/superpowers/specs/` as the record of what was rejected
 and why.
-
-### Open PR
-
-**PR #55** (`feature/pdf-section-segmenter`) — the PDF section segmenter,
-review-clean and CI-green. Three review rounds are fixed on the branch: the
-whole-branch review's two Important findings, and a post-hoc PR review whose
-one confirmed defect ("Financial disclosure" singular went to FUNDING while
-the plural went to CONFLICTS, decided by dict order — both now CONFLICTS)
-came with three minors: partial patterns wrapped in `(?:...)` so the `\b`
-anchors survive a future top-level alternation, a content-stream
-reading-order caveat on `extract_blocks()`, and `to_dict()`/`from_dict()` on
-the segmentation models. Merge with `--merge`, not squash.
 
 ### Worth doing, not yet an issue
 
@@ -116,7 +104,7 @@ transparency/quality reconciliation, no GRADE engine exists, SSRF guard).
 - **Phase 2** rows are rows in the analysis doc's master table, not GitHub
   issues. Done: row 10 Retraction Watch (PR #51, shipped 0.7.0), row 9
   Cochrane assessor (PR #54, merged), row 8 PDF section segmenter (PR #55,
-  open). **Remaining: row 4 (citation/reference stack → new
+  merged). **Remaining: row 4 (citation/reference stack → new
   `bmlib/citations/`) and row 11 (PubMed abstract-markdown + grant/
   affiliation extraction, grafted onto `publications/fetchers/pubmed.py`).**
 - Phases 3–4 (discovery, pubmed_search, MeSH, the prompt-driven agent
