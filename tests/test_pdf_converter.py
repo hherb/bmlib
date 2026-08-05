@@ -351,6 +351,11 @@ class TestLayoutExtractorProtocol:
     def test_pymupdf_converter_implements_the_protocol(self):
         assert issubclass(PyMuPDFConverter, LayoutExtractor)
 
+    def test_a_converter_without_extract_blocks_does_not(self):
+        # Negative control: shows the check actually discriminates rather
+        # than trivially passing for any PDFConverter subclass.
+        assert not issubclass(_StubConverter, LayoutExtractor)
+
 
 class TestLineToBlock:
     """_line_to_block over the dict shape PyMuPDF's get_text("dict") emits."""

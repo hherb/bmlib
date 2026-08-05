@@ -14,9 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Data models for full-text retrieval and JATS XML parsing.
+"""Data models for full-text retrieval, JATS XML parsing, and PDF section
+segmentation.
 
-Mirrors the Swift BioMedLit library's JATSModels and FullTextResult types.
+The full-text and JATS types mirror the Swift BioMedLit library's
+JATSModels and FullTextResult types. The PDF section-segmentation types —
+``SectionType``, ``TextBlock``, ``Section``, ``SegmentedDocument`` — are new
+to this port and mirror nothing in Swift.
 """
 
 from __future__ import annotations

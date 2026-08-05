@@ -21,9 +21,10 @@ All notable changes to bmlib are documented here. The format is based on
   compared regex *source* against the heading as literal text, which killed
   every multi-word pattern and classified a heading "A" as ABSTRACT (now an
   unanchored, word-bounded search of the same compiled pattern, at 0.7).
-  Enum members no pattern could produce are gone (`MATERIALS_AND_METHODS`,
-  `CONCLUSIONS` — duplicates of the members that own their patterns) or
-  given patterns (`APPENDIX`); `TITLE` stays, reserved for callers.
+  Enum members no pattern could produce were not ported from upstream
+  (`MATERIALS_AND_METHODS`, `CONCLUSIONS` — duplicates of the members that
+  own their patterns), or were given patterns instead (`APPENDIX`); `TITLE`
+  stays, reserved for callers.
 - **`PyMuPDFConverter.extract_blocks()`** and the `LayoutExtractor`
   protocol (`bmlib.fulltext`) — one `TextBlock` per text *line*, not per
   span. PyMuPDF starts a new span at every font change, so upstream's

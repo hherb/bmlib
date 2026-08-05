@@ -148,6 +148,21 @@ class TestPatternMatching:
     def test_appendices_is_an_appendix_not_supplementary(self):
         assert self.segmenter._match_section_type("Appendices") == (SectionType.APPENDIX, 1.0)
 
+    def test_authors_curly_apostrophe_contributions_matches(self):
+        # U+2019 (’), not ASCII '\''  — what InDesign/Word actually produce.
+        # This is the regression guard: a plain-ASCII test would keep
+        # passing without the fix.
+        assert self.segmenter._match_section_type("Authors’ contributions") == (
+            SectionType.AUTHOR_CONTRIBUTIONS,
+            1.0,
+        )
+
+    def test_authors_singular_possessive_contributions_matches(self):
+        assert self.segmenter._match_section_type("Author's contributions") == (
+            SectionType.AUTHOR_CONTRIBUTIONS,
+            1.0,
+        )
+
 
 class TestSectionTypeCoverage:
     def test_every_section_type_is_produced_or_declared_reserved(self):
@@ -163,7 +178,10 @@ class TestHeadingDetection:
         self.segmenter = SectionSegmenter()
 
     def test_a_font_below_the_minimum_is_not_a_heading(self):
-        assert not self.segmenter._is_potential_header(block("Methods", size=8.0), 10.0)
+        # 9pt clears the ratio rule against this median without needing
+        # bold (6.0 * 1.2 = 7.2 < 9.0), so only the absolute floor — 10.0,
+        # `min_heading_size`'s default — can be what rejects it.
+        assert not self.segmenter._is_potential_header(block("Methods", size=9.0), 6.0)
 
     def test_body_sized_text_must_be_bold(self):
         assert not self.segmenter._is_potential_header(block("Methods", size=10.0), 10.0)
@@ -322,3 +340,22 @@ class TestTitleExtraction:
     def test_file_path_comes_from_metadata(self):
         doc = self.segmenter.segment_document(paper_blocks(), {"file_path": "paper.pdf"})
         assert doc.file_path == "paper.pdf"
+
+    def test_an_explicit_none_file_path_does_not_become_the_string_none(self):
+        doc = self.segmenter.segment_document(paper_blocks(), {"file_path": None})
+        assert doc.file_path == ""
+
+
+class TestPublicExports:
+    def test_segmenter_types_are_importable_and_exported(self):
+        import bmlib.fulltext as fulltext
+
+        names = ["SectionSegmenter", "Section", "SectionType", "SegmentedDocument", "TextBlock"]
+        for name in names:
+            assert hasattr(fulltext, name), f"{name} not importable from bmlib.fulltext"
+            assert name in fulltext.__all__, f"{name} missing from bmlib.fulltext.__all__"
+
+        # LayoutExtractor lives in pdf_converter but is re-exported at the
+        # package level alongside the segmentation types.
+        assert hasattr(fulltext, "LayoutExtractor")
+        assert "LayoutExtractor" in fulltext.__all__

@@ -94,6 +94,11 @@ def _join_blocks(blocks: list[TextBlock]) -> str:
     lines: list[str] = []
     previous_bottom: float | None = None
     for block in blocks:
+        # A degenerate bbox (height == 0) makes gap_threshold 0, so any
+        # positive gap ahead of this block reads as a paragraph break. Left
+        # as-is: a degenerate bbox gives no usable leading to derive a real
+        # threshold from, and guessing a floor would be an assumed size —
+        # against this module's measured-not-assumed rule.
         gap_threshold = block.height * _PARAGRAPH_GAP_RATIO
         if previous_bottom is not None and block.y - previous_bottom > gap_threshold:
             lines.append("")
@@ -204,11 +209,14 @@ class SectionSegmenter:
             r"^code\s+and\s+data\s+availability$",
         ],
         SectionType.AUTHOR_CONTRIBUTIONS: [
-            r"^author\s+contributions?$",
+            # Covers "Author contributions", "Authors contributions",
+            # "Author's contributions" (singular possessive), and both
+            # apostrophe renderings of "Authors' contributions" — ASCII '
+            # and U+2019 (’), which is what InDesign/Word actually produce.
+            r"^authors?['’]?s?\s+contributions?$",
             r"^contributors?$",
             r"^credit\s+authorship$",
             r"^authorship\s+contributions?$",
-            r"^authors?\s*\'\s*contributions?$",
         ],
     }
 
@@ -297,7 +305,7 @@ class SectionSegmenter:
         median_size = _median_font_size(blocks)
         markers = self._identify_section_markers(blocks, median_size)
         return SegmentedDocument(
-            file_path=str(metadata.get("file_path", "")),
+            file_path=str(metadata.get("file_path") or ""),
             title=self._extract_title(blocks, metadata, median_size),
             sections=self._extract_sections(blocks, markers),
             metadata=metadata,

@@ -842,11 +842,18 @@ print(document.to_markdown())
 A line is a candidate heading when its font size clears the document's
 median by the configured factor (`font_size_threshold`, default 1.2) — or
 fails that but is bold — and it is short (≤100 characters) and contains at
-least one letter. Candidate headings are classified against an anchored,
-case-insensitive pattern table (`"3.  Results"` matches: leading numbering
-and trailing punctuation are stripped first). A heading no anchored pattern
-claims gets a second, word-bounded partial pass at 0.7 confidence
-(`"Supplementary materials online"` → `SUPPLEMENTARY`).
+least one letter. A line's font must also reach the absolute floor
+`min_heading_size` (a constructor parameter, default 10.0) before it can be
+a heading at all, regardless of boldness or how it compares to the median.
+Candidate headings are classified against an anchored, case-insensitive
+pattern table (`"3.  Results"` matches: leading numbering and trailing
+punctuation are stripped first). A heading no anchored pattern claims gets a
+second, word-bounded partial pass at 0.7 confidence
+(`"Supplementary materials online"` → `SUPPLEMENTARY`). A 0.7 match is a
+lower-confidence candidate — a bold "Summary of findings" line or a figure
+caption can produce one — so callers reasoning about section content should
+check `Section.confidence` and filter to 1.0 for certainty. Duplicate
+section types are possible; `get_section()` returns the first.
 
 Sections are the text between consecutive headings. Three container rules:
 
@@ -882,7 +889,7 @@ with `isinstance(converter, LayoutExtractor)`.
 | `sections` | Flat list, document order; `Section.subsections` is likewise reserved |
 | `metadata` | Whatever was passed to `segment_document()`, stored as-is |
 | `get_section(t)` | First section of that type, or `None` — an empty-content section means the heading exists with no body |
-| `to_markdown()` | Title, authors, then each section under `##` headings |
+| `to_markdown()` | Title, authors, then each section preceded by a `---`/bold-uppercase-title banner before its `##` heading |
 
 `segment_document()`'s `metadata` argument is optional; only `title` and
 `file_path` are read from it.
