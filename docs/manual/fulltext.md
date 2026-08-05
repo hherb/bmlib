@@ -18,9 +18,9 @@ pip install bmlib[pdf]              # PDF → text conversion (pymupdf)
 | `service` | `FullTextService`, `FullTextError` | Yes |
 | `jats_parser` | `JATSParser` | Yes — used by the service to render XML |
 | `cache` | `FullTextCache`, `sanitize_identifier()` | Yes — the service constructs one by default |
-| `models` | `FullTextResult`, `FullTextSourceEntry`, all `JATS*` dataclasses | Yes |
+| `models` | `FullTextResult`, `FullTextSourceEntry`, `SegmentedDocument`, `Section`, `TextBlock`, `SectionType`, all `JATS*` dataclasses | Yes |
 | `pdf_converter` | `ConversionResult`, `PDFConverter`, `PyMuPDFConverter`, `get_converter()`, `list_converters()`, `render_html()` | Yes — the service extracts a retrieved PDF's text |
-| `segmenter` | `SectionSegmenter`, `SegmentedDocument`, `Section`, `TextBlock`, `SectionType` | Standalone — segments the text lines from `PyMuPDFConverter.extract_blocks()` |
+| `segmenter` | `SectionSegmenter`, heading-detection patterns | Standalone — segments the text lines from `PyMuPDFConverter.extract_blocks()` |
 
 > **A retrieved PDF is extracted into `FullTextResult.html`.**
 > When the `bmlib[pdf]` extra is installed, the retrieval chain runs a cached PDF through `render_html()` and puts the result in [`FullTextResult.html`](#fulltextresult) with `content_kind="extracted"`. Two conditions apply: extraction happens only *after* the PDF is cached, so `fetch_fulltext()` must be given an `identifier`; and without the extra the result simply carries no HTML. Opt out with `FullTextService(convert_pdfs=False)`.
