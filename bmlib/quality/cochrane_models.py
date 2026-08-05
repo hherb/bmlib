@@ -40,6 +40,8 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
+from bmlib.quality.data_models import BiasRisk
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,6 +56,32 @@ ROB_JUDGEMENT_UNCLEAR = "Unclear risk"
 
 # Valid judgement values for validation.
 VALID_ROB_JUDGEMENTS = {ROB_JUDGEMENT_LOW, ROB_JUDGEMENT_HIGH, ROB_JUDGEMENT_UNCLEAR}
+
+# ``BiasRisk``'s vocabulary, weakest first.  The order *is* the severity
+# ranking used when several Cochrane domains collapse onto one ``BiasRisk``
+# field: "unclear" outranks "low" because an unreported domain is not a clean
+# bill of health — you cannot claim low selection-bias risk when allocation
+# concealment was never described.
+_SEVERITY_ORDER = ("low", "unclear", "high")
+
+# Cochrane judgement string → the word ``BiasRisk`` uses for it.
+_JUDGEMENT_TO_BIAS_RISK = {
+    ROB_JUDGEMENT_LOW: "low",
+    ROB_JUDGEMENT_UNCLEAR: "unclear",
+    ROB_JUDGEMENT_HIGH: "high",
+}
+
+# ``RiskOfBiasItem.bias_type`` → the ``BiasRisk`` field it feeds.  The 9→5
+# grouping is read off the items themselves rather than written out per
+# domain, so a tenth domain of an existing type collapses correctly without
+# this function being touched.
+_BIAS_TYPE_TO_FIELD = {
+    "selection bias": "selection",
+    "performance bias": "performance",
+    "detection bias": "detection",
+    "attrition bias": "attrition",
+    "reporting bias": "reporting",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -504,6 +532,28 @@ class CochraneStudyAssessment:
 
     assessment_version: str = "2.0.0"
 
+    # Set to the original character count when the text was condensed by
+    # ``bmlib.context_processor`` before assessment; ``None`` when the paper
+    # went to the model whole.  A judgement made over an LLM-condensed digest
+    # is weaker evidence than one made over the paper, so it says so rather
+    # than leaving the caller to infer it.  Declared last: downstream projects
+    # construct this positionally.
+    condensed_from_chars: int | None = None
+
+    # The ``ProcessingStatus`` value (``"completed"``, ``"partial"``,
+    # ``"truncated"``) the condensation pass finished with, when the text was
+    # condensed; ``None`` when it was not.  A ``"partial"`` condensation means
+    # one or more extraction batches failed after retries, so whole sections
+    # of the paper are absent from the digest the nine-domain judgement ran
+    # over — a fact the model's own ``overall_confidence`` cannot know, since
+    # it is a property of the pipeline, not of the paper.  Before this field,
+    # that fact lived only as a sentence appended to ``assessment_notes``,
+    # mixed in with the model's own prose and unparseable by a caller; the
+    # prose note is still added, for a human reader, alongside this
+    # structured one.  Declared last, after ``condensed_from_chars``:
+    # downstream projects construct this positionally.
+    condensation_status: str | None = None
+
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a dict."""
         return {
@@ -514,6 +564,8 @@ class CochraneStudyAssessment:
             "evidence_level": self.evidence_level,
             "assessment_notes": self.assessment_notes,
             "assessment_version": self.assessment_version,
+            "condensed_from_chars": self.condensed_from_chars,
+            "condensation_status": self.condensation_status,
         }
 
     @classmethod
@@ -529,6 +581,8 @@ class CochraneStudyAssessment:
             evidence_level=data.get("evidence_level"),
             assessment_notes=data.get("assessment_notes"),
             assessment_version=data.get("assessment_version", "2.0.0"),
+            condensed_from_chars=data.get("condensed_from_chars"),
+            condensation_status=data.get("condensation_status"),
         )
 
     @property
@@ -597,3 +651,54 @@ def create_default_cochrane_risk_of_bias() -> CochraneRiskOfBias:
             "Selective reporting", "reporting bias"
         ),
     )
+
+
+def collapse_risk_of_bias(rob: CochraneRiskOfBias) -> BiasRisk:
+    """Reduce the nine Cochrane domains to the five :class:`BiasRisk` domains.
+
+    Each :class:`RiskOfBiasItem` already names its target through
+    ``bias_type``, so the grouping is derived rather than hard-coded: four
+    domains feed ``selection``, two feed ``detection``, and one each feeds
+    ``performance``, ``attrition`` and ``reporting``.
+
+    Where several domains collapse onto one field the **worst wins**, ranked
+    ``high`` > ``unclear`` > ``low``.  Judgements are normalised through
+    :meth:`RiskOfBiasJudgement.from_string` first, so an item carrying
+    ``"low"`` rather than ``"Low risk"`` is not miscounted as unclear.
+
+    A ``BiasRisk`` field with no contributing item — which only happens for a
+    hand-built :class:`CochraneRiskOfBias` missing one of its nine standard
+    domains, since the nine bmlib itself produces always cover all five
+    ``bias_type`` categories — keeps ``BiasRisk``'s own ``"unclear"`` default
+    rather than being set explicitly.  That is a different failure from the
+    one the raise below guards: an unrecognised ``bias_type`` would silently
+    *drop evidence that was reported*, while an absent field here reports
+    exactly what it is — nothing was reported for that domain, which is what
+    "unclear" already means.
+
+    Args:
+        rob: The nine-domain assessment to reduce.
+
+    Returns:
+        The five-domain equivalent.
+
+    Raises:
+        ValueError: If any item's ``bias_type`` is not one of the five
+            Cochrane categories.  Silently dropping it would return a
+            ``BiasRisk`` that looks complete and is not.
+    """
+    worst: dict[str, int] = {}
+
+    for item in rob.to_list():
+        target = _BIAS_TYPE_TO_FIELD.get(item.bias_type.strip().lower())
+        if target is None:
+            raise ValueError(
+                f"Cannot collapse domain {item.domain!r}: unknown bias_type "
+                f"{item.bias_type!r}. Expected one of {sorted(_BIAS_TYPE_TO_FIELD)}."
+            )
+        judgement = RiskOfBiasJudgement.from_string(item.judgement).value
+        rank = _SEVERITY_ORDER.index(_JUDGEMENT_TO_BIAS_RISK[judgement])
+        if rank > worst.get(target, -1):
+            worst[target] = rank
+
+    return BiasRisk(**{target: _SEVERITY_ORDER[rank] for target, rank in worst.items()})

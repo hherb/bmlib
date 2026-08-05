@@ -1,0 +1,423 @@
+# Cochrane assessor — design
+
+_Date: 2026-08-05. Phase 2 row 9 of the bmlibrarian port
+([`docs/plans/2026-07-17-bmlibrarian-porting-analysis.md`](../../plans/2026-07-17-bmlibrarian-porting-analysis.md)),
+plus the standing ROADMAP item "wire the new quality tools into the pipeline"._
+
+## The problem
+
+`bmlib.quality.cochrane_models` has been in the tree since 0.4.0 and nothing
+imports it. It defines the nine-domain Cochrane Risk-of-Bias assessment and the
+study-characteristics table; `cochrane_formatter` renders them. But no code
+*produces* a `CochraneStudyAssessment`, so the models are a vocabulary with no
+speaker, and the tiered quality pipeline (`QualityManager`) does not know they
+exist.
+
+Upstream `bmlibrarian` has the missing producer:
+`agents/systematic_review/cochrane_assessor.py`, 685 lines, the least-coupled
+agent in that repo — it needs only `BaseAgent` and the Cochrane models, with no
+database, config, or orchestrator reads.
+
+## What this delivers
+
+1. `bmlib/quality/cochrane_assessor.py` — a `CochraneAssessor(BaseAgent)` that
+   turns a title plus text into a `CochraneStudyAssessment`.
+2. `collapse_risk_of_bias()` — the nine Cochrane domains reduced to the five
+   `BiasRisk` domains the rest of `quality/` speaks.
+3. A route through `QualityManager`, so the tiered pipeline can produce
+   Cochrane data instead of merely being able to represent it.
+
+Out of scope, and left as a separate decision: making the rule-based
+`quality/extractors.py` a free pre-filter ahead of Tier 1. That changes Tier 1
+behaviour for existing callers and moves stored values; this change does not.
+
+## Decisions
+
+### The call interface is explicit keyword parameters
+
+```python
+class CochraneAssessor(BaseAgent):
+    def __init__(
+        self,
+        llm: LLMClient,
+        model: str,
+        template_engine: TemplateEngine | None = None,
+        temperature: float = 0.1,
+        max_tokens: int = 4096,
+        condense_config: ProcessingConfig | None = None,
+    ) -> None: ...
+
+    def assess(
+        self,
+        title: str | None,
+        text: str | None,
+        *,
+        study_id: str | None = None,
+        pmid: str | None = None,
+        doi: str | None = None,
+        document_id: int | None = None,
+        min_confidence: float = 0.0,
+    ) -> CochraneStudyAssessment | None: ...
+
+    def assess_batch(
+        self,
+        studies: list[dict[str, Any]],
+        *,
+        min_confidence: float = 0.0,
+        progress_callback: Callable[[int, int, str], None] | None = None,
+    ) -> list[CochraneStudyAssessment]: ...
+```
+
+`assess_batch()` is a convenience loop over `assess()`, so it does take dicts —
+each one keyed by `assess()`'s own parameter names. That is a batch helper
+mapping a caller's records onto a typed call, not the typed call itself, and it
+returns only the assessments that succeeded. A `None` from `assess()` is
+skipped, as upstream does.
+
+Upstream takes a `document: dict` and digs `id` / `title` / `abstract` /
+`full_text` / `authors` / `year` / `pmid` / `doi` out of it. That couples the
+library to one application's key names, cannot be type-checked, and silently
+assesses an empty string when a key is misspelled. Explicit parameters match
+`QualityAgent.assess(title, abstract)` and bmlib's "state lives in the caller"
+convention.
+
+One consequence is deliberate: **the caller chooses full text or abstract.**
+Upstream's `full_text if full_text else abstract` means the agent cannot report
+which it assessed; here the caller passes `text` and knows.
+
+A second consequence: **`study_id` is the caller's.** Upstream derives an
+"Author Year" label with `first_author.split()[-1]`, which reads "van der Berg"
+as "Berg" and any `"Surname, Given"` string backwards. With no `authors`
+parameter there is nothing to guess from, and guessing was wrong anyway.
+Unset, `study_id` falls back to `f"Study {document_id}"`, or to the title when
+there is no `document_id`.
+
+### Failure returns `None`
+
+Upstream returns `None`; bmlib's Tier 3 `QualityAgent.assess()` instead
+degrades to `QualityAssessment.unclassified()` and never fails. The Cochrane
+assessor keeps `None`.
+
+An all-"Unclear risk" fallback would be indistinguishable from a real
+assessment in which the model genuinely judged every domain unclear, and
+anything persisting results would store that fabrication permanently. This is
+the same reasoning that makes `_fetch_ncbi_pmc()` raise on a body-less stub
+rather than degrade it to an abstract.
+
+`create_default_cochrane_risk_of_bias()` therefore stays uncalled by the
+assessor. It remains exported for callers assembling an assessment by hand.
+
+### Oversized text is condensed first, then judged once
+
+A Cochrane assessment wants full text — often 50k+ characters. Truncating is
+not an option here: allocation concealment and blinding live in Methods,
+attrition in Results, and a head-of-string cut drops exactly the evidence the
+nine domains are about.
+
+`bmlib.context_processor` exists for content larger than one context, and the
+**two-pass** shape fits it exactly:
+
+1. The harness reduces the paper to an **evidence digest** that fits.
+2. The nine-domain judgement happens **once**, over that digest.
+
+No merge rule for contradictory judgements is needed anywhere, because the
+harness never makes a judgement. The rejected alternative — a full nine-domain
+assessment per chunk, merged by severity — needs that rule and cannot defend
+it: most chunks hold no evidence for most domains, so it merges mostly
+"Unclear", and a caveat in the Discussion would override documented allocation
+concealment in the Methods.
+
+`LLMChunkProcessor` covers pass 1 with no new subclass. It takes any
+`BaseAgent` — the assessor passes `self`, so token accounting, retries and JSON
+repair are the ones the rest of bmlib uses — plus two prompt templates
+carrying `{query}` and `{content}`. Condensation runs only when
+`len(text) > condense_config.max_context_chars`; below that the text goes to
+the model whole.
+
+The assessor's default is `ProcessingConfig(max_context_chars=48_000)`, not
+the harness's own 4000. Roughly 12k tokens, so a whole research paper usually
+passes through uncondensed while still leaving room in a 32k-token window for
+a ~4k-character prompt and a 4096-token answer. The harness's 4000 would
+condense almost every full text and most long abstracts. A caller whose model
+is larger or smaller passes its own config.
+
+The `query` handed to the harness names what the digest must preserve: the
+methods, participants, interventions, outcomes and notes the characteristics
+table needs, and the reported detail behind each of the nine bias domains —
+randomisation, allocation concealment, baseline comparability, blinding,
+attrition and outcome reporting. A digest that drops those is a digest the
+second pass cannot judge from.
+
+**A failed condensation returns `None`.** `process()` reports failure on the
+result rather than raising, so the assessor checks
+`ProcessingStatus`: a `FAILED` run, or one whose digest is empty, means there
+is nothing to judge, and running the Cochrane prompt over an empty string would
+produce a confident nine-domain assessment of no paper at all. A `PARTIAL` or
+`TRUNCATED` run does yield a digest and is used, with the status recorded in
+`assessment_notes` so a caller can see the digest was incomplete.
+
+**The digest itself is measured, not trusted.** `ProcessingStatus` says how
+the harness's *run* ended — `TRUNCATED` in particular names its recursion
+ceiling, not the size of what it produced: `_merge_results()` returns
+whatever the last level held once `max_recursion_depth` is reached, oversized
+or not. A status check alone therefore cannot tell a `TRUNCATED` digest that
+happens to fit from one that does not, and measurement caught a real one: a
+200-character budget producing a 21,269-character digest, fed straight into
+the assessment prompt with no check. `_condense()` now compares
+`len(digest)` against `condense_config.max_context_chars` after computing the
+digest and before returning it, logs both numbers, and returns `None` rather
+than a digest the model would then see truncated a second time — by the
+provider, silently, exactly the head-of-string cut the whole design exists to
+avoid. This is the same "measured, not assumed" discipline
+`bmlib/context_processor/` already applies to its own batcher.
+
+### A condensed judgement says so
+
+`CochraneStudyAssessment` gains two fields, both declared last:
+
+```python
+condensed_from_chars: int | None = None   # declared, in order, after risk_of_bias
+condensation_status: str | None = None    # declared after condensed_from_chars
+```
+
+`condensed_from_chars` is set to the original character count when the text
+was condensed; `None` when the paper went to the model whole. A judgement
+made over an LLM-condensed digest is weaker evidence than one made over the
+paper, and the project's rule is that every path which degrades reports
+itself rather than leaving the caller to infer it.
+
+`condensation_status` carries the `ProcessingStatus` value (`"completed"`,
+`"partial"`, `"truncated"`) the condensation pass finished with, or `None`
+when the text was not condensed. Before this field, a `PARTIAL` or
+`TRUNCATED` run's degradation was recorded only as a sentence appended to
+`assessment_notes`, mixed in with the model's own prose and unparseable by a
+caller — the strictly *milder* fact that condensation merely happened
+(`condensed_from_chars`) already had a structured field, and the degradation
+did not. The prose note stays, for a human reader; this is the same fact,
+machine-readable, for code that wants to discount or flag a degraded
+judgement without scraping text.
+
+Both are declared last for the same reason as `Publication.pmcid`,
+`BaseAgent.embedding_model` and `TransparencyResult.unknown_reason`:
+downstream projects construct these positionally, so any other placement
+shifts every following argument. Both round-trip through `to_dict()` /
+`from_dict()`; a dict without either key loads it as `None`.
+
+### The 9→5 collapse is derived from the data
+
+```python
+def collapse_risk_of_bias(rob: CochraneRiskOfBias) -> BiasRisk
+```
+
+Lives in `cochrane_models.py`, not `data_models.py`: the richer model knows how
+to reduce itself to the simpler one, and `data_models` stays free of Cochrane
+knowledge. Neither imports the other today, so either direction would work;
+this one keeps the dependency pointing the way the knowledge does.
+
+The mapping is **not hard-coded**. Every `RiskOfBiasItem` already carries a
+`bias_type` naming its target domain — "selection bias" (×4), "performance
+bias", "detection bias" (×2), "attrition bias", "reporting bias" — so the
+function groups by `bias_type` and reduces each group.
+
+**The reduction is worst-wins, ordered `high > unclear > low`.** Where four
+selection domains collapse to one, the result is "high" if any is high;
+otherwise "unclear" if any is unclear; otherwise "low". "Unclear" outranks
+"low" because you cannot claim low selection-bias risk when allocation
+concealment was never reported — an unknown is not a clean bill of health.
+
+**An unrecognised `bias_type` raises.** `RiskOfBiasItem` is public and a caller
+may build one with `bias_type="funding bias"`; silently dropping it would emit
+a `BiasRisk` that looks complete and is not. This follows
+`_Analysis.note_data_level()`, which raises rather than scoring an unknown
+level at zero, and gets the same style of pinning test: every domain
+`create_default_cochrane_risk_of_bias()` produces maps to a domain the collapse
+knows.
+
+### The manager enriches, it does not replace
+
+Three additions, each declared last on its dataclass:
+
+- `QualityFilter.use_cochrane_assessment: bool = False`
+- `QualityAssessment.cochrane_assessment: CochraneStudyAssessment | None = None`
+- a `full_text: str | None = None` keyword on `QualityManager.assess()`
+
+`QualityAssessment.cochrane_assessment` follows the shape
+`transparency_result` already established: a foreign result attached to the
+common carrier, so `assess()` keeps returning `QualityAssessment` and no
+existing caller breaks.
+
+The route, when the flag is set:
+
+1. **Tier 1 metadata runs first** — it is free and supplies `study_design`,
+   `quality_tier`, `quality_score` and `confidence`, which a Cochrane
+   assessment does not produce. (Its `methods` field is free text like
+   "Parallel randomised trial"; mapping that onto `StudyDesign` would need
+   fuzzy matching this change does not attempt.)
+2. The Cochrane assessor runs over `full_text or abstract`.
+3. Its result **enriches** the Tier 1 assessment: `assessment_tier = 4`,
+   `extraction_method = "llm_cochrane_assessment"`, `bias_risk` from the
+   collapse, `cochrane_assessment` attached. `confidence` is **not**
+   touched — see below.
+
+Nothing emits `assessment_tier = 4` today, so no stored value moves.
+
+**Cochrane supersedes `use_detailed_assessment`** when both flags are set and
+the Cochrane pass *succeeds*: it is strictly the deeper assessment, and Tier 3
+is skipped rather than run and discarded — mirroring how Tier 3 already
+supersedes Tier 2.
+
+**A failed Cochrane pass falls through to Tier 3, then Tier 2** — exactly as
+if `use_cochrane_assessment` had not been set — rather than returning the
+Tier 1 result outright. "Supersedes" means "runs instead of, when it works",
+not "suppresses even on failure": the first version of this design had a
+`None` from `self.cochrane.assess(...)` return the Tier 1 result immediately,
+which meant a routine transport failure silently cancelled the Tier 3
+assessment a caller had explicitly asked for, and an unconfident Tier 1
+result that would otherwise have gone to Tier 2 came back UNCLASSIFIED
+instead. With neither Tier 3 nor Tier 2 requested there is nothing to fall
+through to, so that one combination still ends at the Tier 1 result —
+`assessment_tier` staying `1` (or `0`, unclassified) and `cochrane_assessment`
+staying `None` is what tells a Tier 4 success apart from every other outcome.
+
+**`confidence` is deliberately not copied**, for the same shape of reason as
+`evidence_level` below. `CochraneStudyAssessment.overall_confidence` describes
+how sure the model was about the nine bias-risk domains; it says nothing
+about the `study_design` / `quality_tier` / `quality_score` that still come
+from Tier 1 after enrichment. Overwriting `confidence` with it — the first
+version of this design did — meant a caller applying the ordinary
+`if a.confidence >= t: trust a.study_design` pattern could discard a
+0.95-confident Tier 1 "Randomized Controlled Trial" classification because
+the model was merely 0.6 sure about blinding. The Cochrane confidence stays
+losslessly reachable at `result.cochrane_assessment.overall_confidence`.
+
+**`evidence_level` is deliberately not copied.** `CochraneStudyAssessment`'s is
+free-form model text ("Level 2 (moderate-high)"); `QualityAssessment`'s is
+Oxford CEBM (`"1a"`…`"5"`, as the Tier 3 prompt specifies). Copying one into
+the other puts a foreign vocabulary in a field callers parse. It stays
+reachable on the attached object.
+
+The manager builds the assessor with the existing `assessor_model` — the
+Cochrane pass wants a capable model for the same reason Tier 3 does, and a
+second model parameter buys nothing until someone needs them to differ.
+
+## Upstream defects fixed
+
+Each gets a named regression test that fails if the fix is reverted.
+
+1. **`min_confidence` is accepted and never read.** Upstream defines
+   `DEFAULT_MIN_CONFIDENCE = 0.4`, threads it through
+   `assess_document(document, min_confidence=…)`, and never touches it in the
+   body. Ported as a working filter: an assessment whose `overall_confidence`
+   falls below it returns `None`. The default is `0.0`, not upstream's `0.4`,
+   so nothing is dropped unasked — a caller that wants the threshold asks for
+   it.
+
+2. **`get_stats()["success_rate"]` can only ever be 1.0.**
+   `_stats["total_assessments"]` is incremented on the success path only,
+   *after* every failure has already returned; `parse_failures` and
+   `failed_assessments` increment on their own paths but never the total. So
+   the ratio is `successful/total` where the two are the same number. Every
+   attempt counts here. (Same defect class as the context_processor port's
+   `progress_percent` that could never leave 0.0.)
+
+3. **LLM judgement strings bypass `RiskOfBiasJudgement.from_string()`.**
+   Upstream writes `data.get("judgement", ROB_JUDGEMENT_UNCLEAR)` straight into
+   `RiskOfBiasItem.judgement`. A model answering `"low"` or `"Low"` or
+   `"low_risk"` — all of which `from_string()` handles — stores an invalid
+   string. `__post_init__` warns, and then `get_summary_counts()` **skips that
+   domain entirely** (`if item.judgement in counts`), so the summary silently
+   reports eight domains and the formatter renders the ninth wrong. Every
+   judgement is normalised through
+   `RiskOfBiasJudgement.from_string(...).value`, which also makes
+   `RiskOfBiasJudgement` — exported since 0.4.0 and called nowhere in bmlib —
+   live code.
+
+4. **`overall_confidence` is unclamped.** A model reporting `1.4` outranks
+   every honest result and defeats `min_confidence`. Clamped to 0.0–1.0, as
+   `LLMChunkProcessor._extract_structured()` already does for the same reason.
+
+5. **A response missing the entire `risk_of_bias` block is accepted**, and
+   `_parse_risk_of_bias({})` fabricates nine "Unclear risk" defaults from
+   nothing. A Cochrane assessment without any risk-of-bias section is not a
+   Cochrane assessment; it is rejected, and `None` is returned rather than the
+   fabrication.
+
+   `chat_json()` cannot do this retry itself — it validates JSON shape, not
+   the schema underneath, and its loop has closed by the time the assessment
+   is parsed. The assessor therefore makes **at most two** whole attempts
+   (`_ASSESSMENT_ATTEMPTS = 2`), each with `chat_json()`'s own transport
+   retries inside it. Two, not three: a model that omits the risk-of-bias
+   section twice is answering a prompt it has misread, and the bound keeps the
+   worst case at six model calls rather than nine.
+
+   A *single missing domain* still defaults to Unclear with "Not reported or
+   insufficient information" — that is honest per-domain degradation of an
+   otherwise good answer, not fabrication of the whole.
+
+6. **The study label is derived by `first_author.split()[-1]`.** That reads
+   "van der Berg" as "Berg", and any `"Surname, Given"` string backwards.
+   `study_id` is the caller's own parameter instead (see "The call interface
+   is explicit keyword parameters" above); unset, it falls back to
+   `f"Study {document_id}"` and then to the title — never a parsed name.
+   Pinned by `test_a_document_id_is_the_first_fallback`.
+
+## Deliberately not ported
+
+- **The per-document `test_connection()` call.** Upstream runs it at the top of
+  every `assess_document()`, costing an extra round trip per paper in a batch.
+  In bmlib it reports provider reachability only — not whether the model is
+  installed — so it cannot tell the caller what the check implies.
+- **The `orchestrator` and `callback` constructor parameters**, and the
+  `_call_callback()` progress events. Queue integration is the application's,
+  as with every other agent ported so far. `assess_batch()` keeps a
+  `progress_callback`, which is the part that does not need a queue.
+- **`format_assessment_markdown()` and its two siblings.** They are one-line
+  passthroughs to `cochrane_formatter`, which callers already import directly.
+  Re-exporting them from the agent implies the agent owns the rendering.
+- **Dead imports.** `create_default_cochrane_risk_of_bias`,
+  `ROB_JUDGEMENT_LOW` and `ROB_JUDGEMENT_HIGH` were imported and never used.
+  Cleaned up in the port rather than kept as a named defect above: unlike the
+  six defects, this one is not user-facing and has no regression test of its
+  own — there is nothing a test could observe breaking if it were
+  reintroduced.
+
+## Testing
+
+New `tests/test_cochrane_assessor.py`, plus additions to `tests/test_cochrane.py`
+(the collapse) and `tests/test_quality.py` (the manager route). Every test runs
+against a stub LLM client — no network, matching the rest of the suite.
+
+Coverage to hit:
+
+- The six defects above, each by name.
+- Text below the threshold is **not** condensed, and `condensed_from_chars` /
+  `condensation_status` are both `None`; text above it is, and they carry the
+  original length and the harness's status respectively.
+- A condensation that fails or yields an empty digest returns `None` rather
+  than judging an empty string; a digest that still exceeds the budget after
+  condensing (measured, not inferred from `TRUNCATED`) also returns `None`,
+  with a negative control proving that guard can actually fail; a `PARTIAL`
+  one still returns an assessment, with the status in both `assessment_notes`
+  and `condensation_status`.
+- `assess_batch()` skips the papers that returned `None` and keeps the rest,
+  and its statistics count every attempt (defect 2).
+- The collapse: worst-wins in each direction, "unclear" beating "low", an
+  unrecognised `bias_type` raising, every default domain mapping to a known
+  target, and a `bias_type` in another casing still collapsing correctly.
+- The manager: the flag routes to Cochrane; a successful Cochrane pass
+  supersedes Tier 3; a failed pass falls through to Tier 3, then Tier 2, and
+  ends at the Tier 1 result only when neither is enabled; `evidence_level`
+  and `confidence` are not copied across; `use_metadata_only` wins over the
+  Cochrane flag.
+- `assess()` returns `None` for blank title *and* text without calling the
+  model.
+
+## Documentation
+
+`docs/manual/quality.md` gains a Cochrane assessor section. `CHANGELOG.md`
+records it under `[Unreleased]`. `CLAUDE.md`'s `quality/` description currently
+says the Cochrane models are **standalone** and that "nothing in the tiered
+pipeline imports them" — no longer true, and the `BiasRisk` ↔
+`CochraneRiskOfBias` gap it names is what `collapse_risk_of_bias()` closes.
+`ROADMAP.md`'s "wire the new quality tools into the pipeline" row becomes
+partially done, with the extractors pre-filter named as what is left.

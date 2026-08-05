@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from bmlib.quality.cochrane_formatter import (
     format_complete_assessment_markdown,
     format_multiple_assessments_markdown,
@@ -41,9 +43,11 @@ from bmlib.quality.cochrane_models import (
     CochraneStudyCharacteristics,
     RiskOfBiasItem,
     RiskOfBiasJudgement,
+    collapse_risk_of_bias,
     create_default_cochrane_risk_of_bias,
     create_default_risk_of_bias_item,
 )
+from bmlib.quality.data_models import BiasRisk
 
 
 def _sample_assessment(study_id: str = "Andrei 2011") -> CochraneStudyAssessment:
@@ -243,3 +247,139 @@ class TestHtmlFormatters:
 
     def test_css_returned(self):
         assert ".cochrane-risk-of-bias" in get_cochrane_css()
+
+
+class TestCollapsingTheNineDomainsOntoTheFive:
+    """``collapse_risk_of_bias()`` reduces Cochrane's nine domains to the
+    five ``BiasRisk`` speaks, deriving the grouping from each item's own
+    ``bias_type`` rather than a hard-coded per-domain table."""
+
+    def test_all_low_collapses_to_all_low(self) -> None:
+        rob = create_default_cochrane_risk_of_bias()
+        for item in rob.to_list():
+            item.judgement = ROB_JUDGEMENT_LOW
+
+        assert collapse_risk_of_bias(rob) == BiasRisk(
+            selection="low",
+            performance="low",
+            detection="low",
+            attrition="low",
+            reporting="low",
+        )
+
+    def test_the_worst_judgement_in_a_group_wins(self) -> None:
+        """Four domains feed ``selection``; one high makes the group high."""
+        rob = create_default_cochrane_risk_of_bias()
+        for item in rob.to_list():
+            item.judgement = ROB_JUDGEMENT_LOW
+        rob.allocation_concealment.judgement = ROB_JUDGEMENT_HIGH
+
+        assert collapse_risk_of_bias(rob).selection == "high"
+
+    def test_unclear_outranks_low(self) -> None:
+        """An unreported domain is not a clean bill of health: you cannot
+        claim low selection-bias risk when allocation concealment was never
+        described."""
+        rob = create_default_cochrane_risk_of_bias()
+        for item in rob.to_list():
+            item.judgement = ROB_JUDGEMENT_LOW
+        rob.allocation_concealment.judgement = ROB_JUDGEMENT_UNCLEAR
+
+        assert collapse_risk_of_bias(rob).selection == "unclear"
+
+    def test_high_outranks_unclear(self) -> None:
+        rob = create_default_cochrane_risk_of_bias()
+        rob.random_sequence_generation.judgement = ROB_JUDGEMENT_HIGH
+        # The other three selection domains are Unclear by default.
+
+        assert collapse_risk_of_bias(rob).selection == "high"
+
+    def test_the_two_detection_domains_collapse_together(self) -> None:
+        rob = create_default_cochrane_risk_of_bias()
+        for item in rob.to_list():
+            item.judgement = ROB_JUDGEMENT_LOW
+        rob.blinding_outcome_assessment_subjective.judgement = ROB_JUDGEMENT_HIGH
+
+        collapsed = collapse_risk_of_bias(rob)
+        assert collapsed.detection == "high"
+        # ...and nothing else moved with it.
+        assert collapsed.performance == "low"
+        assert collapsed.attrition == "low"
+
+    def test_a_judgement_in_another_casing_still_collapses(self) -> None:
+        """A hand-built item carrying "low" rather than "Low risk" is
+        normalised through ``RiskOfBiasJudgement.from_string()`` instead of
+        being counted as unclear."""
+        rob = create_default_cochrane_risk_of_bias()
+        for item in rob.to_list():
+            item.judgement = "low"
+
+        assert collapse_risk_of_bias(rob).selection == "low"
+
+    def test_a_bias_type_in_another_casing_still_collapses(self) -> None:
+        """``item.bias_type.strip().lower()`` normalises casing before the
+        lookup; until this test, nothing exercised it with a value that was
+        not already lowercase, so the normalisation was dead code."""
+        rob = create_default_cochrane_risk_of_bias()
+        rob.random_sequence_generation.judgement = ROB_JUDGEMENT_HIGH
+        rob.random_sequence_generation.bias_type = "Selection Bias"
+
+        assert collapse_risk_of_bias(rob).selection == "high"
+
+    def test_an_unrecognised_bias_type_raises(self) -> None:
+        """``RiskOfBiasItem`` is public and a caller may build one with any
+        ``bias_type``.  Dropping it silently would emit a ``BiasRisk`` that
+        looks complete and is not — the same reason
+        ``_Analysis.note_data_level()`` raises on an unknown level."""
+        rob = create_default_cochrane_risk_of_bias()
+        rob.selective_reporting.bias_type = "funding bias"
+
+        with pytest.raises(ValueError, match="funding bias"):
+            collapse_risk_of_bias(rob)
+
+    def test_every_default_domain_maps_to_a_domain_the_collapse_knows(self) -> None:
+        """The guard above must never fire for bmlib's own nine domains."""
+        collapse_risk_of_bias(create_default_cochrane_risk_of_bias())
+
+
+class TestTheCondensationProvenanceField:
+    def test_it_defaults_to_none(self) -> None:
+        """``None`` means the paper went to the model whole."""
+        assert _sample_assessment().condensed_from_chars is None
+
+    def test_it_round_trips(self) -> None:
+        assessment = _sample_assessment()
+        assessment.condensed_from_chars = 91_234
+
+        restored = CochraneStudyAssessment.from_dict(assessment.to_dict())
+        assert restored.condensed_from_chars == 91_234
+
+    def test_a_dict_without_the_key_loads_as_none(self) -> None:
+        data = _sample_assessment().to_dict()
+        del data["condensed_from_chars"]
+
+        assert CochraneStudyAssessment.from_dict(data).condensed_from_chars is None
+
+
+class TestTheCondensationStatusField:
+    """``condensation_status`` is the machine-readable counterpart of the
+    prose note ``_condense`` appends to ``assessment_notes``: the
+    ``ProcessingStatus`` value the condensation pass finished with, or
+    ``None`` when the text was never condensed."""
+
+    def test_it_defaults_to_none(self) -> None:
+        """``None`` means the paper went to the model whole."""
+        assert _sample_assessment().condensation_status is None
+
+    def test_it_round_trips(self) -> None:
+        assessment = _sample_assessment()
+        assessment.condensation_status = "partial"
+
+        restored = CochraneStudyAssessment.from_dict(assessment.to_dict())
+        assert restored.condensation_status == "partial"
+
+    def test_a_dict_without_the_key_loads_as_none(self) -> None:
+        data = _sample_assessment().to_dict()
+        del data["condensation_status"]
+
+        assert CochraneStudyAssessment.from_dict(data).condensation_status is None

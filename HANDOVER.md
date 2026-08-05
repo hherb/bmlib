@@ -1,11 +1,10 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-04. **0.7.0 is cut but not yet published to PyPI.**
-Everything it contains was on `main` before the release branch was cut, so
-that branch carries no library code — only the version bump, the CHANGELOG
-promotion and these docs. `[Unreleased]` is empty. No open issues. 1372 tests
-passing + 50 skipped, ruff clean. **The next session's first job is to finish
-the release** — see "Next up"._
+_Last updated: 2026-08-05. **0.7.0 is released and on PyPI.** `[Unreleased]`
+carries the Cochrane assessment agent (Phase 2 row 9 of the bmlibrarian port,
+on `feature/cochrane-assessor`, open as PR #54 and not yet merged or
+released). No open issues. 1449 tests passing + 50 skipped, ruff clean. **The next piece of work is another Phase 2 port** — see
+"Next up"._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -15,7 +14,10 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ## Current state
 
-- **Version 0.7.0**, cut 2026-08-04, **not yet published**. Release
+- **Version 0.7.0**, released 2026-08-04 and live on PyPI — the **first
+  release published by the Release workflow** rather than by hand, so that
+  path is now proven end to end (tag → GitHub release → `pypi` environment
+  gate → Trusted Publishing upload). Release
   history: 0.4.0 (2026-07-19) → 0.5.0 (2026-07-20) → 0.5.1 (2026-07-21) →
   0.6.0 (2026-07-30) → 0.7.0. 0.3.0 was bumped in-tree but never released;
   its changes shipped inside 0.4.0. The version lives in **four** places —
@@ -42,12 +44,26 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed two releases. Widening it is a downstream change, not a bmlib
   one.
-- **1372 tests passing + 50 skipped** (`uv run pytest tests/ -q`). 47 skips
+- **`[Unreleased]` carries the Cochrane assessment agent** — Phase 2 row 9 of
+  the bmlibrarian port, on `feature/cochrane-assessor`. `CochraneAssessor`
+  (Tier 4) turns a title and text into a `CochraneStudyAssessment`;
+  `collapse_risk_of_bias()` bridges its nine domains onto the five-domain
+  `BiasRisk`; `QualityFilter(use_cochrane_assessment=True)` plus a
+  `full_text=` keyword on `QualityManager.assess()` wire it into
+  `QualityManager`, enriching a classification rather than replacing it —
+  Tier 1's when the metadata was conclusive, Tier 2's when it was not, since
+  a Cochrane assessment produces no `study_design` of its own and every
+  preprint arrives without PubMed publication types.
+  Closes the Cochrane half of the "wire the new quality tools into the
+  pipeline" roadmap item — the rule-based extractors half is still open. Both
+  names are exported from `bmlib.quality`. See `CHANGELOG.md` for the full
+  entry and the six upstream defects fixed in the port.
+- **1449 tests passing + 50 skipped** (`uv run pytest tests/ -q`). 47 skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`, which run
   only when `BMLIB_TEST_POSTGRESQL_DSN` is set; 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install; 1 is a
   PostgreSQL-only schema test that does not apply to SQLite. With a DSN set
-  it is **1419 passing + 3 skipped**.
+  it is **1496 passing + 3 skipped**.
 - **Documentation was rewritten for 0.4.0 and kept current through 0.7.0.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` were promoted to
@@ -56,15 +72,6 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   a plan said at the time — leave them alone.
 
 ## Next up
-
-### Finish the 0.7.0 release
-
-The branch is prepared; **everything from the merge on is still to do.** Once
-CI is green, follow "Cutting a release" at the end of this file from the merge
-step: merge with `--merge`, tag the *merge commit* `v0.7.0`, push the tag,
-create the GitHub release, and approve the `pypi` environment gate so the
-Release workflow publishes. The steps are not repeated here — one copy, at the
-end of the file, is the one to keep correct.
 
 ### Open GitHub issues
 
@@ -116,17 +123,21 @@ left in the app as planned, and upstream's `SemanticChunkProcessor` was
 rewritten rather than copied — it called the raw Ollama client, which is the
 coupling the port existed to sever.
 
-**Phase 2 — the next port.** Independent and parallelisable, so pick any.
+**Phase 2.** Independent and parallelisable, so pick any remaining row.
 The numbers below are **rows in the analysis doc's master priority table, not
 GitHub issues** — GitHub #8 and #9 exist and are about something else
 entirely: #4 citations, #8 PDF section segmenter, #9 Cochrane assessor,
 #11 PubMed-metadata graft. **Row 10, Retraction Watch, is done** (PR #51,
 shipping in 0.7.0) — and shipped deliberately as notice storage plus a pure
 rule, not a fetcher; see the design doc's "Why this is not a fetcher" for why
-that word doesn't belong here. The Cochrane
-assessor (row 9) is the one that would also answer the standing "wire the new
-quality tools into the pipeline" roadmap item, since
-`quality/cochrane_models.py` is still standalone.
+that word doesn't belong here. **Row 9, the Cochrane assessor, is also done**
+(`feature/cochrane-assessor`, unreleased) — `bmlib.quality.CochraneAssessor`
+(Tier 4) plus `collapse_risk_of_bias()`, wired into `QualityManager` behind
+`QualityFilter(use_cochrane_assessment=True)`. This is the row that also
+answered the Cochrane half of the standing "wire the new quality tools into
+the pipeline" roadmap item — `quality/cochrane_models.py` is no longer
+standalone, though the rule-based extractors half of that item is still
+open. Design: `docs/superpowers/specs/2026-08-05-cochrane-assessor-design.md`.
 Phases 3–4 (discovery, pubmed_search, MeSH, the prompt-driven agent family,
 paper_weight) are in the analysis doc.
 
@@ -444,6 +455,72 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   truthiness test accepts both and each collapses tens of thousands of
   unrelated notices onto one fake key. Pinned by the `TestIdentifierSentinels`
   class in `tests/test_retractions.py`.
+- **`QualityManager._enrich_with_cochrane()` does not copy
+  `CochraneStudyAssessment.evidence_level` onto `QualityAssessment.evidence_level`.**
+  They are different vocabularies — Cochrane's is free-form model text
+  (`"Level 2 (moderate-high)"`), the metadata tier's is an Oxford CEBM level —
+  and merging them would silently coerce one into looking like the other. The
+  Cochrane value stays reachable at `result.cochrane_assessment.evidence_level`.
+  Pinned by `test_the_evidence_level_vocabularies_are_not_mixed`.
+- **`CochraneAssessor.assess()` returns `None` on failure, never a
+  `CochraneStudyAssessment` with all nine domains defaulted to "Unclear
+  risk".** A fabricated all-unclear result is indistinguishable from a real
+  assessment in which the model genuinely judged every domain unclear, and
+  anything persisting results would store the fabrication permanently.
+  Pinned by `test_a_response_with_no_risk_of_bias_block_is_rejected` and
+  `test_a_blank_title_and_text_returns_none_without_calling_the_model`.
+- **`collapse_risk_of_bias()` raises `ValueError` on an unrecognised
+  `bias_type` rather than skipping the item.** Silently dropping it would
+  return a `BiasRisk` that looks complete and is not — a caller filtering on
+  `bias_risk.selection` would trust a value that one of the five domains
+  feeding it never actually reported. Pinned by
+  `test_an_unrecognised_bias_type_raises`.
+- **In `collapse_risk_of_bias()`'s worst-wins reduction, `unclear` outranks
+  `low`, not the other way round.** An unreported domain is not a clean bill
+  of health: a study with one undescribed allocation-concealment method and
+  three well-described low-risk domains does not get to claim low
+  selection-bias risk. Pinned by `test_unclear_outranks_low`.
+- **`CochraneAssessor._ASSESSMENT_ATTEMPTS = 2`, not 1 or 3.** `chat_json()`
+  already retries transport and JSON-shape failures inside each attempt
+  (`max_retries=3`); this outer bound covers a reply that parses but carries
+  no `risk_of_bias` section at all. Two, not three: a model that omits the
+  section twice has misread the prompt, and two keeps the worst case at six
+  model calls (2 × 3) rather than nine (3 × 3). Pinned by
+  `test_it_is_retried_once_before_giving_up`.
+- **`CochraneAssessor.assess()` takes `study_id` from the caller and never
+  guesses one from an author list.** Upstream derived a label with
+  `first_author.split()[-1]`, which reads "van der Berg" as "Berg" and any
+  "Surname, Given" string backwards. Unset, it falls back to
+  `f"Study {document_id}"` and then to the title — never a parsed name.
+  Pinned by `test_a_document_id_is_the_first_fallback`.
+- **Oversized text is condensed in exactly two passes — digest, then
+  assess — with no per-chunk risk-of-bias judgement and no merge step.**
+  `bmlib.context_processor.LLMChunkProcessor` reduces the paper to one
+  evidence digest first; the nine-domain judgement is then made once, over
+  that digest. Judging each chunk separately and merging nine-domain
+  verdicts across chunks was rejected: a domain like "blinding of
+  participants and personnel" needs the whole Methods section in view at
+  once, not a vote over pieces that each saw only part of it — there is no
+  sensible way to merge two conflicting per-chunk judgements of the same
+  domain. Truncation was rejected for the opposite reason: allocation
+  concealment and blinding live in Methods and attrition in Results, so a
+  head-of-string cut drops exactly the evidence the domains rest on.
+  Exercised end-to-end by `test_condensation_reduces_every_chunk_of_the_paper`
+  and `test_the_digest_reaches_the_model_instead_of_the_paper`.
+- **`CochraneAssessor._condense()` checks `len(digest)` against
+  `condense_config.max_context_chars`, not `ProcessingStatus`.** The tempting
+  simplification is to treat a non-`FAILED` status as "the digest is usable" —
+  it reads as free, since `process()` already reports failure on the result.
+  It is wrong: `TRUNCATED` names the harness's own recursion ceiling, not the
+  size of what it produced, and `_merge_results()` returns whatever the last
+  level held once `max_recursion_depth` is reached, oversized or not. A
+  `TRUNCATED` run whose digest happens to fit is fine, and a `PARTIAL` run
+  whose digest does not fit is not — the status and the size are independent
+  facts. Measured, not assumed: a 200-character budget was observed producing
+  a 21,269-character digest, fed straight into the assessment prompt with no
+  check. Pinned by `test_a_digest_that_still_exceeds_the_budget_is_not_judged`,
+  with `test_the_guard_does_not_reject_a_digest_that_actually_fits` as the
+  negative control proving the guard can fail.
 
 ## Conventions and gotchas for the next session
 
@@ -480,7 +557,13 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   gate to let it through. **Do not also upload by hand:** the publish job has
   no `skip-existing`, so a manual upload first makes it fail on a duplicate —
   which is why v0.5.0's and v0.6.0's runs are still sitting unapproved, those
-  two having been published from a laptop instead. Rehearse the whole path
+  two having been published from a laptop instead. **v0.7.0 was the first
+  release to go the whole way through the workflow, and it worked** — so the
+  hand-upload habit has no remaining excuse. The tag may sit on any merge
+  commit on main's first-parent line that contains the version bump; v0.7.0's
+  landed on a dependabot merge that followed the release merge, which the
+  workflow's `tag == bmlib.__version__` check accepts and which is fine.
+  Rehearse the whole path
   any time with a `workflow_dispatch` run, which targets TestPyPI only. PyPI's
   JSON API serves a stale CDN cache afterwards; verify against
   `https://pypi.org/simple/bmlib/`, which is what installers actually read.

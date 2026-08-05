@@ -16,13 +16,16 @@
 
 """Tiered quality assessment for biomedical publications.
 
-Three-tier pipeline (cheapest first, escalating on demand):
+Tiered pipeline (cheapest first, escalating on demand):
 
 - **Tier 1**: PubMed metadata classification (free, instant)
 - **Tier 2**: LLM study-design classification (cheap model)
 - **Tier 3**: Deep methodological assessment (capable model)
+- **Tier 4**: Cochrane-aligned assessment — nine-domain risk of bias plus the
+  study-characteristics table (capable model; opt-in, off by default)
 """
 
+from bmlib.quality.cochrane_assessor import CochraneAssessor
 from bmlib.quality.cochrane_models import (
     CochraneInterventions,
     CochraneNotes,
@@ -33,6 +36,7 @@ from bmlib.quality.cochrane_models import (
     CochraneStudyCharacteristics,
     RiskOfBiasItem,
     RiskOfBiasJudgement,
+    collapse_risk_of_bias,
     create_default_cochrane_risk_of_bias,
     create_default_risk_of_bias_item,
 )
@@ -62,6 +66,7 @@ __all__ = [
     "DESIGN_TO_TIER",
     "DESIGN_TO_SCORE",
     # Cochrane-aligned models
+    "CochraneAssessor",
     "CochraneInterventions",
     "CochraneNotes",
     "CochraneOutcomes",
@@ -71,6 +76,7 @@ __all__ = [
     "CochraneStudyCharacteristics",
     "RiskOfBiasItem",
     "RiskOfBiasJudgement",
+    "collapse_risk_of_bias",
     "create_default_cochrane_risk_of_bias",
     "create_default_risk_of_bias_item",
     # Rule-based extractors + audit-trail scoring models

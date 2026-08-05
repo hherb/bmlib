@@ -6,6 +6,74 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Cochrane assessment agent** (`bmlib.quality.CochraneAssessor`) — Phase 2
+  row 9 of the bmlibrarian port, and the producer `cochrane_models.py` has
+  been waiting for since 0.4.0. `assess()` turns a title and text into a
+  `CochraneStudyAssessment`: the Cochrane Handbook's five-section
+  study-characteristics table plus a judgement and supporting text for each of
+  the nine Risk-of-Bias domains. Text larger than the configured context is
+  first reduced to an evidence digest by `bmlib.context_processor`, so the
+  nine-domain judgement is always made once, over content that fits —
+  enforced by measuring the digest itself rather than trusting
+  `ProcessingStatus` to imply it, since a `TRUNCATED` run names the harness's
+  recursion ceiling, not the size of what it produced. `condensed_from_chars`
+  says when condensation happened and `condensation_status` says how it
+  finished (`"completed"`, `"partial"`, `"truncated"`), because a judgement
+  made over a digest — especially an incomplete one — is weaker evidence than
+  one made over the paper. Truncating instead was rejected: allocation
+  concealment and blinding live in Methods and attrition in Results, so a
+  head-of-string cut drops exactly the evidence the domains rest on. Failure
+  returns `None`, not an all-"Unclear risk" stand-in that would be
+  indistinguishable from a real assessment.
+- **`collapse_risk_of_bias()`** — the nine Cochrane domains reduced to the
+  five `BiasRisk` domains, closing the `BiasRisk` ↔ `CochraneRiskOfBias` gap.
+  The grouping is derived from each item's own `bias_type` rather than written
+  out per domain; where several collapse onto one field the worst wins, with
+  `unclear` outranking `low` because an unreported domain is not a clean bill
+  of health. An unrecognised `bias_type` raises rather than returning a
+  `BiasRisk` that looks complete.
+- **`QualityFilter(use_cochrane_assessment=True)`** and a `full_text=` keyword
+  on `QualityManager.assess()`. The Cochrane pass *enriches* a classification
+  rather than replacing it — the classification supplies the study design,
+  quality tier/score and confidence a Cochrane assessment does not produce,
+  the Cochrane pass supplies the bias detail no classification tier can see —
+  and attaches the full assessment to the new
+  `QualityAssessment.cochrane_assessment`. Which classification depends on
+  Tier 1: a confident metadata result is the base and Tier 2 is skipped, but
+  an inconclusive one is not, because enriching it would return
+  `study_design=UNKNOWN` at score 0.0 and confidence 0.0 with a full
+  nine-domain bias table attached — worse than the Tier 2 answer the caller
+  had enabled. So when Tier 1 is inconclusive and `use_llm_classification` is
+  set (the default), the cheap classifier runs first and its result is the
+  base. That is the common path for preprints, which carry no PubMed
+  publication types at all. Neither `evidence_level` nor `confidence` is
+  copied across: both are foreign vocabularies (Cochrane's `evidence_level`
+  is free-form model text against the classification's Oxford CEBM, and
+  `overall_confidence` describes the model's certainty about blinding and
+  allocation concealment, not about the `study_design` the classification
+  already supplied); both stay reachable on the attached object. A successful
+  pass supersedes Tier 3 when both are requested; a *failed* pass falls
+  through to Tier 3 and then Tier 2 exactly as if the flag had not been set,
+  rather than returning the Tier 1 result outright — "supersedes" means "runs
+  instead of, when it works", not "suppresses even on failure". With neither
+  Tier 3 nor Tier 2 requested a failed pass still ends at the Tier 1 result,
+  unchanged. Additive: `assessment_tier=4` is new, the flag is off by
+  default, and no stored value moves.
+
+  Six upstream defects were fixed in the port, each with a named regression
+  test: `min_confidence` was accepted and never read; `success_rate` could
+  only ever report 1.0, because the attempt total was incremented on the
+  success path alone; judgement strings bypassed
+  `RiskOfBiasJudgement.from_string()`, so a model answering `"low"` rather
+  than `"Low risk"` stored an invalid value that `get_summary_counts()` then
+  skipped, silently reporting eight domains of nine; `overall_confidence` was
+  unclamped, so a model reporting 1.4 outranked every honest result; a reply
+  carrying no `risk_of_bias` section at all was accepted and turned into nine
+  fabricated defaults; and the study label was derived by
+  `first_author.split()[-1]`, which reads "van der Berg" as "Berg".
+
 ## [0.7.0] — 2026-08-04
 
 Two new capabilities and two widened ones. `bmlib.publications` can answer

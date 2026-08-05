@@ -210,7 +210,9 @@ class BiasRisk:
 class QualityAssessment:
     """Result from any tier of the quality pipeline."""
 
-    assessment_tier: int = 0  # 0=unclassified, 1=metadata, 2=haiku, 3=sonnet
+    # 0=unclassified, 1=metadata, 2=LLM classifier, 3=deep assessment,
+    # 4=Cochrane assessment.
+    assessment_tier: int = 0
     extraction_method: str = "none"
     study_design: StudyDesign = StudyDesign.UNKNOWN
     quality_tier: QualityTier = QualityTier.UNCLASSIFIED
@@ -232,6 +234,13 @@ class QualityAssessment:
     transparency_result: Any = None
     original_quality_tier: QualityTier | None = None
     transparency_adjusted: bool = False
+
+    # Cochrane integration.  Typed ``Any`` for the same reason
+    # ``transparency_result`` is: naming the type here would make
+    # ``data_models`` import ``cochrane_models``, which imports this module
+    # for ``BiasRisk``.  Declared last — downstream projects construct this
+    # positionally.
+    cochrane_assessment: Any = None
 
     # --- Factories ---
 
@@ -315,6 +324,17 @@ class QualityAssessment:
         }
         if self.bias_risk:
             d["bias_risk"] = self.bias_risk.to_dict()
+        if self.cochrane_assessment is not None:
+            # Typed ``Any`` (see the field's own comment), so a caller who
+            # round-tripped through JSON and assigned a plain dict back in
+            # has not necessarily handed us a ``CochraneStudyAssessment``.
+            # Only call ``to_dict()`` when there is one; otherwise the value
+            # is already dict-shaped (or the caller's problem to shape).
+            d["cochrane_assessment"] = (
+                self.cochrane_assessment.to_dict()
+                if hasattr(self.cochrane_assessment, "to_dict")
+                else self.cochrane_assessment
+            )
         return d
 
     @classmethod
@@ -322,6 +342,11 @@ class QualityAssessment:
         design_str = data.get("study_design", "unknown")
         design = STUDY_DESIGN_MAPPING.get(design_str, StudyDesign.UNKNOWN)
         bias = BiasRisk.from_dict(data["bias_risk"]) if "bias_risk" in data else None
+        cochrane = None
+        if "cochrane_assessment" in data:
+            from bmlib.quality.cochrane_models import CochraneStudyAssessment
+
+            cochrane = CochraneStudyAssessment.from_dict(data["cochrane_assessment"])
         return cls(
             assessment_tier=data.get("assessment_tier", 0),
             extraction_method=data.get("extraction_method", "none"),
@@ -340,6 +365,7 @@ class QualityAssessment:
             strengths=data.get("strengths", []),
             limitations=data.get("limitations", []),
             transparency_adjusted=data.get("transparency_adjusted", False),
+            cochrane_assessment=cochrane,
         )
 
 
@@ -359,3 +385,4 @@ class QualityFilter:
     use_metadata_only: bool = False
     use_llm_classification: bool = True
     use_detailed_assessment: bool = False
+    use_cochrane_assessment: bool = False
