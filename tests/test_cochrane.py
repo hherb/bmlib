@@ -316,6 +316,16 @@ class TestCollapsingTheNineDomainsOntoTheFive:
 
         assert collapse_risk_of_bias(rob).selection == "low"
 
+    def test_a_bias_type_in_another_casing_still_collapses(self) -> None:
+        """``item.bias_type.strip().lower()`` normalises casing before the
+        lookup; until this test, nothing exercised it with a value that was
+        not already lowercase, so the normalisation was dead code."""
+        rob = create_default_cochrane_risk_of_bias()
+        rob.random_sequence_generation.judgement = ROB_JUDGEMENT_HIGH
+        rob.random_sequence_generation.bias_type = "Selection Bias"
+
+        assert collapse_risk_of_bias(rob).selection == "high"
+
     def test_an_unrecognised_bias_type_raises(self) -> None:
         """``RiskOfBiasItem`` is public and a caller may build one with any
         ``bias_type``.  Dropping it silently would emit a ``BiasRisk`` that
@@ -349,3 +359,27 @@ class TestTheCondensationProvenanceField:
         del data["condensed_from_chars"]
 
         assert CochraneStudyAssessment.from_dict(data).condensed_from_chars is None
+
+
+class TestTheCondensationStatusField:
+    """``condensation_status`` is the machine-readable counterpart of the
+    prose note ``_condense`` appends to ``assessment_notes``: the
+    ``ProcessingStatus`` value the condensation pass finished with, or
+    ``None`` when the text was never condensed."""
+
+    def test_it_defaults_to_none(self) -> None:
+        """``None`` means the paper went to the model whole."""
+        assert _sample_assessment().condensation_status is None
+
+    def test_it_round_trips(self) -> None:
+        assessment = _sample_assessment()
+        assessment.condensation_status = "partial"
+
+        restored = CochraneStudyAssessment.from_dict(assessment.to_dict())
+        assert restored.condensation_status == "partial"
+
+    def test_a_dict_without_the_key_loads_as_none(self) -> None:
+        data = _sample_assessment().to_dict()
+        del data["condensation_status"]
+
+        assert CochraneStudyAssessment.from_dict(data).condensation_status is None

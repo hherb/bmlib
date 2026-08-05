@@ -25,6 +25,10 @@ Text larger than one context is reduced to an evidence digest by
 made once, over content that fits.  Truncation is not an option here:
 allocation concealment and blinding live in Methods and attrition in Results,
 so a head-of-string cut drops exactly the evidence the domains are about.
+"Fits" is checked by measuring the digest, not by trusting the harness's own
+``ProcessingStatus`` — a status of ``TRUNCATED`` names the harness's
+recursion ceiling, not the size of what it produced, so a digest that is
+still oversized after condensing is refused rather than judged.
 
 Reference: Cochrane Handbook for Systematic Reviews of Interventions
 (https://training.cochrane.org/handbook).
@@ -336,7 +340,10 @@ class CochraneAssessor(BaseAgent):
         assessment, an abstract gives a weak one.  Text longer than
         ``condense_config.max_context_chars`` is condensed first, and the
         result says so through
-        :attr:`CochraneStudyAssessment.condensed_from_chars`.
+        :attr:`CochraneStudyAssessment.condensed_from_chars` and
+        :attr:`CochraneStudyAssessment.condensation_status`.  A digest that
+        still does not fit the budget after condensing is not judged —
+        :meth:`_condense` returns ``None`` and so does this method.
 
         Args:
             title: The paper's title.
@@ -377,6 +384,7 @@ class CochraneAssessor(BaseAgent):
 
         notes: list[str] = []
         condensed_from: int | None = None
+        condensation_status: str | None = None
 
         if len(text) > self.condense_config.max_context_chars:
             condensed = self._condense(text, label)
@@ -384,9 +392,12 @@ class CochraneAssessor(BaseAgent):
                 self._stats["failed_assessments"] += 1
                 return None
             condensed_from = len(text)
-            text, notes = condensed
+            text, notes, status = condensed
+            condensation_status = status.value
 
-        assessment = self._attempt_assessment(title, text, label, notes, condensed_from)
+        assessment = self._attempt_assessment(
+            title, text, label, notes, condensed_from, condensation_status
+        )
         if assessment is None:
             return None
 
@@ -485,6 +496,7 @@ class CochraneAssessor(BaseAgent):
         label: str,
         notes: list[str],
         condensed_from: int | None,
+        condensation_status: str | None,
     ) -> CochraneStudyAssessment | None:
         """Run the model and parse its reply, retrying a structural failure.
 
@@ -494,6 +506,9 @@ class CochraneAssessor(BaseAgent):
             label: Names the study in log lines.
             notes: Extra notes to fold into the assessment.
             condensed_from: Original length when *text* is a digest.
+            condensation_status: The ``ProcessingStatus`` value the
+                condensation pass finished with, when *text* is a digest;
+                ``None`` otherwise.
 
         Returns:
             The parsed assessment, or ``None``.
@@ -519,8 +534,14 @@ class CochraneAssessor(BaseAgent):
                 return None
 
             try:
-                return self._parse_assessment(data, notes, condensed_from)
-            except ValueError as exc:
+                return self._parse_assessment(data, notes, condensed_from, condensation_status)
+            except (ValueError, TypeError, AttributeError) as exc:
+                # Not just the documented ValueError from a missing
+                # risk_of_bias section: any of the three protects the
+                # ``successful + failed == total`` invariant below, since
+                # ``total`` is already incremented and an uncaught exception
+                # here would escape assess() without recording either
+                # outcome.
                 logger.warning(
                     "Unusable Cochrane response for %s (attempt %d/%d): %s",
                     label,
@@ -542,7 +563,7 @@ class CochraneAssessor(BaseAgent):
             return f"Study {document_id}"
         return title or "Unknown study"
 
-    def _condense(self, text: str, label: str) -> tuple[str, list[str]] | None:
+    def _condense(self, text: str, label: str) -> tuple[str, list[str], ProcessingStatus] | None:
         """Reduce oversized text to an evidence digest that fits one context.
 
         Runs :class:`~bmlib.context_processor.LLMChunkProcessor` with this
@@ -555,8 +576,9 @@ class CochraneAssessor(BaseAgent):
             label: Names the study in log lines.
 
         Returns:
-            ``(digest, notes)``, or ``None`` when the run failed or produced
-            nothing to judge.
+            ``(digest, notes, status)``, or ``None`` when the run failed,
+            produced nothing to judge, or produced a digest that still does
+            not fit ``condense_config.max_context_chars``.
         """
         processor = LLMChunkProcessor(
             agent=self,
@@ -577,6 +599,28 @@ class CochraneAssessor(BaseAgent):
             logger.error("Condensing the text of %s produced an empty digest", label)
             return None
 
+        # ``result.status`` says how the harness's own run ended — TRUNCATED
+        # means the recursion ceiling was hit, PARTIAL means a batch failed —
+        # it does not say whether the digest that came out the other end
+        # actually fits.  In particular TRUNCATED names the recursion
+        # ceiling, not the content size: ``_merge_results()`` returns
+        # whatever the last level held once ``max_recursion_depth`` is
+        # reached, oversized or not.  So this checks the same thing
+        # ``context_processor`` checks about itself — the measured length of
+        # what is about to be sent — rather than trusting the status to
+        # imply it; a status check would not have caught a digest that
+        # overflows the budget it was supposed to fit.
+        if len(digest) > self.condense_config.max_context_chars:
+            logger.error(
+                "Condensing the text of %s produced a %d-char digest that still "
+                "exceeds the %d-char budget (status: %s); refusing to judge it",
+                label,
+                len(digest),
+                self.condense_config.max_context_chars,
+                result.status.value,
+            )
+            return None
+
         notes: list[str] = []
         if result.status is not ProcessingStatus.COMPLETED:
             notes.append(
@@ -584,7 +628,7 @@ class CochraneAssessor(BaseAgent):
                 f"finished with status {result.status.value}, so the digest may be "
                 f"incomplete."
             )
-        return digest, notes
+        return digest, notes, result.status
 
     # --- Parsing ---
 
@@ -593,6 +637,7 @@ class CochraneAssessor(BaseAgent):
         data: dict[str, Any],
         notes: list[str],
         condensed_from: int | None,
+        condensation_status: str | None,
     ) -> CochraneStudyAssessment:
         """Build a :class:`CochraneStudyAssessment` from the model's reply.
 
@@ -600,6 +645,9 @@ class CochraneAssessor(BaseAgent):
             data: The parsed JSON object.
             notes: Notes to prepend to the model's own.
             condensed_from: Original length when the text was condensed.
+            condensation_status: The ``ProcessingStatus`` value the
+                condensation pass finished with, when the text was
+                condensed; ``None`` otherwise.
 
         Returns:
             The assessment.  Identity fields are filled in by the caller.
@@ -636,6 +684,7 @@ class CochraneAssessor(BaseAgent):
             evidence_level=data.get("evidence_level"),
             assessment_notes=all_notes or None,
             condensed_from_chars=condensed_from,
+            condensation_status=condensation_status,
         )
 
 

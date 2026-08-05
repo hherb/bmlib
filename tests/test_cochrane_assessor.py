@@ -22,7 +22,13 @@ import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from bmlib.context_processor import ProcessingConfig
+from bmlib.context_processor import (
+    ExtractionResult,
+    LLMChunkProcessor,
+    ProcessingConfig,
+    ProcessingResult,
+    ProcessingStatus,
+)
 from bmlib.llm.data_types import LLMResponse
 from bmlib.quality.cochrane_assessor import CochraneAssessor
 from bmlib.quality.cochrane_models import (
@@ -197,6 +203,16 @@ class TestConfidence:
         )
         assert assessment.overall_confidence is None
 
+    def test_a_null_confidence_becomes_none(self) -> None:
+        """A reply with ``"overall_confidence": null`` (or the key absent —
+        ``dict.get`` returns ``None`` either way) takes the early ``if value
+        is None`` return in ``_clamped_confidence``, distinct from the
+        unparseable-string path above, which takes the ``except`` branch."""
+        assessment = make_assessor(json.dumps(_full_response(overall_confidence=None))).assess(
+            "T", "text"
+        )
+        assert assessment.overall_confidence is None
+
     def test_min_confidence_is_honoured(self) -> None:
         """Upstream declared DEFAULT_MIN_CONFIDENCE = 0.4, threaded it through
         the signature, and never read it."""
@@ -277,6 +293,7 @@ class TestCondensingOversizedText:
         assessment = assessor.assess("T", "x" * 100)
 
         assert assessment.condensed_from_chars is None
+        assert assessment.condensation_status is None
         assert assessor.llm.chat.call_count == 1
 
     def test_oversized_text_is_condensed_and_says_so(self) -> None:
@@ -289,7 +306,9 @@ class TestCondensingOversizedText:
         # condensation is exercised by the two tests below, against replies
         # short enough to converge.
         assessor = make_assessor(json.dumps(_full_response()), condense_config=self._tiny_config())
-        assessor._condense = lambda text, label: ("a digest", [])  # type: ignore[method-assign]
+        assessor._condense = (  # type: ignore[method-assign]
+            lambda text, label: ("a digest", [], ProcessingStatus.COMPLETED)
+        )
         text = "x " * 400
         assessment = assessor.assess("T", text)
 
@@ -297,6 +316,7 @@ class TestCondensingOversizedText:
         # ``assess()`` strips the text before this branch ever sees it, so the
         # recorded length is of the stripped text, not the caller's literal.
         assert assessment.condensed_from_chars == len(text.strip())
+        assert assessment.condensation_status == "completed"
 
     def test_condensation_reduces_every_chunk_of_the_paper(self) -> None:
         """The real harness run, against a reply short enough that the
@@ -306,10 +326,11 @@ class TestCondensingOversizedText:
         condensed = assessor._condense("x " * 400, "a study")
 
         assert condensed is not None
-        digest, notes = condensed
+        digest, notes, status = condensed
         assert "short evidence" in digest
         assert assessor.llm.chat.call_count > 1  # the paper really was chunked
         assert notes == []  # a clean run records nothing
+        assert status is ProcessingStatus.COMPLETED
 
     def test_the_digest_reaches_the_model_instead_of_the_paper(self) -> None:
         # ``_condense`` is stubbed rather than run: how many model calls a
@@ -318,7 +339,9 @@ class TestCondensingOversizedText:
         # makes the assertion depend on that count.  What this test is for is
         # the wiring — that the digest replaces the paper in the prompt.
         assessor = make_assessor(json.dumps(_full_response()), condense_config=self._tiny_config())
-        assessor._condense = lambda text, label: ("DIGEST-MARKER", [])  # type: ignore[method-assign]
+        assessor._condense = (  # type: ignore[method-assign]
+            lambda text, label: ("DIGEST-MARKER", [], ProcessingStatus.COMPLETED)
+        )
         assessor.assess("T", "ORIGINAL-MARKER " * 40)
 
         final_prompt = assessor.llm.chat.call_args.kwargs["messages"][-1].content
@@ -337,6 +360,100 @@ class TestCondensingOversizedText:
         assessor._condense = lambda text, label: None  # type: ignore[method-assign]
 
         assert assessor.assess("T", "x " * 400) is None
+
+
+class TestTheDigestSizeGuaranteeIsEnforced:
+    """``TRUNCATED`` names the harness's own recursion ceiling, not the size
+    of the digest it produced: ``_merge_results()`` returns whatever the
+    last level held once ``max_recursion_depth`` is reached, oversized or
+    not. So ``_condense`` has to measure the digest it is about to hand back
+    rather than trust ``ProcessingStatus`` to imply it fits — the same
+    "measured, not assumed" principle ``context_processor`` already applies
+    to itself. A 21,269-char digest emerging from a 200-char budget is the
+    concrete failure this guards against."""
+
+    @staticmethod
+    def _stub_result(content: str, status: ProcessingStatus) -> ProcessingResult:
+        return ProcessingResult(
+            final_result=ExtractionResult(content=content, confidence=1.0),
+            status=status,
+            total_items_processed=1,
+            batches_created=1,
+            recursion_levels_used=0,
+            successful_batches=1,
+        )
+
+    def test_a_digest_that_still_exceeds_the_budget_is_not_judged(self) -> None:
+        assessor = make_assessor(condense_config=ProcessingConfig(max_context_chars=200))
+        oversized = self._stub_result("x" * 21_269, ProcessingStatus.TRUNCATED)
+
+        with patch.object(LLMChunkProcessor, "process", return_value=oversized):
+            assert assessor._condense("y" * 500, "a study") is None
+
+    def test_the_guard_does_not_reject_a_digest_that_actually_fits(self) -> None:
+        """The negative control: a guard that always returns ``None`` would
+        also make the test above pass. This proves the guard can tell a
+        digest that fits from one that does not, rather than never firing
+        at all — or always firing."""
+        assessor = make_assessor(condense_config=ProcessingConfig(max_context_chars=200))
+        within_budget = self._stub_result("x" * 199, ProcessingStatus.TRUNCATED)
+
+        with patch.object(LLMChunkProcessor, "process", return_value=within_budget):
+            condensed = assessor._condense("y" * 500, "a study")
+
+        assert condensed is not None
+        digest, notes, status = condensed
+        assert digest == "x" * 199
+        assert status is ProcessingStatus.TRUNCATED
+        assert notes  # TRUNCATED still records the degradation note
+
+
+class TestBothCondensationDegradationBranchesReachTheAssessment:
+    """Coverage the design spec's "Coverage to hit" list required and which
+    was dropped when the plan was amended mid-execution: a ``FAILED``
+    condensation must stop the assessment, and a ``PARTIAL`` one — some
+    batches failed, but there is still a digest — must not."""
+
+    @staticmethod
+    def _stub_result(status: ProcessingStatus, content: str = "usable digest") -> ProcessingResult:
+        return ProcessingResult(
+            final_result=ExtractionResult(content=content, confidence=1.0),
+            status=status,
+            total_items_processed=1,
+            batches_created=1,
+            recursion_levels_used=0,
+            error_message="boom" if status is ProcessingStatus.FAILED else None,
+            successful_batches=0 if status is ProcessingStatus.FAILED else 1,
+        )
+
+    def test_a_failed_condensation_means_no_assessment(self) -> None:
+        assessor = make_assessor(
+            json.dumps(_full_response()), condense_config=ProcessingConfig(max_context_chars=200)
+        )
+        failed = self._stub_result(ProcessingStatus.FAILED, content="")
+
+        with patch.object(LLMChunkProcessor, "process", return_value=failed):
+            assert assessor._condense("x " * 400, "a study") is None
+            assert assessor.assess("T", "x " * 400) is None
+
+    def test_a_partial_condensation_still_returns_an_assessment_carrying_the_note(self) -> None:
+        assessor = make_assessor(
+            json.dumps(_full_response()), condense_config=ProcessingConfig(max_context_chars=200)
+        )
+        partial = self._stub_result(ProcessingStatus.PARTIAL)
+
+        with patch.object(LLMChunkProcessor, "process", return_value=partial):
+            condensed = assessor._condense("x " * 400, "a study")
+            assessment = assessor.assess("T", "x " * 400)
+
+        assert condensed is not None
+        digest, notes, status = condensed
+        assert status is ProcessingStatus.PARTIAL
+        assert notes and "partial" in notes[0]
+
+        assert assessment is not None
+        assert assessment.condensation_status == "partial"
+        assert any("partial" in note for note in (assessment.assessment_notes or []))
 
 
 class TestBatchAssessment:
