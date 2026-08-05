@@ -323,7 +323,16 @@ class QualityAssessment:
         if self.bias_risk:
             d["bias_risk"] = self.bias_risk.to_dict()
         if self.cochrane_assessment is not None:
-            d["cochrane_assessment"] = self.cochrane_assessment.to_dict()
+            # Typed ``Any`` (see the field's own comment), so a caller who
+            # round-tripped through JSON and assigned a plain dict back in
+            # has not necessarily handed us a ``CochraneStudyAssessment``.
+            # Only call ``to_dict()`` when there is one; otherwise the value
+            # is already dict-shaped (or the caller's problem to shape).
+            d["cochrane_assessment"] = (
+                self.cochrane_assessment.to_dict()
+                if hasattr(self.cochrane_assessment, "to_dict")
+                else self.cochrane_assessment
+            )
         return d
 
     @classmethod

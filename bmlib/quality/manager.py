@@ -142,19 +142,21 @@ class QualityManager:
             return metadata_result
 
         # --- Tier 4: Cochrane assessment ---
-        # Deeper than Tier 3, so it supersedes it exactly as Tier 3 supersedes
-        # Tier 2: the shallower tier is skipped, not run and discarded.
+        # Deeper than Tier 3, so a *successful* pass supersedes it exactly as
+        # Tier 3 supersedes Tier 2: the shallower tier is skipped, not run and
+        # discarded. "Supersedes" means "runs instead of, when it works", not
+        # "suppresses even on failure" — a routine transport failure here must
+        # not stop the Tier 3 assessment the caller explicitly enabled from
+        # running, so a ``None`` falls through to Tier 3 and then Tier 2
+        # exactly as if ``use_cochrane_assessment`` had not been set.
         if filt.use_cochrane_assessment:
             cochrane = self.cochrane.assess(title, full_text or abstract)
-            if cochrane is None:
-                # Degrade to the free classification rather than to nothing;
-                # ``assessment_tier`` staying 1 is what tells the two apart.
-                logger.debug("Tier 4: no Cochrane assessment; keeping the Tier 1 result")
-                return metadata_result
-            logger.debug(
-                "Tier 4: Cochrane assessment of %s", cochrane.study_characteristics.study_id
-            )
-            return self._enrich_with_cochrane(metadata_result, cochrane)
+            if cochrane is not None:
+                logger.debug(
+                    "Tier 4: Cochrane assessment of %s", cochrane.study_characteristics.study_id
+                )
+                return self._enrich_with_cochrane(metadata_result, cochrane)
+            logger.debug("Tier 4: no Cochrane assessment; falling through to Tier 3/Tier 2")
 
         # --- Tier 3: deep assessment ---
         # When a detailed assessment is requested it supersedes Tier 2, so we
@@ -224,12 +226,19 @@ class QualityManager:
     ) -> QualityAssessment:
         """Fold a Cochrane assessment into the Tier 1 result.
 
-        The metadata tier supplies ``study_design``, ``quality_tier`` and
-        ``quality_score``, which a Cochrane assessment does not produce; the
-        Cochrane pass supplies the bias detail, which the metadata tier cannot
-        see.  ``evidence_level`` is deliberately **not** copied: Cochrane's is
-        free-form model text, this one is Oxford CEBM, and the Cochrane value
-        stays reachable on the attached object.
+        The metadata tier supplies ``study_design``, ``quality_tier``,
+        ``quality_score`` and ``confidence``, which a Cochrane assessment does
+        not produce; the Cochrane pass supplies the bias detail, which the
+        metadata tier cannot see.  Neither ``evidence_level`` nor
+        ``confidence`` is copied across: Cochrane's ``evidence_level`` is
+        free-form model text where this one is Oxford CEBM, and Cochrane's
+        ``overall_confidence`` describes the model's certainty about the
+        nine bias-risk domains, not about the ``study_design`` /
+        ``quality_tier`` / ``quality_score`` this method leaves untouched —
+        so overwriting ``confidence`` with it would let a caller's
+        ``if a.confidence >= t: trust a.study_design`` pattern discard a
+        highly-confident Tier 1 classification because the model was unsure
+        about blinding.  Both values stay reachable on the attached object.
 
         Args:
             base: The Tier 1 result to enrich.
@@ -241,7 +250,7 @@ class QualityManager:
         # ``replace()`` copies shallowly, so the mutable fields are re-listed:
         # otherwise the "copy" shares them with the original and mutating
         # either rewrites both.
-        enriched = dataclasses.replace(
+        return dataclasses.replace(
             base,
             assessment_tier=4,
             extraction_method="llm_cochrane_assessment",
@@ -251,6 +260,3 @@ class QualityManager:
             limitations=list(base.limitations),
             extraction_details=[*base.extraction_details, "Cochrane assessment via LLM"],
         )
-        if cochrane.overall_confidence is not None:
-            enriched.confidence = cochrane.overall_confidence
-        return enriched

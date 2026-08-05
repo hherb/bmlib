@@ -203,6 +203,22 @@ class TestQualityAssessment:
         assert "cochrane_assessment" not in without_cochrane.to_dict()
         assert QualityAssessment.from_dict(without_cochrane.to_dict()).cochrane_assessment is None
 
+    def test_to_dict_does_not_crash_on_a_plain_dict_cochrane_assessment(self):
+        """``cochrane_assessment`` is typed ``Any``, so nothing stops a caller
+        who round-tripped through JSON from assigning the plain dict straight
+        back onto a ``QualityAssessment`` rather than reconstructing the
+        ``CochraneStudyAssessment``. The next ``to_dict()`` must not assume
+        ``.to_dict()`` exists on whatever is there."""
+        a = QualityAssessment(
+            assessment_tier=4,
+            study_design=StudyDesign.RCT,
+            cochrane_assessment={"study_characteristics": {"study_id": "Andrei 2011"}},
+        )
+
+        d = a.to_dict()
+
+        assert d["cochrane_assessment"] == {"study_characteristics": {"study_id": "Andrei 2011"}}
+
 
 class TestMetadataFilter:
     def test_rct_classification(self):
@@ -701,10 +717,13 @@ class TestTheCochraneRoute:
 
         mgr.cochrane.assess.assert_called_once()
 
-    def test_a_failed_pass_degrades_to_the_tier_1_result(self):
-        """Not to nothing — and the two are distinguishable."""
+    def test_a_failed_pass_with_no_other_tier_enabled_still_ends_at_the_tier_1_result(self):
+        """Not to nothing — and the two are distinguishable. This is the one
+        combination where the old "return metadata_result on failure"
+        behaviour is unchanged: with neither Tier 3 nor Tier 2 requested,
+        there is nothing left to fall through to."""
         mgr = self._manager_with_cochrane(None)
-        f = QualityFilter(use_cochrane_assessment=True)
+        f = QualityFilter(use_cochrane_assessment=True, use_llm_classification=False)
 
         result = mgr.assess(
             "Title",
@@ -716,31 +735,114 @@ class TestTheCochraneRoute:
         assert result.assessment_tier == 1
         assert result.cochrane_assessment is None
         assert result.study_design == StudyDesign.RCT
+        mgr.assessor.assess.assert_not_called()
+        mgr.classifier.classify.assert_not_called()
+
+    def test_a_failed_pass_falls_through_to_tier_3_when_a_detailed_assessment_was_requested(self):
+        """Superseding Tier 3 means "runs instead of, when it works", not
+        "suppresses even on failure": a routine transport failure in the
+        Cochrane pass must not stop the deep Tier 3 assessment the caller
+        explicitly enabled from running."""
+        mgr = self._manager_with_cochrane(None)
+        mgr.assessor.assess.return_value = QualityAssessment(
+            assessment_tier=3, study_design=StudyDesign.RCT
+        )
+        f = QualityFilter(use_cochrane_assessment=True, use_detailed_assessment=True)
+
+        result = mgr.assess("Title", "Abstract", filter_settings=f)
+
+        assert result.assessment_tier == 3
+        mgr.assessor.assess.assert_called_once()
+        mgr.classifier.classify.assert_not_called()
+
+    def test_a_failed_pass_falls_through_to_tier_2_when_only_classification_was_requested(self):
+        """Same fall-through, one tier shallower: with only
+        ``use_llm_classification`` set, a failed Cochrane pass reaches Tier 2
+        instead of coming back UNCLASSIFIED."""
+        mgr = self._manager_with_cochrane(None)
+        mgr.classifier.classify.return_value = QualityAssessment(
+            assessment_tier=2, study_design=StudyDesign.RCT
+        )
+        f = QualityFilter(use_cochrane_assessment=True, use_llm_classification=True)
+
+        result = mgr.assess("Title", "Abstract", filter_settings=f)
+
+        assert result.assessment_tier == 2
+        mgr.classifier.classify.assert_called_once()
+        mgr.assessor.assess.assert_not_called()
 
     def test_the_evidence_level_vocabularies_are_not_mixed(self):
         """CochraneStudyAssessment.evidence_level is free-form model text
         ("Level 2 (moderate-high)"); QualityAssessment.evidence_level is
         Oxford CEBM ("1a"…"5").  Copying one into the other puts a foreign
-        vocabulary in a field callers parse."""
+        vocabulary in a field callers parse.
+
+        Asserting only ``!= "Level 2 (moderate-high)"`` would pass for
+        *any* value, including a field that was never populated at all — it
+        cannot tell "correctly not copied" from "correctly not set". Asserted
+        instead against the actual Tier 1 value the enrichment is supposed to
+        have left untouched.
+        """
+        from bmlib.quality.metadata_filter import classify_from_metadata
+
         mgr = self._manager_with_cochrane(self._cochrane_assessment())
         f = QualityFilter(use_cochrane_assessment=True)
+        publication_types = ["Randomized Controlled Trial"]
+        expected_evidence_level = classify_from_metadata(publication_types).evidence_level
 
-        result = mgr.assess("Title", "Abstract", filter_settings=f)
+        result = mgr.assess(
+            "Title", "Abstract", publication_types=publication_types, filter_settings=f
+        )
 
-        assert result.evidence_level != "Level 2 (moderate-high)"
+        assert result.evidence_level == expected_evidence_level
         assert result.cochrane_assessment.evidence_level == "Level 2 (moderate-high)"
 
-    def test_the_model_confidence_is_carried_across(self):
+    def test_the_tier_1_confidence_survives_enrichment_and_the_cochrane_confidence_stays_reachable(
+        self,
+    ):
+        """``overall_confidence`` describes how sure the model was about the
+        nine bias-risk domains, not about the ``study_design`` /
+        ``quality_tier`` / ``quality_score`` Tier 1 still supplies — so it
+        must not overwrite ``confidence``. A caller trusting
+        ``study_design`` above a confidence threshold must not have a
+        0.9-confident Tier 1 RCT classification discarded because the model
+        was merely 0.85 sure about blinding. The Cochrane confidence stays
+        losslessly available on the attached object."""
         mgr = self._manager_with_cochrane(self._cochrane_assessment())
         f = QualityFilter(use_cochrane_assessment=True)
 
-        result = mgr.assess("Title", "Abstract", filter_settings=f)
+        result = mgr.assess(
+            "Title",
+            "Abstract",
+            publication_types=["Randomized Controlled Trial"],
+            filter_settings=f,
+        )
 
-        assert result.confidence == 0.85
+        assert result.confidence == 0.9  # Tier 1's own confidence, untouched
+        assert result.cochrane_assessment.overall_confidence == 0.85
 
     def test_the_flag_is_off_by_default(self):
         mgr = self._manager_with_cochrane(self._cochrane_assessment())
 
         mgr.assess("Title", "Abstract", filter_settings=QualityFilter())
 
+        mgr.cochrane.assess.assert_not_called()
+
+    def test_use_metadata_only_wins_over_the_cochrane_flag(self):
+        """The one combination in the new matrix with no prior coverage.
+        ``use_metadata_only`` already short-circuits ahead of Tier 3 for the
+        same reason: it asks for the free tier and nothing else, so every
+        LLM-backed tier — Cochrane included — is skipped."""
+        mgr = self._manager_with_cochrane(self._cochrane_assessment())
+        f = QualityFilter(use_metadata_only=True, use_cochrane_assessment=True)
+
+        result = mgr.assess(
+            "Title",
+            "Abstract",
+            publication_types=["Randomized Controlled Trial"],
+            filter_settings=f,
+        )
+
+        assert result.assessment_tier == 1
+        assert result.cochrane_assessment is None
         mgr.cochrane.assess.assert_not_called()
