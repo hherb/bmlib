@@ -360,12 +360,12 @@ Run the tiered assessment pipeline for a single paper.
 1. **Tier 1 (metadata)** always runs first, via `classify_from_metadata(publication_types)`. Free and instant.
 2. If `use_metadata_only` is `True`, the Tier 1 result is returned immediately — no LLM call.
 3. The Tier 1 result is *confident* when its `confidence >= 0.9` (`METADATA_ACCEPTANCE_THRESHOLD`) **and** its `quality_tier` is not `UNCLASSIFIED`. A confident result is returned as-is unless `use_detailed_assessment` or `use_cochrane_assessment` is `True`.
-4. **Tier 4 (Cochrane assessment):** if `use_cochrane_assessment` is `True`, `CochraneAssessor.assess()` runs against `full_text` (falling back to `abstract` when `full_text` is absent) and *enriches* the Tier 1 result rather than replacing it — see [Cochrane assessment](#cochrane-assessment) for what that means. **Both Tier 2 and Tier 3 are skipped entirely** — Tier 4 is deeper than Tier 3 exactly as Tier 3 is deeper than Tier 2, so the shallower tiers are never run and discarded.
+4. **Tier 4 (Cochrane assessment):** if `use_cochrane_assessment` is `True`, `CochraneAssessor.assess()` runs against `full_text` (falling back to `abstract` when `full_text` is absent). **On success** it *enriches* the Tier 1 result rather than replacing it — see [Cochrane assessment](#cochrane-assessment) for what that means — and **both Tier 2 and Tier 3 are skipped entirely**, since Tier 4 is deeper than Tier 3 exactly as Tier 3 is deeper than Tier 2. **On failure** (`CochraneAssessor.assess()` returns `None`, e.g. a transport error) there is no result to supersede anything with, so execution falls through to step 5 exactly as if `use_cochrane_assessment` had not been set — a failed Cochrane pass must not cancel the Tier 3 assessment a caller separately asked for.
 5. **Tier 3 (deep assessment):** otherwise, if `use_detailed_assessment` is `True`, `QualityAgent.assess()` runs and its result is returned. **Tier 2 is skipped entirely** — the detailed assessment supersedes the classifier, so the cheap-but-not-free call is never made.
 6. **Tier 2 (classifier):** otherwise, if `use_llm_classification` is `True` (the default), `StudyClassifier.classify()` runs and its result is returned.
-7. Otherwise the Tier 1 result is returned as a fallback.
+7. Otherwise the Tier 1 result is returned as a fallback — including when Tier 4 was requested but failed and neither Tier 3 nor Tier 2 is enabled.
 
-Tiers 2, 3 and 4 never run together. Tiers 2 and 3 *replace* the Tier 1 result outright; Tier 4 *merges* into it (see below) — the one tier that does not discard the metadata pass's `study_design`.
+A *successful* Tier 4 pass never runs alongside Tier 2 or Tier 3 in the same call. Tiers 2 and 3 *replace* the Tier 1 result outright; a successful Tier 4 *merges* into it (see below) — the one tier that does not discard the metadata pass's `study_design`. A **failed** Tier 4 pass produced nothing to merge, so it is not a fourth tier that ran and lost: the pipeline falls through and Tier 3 or Tier 2 may still run in that same call, exactly as they would have without `use_cochrane_assessment` set.
 
 **Parameters:**
 
@@ -726,6 +726,7 @@ class CochraneStudyAssessment:
     assessment_notes: list[str] | None = None
     assessment_version: str = "2.0.0"
     condensed_from_chars: int | None = None      # original length, if condensed before assessment
+    condensation_status: str | None = None       # ProcessingStatus value, if condensed before assessment
 ```
 
 | Member | Description |
@@ -735,7 +736,7 @@ class CochraneStudyAssessment:
 | `study_id` *(property)* | Delegates to `study_characteristics.study_id`. |
 | `document_id` *(property)* | Delegates to `study_characteristics.document_id`. |
 
-`condensed_from_chars` is set by [`CochraneAssessor`](#cochrane-assessment) to the original character count when the text was reduced to an evidence digest before assessment, and left `None` when the paper went to the model whole — see [Cochrane assessment](#cochrane-assessment). Declared last, so positional construction stays stable across versions.
+`condensed_from_chars` is set by [`CochraneAssessor`](#cochrane-assessment) to the original character count when the text was reduced to an evidence digest before assessment, and left `None` when the paper went to the model whole — see [Cochrane assessment](#cochrane-assessment). `condensation_status` carries the `ProcessingStatus` value (`"completed"`, `"partial"`, `"truncated"`) the condensation pass finished with, alongside `condensed_from_chars`, and is likewise `None` when the text was not condensed — the machine-readable counterpart of the human-readable note `assess()` also appends to `assessment_notes` when condensation degraded. Both are declared last, so positional construction stays stable across versions.
 
 ### Factory Functions
 
@@ -804,7 +805,7 @@ Assess one study against the Cochrane template. Either `title` or `text` may be 
 | `document_id` | `int \| None` | `None` | The caller's own row id. |
 | `min_confidence` | `float` | `0.0` | Reject an assessment whose `overall_confidence` falls below this. Zero rejects nothing. Only a *reported* confidence below the bar is rejected — an assessment whose confidence could not be parsed (`overall_confidence is None`) is kept regardless of `min_confidence`; an unknown confidence is not treated as a low one. |
 
-**Returns:** the assessment, or `None` if it could not be made. `None` rather than an all-"Unclear risk" stand-in: that would be indistinguishable from a real assessment in which the model genuinely judged every domain unclear, and anything persisting results would store the fabrication permanently. `assess()` returns `None` when: both `title` and `text` are empty; condensing oversized text fails or produces an empty digest; the model call itself fails (a transport error, or a reply that still will not parse as JSON after `chat_json()`'s own retries); the model's reply parses but carries no `risk_of_bias` section, after both of `assess()`'s own attempts; or a reported `overall_confidence` falls below `min_confidence`.
+**Returns:** the assessment, or `None` if it could not be made. `None` rather than an all-"Unclear risk" stand-in: that would be indistinguishable from a real assessment in which the model genuinely judged every domain unclear, and anything persisting results would store the fabrication permanently. `assess()` returns `None` when: both `title` and `text` are empty; condensing oversized text fails, produces an empty digest, or produces a digest that still exceeds `condense_config.max_context_chars` after condensing (checked by measuring the digest itself, not by trusting `ProcessingStatus` — see "Condensing oversized text" below); the model call itself fails (a transport error, or a reply that still will not parse as JSON after `chat_json()`'s own retries); the model's reply parses but carries no `risk_of_bias` section, after both of `assess()`'s own attempts; or a reported `overall_confidence` falls below `min_confidence`.
 
 **Example:**
 
@@ -844,6 +845,8 @@ Left unset, `condense_config` defaults to `ProcessingConfig(max_context_chars=DE
 
 When condensation ran, `CochraneStudyAssessment.condensed_from_chars` is set to the original character count; it is `None` when the paper went to the model whole. A judgement made over an LLM-condensed digest is weaker evidence than one made over the paper, so the result says so rather than leaving the caller to infer it.
 
+**The digest is not trusted to fit just because `ProcessingStatus` is not `FAILED`.** `bmlib.context_processor` reports `TRUNCATED` when its own recursion ceiling is reached — that names the ceiling, not the size of the digest it hands back, and `_merge_results()` returns whatever the last level held once the ceiling is hit, oversized or not. So `CochraneAssessor` measures `len(digest)` against `condense_config.max_context_chars` itself before ever building the assessment prompt; if the digest still does not fit, `assess()` returns `None` rather than sending a digest the provider might then truncate a second time, silently, at whatever byte its own limit happens to fall. `CochraneStudyAssessment.condensation_status` records the `ProcessingStatus` value (`"completed"`, `"partial"`, `"truncated"`) whenever condensation *did* produce a usable digest — the machine-readable form of the same note `assess()` appends to `assessment_notes` in prose when the run was not a clean `"completed"`.
+
 ### `collapse_risk_of_bias()`
 
 ```python
@@ -860,7 +863,11 @@ Raises `ValueError` if any item's `bias_type` is not one of the five Cochrane ca
 
 `QualityFilter(use_cochrane_assessment=True)` routes `QualityManager.assess()` through `CochraneAssessor` instead of Tier 2 or Tier 3 — both are skipped entirely, exactly as Tier 3 already skips Tier 2 when requested. `QualityManager.assess()` gained a `full_text: str | None = None` keyword for this: the Cochrane pass reads `full_text`, falling back to `abstract` when it is absent (a weak risk-of-bias assessment beats none).
 
-The Cochrane pass **enriches** the free Tier 1 metadata result rather than replacing it: the metadata tier supplies `study_design`, `quality_tier` and `quality_score`, which a Cochrane assessment does not produce; the Cochrane pass supplies `bias_risk` (via `collapse_risk_of_bias()`) and the full `cochrane_assessment` object, which the metadata tier cannot see. On success the returned `QualityAssessment` carries `assessment_tier=4`, `extraction_method="llm_cochrane_assessment"`, and `cochrane_assessment` set to the `CochraneStudyAssessment`. `evidence_level` is deliberately **not** copied across — Cochrane's is free-form model text, the metadata tier's is an Oxford CEBM level, and the Cochrane value stays reachable at `result.cochrane_assessment.evidence_level`. If `CochraneAssessor.assess()` returns `None`, `QualityManager.assess()` degrades to the Tier 1 result rather than to nothing — `assessment_tier` staying at whatever Tier 1 produced (`0` unclassified, `1` classified) rather than becoming `4` is what tells the two outcomes apart.
+The Cochrane pass **enriches** the free Tier 1 metadata result rather than replacing it: the metadata tier supplies `study_design`, `quality_tier`, `quality_score` and `confidence`, which a Cochrane assessment does not produce; the Cochrane pass supplies `bias_risk` (via `collapse_risk_of_bias()`) and the full `cochrane_assessment` object, which the metadata tier cannot see. On success the returned `QualityAssessment` carries `assessment_tier=4`, `extraction_method="llm_cochrane_assessment"`, and `cochrane_assessment` set to the `CochraneStudyAssessment`.
+
+Two fields are deliberately **not** copied across. `evidence_level` is free-form model text on the Cochrane side against an Oxford CEBM level on the metadata side — different vocabularies. `confidence` is not touched either: `CochraneStudyAssessment.overall_confidence` describes how sure the model was about the nine bias-risk domains, not about the `study_design` / `quality_tier` / `quality_score` that still come from Tier 1 after enrichment, so overwriting `confidence` with it would let a caller's `if a.confidence >= t: trust a.study_design` pattern discard a highly-confident Tier 1 classification because the model was merely middling-sure about blinding. Both values stay reachable at `result.cochrane_assessment.evidence_level` and `result.cochrane_assessment.overall_confidence`.
+
+If `CochraneAssessor.assess()` returns `None` — a routine transport failure, not a decision — `QualityManager.assess()` does **not** return the Tier 1 result outright. It falls through into the Tier 3 check and then the Tier 2 check, exactly as if `use_cochrane_assessment` had not been set: "Cochrane supersedes Tier 3" means "runs instead of, when it works", not "suppresses even on failure", so a transport error must not cancel a Tier 3 assessment the caller separately asked for, or send an otherwise-eligible-for-Tier-2 paper back UNCLASSIFIED. Only when neither `use_detailed_assessment` nor `use_llm_classification` is set does a failed Cochrane pass end at the Tier 1 result — `assessment_tier` staying at whatever Tier 1 produced (`0` unclassified, `1` classified) rather than becoming `4` is what tells that outcome apart from a Tier 4 success.
 
 **Example:**
 

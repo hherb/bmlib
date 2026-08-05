@@ -156,25 +156,52 @@ produce a confident nine-domain assessment of no paper at all. A `PARTIAL` or
 `TRUNCATED` run does yield a digest and is used, with the status recorded in
 `assessment_notes` so a caller can see the digest was incomplete.
 
+**The digest itself is measured, not trusted.** `ProcessingStatus` says how
+the harness's *run* ended — `TRUNCATED` in particular names its recursion
+ceiling, not the size of what it produced: `_merge_results()` returns
+whatever the last level held once `max_recursion_depth` is reached, oversized
+or not. A status check alone therefore cannot tell a `TRUNCATED` digest that
+happens to fit from one that does not, and measurement caught a real one: a
+200-character budget producing a 21,269-character digest, fed straight into
+the assessment prompt with no check. `_condense()` now compares
+`len(digest)` against `condense_config.max_context_chars` after computing the
+digest and before returning it, logs both numbers, and returns `None` rather
+than a digest the model would then see truncated a second time — by the
+provider, silently, exactly the head-of-string cut the whole design exists to
+avoid. This is the same "measured, not assumed" discipline
+`bmlib/context_processor/` already applies to its own batcher.
+
 ### A condensed judgement says so
 
-`CochraneStudyAssessment` gains:
+`CochraneStudyAssessment` gains two fields, both declared last:
 
 ```python
-condensed_from_chars: int | None = None   # declared last
+condensed_from_chars: int | None = None   # declared, in order, after risk_of_bias
+condensation_status: str | None = None    # declared after condensed_from_chars
 ```
 
-Set to the original character count when the text was condensed; `None` when
-the paper went to the model whole. A judgement made over an LLM-condensed
-digest is weaker evidence than one made over the paper, and the project's rule
-is that every path which degrades reports itself rather than leaving the caller
-to infer it.
+`condensed_from_chars` is set to the original character count when the text
+was condensed; `None` when the paper went to the model whole. A judgement
+made over an LLM-condensed digest is weaker evidence than one made over the
+paper, and the project's rule is that every path which degrades reports
+itself rather than leaving the caller to infer it.
 
-Declared last for the same reason as `Publication.pmcid`,
-`BaseAgent.embedding_model` and `TransparencyResult.unknown_reason`: downstream
-projects construct these positionally, so any other placement shifts every
-following argument. It round-trips through `to_dict()` / `from_dict()`; a dict
-without the key loads as `None`.
+`condensation_status` carries the `ProcessingStatus` value (`"completed"`,
+`"partial"`, `"truncated"`) the condensation pass finished with, or `None`
+when the text was not condensed. Before this field, a `PARTIAL` or
+`TRUNCATED` run's degradation was recorded only as a sentence appended to
+`assessment_notes`, mixed in with the model's own prose and unparseable by a
+caller — the strictly *milder* fact that condensation merely happened
+(`condensed_from_chars`) already had a structured field, and the degradation
+did not. The prose note stays, for a human reader; this is the same fact,
+machine-readable, for code that wants to discount or flag a degraded
+judgement without scraping text.
+
+Both are declared last for the same reason as `Publication.pmcid`,
+`BaseAgent.embedding_model` and `TransparencyResult.unknown_reason`:
+downstream projects construct these positionally, so any other placement
+shifts every following argument. Both round-trip through `to_dict()` /
+`from_dict()`; a dict without either key loads it as `None`.
 
 ### The 9→5 collapse is derived from the data
 
@@ -222,25 +249,46 @@ existing caller breaks.
 The route, when the flag is set:
 
 1. **Tier 1 metadata runs first** — it is free and supplies `study_design`,
-   `quality_tier` and `quality_score`, which a Cochrane assessment does not
-   produce. (Its `methods` field is free text like "Parallel randomised trial";
-   mapping that onto `StudyDesign` would need fuzzy matching this change does
-   not attempt.)
+   `quality_tier`, `quality_score` and `confidence`, which a Cochrane
+   assessment does not produce. (Its `methods` field is free text like
+   "Parallel randomised trial"; mapping that onto `StudyDesign` would need
+   fuzzy matching this change does not attempt.)
 2. The Cochrane assessor runs over `full_text or abstract`.
 3. Its result **enriches** the Tier 1 assessment: `assessment_tier = 4`,
    `extraction_method = "llm_cochrane_assessment"`, `bias_risk` from the
-   collapse, `cochrane_assessment` attached, and `confidence` taken from
-   `overall_confidence` when the model reported one.
+   collapse, `cochrane_assessment` attached. `confidence` is **not**
+   touched — see below.
 
 Nothing emits `assessment_tier = 4` today, so no stored value moves.
 
-**Cochrane supersedes `use_detailed_assessment`** when both flags are set: it
-is strictly the deeper assessment, and Tier 3 is skipped rather than run and
-discarded — mirroring how Tier 3 already supersedes Tier 2.
+**Cochrane supersedes `use_detailed_assessment`** when both flags are set and
+the Cochrane pass *succeeds*: it is strictly the deeper assessment, and Tier 3
+is skipped rather than run and discarded — mirroring how Tier 3 already
+supersedes Tier 2.
 
-**A failed Cochrane pass degrades to the Tier 1 result**, not to nothing, and
-the two are distinguishable: `assessment_tier` stays `1` and
-`cochrane_assessment` is `None`.
+**A failed Cochrane pass falls through to Tier 3, then Tier 2** — exactly as
+if `use_cochrane_assessment` had not been set — rather than returning the
+Tier 1 result outright. "Supersedes" means "runs instead of, when it works",
+not "suppresses even on failure": the first version of this design had a
+`None` from `self.cochrane.assess(...)` return the Tier 1 result immediately,
+which meant a routine transport failure silently cancelled the Tier 3
+assessment a caller had explicitly asked for, and an unconfident Tier 1
+result that would otherwise have gone to Tier 2 came back UNCLASSIFIED
+instead. With neither Tier 3 nor Tier 2 requested there is nothing to fall
+through to, so that one combination still ends at the Tier 1 result —
+`assessment_tier` staying `1` (or `0`, unclassified) and `cochrane_assessment`
+staying `None` is what tells a Tier 4 success apart from every other outcome.
+
+**`confidence` is deliberately not copied**, for the same shape of reason as
+`evidence_level` below. `CochraneStudyAssessment.overall_confidence` describes
+how sure the model was about the nine bias-risk domains; it says nothing
+about the `study_design` / `quality_tier` / `quality_score` that still come
+from Tier 1 after enrichment. Overwriting `confidence` with it — the first
+version of this design did — meant a caller applying the ordinary
+`if a.confidence >= t: trust a.study_design` pattern could discard a
+0.95-confident Tier 1 "Randomized Controlled Trial" classification because
+the model was merely 0.6 sure about blinding. The Cochrane confidence stays
+losslessly reachable at `result.cochrane_assessment.overall_confidence`.
 
 **`evidence_level` is deliberately not copied.** `CochraneStudyAssessment`'s is
 free-form model text ("Level 2 (moderate-high)"); `QualityAssessment`'s is
@@ -306,8 +354,12 @@ Each gets a named regression test that fails if the fix is reverted.
    insufficient information" — that is honest per-domain degradation of an
    otherwise good answer, not fabrication of the whole.
 
-6. **Dead imports.** `create_default_cochrane_risk_of_bias`,
-   `ROB_JUDGEMENT_LOW` and `ROB_JUDGEMENT_HIGH` are imported and never used.
+6. **The study label is derived by `first_author.split()[-1]`.** That reads
+   "van der Berg" as "Berg", and any `"Surname, Given"` string backwards.
+   `study_id` is the caller's own parameter instead (see "The call interface
+   is explicit keyword parameters" above); unset, it falls back to
+   `f"Study {document_id}"` and then to the title — never a parsed name.
+   Pinned by `test_a_document_id_is_the_first_fallback`.
 
 ## Deliberately not ported
 
@@ -322,6 +374,12 @@ Each gets a named regression test that fails if the fix is reverted.
 - **`format_assessment_markdown()` and its two siblings.** They are one-line
   passthroughs to `cochrane_formatter`, which callers already import directly.
   Re-exporting them from the agent implies the agent owns the rendering.
+- **Dead imports.** `create_default_cochrane_risk_of_bias`,
+  `ROB_JUDGEMENT_LOW` and `ROB_JUDGEMENT_HIGH` were imported and never used.
+  Cleaned up in the port rather than kept as a named defect above: unlike the
+  six defects, this one is not user-facing and has no regression test of its
+  own — there is nothing a test could observe breaking if it were
+  reintroduced.
 
 ## Testing
 
@@ -332,19 +390,25 @@ against a stub LLM client — no network, matching the rest of the suite.
 Coverage to hit:
 
 - The six defects above, each by name.
-- Text below the threshold is **not** condensed, and `condensed_from_chars` is
-  `None`; text above it is, and the field carries the original length.
+- Text below the threshold is **not** condensed, and `condensed_from_chars` /
+  `condensation_status` are both `None`; text above it is, and they carry the
+  original length and the harness's status respectively.
 - A condensation that fails or yields an empty digest returns `None` rather
-  than judging an empty string; a `PARTIAL`/`TRUNCATED` one still returns an
-  assessment, with the status in `assessment_notes`.
+  than judging an empty string; a digest that still exceeds the budget after
+  condensing (measured, not inferred from `TRUNCATED`) also returns `None`,
+  with a negative control proving that guard can actually fail; a `PARTIAL`
+  one still returns an assessment, with the status in both `assessment_notes`
+  and `condensation_status`.
 - `assess_batch()` skips the papers that returned `None` and keeps the rest,
   and its statistics count every attempt (defect 2).
 - The collapse: worst-wins in each direction, "unclear" beating "low", an
-  unrecognised `bias_type` raising, and every default domain mapping to a known
-  target.
-- The manager: the flag routes to Cochrane; Cochrane supersedes Tier 3 when
-  both are set; a failed pass leaves a Tier 1 result with
-  `cochrane_assessment=None`; `evidence_level` is not copied across.
+  unrecognised `bias_type` raising, every default domain mapping to a known
+  target, and a `bias_type` in another casing still collapsing correctly.
+- The manager: the flag routes to Cochrane; a successful Cochrane pass
+  supersedes Tier 3; a failed pass falls through to Tier 3, then Tier 2, and
+  ends at the Tier 1 result only when neither is enabled; `evidence_level`
+  and `confidence` are not copied across; `use_metadata_only` wins over the
+  Cochrane flag.
 - `assess()` returns `None` for blank title *and* text without calling the
   model.
 

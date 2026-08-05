@@ -15,13 +15,18 @@ All notable changes to bmlib are documented here. The format is based on
   study-characteristics table plus a judgement and supporting text for each of
   the nine Risk-of-Bias domains. Text larger than the configured context is
   first reduced to an evidence digest by `bmlib.context_processor`, so the
-  nine-domain judgement is always made once, over content that fits — and
-  `condensed_from_chars` says when that happened, because a judgement made
-  over a digest is weaker evidence than one made over the paper. Truncating
-  instead was rejected: allocation concealment and blinding live in Methods
-  and attrition in Results, so a head-of-string cut drops exactly the evidence
-  the domains rest on. Failure returns `None`, not an all-"Unclear risk"
-  stand-in that would be indistinguishable from a real assessment.
+  nine-domain judgement is always made once, over content that fits —
+  enforced by measuring the digest itself rather than trusting
+  `ProcessingStatus` to imply it, since a `TRUNCATED` run names the harness's
+  recursion ceiling, not the size of what it produced. `condensed_from_chars`
+  says when condensation happened and `condensation_status` says how it
+  finished (`"completed"`, `"partial"`, `"truncated"`), because a judgement
+  made over a digest — especially an incomplete one — is weaker evidence than
+  one made over the paper. Truncating instead was rejected: allocation
+  concealment and blinding live in Methods and attrition in Results, so a
+  head-of-string cut drops exactly the evidence the domains rest on. Failure
+  returns `None`, not an all-"Unclear risk" stand-in that would be
+  indistinguishable from a real assessment.
 - **`collapse_risk_of_bias()`** — the nine Cochrane domains reduced to the
   five `BiasRisk` domains, closing the `BiasRisk` ↔ `CochraneRiskOfBias` gap.
   The grouping is derived from each item's own `bias_type` rather than written
@@ -32,11 +37,21 @@ All notable changes to bmlib are documented here. The format is based on
 - **`QualityFilter(use_cochrane_assessment=True)`** and a `full_text=` keyword
   on `QualityManager.assess()`. The Cochrane pass *enriches* the free Tier 1
   metadata result rather than replacing it — the metadata tier supplies the
-  study design a Cochrane assessment does not produce, the Cochrane pass
-  supplies the bias detail the metadata tier cannot see — and attaches the
-  full assessment to the new `QualityAssessment.cochrane_assessment`. It
-  supersedes Tier 3 when both are requested, and a failed pass degrades to the
-  Tier 1 result rather than to nothing. Additive: `assessment_tier=4` is new,
+  study design, quality tier/score and confidence a Cochrane assessment does
+  not produce, the Cochrane pass supplies the bias detail the metadata tier
+  cannot see — and attaches the full assessment to the new
+  `QualityAssessment.cochrane_assessment`. Neither `evidence_level` nor
+  `confidence` is copied across: both are foreign vocabularies (Cochrane's
+  `evidence_level` is free-form model text against the metadata tier's Oxford
+  CEBM, and `overall_confidence` describes the model's certainty about
+  blinding and allocation concealment, not about the `study_design` the
+  metadata tier already supplied); both stay reachable on the attached
+  object. A successful pass supersedes Tier 3 when both are requested; a
+  *failed* pass falls through to Tier 3 and then Tier 2 exactly as if the
+  flag had not been set, rather than returning the Tier 1 result outright —
+  "supersedes" means "runs instead of, when it works", not "suppresses even
+  on failure". With neither Tier 3 nor Tier 2 requested a failed pass still
+  ends at the Tier 1 result, unchanged. Additive: `assessment_tier=4` is new,
   the flag is off by default, and no stored value moves.
 
   Six upstream defects were fixed in the port, each with a named regression

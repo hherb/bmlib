@@ -3,7 +3,7 @@
 _Last updated: 2026-08-05. **0.7.0 is released and on PyPI.** `[Unreleased]`
 carries the Cochrane assessment agent (Phase 2 row 9 of the bmlibrarian port,
 on `feature/cochrane-assessor`, not yet merged or released). No open issues,
-no open PRs yet — this branch's PR is the next one. 1433 tests passing + 50
+no open PRs yet — this branch's PR is the next one. 1446 tests passing + 50
 skipped, ruff clean. **The next piece of work is another Phase 2 port** — see
 "Next up"._
 
@@ -56,12 +56,12 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   pipeline" roadmap item — the rule-based extractors half is still open. Both
   names are exported from `bmlib.quality`. See `CHANGELOG.md` for the full
   entry and the six upstream defects fixed in the port.
-- **1433 tests passing + 50 skipped** (`uv run pytest tests/ -q`). 47 skips
+- **1446 tests passing + 50 skipped** (`uv run pytest tests/ -q`). 47 skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`, which run
   only when `BMLIB_TEST_POSTGRESQL_DSN` is set; 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install; 1 is a
   PostgreSQL-only schema test that does not apply to SQLite. With a DSN set
-  it is **1480 passing + 3 skipped**.
+  it is **1493 passing + 3 skipped**.
 - **Documentation was rewritten for 0.4.0 and kept current through 0.7.0.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` were promoted to
@@ -505,6 +505,20 @@ Each was investigated and closed as correct. Reopening them wastes a session.
   head-of-string cut drops exactly the evidence the domains rest on.
   Exercised end-to-end by `test_condensation_reduces_every_chunk_of_the_paper`
   and `test_the_digest_reaches_the_model_instead_of_the_paper`.
+- **`CochraneAssessor._condense()` checks `len(digest)` against
+  `condense_config.max_context_chars`, not `ProcessingStatus`.** The tempting
+  simplification is to treat a non-`FAILED` status as "the digest is usable" —
+  it reads as free, since `process()` already reports failure on the result.
+  It is wrong: `TRUNCATED` names the harness's own recursion ceiling, not the
+  size of what it produced, and `_merge_results()` returns whatever the last
+  level held once `max_recursion_depth` is reached, oversized or not. A
+  `TRUNCATED` run whose digest happens to fit is fine, and a `PARTIAL` run
+  whose digest does not fit is not — the status and the size are independent
+  facts. Measured, not assumed: a 200-character budget was observed producing
+  a 21,269-character digest, fed straight into the assessment prompt with no
+  check. Pinned by `test_a_digest_that_still_exceeds_the_budget_is_not_judged`,
+  with `test_the_guard_does_not_reject_a_digest_that_actually_fits` as the
+  negative control proving the guard can fail.
 
 ## Conventions and gotchas for the next session
 
