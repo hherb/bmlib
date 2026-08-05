@@ -17,14 +17,16 @@ All notable changes to bmlib are documented here. The format is based on
   `format_document()` number citations by order of first appearance,
   combine adjacent markers (`[1-3]`), and append a markdown reference list,
   with document metadata injected by the caller as
-  `Mapping[int, DocumentMetadata]` instead of fetched from a database. Four
+  `Mapping[int, DocumentMetadata]` instead of fetched from a database. Five
   upstream defects fixed, each with a named regression test: a
   semicolon-separated author string of inverted names was shattered into
   fragments (`"Smith, John; Doe, Jane"` became four authors); marker
   validation anchored only the start, so trailing junk validated;
   author–date styles (APA/Harvard/Chicago) received numeric `[N]` inline
-  citations against an unnumbered reference list; and APA/Chicago author
-  blocks doubled the terminal period (`"Williams, B.."`). The app-editor
+  citations against an unnumbered reference list; APA/Chicago author
+  blocks doubled the terminal period (`"Williams, B.."`); and a
+  whitespace-only author entry crashed every style's reference formatting
+  with an `IndexError` (blank entries are now dropped). The app-editor
   pieces (`document_store`, `WritingDocument`, autosave/editor constants)
   were deliberately not ported.
 - **PDF section segmenter** (`bmlib.fulltext.SectionSegmenter`) — Phase 2

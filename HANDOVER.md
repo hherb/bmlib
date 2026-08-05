@@ -5,7 +5,7 @@ carries three Phase 2 ports: the Cochrane assessment agent (row 9, PR #54,
 merged), the PDF section segmenter (row 8, PR #55, merged), and the
 citation/reference stack (row 4, on `feature/citations`, PR open). Two open
 issues (#56, #57), both minor `fulltext` refinements deferred from PR #55's
-review. 1598 tests passing + 49 skipped, ruff clean. **The next piece of
+review. 1602 tests passing + 49 skipped, ruff clean. **The next piece of
 work is the last Phase 2 port, row 11** — see "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
@@ -54,7 +54,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   `Mapping[int, DocumentMetadata]` (the upstream DB fetch severed). See
   `CHANGELOG.md` for the full entries and the upstream defects each port
   fixed.
-- **1598 tests passing + 49 skipped** (`uv run pytest tests/ -q`). 47 skips
+- **1602 tests passing + 49 skipped** (`uv run pytest tests/ -q`). 47 skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`, which run
   only when `BMLIB_TEST_POSTGRESQL_DSN` is set; 1 is a PostgreSQL-only schema
   test; 1 is `test_pymupdf_requires_dependency`, which runs only when
@@ -345,9 +345,20 @@ named source file; the entry here is the pointer, not the argument.
 - **Upstream's code is the output spec, not its docstrings** — where the two
   disagreed (APA renders `"(2023) Title"`, no period after the year, though
   upstream's docstring example shows one), the code's output was kept.
-  Only four confirmed defects were fixed, each with a named regression test
-  listed in the design doc
-  (`docs/superpowers/specs/2026-08-06-citations-port-design.md`).
+  Only five confirmed defects were fixed, each with a named regression test
+  — four listed in the design doc
+  (`docs/superpowers/specs/2026-08-06-citations-port-design.md`), plus a
+  fifth from the PR #58 review: a whitespace-only author entry crashed
+  every style's `format_reference` with `IndexError` (upstream ran
+  `parts[-1]` on an empty split); blank entries are now dropped via
+  `_named_authors()`.
+- **An empty title renders per style, not uniformly** — Vancouver/APA say
+  `Untitled`, Harvard `''`, Chicago `"."` — upstream-faithful, pinned by
+  `TestEmptyTitles` rather than unified.
+- **A lone inverted name as a bare `authors` string is ambiguous** —
+  `from_dict({"authors": "Smith, John"})` splits into two authors; only a
+  semicolon marks the string form as inverted. Documented in the manual;
+  callers wanting exactness pass a list.
 - **`format_reference_list()` begins with `"\n---"`, no leading blank
   line** — upstream-faithful; a document not ending in a blank line renders
   its last line as a setext heading, documented in the manual rather than

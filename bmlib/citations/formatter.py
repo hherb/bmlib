@@ -47,6 +47,17 @@ def _terminated(author_block: str) -> str:
     return author_block if author_block.endswith(".") else author_block + "."
 
 
+def _named_authors(authors: list[str]) -> list[str]:
+    """Drop whitespace-only entries — a blank string is no author.
+
+    Upstream's author helpers ran ``parts[-1]`` on an empty split, so one
+    blank entry crashed every style's ``format_reference`` with an
+    ``IndexError``; an all-blank list falls through to each style's
+    "Unknown author" branch.
+    """
+    return [author for author in authors if author.strip()]
+
+
 class BaseFormatter(ABC):
     """Formats references and inline citations for one citation style."""
 
@@ -121,6 +132,7 @@ class VancouverFormatter(BaseFormatter):
         return f"[{metadata.document_id}]"
 
     def _format_authors(self, authors: list[str]) -> str:
+        authors = _named_authors(authors)
         if not authors:
             return "Unknown author."
         formatted = []
@@ -181,6 +193,7 @@ class APAFormatter(BaseFormatter):
         return f"({surname}, {year})"
 
     def _format_authors(self, authors: list[str]) -> str:
+        authors = _named_authors(authors)
         if not authors:
             return "Unknown author."
         formatted = []
@@ -258,6 +271,7 @@ class HarvardFormatter(BaseFormatter):
         return f"({surname}, {year})"
 
     def _format_authors(self, authors: list[str]) -> str:
+        authors = _named_authors(authors)
         if not authors:
             return "Unknown author"
         formatted = []
@@ -330,6 +344,7 @@ class ChicagoFormatter(BaseFormatter):
         return f"({surname} {year})"
 
     def _format_authors(self, authors: list[str]) -> str:
+        authors = _named_authors(authors)
         if not authors:
             return "Unknown author."
         formatted = []

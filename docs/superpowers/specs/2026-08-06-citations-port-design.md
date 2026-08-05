@@ -187,6 +187,17 @@ DocumentMetadata]`.
    period only when the block does not already end with one.
    Tests: `test_apa_references_never_double_the_period`,
    `test_an_initialed_chicago_author_does_not_double_the_period`.
+5. **A blank author entry crashes every style's `format_reference`.**
+   (Found in the PR #58 review, after this design was written.) Upstream's
+   author helpers run `parts[-1]` on the empty split of a whitespace-only
+   name, raising `IndexError` — while `author_surname("  ")` in the same
+   package deliberately returns `"Unknown"`, so blank authors are reachable
+   input by the package's own contract, and the injected metadata mapping
+   replaces a DB fetch where empty author strings occur. Fix: each
+   `_format_authors` drops whitespace-only entries via `_named_authors()`;
+   an all-blank list falls through to the style's "Unknown author" branch.
+   Tests: `test_a_blank_author_entry_is_dropped_not_crashed`,
+   `test_an_all_blank_author_list_reads_unknown`.
 
 ## Error handling
 

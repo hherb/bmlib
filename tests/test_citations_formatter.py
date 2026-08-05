@@ -158,6 +158,38 @@ class TestChicago:
         assert formatter.format_inline_citation(one) == "(Smith 2023)"
 
 
+class TestBlankAuthorEntries:
+    def test_a_blank_author_entry_is_dropped_not_crashed(self):
+        # Regression: upstream's author helpers ran parts[-1] on an empty
+        # split, so a whitespace-only author entry crashed every style's
+        # format_reference with IndexError.
+        metadata = replace(METADATA, authors=["John Smith", " "])
+        assert VancouverFormatter().format_reference(metadata).startswith("Smith J.")
+        assert APAFormatter().format_reference(metadata).startswith("Smith, J. (2023)")
+        assert HarvardFormatter().format_reference(metadata).startswith("Smith, J. (2023)")
+        assert ChicagoFormatter().format_reference(metadata).startswith("Smith, John. 2023.")
+
+    def test_an_all_blank_author_list_reads_unknown(self):
+        metadata = replace(METADATA, authors=["", "  "])
+        assert VancouverFormatter().format_reference(metadata).startswith("Unknown author.")
+        assert APAFormatter().format_reference(metadata).startswith("Unknown author.")
+
+
+class TestEmptyTitles:
+    def test_vancouver_and_apa_render_untitled(self):
+        metadata = replace(METADATA, title="")
+        assert "Untitled" in VancouverFormatter().format_reference(metadata)
+        assert "Untitled" in APAFormatter().format_reference(metadata)
+
+    def test_harvard_and_chicago_quote_the_empty_title(self):
+        # Upstream-faithful: Harvard and Chicago quote the raw title, so an
+        # empty title renders as '' / "." — recorded in HANDOVER.md rather
+        # than unified with Vancouver/APA's "Untitled".
+        metadata = replace(METADATA, title="")
+        assert "(2023) ''," in HarvardFormatter().format_reference(metadata)
+        assert '"."' in ChicagoFormatter().format_reference(metadata)
+
+
 class TestCitationFormatterFacade:
     def test_the_default_style_is_vancouver(self):
         assert CitationFormatter().style is CitationStyle.VANCOUVER

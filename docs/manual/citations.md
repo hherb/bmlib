@@ -143,10 +143,11 @@ Check `find_missing_documents()` before publishing output — a placeholder in a
 
 ## Differences from bmlibrarian
 
-The port is output-faithful to upstream's code, with four defects fixed (each carries a named regression test) and the app-editor pieces left behind. Full reasoning: `docs/superpowers/specs/2026-08-06-citations-port-design.md`.
+The port is output-faithful to upstream's code, with five defects fixed (each carries a named regression test) and the app-editor pieces left behind. Full reasoning: `docs/superpowers/specs/2026-08-06-citations-port-design.md`.
 
-- `DocumentMetadata.from_dict()` no longer shatters a semicolon-separated author string of inverted names (`"Smith, John; Doe, Jane"` was four authors upstream).
+- `DocumentMetadata.from_dict()` no longer shatters a semicolon-separated author string of inverted names (`"Smith, John; Doe, Jane"` was four authors upstream). A *lone* inverted name as a bare string (`"Smith, John"`, no semicolon) is inherently ambiguous and still splits into two authors — pass `authors` as a list when exactness matters.
 - `validate_citation_marker()` validates the whole string; upstream anchored only the start, so trailing junk validated.
 - Author–date styles get author–date inline citations; upstream replaced markers with `[N]` in every style.
 - APA/Chicago author blocks no longer double the terminal period (`"Williams, B.."`).
+- A whitespace-only author entry no longer crashes reference formatting (upstream raised `IndexError` in every style); blank entries are dropped, and an all-blank list reads "Unknown author".
 - The stateless parser class became module functions; `Citation` compares by all fields (upstream: by `document_id` alone); `WritingDocument`, `DocumentVersion`, `document_store`, and the editor/autosave constants were not ported.

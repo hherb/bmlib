@@ -41,7 +41,7 @@ hold the full story.
 | **Templates (`bmlib.templates`)** | | |
 | ✅ Done | Jinja2 prompt engine | User directory override with default-directory fallback |
 | **Citations (`bmlib.citations`)** | | |
-| ✅ Done | Citation/reference stack | Phase 2 row 4 of the bmlibrarian port. `[@id:N:Label]` marker parsing as pure functions, Vancouver/APA/Harvard/Chicago formatters, and a reference builder that numbers by first appearance, combines adjacent markers, and takes caller-injected metadata (the upstream DB fetch severed). Four upstream defects fixed with named regression tests: shattered semicolon-separated inverted author names, start-anchored marker validation, numeric inline citations in author–date styles, and doubled terminal periods in APA/Chicago author blocks (unreleased) |
+| ✅ Done | Citation/reference stack | Phase 2 row 4 of the bmlibrarian port. `[@id:N:Label]` marker parsing as pure functions, Vancouver/APA/Harvard/Chicago formatters, and a reference builder that numbers by first appearance, combines adjacent markers, and takes caller-injected metadata (the upstream DB fetch severed). Five upstream defects fixed with named regression tests: shattered semicolon-separated inverted author names, start-anchored marker validation, numeric inline citations in author–date styles, doubled terminal periods in APA/Chicago author blocks, and an `IndexError` crash on blank author entries (unreleased) |
 | **Quality (`bmlib.quality`)** | | |
 | ✅ Done | 3-tier assessment pipeline | Free metadata filter → cheap LLM study classifier → deep assessment agent; CEBM evidence hierarchy |
 | ✅ Done | Cochrane risk-of-bias models | 9-domain RoB + study-characteristics table + Markdown/HTML renderers (0.4.0) |
