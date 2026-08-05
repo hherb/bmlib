@@ -26,6 +26,22 @@ from bmlib.citations.models import (
     FormattedReference,
     author_surname,
 )
+from bmlib.citations.parser import (
+    citation_positions,
+    citations_in_range,
+    count_citations,
+    count_unique_citations,
+    create_citation_marker,
+    extract_document_id_from_citation,
+    extract_label_from_citation,
+    find_adjacent_citations,
+    format_citation_group,
+    parse_citations,
+    replace_all_citations_with_numbers,
+    replace_citation_with_number,
+    unique_document_ids,
+    validate_citation_marker,
+)
 
 
 class TestCitationStyle:
@@ -132,3 +148,137 @@ class TestFormattedReference:
     def test_round_trip_without_metadata(self):
         reference = FormattedReference(number=2, document_id=9, formatted_text="2. [missing]")
         assert FormattedReference.from_dict(reference.to_dict()) == reference
+
+
+class TestParseCitations:
+    def test_markers_parse_in_order_with_positions(self):
+        text = "Alpha [@id:12:Smith2023] beta [@id:7:Jones2021] gamma."
+        citations = parse_citations(text)
+        assert [c.document_id for c in citations] == [12, 7]
+        assert citations[0].label == "Smith2023"
+        assert citations[0].position == text.index("[@id:12")
+        assert citations[0].text == "[@id:12:Smith2023]"
+
+    def test_text_without_markers_yields_nothing(self):
+        assert parse_citations("No citations here.") == []
+
+    def test_malformed_markers_are_ignored(self):
+        assert parse_citations("[@id:abc:NotANumber] [@id:5] [@id:5:]") == []
+
+
+class TestCountingAndPositions:
+    TEXT = "[@id:3:A] mid [@id:1:B] and [@id:3:A] end"
+
+    def test_unique_ids_keep_order_of_first_appearance(self):
+        assert unique_document_ids(self.TEXT) == [3, 1]
+
+    def test_every_marker_counts(self):
+        assert count_citations(self.TEXT) == 3
+
+    def test_unique_documents_count_once(self):
+        assert count_unique_citations(self.TEXT) == 2
+
+    def test_positions_group_by_document(self):
+        positions = citation_positions(self.TEXT)
+        assert set(positions) == {3, 1}
+        assert positions[3] == [0, self.TEXT.rindex("[@id:3")]
+
+    def test_range_lookup_is_half_open(self):
+        second_start = self.TEXT.index("[@id:1")
+        found = citations_in_range(self.TEXT, 0, second_start)
+        assert [c.document_id for c in found] == [3]
+
+
+class TestMarkersAndReplacement:
+    def test_create_citation_marker_round_trips(self):
+        marker = create_citation_marker(12345, "Smith2023")
+        assert marker == "[@id:12345:Smith2023]"
+        [citation] = parse_citations(marker)
+        assert (citation.document_id, citation.label) == (12345, "Smith2023")
+
+    def test_replace_one_document_everywhere(self):
+        text = "A [@id:5:X] B [@id:5:Y] C [@id:6:Z]"
+        assert replace_citation_with_number(text, 5, 1) == "A [1] B [1] C [@id:6:Z]"
+
+    def test_an_id_sharing_a_prefix_is_not_replaced(self):
+        assert replace_citation_with_number("[@id:55:X]", 5, 1) == "[@id:55:X]"
+
+    def test_replace_all_preserves_unmapped_markers(self):
+        text = "[@id:5:X] and [@id:6:Y]"
+        assert replace_all_citations_with_numbers(text, {5: 1}) == "[1] and [@id:6:Y]"
+
+
+class TestAdjacentCitations:
+    def test_comma_and_space_separated_markers_group(self):
+        text = "Claim [@id:1:A], [@id:2:B] [@id:3:C]. Later [@id:4:D]."
+        groups = find_adjacent_citations(text)
+        assert [[c.document_id for c in g] for g in groups] == [[1, 2, 3], [4]]
+
+    def test_prose_between_markers_breaks_the_group(self):
+        groups = find_adjacent_citations("[@id:1:A] and [@id:2:B]")
+        assert [[c.document_id for c in g] for g in groups] == [[1], [2]]
+
+    def test_no_markers_means_no_groups(self):
+        assert find_adjacent_citations("plain text") == []
+
+
+def _group(*document_ids: int) -> list[Citation]:
+    return [
+        Citation(document_id=i, label=f"L{i}", position=0, text=f"[@id:{i}:L{i}]")
+        for i in document_ids
+    ]
+
+
+class TestFormatCitationGroup:
+    def test_two_numbers_stay_listed(self):
+        assert format_citation_group(_group(1, 2), {1: 1, 2: 2}) == "[1,2]"
+
+    def test_three_sequential_numbers_combine_to_a_range(self):
+        assert format_citation_group(_group(1, 2, 3), {1: 1, 2: 2, 3: 3}) == "[1-3]"
+
+    def test_a_run_and_a_straggler(self):
+        assert format_citation_group(_group(1, 2, 3, 5), {1: 1, 2: 2, 3: 3, 5: 5}) == "[1-3,5]"
+
+    def test_a_two_run_is_listed_not_ranged(self):
+        assert format_citation_group(_group(1, 2, 4), {1: 1, 2: 2, 4: 4}) == "[1,2,4]"
+
+    def test_combining_can_be_disabled(self):
+        assert (
+            format_citation_group(_group(1, 2, 3), {1: 1, 2: 2, 3: 3}, combine_sequential=False)
+            == "[1,2,3]"
+        )
+
+    def test_unnumbered_citations_are_skipped(self):
+        assert format_citation_group(_group(1, 9), {1: 1}) == "[1]"
+
+    def test_nothing_numbered_is_empty(self):
+        assert format_citation_group(_group(9), {}) == ""
+
+
+class TestMarkerValidation:
+    def test_a_well_formed_marker_validates(self):
+        assert validate_citation_marker("[@id:5:Smith2023]") == (True, None)
+
+    def test_a_marker_with_trailing_text_is_not_valid(self):
+        # Regression: upstream used .match(), so trailing junk validated.
+        ok, reason = validate_citation_marker("[@id:5:Smith2023] trailing")
+        assert not ok
+        assert reason is not None
+
+    def test_a_zero_document_id_is_rejected(self):
+        ok, reason = validate_citation_marker("[@id:0:X]")
+        assert not ok
+        assert "positive" in reason
+
+    def test_an_overlong_label_is_rejected(self):
+        ok, _reason = validate_citation_marker(f"[@id:5:{'x' * 101}]")
+        assert not ok
+        assert validate_citation_marker(f"[@id:5:{'x' * 100}]") == (True, None)
+
+    def test_extract_helpers_read_a_marker(self):
+        assert extract_label_from_citation("[@id:5:Smith2023]") == "Smith2023"
+        assert extract_document_id_from_citation("[@id:5:Smith2023]") == 5
+
+    def test_extract_helpers_reject_junk_and_trailing_text(self):
+        assert extract_label_from_citation("not a marker") is None
+        assert extract_document_id_from_citation("[@id:5:X] tail") is None
