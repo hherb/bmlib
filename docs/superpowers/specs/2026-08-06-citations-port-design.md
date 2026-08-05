@@ -179,6 +179,14 @@ DocumentMetadata]`.
    `format_inline_citation(metadata)` — e.g. `(Smith et al., 2023)`; a
    marker with no metadata stays verbatim.
    Test: `test_author_date_styles_get_author_date_inline_citations`.
+4. **APA/Chicago author blocks double the terminal period.** Upstream
+   appends `"."` to an author block that already ends with an initial's
+   period, so every APA reference with initials reads `"…Williams, B.."`,
+   and a Chicago first author like `"Smith, John A."` doubles the same way.
+   Found while deriving the golden test strings. Fix: append the terminal
+   period only when the block does not already end with one.
+   Tests: `test_apa_references_never_double_the_period`,
+   `test_an_initialed_chicago_author_does_not_double_the_period`.
 
 ## Error handling
 
