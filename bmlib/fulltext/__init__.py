@@ -36,6 +36,7 @@ from bmlib.fulltext.models import (
 )
 from bmlib.fulltext.pdf_converter import (
     ConversionResult,
+    LayoutExtractor,
     PDFConverter,
     PyMuPDFConverter,
     get_converter,
@@ -61,6 +62,7 @@ __all__ = [
     "JATSParser",
     "JATSReferenceInfo",
     "JATSTableInfo",
+    "LayoutExtractor",
     "PDFConverter",
     "PyMuPDFConverter",
     "Section",
