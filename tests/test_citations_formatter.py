@@ -143,9 +143,7 @@ class TestChicago:
 
     def test_only_the_first_author_is_inverted(self):
         two = replace(METADATA, authors=["Smith, John", "Johnson, Anna"])
-        assert ChicagoFormatter().format_reference(two).startswith(
-            "Smith, John, and Anna Johnson."
-        )
+        assert ChicagoFormatter().format_reference(two).startswith("Smith, John, and Anna Johnson.")
 
     def test_an_initialed_chicago_author_does_not_double_the_period(self):
         one = replace(METADATA, authors=["Smith, John A."])

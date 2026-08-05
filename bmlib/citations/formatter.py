@@ -60,9 +60,7 @@ class BaseFormatter(ABC):
         """
 
     @abstractmethod
-    def format_inline_citation(
-        self, metadata: DocumentMetadata, number: int | None = None
-    ) -> str:
+    def format_inline_citation(self, metadata: DocumentMetadata, number: int | None = None) -> str:
         """Format an inline citation for running text."""
 
     def _format_title(self, title: str) -> str:
@@ -117,9 +115,7 @@ class VancouverFormatter(BaseFormatter):
             parts.append(f"PMID:{metadata.pmid}")
         return " ".join(parts)
 
-    def format_inline_citation(
-        self, metadata: DocumentMetadata, number: int | None = None
-    ) -> str:
+    def format_inline_citation(self, metadata: DocumentMetadata, number: int | None = None) -> str:
         if number is not None:
             return f"[{number}]"
         return f"[{metadata.document_id}]"
@@ -175,9 +171,7 @@ class APAFormatter(BaseFormatter):
             parts.append(f"https://doi.org/{metadata.doi}")
         return " ".join(parts)
 
-    def format_inline_citation(
-        self, metadata: DocumentMetadata, number: int | None = None
-    ) -> str:
+    def format_inline_citation(self, metadata: DocumentMetadata, number: int | None = None) -> str:
         surname = metadata.get_first_author_surname()
         year = metadata.year or "n.d."
         if len(metadata.authors) > 2:
@@ -254,9 +248,7 @@ class HarvardFormatter(BaseFormatter):
             parts.append(f"doi: {metadata.doi}.")
         return " ".join(parts)
 
-    def format_inline_citation(
-        self, metadata: DocumentMetadata, number: int | None = None
-    ) -> str:
+    def format_inline_citation(self, metadata: DocumentMetadata, number: int | None = None) -> str:
         surname = metadata.get_first_author_surname()
         year = metadata.year or "n.d."
         if len(metadata.authors) > 2:
@@ -328,9 +320,7 @@ class ChicagoFormatter(BaseFormatter):
             parts.append(f"https://doi.org/{metadata.doi}.")
         return " ".join(parts)
 
-    def format_inline_citation(
-        self, metadata: DocumentMetadata, number: int | None = None
-    ) -> str:
+    def format_inline_citation(self, metadata: DocumentMetadata, number: int | None = None) -> str:
         surname = metadata.get_first_author_surname()
         year = metadata.year or "n.d."
         if len(metadata.authors) > 2:
@@ -409,9 +399,7 @@ class CitationFormatter:
         """Format a full bibliographic reference in the active style."""
         return self._formatter.format_reference(metadata, number)
 
-    def format_inline_citation(
-        self, metadata: DocumentMetadata, number: int | None = None
-    ) -> str:
+    def format_inline_citation(self, metadata: DocumentMetadata, number: int | None = None) -> str:
         """Format an inline citation in the active style."""
         return self._formatter.format_inline_citation(metadata, number)
 

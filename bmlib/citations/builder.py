@@ -127,9 +127,7 @@ def format_document(
     return formatted_text
 
 
-def find_missing_documents(
-    text: str, metadata: Mapping[int, DocumentMetadata]
-) -> list[Citation]:
+def find_missing_documents(text: str, metadata: Mapping[int, DocumentMetadata]) -> list[Citation]:
     """Citations in *text* whose document id has no entry in *metadata*.
 
     One :class:`Citation` per marker, so a document cited twice is reported

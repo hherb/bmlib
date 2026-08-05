@@ -129,3 +129,21 @@ class TestFindMissingDocuments:
 
     def test_nothing_missing_is_empty(self):
         assert find_missing_documents("[@id:1:A]", _metadata_map()) == []
+
+
+class TestPackageExports:
+    def test_the_public_names_import_from_the_package(self):
+        from bmlib.citations import (  # noqa: F401
+            CITATION_PATTERN,
+            DEFAULT_CITATION_STYLE,
+            Citation,
+            CitationFormatter,
+            CitationStyle,
+            DocumentMetadata,
+            FormattedReference,
+            build_references,
+            create_citation_marker,
+            find_missing_documents,
+            format_document,
+            parse_citations,
+        )
