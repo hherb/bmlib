@@ -42,8 +42,9 @@ from __future__ import annotations
 
 import re
 import statistics
+from typing import Any
 
-from bmlib.fulltext.models import SectionType, TextBlock
+from bmlib.fulltext.models import Section, SectionType, SegmentedDocument, TextBlock
 
 # Confidence for sections that contain rather than classify: front matter,
 # and the whole-document fallback when no heading was detected. If the first
@@ -79,6 +80,26 @@ def _median_font_size(blocks: list[TextBlock]) -> float:
     if not sizes:
         return _DEFAULT_FONT_SIZE
     return float(statistics.median(sizes))
+
+
+def _join_blocks(blocks: list[TextBlock]) -> str:
+    """Join lines, inserting a blank line at each paragraph-sized gap.
+
+    A vertical gap larger than 1.5x the line's height is a paragraph
+    boundary — the leading within a paragraph is smaller. A column or page
+    boundary sends the gap negative, so no break is inserted there: a
+    paragraph continuing across the boundary stays one paragraph, and a PDF
+    gives no signal that would distinguish it from one that ends at it.
+    """
+    lines: list[str] = []
+    previous_bottom: float | None = None
+    for block in blocks:
+        gap_threshold = block.height * _PARAGRAPH_GAP_RATIO
+        if previous_bottom is not None and block.y - previous_bottom > gap_threshold:
+            lines.append("")
+        lines.append(block.text)
+        previous_bottom = block.y + block.height
+    return "\n".join(lines)
 
 
 class SectionSegmenter:
@@ -252,3 +273,123 @@ class SectionSegmenter:
         if not any(c.isalpha() for c in block.text):
             return False
         return True
+
+    def segment_document(
+        self, blocks: list[TextBlock], metadata: dict[str, Any] | None = None
+    ) -> SegmentedDocument:
+        """Segment *blocks* into a :class:`SegmentedDocument`.
+
+        Args:
+            blocks: Text lines in reading order, as produced by
+                :meth:`PyMuPDFConverter.extract_blocks
+                <bmlib.fulltext.pdf_converter.PyMuPDFConverter.extract_blocks>`.
+            metadata: Optional document metadata; only ``title`` and
+                ``file_path`` are read, so a caller who has not run
+                ``convert()`` can pass nothing and loses only the metadata
+                title. Stored on the result as-is.
+
+        Returns:
+            The segmented document. With no blocks, a document with no
+            sections; with blocks but no detected headings, one ``UNKNOWN``
+            section titled "Full Text" at 0.5 confidence.
+        """
+        metadata = metadata or {}
+        median_size = _median_font_size(blocks)
+        markers = self._identify_section_markers(blocks, median_size)
+        return SegmentedDocument(
+            file_path=str(metadata.get("file_path", "")),
+            title=self._extract_title(blocks, metadata, median_size),
+            sections=self._extract_sections(blocks, markers),
+            metadata=metadata,
+        )
+
+    def _identify_section_markers(
+        self, blocks: list[TextBlock], median_font_size: float
+    ) -> list[tuple[int, SectionType, str, float]]:
+        """Find heading blocks, as ``(index, type, title, confidence)`` tuples."""
+        markers: list[tuple[int, SectionType, str, float]] = []
+        for i, block in enumerate(blocks):
+            if not self._is_potential_header(block, median_font_size):
+                continue
+            section_type, confidence = self._match_section_type(block.text)
+            if section_type is not SectionType.UNKNOWN:
+                markers.append((i, section_type, block.text, confidence))
+        return markers
+
+    def _extract_sections(
+        self,
+        blocks: list[TextBlock],
+        markers: list[tuple[int, SectionType, str, float]],
+    ) -> list[Section]:
+        """Slice *blocks* into sections at the marker boundaries."""
+        if not blocks:
+            return []
+
+        if not markers:
+            return [
+                Section(
+                    section_type=SectionType.UNKNOWN,
+                    title="Full Text",
+                    content=_join_blocks(blocks),
+                    page_start=blocks[0].page_num,
+                    page_end=blocks[-1].page_num,
+                    confidence=FALLBACK_CONFIDENCE,
+                )
+            ]
+
+        sections: list[Section] = []
+
+        # Everything before the first marker is the front matter — title,
+        # authors, an abstract whose heading was not detected. Upstream
+        # dropped these blocks silently.
+        front_blocks = blocks[: markers[0][0]]
+        if front_blocks:
+            sections.append(
+                Section(
+                    section_type=SectionType.FRONT_MATTER,
+                    title="Front Matter",
+                    content=_join_blocks(front_blocks),
+                    page_start=front_blocks[0].page_num,
+                    page_end=front_blocks[-1].page_num,
+                    confidence=FALLBACK_CONFIDENCE,
+                )
+            )
+
+        for i, (start_idx, section_type, title, confidence) in enumerate(markers):
+            end_idx = markers[i + 1][0] if i + 1 < len(markers) else len(blocks)
+            section_blocks = blocks[start_idx + 1 : end_idx]
+            # A heading with no body is still a heading. Dropping it — as
+            # upstream did — says the paper has no such section when it has
+            # an (empty) one, and loses the heading text with it.
+            heading = blocks[start_idx]
+            sections.append(
+                Section(
+                    section_type=section_type,
+                    title=title,
+                    content=_join_blocks(section_blocks),
+                    page_start=section_blocks[0].page_num if section_blocks else heading.page_num,
+                    page_end=section_blocks[-1].page_num if section_blocks else heading.page_num,
+                    confidence=confidence,
+                )
+            )
+        return sections
+
+    def _extract_title(
+        self, blocks: list[TextBlock], metadata: dict[str, Any], median_font_size: float
+    ) -> str | None:
+        """Document title from metadata, else the largest first-page line.
+
+        The fallback is believed only when it exceeds the body median by
+        half again — otherwise an ordinary line would become the title of
+        every PDF whose metadata is blank.
+        """
+        title = metadata.get("title")
+        if title:
+            return str(title)
+        first_page = [b for b in blocks if b.page_num == 0]
+        if not first_page:
+            return None
+        candidate = max(first_page, key=lambda b: b.font_size)
+        if candidate.font_size > median_font_size * _TITLE_SIZE_RATIO:
+            return candidate.text
+        return None

@@ -191,3 +191,134 @@ class TestMedianFontSize:
     def test_no_usable_sizes_returns_the_default(self):
         assert _median_font_size([]) == 12.0
         assert _median_font_size([block("a", size=0.0)]) == 12.0
+
+
+def paper_blocks() -> list[TextBlock]:
+    """A miniature paper: front matter, four sections, two pages.
+
+    Sizes matter: the median is 11.5 (five body lines at 10, four headings
+    at 13, one title at 20), so 13-point headings are below 1.2x the median
+    and need their bold; the 20-point title clears every threshold but
+    matches no pattern.
+    """
+    return [
+        block("Aspirin and Mortality: A Trial", size=TITLE_SIZE),
+        block("J Smith, R Jones"),
+        block("Abstract", size=HEADING_SIZE, bold=True),
+        block("We tested aspirin against placebo."),
+        block("Methods", size=HEADING_SIZE, bold=True),
+        block("Participants were randomised by coin toss."),
+        block("Results", size=HEADING_SIZE, bold=True),
+        block("Mortality fell.", page=1),
+        block("References", size=HEADING_SIZE, bold=True, page=1),
+        block("1. Prior trial.", page=1),
+    ]
+
+
+class TestSectionExtraction:
+    def setup_method(self):
+        self.segmenter = SectionSegmenter()
+
+    def test_a_paper_segments_into_its_sections(self):
+        doc = self.segmenter.segment_document(paper_blocks())
+        assert [s.section_type for s in doc.sections] == [
+            SectionType.FRONT_MATTER,
+            SectionType.ABSTRACT,
+            SectionType.METHODS,
+            SectionType.RESULTS,
+            SectionType.REFERENCES,
+        ]
+        methods = doc.get_section(SectionType.METHODS)
+        assert methods is not None
+        assert methods.content == "Participants were randomised by coin toss."
+        assert methods.confidence == 1.0
+
+    def test_front_matter_is_kept(self):
+        # Upstream dropped everything before the first detected heading —
+        # title, authors, an abstract whose heading was missed — silently.
+        doc = self.segmenter.segment_document(paper_blocks())
+        front = doc.sections[0]
+        assert front.section_type is SectionType.FRONT_MATTER
+        assert front.content == "Aspirin and Mortality: A Trial\nJ Smith, R Jones"
+        assert front.confidence == 0.5
+
+    def test_a_heading_with_no_body_is_still_reported(self):
+        # Upstream skipped a marker whose slice was empty, discarding the
+        # heading with it — two adjacent headings lost the first entirely.
+        blocks = [
+            block("Methods", size=HEADING_SIZE, bold=True),
+            block("Results", size=HEADING_SIZE, bold=True),
+            block("Mortality fell."),
+        ]
+        doc = self.segmenter.segment_document(blocks)
+        methods = doc.get_section(SectionType.METHODS)
+        assert methods is not None
+        assert methods.content == ""
+        assert methods.page_start == 0 and methods.page_end == 0
+
+    def test_no_headings_returns_one_unknown_section(self):
+        doc = self.segmenter.segment_document([block("Just prose."), block("More prose.")])
+        assert [s.section_type for s in doc.sections] == [SectionType.UNKNOWN]
+        fallback = doc.sections[0]
+        assert fallback.title == "Full Text"
+        assert fallback.confidence == 0.5
+        assert "Just prose." in fallback.content
+        assert "More prose." in fallback.content
+
+    def test_no_blocks_returns_no_sections(self):
+        doc = self.segmenter.segment_document([])
+        assert doc.sections == []
+        assert doc.title is None
+
+    def test_a_vertical_gap_becomes_a_paragraph_break(self):
+        blocks = [
+            block("Methods", size=HEADING_SIZE, bold=True, y=100.0),
+            block("First paragraph.", y=120.0, height=12.0),
+            # Gap: 160 - (120 + 12) = 28 > 12 * 1.5 — a paragraph boundary.
+            block("Second paragraph.", y=160.0, height=12.0),
+        ]
+        doc = self.segmenter.segment_document(blocks)
+        assert doc.sections[-1].content == "First paragraph.\n\nSecond paragraph."
+
+    def test_a_page_boundary_is_not_a_paragraph_break(self):
+        # The next page starts higher on the canvas, so the gap is negative;
+        # a paragraph continuing across the page break stays one paragraph.
+        blocks = [
+            block("Methods", size=HEADING_SIZE, bold=True, y=100.0),
+            block("wrapped line one", y=700.0, height=12.0),
+            block("continues at the top of the next page", page=1, y=72.0, height=12.0),
+        ]
+        doc = self.segmenter.segment_document(blocks)
+        assert doc.sections[-1].content == (
+            "wrapped line one\ncontinues at the top of the next page"
+        )
+
+    def test_metadata_is_optional(self):
+        doc = self.segmenter.segment_document([block("Just prose.")])
+        assert doc.file_path == ""
+        assert doc.metadata == {}
+
+
+class TestTitleExtraction:
+    def setup_method(self):
+        self.segmenter = SectionSegmenter()
+
+    def test_the_metadata_title_wins(self):
+        doc = self.segmenter.segment_document(paper_blocks(), {"title": "From Metadata"})
+        assert doc.title == "From Metadata"
+
+    def test_the_largest_first_page_line_is_the_fallback_title(self):
+        doc = self.segmenter.segment_document(paper_blocks())
+        assert doc.title == "Aspirin and Mortality: A Trial"
+
+    def test_a_title_must_clear_the_median_by_half_again(self):
+        doc = self.segmenter.segment_document([block("Modest line"), block("Body text.")])
+        assert doc.title is None
+
+    def test_no_first_page_blocks_means_no_title(self):
+        doc = self.segmenter.segment_document([block("Late text", page=2)])
+        assert doc.title is None
+
+    def test_file_path_comes_from_metadata(self):
+        doc = self.segmenter.segment_document(paper_blocks(), {"file_path": "paper.pdf"})
+        assert doc.file_path == "paper.pdf"

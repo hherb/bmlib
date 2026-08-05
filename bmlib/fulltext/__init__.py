@@ -42,6 +42,7 @@ from bmlib.fulltext.pdf_converter import (
     list_converters,
     render_html,
 )
+from bmlib.fulltext.segmenter import SectionSegmenter
 from bmlib.fulltext.service import FullTextError, FullTextService
 
 __all__ = [
@@ -63,6 +64,7 @@ __all__ = [
     "PDFConverter",
     "PyMuPDFConverter",
     "Section",
+    "SectionSegmenter",
     "SectionType",
     "SegmentedDocument",
     "TextBlock",
