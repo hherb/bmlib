@@ -8,6 +8,34 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **PDF section segmenter** (`bmlib.fulltext.SectionSegmenter`) — Phase 2
+  row 8 of the bmlibrarian port. `segment_document()` turns a PDF's text
+  lines into a `SegmentedDocument` of typed, titled `Section`s, located by
+  heading detection (font size against the document's median, bold as the
+  rescue for body-sized headings) and an anchored pattern table covering
+  every producible `SectionType`. Three content-losing upstream defects are
+  fixed, each with a named regression test: everything before the first
+  detected heading was silently dropped (now a `FRONT_MATTER` section at
+  0.5 confidence); a heading with no body vanished along with its heading
+  text (now reported with empty content); and the partial-match fallback
+  compared regex *source* against the heading as literal text, which killed
+  every multi-word pattern and classified a heading "A" as ABSTRACT (now an
+  unanchored, word-bounded search of the same compiled pattern, at 0.7).
+  Enum members no pattern could produce are gone (`MATERIALS_AND_METHODS`,
+  `CONCLUSIONS` — duplicates of the members that own their patterns) or
+  given patterns (`APPENDIX`); `TITLE` stays, reserved for callers.
+- **`PyMuPDFConverter.extract_blocks()`** and the `LayoutExtractor`
+  protocol (`bmlib.fulltext`) — one `TextBlock` per text *line*, not per
+  span. PyMuPDF starts a new span at every font change, so upstream's
+  span-level extraction shattered a mixed-font heading ("2." + "Materials
+  and Methods") into fragments no anchored pattern could match, and split
+  sentences at every italic word. Font attributes come from the line's
+  dominant span, so a superscript marker cannot restyle a line. Declared as
+  a protocol rather than on the `PDFConverter` ABC so a backend that cannot
+  report line geometry is not forced to fake it. Raises on a corrupt file
+  rather than returning a partial list — unlike `convert()`, whose partial
+  text is useful, a partial block list is indistinguishable from a sparse
+  PDF.
 - **Cochrane assessment agent** (`bmlib.quality.CochraneAssessor`) — Phase 2
   row 9 of the bmlibrarian port, and the producer `cochrane_models.py` has
   been waiting for since 0.4.0. `assess()` turns a title and text into a

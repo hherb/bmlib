@@ -20,6 +20,7 @@ pip install bmlib[pdf]              # PDF → text conversion (pymupdf)
 | `cache` | `FullTextCache`, `sanitize_identifier()` | Yes — the service constructs one by default |
 | `models` | `FullTextResult`, `FullTextSourceEntry`, all `JATS*` dataclasses | Yes |
 | `pdf_converter` | `ConversionResult`, `PDFConverter`, `PyMuPDFConverter`, `get_converter()`, `list_converters()`, `render_html()` | Yes — the service extracts a retrieved PDF's text |
+| `segmenter` | `SectionSegmenter`, `SegmentedDocument`, `Section`, `TextBlock`, `SectionType` | Standalone — segments the text lines from `PyMuPDFConverter.extract_blocks()` |
 
 > **A retrieved PDF is extracted into `FullTextResult.html`.**
 > When the `bmlib[pdf]` extra is installed, the retrieval chain runs a cached PDF through `render_html()` and puts the result in [`FullTextResult.html`](#fulltextresult) with `content_kind="extracted"`. Two conditions apply: extraction happens only *after* the PDF is cached, so `fetch_fulltext()` must be given an `identifier`; and without the extra the result simply carries no HTML. Opt out with `FullTextService(convert_pdfs=False)`.
@@ -809,6 +810,82 @@ try:
 except ImportError:
     converter = None   # pip install bmlib[pdf] to enable
 ```
+
+---
+
+## Section Segmentation
+
+Split a PDF's text into the standard sections of a biomedical paper —
+abstract, introduction, methods, results, discussion, funding, conflicts,
+data availability, and the rest of `SectionType`. Extraction needs
+`bmlib[pdf]`; the segmenter itself is pure and works on any
+`list[TextBlock]`.
+
+```python
+from pathlib import Path
+from bmlib.fulltext import SectionSegmenter, SectionType, get_converter
+
+converter = get_converter("pymupdf")
+blocks = converter.extract_blocks(Path("paper.pdf"))       # list[TextBlock]
+document = SectionSegmenter().segment_document(blocks)     # SegmentedDocument
+
+methods = document.get_section(SectionType.METHODS)
+if methods is not None:
+    print(methods.title, methods.confidence)
+    print(methods.content[:200])
+
+print(document.to_markdown())
+```
+
+### How sections are found
+
+A line is a candidate heading when its font size clears the document's
+median by the configured factor (`font_size_threshold`, default 1.2) — or
+fails that but is bold — and it is short (≤100 characters) and contains at
+least one letter. Candidate headings are classified against an anchored,
+case-insensitive pattern table (`"3.  Results"` matches: leading numbering
+and trailing punctuation are stripped first). A heading no anchored pattern
+claims gets a second, word-bounded partial pass at 0.7 confidence
+(`"Supplementary materials online"` → `SUPPLEMENTARY`).
+
+Sections are the text between consecutive headings. Three container rules:
+
+| Situation | Result |
+|---|---|
+| Text before the first heading | A `FRONT_MATTER` section, confidence 0.5 |
+| No headings detected at all | One `UNKNOWN` section titled "Full Text", confidence 0.5 |
+| A heading directly followed by another | Reported with `content == ""`, not dropped |
+
+### `TextBlock` granularity
+
+`extract_blocks()` emits one `TextBlock` per text **line**. PyMuPDF starts
+a new span at every font change, so span-level blocks would shatter a
+mixed-font heading into fragments no anchored pattern can match. Font
+attributes (`font_size`, `font_name`, `is_bold`, `is_italic`) are those of
+the line's *dominant* span — the one contributing the most non-whitespace
+characters — so a superscript reference marker cannot restyle its line.
+
+`extract_blocks()` **raises** (`FileNotFoundError`, `ValueError`) rather
+than returning a partial result: unlike `convert()`, whose partial text is
+useful, a partial block list is indistinguishable from a sparse PDF. A
+page with no extractable text simply contributes no blocks.
+
+Only `PyMuPDFConverter` implements extraction; test for the capability
+with `isinstance(converter, LayoutExtractor)`.
+
+### `SegmentedDocument`
+
+| Field / method | Notes |
+|---|---|
+| `title` | Metadata title if present, else the largest first-page line when it clears the median font size by 1.5× |
+| `authors` | **Reserved** — never populated today |
+| `sections` | Flat list, document order; `Section.subsections` is likewise reserved |
+| `metadata` | Whatever was passed to `segment_document()`, stored as-is |
+| `get_section(t)` | First section of that type, or `None` — an empty-content section means the heading exists with no body |
+| `to_markdown()` | Title, authors, then each section under `##` headings |
+
+`segment_document()`'s `metadata` argument is optional; only `title` and
+`file_path` are read from it.
 
 ---
 
