@@ -29,6 +29,10 @@ from bmlib.fulltext.models import (
     JATSFigureInfo,
     JATSReferenceInfo,
     JATSTableInfo,
+    Section,
+    SectionType,
+    SegmentedDocument,
+    TextBlock,
 )
 from bmlib.fulltext.pdf_converter import (
     ConversionResult,
@@ -58,6 +62,10 @@ __all__ = [
     "JATSTableInfo",
     "PDFConverter",
     "PyMuPDFConverter",
+    "Section",
+    "SectionType",
+    "SegmentedDocument",
+    "TextBlock",
     "get_converter",
     "list_converters",
     "render_html",
