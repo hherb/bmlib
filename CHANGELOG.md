@@ -24,7 +24,11 @@ All notable changes to bmlib are documented here. The format is based on
   Enum members no pattern could produce were not ported from upstream
   (`MATERIALS_AND_METHODS`, `CONCLUSIONS` — duplicates of the members that
   own their patterns), or were given patterns instead (`APPENDIX`); `TITLE`
-  stays, reserved for callers.
+  stays, reserved for callers. "Financial disclosure(s)" classifies as
+  `CONFLICTS` in both numbers — the singular once sat in `FUNDING`'s list
+  too, so the two numbers landed in different sections, decided by dict
+  order. `TextBlock`, `Section` and `SegmentedDocument` carry
+  `to_dict()`/`from_dict()` for JSON-safe persistence of a segmentation.
 - **`PyMuPDFConverter.extract_blocks()`** and the `LayoutExtractor`
   protocol (`bmlib.fulltext`) — one `TextBlock` per text *line*, not per
   span. PyMuPDF starts a new span at every font change, so upstream's

@@ -364,7 +364,11 @@ class PyMuPDFConverter(PDFConverter):
             pdf_path: Path to the PDF file.
 
         Returns:
-            One block per text line, pages in order, lines in reading order.
+            One block per text line, pages in order, lines in the PDF's
+            content-stream order — usually reading order, but a
+            multi-column layout whose stream interleaves columns will
+            interleave here too, and section boundaries drawn from these
+            blocks inherit that ordering.
 
         Raises:
             FileNotFoundError: If the file does not exist.

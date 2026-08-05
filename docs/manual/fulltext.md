@@ -877,6 +877,12 @@ than returning a partial result: unlike `convert()`, whose partial text is
 useful, a partial block list is indistinguishable from a sparse PDF. A
 page with no extractable text simply contributes no blocks.
 
+Blocks arrive in the PDF's *content-stream* order. For born-digital
+papers that is almost always reading order — column by column — but a
+PDF whose stream interleaves its columns will interleave here too, and
+the section boundaries the segmenter draws from these blocks inherit
+that ordering.
+
 Only `PyMuPDFConverter` implements extraction; test for the capability
 with `isinstance(converter, LayoutExtractor)`.
 
@@ -890,6 +896,7 @@ with `isinstance(converter, LayoutExtractor)`.
 | `metadata` | Whatever was passed to `segment_document()`, stored as-is |
 | `get_section(t)` | First section of that type, or `None` — an empty-content section means the heading exists with no body |
 | `to_markdown()` | Title, authors, then each section preceded by a `---`/bold-uppercase-title banner before its `##` heading |
+| `to_dict()` / `from_dict()` | JSON-safe round trip (`SectionType` serialises as its value); on `TextBlock` and `Section` too. `metadata` rides along as-is, so it is JSON-safe only if what the caller passed in was |
 
 `segment_document()`'s `metadata` argument is optional; only `title` and
 `file_path` are read from it.

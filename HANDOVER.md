@@ -1,10 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-05. **0.7.0 is released and on PyPI.** `[Unreleased]`
+_Last updated: 2026-08-06. **0.7.0 is released and on PyPI.** `[Unreleased]`
 carries two Phase 2 ports: the Cochrane assessment agent (row 9, PR #54,
 **merged to main**) and the PDF section segmenter (row 8, on
-`feature/pdf-section-segmenter`, open as PR #55 and not yet merged). No open
-issues. 1508 tests passing + 49 skipped, ruff clean. **The next piece of work
+`feature/pdf-section-segmenter`, open as PR #55 and not yet merged). Two open
+issues (#56, #57), both minor `fulltext` refinements deferred from PR #55's
+review. 1513 tests passing + 49 skipped, ruff clean. **The next piece of work
 is another Phase 2 port** — see "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
@@ -67,15 +68,26 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-**None.** Every closed design stays in `docs/superpowers/specs/` as the
-record of what was rejected and why.
+Two, both minor `fulltext` refinements deferred from PR #55's review rather
+than folded into it: **#56** (`_extract_title()` trusts junk PDF metadata
+titles — "Microsoft Word - manuscript.docx" wins over the large-font
+first-page line) and **#57** (`convert()` on a password-protected PDF
+returns `success=True` with empty text; `is_complete` already says `False`,
+and `extract_blocks()` already raises for the same file). Every closed
+design stays in `docs/superpowers/specs/` as the record of what was rejected
+and why.
 
 ### Open PR
 
 **PR #55** (`feature/pdf-section-segmenter`) — the PDF section segmenter,
-review-clean (whole-branch review ran; its two Important code findings are
-fixed on the branch) and CI-green at handover. Merge with `--merge`, not
-squash.
+review-clean and CI-green. Three review rounds are fixed on the branch: the
+whole-branch review's two Important findings, and a post-hoc PR review whose
+one confirmed defect ("Financial disclosure" singular went to FUNDING while
+the plural went to CONFLICTS, decided by dict order — both now CONFLICTS)
+came with three minors: partial patterns wrapped in `(?:...)` so the `\b`
+anchors survive a future top-level alternation, a content-stream
+reading-order caveat on `extract_blocks()`, and `to_dict()`/`from_dict()` on
+the segmentation models. Merge with `--merge`, not squash.
 
 ### Worth doing, not yet an issue
 
@@ -312,6 +324,12 @@ named source file; the entry here is the pointer, not the argument.
   Pinned by `test_a_page_boundary_is_not_a_paragraph_break`. The
   `height == 0` degenerate-bbox case is likewise acknowledged in a comment
   in `_join_blocks` and left — guessing a floor would be an assumed size.
+- **CONFLICTS owns the disclosure family, in both numbers** — FUNDING once
+  listed the singular `financial disclosure` while CONFLICTS listed both, so
+  the two numbers of the same heading landed in different sections, decided
+  by dict iteration order. Pinned by
+  `test_financial_disclosure_classifies_the_same_in_both_numbers`; a comment
+  in FUNDING's pattern list wards off re-adding it.
 - **The 0.7 partial-match pass can fire on a bold figure caption** ("Fig. 3
   Study results" → RESULTS at 0.7) — a knowing spec-level choice, kept
   upstream-faithful; the manual tells callers to check `Section.confidence`.

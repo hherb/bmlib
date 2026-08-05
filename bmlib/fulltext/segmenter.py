@@ -177,10 +177,14 @@ class SectionSegmenter:
             r"^appendices$",
         ],
         SectionType.FUNDING: [
+            # "Financial disclosure(s)" is deliberately absent: CONFLICTS
+            # owns the disclosure family, in both numbers. Listing the
+            # singular here once sent "Financial disclosure" to FUNDING and
+            # "Financial disclosures" to CONFLICTS, decided only by dict
+            # iteration order.
             r"^funding$",
             r"^funding\s+sources?$",
             r"^financial\s+support$",
-            r"^financial\s+disclosure$",
             r"^grant\s+support$",
             r"^funding\s+and\s+acknowledgments?$",
             r"^funding\s+and\s+acknowledgements?$",
@@ -238,9 +242,12 @@ class SectionSegmenter:
         # word-bounded. Upstream compared the regex *source* against the
         # heading as literal text, which made every multi-word pattern
         # unmatchable (r"\s+" never occurs in prose) and let the reverse
-        # containment classify a heading "A" as ABSTRACT.
+        # containment classify a heading "A" as ABSTRACT. The non-capturing
+        # group keeps the \b anchors binding the whole pattern, not the
+        # first and last branch, should a pattern ever gain a top-level
+        # alternation.
         self._partial_patterns = {
-            section_type: [re.compile(rf"\b{p.strip('^$')}\b", re.IGNORECASE) for p in patterns]
+            section_type: [re.compile(rf"\b(?:{p.strip('^$')})\b", re.IGNORECASE) for p in patterns]
             for section_type, patterns in self.SECTION_PATTERNS.items()
         }
 

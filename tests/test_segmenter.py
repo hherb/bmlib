@@ -103,6 +103,56 @@ class TestSectionModels:
         assert len(str(section)) < 200
 
 
+class TestSerialization:
+    def test_a_text_block_round_trips(self):
+        original = block("Methods", page=2, size=13.0, bold=True, y=88.0, height=14.0)
+        assert TextBlock.from_dict(original.to_dict()) == original
+
+    def test_a_section_round_trips_with_enum_and_subsections(self):
+        sub = Section(SectionType.UNKNOWN, "Participants", "Adults.", 1, 1)
+        original = Section(
+            SectionType.METHODS, "Methods", "Overview.", 1, 2, confidence=0.7, subsections=[sub]
+        )
+        restored = Section.from_dict(original.to_dict())
+        assert restored == original
+        assert restored.section_type is SectionType.METHODS
+        assert restored.subsections[0].section_type is SectionType.UNKNOWN
+
+    def test_a_segmented_document_survives_json(self):
+        # The round trip goes through actual JSON, so an enum or dataclass
+        # leaking into to_dict() unserialised fails here, not downstream.
+        import json
+
+        original = SegmentedDocument(
+            file_path="paper.pdf",
+            title="A Trial",
+            authors=["J Smith"],
+            sections=[Section(SectionType.METHODS, "Methods", "We measured.", 0, 0)],
+            metadata={"title": "A Trial"},
+        )
+        restored = SegmentedDocument.from_dict(json.loads(json.dumps(original.to_dict())))
+        assert restored == original
+
+    def test_from_dict_supplies_the_dataclass_defaults(self):
+        section = Section.from_dict(
+            {
+                "section_type": "methods",
+                "title": "Methods",
+                "content": "",
+                "page_start": 0,
+                "page_end": 0,
+            }
+        )
+        assert section.confidence == 1.0
+        assert section.subsections == []
+        document = SegmentedDocument.from_dict({})
+        assert document.file_path == ""
+        assert document.title is None
+        assert document.authors == []
+        assert document.sections == []
+        assert document.metadata == {}
+
+
 class TestPatternMatching:
     def setup_method(self):
         self.segmenter = SectionSegmenter()
@@ -160,6 +210,21 @@ class TestPatternMatching:
     def test_authors_singular_possessive_contributions_matches(self):
         assert self.segmenter._match_section_type("Author's contributions") == (
             SectionType.AUTHOR_CONTRIBUTIONS,
+            1.0,
+        )
+
+    def test_financial_disclosure_classifies_the_same_in_both_numbers(self):
+        # FUNDING used to list the singular form while CONFLICTS listed
+        # both, so "Financial disclosure" went to FUNDING and "Financial
+        # disclosures" to CONFLICTS — the same heading in two sections,
+        # decided by dict iteration order. CONFLICTS owns the disclosure
+        # family, in both numbers.
+        assert self.segmenter._match_section_type("Financial disclosure") == (
+            SectionType.CONFLICTS,
+            1.0,
+        )
+        assert self.segmenter._match_section_type("Financial disclosures") == (
+            SectionType.CONFLICTS,
             1.0,
         )
 

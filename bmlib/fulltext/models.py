@@ -296,6 +296,37 @@ class TextBlock:
             f"TextBlock(page={self.page_num}, font={self.font_size:.1f}, text={self.text[:50]!r})"
         )
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable dict of all fields."""
+        return {
+            "text": self.text,
+            "page_num": self.page_num,
+            "font_size": self.font_size,
+            "font_name": self.font_name,
+            "is_bold": self.is_bold,
+            "is_italic": self.is_italic,
+            "x": self.x,
+            "y": self.y,
+            "width": self.width,
+            "height": self.height,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TextBlock:
+        """Rebuild a block from :meth:`to_dict` output. All fields required."""
+        return cls(
+            text=data["text"],
+            page_num=data["page_num"],
+            font_size=data["font_size"],
+            font_name=data["font_name"],
+            is_bold=data["is_bold"],
+            is_italic=data["is_italic"],
+            x=data["x"],
+            y=data["y"],
+            width=data["width"],
+            height=data["height"],
+        )
+
 
 @dataclass
 class Section:
@@ -330,6 +361,35 @@ class Section:
         return (
             f"Section({self.section_type.value}, pages={self.page_start}-{self.page_end}, "
             f"{len(self.content)} chars)"
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable dict; the enum becomes its value."""
+        return {
+            "section_type": self.section_type.value,
+            "title": self.title,
+            "content": self.content,
+            "page_start": self.page_start,
+            "page_end": self.page_end,
+            "confidence": self.confidence,
+            "subsections": [s.to_dict() for s in self.subsections],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Section:
+        """Rebuild a section from :meth:`to_dict` output.
+
+        ``confidence`` and ``subsections`` default as on the dataclass;
+        everything else is required.
+        """
+        return cls(
+            section_type=SectionType(data["section_type"]),
+            title=data["title"],
+            content=data["content"],
+            page_start=data["page_start"],
+            page_end=data["page_end"],
+            confidence=data.get("confidence", 1.0),
+            subsections=[cls.from_dict(s) for s in data.get("subsections", [])],
         )
 
 
@@ -373,3 +433,28 @@ class SegmentedDocument:
     def __str__(self) -> str:
         """Return a short summary that does not dump the sections."""
         return f"SegmentedDocument({self.file_path or '<no path>'}, {len(self.sections)} sections)"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable dict.
+
+        ``metadata`` is included as-is — it is JSON-safe only if what the
+        caller passed to ``segment_document()`` was.
+        """
+        return {
+            "file_path": self.file_path,
+            "title": self.title,
+            "authors": list(self.authors),
+            "sections": [s.to_dict() for s in self.sections],
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SegmentedDocument:
+        """Rebuild a document from :meth:`to_dict` output. Every field defaults."""
+        return cls(
+            file_path=data.get("file_path", ""),
+            title=data.get("title"),
+            authors=list(data.get("authors", [])),
+            sections=[Section.from_dict(s) for s in data.get("sections", [])],
+            metadata=data.get("metadata", {}),
+        )
