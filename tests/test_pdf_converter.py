@@ -23,13 +23,18 @@ from pathlib import Path
 
 import pytest
 
+from bmlib.fulltext.models import SectionType
 from bmlib.fulltext.pdf_converter import (
     ConversionResult,
+    LayoutExtractor,
     PDFConverter,
+    PyMuPDFConverter,
+    _line_to_block,
     get_converter,
     list_converters,
     render_html,
 )
+from bmlib.fulltext.segmenter import SectionSegmenter
 
 _HAS_FITZ = importlib.util.find_spec("fitz") is not None
 
@@ -340,3 +345,192 @@ class TestRenderHTML:
         """Every line stripped leaves no prose to render, not a stray tag."""
         pages = ["Watermark\nRunning head"] * 3
         assert render_html(self._result(pages)) == ""
+
+
+class TestLayoutExtractorProtocol:
+    def test_pymupdf_converter_implements_the_protocol(self):
+        assert issubclass(PyMuPDFConverter, LayoutExtractor)
+
+    def test_a_converter_without_extract_blocks_does_not(self):
+        # Negative control: shows the check actually discriminates rather
+        # than trivially passing for any PDFConverter subclass.
+        assert not issubclass(_StubConverter, LayoutExtractor)
+
+
+class TestLineToBlock:
+    """_line_to_block over the dict shape PyMuPDF's get_text("dict") emits."""
+
+    @staticmethod
+    def _line(spans, bbox=(72.0, 100.0, 300.0, 112.0)):
+        return {"spans": spans, "bbox": bbox}
+
+    @staticmethod
+    def _span(text, size=10.0, font="Helvetica", flags=0):
+        return {"text": text, "size": size, "font": font, "flags": flags}
+
+    def test_a_heading_split_across_spans_is_one_block(self):
+        # PyMuPDF starts a new span at every font change; upstream flattened
+        # to spans, so "2." and "Materials and Methods" were separate blocks
+        # and the anchored heading pattern could never match.
+        line = self._line(
+            [
+                self._span("2. ", size=12.0),
+                self._span("Materials and Methods", size=12.0, font="Helvetica-Bold", flags=16),
+            ]
+        )
+        result = _line_to_block(line, page_num=0)
+        assert result is not None
+        assert result.text == "2. Materials and Methods"
+
+    def test_font_attributes_come_from_the_dominant_span(self):
+        line = self._line(
+            [
+                self._span("2. ", size=12.0),
+                self._span("Materials and Methods", size=14.0, font="Helvetica-Bold", flags=16),
+            ]
+        )
+        result = _line_to_block(line, page_num=0)
+        assert result.is_bold is True
+        assert result.font_name == "Helvetica-Bold"
+        assert result.font_size == 14.0
+
+    def test_a_superscript_marker_does_not_restyle_the_line(self):
+        line = self._line(
+            [
+                self._span("Aspirin reduced mortality", size=10.0),
+                self._span("1", size=6.0, flags=1),  # superscript reference marker
+            ]
+        )
+        result = _line_to_block(line, page_num=0)
+        assert result.font_size == 10.0
+        assert result.is_bold is False
+
+    def test_span_text_is_concatenated_not_double_spaced(self):
+        # Span text carries its own trailing spaces; joining with " " would
+        # double them, and the whitespace collapse must repair any that
+        # PyMuPDF already carries.
+        line = self._line([self._span("word "), self._span("next")])
+        assert _line_to_block(line, page_num=0).text == "word next"
+
+    def test_an_empty_line_is_none(self):
+        assert _line_to_block(self._line([]), page_num=0) is None
+        assert _line_to_block(self._line([self._span("   ")]), page_num=0) is None
+
+    def test_geometry_comes_from_the_line_bbox(self):
+        result = _line_to_block(
+            self._line([self._span("text")], bbox=(72.0, 100.0, 300.0, 112.0)), page_num=3
+        )
+        assert (result.x, result.y) == (72.0, 100.0)
+        assert (result.width, result.height) == (228.0, 12.0)
+        assert result.page_num == 3
+
+
+@pytest.mark.skipif(not _HAS_FITZ, reason="PyMuPDF not installed")
+class TestExtractBlocks:
+    @staticmethod
+    def _write_pdf(path, pages):
+        """Write a PDF; *pages* is a list of (x, y, text, fontname, fontsize) lists."""
+        import fitz
+
+        doc = fitz.open()
+        for page_items in pages:
+            page = doc.new_page()
+            for x, y, text, fontname, fontsize in page_items:
+                page.insert_text((x, y), text, fontname=fontname, fontsize=fontsize)
+        doc.save(str(path))
+        doc.close()
+
+    def test_each_line_is_one_block_on_its_page(self, tmp_path):
+        pdf = tmp_path / "two_pages.pdf"
+        self._write_pdf(
+            pdf,
+            [
+                [
+                    (72, 100, "Methods", "hebo", 14),
+                    (72, 130, "We randomised patients.", "helv", 10),
+                ],
+                [(72, 100, "Results", "hebo", 14)],
+            ],
+        )
+        blocks = get_converter("pymupdf").extract_blocks(pdf)
+        texts = [(b.text, b.page_num) for b in blocks]
+        assert ("Methods", 0) in texts
+        assert ("We randomised patients.", 0) in texts
+        assert ("Results", 1) in texts
+
+    def test_a_real_pdf_heading_in_mixed_fonts_is_one_line(self, tmp_path):
+        import fitz
+
+        pdf = tmp_path / "mixed.pdf"
+        doc = fitz.open()
+        page = doc.new_page()
+        # Same baseline, two fonts — PyMuPDF reports two spans in one line.
+        page.insert_text((72, 100), "2. ", fontname="helv", fontsize=14)
+        page.insert_text((92, 100), "Materials and Methods", fontname="hebo", fontsize=14)
+        doc.save(str(pdf))
+        doc.close()
+
+        blocks = get_converter("pymupdf").extract_blocks(pdf)
+        assert any(b.text == "2. Materials and Methods" for b in blocks)
+
+    def test_bold_is_read_from_the_font_flags(self, tmp_path):
+        pdf = tmp_path / "bold.pdf"
+        self._write_pdf(pdf, [[(72, 100, "Methods", "hebo", 14), (72, 130, "Body.", "helv", 10)]])
+        blocks = get_converter("pymupdf").extract_blocks(pdf)
+        by_text = {b.text: b for b in blocks}
+        assert by_text["Methods"].is_bold is True
+        assert by_text["Body."].is_bold is False
+
+    def test_an_empty_page_contributes_no_blocks(self, tmp_path):
+        pdf = tmp_path / "empty.pdf"
+        self._write_pdf(pdf, [[]])
+        assert get_converter("pymupdf").extract_blocks(pdf) == []
+
+    def test_a_missing_file_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            get_converter("pymupdf").extract_blocks(tmp_path / "nope.pdf")
+
+    def test_a_non_pdf_suffix_raises(self, tmp_path):
+        f = tmp_path / "notes.txt"
+        f.write_text("hello")
+        with pytest.raises(ValueError, match="not a PDF"):
+            get_converter("pymupdf").extract_blocks(f)
+
+    def test_a_corrupt_pdf_raises_rather_than_degrading(self, tmp_path):
+        # Unlike convert(), which returns a failed result because partial
+        # text is useful, a partial block list is indistinguishable from a
+        # sparse PDF — so this path raises.
+        pdf = tmp_path / "corrupt.pdf"
+        pdf.write_bytes(b"%PDF-1.4 this is not a valid pdf body")
+        with pytest.raises(ValueError, match="Failed to extract text blocks"):
+            get_converter("pymupdf").extract_blocks(pdf)
+
+    def test_a_pdf_paper_segments_end_to_end(self, tmp_path):
+        pdf = tmp_path / "paper.pdf"
+        self._write_pdf(
+            pdf,
+            [
+                [
+                    (72, 90, "Aspirin and Mortality: A Trial", "helv", 20),
+                    (72, 120, "J Smith, R Jones", "helv", 10),
+                    (72, 160, "Abstract", "hebo", 14),
+                    (72, 180, "We tested aspirin against placebo.", "helv", 10),
+                    (72, 220, "Methods", "hebo", 14),
+                    (72, 240, "Participants were randomised by coin toss.", "helv", 10),
+                ],
+                [
+                    (72, 90, "Results", "hebo", 14),
+                    (72, 110, "Mortality fell.", "helv", 10),
+                ],
+            ],
+        )
+        blocks = get_converter("pymupdf").extract_blocks(pdf)
+        doc = SectionSegmenter().segment_document(blocks, {"file_path": str(pdf)})
+
+        assert doc.sections[0].section_type is SectionType.FRONT_MATTER
+        assert doc.title == "Aspirin and Mortality: A Trial"
+        methods = doc.get_section(SectionType.METHODS)
+        assert methods is not None
+        assert "randomised" in methods.content
+        assert doc.get_section(SectionType.RESULTS) is not None
+        assert doc.file_path == str(pdf)

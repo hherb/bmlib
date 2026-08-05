@@ -41,7 +41,9 @@ from collections import Counter
 from dataclasses import dataclass, field
 from html import escape as html_escape
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
+
+from bmlib.fulltext.models import TextBlock
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +71,10 @@ PARAGRAPH_BREAK_RATIO = 0.85
 # that headings and stubs do not drag the estimate down. Below this many lines
 # there is no distribution worth a percentile, so the longest line is used.
 PARAGRAPH_WIDTH_MIN_LINES = 10
+
+# PyMuPDF span-flag bits (get_text("dict") -> span["flags"]).
+_SPAN_BOLD_FLAG = 1 << 4
+_SPAN_ITALIC_FLAG = 1 << 1
 
 
 @dataclass
@@ -161,6 +167,63 @@ class PDFConverter(ABC):
             raise ValueError(f"Path is not a file: {pdf_path}")
         if pdf_path.suffix.lower() != ".pdf":
             raise ValueError(f"File is not a PDF: {pdf_path}")
+
+
+@runtime_checkable
+class LayoutExtractor(Protocol):
+    """A converter that can report a PDF's text lines with their layout.
+
+    A protocol rather than an abstract method on :class:`PDFConverter`: a
+    backend that cannot report line geometry — an OCR or LLM-based
+    converter — is not forced to fake it, and third-party converters
+    registered before this protocol existed keep working. Ask
+    ``isinstance(converter, LayoutExtractor)``.
+    """
+
+    def extract_blocks(self, pdf_path: Path) -> list[TextBlock]:
+        """Extract one :class:`TextBlock` per text line, in reading order."""
+        ...
+
+
+def _span_text_weight(span: dict[str, Any]) -> int:
+    """Non-whitespace characters a span contributes to its line."""
+    return sum(not c.isspace() for c in span.get("text", ""))
+
+
+def _line_to_block(raw_line: dict[str, Any], page_num: int) -> TextBlock | None:
+    """Collapse one PyMuPDF line dict into a :class:`TextBlock`.
+
+    One block per *line*, not per span: PyMuPDF starts a new span at every
+    font change, so a heading numbered in a different weight ("2." +
+    "Materials and Methods") or a sentence holding an italic gene name
+    would otherwise shatter into fragments no anchored heading pattern can
+    match. Span text is concatenated, not joined with spaces — spans carry
+    their own trailing spaces, and joining would double them. Font
+    attributes come from the dominant span (most non-whitespace characters,
+    ties to the first), so a superscript reference marker or an inline
+    formula cannot restyle the line.
+
+    Returns None for a line with no non-whitespace text.
+    """
+    spans = raw_line.get("spans", [])
+    text = _normalize("".join(span.get("text", "") for span in spans))
+    if not text:
+        return None
+    dominant = max(spans, key=_span_text_weight)
+    flags = int(dominant.get("flags", 0))
+    x0, y0, x1, y1 = raw_line.get("bbox", (0.0, 0.0, 0.0, 0.0))
+    return TextBlock(
+        text=text,
+        page_num=page_num,
+        font_size=float(dominant.get("size", 12.0)),
+        font_name=str(dominant.get("font", "")),
+        is_bold=bool(flags & _SPAN_BOLD_FLAG),
+        is_italic=bool(flags & _SPAN_ITALIC_FLAG),
+        x=float(x0),
+        y=float(y0),
+        width=float(x1 - x0),
+        height=float(y1 - y0),
+    )
 
 
 class PyMuPDFConverter(PDFConverter):
@@ -287,6 +350,47 @@ class PyMuPDFConverter(PDFConverter):
                 converter_version=self.version,
                 error_message=error_msg,
             )
+
+    def extract_blocks(self, pdf_path: Path) -> list[TextBlock]:
+        """Extract one :class:`TextBlock` per text line, in reading order.
+
+        Unlike :meth:`convert`, which returns a failed result because
+        partial text is still useful, this raises: a partial block list is
+        indistinguishable from a sparse PDF, so degradation would be
+        silent. A page with no extractable text (an image-only scan)
+        contributes no blocks — that is not an error.
+
+        Args:
+            pdf_path: Path to the PDF file.
+
+        Returns:
+            One block per text line, pages in order, lines in the PDF's
+            content-stream order — usually reading order, but a
+            multi-column layout whose stream interleaves columns will
+            interleave here too, and section boundaries drawn from these
+            blocks inherit that ordering.
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
+            ValueError: If the path is not a PDF file, or the file cannot
+                be parsed (corrupt or encrypted).
+        """
+        self.validate_pdf_path(pdf_path)
+        blocks: list[TextBlock] = []
+        try:
+            with self._fitz.open(str(pdf_path)) as doc:
+                for page_num in range(len(doc)):
+                    page_dict = doc[page_num].get_text("dict")
+                    for raw_block in page_dict.get("blocks", []):
+                        if raw_block.get("type") != 0:  # not a text block (image)
+                            continue
+                        for raw_line in raw_block.get("lines", []):
+                            text_block = _line_to_block(raw_line, page_num)
+                            if text_block is not None:
+                                blocks.append(text_block)
+        except Exception as e:  # noqa: BLE001 — any parse failure becomes ValueError
+            raise ValueError(f"Failed to extract text blocks from {pdf_path}: {e}") from e
+        return blocks
 
 
 _WS_RE = re.compile(r"\s+")

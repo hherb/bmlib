@@ -14,14 +14,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Data models for full-text retrieval and JATS XML parsing.
+"""Data models for full-text retrieval, JATS XML parsing, and PDF section
+segmentation.
 
-Mirrors the Swift BioMedLit library's JATSModels and FullTextResult types.
+The full-text and JATS types mirror the Swift BioMedLit library's
+JATSModels and FullTextResult types. The PDF section-segmentation types —
+``SectionType``, ``TextBlock``, ``Section``, ``SegmentedDocument`` — are new
+to this port and mirror nothing in Swift.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Literal
 
 # What a :attr:`FullTextResult.html` payload actually is. See the field's
@@ -228,3 +233,228 @@ class FullTextResult:
     # Callers that must not analyse an abstract as if it were an article
     # should branch on this rather than on ``html`` being set.
     content_kind: ContentKind = "none"
+
+
+class SectionType(Enum):
+    """Standard sections of a biomedical publication.
+
+    ``TITLE`` is reserved: the segmenter carries the document title on
+    :attr:`SegmentedDocument.title` and never emits a ``TITLE`` section, but
+    the member stays as the name a caller building one by hand would reach
+    for, and :meth:`Section.to_markdown` renders it at heading level one.
+    ``FRONT_MATTER`` and ``UNKNOWN`` are containers, not classifications —
+    what precedes the first detected heading, and text no heading claimed.
+    Every other member has at least one heading pattern in
+    :data:`bmlib.fulltext.segmenter.SectionSegmenter.SECTION_PATTERNS`.
+    """
+
+    TITLE = "title"
+    ABSTRACT = "abstract"
+    INTRODUCTION = "introduction"
+    BACKGROUND = "background"
+    METHODS = "methods"
+    RESULTS = "results"
+    DISCUSSION = "discussion"
+    CONCLUSION = "conclusion"
+    ACKNOWLEDGMENTS = "acknowledgments"
+    REFERENCES = "references"
+    SUPPLEMENTARY = "supplementary"
+    APPENDIX = "appendix"
+    FUNDING = "funding"
+    CONFLICTS = "conflicts"
+    DATA_AVAILABILITY = "data_availability"
+    AUTHOR_CONTRIBUTIONS = "author_contributions"
+    FRONT_MATTER = "front_matter"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class TextBlock:
+    """One text line of a PDF with its layout and font attributes.
+
+    A line, not a span: PyMuPDF starts a new span at every font change, so a
+    heading numbered in a different weight or a sentence holding an italic
+    gene name would shatter into fragments no anchored heading pattern can
+    match. Font attributes are those of the line's dominant span — see
+    ``_line_to_block()`` in :mod:`bmlib.fulltext.pdf_converter`.
+    """
+
+    text: str
+    page_num: int  # 0-indexed
+    font_size: float
+    font_name: str
+    is_bold: bool
+    is_italic: bool
+    x: float
+    y: float
+    width: float
+    height: float
+
+    def __str__(self) -> str:
+        """Return a short summary that does not dump the text."""
+        return (
+            f"TextBlock(page={self.page_num}, font={self.font_size:.1f}, text={self.text[:50]!r})"
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable dict of all fields."""
+        return {
+            "text": self.text,
+            "page_num": self.page_num,
+            "font_size": self.font_size,
+            "font_name": self.font_name,
+            "is_bold": self.is_bold,
+            "is_italic": self.is_italic,
+            "x": self.x,
+            "y": self.y,
+            "width": self.width,
+            "height": self.height,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TextBlock:
+        """Rebuild a block from :meth:`to_dict` output. All fields required."""
+        return cls(
+            text=data["text"],
+            page_num=data["page_num"],
+            font_size=data["font_size"],
+            font_name=data["font_name"],
+            is_bold=data["is_bold"],
+            is_italic=data["is_italic"],
+            x=data["x"],
+            y=data["y"],
+            width=data["width"],
+            height=data["height"],
+        )
+
+
+@dataclass
+class Section:
+    """A typed, titled span of a segmented document.
+
+    ``page_start`` / ``page_end`` are 0-indexed and cover the section's
+    content blocks; for a heading with no body they are the heading's page.
+    ``confidence`` is 1.0 for an exact heading match, 0.7 for a partial one,
+    and 0.5 for the two container sections (front matter, the no-headings
+    fallback). ``subsections`` is carried for callers but never populated by
+    the segmenter, which emits a flat list.
+    """
+
+    section_type: SectionType
+    title: str
+    content: str
+    page_start: int
+    page_end: int
+    confidence: float = 1.0
+    subsections: list[Section] = field(default_factory=list)
+
+    def to_markdown(self) -> str:
+        """Render as markdown — ``#`` for a TITLE section, ``##`` otherwise."""
+        level = "#" if self.section_type is SectionType.TITLE else "##"
+        md = f"{level} {self.title}\n\n{self.content}\n"
+        for subsection in self.subsections:
+            md += f"\n### {subsection.title}\n\n{subsection.content}\n"
+        return md
+
+    def __str__(self) -> str:
+        """Return a short summary that does not dump the content."""
+        return (
+            f"Section({self.section_type.value}, pages={self.page_start}-{self.page_end}, "
+            f"{len(self.content)} chars)"
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable dict; the enum becomes its value."""
+        return {
+            "section_type": self.section_type.value,
+            "title": self.title,
+            "content": self.content,
+            "page_start": self.page_start,
+            "page_end": self.page_end,
+            "confidence": self.confidence,
+            "subsections": [s.to_dict() for s in self.subsections],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Section:
+        """Rebuild a section from :meth:`to_dict` output.
+
+        ``confidence`` and ``subsections`` default as on the dataclass;
+        everything else is required.
+        """
+        return cls(
+            section_type=SectionType(data["section_type"]),
+            title=data["title"],
+            content=data["content"],
+            page_start=data["page_start"],
+            page_end=data["page_end"],
+            confidence=data.get("confidence", 1.0),
+            subsections=[cls.from_dict(s) for s in data.get("subsections", [])],
+        )
+
+
+@dataclass
+class SegmentedDocument:
+    """A publication segmented into typed sections.
+
+    ``authors`` is reserved: nothing populates it today — author extraction
+    from PDF front matter is its own heuristic problem — but a parser that
+    can fill it should not need a schema change. ``metadata`` is whatever
+    the caller passed to ``segment_document()``, stored as-is.
+    """
+
+    file_path: str = ""
+    title: str | None = None
+    authors: list[str] = field(default_factory=list)
+    sections: list[Section] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def get_section(self, section_type: SectionType) -> Section | None:
+        """Return the first section of *section_type*, or None."""
+        for section in self.sections:
+            if section.section_type is section_type:
+                return section
+        return None
+
+    def to_markdown(self) -> str:
+        """Render the whole document as markdown."""
+        md_parts: list[str] = []
+        if self.title:
+            md_parts.append(f"# {self.title}\n")
+        if self.authors:
+            md_parts.append(f"**Authors:** {', '.join(self.authors)}\n")
+        for section in self.sections:
+            md_parts.append("\n---\n")
+            md_parts.append(f"**{section.title.upper()}**")
+            md_parts.append("\n---\n\n")
+            md_parts.append(section.to_markdown())
+        return "\n".join(md_parts)
+
+    def __str__(self) -> str:
+        """Return a short summary that does not dump the sections."""
+        return f"SegmentedDocument({self.file_path or '<no path>'}, {len(self.sections)} sections)"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable dict.
+
+        ``metadata`` is included as-is — it is JSON-safe only if what the
+        caller passed to ``segment_document()`` was.
+        """
+        return {
+            "file_path": self.file_path,
+            "title": self.title,
+            "authors": list(self.authors),
+            "sections": [s.to_dict() for s in self.sections],
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SegmentedDocument:
+        """Rebuild a document from :meth:`to_dict` output. Every field defaults."""
+        return cls(
+            file_path=data.get("file_path", ""),
+            title=data.get("title"),
+            authors=list(data.get("authors", [])),
+            sections=[Section.from_dict(s) for s in data.get("sections", [])],
+            metadata=data.get("metadata", {}),
+        )

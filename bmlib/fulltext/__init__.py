@@ -29,15 +29,21 @@ from bmlib.fulltext.models import (
     JATSFigureInfo,
     JATSReferenceInfo,
     JATSTableInfo,
+    Section,
+    SectionType,
+    SegmentedDocument,
+    TextBlock,
 )
 from bmlib.fulltext.pdf_converter import (
     ConversionResult,
+    LayoutExtractor,
     PDFConverter,
     PyMuPDFConverter,
     get_converter,
     list_converters,
     render_html,
 )
+from bmlib.fulltext.segmenter import SectionSegmenter
 from bmlib.fulltext.service import FullTextError, FullTextService
 
 __all__ = [
@@ -56,8 +62,14 @@ __all__ = [
     "JATSParser",
     "JATSReferenceInfo",
     "JATSTableInfo",
+    "LayoutExtractor",
     "PDFConverter",
     "PyMuPDFConverter",
+    "Section",
+    "SectionSegmenter",
+    "SectionType",
+    "SegmentedDocument",
+    "TextBlock",
     "get_converter",
     "list_converters",
     "render_html",
