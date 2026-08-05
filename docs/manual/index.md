@@ -39,7 +39,7 @@ bmlib is organised into nine modules, each with a focused responsibility:
 | [`bmlib.templates`](templates.md) | Jinja2-based prompt template engine with directory fallback | [templates.md](templates.md) |
 | [`bmlib.agents`](agents.md) | Base class for LLM-driven tasks | [agents.md](agents.md) |
 | [`bmlib.context_processor`](context_processor.md) | Hierarchical map-reduce over content that exceeds one context window | [context_processor.md](context_processor.md) |
-| [`bmlib.quality`](quality.md) | 3-tier quality assessment pipeline, Cochrane risk-of-bias models, rule-based extractors | [quality.md](quality.md) |
+| [`bmlib.quality`](quality.md) | 4-tier quality assessment pipeline (metadata → LLM classifier → deep assessment → Cochrane risk of bias), rule-based extractors | [quality.md](quality.md) |
 | [`bmlib.transparency`](transparency.md) | Multi-API transparency analysis (CrossRef, Europe PMC, OpenAlex, ClinicalTrials.gov) | [transparency.md](transparency.md) |
 | [`bmlib.publications`](publications.md) | Publication ingestion, deduplication, storage, and multi-source sync | [publications.md](publications.md) |
 | [`bmlib.fulltext`](fulltext.md) | Full-text retrieval (Europe PMC, Unpaywall, DOI), JATS XML parsing, PDF conversion, disk caching | [fulltext.md](fulltext.md) |

@@ -210,7 +210,9 @@ class BiasRisk:
 class QualityAssessment:
     """Result from any tier of the quality pipeline."""
 
-    assessment_tier: int = 0  # 0=unclassified, 1=metadata, 2=haiku, 3=sonnet
+    # 0=unclassified, 1=metadata, 2=LLM classifier, 3=deep assessment,
+    # 4=Cochrane assessment.
+    assessment_tier: int = 0
     extraction_method: str = "none"
     study_design: StudyDesign = StudyDesign.UNKNOWN
     quality_tier: QualityTier = QualityTier.UNCLASSIFIED

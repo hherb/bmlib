@@ -21,8 +21,8 @@ Assessment flow:
   2. Tier 2: LLM classification via cheap model (if metadata inconclusive)
   3. Tier 3: Deep assessment via capable model (if explicitly requested)
   4. Tier 4: Cochrane-aligned assessment (if explicitly requested), which
-     enriches the Tier 1 result with nine-domain risk-of-bias detail rather
-     than replacing it
+     enriches the shallower tier's classification with nine-domain
+     risk-of-bias detail rather than replacing it
 """
 
 from __future__ import annotations
@@ -142,20 +142,37 @@ class QualityManager:
             return metadata_result
 
         # --- Tier 4: Cochrane assessment ---
-        # Deeper than Tier 3, so a *successful* pass supersedes it exactly as
-        # Tier 3 supersedes Tier 2: the shallower tier is skipped, not run and
-        # discarded. "Supersedes" means "runs instead of, when it works", not
-        # "suppresses even on failure" — a routine transport failure here must
-        # not stop the Tier 3 assessment the caller explicitly enabled from
-        # running, so a ``None`` falls through to Tier 3 and then Tier 2
-        # exactly as if ``use_cochrane_assessment`` had not been set.
+        # Deeper than Tier 3, so a *successful* pass supersedes Tier 3 exactly
+        # as Tier 3 supersedes Tier 2: it is skipped, not run and discarded.
+        # "Supersedes" means "runs instead of, when it works", not "suppresses
+        # even on failure" — a routine transport failure here must not stop the
+        # Tier 3 assessment the caller explicitly enabled from running, so a
+        # ``None`` falls through to Tier 3 and then Tier 2 exactly as if
+        # ``use_cochrane_assessment`` had not been set.  Tier 2 is a separate
+        # question, answered on the success path below: it is not superseded
+        # but *depended on*, for the study design Tier 4 does not produce.
         if filt.use_cochrane_assessment:
             cochrane = self.cochrane.assess(title, full_text or abstract)
             if cochrane is not None:
                 logger.debug(
                     "Tier 4: Cochrane assessment of %s", cochrane.study_characteristics.study_id
                 )
-                return self._enrich_with_cochrane(metadata_result, cochrane)
+                # A Cochrane assessment carries no study design, so the result
+                # it enriches has to supply one.  Tier 1 does when the metadata
+                # was conclusive; when it was not, the cheap classifier does.
+                # That case is not an edge: a bioRxiv or medRxiv record has no
+                # PubMed publication types at all, so Tier 1 is inconclusive
+                # for exactly the papers whose full text makes a Cochrane pass
+                # worth paying for.  Enriching the unclassified Tier 1 result
+                # there returned UNKNOWN at score 0.0 and confidence 0.0 —
+                # worse than the Tier 2 answer the caller had left enabled —
+                # with a full nine-domain bias table attached to it.  Tier 3
+                # stays superseded regardless: it is the expensive tier whose
+                # work the Cochrane pass actually replaces.
+                base = metadata_result
+                if not metadata_is_confident and filt.use_llm_classification:
+                    base = self._classify(title, abstract)
+                return self._enrich_with_cochrane(base, cochrane)
             logger.debug("Tier 4: no Cochrane assessment; falling through to Tier 3/Tier 2")
 
         # --- Tier 3: deep assessment ---
@@ -173,13 +190,7 @@ class QualityManager:
 
         # --- Tier 2: LLM classification ---
         if filt.use_llm_classification:
-            classification = self.classifier.classify(title, abstract)
-            logger.debug(
-                "Tier 2: %s (confidence %.2f)",
-                classification.study_design.value,
-                classification.confidence,
-            )
-            return classification
+            return self._classify(title, abstract)
 
         # Fallback
         return metadata_result
@@ -219,29 +230,52 @@ class QualityManager:
                 progress_callback(i + 1, total, assessment)
         return results
 
+    def _classify(self, title: str | None, abstract: str | None) -> QualityAssessment:
+        """Run Tier 2 and log what it decided.
+
+        Shared by the Tier 2 step and the Cochrane branch, which needs a study
+        design the Cochrane pass does not produce.  One place, so the two
+        cannot drift into logging or calling the classifier differently.
+
+        Args:
+            title: Paper title.
+            abstract: Paper abstract.
+
+        Returns:
+            The classifier's assessment.
+        """
+        classification = self.classifier.classify(title, abstract)
+        logger.debug(
+            "Tier 2: %s (confidence %.2f)",
+            classification.study_design.value,
+            classification.confidence,
+        )
+        return classification
+
     @staticmethod
     def _enrich_with_cochrane(
         base: QualityAssessment,
         cochrane: CochraneStudyAssessment,
     ) -> QualityAssessment:
-        """Fold a Cochrane assessment into the Tier 1 result.
+        """Fold a Cochrane assessment into the classification it enriches.
 
-        The metadata tier supplies ``study_design``, ``quality_tier``,
-        ``quality_score`` and ``confidence``, which a Cochrane assessment does
-        not produce; the Cochrane pass supplies the bias detail, which the
-        metadata tier cannot see.  Neither ``evidence_level`` nor
-        ``confidence`` is copied across: Cochrane's ``evidence_level`` is
-        free-form model text where this one is Oxford CEBM, and Cochrane's
-        ``overall_confidence`` describes the model's certainty about the
-        nine bias-risk domains, not about the ``study_design`` /
-        ``quality_tier`` / ``quality_score`` this method leaves untouched —
-        so overwriting ``confidence`` with it would let a caller's
-        ``if a.confidence >= t: trust a.study_design`` pattern discard a
-        highly-confident Tier 1 classification because the model was unsure
+        *base* is the shallower tier's result — Tier 1 when the metadata was
+        conclusive, Tier 2 when it was not and the classifier was enabled.  It
+        supplies ``study_design``, ``quality_tier``, ``quality_score`` and
+        ``confidence``, which a Cochrane assessment does not produce; the
+        Cochrane pass supplies the bias detail, which neither of those tiers
+        can see.  Neither ``evidence_level`` nor ``confidence`` is copied
+        across: Cochrane's ``evidence_level`` is free-form model text where
+        this one is Oxford CEBM, and Cochrane's ``overall_confidence``
+        describes the model's certainty about the nine bias-risk domains, not
+        about the ``study_design`` / ``quality_tier`` / ``quality_score`` this
+        method leaves untouched — so overwriting ``confidence`` with it would
+        let a caller's ``if a.confidence >= t: trust a.study_design`` pattern
+        discard a highly-confident classification because the model was unsure
         about blinding.  Both values stay reachable on the attached object.
 
         Args:
-            base: The Tier 1 result to enrich.
+            base: The classification result to enrich.
             cochrane: The assessment to fold in.
 
         Returns:

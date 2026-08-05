@@ -614,6 +614,17 @@ class TestTheCochraneRoute:
 
         mgr = QualityManager(llm=MagicMock(), classifier_model="o:x", assessor_model="o:y")
         mgr.classifier = MagicMock()
+        # A real assessment rather than a bare MagicMock: the Cochrane route
+        # folds the classifier's result into a dataclass, and
+        # ``dataclasses.replace()`` rejects anything that is not one.
+        mgr.classifier.classify.return_value = QualityAssessment(
+            assessment_tier=2,
+            extraction_method="llm_classification",
+            study_design=StudyDesign.RCT,
+            quality_tier=QualityTier.TIER_4_EXPERIMENTAL,
+            quality_score=8.0,
+            confidence=0.85,
+        )
         mgr.assessor = MagicMock()
         mgr.cochrane = MagicMock()
         mgr.cochrane.assess.return_value = assessment
@@ -693,15 +704,80 @@ class TestTheCochraneRoute:
         assert mgr.cochrane.assess.call_args.args[1] == "Abstract"
 
     def test_cochrane_supersedes_tier_3(self):
-        """Deeper than Tier 3, so the shallower tier is skipped rather than
-        run and discarded — as Tier 3 already supersedes Tier 2."""
+        """Deeper than Tier 3, so Tier 3 is skipped rather than run and
+        discarded — as Tier 3 already supersedes Tier 2.
+
+        Conclusive publication types, so the base the enrichment folds into
+        already carries a study design and the classifier is not needed for
+        one either — see the two tests below for the inconclusive case."""
         mgr = self._manager_with_cochrane(self._cochrane_assessment())
         f = QualityFilter(use_cochrane_assessment=True, use_detailed_assessment=True)
+
+        result = mgr.assess(
+            "Title",
+            "Abstract",
+            publication_types=["Randomized Controlled Trial"],
+            filter_settings=f,
+        )
+
+        assert result.assessment_tier == 4
+        mgr.assessor.assess.assert_not_called()
+        mgr.classifier.classify.assert_not_called()
+
+    def test_an_inconclusive_metadata_tier_still_yields_a_study_design(self):
+        """A Cochrane assessment produces no study design, so the base it
+        enriches has to carry one. Every preprint reaches here: bioRxiv and
+        medRxiv records have no PubMed publication types at all, so Tier 1 is
+        always inconclusive for exactly the papers whose full text makes a
+        Cochrane pass worth paying for. Without the cheap classifier the
+        result came back UNKNOWN at score 0.0 and confidence 0.0 — worse than
+        the Tier 2 answer the caller had enabled — with a full nine-domain
+        bias table attached to it."""
+        mgr = self._manager_with_cochrane(self._cochrane_assessment())
+        f = QualityFilter(use_cochrane_assessment=True)
+
+        result = mgr.assess("An RCT of X", "Abstract", full_text="Whole paper", filter_settings=f)
+
+        assert result.assessment_tier == 4
+        assert result.study_design == StudyDesign.RCT
+        assert result.quality_tier == QualityTier.TIER_4_EXPERIMENTAL
+        assert result.quality_score == 8.0
+        assert result.confidence == 0.85
+        assert result.cochrane_assessment is not None
+        mgr.classifier.classify.assert_called_once()
+        # Tier 3 stays superseded: it is the expensive tier whose work the
+        # Cochrane pass actually replaces.
+        mgr.assessor.assess.assert_not_called()
+
+    def test_the_classifier_is_not_run_for_a_design_the_metadata_tier_already_gave(self):
+        """The negative control for the test above. Enriching a confident
+        Tier 1 result must not buy a second, redundant classification."""
+        mgr = self._manager_with_cochrane(self._cochrane_assessment())
+        f = QualityFilter(use_cochrane_assessment=True)
+
+        result = mgr.assess(
+            "Title",
+            "Abstract",
+            publication_types=["Randomized Controlled Trial"],
+            filter_settings=f,
+        )
+
+        assert result.assessment_tier == 4
+        assert result.study_design == StudyDesign.RCT
+        mgr.classifier.classify.assert_not_called()
+
+    def test_an_inconclusive_metadata_tier_is_left_alone_when_tier_2_is_disabled(self):
+        """``use_llm_classification=False`` is a caller declining the cheap
+        tier, not an oversight to be worked around: the enrichment falls back
+        to the (unclassified) metadata result rather than spending a call the
+        caller ruled out."""
+        mgr = self._manager_with_cochrane(self._cochrane_assessment())
+        f = QualityFilter(use_cochrane_assessment=True, use_llm_classification=False)
 
         result = mgr.assess("Title", "Abstract", filter_settings=f)
 
         assert result.assessment_tier == 4
-        mgr.assessor.assess.assert_not_called()
+        assert result.study_design == StudyDesign.UNKNOWN
         mgr.classifier.classify.assert_not_called()
 
     def test_confident_metadata_does_not_short_circuit_the_cochrane_pass(self):

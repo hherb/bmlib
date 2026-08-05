@@ -2,9 +2,8 @@
 
 _Last updated: 2026-08-05. **0.7.0 is released and on PyPI.** `[Unreleased]`
 carries the Cochrane assessment agent (Phase 2 row 9 of the bmlibrarian port,
-on `feature/cochrane-assessor`, not yet merged or released). No open issues,
-no open PRs yet — this branch's PR is the next one. 1446 tests passing + 50
-skipped, ruff clean. **The next piece of work is another Phase 2 port** — see
+on `feature/cochrane-assessor`, open as PR #54 and not yet merged or
+released). No open issues. 1449 tests passing + 50 skipped, ruff clean. **The next piece of work is another Phase 2 port** — see
 "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
@@ -51,17 +50,20 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   `collapse_risk_of_bias()` bridges its nine domains onto the five-domain
   `BiasRisk`; `QualityFilter(use_cochrane_assessment=True)` plus a
   `full_text=` keyword on `QualityManager.assess()` wire it into
-  `QualityManager`, enriching the free Tier 1 result rather than replacing
-  it. Closes the Cochrane half of the "wire the new quality tools into the
+  `QualityManager`, enriching a classification rather than replacing it —
+  Tier 1's when the metadata was conclusive, Tier 2's when it was not, since
+  a Cochrane assessment produces no `study_design` of its own and every
+  preprint arrives without PubMed publication types.
+  Closes the Cochrane half of the "wire the new quality tools into the
   pipeline" roadmap item — the rule-based extractors half is still open. Both
   names are exported from `bmlib.quality`. See `CHANGELOG.md` for the full
   entry and the six upstream defects fixed in the port.
-- **1446 tests passing + 50 skipped** (`uv run pytest tests/ -q`). 47 skips
+- **1449 tests passing + 50 skipped** (`uv run pytest tests/ -q`). 47 skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`, which run
   only when `BMLIB_TEST_POSTGRESQL_DSN` is set; 2 are `test_pdf_converter`
   tests needing PyMuPDF, which the dev venv does not install; 1 is a
   PostgreSQL-only schema test that does not apply to SQLite. With a DSN set
-  it is **1493 passing + 3 skipped**.
+  it is **1496 passing + 3 skipped**.
 - **Documentation was rewritten for 0.4.0 and kept current through 0.7.0.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` were promoted to
