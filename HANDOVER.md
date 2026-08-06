@@ -1,12 +1,12 @@
 # HANDOVER — bmlib development
 
 _Last updated: 2026-08-06. **0.7.0 is released and on PyPI.** `[Unreleased]`
-carries two Phase 2 ports: the Cochrane assessment agent (row 9, PR #54,
-**merged to main**) and the PDF section segmenter (row 8, on
-`feature/pdf-section-segmenter`, open as PR #55 and not yet merged). Two open
+carries three Phase 2 ports: the Cochrane assessment agent (row 9, PR #54,
+merged), the PDF section segmenter (row 8, PR #55, merged), and the
+citation/reference stack (row 4, on `feature/citations`, PR open). Two open
 issues (#56, #57), both minor `fulltext` refinements deferred from PR #55's
-review. 1513 tests passing + 49 skipped, ruff clean. **The next piece of work
-is another Phase 2 port** — see "Next up"._
+review. 1602 tests passing + 49 skipped, ruff clean. **The next piece of
+work is the last Phase 2 port, row 11** — see "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -36,20 +36,25 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed two releases. Widening it is a downstream change, not a bmlib
   one.
-- **`[Unreleased]` carries two Phase 2 ports.** (1) The **Cochrane assessment
-  agent** (row 9, PR #54, merged): `CochraneAssessor` (Tier 4) turns a title
-  and text into a `CochraneStudyAssessment`; `collapse_risk_of_bias()`
-  bridges its nine domains onto the five-domain `BiasRisk`;
-  `QualityFilter(use_cochrane_assessment=True)` plus `full_text=` on
-  `QualityManager.assess()` wire it in, enriching a classification rather
-  than replacing it. (2) The **PDF section segmenter** (row 8, PR #55, open):
-  `SectionSegmenter` turns the `TextBlock` lines from the new
-  `PyMuPDFConverter.extract_blocks()` (behind the `LayoutExtractor`
-  protocol) into a `SegmentedDocument` of typed sections — standalone,
-  nothing wires it into `FullTextService` or `quality/` yet. See
-  `CHANGELOG.md` for both full entries and the upstream defects each port
+- **`[Unreleased]` carries three Phase 2 ports.** (1) The **Cochrane
+  assessment agent** (row 9, PR #54, merged): `CochraneAssessor` (Tier 4)
+  turns a title and text into a `CochraneStudyAssessment`;
+  `collapse_risk_of_bias()` bridges its nine domains onto the five-domain
+  `BiasRisk`; `QualityFilter(use_cochrane_assessment=True)` plus
+  `full_text=` on `QualityManager.assess()` wire it in, enriching a
+  classification rather than replacing it. (2) The **PDF section
+  segmenter** (row 8, PR #55, merged): `SectionSegmenter` turns the
+  `TextBlock` lines from the new `PyMuPDFConverter.extract_blocks()`
+  (behind the `LayoutExtractor` protocol) into a `SegmentedDocument` of
+  typed sections — standalone, nothing wires it into `FullTextService` or
+  `quality/` yet. (3) The **citation/reference stack** (row 4, PR open):
+  new pure-stdlib `bmlib/citations/` — `[@id:N:Label]` marker parsing as
+  pure functions, Vancouver/APA/Harvard/Chicago formatters, and
+  `build_references()`/`format_document()` with caller-injected
+  `Mapping[int, DocumentMetadata]` (the upstream DB fetch severed). See
+  `CHANGELOG.md` for the full entries and the upstream defects each port
   fixed.
-- **1508 tests passing + 49 skipped** (`uv run pytest tests/ -q`). 47 skips
+- **1602 tests passing + 49 skipped** (`uv run pytest tests/ -q`). 47 skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`, which run
   only when `BMLIB_TEST_POSTGRESQL_DSN` is set; 1 is a PostgreSQL-only schema
   test; 1 is `test_pymupdf_requires_dependency`, which runs only when
@@ -76,18 +81,6 @@ returns `success=True` with empty text; `is_complete` already says `False`,
 and `extract_blocks()` already raises for the same file). Every closed
 design stays in `docs/superpowers/specs/` as the record of what was rejected
 and why.
-
-### Open PR
-
-**PR #55** (`feature/pdf-section-segmenter`) — the PDF section segmenter,
-review-clean and CI-green. Three review rounds are fixed on the branch: the
-whole-branch review's two Important findings, and a post-hoc PR review whose
-one confirmed defect ("Financial disclosure" singular went to FUNDING while
-the plural went to CONFLICTS, decided by dict order — both now CONFLICTS)
-came with three minors: partial patterns wrapped in `(?:...)` so the `\b`
-anchors survive a future top-level alternation, a content-stream
-reading-order caveat on `extract_blocks()`, and `to_dict()`/`from_dict()` on
-the segmentation models. Merge with `--merge`, not squash.
 
 ### Worth doing, not yet an issue
 
@@ -116,9 +109,10 @@ transparency/quality reconciliation, no GRADE engine exists, SSRF guard).
 - **Phase 2** rows are rows in the analysis doc's master table, not GitHub
   issues. Done: row 10 Retraction Watch (PR #51, shipped 0.7.0), row 9
   Cochrane assessor (PR #54, merged), row 8 PDF section segmenter (PR #55,
-  open). **Remaining: row 4 (citation/reference stack → new
-  `bmlib/citations/`) and row 11 (PubMed abstract-markdown + grant/
-  affiliation extraction, grafted onto `publications/fetchers/pubmed.py`).**
+  merged), row 4 citation/reference stack (`feature/citations`, PR open).
+  **Remaining: row 11 (PubMed abstract-markdown + grant/affiliation
+  extraction, grafted onto `publications/fetchers/pubmed.py`) — the last
+  Phase 2 row.**
 - Phases 3–4 (discovery, pubmed_search, MeSH, the prompt-driven agent
   family, paper_weight) are in the analysis doc.
 
@@ -345,6 +339,39 @@ named source file; the entry here is the pointer, not the argument.
   later; no mypy in CI), and `pdf_converter.py`'s literal `12.0` default
   font size is not shared with `segmenter.py`'s `_DEFAULT_FONT_SIZE`
   (sharing it inverts the import direction for a cosmetic gain).
+
+### citations (PR open)
+
+- **Upstream's code is the output spec, not its docstrings** — where the two
+  disagreed (APA renders `"(2023) Title"`, no period after the year, though
+  upstream's docstring example shows one), the code's output was kept.
+  Only five confirmed defects were fixed, each with a named regression test
+  — four listed in the design doc
+  (`docs/superpowers/specs/2026-08-06-citations-port-design.md`), plus a
+  fifth from the PR #58 review: a whitespace-only author entry crashed
+  every style's `format_reference` with `IndexError` (upstream ran
+  `parts[-1]` on an empty split); blank entries are now dropped via
+  `_named_authors()`.
+- **An empty title renders per style, not uniformly** — Vancouver/APA say
+  `Untitled`, Harvard `''`, Chicago `"."` — upstream-faithful, pinned by
+  `TestEmptyTitles` rather than unified.
+- **A lone inverted name as a bare `authors` string is ambiguous** —
+  `from_dict({"authors": "Smith, John"})` splits into two authors; only a
+  semicolon marks the string form as inverted. Documented in the manual;
+  callers wanting exactness pass a list.
+- **`format_reference_list()` begins with `"\n---"`, no leading blank
+  line** — upstream-faithful; a document not ending in a blank line renders
+  its last line as a setext heading, documented in the manual rather than
+  changed.
+- **`generate_label()` without a year yields `"Smithn.d."`**, and
+  **`author_surname("Jan van der Berg")` is `"Berg"`** (particles survive
+  only in the inverted format) — both upstream-faithful, both pinned by
+  tests naming them.
+- **`Citation` compares by all fields**, not upstream's `document_id`-only
+  equality — nothing ported relies on the old semantics; pinned by
+  `test_two_citations_of_one_document_at_different_positions_differ`.
+- **Marker ids are `int` only** — upstream's grammar; a string-id variant is
+  a spec change, noted out of scope in the design doc.
 
 ### publications — retractions
 

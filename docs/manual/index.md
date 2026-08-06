@@ -30,7 +30,7 @@ pip install -e ".[all,dev]"
 
 ## Module Overview
 
-bmlib is organised into nine modules, each with a focused responsibility:
+bmlib is organised into ten modules, each with a focused responsibility:
 
 | Module | Description | Documentation |
 |--------|-------------|---------------|
@@ -43,6 +43,7 @@ bmlib is organised into nine modules, each with a focused responsibility:
 | [`bmlib.transparency`](transparency.md) | Multi-API transparency analysis (CrossRef, Europe PMC, OpenAlex, ClinicalTrials.gov) | [transparency.md](transparency.md) |
 | [`bmlib.publications`](publications.md) | Publication ingestion, deduplication, storage, and multi-source sync | [publications.md](publications.md) |
 | [`bmlib.fulltext`](fulltext.md) | Full-text retrieval (Europe PMC, Unpaywall, DOI), JATS XML parsing, PDF conversion, disk caching | [fulltext.md](fulltext.md) |
+| [`bmlib.citations`](citations.md) | Citation-marker parsing, Vancouver/APA/Harvard/Chicago formatting, reference-list building (pure stdlib) | [citations.md](citations.md) |
 
 ## Architecture Principles
 
