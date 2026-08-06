@@ -863,3 +863,30 @@ class TestAffiliationExtraction:
     def test_a_record_without_affiliations_has_an_empty_list(self):
         result = _parse_article_xml(ET.fromstring(MINIMAL_ARTICLE_XML))
         assert result.author_affiliations == []
+
+    def test_position_indexes_the_xml_author_list_not_the_authors_field(self):
+        """A consortium consumes a position but contributes no name.
+
+        ``position`` is an index into ``<AuthorList>``, not into
+        ``FetchedRecord.authors`` — a ``<CollectiveName>`` author has no
+        personal name, so it is absent from ``authors`` while still occupying
+        its place in the paper's author order. The two lists therefore differ
+        in length whenever one is present, and ``authors[a.position]`` is the
+        wrong way to resolve an affiliation's author; match on ``author``
+        instead. What position is *for* — is this the first or the senior
+        author — is answered correctly either way.
+        """
+        el = ET.fromstring(
+            "<PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
+            "<ArticleTitle>T</ArticleTitle><AuthorList>"
+            "<Author><CollectiveName>The Trial Group</CollectiveName></Author>"
+            "<Author><LastName>Smith</LastName><ForeName>J</ForeName>"
+            "<AffiliationInfo><Affiliation>St Elsewhere</Affiliation></AffiliationInfo>"
+            "</Author>"
+            "</AuthorList></Article></MedlineCitation></PubmedArticle>"
+        )
+        result = _parse_article_xml(el)
+
+        assert result.authors == ["Smith, J"]
+        assert result.author_affiliations[0].author == "Smith, J"
+        assert result.author_affiliations[0].position == 1

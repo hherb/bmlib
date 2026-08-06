@@ -1,12 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-06. **0.7.0 is released and on PyPI.** `[Unreleased]`
-carries three Phase 2 ports: the Cochrane assessment agent (row 9, PR #54,
-merged), the PDF section segmenter (row 8, PR #55, merged), and the
-citation/reference stack (row 4, PR #58, merged). Two open
-issues (#56, #57), both minor `fulltext` refinements deferred from PR #55's
-review. 1602 tests passing + 49 skipped, ruff clean. **The next piece of
-work is the last Phase 2 port, row 11** — see "Next up"._
+_Last updated: 2026-08-06. **0.7.0 is released and on PyPI.** **Phase 2 of the
+bmlibrarian port is complete**: `[Unreleased]` carries all four of its ports —
+the Cochrane assessment agent (row 9, PR #54), the PDF section segmenter
+(row 8, PR #55), the citation/reference stack (row 4, PR #58), and the PubMed
+metadata graft (row 11, PR open). Two open issues (#56, #57), both minor
+`fulltext` refinements deferred from PR #55's review. 1652 tests passing + 55
+skipped (1705 + 2 with a PostgreSQL DSN), ruff clean. **`[Unreleased]` is now
+large enough to be worth cutting as 0.8.0** — see "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -36,7 +37,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed two releases. Widening it is a downstream change, not a bmlib
   one.
-- **`[Unreleased]` carries three Phase 2 ports.** (1) The **Cochrane
+- **`[Unreleased]` carries all four Phase 2 ports.** (1) The **Cochrane
   assessment agent** (row 9, PR #54, merged): `CochraneAssessor` (Tier 4)
   turns a title and text into a `CochraneStudyAssessment`;
   `collapse_risk_of_bias()` bridges its nine domains onto the five-domain
@@ -51,17 +52,36 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   new pure-stdlib `bmlib/citations/` — `[@id:N:Label]` marker parsing as
   pure functions, Vancouver/APA/Harvard/Chicago formatters, and
   `build_references()`/`format_document()` with caller-injected
-  `Mapping[int, DocumentMetadata]` (the upstream DB fetch severed). See
+  `Mapping[int, DocumentMetadata]` (the upstream DB fetch severed). (4) The
+  **PubMed metadata graft** (row 11, PR open): `<GrantList>` and
+  `<AffiliationInfo>` become `Grant` / `AuthorAffiliation` child rows in two
+  new tables, and titles and abstracts are read as Markdown. See
   `CHANGELOG.md` for the full entries and the upstream defects each port
   fixed.
-- **1602 tests passing + 49 skipped** (`uv run pytest tests/ -q`). 47 skips
-  are the PostgreSQL parameterisations of `tests/test_backends.py`, which run
-  only when `BMLIB_TEST_POSTGRESQL_DSN` is set; 1 is a PostgreSQL-only schema
-  test; 1 is `test_pymupdf_requires_dependency`, which runs only when
-  PyMuPDF is *absent*. **PyMuPDF is now installed in the dev venv** (PR #55
-  did it so the extraction tests run locally), which is why the old "2 skips
-  need PyMuPDF" note is gone. With a PostgreSQL DSN set the counts shift
-  accordingly.
+- **Three of the four move stored values, so `[Unreleased]` is not a
+  drop-in upgrade.** The largest is the PubMed one: every synced title and
+  abstract changes shape (titles because they were being *truncated* at their
+  first markup tag; abstracts because they gain `NlmCategory` labels,
+  blank-line section breaks and `CO~2~` notation). CHANGELOG says which, and
+  the manual tells callers to re-sync or accept a mix.
+- **1652 tests passing + 55 skipped** (`uv run pytest tests/ -q`); **1705 + 2
+  with `BMLIB_TEST_POSTGRESQL_DSN` set**. 53 of the default skips are the
+  PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
+  PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
+  runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev
+  venv** (PR #55 did it so the extraction tests run locally).
+- **Running the PostgreSQL half locally is worth the two minutes.** Postgres.app
+  ships the binaries; the socket directory must be short (`/tmp/bmlpg/run`, not
+  a scratchpad path — the 103-byte socket limit bites):
+  ```bash
+  PGBIN=/Applications/Postgres.app/Contents/Versions/16/bin
+  mkdir -p /tmp/bmlpg/run
+  $PGBIN/initdb -D /tmp/bmlpg/data -U postgres --auth=trust
+  $PGBIN/pg_ctl -D /tmp/bmlpg/data \
+      -o "-k /tmp/bmlpg/run -p 55432 -c listen_addresses=''" -l /tmp/bmlpg/pg.log start
+  $PGBIN/createdb -h /tmp/bmlpg/run -p 55432 -U postgres bmlib_test
+  export BMLIB_TEST_POSTGRESQL_DSN="host=/tmp/bmlpg/run port=55432 dbname=bmlib_test user=postgres"
+  ```
 - **Documentation was rewritten for 0.4.0 and kept current through 0.7.0.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
@@ -84,16 +104,27 @@ and why.
 
 ### Worth doing, not yet an issue
 
+- **Cut 0.8.0.** Phase 2 is complete and `[Unreleased]` now holds four ports,
+  three of which move stored values. That is a release's worth of work sitting
+  unshipped, and the longer it sits the larger the "not comparable" note the
+  next upgrader has to read. Recipe at the bottom of this file; it is a minor
+  bump (everything is additive).
 - **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume
   0.6.0 and 0.7.0. Read both releases' non-comparable behaviour changes
-  first — the transparency ones move stored scores.
+  first — the transparency ones move stored scores, and 0.8.0 will move
+  every PubMed title and abstract.
 - **Wire the segmenter and the rule-based extractors in.** Two halves of the
-  same roadmap item: the segmenter (this PR) could give `CochraneAssessor`
+  same roadmap item: the segmenter could give `CochraneAssessor`
   Methods/Results boundaries and `TransparencyAnalyzer` the paper's own
   Funding/COI/Data-availability sections; `quality/extractors.py` is still
   called by no tier. Each needs its own design conversation.
+- **Feed the stored grants to `transparency/`.** `TransparencyAnalyzer` runs
+  its own `efetch` per paper to read `<GrantList>`, which `fetch_pubmed` has
+  now already stored at sync time. Reading the table instead would save that
+  request — but it is a scoring change that moves stored values, so it needs
+  its own decision, not a quiet optimisation.
 
-### bmlibrarian → bmlib porting (Phase 2 nearly done)
+### bmlibrarian → bmlib porting (Phase 2 done)
 
 The "mother project" `~/src/bmlibrarian` holds functionality that belongs in
 bmlib. The assessment and phased backlog live in
@@ -106,15 +137,18 @@ transparency/quality reconciliation, no GRADE engine exists, SSRF guard).
   formatter, extractors + scoring_models, pdf_converter.
 - **Phase 1 is done**: BaseAgent enhancement (PR #34), `context_processor`
   (#49, PR #50).
-- **Phase 2** rows are rows in the analysis doc's master table, not GitHub
-  issues. Done: row 10 Retraction Watch (PR #51, shipped 0.7.0), row 9
-  Cochrane assessor (PR #54, merged), row 8 PDF section segmenter (PR #55,
-  merged), row 4 citation/reference stack (PR #58, merged).
-  **Remaining: row 11 (PubMed abstract-markdown + grant/affiliation
-  extraction, grafted onto `publications/fetchers/pubmed.py`) — the last
-  Phase 2 row.**
-- Phases 3–4 (discovery, pubmed_search, MeSH, the prompt-driven agent
-  family, paper_weight) are in the analysis doc.
+- **Phase 2 is done.** Its rows are rows in the analysis doc's master table,
+  not GitHub issues: row 10 Retraction Watch (PR #51, shipped 0.7.0), row 9
+  Cochrane assessor (PR #54), row 8 PDF section segmenter (PR #55), row 4
+  citation/reference stack (PR #58), row 11 PubMed metadata graft (PR open).
+- **Phase 3 is next**: discovery (#12), `pubmed_search` (#13), MeSH (#21),
+  ClinicalTrials.gov (#14 — **check the caveat first**, the legacy bulk XML
+  the parser targets was deprecated in the 2024 API v2 migration). These are
+  larger subsystems than anything in Phase 2; expect each to need its own
+  design conversation rather than a straight port. Phase 4 (the prompt-driven
+  agent family, paper_weight, review building-blocks) follows, and each of
+  those must be reconciled against the existing `quality/` and
+  `transparency/` rather than forked — see the analysis doc's caveats.
 
 ### The port recipe (repeat it)
 
@@ -152,38 +186,27 @@ named source file; the entry here is the pointer, not the argument.
 - **`_is_industry_funder()` is deliberately not applied to COI prose**;
   `_INDUSTRY_COI_KEYWORDS` stays separate — org suffixes match far too
   freely in running text.
-- **`_merge_pubmed_signals()` mutates the `_Analysis` it is given and
-  returns nothing**, and **every `analyze()` sub-step takes `_Analysis` and
-  returns `None`** — one step threading a value while four mutate is the
+- **Every `analyze()` sub-step takes `_Analysis`, mutates it, and returns
+  `None`** — one step threading a value while four mutate is the
   inconsistency that makes the next contributor guess. Pinned by
   `test_the_merge_applies_both_of_its_branches_to_one_list`.
 - **The data-deposition rank-merge machinery** (`_DATA_LEVEL_RANK`,
   `note_data_level()`, `_DEPOSITION_DATABANK_LEVELS`) is argued inline in
   `transparency/analyzer.py`. Two rules: every producible level must be a
-  key of the ranking or `note_data_level()` raises by design; the
-  deposition list deliberately excludes reference-only databases (dbSNP,
-  OMIM, RefSeq…). Pinned by
-  `test_every_pattern_maps_to_a_level_the_ranking_knows`,
-  `test_every_repository_maps_to_a_level_the_ranking_knows`,
-  `test_the_deposition_and_registry_name_sets_are_disjoint`.
-- **`TransparencySettings.filtering_enabled`, `max_concurrent_analyses`,
-  `cache_results` are not dead code** — caller-owned orchestration hints,
-  documented as such.
-- **`outcome_switching_detected` stays reserved and always `False`** — a
-  real feature with real false-positive risk, kept in the schema so
-  persisted results need no migration when detection lands.
-- **A PubMed record with no `<CoiStatement>` leaves `coi_disclosed` alone.**
-  Absence means the publisher supplied no statement, not that the paper
-  carries none. Pinned by
-  `test_an_absent_pubmed_statement_leaves_the_status_unknown`.
-- **`<DataBankList>` accessions are validated as `NCT\d{8}` before use, and
-  a ClinicalTrials.gov entry failing validation still counts as
-  registered** — registration is separate from followability. Pinned by
-  `test_a_malformed_accession_never_reaches_a_url` and
-  `test_an_unusable_clinicaltrials_accession_is_not_called_another_registry`.
-- **The transparency indicator strings are module constants, not literals**
-  — the PubMed step retracts the two full-text COI lines by name. Pinned by
-  `test_a_pubmed_statement_retracts_the_full_text_absence_indicator`.
+  key of the ranking or `note_data_level()` raises by design; the deposition
+  list deliberately excludes reference-only databases (dbSNP, OMIM, RefSeq…).
+  Three tests in `test_transparency.py` pin it.
+- **Four more, each argued where it lives:**
+  `TransparencySettings.filtering_enabled` / `max_concurrent_analyses` /
+  `cache_results` are caller-owned orchestration hints, not dead code;
+  `outcome_switching_detected` stays reserved and always `False` (real
+  false-positive risk, kept in the schema so persisted results need no
+  migration when detection lands); a PubMed record with no `<CoiStatement>`
+  leaves `coi_disclosed` alone (absence means the publisher supplied none,
+  not that the paper carries none); and `<DataBankList>` accessions are
+  validated as `NCT\d{8}` before becoming a URL, though an entry failing
+  validation still counts as registered — registration is separate from
+  followability. Each has a test naming it.
 
 ### Positional stability
 
@@ -210,18 +233,9 @@ named source file; the entry here is the pointer, not the argument.
   a third `bool` overload** (mypy does not expand `bool` into the two
   `Literal`s; CI runs ruff only, so nothing catches its removal), and
   **`salvage_json_fields()` bounds both passes with `RecursionError` caught
-  wherever a candidate is decoded**. Pinning tests:
-  `TestExtractJsonPrefersWholeSpans`,
-  `test_raises_rather_than_returning_a_fragment_of_a_broken_array`,
-  `test_a_truncated_array_of_objects_is_repaired_whole`,
-  `test_a_fragment_is_still_the_last_resort`,
-  `test_fenced_array_of_objects_is_returned_whole`,
-  `test_a_bare_scalar_is_not_a_structured_answer`,
-  `test_repair_is_attempted_at_most_once_per_key`,
-  `test_fast_pass_is_bounded_to_the_match_cap`,
-  `test_the_last_match_is_still_reached_beyond_the_cap`,
-  `test_deep_nesting_returns_the_text_rather_than_raising`,
-  `test_deeply_nested_text_raises_valueerror_not_recursionerror`.
+  wherever a candidate is decoded**. Eleven tests pin these — seven in
+  `test_json_extraction.py` (starting at `TestExtractJsonPrefersWholeSpans`)
+  and four in `test_agents.py`.
   `iter_json_spans()` dedupes candidates by text, not position (argued
   inline in `llm/utils.py`).
 - **`PerformanceMetrics.elapsed_time_seconds` reads `time.monotonic()`**,
@@ -241,25 +255,18 @@ named source file; the entry here is the pointer, not the argument.
   `test_a_boundary_item_is_measured_where_it_lands`. `estimate_item_size()`
   was deliberately not ported — it let the oversized decision disagree with
   the packing measurement.
-- **Four more load-bearing "simplifications" refused**, each with a named
-  test: `_render()` substitutes in one regex pass (two-pass `.replace()`
-  splices the batch into a query containing `{content}`); the package
-  `__init__` reaches `llm_processor` through PEP 562 `__getattr__` (a plain
-  re-export drags jinja2 into the LLM-free harness); `process()` keeps
-  statistics in a local, not on `self`; `success_rate` cannot return 1.0 for
-  a batch-less run that dropped everything as oversized.
-- **The recursion wraps results in `ConsolidatedItem`, not a tuple** (what
-  made upstream's `format_consolidated_item()` dead code), and
-  **`min_items_for_recursion` stopping at one result is correct** — one
-  result has nothing to be consolidated with. Pinned by
-  `test_a_recursion_level_receives_consolidated_items`,
-  `test_consolidated_items_route_to_their_own_formatter`,
-  `test_too_few_results_to_consolidate_returns_what_there_is`.
-- **`LLMChunkProcessor` renders prompts with `str.replace`, not
-  `str.format`** (templates legitimately hold literal braces), and clamps a
-  structured-output confidence to 0.0–1.0. Pinned by
-  `test_literal_braces_survive_rendering` and
-  `test_a_confidence_outside_the_range_is_clamped`.
+- **Six more load-bearing "simplifications" refused**, each with a named test
+  in `test_context_processor.py` / `test_llm_chunk_processor.py`: `_render()`
+  substitutes in one regex pass (two-pass `.replace()` splices the batch into
+  a query containing `{content}`); the package `__init__` reaches
+  `llm_processor` through PEP 562 `__getattr__` (a plain re-export drags
+  jinja2 into the LLM-free harness); `process()` keeps statistics in a local,
+  not on `self`; `success_rate` cannot return 1.0 for a batch-less run that
+  dropped everything; the recursion wraps results in `ConsolidatedItem`, not
+  a tuple (what made upstream's `format_consolidated_item()` dead code), and
+  `min_items_for_recursion` stopping at one result is correct; and
+  `LLMChunkProcessor` renders with `str.replace`, not `str.format` (templates
+  legitimately hold literal braces).
 
 ### fulltext — retrieval and JATS
 
@@ -296,18 +303,14 @@ named source file; the entry here is the pointer, not the argument.
   pattern can match, and a superscript marker must not restyle its line.
   Pinned by `test_a_heading_split_across_spans_is_one_block` and
   `test_a_superscript_marker_does_not_restyle_the_line`.
-- **Front matter is a 0.5-confidence section, not dropped** — what precedes
-  the first detected heading is a container, not a classification; if the
-  real first heading was missed, it has swallowed the introduction. Same
-  confidence, same reason, as the no-markers "Full Text" fallback. Pinned by
-  `test_front_matter_is_kept`.
-- **A heading with no body is reported with `content == ""`, never
-  dropped** — dropping it says the paper has no such section when it has an
-  empty one. Pinned by `test_a_heading_with_no_body_is_still_reported`.
-- **`SectionType.TITLE`, `SegmentedDocument.authors` and
-  `Section.subsections` are reserved, not dead** — documented as never
-  populated today, kept so a future producer needs no schema change (the
-  `outcome_switching_detected` precedent).
+- **Nothing is dropped for being empty or unclassified**, each with a named
+  test: front matter is a 0.5-confidence section (what precedes the first
+  detected heading is a container, not a classification — if the real first
+  heading was missed, it has swallowed the introduction); a heading with no
+  body is reported with `content == ""` (dropping it says the paper has no
+  such section when it has an empty one); and `SectionType.TITLE`,
+  `SegmentedDocument.authors` and `Section.subsections` are reserved, not
+  dead (the `outcome_switching_detected` precedent).
 - **`extract_blocks()` raises where `convert()` returns a failed result.**
   Partial text is useful and `converted_pages` says how partial; a partial
   block list is indistinguishable from a sparse PDF, so degradation would be
@@ -324,21 +327,14 @@ named source file; the entry here is the pointer, not the argument.
   by dict iteration order. Pinned by
   `test_financial_disclosure_classifies_the_same_in_both_numbers`; a comment
   in FUNDING's pattern list wards off re-adding it.
-- **The 0.7 partial-match pass can fire on a bold figure caption** ("Fig. 3
-  Study results" → RESULTS at 0.7) — a knowing spec-level choice, kept
-  upstream-faithful; the manual tells callers to check `Section.confidence`.
-  Related: `min_heading_size` is an absolute floor (default 10.0) in an
-  otherwise median-relative design — it can silence the segmenter on a 9pt
-  two-column layout, which is documented in the manual and guarded by a test
-  that genuinely isolates the floor
-  (`test_a_font_below_the_minimum_is_not_a_heading`, inputs 9.0 vs median
-  6.0 — an 8.0-vs-10.0 input is vacuous, rejected by the ratio rule too).
-- **Two final-review minors parked with rulings:** the manual's headline
-  example calls `extract_blocks()` without an `isinstance(converter,
-  LayoutExtractor)` check (brevity; the check is documented four paragraphs
-  later; no mypy in CI), and `pdf_converter.py`'s literal `12.0` default
-  font size is not shared with `segmenter.py`'s `_DEFAULT_FONT_SIZE`
-  (sharing it inverts the import direction for a cosmetic gain).
+- **Two known spec-level limits, documented in the manual rather than
+  fixed:** the 0.7 partial-match pass can fire on a bold figure caption
+  ("Fig. 3 Study results" → RESULTS), and `min_heading_size` is an absolute
+  floor (10.0) in an otherwise median-relative design, so it can silence the
+  segmenter on a 9pt two-column layout. Callers are told to check
+  `Section.confidence`. The floor's test genuinely isolates it
+  (`test_a_font_below_the_minimum_is_not_a_heading`, 9.0 against median 6.0 —
+  an 8.0-vs-10.0 input is vacuous, rejected by the ratio rule too).
 
 ### citations (merged, PR #58)
 
@@ -352,26 +348,62 @@ named source file; the entry here is the pointer, not the argument.
   every style's `format_reference` with `IndexError` (upstream ran
   `parts[-1]` on an empty split); blank entries are now dropped via
   `_named_authors()`.
-- **An empty title renders per style, not uniformly** — Vancouver/APA say
-  `Untitled`, Harvard `''`, Chicago `"."` — upstream-faithful, pinned by
-  `TestEmptyTitles` rather than unified.
-- **A lone inverted name as a bare `authors` string is ambiguous** —
-  `from_dict({"authors": "Smith, John"})` splits into two authors; only a
-  semicolon marks the string form as inverted. Documented in the manual;
-  callers wanting exactness pass a list.
-- **`format_reference_list()` begins with `"\n---"`, no leading blank
-  line** — upstream-faithful; a document not ending in a blank line renders
-  its last line as a setext heading, documented in the manual rather than
-  changed.
-- **`generate_label()` without a year yields `"Smithn.d."`**, and
-  **`author_surname("Jan van der Berg")` is `"Berg"`** (particles survive
-  only in the inverted format) — both upstream-faithful, both pinned by
-  tests naming them.
-- **`Citation` compares by all fields**, not upstream's `document_id`-only
-  equality — nothing ported relies on the old semantics; pinned by
-  `test_two_citations_of_one_document_at_different_positions_differ`.
-- **Marker ids are `int` only** — upstream's grammar; a string-id variant is
-  a spec change, noted out of scope in the design doc.
+- **Five upstream-faithful oddities kept rather than unified**, each pinned
+  by a test naming it: an empty title renders per style (Vancouver/APA
+  `Untitled`, Harvard `''`, Chicago `"."`); a lone inverted name as a bare
+  `authors` string is ambiguous, so `{"authors": "Smith, John"}` splits into
+  two authors and only a semicolon marks the string form as inverted;
+  `format_reference_list()` begins `"\n---"` with no leading blank line (a
+  document not ending in a blank line renders its last line as a setext
+  heading); `generate_label()` without a year yields `"Smithn.d."`; and
+  `author_surname("Jan van der Berg")` is `"Berg"` — particles survive only
+  in the inverted format. All are documented in the manual.
+- **Two deliberate departures from upstream:** `Citation` compares by all
+  fields, not upstream's `document_id`-only equality (nothing ported relies
+  on the old semantics), and marker ids stay `int` only — a string-id variant
+  is a spec change, noted out of scope in the design doc.
+
+### publications — PubMed metadata graft (PR open)
+
+- **The child tables carry no UNIQUE constraint on their natural key**, and
+  one must not be added. Every column of a grant is nullable and both backends
+  treat `NULL` as *distinct* in a unique index, so
+  `UNIQUE(publication_id, agency, grant_id)` lets `(1, NULL, 'R01')` insert
+  twice — it protects nothing while looking like it protects something.
+  Idempotency is `_replace_child_rows()`'s job, pinned by
+  `test_re_storing_the_same_record_does_not_duplicate` on both backends.
+- **Replace-if-nonempty, not accumulate** — deliberately unlike
+  `fulltext_sources`, which accumulates because a paper genuinely has several
+  URLs. A grant set is one source's complete statement, so it replaces; the
+  empty guard is what stops a bioRxiv record erasing what PubMed found. Pinned
+  by `test_a_record_carrying_none_does_not_erase_stored_grants`. Known limit,
+  documented rather than fixed: two sources supplying grants would alternate.
+- **`_consolidate_rows()` relocates every child row before the parent DELETE**,
+  and moves them only when the keep row has none of its own. Both backends
+  enforce foreign keys, so a stranded row aborts the whole store — verified by
+  removing the relocation and watching both backends raise
+  `ForeignKeyViolation`. Pinned by
+  `test_a_split_identity_merge_relocates_child_rows`.
+- **`position` counts every `<Author>` element, including the
+  `<CollectiveName>` consortia that `authors` skips.** It is an index into the
+  XML author list, not into `Publication.authors`; the two lists differ in
+  length whenever a consortium is present. What it is for — is this the first
+  or the senior author — is answered correctly either way.
+- **`is_retracted` was not ported.** `publication_types` already carries
+  "Retracted Publication" verbatim, `retractions.py` answers authoritatively
+  from Retraction Watch, and upstream reads RefType `RetractionOf` — which
+  marks an article as *being* the retraction notice — as retracted.
+- **Upstream's `_extract_date` was not ported.** `_parse_pubdate` is strictly
+  better: upstream defaults a missing month and day to `01`, inventing
+  precision the record does not have, and swallows every failure in a bare
+  `except:`.
+- **`~x~` / `^x^` are Pandoc extensions, knowingly.** A renderer without them
+  shows the tildes literally; the alternative flattened `CO<sub>2</sub>` and
+  `CO<sup>2</sup>` to the same ambiguous `CO2`. Documented in the manual.
+- **Only `ArticleTitle` and `Abstract` get the formatting walker.**
+  `Journal/Title`, MeSH descriptors and publication types stay on plain
+  `.text` — they are leaf elements in practice, and widening it is scope this
+  port did not need.
 
 ### publications — retractions
 
@@ -392,25 +424,19 @@ named source file; the entry here is the pointer, not the argument.
 
 ### quality — Cochrane assessor (merged, PR #54)
 
-- **`_enrich_with_cochrane()` does not copy the Cochrane `evidence_level`
-  onto `QualityAssessment.evidence_level`** — different vocabularies
-  (free-form model text vs Oxford CEBM). Pinned by
-  `test_the_evidence_level_vocabularies_are_not_mixed`.
-- **`assess()` returns `None` on failure, never nine defaulted "Unclear
-  risk" domains** — a fabrication indistinguishable from a real all-unclear
-  judgement. Pinned by
-  `test_a_response_with_no_risk_of_bias_block_is_rejected`.
-- **`collapse_risk_of_bias()` raises on an unrecognised `bias_type`**
-  (silently skipping returns a `BiasRisk` that looks complete and is not),
-  and **`unclear` outranks `low` in its worst-wins reduction** (an
-  unreported domain is not a clean bill of health). Pinned by
-  `test_an_unrecognised_bias_type_raises` and `test_unclear_outranks_low`.
+- **Nothing is fabricated to fill a gap**, each with a named test:
+  `assess()` returns `None` on failure rather than nine defaulted "Unclear
+  risk" domains (indistinguishable from a real all-unclear judgement);
+  `collapse_risk_of_bias()` raises on an unrecognised `bias_type` rather than
+  skipping it into a `BiasRisk` that looks complete; `unclear` outranks `low`
+  in its worst-wins reduction (an unreported domain is not a clean bill of
+  health); `_enrich_with_cochrane()` does not copy Cochrane's
+  `evidence_level` onto the assessment's (free-form model text vs Oxford
+  CEBM); and `study_id` comes from the caller, never parsed from an author
+  list (upstream's `first_author.split()[-1]` read "van der Berg" as "Berg").
 - **`_ASSESSMENT_ATTEMPTS = 2`, not 1 or 3** — `chat_json()` already retries
   inside each attempt; two keeps the worst case at six model calls. Pinned
   by `test_it_is_retried_once_before_giving_up`.
-- **`study_id` comes from the caller, never parsed from an author list**
-  (upstream's `first_author.split()[-1]` read "van der Berg" as "Berg").
-  Pinned by `test_a_document_id_is_the_first_fallback`.
 - **Oversized text is condensed in exactly two passes — digest, then one
   nine-domain judgement — with no per-chunk verdicts to merge** (a domain
   like blinding needs the whole Methods in view; truncation drops exactly
