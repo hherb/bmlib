@@ -25,7 +25,9 @@ from unittest.mock import MagicMock, patch
 from bmlib.publications.fetchers.pubmed import (
     EFETCH_URL,
     ESEARCH_URL,
+    _format_abstract_markdown,
     _parse_article_xml,
+    _text_with_formatting,
     fetch_pubmed,
 )
 from bmlib.publications.models import FetchedRecord, SyncProgress
@@ -146,9 +148,9 @@ class TestParseArticleXml:
         assert isinstance(result, FetchedRecord)
         assert result.pmid == "12345678"
         assert result.title == "Effects of aspirin on cardiovascular outcomes"
-        assert "BACKGROUND: Heart disease is the leading cause of death." in result.abstract
-        assert "METHODS: We conducted a randomized trial." in result.abstract
-        assert "RESULTS: Aspirin reduced events by 20%." in result.abstract
+        assert "**BACKGROUND:** Heart disease is the leading cause of death." in result.abstract
+        assert "**METHODS:** We conducted a randomized trial." in result.abstract
+        assert "**RESULTS:** Aspirin reduced events by 20%." in result.abstract
         assert result.authors == ["Smith, John A", "Jones, Mary B"]
         assert result.journal == "The Lancet"
         assert result.publication_date == "2024-01-15"
@@ -589,3 +591,146 @@ class TestFetchPubmed:
             fetch_pubmed(client, target, on_record=on_record, api_key=None)
 
         mock_sleep.assert_called_once_with(0.34)
+
+
+# ---------------------------------------------------------------------------
+# Inline formatting and Markdown abstracts
+# ---------------------------------------------------------------------------
+
+
+class TestInlineFormatting:
+    """Tests for _text_with_formatting — mixed content and Markdown mapping."""
+
+    def test_a_title_with_markup_is_not_truncated(self):
+        """The whole title survives markup.
+
+        Regression guard. The previous implementation read ``el.text``, which is
+        only the text *before the first child*, so this title parsed as
+        "Effects of H" — silently discarding most of the primary field.
+        """
+        el = ET.fromstring(
+            "<ArticleTitle>Effects of H<sub>2</sub>O and <i>E. coli</i> on outcomes</ArticleTitle>"
+        )
+        assert _text_with_formatting(el) == "Effects of H~2~O and *E. coli* on outcomes"
+
+    def test_a_plain_element_is_its_text(self):
+        assert _text_with_formatting(ET.fromstring("<t>Plain text</t>")) == "Plain text"
+
+    def test_none_is_the_empty_string(self):
+        assert _text_with_formatting(None) == ""
+
+    def test_an_empty_element_is_the_empty_string(self):
+        assert _text_with_formatting(ET.fromstring("<t/>")) == ""
+
+    def test_each_inline_tag_maps_to_its_marker(self):
+        cases = [
+            ("<t><b>x</b></t>", "**x**"),
+            ("<t><bold>x</bold></t>", "**x**"),
+            ("<t><i>x</i></t>", "*x*"),
+            ("<t><italic>x</italic></t>", "*x*"),
+            ("<t><sup>x</sup></t>", "^x^"),
+            ("<t><sub>x</sub></t>", "~x~"),
+            ("<t><u>x</u></t>", "__x__"),
+            ("<t><underline>x</underline></t>", "__x__"),
+        ]
+        for xml, expected in cases:
+            assert _text_with_formatting(ET.fromstring(xml)) == expected, xml
+
+    def test_an_unknown_tag_contributes_its_text_undecorated(self):
+        el = ET.fromstring("<t>a <unknown>b</unknown> c</t>")
+        assert _text_with_formatting(el) == "a b c"
+
+    def test_nested_formatting_nests(self):
+        el = ET.fromstring("<t><b>bold and <i>italic</i></b></t>")
+        assert _text_with_formatting(el) == "**bold and *italic***"
+
+    def test_a_space_inside_a_formatted_run_is_not_eaten(self):
+        """Whitespace inside a formatted run survives.
+
+        Upstream stripped at *every* recursion level, so the space belonging to
+        ``<b>Randomised </b>`` vanished and the two runs welded into
+        ``**Randomised****trial**`` — not merely ugly, but broken Markdown.
+        Stripping happens once, at the outermost call.
+        """
+        el = ET.fromstring("<t><b>Randomised </b><b>trial</b></t>")
+        assert _text_with_formatting(el) == "**Randomised** **trial**"
+
+    def test_a_trailing_space_before_a_sibling_run_is_not_eaten(self):
+        el = ET.fromstring("<t>A <b>bold </b><i>italic</i> tail</t>")
+        assert _text_with_formatting(el) == "A **bold** *italic* tail"
+
+    def test_surrounding_whitespace_is_stripped_once(self):
+        el = ET.fromstring("<t>  padded <b>x</b>  </t>")
+        assert _text_with_formatting(el) == "padded **x**"
+
+
+class TestAbstractMarkdown:
+    """Tests for _format_abstract_markdown."""
+
+    def test_none_yields_none(self):
+        assert _format_abstract_markdown(None) is None
+
+    def test_an_abstract_with_no_text_yields_none(self):
+        assert _format_abstract_markdown(ET.fromstring("<Abstract/>")) is None
+
+    def test_an_abstract_of_only_blank_text_yields_none(self):
+        el = ET.fromstring("<Abstract><AbstractText>   </AbstractText></Abstract>")
+        assert _format_abstract_markdown(el) is None
+
+    def test_an_unlabelled_abstract_is_bare_text(self):
+        el = ET.fromstring("<Abstract><AbstractText>Just prose.</AbstractText></Abstract>")
+        assert _format_abstract_markdown(el) == "Just prose."
+
+    def test_a_label_becomes_a_bold_upper_case_heading(self):
+        el = ET.fromstring(
+            '<Abstract><AbstractText Label="Background">Prose.</AbstractText></Abstract>'
+        )
+        assert _format_abstract_markdown(el) == "**BACKGROUND:** Prose."
+
+    def test_nlm_category_supplies_a_label_when_label_is_absent(self):
+        """A section labelled only by NlmCategory keeps its label.
+
+        The previous implementation read the ``Label`` attribute alone, so every
+        section labelled the other way lost its heading and ran into its
+        neighbour.
+        """
+        el = ET.fromstring(
+            '<Abstract><AbstractText NlmCategory="METHODS">Prose.</AbstractText></Abstract>'
+        )
+        assert _format_abstract_markdown(el) == "**METHODS:** Prose."
+
+    def test_label_wins_over_nlm_category(self):
+        el = ET.fromstring(
+            '<Abstract><AbstractText Label="Patients" NlmCategory="METHODS">P.</AbstractText>'
+            "</Abstract>"
+        )
+        assert _format_abstract_markdown(el) == "**PATIENTS:** P."
+
+    def test_a_placeholder_nlm_category_is_not_a_label(self):
+        """UNASSIGNED and UNLABELLED mean "no label", not a heading of that name."""
+        for category in ("UNASSIGNED", "UNLABELLED"):
+            el = ET.fromstring(
+                f'<Abstract><AbstractText NlmCategory="{category}">Prose.</AbstractText></Abstract>'
+            )
+            assert _format_abstract_markdown(el) == "Prose.", category
+
+    def test_sections_are_separated_by_a_blank_line(self):
+        el = ET.fromstring(
+            '<Abstract><AbstractText Label="BACKGROUND">One.</AbstractText>'
+            '<AbstractText Label="METHODS">Two.</AbstractText></Abstract>'
+        )
+        assert _format_abstract_markdown(el) == "**BACKGROUND:** One.\n\n**METHODS:** Two."
+
+    def test_a_section_with_no_text_is_skipped(self):
+        el = ET.fromstring(
+            '<Abstract><AbstractText Label="BACKGROUND">One.</AbstractText>'
+            '<AbstractText Label="METHODS"/></Abstract>'
+        )
+        assert _format_abstract_markdown(el) == "**BACKGROUND:** One."
+
+    def test_inline_formatting_survives_into_the_abstract(self):
+        el = ET.fromstring(
+            '<Abstract><AbstractText Label="RESULTS">CO<sub>2</sub> fell over 10 m<sup>2</sup>.'
+            "</AbstractText></Abstract>"
+        )
+        assert _format_abstract_markdown(el) == "**RESULTS:** CO~2~ fell over 10 m^2^."

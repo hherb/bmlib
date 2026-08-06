@@ -71,11 +71,128 @@ _MONTH_MAP: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
+# Inline markup PubMed carries inside titles and abstracts, and the Markdown
+# each maps to. Scientific prose depends on these: without ``sub``/``sup`` a
+# chemical formula and an exponent both flatten into an ambiguous "CO2" / "m2".
+_INLINE_MARKUP: dict[str, tuple[str, str]] = {
+    "b": ("**", "**"),
+    "bold": ("**", "**"),
+    "i": ("*", "*"),
+    "italic": ("*", "*"),
+    "sup": ("^", "^"),
+    "sub": ("~", "~"),
+    "u": ("__", "__"),
+    "underline": ("__", "__"),
+}
+
+# NlmCategory values that mean "this section has no label". Rendering them as
+# headings would put the word UNASSIGNED in front of the prose.
+_UNLABELLED_CATEGORIES = frozenset({"UNASSIGNED", "UNLABELLED"})
+
+
 def _text(el: ET.Element | None) -> str | None:
     """Extract text content from an XML element, or return None."""
     if el is None:
         return None
     return el.text
+
+
+def _text_with_formatting(el: ET.Element | None) -> str:
+    """Extract an element's full text, mapping inline markup to Markdown.
+
+    Walks mixed content — an element's own text, each child's text, and the
+    tail text following each child — so nothing is lost. Recognised inline tags
+    (see :data:`_INLINE_MARKUP`) are wrapped in their Markdown markers;
+    an unrecognised tag contributes its text undecorated.
+
+    Note this is *not* interchangeable with :func:`_text`, which reads only
+    ``el.text``: for any element holding markup that is the text before the
+    first child, which truncates the value silently.
+
+    Whitespace at the edge of a formatted run is emitted *outside* that run's
+    markers, and stripped only once overall, by the outermost call. Both halves
+    matter, and upstream got the first wrong in a way that produced broken
+    Markdown rather than merely ugly text: it stripped at every recursion
+    level, so the space belonging to ``<b>Randomised </b><b>trial</b>``
+    vanished entirely and the runs welded into ``**Randomised****trial**``.
+    Keeping the space where it sat is no better — CommonMark requires an
+    emphasis delimiter to be adjacent to non-whitespace, so ``**Randomised **``
+    does not emphasise either. Moving it out yields
+    ``**Randomised** **trial**``.
+
+    Args:
+        el: The element to read, or ``None``.
+
+    Returns:
+        The element's text with inline markup rendered as Markdown; ``""``
+        when *el* is ``None`` or holds no text.
+    """
+    return _walk_formatting(el).strip()
+
+
+def _walk_formatting(el: ET.Element | None) -> str:
+    """Recursive, non-stripping worker for :func:`_text_with_formatting`."""
+    if el is None:
+        return ""
+
+    parts: list[str] = [el.text or ""]
+    for child in el:
+        text = _walk_formatting(child)
+        prefix, suffix = _INLINE_MARKUP.get(child.tag.lower(), ("", ""))
+        core = text.strip()
+        if core:
+            # Re-emit the run's edge whitespace outside its markers, so the
+            # delimiters stay adjacent to non-whitespace (see the caller's
+            # docstring). A run of pure whitespace, or one with no markup,
+            # passes through untouched.
+            lead = text[: len(text) - len(text.lstrip())]
+            trail = text[len(text.rstrip()) :]
+            parts.append(f"{lead}{prefix}{core}{suffix}{trail}")
+        else:
+            # An empty run would otherwise render as stray markers ("****").
+            parts.append(text)
+        parts.append(child.tail or "")
+
+    return "".join(parts)
+
+
+def _format_abstract_markdown(abstract_el: ET.Element | None) -> str | None:
+    """Render an ``Abstract`` element as Markdown, or return None.
+
+    Each ``AbstractText`` becomes one section. A section's label comes from the
+    ``Label`` attribute, falling back to ``NlmCategory`` — PubMed uses either,
+    and reading only ``Label`` drops the heading from every section labelled
+    the other way, running it into its neighbour. Labels render as
+    ``**HEADING:** text``; sections are separated by a blank line so the
+    structure survives into Markdown. Inline markup is preserved throughout
+    (see :func:`_text_with_formatting`).
+
+    Args:
+        abstract_el: The ``Abstract`` element, or ``None``.
+
+    Returns:
+        The formatted abstract, or ``None`` when there is no text at all —
+        ``FetchedRecord.abstract`` is ``str | None`` and an empty string would
+        read as "this paper has a blank abstract" rather than "none was given".
+    """
+    if abstract_el is None:
+        return None
+
+    sections: list[str] = []
+    for part in abstract_el.findall("AbstractText"):
+        text = _text_with_formatting(part)
+        if not text:
+            continue
+
+        label = (part.get("Label") or "").strip()
+        if not label:
+            category = (part.get("NlmCategory") or "").strip()
+            if category and category.upper() not in _UNLABELLED_CATEGORIES:
+                label = category
+
+        sections.append(f"**{label.upper()}:** {text}" if label else text)
+
+    return "\n\n".join(sections) or None
 
 
 def _parse_pubdate(pubdate_el: ET.Element | None) -> str | None:
@@ -128,26 +245,15 @@ def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
     # PMID
     pmid = _text(medline.find("PMID")) if medline is not None else None
 
-    # Title
-    title = _text(article.find("ArticleTitle")) if article is not None else None
+    # Title — read with _text_with_formatting, not _text: a title holding
+    # markup (a chemical formula, an italicised species name) is truncated at
+    # its first child element by a bare ``el.text`` read.
+    title = _text_with_formatting(article.find("ArticleTitle")) if article is not None else None
 
-    # Abstract — join multiple AbstractText parts
+    # Abstract — Markdown, preserving section labels and inline markup
     abstract: str | None = None
     if article is not None:
-        abstract_el = article.find("Abstract")
-        if abstract_el is not None:
-            parts = []
-            for part in abstract_el.findall("AbstractText"):
-                label = part.get("Label")
-                # itertext() captures mixed content (text + child elements)
-                text = "".join(part.itertext()).strip()
-                if text:
-                    if label:
-                        parts.append(f"{label}: {text}")
-                    else:
-                        parts.append(text)
-            if parts:
-                abstract = "\n".join(parts)
+        abstract = _format_abstract_markdown(article.find("Abstract"))
 
     # Authors
     authors: list[str] = []
