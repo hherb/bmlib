@@ -1044,7 +1044,8 @@ Each `AbstractText` becomes one section, separated from the next by a blank line
 
 Two things to know:
 
-- **`~x~` and `^x^` are Pandoc extensions, not CommonMark.** A renderer without them shows the tildes and carets literally. The alternative was worse: flattening the markup away renders both `CO<sub>2</sub>` and `CO^2^` as an ambiguous `CO2`.
+- **`~x~` and `^x^` are Pandoc extensions, not CommonMark.** A renderer without them shows the tildes and carets literally. The alternative was worse: flattening the markup away renders both `CO<sub>2</sub>` and `CO<sup>2</sup>` as an ambiguous `CO2`.
+- **Markdown metacharacters in the source text are not escaped.** A title containing a literal `*` or `_` reaches the output as-is, so a renderer may read it as emphasis. Escaping them would have to leave the markers this function *inserts* alone, and the distinction is not worth the failure modes it would add; treat these values as Markdown-ish text rather than guaranteed-clean Markdown.
 - **Values are not comparable with those stored before this release.** Titles changed because they were previously truncated at their first markup tag — `"Effects of H<sub>2</sub>O and <i>E. coli</i> on outcomes"` was stored as `"Effects of H"`. Abstracts changed because they gain the recovered `NlmCategory` labels, the blank-line section breaks, and the sub/superscript notation. Re-sync, or accept a mix.
 
 ### `fetch_biorxiv`

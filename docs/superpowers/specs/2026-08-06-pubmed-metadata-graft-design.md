@@ -47,8 +47,15 @@ so a space living inside a formatted run is eaten and words weld together:
 | `<b>Randomised </b><b>trial</b>` | `**Randomised****trial**` | `**Randomised** **trial**` |
 | `A <b>bold </b><i>italic</i> tail` | `A **bold***italic* tail` | `A **bold** *italic* tail` |
 
-Stripping happens once, at the outermost call. The upstream output is not merely
-cosmetically wrong — `**Randomised****trial**` is broken Markdown.
+The upstream output is not merely cosmetically wrong —
+`**Randomised****trial**` is broken Markdown.
+
+Simply *not* stripping during the recursion is not enough, which the
+implementation found: it yields `**Randomised **`, and CommonMark requires an
+emphasis delimiter to be adjacent to non-whitespace, so that does not emphasise
+either. The rule is therefore two-part — **a run's edge whitespace is
+re-emitted outside its markers, and the result is stripped once, by the
+outermost call.** Both halves have a test.
 
 **`_format_abstract_markdown(abstract_el) -> str | None`** renders each
 `AbstractText`: the label is `Label`, falling back to `NlmCategory` unless it is
