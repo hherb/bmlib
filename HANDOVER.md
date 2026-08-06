@@ -5,8 +5,8 @@ bmlibrarian port is complete**: `[Unreleased]` carries all four of its ports —
 the Cochrane assessment agent (row 9, PR #54), the PDF section segmenter
 (row 8, PR #55), the citation/reference stack (row 4, PR #58), and the PubMed
 metadata graft (row 11, PR #59). Two open issues (#56, #57), both minor
-`fulltext` refinements deferred from PR #55's review. 1668 tests passing + 58
-skipped (1724 + 2 with a PostgreSQL DSN), ruff clean. **`[Unreleased]` is now
+`fulltext` refinements deferred from PR #55's review. 1670 tests passing + 58
+skipped (1726 + 2 with a PostgreSQL DSN), ruff clean. **`[Unreleased]` is now
 large enough to be worth cutting as 0.8.0** — see "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
@@ -59,7 +59,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   first markup tag; abstracts because they gain `NlmCategory` labels,
   blank-line section breaks and `CO~2~` notation). CHANGELOG says which, and
   the manual tells callers to re-sync or accept a mix.
-- **1668 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1724 + 2
+- **1670 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1726 + 2
   with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
   PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
@@ -423,10 +423,12 @@ named source file; the entry here is the pointer, not the argument.
 - **`~x~` / `^x^` are Pandoc extensions, knowingly.** A renderer without them
   shows the tildes literally; the alternative flattened `CO<sub>2</sub>` and
   `CO<sup>2</sup>` to the same ambiguous `CO2`. Documented in the manual.
-- **Only `ArticleTitle` and `Abstract` get the formatting walker.**
-  `Journal/Title`, MeSH descriptors and publication types stay on plain
-  `.text` — they are leaf elements in practice, and widening it is scope this
-  port did not need.
+- **Which elements get the formatting walker is decided by NLM's DTD.**
+  `ArticleTitle`, `AbstractText` and `Affiliation` are all declared
+  `(%text;)*` — `#PCDATA | b | i | sup | sub | u` — so all three use
+  `_text_with_formatting`. `Journal/Title`, `DescriptorName` and
+  `PublicationType` are declared `(#PCDATA)`, genuine leaves, and keep plain
+  `.text`. Do not widen or narrow this list by eye; check the DTD.
 
 ### publications — retractions
 

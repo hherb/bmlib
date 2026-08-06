@@ -1476,3 +1476,28 @@ class TestChildRowsAreScopedBySource:
                 Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1"),
                 grants=[Grant(agency="NHLBI", source=None)],
             )
+
+    def test_relocating_a_row_onto_itself_is_a_no_op(self):
+        """Guards the one assumption the relocation rests on.
+
+        `_relocate_child_rows` deletes the drop row's rows for sources the keep
+        row has, then moves the rest. Those two sets are disjoint only because
+        the ids differ. With equal ids the subquery would match every row the
+        DELETE is about to remove, wiping the publication's whole set and
+        leaving the UPDATE nothing to move — total loss, silently. The caller
+        cannot currently pass equal ids; this pins that it would be harmless if
+        it ever could.
+        """
+        from bmlib.publications.storage import _relocate_child_rows
+
+        conn = _schema_conn()
+        store_publication(
+            conn,
+            Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1"),
+            grants=[Grant(agency="NHLBI", source="pubmed")],
+        )
+        pub_id = get_publication_by_pmid(conn, "1").id
+
+        _relocate_child_rows(conn, "publication_grants", pub_id, pub_id)
+
+        assert [g.agency for g in get_grants(conn, pub_id)] == ["NHLBI"]

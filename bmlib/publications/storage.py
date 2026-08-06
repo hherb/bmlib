@@ -349,7 +349,19 @@ def _relocate_child_rows(conn: Any, table: str, keep_id: int, drop_id: int) -> N
     granularity — merging two rows' accounts of what PubMed said would produce
     a set PubMed never asserted, while a source only the drop row saw is real
     information the keep row should gain.
+
+    Returns immediately when the two ids are equal. The caller only reaches
+    here having established they differ, but the whole method rests on that:
+    the DELETE's subquery reads the keep row's sources while the DELETE itself
+    removes the drop row's, and those sets are disjoint *only* because the ids
+    are. Were they ever the same, the subquery would match every row it is
+    about to delete, the DELETE would wipe the publication's entire set and the
+    UPDATE would find nothing left to move — total loss, silently. Two lines to
+    make that unreachable by construction rather than by a caller's invariant.
     """
+    if keep_id == drop_id:
+        return
+
     ph = placeholder(conn)
     # Discard first, so the surviving rows can move in one unconditional
     # statement. (An anti-join UPDATE would work too, but "delete what loses,
