@@ -3,7 +3,7 @@
 _Last updated: 2026-08-06. **0.7.0 is released and on PyPI.** `[Unreleased]`
 carries three Phase 2 ports: the Cochrane assessment agent (row 9, PR #54,
 merged), the PDF section segmenter (row 8, PR #55, merged), and the
-citation/reference stack (row 4, on `feature/citations`, PR open). Two open
+citation/reference stack (row 4, PR #58, merged). Two open
 issues (#56, #57), both minor `fulltext` refinements deferred from PR #55's
 review. 1602 tests passing + 49 skipped, ruff clean. **The next piece of
 work is the last Phase 2 port, row 11** — see "Next up"._
@@ -47,7 +47,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   `TextBlock` lines from the new `PyMuPDFConverter.extract_blocks()`
   (behind the `LayoutExtractor` protocol) into a `SegmentedDocument` of
   typed sections — standalone, nothing wires it into `FullTextService` or
-  `quality/` yet. (3) The **citation/reference stack** (row 4, PR open):
+  `quality/` yet. (3) The **citation/reference stack** (row 4, PR #58, merged):
   new pure-stdlib `bmlib/citations/` — `[@id:N:Label]` marker parsing as
   pure functions, Vancouver/APA/Harvard/Chicago formatters, and
   `build_references()`/`format_document()` with caller-injected
@@ -109,7 +109,7 @@ transparency/quality reconciliation, no GRADE engine exists, SSRF guard).
 - **Phase 2** rows are rows in the analysis doc's master table, not GitHub
   issues. Done: row 10 Retraction Watch (PR #51, shipped 0.7.0), row 9
   Cochrane assessor (PR #54, merged), row 8 PDF section segmenter (PR #55,
-  merged), row 4 citation/reference stack (`feature/citations`, PR open).
+  merged), row 4 citation/reference stack (PR #58, merged).
   **Remaining: row 11 (PubMed abstract-markdown + grant/affiliation
   extraction, grafted onto `publications/fetchers/pubmed.py`) — the last
   Phase 2 row.**
@@ -340,7 +340,7 @@ named source file; the entry here is the pointer, not the argument.
   font size is not shared with `segmenter.py`'s `_DEFAULT_FONT_SIZE`
   (sharing it inverts the import direction for a cosmetic gain).
 
-### citations (PR open)
+### citations (merged, PR #58)
 
 - **Upstream's code is the output spec, not its docstrings** — where the two
   disagreed (APA renders `"(2023) Title"`, no period after the year, though
