@@ -42,17 +42,9 @@ from bmlib.publications import (
     Publication,
     FetchedRecord,
     FullTextSource,
+    Grant,
+    AuthorAffiliation,
     DownloadDay,
-    FetchedRecord,
-
-    # Source registry
-    register_source,
-    get_source,
-    get_fetcher,
-    list_sources,
-    source_names,
-    SourceDescriptor,
-    SourceParam,
 
     # Source registry
     SourceDescriptor,
@@ -68,6 +60,8 @@ from bmlib.publications import (
     get_publication_by_doi,
     get_publication_by_pmid,
     add_fulltext_source,
+    get_grants,
+    get_author_affiliations,
 
     # Schema
     ensure_schema,
@@ -183,6 +177,10 @@ class FetchedRecord:
 
     # -- Source-specific extras --
     extras: dict[str, Any] = field(default_factory=dict)
+
+    # -- Declared last, for positional stability --
+    grants: list[Grant] = field(default_factory=list)
+    author_affiliations: list[AuthorAffiliation] = field(default_factory=list)
 ```
 
 | Field | Type | Description |
@@ -202,8 +200,12 @@ class FetchedRecord:
 | `license` | `str \| None` | License identifier. |
 | `fulltext_sources` | `list[FullTextSourceEntry]` | Known full-text URLs (see [`bmlib.fulltext`](fulltext.md)). Plain dicts with `url`/`source`/`format`/`version` keys are also accepted. |
 | `extras` | `dict[str, Any]` | Source-specific data not covered by the core fields. |
+| `grants` | `list[Grant]` | Funding awards. Only `fetch_pubmed` populates these. |
+| `author_affiliations` | `list[AuthorAffiliation]` | Author affiliations. Only `fetch_pubmed` populates these. |
 
-`sync()` maps `FetchedRecord` → `Publication` by copying the core fields and setting both `sources=[record.source]` and `first_seen_source=record.source`. Note that `pmc_id` and `extras` are **not** persisted — if you need them, capture them in an `on_record` callback.
+`sync()` maps `FetchedRecord` → `Publication` by copying the core fields and setting both `sources=[record.source]` and `first_seen_source=record.source`. `grants` and `author_affiliations` are persisted separately, into their own tables (see [`Grant` and `AuthorAffiliation`](#grant-and-authoraffiliation)). Note that `pmc_id` and `extras` are **not** persisted — if you need them, capture them in an `on_record` callback.
+
+The last two fields are declared after `extras` rather than beside the content fields they read best beside, because downstream projects construct `FetchedRecord` positionally: inserting a field anywhere but the end shifts every later argument silently.
 
 ---
 
@@ -235,6 +237,45 @@ class FullTextSource:
 | `retrieved_at` | `datetime \| None` | When the full text was last retrieved. |
 
 Serialisable via `to_dict()` / `from_dict()`.
+
+---
+
+### `Grant` and `AuthorAffiliation`
+
+Funding awards and author affiliations, parsed from PubMed's `<GrantList>` and `<AffiliationInfo>`. Like `FullTextSource`, these are **child rows** of a publication rather than columns on it, stored in `publication_grants` and `publication_affiliations`.
+
+```python
+@dataclass
+class Grant:
+    agency: str | None = None
+    grant_id: str | None = None
+    country: str | None = None
+    publication_id: int = 0     # set by store_publication
+    id: int | None = None
+
+@dataclass
+class AuthorAffiliation:
+    author: str
+    affiliation: str
+    position: int = 0           # 0-based index in <AuthorList>
+    publication_id: int = 0
+    id: int | None = None
+```
+
+Every field of a `Grant` is optional because PubMed's own records are: an award may name an agency with no id, or an id with no country. A grant naming **neither** an agency nor an id is dropped at parse time — it identifies no award.
+
+`AuthorAffiliation` is one row per *(author, affiliation)* pair, so an author listing three institutions produces three rows. `author` is formatted exactly as `Publication.authors` formats it (`"Last, Fore"`), so the two can be matched. `position` is the author's index in the `<AuthorList>`, carried because first-author and senior-author affiliations are the ones a conflict-of-interest check cares about and the name alone cannot recover the ordering.
+
+Both are serialisable via `to_dict()` / `from_dict()`, and both are read back with [`get_grants()` / `get_author_affiliations()`](#get_grants-and-get_author_affiliations).
+
+```python
+from bmlib.publications import get_author_affiliations, get_grants
+
+for grant in get_grants(conn, pub.id):
+    print(grant.agency, grant.grant_id)
+
+industry = [a for a in get_author_affiliations(conn, pub.id) if "Pfizer" in a.affiliation]
+```
 
 ---
 
@@ -374,11 +415,15 @@ class SourceDescriptor:
 def ensure_schema(conn: Any) -> None
 ```
 
-Create all publications tables if they do not exist, delegating to `bmlib.db.create_tables`. Creates three tables:
+Create all publications tables if they do not exist, delegating to `bmlib.db.create_tables`. Creates:
 
 - **`publications`** — Core publication records, with unique **partial** indexes on `doi` and `pmid` (each `WHERE ... IS NOT NULL`, so any number of rows may have a `NULL` identifier) and a plain index on `publication_date`.
 - **`fulltext_sources`** — Full-text source URLs linked to publications. Unique on `(publication_id, url)`.
 - **`download_days`** — Tracks which source/date combinations have been fetched. Unique on `(source, date)`.
+- **`retraction_notices`** — Retraction Watch notices, unique on `record_id`. See [Retractions](#retractions).
+- **`publication_grants`** and **`publication_affiliations`** — PubMed funding awards and author affiliations, each indexed on `publication_id`.
+
+Neither of the last two carries a UNIQUE constraint on its natural key, and that is deliberate: every column of a grant is nullable, and both backends treat `NULL` as *distinct* in a unique index, so `UNIQUE(publication_id, agency, grant_id)` would let `(1, NULL, 'R01')` insert twice — protecting nothing while appearing to. Idempotency is the storage layer's job instead; see [`store_publication`](#store_publication).
 
 Called automatically by `sync()`. Call manually if you need the schema before syncing. The raw DDL is available as `bmlib.publications.schema.SCHEMA_SQL` (SQLite) and `SCHEMA_SQL_POSTGRESQL`; `ensure_schema()` picks the matching one. The two differ only where the dialects do — surrogate keys and booleans. Everything the storage layer leans on exists in both.
 
@@ -453,8 +498,11 @@ When `store_publication()` detects this, it consolidates before merging:
 
 1. The **DOI row is kept**; the PMID row is dropped.
 2. The drop row's full-text sources are re-pointed at the keep row with `UPDATE OR IGNORE` (silently skipping any `(publication_id, url)` pair the keep row already has); leftover duplicates on the drop row are then deleted.
-3. The drop row's data is snapshotted, the drop row is deleted — freeing its unique identifier — and the snapshot is merged into the keep row.
-4. The keep row is re-read, and the incoming record is merged into it as usual. The call returns `"merged"`.
+3. The drop row's grants and affiliations move to the keep row — but **only if the keep row has none of its own**, otherwise they are deleted. That is the same "fill, never overwrite" rule the field merge follows, applied at table granularity: layering two sources' grant sets together would produce a merged set belonging to neither paper.
+4. The drop row's data is snapshotted, the drop row is deleted — freeing its unique identifier — and the snapshot is merged into the keep row.
+5. The keep row is re-read, and the incoming record is merged into it as usual. The call returns `"merged"`.
+
+Steps 2 and 3 must both complete before step 4: both backends enforce foreign keys, so any child row still pointing at the drop row makes its `DELETE` raise and aborts the entire store.
 
 The whole consolidation runs inside `store_publication()`'s transaction, so a failure part-way through rolls back completely and cannot lose the drop row's data.
 
@@ -467,6 +515,9 @@ def store_publication(
     conn: Any,
     pub: Publication,
     fulltext_sources: Sequence[FullTextSource] | None = None,
+    *,
+    grants: Sequence[Grant] | None = None,
+    affiliations: Sequence[AuthorAffiliation] | None = None,
 ) -> str
 ```
 
@@ -479,6 +530,7 @@ Store a publication, de-duplicating by DOI then PMID.
 4. If a row was found, **merge** the incoming record into it.
 5. Otherwise, **insert** as a new record.
 6. Insert any `fulltext_sources` against the resulting row id.
+7. Apply `grants` and `affiliations` against the resulting row id.
 
 **Merge behaviour:**
 - Appends new source names to the existing `sources` list (no duplicates).
@@ -487,11 +539,15 @@ Store a publication, de-duplicating by DOI then PMID.
 - `is_open_access`: can only be upgraded from `0` to the incoming value, never downgraded.
 - `updated_at` is set to now.
 
-**Transactions:** the whole store (row consolidation, insert/merge, and
-full-text sources) is one atomic transaction. Standalone calls commit on
-return; calls made inside a caller's `transaction(conn)` block join it via a
-savepoint, deferring the commit to the caller (this is how `sync()` batches a
-whole day into one commit — see `bmlib.db.transaction`).
+**Grants and affiliations are replace-if-nonempty**, which is *not* how `fulltext_sources` behaves. Full-text URLs accumulate — every source's are kept, because a paper genuinely has several. Grants and affiliations are a property of the paper that one source states completely, so supplying any **replaces** the stored set for that publication, and supplying none leaves it untouched.
+
+That makes re-syncing a day idempotent (no accumulating duplicates) and self-correcting (a corrected grant supersedes the stale one) without a unique index, which [cannot be written correctly here](#ensure_schema). The "supplying none leaves it alone" half is what stops a bioRxiv or OpenAlex record — which carries no funding data — from erasing what PubMed found. The limitation, since only `fetch_pubmed` produces these today: if a second source ever supplied them, successive syncs would alternate between the two sources' sets.
+
+**Transactions:** the whole store (row consolidation, insert/merge, full-text
+sources, grants and affiliations) is one atomic transaction. Standalone calls
+commit on return; calls made inside a caller's `transaction(conn)` block join
+it via a savepoint, deferring the commit to the caller (this is how `sync()`
+batches a whole day into one commit — see `bmlib.db.transaction`).
 
 **Parameters:**
 
@@ -499,7 +555,9 @@ whole day into one commit — see `bmlib.db.transaction`).
 |-----------|------|---------|-------------|
 | `conn` | `Any` | *(required)* | A DB-API connection with the publications schema. |
 | `pub` | `Publication` | *(required)* | The publication to store. **Mutated in place** to hold normalised identifiers. |
-| `fulltext_sources` | `Sequence[FullTextSource] \| None` | `None` | Optional full-text sources to associate with the publication. Their `publication_id` is ignored; the stored row's id is used. |
+| `fulltext_sources` | `Sequence[FullTextSource] \| None` | `None` | Optional full-text sources to associate with the publication. Their `publication_id` is ignored; the stored row's id is used. They accumulate across calls. |
+| `grants` | `Sequence[Grant] \| None` | `None` | Keyword-only. Funding awards. Replaces the stored set if non-empty; leaves it alone otherwise. |
+| `affiliations` | `Sequence[AuthorAffiliation] \| None` | `None` | Keyword-only. Author affiliations, same replace-or-leave rule. |
 
 **Returns:** `"added"` for a new record, `"merged"` for an updated existing record.
 
@@ -541,6 +599,25 @@ def get_publication_by_pmid(conn: Any, pmid: str) -> Publication | None
 ```
 
 Look up a publication by PMID. The argument is whitespace-stripped before lookup. Returns `None` if not found.
+
+---
+
+### `get_grants` and `get_author_affiliations`
+
+```python
+def get_grants(conn: Any, publication_id: int) -> list[Grant]
+def get_author_affiliations(conn: Any, publication_id: int) -> list[AuthorAffiliation]
+```
+
+Read back what [`store_publication`](#store_publication) persisted for one publication. Both return an empty list when nothing was stored. Affiliations come back ordered by `position`, so the first and senior authors are at the ends.
+
+```python
+pub = get_publication_by_pmid(conn, "12345678")
+funders = {g.agency for g in get_grants(conn, pub.id) if g.agency}
+first_author_affiliations = [
+    a.affiliation for a in get_author_affiliations(conn, pub.id) if a.position == 0
+]
+```
 
 ---
 
@@ -656,7 +733,7 @@ What a callback **may** assume:
 
 - It receives a fully normalised `FetchedRecord` (not a raw dict, and not a `Publication`).
 - It is called once per record, in fetch order, on the calling thread.
-- Fields dropped during storage — `pmc_id`, `extras` — are still present here. This is the only place to capture them.
+- Fields dropped during storage — `pmc_id`, `extras` — are still present here. This is the only place to capture them. (`grants` and `author_affiliations` *are* persisted, into their own tables.)
 
 What a callback **must not** assume:
 
@@ -949,8 +1026,26 @@ Fetch all PubMed articles published on `target_date` using NCBI E-utilities.
 - ESearch (with `usehistory=y`) to count and stage PMIDs, then paged EFetch to retrieve XML.
 - Pages through results in batches of 500 (`EFETCH_PAGE_SIZE`).
 - Rate limits: `0.1 s` with an API key, `0.34 s` without — selected purely by whether `api_key` is truthy.
-- Extracts: PMID, title, abstract (multi-part), authors, journal, DOI, PMC ID, MeSH keywords, and full-text source URLs (PMC article page, DOI resolver). It also populates `publication_types` from `PublicationTypeList`, which is what the free Tier 1 quality filter classifies study design from (see [quality.md](quality.md)). Before 0.4.0 this field was left empty, so synced PubMed records skipped the free tier entirely.
+- Extracts: PMID, title, abstract, authors, journal, DOI, PMC ID, MeSH keywords, and full-text source URLs (PMC article page, DOI resolver). It also populates `publication_types` from `PublicationTypeList`, which is what the free Tier 1 quality filter classifies study design from (see [quality.md](quality.md)). Before 0.4.0 this field was left empty, so synced PubMed records skipped the free tier entirely.
+- Populates `grants` from `<GrantList>` and `author_affiliations` from `<AffiliationInfo>`; `sync()` persists both (see [`Grant` and `AuthorAffiliation`](#grant-and-authoraffiliation)). It is the only built-in fetcher that produces either.
 - Takes **no** `email` parameter.
+
+#### Titles and abstracts are Markdown
+
+Titles and abstracts preserve PubMed's inline markup, mapped to Markdown: `<b>`/`<bold>` → `**x**`, `<i>`/`<italic>` → `*x*`, `<sup>` → `^x^`, `<sub>` → `~x~`, `<u>`/`<underline>` → `__x__`. An unrecognised tag contributes its text undecorated.
+
+Each `AbstractText` becomes one section, separated from the next by a blank line. Its label comes from the `Label` attribute, falling back to `NlmCategory` (except the placeholders `UNASSIGNED` and `UNLABELLED`), and renders as a bold upper-case heading:
+
+```markdown
+**BACKGROUND:** Levels of CO~2~ rose over 10 m^2^ plots.
+
+**METHODS:** We conducted a randomised trial.
+```
+
+Two things to know:
+
+- **`~x~` and `^x^` are Pandoc extensions, not CommonMark.** A renderer without them shows the tildes and carets literally. The alternative was worse: flattening the markup away renders both `CO<sub>2</sub>` and `CO^2^` as an ambiguous `CO2`.
+- **Values are not comparable with those stored before this release.** Titles changed because they were previously truncated at their first markup tag — `"Effects of H<sub>2</sub>O and <i>E. coli</i> on outcomes"` was stored as `"Effects of H"`. Abstracts changed because they gain the recovered `NlmCategory` labels, the blank-line section breaks, and the sub/superscript notation. Re-sync, or accept a mix.
 
 ### `fetch_biorxiv`
 

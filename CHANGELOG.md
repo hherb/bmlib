@@ -127,6 +127,73 @@ All notable changes to bmlib are documented here. The format is based on
   carrying no `risk_of_bias` section at all was accepted and turned into nine
   fabricated defaults; and the study label was derived by
   `first_author.split()[-1]`, which reads "van der Berg" as "Berg".
+- **PubMed grants and author affiliations** (`bmlib.publications.Grant`,
+  `AuthorAffiliation`) — Phase 2 row 11 of the bmlibrarian port, and the last
+  Phase 2 row. The PubMed fetcher now reads `<GrantList>` awards and
+  `<AffiliationInfo>` affiliations, and both are persisted: two new tables,
+  `publication_grants` and `publication_affiliations`, created by
+  `ensure_schema()` on both backends, read back by the new `get_grants()` and
+  `get_author_affiliations()`. They are child rows of a publication, following
+  the `FullTextSource` precedent, so `Publication` and its `to_dict()`
+  contract are unchanged; the new `FetchedRecord.grants` and
+  `FetchedRecord.author_affiliations` are declared last, for positional
+  stability. Affiliations are stored one row per *(author, affiliation)* pair
+  rather than upstream's nested grouping — the relational shape, which makes
+  "which papers have an author at this institution?" an indexed query — and
+  carry the author's `position` in the `<AuthorList>`, because first-author
+  and senior-author affiliation are the conflict-of-interest signals and the
+  name alone cannot recover the ordering.
+
+  Storage is replace-if-nonempty: a record carrying grants replaces the stored
+  set, a record carrying none leaves it alone. That makes re-syncing a day
+  idempotent and self-correcting without a UNIQUE constraint on the natural
+  key — which cannot be written correctly here, since every column of a grant
+  is nullable and both backends treat NULL as *distinct* in a unique index, so
+  the constraint would protect nothing while appearing to. The
+  `if incoming:` guard is the same "fill, never clobber" rule the field merge
+  already applies: a bioRxiv or OpenAlex record merging into a PubMed row
+  carries no grants, and reading that silence as "this paper has no funders"
+  would destroy real data.
+
+  Two upstream defects fixed, each with a named regression test: a grant
+  naming neither an agency nor an award id was stored as a row identifying no
+  award, and affiliations named their author `"Smith John"` while the author
+  list said `"Smith, John A"`, so joining the two was guesswork — one pass
+  over `<AuthorList>` now formats both. Upstream's `is_retracted` was
+  deliberately not ported: `publication_types` already carries "Retracted
+  Publication" verbatim, `bmlib.publications.retractions` answers the question
+  authoritatively, and upstream treats RefType `RetractionOf` as retracted
+  when it marks an article as *being* the retraction notice.
+
+### Changed
+
+- **PubMed titles and abstracts preserve inline markup, and abstracts are
+  Markdown.** `_text()` read `el.text`, which is the text *before the first
+  child element*, so any PubMed title carrying markup was truncated there and
+  the loss was silent: `"Effects of H<sub>2</sub>O and <i>E. coli</i> on
+  outcomes"` parsed as `"Effects of H"`. Titles drive dedup display, quality
+  assessment and citation building, and chemical formulas and italicised
+  species names are ordinary in PubMed titles. Titles and abstracts are now
+  read with a mixed-content walker that maps `<b>`/`<i>`/`<sup>`/`<sub>`/`<u>`
+  to Markdown, and each `AbstractText` becomes a `**LABEL:** text` section
+  separated by a blank line, with the label taken from `Label` *or*
+  `NlmCategory` — reading only `Label` dropped the heading from every section
+  labelled the other way, running it into its neighbour.
+
+  A second upstream defect fixed on the way: upstream stripped whitespace at
+  every recursion level, so the space inside `<b>Randomised </b><b>trial</b>`
+  vanished and the runs welded into `**Randomised****trial**`, which is broken
+  Markdown rather than merely ugly text. Leaving the space where it sits is no
+  better — CommonMark requires an emphasis delimiter to be adjacent to
+  non-whitespace — so a run's edge whitespace is re-emitted *outside* its
+  markers, giving `**Randomised** **trial**`.
+
+  **Not comparable with previously stored values.** Every synced PubMed title
+  and abstract changes shape: titles because they were being truncated,
+  abstracts because they gain recovered `NlmCategory` labels, blank-line
+  section breaks, and `CO~2~` / `m^2^` where the old flattening produced an
+  ambiguous `CO2` / `m2`. Anything persisting abstracts should re-sync or
+  accept the mix.
 
 ## [0.7.0] — 2026-08-04
 
