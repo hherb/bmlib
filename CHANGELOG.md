@@ -139,7 +139,9 @@ All notable changes to bmlib are documented here. The format is based on
   `FetchedRecord.author_affiliations` are declared last, for positional
   stability. Affiliations are stored one row per *(author, affiliation)* pair
   rather than upstream's nested grouping — the relational shape, which makes
-  "which papers have an author at this institution?" an indexed query — and
+  "which papers have an author at this institution?" a join rather than a scan
+  through nested JSON (only `publication_id` is indexed; an index suiting a
+  search *by* institution is the consumer's to add) — and
   carry the author's `position` in the `<AuthorList>`, because first-author
   and senior-author affiliation are the conflict-of-interest signals and the
   name alone cannot recover the ordering.
@@ -155,7 +157,13 @@ All notable changes to bmlib are documented here. The format is based on
   source rather than each fetcher setting it, so a new fetcher cannot forget.
   A record carrying no rows at all still leaves everything alone: an absent
   `<GrantList>` means the record did not carry the data, not that the funding
-  was withdrawn.
+  was withdrawn. A row naming *no* source raises `ValueError` rather than
+  being stored, because scoping is the whole mechanism: an unnamed row is
+  unreachable, so no later sync can replace it and each one stacks a
+  correctly-labelled duplicate beside it. The check is in the storage layer
+  rather than left to the `NOT NULL` column because the column rejects `None`
+  while `""` — the dataclass default, and so the value a forgetful caller
+  actually produces — was stored happily.
 
   There is no UNIQUE constraint on the natural key, deliberately — every
   column of a grant proper is nullable and both backends treat NULL as
@@ -189,11 +197,29 @@ All notable changes to bmlib are documented here. The format is based on
   outcomes"` parsed as `"Effects of H"`. Titles drive dedup display, quality
   assessment and citation building, and chemical formulas and italicised
   species names are ordinary in PubMed titles. Titles and abstracts are now
-  read with a mixed-content walker that maps `<b>`/`<i>`/`<sup>`/`<sub>`/`<u>`
+  read with a mixed-content walker that maps `<b>`/`<i>`/`<sup>`/`<sub>`
   to Markdown, and each `AbstractText` becomes a `**LABEL:** text` section
   separated by a blank line, with the label taken from `Label` *or*
   `NlmCategory` — reading only `Label` dropped the heading from every section
   labelled the other way, running it into its neighbour.
+
+  Prose taken from the document is escaped (`` \ ` * ~ ^ ``), so a field
+  *declared* Markdown cannot be re-read as markup it never carried. Without
+  this the change would corrupt values that were fine before: `CYP2C19 (*1,
+  *2, *3, *17 alleles)`, the standard star-allele notation, renders as
+  `(<em>1, </em>2, …)`, and the `~` of "AUC ~ 0.80" pairs with the next one to
+  subscript half a sentence — a hazard the `~x~` mapping itself created. The
+  escape set is measured against 3,403 real titles and abstract sections: it
+  alters 0.35% of them and removes every construct a CommonMark parser found,
+  while also escaping `_` and `[`/`]` churned 4.3% and fixed nothing further
+  (intraword `_` is inert in CommonMark, and a bare `[…]` is not a link).
+
+  `<u>`/`<underline>` is **not** mapped, and passes through undecorated.
+  Markdown has no underline — `__x__` is *strong* emphasis, so mapping `<u>`
+  to it renders underlined text identically to `<b>` while asserting the
+  source said "bold", which is exactly the ambiguity `<sub>`/`<sup>` earned
+  their Pandoc markers to avoid. Underline is presentational, unlike a
+  subscript, so dropping it loses nothing a reader needs.
 
   A second upstream defect fixed on the way: upstream stripped whitespace at
   every recursion level, so the space inside `<b>Randomised </b><b>trial</b>`

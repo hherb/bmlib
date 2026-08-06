@@ -5,8 +5,8 @@ bmlibrarian port is complete**: `[Unreleased]` carries all four of its ports —
 the Cochrane assessment agent (row 9, PR #54), the PDF section segmenter
 (row 8, PR #55), the citation/reference stack (row 4, PR #58), and the PubMed
 metadata graft (row 11, PR #59). Two open issues (#56, #57), both minor
-`fulltext` refinements deferred from PR #55's review. 1670 tests passing + 58
-skipped (1726 + 2 with a PostgreSQL DSN), ruff clean. **`[Unreleased]` is now
+`fulltext` refinements deferred from PR #55's review. 1685 tests passing + 58
+skipped (1741 + 2 with a PostgreSQL DSN), ruff clean. **`[Unreleased]` is now
 large enough to be worth cutting as 0.8.0** — see "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
@@ -59,7 +59,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   first markup tag; abstracts because they gain `NlmCategory` labels,
   blank-line section breaks and `CO~2~` notation). CHANGELOG says which, and
   the manual tells callers to re-sync or accept a mix.
-- **1670 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1726 + 2
+- **1685 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1741 + 2
   with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
   PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
@@ -165,9 +165,15 @@ transparency/quality reconciliation, no GRADE engine exists, SSRF guard).
 7. **Reconcile, don't fork:** where a port overlaps existing bmlib, build on
    the existing module.
 8. **When the code parses someone's XML, read their DTD** rather than
-   deciding by eye which elements are leaves. Row 11's one review finding was
-   exactly that: `<Affiliation>` looks like a leaf, is declared `(%text;)*`,
-   and a bare `.text` read silently dropped rows.
+   deciding by eye which elements are leaves. One of row 11's review findings
+   was exactly that: `<Affiliation>` looks like a leaf, is declared
+   `(%text;)*`, and a bare `.text` read silently dropped rows.
+9. **If the code declares an output format, it owes that format's rules.**
+   Row 11's later review found the same class of error twice over: having
+   decided titles were Markdown, the fetcher neither escaped the prose it
+   wrapped nor checked that `<u>` had a Markdown spelling that was not
+   already `<b>`'s. Deciding a format is a promise about every value, not
+   only the ones carrying markup.
 
 ## Deliberate non-fixes — do not "fix" these
 
@@ -423,6 +429,30 @@ named source file; the entry here is the pointer, not the argument.
 - **`~x~` / `^x^` are Pandoc extensions, knowingly.** A renderer without them
   shows the tildes literally; the alternative flattened `CO<sub>2</sub>` and
   `CO<sup>2</sup>` to the same ambiguous `CO2`. Documented in the manual.
+- **The escape set is measured, and re-deciding it needs a measurement, not
+  an opinion.** `_escape_markdown()` escapes ``\ ` * ~ ^`` in document prose
+  and nothing else. Across 3,403 real titles and abstract sections that
+  alters 0.35% and removes every construct a CommonMark parser found;
+  escaping `_` and `[`/`]` too churned 4.3% and fixed nothing, because
+  intraword `_` is inert in CommonMark and a bare `[…]` is not a link. The
+  commonest real hazard is the tilde, which *this module* created by emitting
+  `~2~`: "AUC ~ 0.80" and "(~88%)" are ordinary prose and an unescaped pair
+  subscripts the span between them. The asterisk case is the star allele,
+  `CYP2C19 (*1, *2, *3)`. Affiliations share the walker and so are escaped
+  too — which is user-visible, because that column is a join key.
+- **`<u>` is deliberately not mapped and must not be re-added.** Markdown has
+  no underline; `__x__` is *strong* emphasis, so mapping `<u>` renders it
+  identically to `<b>` while asserting the source said "bold" — the ambiguity
+  `sub`/`sup` earned Pandoc markers to avoid. It falls through to the
+  undecorated path. Pinned by `test_underline_is_not_rendered_as_bold`.
+- **A grant or affiliation naming no source raises `ValueError`.** Scoping is
+  the whole mechanism, so an unnamed row is unreachable: nothing can name it,
+  so no sync can replace it and each one stacks a labelled duplicate beside
+  it. The check is in the storage layer, not left to `NOT NULL`, because the
+  column rejects `None` while `""` — the dataclass default, and the value a
+  forgetful caller actually produces — was stored happily. Nine tests were
+  silently exercising that path before the guard landed. Pinned by
+  `test_a_row_naming_no_source_is_rejected`.
 - **Which elements get the formatting walker is decided by NLM's DTD.**
   `ArticleTitle`, `AbstractText` and `Affiliation` are all declared
   `(%text;)*` — `#PCDATA | b | i | sup | sub | u` — so all three use

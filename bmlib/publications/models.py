@@ -241,8 +241,15 @@ class AuthorAffiliation:
 
     One row per *(author, affiliation)* pair — an author listing three
     institutions produces three of these. That is the relational shape, and it
-    makes "which papers have an author at this institution?" a single indexed
-    query rather than a scan through nested JSON.
+    makes "which papers have an author at this institution?" a single join
+    rather than a scan through nested JSON.
+
+    Only ``publication_id`` is indexed, which serves the read this module
+    performs (a publication's own rows). A search *by* institution is a table
+    scan until a consumer adds its own index — deliberately left to them,
+    because an affiliation is long free text for which the useful index is
+    trigram or full-text, and both are backend-specific and costly to maintain
+    for callers who never run that query.
 
     ``position`` is the author's 0-based index in the ``<AuthorList>``. It is
     carried because first-author and senior-author affiliations are the ones a
@@ -255,6 +262,13 @@ class AuthorAffiliation:
     ``position`` counts every ``<Author>`` element, including the
     ``<CollectiveName>`` consortia that ``authors`` omits, so the two lists
     differ in length whenever one is present.
+
+    ``affiliation`` is Markdown, read by the same walker as the title and
+    abstract — an ``<Affiliation>`` shares ``<ArticleTitle>``'s content model
+    and can carry a superscript footnote marker. It is therefore escaped like
+    any other prose, which matters here in a way it does not for a title:
+    matching this column against an institution name obtained elsewhere must
+    compare against the escaped form.
 
     ``source`` and ``publication_id`` behave exactly as :class:`Grant`'s do —
     the first scopes storage to the source that asserted the row, the second is

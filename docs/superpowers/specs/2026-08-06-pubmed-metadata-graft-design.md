@@ -36,8 +36,30 @@ Six files change. Each piece is separable and independently testable.
 
 **`_text_with_formatting(el) -> str`** walks mixed content and maps inline tags
 to Markdown: `b`/`bold` → `**x**`, `i`/`italic` → `*x*`, `sup` → `^x^`,
-`sub` → `~x~`, `u`/`underline` → `__x__`. An unrecognised tag contributes its
-text without decoration. Tail text after each child is preserved.
+`sub` → `~x~`. An unrecognised tag contributes its text without decoration.
+Tail text after each child is preserved.
+
+`u`/`underline` is deliberately *not* mapped, a change made in review. Markdown
+has no underline; `__x__` is strong emphasis, so mapping `<u>` to it renders
+underlined text identically to `<b>` — the same collapse `sub`/`sup` earned
+Pandoc markers to avoid — while additionally asserting the source said "bold".
+Underline is presentational, so dropping the decoration loses nothing a reader
+needs.
+
+**`_escape_markdown(text) -> str`** backslash-escapes ``\ ` * ~ ^`` in text
+taken from the document, never in the markers the walker inserts. Also from
+review: declaring these fields Markdown without it would corrupt values that
+were fine before. The escape set is measured, not assumed — across 3,403 real
+titles and abstract sections it alters 0.35% of them and removes every
+construct a CommonMark parser found in the unescaped text, whereas also
+escaping `_` and `[`/`]` churned 4.3% and fixed nothing further.
+
+| hazard | measured | unescaped result |
+|---|---|---|
+| `~` "approximately" — `AUC ~ 0.80`, `(~88%)` | 8 fields | pairs with the next `~` and subscripts the span, under the very Pandoc renderer `~2~` targets |
+| `*` star alleles — `CYP2C19 (*1, *2, *3)` | 3 fields | `(<em>1, </em>2, …)` |
+| `_` intraword — `TP53_R175H` | 10 fields | **inert in CommonMark** — escaping is pure noise |
+| `[…]` — `[This corrects the article …]` | 128 fields | **not a link** without a following `(…)` |
 
 **Upstream defect fixed:** upstream calls `.strip()` at *every* recursion level,
 so a space living inside a formatted run is eaten and words weld together:
@@ -121,7 +143,10 @@ Both get `to_dict()`/`from_dict()` per convention.
 One row per *(author, affiliation)* pair rather than upstream's
 `{author, affiliations: [...]}` grouping — that is the relational shape, and it
 makes the transparency question ("which papers have an author at Pfizer?") a
-single indexed query instead of a JSON scan.
+join instead of a JSON scan. Only `publication_id` is indexed, which serves the
+read this module performs; an index suiting a search *by* institution is left
+to the consumer, since the useful one over long free text is trigram or
+full-text and both are backend-specific.
 
 `position` is carried because first-author and senior-author affiliation are
 *the* COI signals, and the author name alone cannot recover the ordering:

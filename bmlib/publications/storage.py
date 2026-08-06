@@ -46,6 +46,7 @@ from typing import Any
 
 from bmlib.db import (
     execute,
+    executemany,
     fetch_all,
     fetch_one,
     is_sqlite,
@@ -309,16 +310,32 @@ def _replace_child_rows(
     Does nothing when *rows* is empty — there is no source to scope the delete
     to, and an absent ``<GrantList>`` means the record did not carry the data
     rather than that the funding was withdrawn.
+
+    Raises:
+        ValueError: If any row names no source. Every row must say who
+            asserted it; see below for why this is raised rather than stored.
     """
     if not rows:
         return
 
-    # Not ``str(source)``: coercing here would turn a ``None`` source — a
-    # NOT NULL violation the database would reject loudly — into the literal
-    # string "None", a source name that looks real, matches nothing, and can
-    # never be replaced by a later sync because no record will ever name it.
+    # A row whose source is missing has nowhere to live. Scoping is the whole
+    # mechanism here, so an unnamed row is one no later sync can ever replace:
+    # it is not merely unlabelled, it is permanently stuck, accumulating a
+    # duplicate beside the correctly-labelled row on every subsequent sync.
+    #
+    # ``None`` would be caught by the NOT NULL column, but ``""`` is what the
+    # dataclass defaults to and the column accepts it happily — so the check
+    # lives here, where both fail the same way and the message can say what to
+    # do. ``sync()`` stamps the source for every fetcher (see
+    # ``sync._stamp_source``); a caller reaching this function directly is the
+    # one who has to set it.
     by_source: dict[Any, list[tuple[Any, ...]]] = {}
     for source, *values in rows:
+        if not source:
+            raise ValueError(
+                f"{table}: every row must name the source that asserted it, got {source!r}. "
+                "Set Grant.source / AuthorAffiliation.source, or let sync() stamp it."
+            )
         by_source.setdefault(source, []).append(tuple(values))
 
     ph = placeholder(conn)
@@ -331,8 +348,10 @@ def _replace_child_rows(
             f"DELETE FROM {table} WHERE publication_id = {ph} AND source = {ph}",
             (publication_id, source),
         )
-        for row in group:
-            execute(conn, sql, (publication_id, source, *row, now))
+        # One round trip for the group rather than one per row: a PubMed day is
+        # thousands of records each carrying an affiliation per author, and on
+        # PostgreSQL every ``execute`` is a network round trip.
+        executemany(conn, sql, [(publication_id, source, *row, now) for row in group])
 
 
 def _relocate_child_rows(conn: Any, table: str, keep_id: int, drop_id: int) -> None:
@@ -520,14 +539,19 @@ def store_publication(
             identifiers.
         fulltext_sources: Full-text locations to record alongside it. These
             accumulate — every source's URLs are kept.
-        grants: Funding awards. Supplying any **replaces** whatever is stored
-            for this publication; supplying none leaves it untouched (see
-            :func:`_replace_child_rows`).
-        affiliations: Author affiliations, with the same replace-or-leave rule.
+        grants: Funding awards. Supplying any **replaces** the stored rows for
+            each ``source`` those rows name, leaving every other source's
+            alone; supplying none leaves everything untouched (see
+            :func:`_replace_child_rows`). Every row must name its source.
+        affiliations: Author affiliations, with the same replace-per-source
+            rule.
 
     Returns:
         ``"added"`` for a new record, or ``"merged"`` if an existing record was
         found and updated.
+
+    Raises:
+        ValueError: If a grant or affiliation names no source.
     """
     now = _now_iso()
     ph = placeholder(conn)

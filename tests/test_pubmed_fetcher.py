@@ -630,11 +630,21 @@ class TestInlineFormatting:
             ("<t><italic>x</italic></t>", "*x*"),
             ("<t><sup>x</sup></t>", "^x^"),
             ("<t><sub>x</sub></t>", "~x~"),
-            ("<t><u>x</u></t>", "__x__"),
-            ("<t><underline>x</underline></t>", "__x__"),
         ]
         for xml, expected in cases:
             assert _text_with_formatting(ET.fromstring(xml)) == expected, xml
+
+    def test_underline_is_not_rendered_as_bold(self):
+        """``<u>`` must not borrow ``<b>``'s markers.
+
+        Markdown has no underline, and ``__x__`` is *strong* emphasis — the
+        same output ``<b>`` produces. Mapping ``<u>`` to it would render the
+        two identically while asserting the source said "bold", which is the
+        ambiguity ``sub``/``sup`` earned their Pandoc markers to avoid. Passing
+        the text through undecorated loses only presentation.
+        """
+        for xml in ("<t><u>x</u></t>", "<t><underline>x</underline></t>"):
+            assert _text_with_formatting(ET.fromstring(xml)) == "x", xml
 
     def test_an_unknown_tag_contributes_its_text_undecorated(self):
         el = ET.fromstring("<t>a <unknown>b</unknown> c</t>")
@@ -662,6 +672,107 @@ class TestInlineFormatting:
     def test_surrounding_whitespace_is_stripped_once(self):
         el = ET.fromstring("<t>  padded <b>x</b>  </t>")
         assert _text_with_formatting(el) == "padded **x**"
+
+
+class TestProseIsEscapedAgainstItsOwnMarkup:
+    """Declaring a field Markdown must not corrupt text that was fine before.
+
+    The escape set is measured, not guessed: across 3,403 real titles and
+    abstract sections, escaping ``\\ ` * ~ ^`` altered 0.35% of them and removed
+    every construct a CommonMark parser found, while adding ``_`` and
+    ``[``/``]`` churned 4.3% and fixed nothing further.
+    """
+
+    def test_a_star_allele_is_not_emphasis(self):
+        """The measured asterisk case, from real records.
+
+        ``CYP2C19 (*1, *2, *3, *17 alleles)`` is standard pharmacogenomic
+        notation; unescaped, a CommonMark parser reads the run between the
+        first two stars as emphasis and renders ``(<em>1, </em>2, ...)``.
+        """
+        el = ET.fromstring("<t>CYP2C19 (*1, *2, *3, *17 alleles)</t>")
+        assert _text_with_formatting(el) == r"CYP2C19 (\*1, \*2, \*3, \*17 alleles)"
+
+    def test_an_approximately_tilde_cannot_pair_with_a_subscript_marker(self):
+        """The commonest case, and one this module created.
+
+        ``~`` means "approximately" throughout scientific prose ("AUC ~ 0.80",
+        "(~88%)"). Emitting ``~2~`` for ``<sub>`` made the character
+        meaningful, so an unescaped literal pair now silently subscripts
+        everything between them under a Pandoc renderer.
+        """
+        el = ET.fromstring("<t>AUC ~ 0.80 and ~88% of H<sub>2</sub>O</t>")
+        assert _text_with_formatting(el) == r"AUC \~ 0.80 and \~88% of H~2~O"
+
+    def test_a_caret_is_escaped_but_a_superscript_marker_is_not(self):
+        el = ET.fromstring("<t>2^10 vs m<sup>2</sup></t>")
+        assert _text_with_formatting(el) == r"2\^10 vs m^2^"
+
+    def test_a_backslash_is_escaped_so_the_escapes_are_unambiguous(self):
+        el = ET.fromstring(r"<t>path\to\file</t>")
+        assert _text_with_formatting(el) == r"path\\to\\file"
+
+    def test_a_backtick_cannot_open_a_code_span(self):
+        el = ET.fromstring("<t>the `gene` locus</t>")
+        assert _text_with_formatting(el) == r"the \`gene\` locus"
+
+    def test_an_intraword_underscore_is_left_alone(self):
+        """Escaping ``_`` would be pure noise.
+
+        CommonMark makes intraword ``_`` inert, so gene and variant names —
+        which is nearly every underscore PubMed carries — need no escape. The
+        measurement says escaping it alters 10 more fields and fixes none.
+        """
+        el = ET.fromstring("<t>TP53_R175H and BRCA1_var</t>")
+        assert _text_with_formatting(el) == "TP53_R175H and BRCA1_var"
+
+    def test_brackets_are_left_alone(self):
+        """A bare ``[...]`` is not a link without a following ``(...)``.
+
+        These are common in PubMed ("[This corrects the article ...]", "[grant
+        number X]") and were the whole cost of the wider escape set.
+        """
+        el = ET.fromstring("<t>[This corrects the article DOI: 10.1/x.]</t>")
+        assert _text_with_formatting(el) == "[This corrects the article DOI: 10.1/x.]"
+
+    def test_escaping_reaches_tail_text_as_well_as_element_text(self):
+        """Every text node is escaped, not merely the first.
+
+        Tails are a separate node from an element's own text; escaping only the
+        latter would leave everything after the first child unprotected.
+        """
+        el = ET.fromstring("<t>a*b <b>x</b> c*d</t>")
+        assert _text_with_formatting(el) == r"a\*b **x** c\*d"
+
+    def test_text_inside_a_formatted_run_is_escaped_too(self):
+        el = ET.fromstring("<t><b>2*3</b></t>")
+        assert _text_with_formatting(el) == r"**2\*3**"
+
+    def test_an_abstract_label_is_escaped(self):
+        el = ET.fromstring(
+            '<Abstract><AbstractText Label="Costs*">Prose.</AbstractText></Abstract>'
+        )
+        assert _format_abstract_markdown(el) == r"**COSTS\*:** Prose."
+
+    def test_an_affiliation_is_escaped_like_any_other_prose(self):
+        """Affiliations share the walker, so they share the contract.
+
+        Worth pinning separately because this column is a join key: anything
+        matching it against an institution name from elsewhere must compare
+        against the escaped form.
+        """
+        el = ET.fromstring("<Affiliation>Dept of Physics, Building C*, Univ X</Affiliation>")
+        assert _text_with_formatting(el) == r"Dept of Physics, Building C\*, Univ X"
+
+    def test_plain_prose_is_untouched(self):
+        """The negative control: escaping must not churn ordinary text.
+
+        Without this, a rule that escaped everything would pass every test
+        above while making 4% of stored abstracts worse.
+        """
+        text = "Patients (n = 42) improved by 15% [95% CI 3-27]; P < 0.05, TP53_R175H."
+        el = ET.fromstring(f"<t>{text.replace('<', '&lt;')}</t>")
+        assert _text_with_formatting(el) == text
 
 
 class TestAbstractMarkdown:

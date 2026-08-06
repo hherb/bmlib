@@ -1177,7 +1177,9 @@ class TestGrantAndAffiliationStorage:
         store_publication(
             conn,
             pub,
-            grants=[Grant(agency="NHLBI", grant_id="R01", country="United States")],
+            grants=[
+                Grant(agency="NHLBI", grant_id="R01", country="United States", source="pubmed")
+            ],
         )
 
         pub_id = get_publication_by_pmid(conn, "1").id
@@ -1192,7 +1194,7 @@ class TestGrantAndAffiliationStorage:
     def test_a_grant_with_null_fields_round_trips(self):
         conn = _schema_conn()
         pub = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
-        store_publication(conn, pub, grants=[Grant(agency="Wellcome Trust")])
+        store_publication(conn, pub, grants=[Grant(agency="Wellcome Trust", source="pubmed")])
 
         stored = get_grants(conn, get_publication_by_pmid(conn, "1").id)
         assert stored[0].agency == "Wellcome Trust"
@@ -1206,8 +1208,12 @@ class TestGrantAndAffiliationStorage:
             conn,
             pub,
             affiliations=[
-                AuthorAffiliation(author="Brown", affiliation="Pfizer Inc", position=2),
-                AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere", position=0),
+                AuthorAffiliation(
+                    author="Brown", affiliation="Pfizer Inc", position=2, source="pubmed"
+                ),
+                AuthorAffiliation(
+                    author="Smith, J", affiliation="St Elsewhere", position=0, source="pubmed"
+                ),
             ],
         )
 
@@ -1235,8 +1241,13 @@ class TestGrantAndAffiliationStorage:
         storage layer's job instead.
         """
         conn = _schema_conn()
-        grants = [Grant(agency="NHLBI", grant_id="R01"), Grant(agency="Wellcome Trust")]
-        affiliations = [AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere")]
+        grants = [
+            Grant(agency="NHLBI", grant_id="R01", source="pubmed"),
+            Grant(agency="Wellcome Trust", source="pubmed"),
+        ]
+        affiliations = [
+            AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere", source="pubmed")
+        ]
 
         for _ in range(3):
             pub = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
@@ -1250,10 +1261,12 @@ class TestGrantAndAffiliationStorage:
         """A corrected record supersedes the stale one rather than adding to it."""
         conn = _schema_conn()
         pub = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
-        store_publication(conn, pub, grants=[Grant(agency="Typo Foundation")])
+        store_publication(conn, pub, grants=[Grant(agency="Typo Foundation", source="pubmed")])
 
         pub2 = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
-        store_publication(conn, pub2, grants=[Grant(agency="NHLBI", grant_id="R01")])
+        store_publication(
+            conn, pub2, grants=[Grant(agency="NHLBI", grant_id="R01", source="pubmed")]
+        )
 
         stored = get_grants(conn, get_publication_by_pmid(conn, "1").id)
         assert [g.agency for g in stored] == ["NHLBI"]
@@ -1270,8 +1283,10 @@ class TestGrantAndAffiliationStorage:
         store_publication(
             conn,
             pub,
-            grants=[Grant(agency="NHLBI")],
-            affiliations=[AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere")],
+            grants=[Grant(agency="NHLBI", source="pubmed")],
+            affiliations=[
+                AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere", source="pubmed")
+            ],
         )
 
         merged = Publication(title="P", sources=["biorxiv"], first_seen_source="biorxiv", pmid="1")
@@ -1301,8 +1316,10 @@ class TestConsolidationRelocatesChildRows:
         store_publication(
             conn,
             by_pmid,
-            grants=[Grant(agency="NHLBI")],
-            affiliations=[AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere")],
+            grants=[Grant(agency="NHLBI", source="pubmed")],
+            affiliations=[
+                AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere", source="pubmed")
+            ],
         )
 
         # A record carrying both identifiers consolidates them.
@@ -1317,14 +1334,21 @@ class TestConsolidationRelocatesChildRows:
         assert [a.author for a in get_author_affiliations(conn, kept.id)] == ["Smith, J"]
 
     def test_the_kept_rows_own_children_survive_a_merge(self):
-        """The keep row's data wins; the drop row's is not layered on top."""
+        """The keep row's data wins; the drop row's is not layered on top.
+
+        Both grants name the *same* source, which is the case this pins: two
+        accounts of what PubMed said, of which only one can be right. Merging
+        them would yield a funder set PubMed never asserted, so the keep row's
+        wins outright. The cross-source case is the opposite and is covered by
+        ``test_consolidation_keeps_each_source_at_most_once``.
+        """
         conn = _schema_conn()
         by_doi = Publication(
             title="P", sources=["openalex"], first_seen_source="openalex", doi="10.1/x"
         )
-        store_publication(conn, by_doi, grants=[Grant(agency="Keep Foundation")])
+        store_publication(conn, by_doi, grants=[Grant(agency="Keep Foundation", source="pubmed")])
         by_pmid = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
-        store_publication(conn, by_pmid, grants=[Grant(agency="Drop Foundation")])
+        store_publication(conn, by_pmid, grants=[Grant(agency="Drop Foundation", source="pubmed")])
 
         both = Publication(
             title="P", sources=["pubmed"], first_seen_source="pubmed", doi="10.1/x", pmid="1"
@@ -1346,8 +1370,10 @@ class TestConsolidationRelocatesChildRows:
         than an obvious sentinel. Read the stored form back instead.
         """
         conn = _schema_conn()
-        grant = Grant(agency="NHLBI")
-        affiliation = AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere")
+        grant = Grant(agency="NHLBI", source="pubmed")
+        affiliation = AuthorAffiliation(
+            author="Smith, J", affiliation="St Elsewhere", source="pubmed"
+        )
         pub = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
 
         store_publication(conn, pub, grants=[grant], affiliations=[affiliation])
@@ -1460,22 +1486,58 @@ class TestChildRowsAreScopedBySource:
         assert sorted(g.agency for g in stored) == ["Keep NHLBI", "Wellcome Trust"]
         assert fetch_one(conn, "SELECT COUNT(*) AS n FROM publication_grants")["n"] == 2
 
-    def test_a_missing_source_is_rejected_rather_than_stored_as_none(self):
-        """A ``None`` source must fail loudly, not become the string "None".
+    def test_a_row_naming_no_source_is_rejected(self):
+        """A source-less row must fail loudly, whichever way it is missing.
 
-        ``source`` is typed ``str``, so this is a caller bug — but the failure
-        mode matters. Coercing it with ``str()`` would store the literal
-        "None": a source name that looks real, matches no record, and can
-        therefore never be replaced by a later sync, quietly accumulating rows
-        nothing will ever clean up. The NOT NULL column is allowed to reject it.
+        Scoping is the whole mechanism, so an unnamed row is not merely
+        unlabelled — it is unreachable. No later sync can name it, so it can
+        never be replaced, and every subsequent sync stacks a correctly
+        labelled duplicate beside it.
+
+        Both spellings of "missing" are checked because they used to fail
+        differently. ``None`` hit the NOT NULL column; ``""`` — which is what
+        the dataclass *defaults to*, so it is the one a caller actually
+        reaches — sailed through and was stored. That is why the check is in
+        the storage layer rather than left to the column.
         """
         conn = _schema_conn()
-        with pytest.raises(sqlite3.IntegrityError):
+        for missing in (None, ""):
+            with pytest.raises(ValueError, match="must name the source"):
+                store_publication(
+                    conn,
+                    Publication(
+                        title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1"
+                    ),
+                    grants=[Grant(agency="NHLBI", source=missing)],
+                )
+
+    def test_a_source_less_affiliation_is_rejected_too(self):
+        """The guard covers both child tables, not just grants."""
+        conn = _schema_conn()
+        with pytest.raises(ValueError, match="publication_affiliations"):
             store_publication(
                 conn,
-                Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1"),
-                grants=[Grant(agency="NHLBI", source=None)],
+                Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="2"),
+                affiliations=[AuthorAffiliation(author="Smith, J", affiliation="St E")],
             )
+
+    def test_the_rejection_leaves_nothing_behind(self):
+        """The raise happens inside the store's transaction, so it rolls back.
+
+        Otherwise a rejected batch could still leave the publication row — and
+        any earlier grant group — committed, which is a worse state than either
+        storing or refusing cleanly.
+        """
+        conn = _schema_conn()
+        with pytest.raises(ValueError):
+            store_publication(
+                conn,
+                Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="3"),
+                grants=[Grant(agency="NHLBI", source="pubmed"), Grant(agency="Wellcome")],
+            )
+
+        assert get_publication_by_pmid(conn, "3") is None
+        assert fetch_one(conn, "SELECT COUNT(*) AS n FROM publication_grants")["n"] == 0
 
     def test_relocating_a_row_onto_itself_is_a_no_op(self):
         """Guards the one assumption the relocation rests on.

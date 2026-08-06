@@ -187,6 +187,14 @@ the column from `record.source` rather than each fetcher setting it, because a
 fetcher that forgets fails silently — its rows land in an unnamed bucket and
 stop being scoped.
 
+A row naming **no** source raises `ValueError`. An unnamed row is not merely
+unlabelled but unreachable: nothing can ever name it, so no later sync can
+replace it and each one stacks a correctly-labelled duplicate beside it. The
+check is in the storage layer rather than left to the `NOT NULL` column
+because the column rejects `None` while `""` — the dataclass default, and so
+the value a forgetful caller actually produces — was stored happily. Nine
+tests were silently exercising that path before the guard existed.
+
 **No UNIQUE constraint on the natural key**, on purpose. Every column of a
 grant proper is nullable and both backends treat `NULL` as *distinct* in a
 unique index, so `UNIQUE(publication_id, source, agency, grant_id)` would let
@@ -231,6 +239,25 @@ test:
 
 An abstract section's label comes from `Label` **or** `NlmCategory` — reading
 only the first dropped the heading from every section labelled the other way.
+
+Two further rules keep the *declared* format honest, and the section title is
+meant literally — both were settled by measuring 3,403 real titles and
+abstract sections, not by taste:
+
+- **Prose is escaped; the markers are not.** `_escape_markdown()` escapes
+  ``\ ` * ~ ^`` in text taken from the document. Calling a field Markdown
+  without this corrupts values that were fine before: `CYP2C19 (*1, *2, *3)`
+  renders as `(<em>1, </em>2, …)`, and the `~` of "AUC ~ 0.80" pairs with the
+  next one to subscript half a sentence — a hazard the `~x~` mapping itself
+  created. That set alters 0.35% of fields and removes every construct a
+  CommonMark parser found; adding `_` and `[`/`]` churned 4.3% and fixed
+  nothing, since intraword `_` is inert and a bare `[…]` is not a link.
+  Affiliations go through the same walker, so they are escaped too — which
+  matters because that column is a join key.
+- **`<u>` is not mapped.** Markdown has no underline, and `__x__` is *strong*
+  emphasis, so mapping it renders `<u>` identically to `<b>` while asserting
+  the source said "bold". Underline is presentational, unlike a subscript, so
+  it falls through to the undecorated path instead.
 
 ### Optional dependencies guarded at the call site
 Optional imports are deferred to the constructor or function that needs them, not the module top level, so importing a module never drags in an extra. `PyMuPDFConverter.__init__` and `TransparencyAnalyzer.analyze()` both follow this pattern.

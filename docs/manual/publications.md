@@ -270,6 +270,8 @@ Every field of a `Grant` is optional because PubMed's own records are: an award 
 
 `AuthorAffiliation` is one row per *(author, affiliation)* pair, so an author listing three institutions produces three rows. `author` is formatted exactly as `Publication.authors` formats it (`"Last, Fore"`), so the two can be matched **by name**. `position` is the author's index in the `<AuthorList>`, carried because first-author and senior-author affiliations are the ones a conflict-of-interest check cares about and the name alone cannot recover the ordering.
 
+`affiliation` is Markdown, read by the same walker as titles and abstracts (an `<Affiliation>` shares `<ArticleTitle>`'s content model and can carry a superscript footnote marker), so it is escaped like any other prose — see [Titles and abstracts are Markdown](#titles-and-abstracts-are-markdown). That matters more here than for a title, because this column is a join key: matching it against an institution name obtained elsewhere must compare against the escaped form. Only `publication_id` is indexed, so a search *by* institution is a table scan until you add an index suiting your backend.
+
 > **`authors[a.position]` is the wrong way to resolve an affiliation's author.** `position` counts every `<Author>` element, while `authors` omits `<CollectiveName>` consortia, which have no personal name — so the two lists differ in length whenever a consortium is present. Match on `author` instead. (A consortium's own affiliation, if it states one, is not recorded.)
 
 Neither model's `publication_id` is read on the way in: `store_publication()` takes the id from the publication being stored and does **not** write it back onto the object you passed, unlike its `pub` argument. Read the persisted form back with `get_grants()` / `get_author_affiliations()`, whose results carry `publication_id` and `id`.
@@ -576,8 +578,10 @@ batches a whole day into one commit — see `bmlib.db.transaction`).
 | `conn` | `Any` | *(required)* | A DB-API connection with the publications schema. |
 | `pub` | `Publication` | *(required)* | The publication to store. **Mutated in place** to hold normalised identifiers. |
 | `fulltext_sources` | `Sequence[FullTextSource] \| None` | `None` | Optional full-text sources to associate with the publication. Their `publication_id` is ignored; the stored row's id is used. They accumulate across calls. |
-| `grants` | `Sequence[Grant] \| None` | `None` | Keyword-only. Funding awards. Replaces the stored rows for each `source` they name; leaves other sources', and everything, alone if empty. |
+| `grants` | `Sequence[Grant] \| None` | `None` | Keyword-only. Funding awards. Replaces the stored rows for each `source` they name; leaves other sources', and everything, alone if empty. Every row **must** name a source — see below. |
 | `affiliations` | `Sequence[AuthorAffiliation] \| None` | `None` | Keyword-only. Author affiliations, same replace-per-source rule. |
+
+**A row naming no source raises `ValueError`.** Scoping is the whole mechanism, so an unnamed row is not merely unlabelled — it is unreachable: no later sync can name it, so it can never be replaced, and each subsequent sync stacks a correctly-labelled duplicate beside it. `sync()` stamps the source for you from the record's own (`_stamp_source`), so this only concerns callers reaching `store_publication` directly. Note that `Grant.source` and `AuthorAffiliation.source` **default to `""`**, which is why the check lives in the storage layer rather than being left to the `NOT NULL` column — the column rejects `None`, but the value a forgetful caller actually produces is the empty string.
 
 **Returns:** `"added"` for a new record, `"merged"` for an updated existing record.
 
@@ -1056,7 +1060,7 @@ Fetch all PubMed articles published on `target_date` using NCBI E-utilities.
 
 #### Titles and abstracts are Markdown
 
-Titles and abstracts preserve PubMed's inline markup, mapped to Markdown: `<b>`/`<bold>` → `**x**`, `<i>`/`<italic>` → `*x*`, `<sup>` → `^x^`, `<sub>` → `~x~`, `<u>`/`<underline>` → `__x__`. An unrecognised tag contributes its text undecorated.
+Titles and abstracts preserve PubMed's inline markup, mapped to Markdown: `<b>`/`<bold>` → `**x**`, `<i>`/`<italic>` → `*x*`, `<sup>` → `^x^`, `<sub>` → `~x~`. An unrecognised tag contributes its text undecorated, and so does `<u>`/`<underline>` — see below.
 
 Each `AbstractText` becomes one section, separated from the next by a blank line. Its label comes from the `Label` attribute, falling back to `NlmCategory` (except the placeholders `UNASSIGNED` and `UNLABELLED`), and renders as a bold upper-case heading:
 
@@ -1066,10 +1070,11 @@ Each `AbstractText` becomes one section, separated from the next by a blank line
 **METHODS:** We conducted a randomised trial.
 ```
 
-Two things to know:
+Four things to know:
 
 - **`~x~` and `^x^` are Pandoc extensions, not CommonMark.** A renderer without them shows the tildes and carets literally. The alternative was worse: flattening the markup away renders both `CO<sub>2</sub>` and `CO<sup>2</sup>` as an ambiguous `CO2`.
-- **Markdown metacharacters in the source text are not escaped.** A title containing a literal `*` or `_` reaches the output as-is, so a renderer may read it as emphasis. Escaping them would have to leave the markers this function *inserts* alone, and the distinction is not worth the failure modes it would add; treat these values as Markdown-ish text rather than guaranteed-clean Markdown.
+- **The source text is escaped, so these are real Markdown, not Markdown-ish text.** `\`, `` ` ``, `*`, `~` and `^` taken from the document are backslash-escaped; the markers the fetcher inserts are not. Without this, declaring the field Markdown would corrupt values that were fine before — `CYP2C19 (*1, *2, *3, *17 alleles)`, the standard star-allele notation, renders as `(<em>1, </em>2, …)`, and the `~` of "AUC ~ 0.80" pairs with the next one to subscript half a sentence. The set is measured rather than assumed: across 3,403 real titles and abstract sections it alters 0.35% of them and removes every construct a CommonMark parser found in the unescaped text, whereas also escaping `_` and `[`/`]` churned 4.3% and fixed nothing further. Intraword `_` is inert in CommonMark, so gene names like `TP53_R175H` are safe unescaped, and a bare `[...]` — common in PubMed's `[This corrects the article …]` — is not a link.
+- **`<u>` is dropped rather than mapped.** Markdown has no underline: `__x__` is *strong* emphasis, so mapping `<u>` to it would render underlined text identically to `<b>` while asserting the source said "bold". That is the ambiguity `~`/`^` exist to avoid, and underline — unlike a subscript — is presentational, so losing it costs nothing a reader needs.
 - **Values are not comparable with those stored before this release.** Titles changed because they were previously truncated at their first markup tag — `"Effects of H<sub>2</sub>O and <i>E. coli</i> on outcomes"` was stored as `"Effects of H"`. Abstracts changed because they gain the recovered `NlmCategory` labels, the blank-line section breaks, and the sub/superscript notation. Re-sync, or accept a mix.
 
 ### `fetch_biorxiv`

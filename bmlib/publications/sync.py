@@ -32,9 +32,11 @@ from bmlib import __version__
 from bmlib.db import execute, fetch_all, placeholder, transaction
 from bmlib.publications.fetchers.registry import get_fetcher, source_names
 from bmlib.publications.models import (
+    AuthorAffiliation,
     FetchedRecord,
     FetchResult,
     FullTextSource,
+    Grant,
     Publication,
     SyncProgress,
     SyncReport,
@@ -44,9 +46,11 @@ from bmlib.publications.storage import store_publication
 
 logger = logging.getLogger(__name__)
 
-# Grant | AuthorAffiliation — both carry ``source`` and are dataclasses, which
-# is all _stamp_source needs.
-_T = TypeVar("_T")
+# Both carry ``source`` and are dataclasses, which is all _stamp_source needs.
+# Bound rather than bare, so ``dataclasses.replace`` — which accepts only a
+# dataclass instance — type-checks, and so the return type stays the caller's
+# own type rather than widening to the union.
+_ChildRow = TypeVar("_ChildRow", Grant, AuthorAffiliation)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -165,7 +169,7 @@ def _record_to_publication(record: FetchedRecord) -> Publication:
     )
 
 
-def _stamp_source(rows: Sequence[_T], source: str) -> list[_T]:
+def _stamp_source(rows: Sequence[_ChildRow], source: str) -> list[_ChildRow]:
     """Return copies of *rows* whose ``source`` is the record's own.
 
     Provenance is stamped here rather than in each fetcher because this is the
