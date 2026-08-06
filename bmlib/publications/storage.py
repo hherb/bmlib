@@ -272,12 +272,17 @@ def _merge_publication(
 # ---------------------------------------------------------------------------
 
 # The two child tables carry no UNIQUE constraint on their natural key, and
-# that is deliberate. ``UNIQUE(publication_id, agency, grant_id)`` looks like
-# the obvious guard against a re-sync duplicating rows, but every column in a
-# grant's natural key is nullable and both backends treat NULL as *distinct*
-# in a unique index — so ``(1, NULL, 'R01')`` inserts twice and the constraint
-# protects nothing while appearing to. Idempotency lives in
-# :func:`_replace_child_rows` instead, where a test can reach it.
+# that is deliberate. ``UNIQUE(publication_id, source, agency, grant_id)``
+# looks like the obvious guard against a re-sync duplicating rows, but every
+# column of a grant proper is nullable and both backends treat NULL as
+# *distinct* in a unique index — so ``(1, 'pubmed', NULL, 'R01')`` inserts
+# twice and the constraint protects nothing while appearing to. An expression
+# index over ``COALESCE``d columns would work on both backends, but there is
+# nothing left for it to catch: the fetcher collapses PubMed's verbatim repeats
+# at parse time, and :func:`_replace_child_rows` below is idempotent per
+# source. Both of those are reachable from a test; a unique index that has to
+# be written around three nullable columns is not obviously correct at a
+# glance, which is how the original trap looked too.
 
 
 def _replace_child_rows(
@@ -288,59 +293,74 @@ def _replace_child_rows(
     rows: Sequence[tuple[Any, ...]],
     now: str,
 ) -> None:
-    """Replace *publication_id*'s rows in *table* with *rows*.
+    """Replace rows in *table* for each source present in *rows*.
 
-    Does nothing when *rows* is empty. That guard is the same "fill, never
-    clobber" rule :func:`_merge_publication` applies per field: a bioRxiv or
-    OpenAlex record merging into a PubMed row carries no grants, and treating
-    that silence as "this paper has no funders" would destroy real data on the
-    next sync of any other source.
+    Each element of *rows* is ``(source, *values)``, with *values* matching
+    *columns*. Rows are grouped by source, and each group replaces only that
+    source's existing rows — every other source's are left alone. This is what
+    lets PubMed's grants and OpenAlex's coexist; scoping by publication alone
+    made the stored set depend on whichever source synced last, flip-flopping
+    on every sync with no error and no warning.
 
-    Delete-then-insert rather than insert-if-absent, so a re-sync is both
-    idempotent and self-correcting — a corrected grant supersedes the stale one
-    instead of accumulating beside it. The limit, since only PubMed produces
-    these today: if a second source ever supplied them, successive syncs would
-    alternate between the two sources' sets.
+    Delete-then-insert rather than insert-if-absent, so re-syncing one source
+    is both idempotent and self-correcting: a corrected grant supersedes the
+    stale one instead of accumulating beside it.
+
+    Does nothing when *rows* is empty — there is no source to scope the delete
+    to, and an absent ``<GrantList>`` means the record did not carry the data
+    rather than that the funding was withdrawn.
     """
     if not rows:
         return
 
-    ph = placeholder(conn)
-    execute(conn, f"DELETE FROM {table} WHERE publication_id = {ph}", (publication_id,))
+    by_source: dict[str, list[tuple[Any, ...]]] = {}
+    for source, *values in rows:
+        by_source.setdefault(str(source), []).append(tuple(values))
 
-    named = ("publication_id", *columns, "created_at")
+    ph = placeholder(conn)
+    named = ("publication_id", "source", *columns, "created_at")
     sql = f"INSERT INTO {table} ({', '.join(named)}) VALUES ({placeholders(conn, len(named))})"
-    for row in rows:
-        execute(conn, sql, (publication_id, *row, now))
+
+    for source, group in by_source.items():
+        execute(
+            conn,
+            f"DELETE FROM {table} WHERE publication_id = {ph} AND source = {ph}",
+            (publication_id, source),
+        )
+        for row in group:
+            execute(conn, sql, (publication_id, source, *row, now))
 
 
 def _relocate_child_rows(conn: Any, table: str, keep_id: int, drop_id: int) -> None:
-    """Move *drop_id*'s rows in *table* onto *keep_id*, or delete them.
+    """Move *drop_id*'s rows in *table* onto *keep_id*, per source.
 
     Called before the drop row is deleted. Both backends enforce foreign keys
     (:func:`~bmlib.db.connect_sqlite` sets ``PRAGMA foreign_keys=ON``), so a row
     still pointing at the doomed publication makes the ``DELETE`` raise and
-    aborts the whole store.
+    aborts the whole store — every child must be off the drop row first.
 
-    The rows move only when the keep row has none of its own; otherwise they are
-    dropped. That is :func:`_merge_publication`'s "fill, never overwrite" rule
-    at table granularity — layering two sources' grant sets together would
-    produce a merged set belonging to neither.
+    A source the keep row already has wins, so the drop row's rows for that
+    source are discarded; sources the keep row lacks move across. That is
+    :func:`_merge_publication`'s "fill, never overwrite" rule at source
+    granularity — merging two rows' accounts of what PubMed said would produce
+    a set PubMed never asserted, while a source only the drop row saw is real
+    information the keep row should gain.
     """
     ph = placeholder(conn)
-    existing = fetch_one(
+    # Discard first, so the surviving rows can move in one unconditional
+    # statement. (An anti-join UPDATE would work too, but "delete what loses,
+    # move what is left" needs no correlated subquery on either backend.)
+    execute(
         conn,
-        f"SELECT COUNT(*) AS n FROM {table} WHERE publication_id = {ph}",
-        (keep_id,),
+        f"DELETE FROM {table} WHERE publication_id = {ph}"
+        f" AND source IN (SELECT source FROM {table} WHERE publication_id = {ph})",
+        (drop_id, keep_id),
     )
-    if existing is not None and existing["n"]:
-        execute(conn, f"DELETE FROM {table} WHERE publication_id = {ph}", (drop_id,))
-    else:
-        execute(
-            conn,
-            f"UPDATE {table} SET publication_id = {ph} WHERE publication_id = {ph}",
-            (keep_id, drop_id),
-        )
+    execute(
+        conn,
+        f"UPDATE {table} SET publication_id = {ph} WHERE publication_id = {ph}",
+        (keep_id, drop_id),
+    )
 
 
 def get_grants(conn: Any, publication_id: int) -> list[Grant]:
@@ -357,7 +377,7 @@ def get_grants(conn: Any, publication_id: int) -> list[Grant]:
     ph = placeholder(conn)
     rows = fetch_all(
         conn,
-        "SELECT id, publication_id, agency, grant_id, country FROM publication_grants"
+        "SELECT id, publication_id, source, agency, grant_id, country FROM publication_grants"
         f" WHERE publication_id = {ph} ORDER BY id",
         (publication_id,),
     )
@@ -365,6 +385,7 @@ def get_grants(conn: Any, publication_id: int) -> list[Grant]:
         Grant(
             id=row["id"],
             publication_id=row["publication_id"],
+            source=row["source"],
             agency=row["agency"],
             grant_id=row["grant_id"],
             country=row["country"],
@@ -388,7 +409,7 @@ def get_author_affiliations(conn: Any, publication_id: int) -> list[AuthorAffili
     ph = placeholder(conn)
     rows = fetch_all(
         conn,
-        "SELECT id, publication_id, author, affiliation, position"
+        "SELECT id, publication_id, source, author, affiliation, position"
         f" FROM publication_affiliations WHERE publication_id = {ph} ORDER BY position, id",
         (publication_id,),
     )
@@ -396,6 +417,7 @@ def get_author_affiliations(conn: Any, publication_id: int) -> list[AuthorAffili
         AuthorAffiliation(
             id=row["id"],
             publication_id=row["publication_id"],
+            source=row["source"],
             author=row["author"],
             affiliation=row["affiliation"],
             position=row["position"],
@@ -543,7 +565,7 @@ def store_publication(
             "publication_grants",
             pub_id,
             ("agency", "grant_id", "country"),
-            [(g.agency, g.grant_id, g.country) for g in grants or ()],
+            [(g.source, g.agency, g.grant_id, g.country) for g in grants or ()],
             now,
         )
         _replace_child_rows(
@@ -551,7 +573,7 @@ def store_publication(
             "publication_affiliations",
             pub_id,
             ("author", "affiliation", "position"),
-            [(a.author, a.affiliation, a.position) for a in affiliations or ()],
+            [(a.source, a.author, a.affiliation, a.position) for a in affiliations or ()],
             now,
         )
 

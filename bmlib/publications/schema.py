@@ -110,6 +110,7 @@ CREATE INDEX IF NOT EXISTS idx_retraction_notices_pmid
 CREATE TABLE IF NOT EXISTS publication_grants (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     publication_id  INTEGER NOT NULL REFERENCES publications(id),
+    source          TEXT NOT NULL,
     agency          TEXT,
     grant_id        TEXT,
     country         TEXT,
@@ -122,6 +123,7 @@ CREATE INDEX IF NOT EXISTS idx_publication_grants_publication_id
 CREATE TABLE IF NOT EXISTS publication_affiliations (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     publication_id  INTEGER NOT NULL REFERENCES publications(id),
+    source          TEXT NOT NULL,
     author          TEXT NOT NULL,
     affiliation     TEXT NOT NULL,
     position        INTEGER NOT NULL DEFAULT 0,
@@ -218,6 +220,7 @@ CREATE INDEX IF NOT EXISTS idx_retraction_notices_pmid
 CREATE TABLE IF NOT EXISTS publication_grants (
     id              SERIAL PRIMARY KEY,
     publication_id  INTEGER NOT NULL REFERENCES publications(id),
+    source          TEXT NOT NULL,
     agency          TEXT,
     grant_id        TEXT,
     country         TEXT,
@@ -230,6 +233,7 @@ CREATE INDEX IF NOT EXISTS idx_publication_grants_publication_id
 CREATE TABLE IF NOT EXISTS publication_affiliations (
     id              SERIAL PRIMARY KEY,
     publication_id  INTEGER NOT NULL REFERENCES publications(id),
+    source          TEXT NOT NULL,
     author          TEXT NOT NULL,
     affiliation     TEXT NOT NULL,
     position        INTEGER NOT NULL DEFAULT 0,

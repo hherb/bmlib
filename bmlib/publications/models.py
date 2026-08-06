@@ -187,6 +187,14 @@ class Grant:
     an agency with no award id, or an award id with no country. A grant naming
     neither an agency nor an id carries no information and is not stored.
 
+    ``source`` names the publication source that asserted this grant (e.g.
+    ``"pubmed"``). It is what scopes storage: re-storing a source's grants
+    replaces that source's rows and leaves every other source's alone, so two
+    sources' funding data coexist instead of overwriting each other on
+    alternate syncs. :func:`~bmlib.publications.sync.sync` fills it in from the
+    record's own source, so a fetcher cannot forget it; a caller reaching
+    :func:`~bmlib.publications.storage.store_publication` directly must set it.
+
     ``publication_id`` defaults to 0 so a fetcher can build one before the
     publication has a row. On the way in it is **ignored** — the stored row
     takes its id from the publication, and the object you passed is *not*
@@ -199,6 +207,7 @@ class Grant:
     agency: str | None = None
     grant_id: str | None = None
     country: str | None = None
+    source: str = ""
     publication_id: int = 0
     id: int | None = None
 
@@ -207,6 +216,7 @@ class Grant:
         return {
             "id": self.id,
             "publication_id": self.publication_id,
+            "source": self.source,
             "agency": self.agency,
             "grant_id": self.grant_id,
             "country": self.country,
@@ -218,6 +228,7 @@ class Grant:
         return cls(
             id=data.get("id"),
             publication_id=data.get("publication_id", 0),
+            source=data.get("source", ""),
             agency=data.get("agency"),
             grant_id=data.get("grant_id"),
             country=data.get("country"),
@@ -245,14 +256,16 @@ class AuthorAffiliation:
     ``<CollectiveName>`` consortia that ``authors`` omits, so the two lists
     differ in length whenever one is present.
 
-    ``publication_id`` behaves exactly as :class:`Grant`'s does — ignored on
-    the way in, and read back with
+    ``source`` and ``publication_id`` behave exactly as :class:`Grant`'s do —
+    the first scopes storage to the source that asserted the row, the second is
+    ignored on the way in. Read the persisted form back with
     :func:`~bmlib.publications.storage.get_author_affiliations`.
     """
 
     author: str
     affiliation: str
     position: int = 0
+    source: str = ""
     publication_id: int = 0
     id: int | None = None
 
@@ -261,6 +274,7 @@ class AuthorAffiliation:
         return {
             "id": self.id,
             "publication_id": self.publication_id,
+            "source": self.source,
             "author": self.author,
             "affiliation": self.affiliation,
             "position": self.position,
@@ -272,6 +286,7 @@ class AuthorAffiliation:
         return cls(
             id=data.get("id"),
             publication_id=data.get("publication_id", 0),
+            source=data.get("source", ""),
             author=data["author"],
             affiliation=data["affiliation"],
             position=data.get("position", 0),

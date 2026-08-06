@@ -917,3 +917,88 @@ class TestAffiliationExtraction:
             "Dept of Chemistry, Univ X^1^, Rome.",
             "^2^Istituto Nazionale, Rome.",
         ]
+
+
+class TestRepeatedEntriesAreDeduplicated:
+    """PubMed repeats identical entries; they must not become duplicate rows.
+
+    Measured against the live API: 31 of 575 `<Grant>` entries across 200
+    NIH-funded records were exact duplicates of another entry in the same
+    record, affecting 14 records. Stored verbatim they inflate any count of a
+    paper's funders, and no downstream reader can tell a real second award
+    from PubMed's repetition.
+    """
+
+    def test_an_exactly_repeated_grant_is_stored_once(self):
+        el = ET.fromstring(
+            "<PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
+            "<ArticleTitle>T</ArticleTitle><GrantList>"
+            "<Grant><GrantID>K23 NR020044</GrantID><Agency>NINR NIH HHS</Agency>"
+            "<Country>United States</Country></Grant>"
+            "<Grant><GrantID>K23 NR020044</GrantID><Agency>NINR NIH HHS</Agency>"
+            "<Country>United States</Country></Grant>"
+            "</GrantList></Article></MedlineCitation></PubmedArticle>"
+        )
+        result = _parse_article_xml(el)
+
+        assert len(result.grants) == 1
+        assert result.grants[0].grant_id == "K23 NR020044"
+
+    def test_grants_differing_in_any_field_are_both_kept(self):
+        """Only an *exact* repeat is a repeat."""
+        el = ET.fromstring(
+            "<PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
+            "<ArticleTitle>T</ArticleTitle><GrantList>"
+            "<Grant><GrantID>R01 A</GrantID><Agency>NHLBI</Agency></Grant>"
+            "<Grant><GrantID>R01 B</GrantID><Agency>NHLBI</Agency></Grant>"
+            "<Grant><GrantID>R01 A</GrantID><Agency>NINR</Agency></Grant>"
+            "</GrantList></Article></MedlineCitation></PubmedArticle>"
+        )
+        result = _parse_article_xml(el)
+
+        assert [(g.agency, g.grant_id) for g in result.grants] == [
+            ("NHLBI", "R01 A"),
+            ("NHLBI", "R01 B"),
+            ("NINR", "R01 A"),
+        ]
+
+    def test_the_first_occurrence_order_is_kept(self):
+        el = ET.fromstring(
+            "<PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
+            "<ArticleTitle>T</ArticleTitle><GrantList>"
+            "<Grant><Agency>First</Agency></Grant>"
+            "<Grant><Agency>Second</Agency></Grant>"
+            "<Grant><Agency>First</Agency></Grant>"
+            "</GrantList></Article></MedlineCitation></PubmedArticle>"
+        )
+        assert [g.agency for g in _parse_article_xml(el).grants] == ["First", "Second"]
+
+    def test_a_repeated_affiliation_for_one_author_is_stored_once(self):
+        el = ET.fromstring(
+            "<PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
+            "<ArticleTitle>T</ArticleTitle><AuthorList><Author><LastName>Smith</LastName>"
+            "<AffiliationInfo><Affiliation>St Elsewhere</Affiliation></AffiliationInfo>"
+            "<AffiliationInfo><Affiliation>St Elsewhere</Affiliation></AffiliationInfo>"
+            "</Author></AuthorList></Article></MedlineCitation></PubmedArticle>"
+        )
+        result = _parse_article_xml(el)
+
+        assert [a.affiliation for a in result.author_affiliations] == ["St Elsewhere"]
+
+    def test_two_authors_at_the_same_institution_both_keep_it(self):
+        """Deduplication is per author, not per paper."""
+        el = ET.fromstring(
+            "<PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
+            "<ArticleTitle>T</ArticleTitle><AuthorList>"
+            "<Author><LastName>Smith</LastName>"
+            "<AffiliationInfo><Affiliation>St Elsewhere</Affiliation></AffiliationInfo></Author>"
+            "<Author><LastName>Jones</LastName>"
+            "<AffiliationInfo><Affiliation>St Elsewhere</Affiliation></AffiliationInfo></Author>"
+            "</AuthorList></Article></MedlineCitation></PubmedArticle>"
+        )
+        result = _parse_article_xml(el)
+
+        assert [(a.author, a.position) for a in result.author_affiliations] == [
+            ("Smith", 0),
+            ("Jones", 1),
+        ]

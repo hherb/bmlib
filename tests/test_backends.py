@@ -912,9 +912,13 @@ class TestGrantAndAffiliationStorage:
         store_publication(
             backend_conn,
             _pub(pmid="1"),
-            grants=[Grant(agency="NHLBI", grant_id="R01", country="United States")],
+            grants=[
+                Grant(agency="NHLBI", grant_id="R01", country="United States", source="pubmed")
+            ],
             affiliations=[
-                AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere", position=0)
+                AuthorAffiliation(
+                    author="Smith, J", affiliation="St Elsewhere", position=0, source="pubmed"
+                )
             ],
         )
 
@@ -929,7 +933,9 @@ class TestGrantAndAffiliationStorage:
         ]
 
     def test_a_grant_with_null_columns_round_trips(self, backend_conn):
-        store_publication(backend_conn, _pub(pmid="1"), grants=[Grant(agency="Wellcome Trust")])
+        store_publication(
+            backend_conn, _pub(pmid="1"), grants=[Grant(agency="Wellcome Trust", source="pubmed")]
+        )
 
         stored = get_grants(backend_conn, get_publication_by_pmid(backend_conn, "1").id)
         assert (stored[0].agency, stored[0].grant_id, stored[0].country) == (
@@ -943,13 +949,15 @@ class TestGrantAndAffiliationStorage:
             store_publication(
                 backend_conn,
                 _pub(pmid="1"),
-                grants=[Grant(agency="NHLBI", grant_id="R01")],
+                grants=[Grant(agency="NHLBI", grant_id="R01", source="pubmed")],
             )
 
         assert _count(backend_conn, "publication_grants") == 1
 
     def test_a_record_without_grants_does_not_erase_them(self, backend_conn):
-        store_publication(backend_conn, _pub(pmid="1"), grants=[Grant(agency="NHLBI")])
+        store_publication(
+            backend_conn, _pub(pmid="1"), grants=[Grant(agency="NHLBI", source="pubmed")]
+        )
         store_publication(backend_conn, _pub(pmid="1", sources=["biorxiv"]))
 
         assert _count(backend_conn, "publication_grants") == 1
@@ -965,8 +973,10 @@ class TestGrantAndAffiliationStorage:
         store_publication(
             backend_conn,
             _pub(pmid="1"),
-            grants=[Grant(agency="NHLBI")],
-            affiliations=[AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere")],
+            grants=[Grant(agency="NHLBI", source="pubmed")],
+            affiliations=[
+                AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere", source="pubmed")
+            ],
         )
 
         store_publication(backend_conn, _pub(doi="10.1/x", pmid="1"))
@@ -980,12 +990,69 @@ class TestGrantAndAffiliationStorage:
         store_publication(
             backend_conn,
             _pub(doi="10.1/x", sources=["openalex"]),
-            grants=[Grant(agency="Keep Foundation")],
+            grants=[Grant(agency="Keep Foundation", source="pubmed")],
         )
-        store_publication(backend_conn, _pub(pmid="1"), grants=[Grant(agency="Drop Foundation")])
+        store_publication(
+            backend_conn, _pub(pmid="1"), grants=[Grant(agency="Drop Foundation", source="pubmed")]
+        )
 
         store_publication(backend_conn, _pub(doi="10.1/x", pmid="1"))
 
         kept = get_publication_by_doi(backend_conn, "10.1/x")
         assert [g.agency for g in get_grants(backend_conn, kept.id)] == ["Keep Foundation"]
         assert _count(backend_conn, "publication_grants") == 1
+
+    def test_two_sources_grants_coexist(self, backend_conn):
+        """Scoping by publication alone made the last sync win, silently."""
+        store_publication(
+            backend_conn, _pub(pmid="1"), grants=[Grant(agency="NHLBI", source="pubmed")]
+        )
+        store_publication(
+            backend_conn,
+            _pub(pmid="1", sources=["openalex"]),
+            grants=[Grant(agency="Wellcome Trust", source="openalex")],
+        )
+
+        stored = get_grants(backend_conn, get_publication_by_pmid(backend_conn, "1").id)
+        assert sorted((g.source, g.agency) for g in stored) == [
+            ("openalex", "Wellcome Trust"),
+            ("pubmed", "NHLBI"),
+        ]
+
+    def test_re_syncing_one_source_leaves_the_other_alone(self, backend_conn):
+        store_publication(
+            backend_conn,
+            _pub(pmid="1", sources=["openalex"]),
+            grants=[Grant(agency="Wellcome Trust", source="openalex")],
+        )
+        for agency in ("Typo Foundation", "NHLBI"):
+            store_publication(
+                backend_conn, _pub(pmid="1"), grants=[Grant(agency=agency, source="pubmed")]
+            )
+
+        stored = get_grants(backend_conn, get_publication_by_pmid(backend_conn, "1").id)
+        assert sorted(g.agency for g in stored) == ["NHLBI", "Wellcome Trust"]
+
+    def test_consolidation_moves_only_sources_the_keep_row_lacks(self, backend_conn):
+        store_publication(
+            backend_conn,
+            _pub(doi="10.1/x"),
+            grants=[Grant(agency="Keep NHLBI", source="pubmed")],
+        )
+        store_publication(
+            backend_conn,
+            _pub(pmid="1"),
+            grants=[
+                Grant(agency="Drop NHLBI", source="pubmed"),
+                Grant(agency="Wellcome Trust", source="openalex"),
+            ],
+        )
+
+        store_publication(backend_conn, _pub(doi="10.1/x", pmid="1"))
+
+        kept = get_publication_by_doi(backend_conn, "10.1/x")
+        assert sorted(g.agency for g in get_grants(backend_conn, kept.id)) == [
+            "Keep NHLBI",
+            "Wellcome Trust",
+        ]
+        assert _count(backend_conn, "publication_grants") == 2

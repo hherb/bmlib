@@ -1360,3 +1360,102 @@ class TestConsolidationRelocatesChildRows:
         pub_id = get_publication_by_pmid(conn, "1").id
         assert get_grants(conn, pub_id)[0].publication_id == pub_id
         assert get_grants(conn, pub_id)[0].id is not None
+
+
+class TestChildRowsAreScopedBySource:
+    """Two sources' grants must coexist, not alternate.
+
+    Without a ``source`` column, replace-on-store made the stored set depend
+    entirely on which source synced last — PubMed's grants, then OpenAlex's,
+    then PubMed's again, flip-flopping forever with no error and no warning.
+    The sibling table ``fulltext_sources`` has always carried ``source``;
+    these two were the exception.
+    """
+
+    def test_a_second_source_does_not_displace_the_first(self):
+        conn = _schema_conn()
+        store_publication(
+            conn,
+            Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1"),
+            grants=[Grant(agency="NHLBI", source="pubmed")],
+        )
+        store_publication(
+            conn,
+            Publication(title="P", sources=["openalex"], first_seen_source="openalex", pmid="1"),
+            grants=[Grant(agency="Wellcome Trust", source="openalex")],
+        )
+
+        pub_id = get_publication_by_pmid(conn, "1").id
+        assert sorted(g.agency for g in get_grants(conn, pub_id)) == [
+            "NHLBI",
+            "Wellcome Trust",
+        ]
+
+    def test_re_syncing_one_source_replaces_only_its_own_rows(self):
+        conn = _schema_conn()
+        store_publication(
+            conn,
+            Publication(title="P", sources=["openalex"], first_seen_source="openalex", pmid="1"),
+            grants=[Grant(agency="Wellcome Trust", source="openalex")],
+        )
+        for agency in ("Typo Foundation", "NHLBI"):
+            store_publication(
+                conn,
+                Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1"),
+                grants=[Grant(agency=agency, source="pubmed")],
+            )
+
+        pub_id = get_publication_by_pmid(conn, "1").id
+        stored = get_grants(conn, pub_id)
+        # PubMed's correction superseded its own stale row; OpenAlex untouched.
+        assert sorted(g.agency for g in stored) == ["NHLBI", "Wellcome Trust"]
+        assert {g.source for g in stored} == {"pubmed", "openalex"}
+
+    def test_the_stored_row_reports_which_source_asserted_it(self):
+        conn = _schema_conn()
+        store_publication(
+            conn,
+            Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1"),
+            grants=[Grant(agency="NHLBI", source="pubmed")],
+            affiliations=[
+                AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere", source="pubmed")
+            ],
+        )
+
+        pub_id = get_publication_by_pmid(conn, "1").id
+        assert get_grants(conn, pub_id)[0].source == "pubmed"
+        assert get_author_affiliations(conn, pub_id)[0].source == "pubmed"
+
+    def test_consolidation_keeps_each_source_at_most_once(self):
+        """A split-identity merge must not layer one source's rows onto itself.
+
+        The keep row already has PubMed grants; the drop row's PubMed grants
+        are dropped rather than added, while a source the keep row lacks moves
+        across.
+        """
+        conn = _schema_conn()
+        store_publication(
+            conn,
+            Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", doi="10.1/x"),
+            grants=[Grant(agency="Keep NHLBI", source="pubmed")],
+        )
+        store_publication(
+            conn,
+            Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1"),
+            grants=[
+                Grant(agency="Drop NHLBI", source="pubmed"),
+                Grant(agency="Wellcome Trust", source="openalex"),
+            ],
+        )
+
+        store_publication(
+            conn,
+            Publication(
+                title="P", sources=["pubmed"], first_seen_source="pubmed", doi="10.1/x", pmid="1"
+            ),
+        )
+
+        kept = get_publication_by_doi(conn, "10.1/x")
+        stored = get_grants(conn, kept.id)
+        assert sorted(g.agency for g in stored) == ["Keep NHLBI", "Wellcome Trust"]
+        assert fetch_one(conn, "SELECT COUNT(*) AS n FROM publication_grants")["n"] == 2

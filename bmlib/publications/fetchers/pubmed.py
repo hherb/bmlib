@@ -261,20 +261,26 @@ def _parse_grants(article_el: ET.Element) -> list[Grant]:
     A grant naming neither an agency nor an award id is skipped: it identifies
     no award, and storing it would put an empty row in front of anyone counting
     a paper's funders.
+
+    Exact repeats are collapsed, keeping first-occurrence order. PubMed really
+    does repeat a `<Grant>` block verbatim — 31 of 575 entries across 200
+    NIH-funded records, affecting 14 of them — and stored as separate rows
+    those inflate every count of a paper's funders, with no way for a reader to
+    tell PubMed's repetition from a genuine second award. Two grants differing
+    in any field are two grants.
     """
     grants: list[Grant] = []
+    seen: set[tuple[str | None, str | None, str | None]] = set()
     for grant_el in article_el.findall("GrantList/Grant"):
         agency = _text(grant_el.find("Agency"))
         grant_id = _text(grant_el.find("GrantID"))
         if not agency and not grant_id:
             continue
-        grants.append(
-            Grant(
-                agency=agency,
-                grant_id=grant_id,
-                country=_text(grant_el.find("Country")),
-            )
-        )
+        key = (agency, grant_id, _text(grant_el.find("Country")))
+        if key in seen:
+            continue
+        seen.add(key)
+        grants.append(Grant(agency=key[0], grant_id=key[1], country=key[2]))
     return grants
 
 
@@ -311,6 +317,9 @@ def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
                 if name is None:
                     continue
                 authors.append(name)
+                # Deduplicated per author, for the same reason grants are (see
+                # _parse_grants) — two authors at one institution each keep it.
+                seen_affiliations: set[str] = set()
                 for aff_el in author_el.findall("AffiliationInfo/Affiliation"):
                     # Read with the walker, not ``.text``: NLM declares
                     # ``<Affiliation>`` with the same ``(%text;)*`` content
@@ -318,7 +327,8 @@ def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
                     # marker truncates the institution — and a *leading* one
                     # makes ``.text`` None, which the guard below then drops.
                     affiliation = _text_with_formatting(aff_el)
-                    if affiliation:
+                    if affiliation and affiliation not in seen_affiliations:
+                        seen_affiliations.add(affiliation)
                         author_affiliations.append(
                             AuthorAffiliation(
                                 author=name,
