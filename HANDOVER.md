@@ -59,7 +59,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   first markup tag; abstracts because they gain `NlmCategory` labels,
   blank-line section breaks and `CO~2~` notation). CHANGELOG says which, and
   the manual tells callers to re-sync or accept a mix.
-- **1667 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1723 + 2
+- **1668 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1724 + 2
   with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
   PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which

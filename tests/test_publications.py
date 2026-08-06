@@ -1459,3 +1459,20 @@ class TestChildRowsAreScopedBySource:
         stored = get_grants(conn, kept.id)
         assert sorted(g.agency for g in stored) == ["Keep NHLBI", "Wellcome Trust"]
         assert fetch_one(conn, "SELECT COUNT(*) AS n FROM publication_grants")["n"] == 2
+
+    def test_a_missing_source_is_rejected_rather_than_stored_as_none(self):
+        """A ``None`` source must fail loudly, not become the string "None".
+
+        ``source`` is typed ``str``, so this is a caller bug — but the failure
+        mode matters. Coercing it with ``str()`` would store the literal
+        "None": a source name that looks real, matches no record, and can
+        therefore never be replaced by a later sync, quietly accumulating rows
+        nothing will ever clean up. The NOT NULL column is allowed to reject it.
+        """
+        conn = _schema_conn()
+        with pytest.raises(sqlite3.IntegrityError):
+            store_publication(
+                conn,
+                Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1"),
+                grants=[Grant(agency="NHLBI", source=None)],
+            )

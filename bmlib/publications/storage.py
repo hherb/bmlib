@@ -313,9 +313,13 @@ def _replace_child_rows(
     if not rows:
         return
 
-    by_source: dict[str, list[tuple[Any, ...]]] = {}
+    # Not ``str(source)``: coercing here would turn a ``None`` source — a
+    # NOT NULL violation the database would reject loudly — into the literal
+    # string "None", a source name that looks real, matches nothing, and can
+    # never be replaced by a later sync because no record will ever name it.
+    by_source: dict[Any, list[tuple[Any, ...]]] = {}
     for source, *values in rows:
-        by_source.setdefault(str(source), []).append(tuple(values))
+        by_source.setdefault(source, []).append(tuple(values))
 
     ph = placeholder(conn)
     named = ("publication_id", "source", *columns, "created_at")
