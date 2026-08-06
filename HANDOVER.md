@@ -27,13 +27,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   `bmlib/__init__.py`, the README version line, `CLAUDE.md`'s header — and
   all four agree.
 - **What each release shipped is in `CHANGELOG.md`** — do not re-narrate it
-  here. 0.7.0 carried four behaviour changes that move stored values, none
-  behind a flag (deposition repositories raise `transparency_score` /
-  `data_availability_level`; three previously-unrecognised trial registries
-  move `trial_registered`; a funder CrossRef repeats collapses to one
-  indicator line; `FullTextResult.source` gains `"ncbi_pmc"`). 0.6.0's three
-  non-comparable changes are separate and still apply to anyone upgrading
-  across both. Anything persisting these values needs to know.
+  here. Both 0.6.0 (three changes) and 0.7.0 (four) moved stored values, none
+  behind a flag, and they compound for anyone upgrading across both.
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed two releases. Widening it is a downstream change, not a bmlib
   one.
@@ -168,6 +163,10 @@ transparency/quality reconciliation, no GRADE engine exists, SSRF guard).
 6. **Record** each port in `CHANGELOG.md` under `[Unreleased]`.
 7. **Reconcile, don't fork:** where a port overlaps existing bmlib, build on
    the existing module.
+8. **When the code parses someone's XML, read their DTD** rather than
+   deciding by eye which elements are leaves. Row 11's one review finding was
+   exactly that: `<Affiliation>` looks like a leaf, is declared `(%text;)*`,
+   and a bare `.text` read silently dropped rows.
 
 ## Deliberate non-fixes — do not "fix" these
 
@@ -233,11 +232,10 @@ named source file; the entry here is the pointer, not the argument.
   a third `bool` overload** (mypy does not expand `bool` into the two
   `Literal`s; CI runs ruff only, so nothing catches its removal), and
   **`salvage_json_fields()` bounds both passes with `RecursionError` caught
-  wherever a candidate is decoded**. Eleven tests pin these — seven in
-  `test_json_extraction.py` (starting at `TestExtractJsonPrefersWholeSpans`)
-  and four in `test_agents.py`.
-  `iter_json_spans()` dedupes candidates by text, not position (argued
-  inline in `llm/utils.py`).
+  wherever a candidate is decoded**. `iter_json_spans()` dedupes candidates
+  by text, not position (argued inline in `llm/utils.py`). Eleven tests pin
+  these — seven in `test_json_extraction.py` (starting at
+  `TestExtractJsonPrefersWholeSpans`) and four in `test_agents.py`.
 - **`PerformanceMetrics.elapsed_time_seconds` reads `time.monotonic()`**,
   not the wall-clock timestamps it stores; `snapshot()` must copy the
   monotonic marks by hand (`init=False`). Model-inference and prompt-eval
@@ -281,11 +279,9 @@ named source file; the entry here is the pointer, not the argument.
   `except`, in its own statement** — a search that raised is exactly when a
   second resolver is worth its request, and one enclosing handler would
   swallow the error before the converter was reached. A converter-discovered
-  PMC ID is tried at Europe PMC even when the search hit said
-  `inEPMC="N"` (believing the flag needs a third tuple element and a stale
-  flag is one reason the converter exists — revisit only if it measures as a
-  real cost). Pinned by
-  `test_the_converter_is_not_consulted_when_the_search_found_an_id` and
+  PMC ID is tried at Europe PMC even when the search said `inEPMC="N"`, since
+  a stale flag is one reason the converter exists. Two tests in
+  `test_fulltext_service.py` pin it, starting at
   `test_the_converter_is_consulted_when_the_search_itself_failed`.
 - **`_fetch_ncbi_pmc()` raises on a reply with neither body nor abstract** —
   efetch answers a publisher-withheld article with a stub that is HTTP 200
@@ -431,12 +427,12 @@ named source file; the entry here is the pointer, not the argument.
   or `quality/`** (both are scoring changes moving stored values — separate
   decisions), and **has no `is_paper_retracted()` convenience wrapper**
   (keeping the pure rule separable from the I/O is what makes it testable).
-- **The `%m/%d/%Y` / `%d/%m/%Y` ambiguity is real and deliberately
-  unresolved** — US-first, confirmed by same-file dates whose day exceeds
-  12. Pinned by `test_an_ambiguous_date_resolves_month_first`.
-- **`_ABSENT_IDENTIFIER_VALUES` holds exactly `{"0", "unavailable"}`**, each
-  measured against the live export; a third sentinel needs its own
-  measurement. Pinned by `TestIdentifierSentinels`.
+- **Two values measured against the live export, not reasoned about**: the
+  `%m/%d/%Y` / `%d/%m/%Y` ambiguity resolves US-first (confirmed by same-file
+  dates whose day exceeds 12), and `_ABSENT_IDENTIFIER_VALUES` holds exactly
+  `{"0", "unavailable"}` — a third sentinel needs its own measurement. Pinned
+  by `test_an_ambiguous_date_resolves_month_first` and
+  `TestIdentifierSentinels`.
 
 ### quality — Cochrane assessor (merged, PR #54)
 
@@ -479,11 +475,8 @@ named source file; the entry here is the pointer, not the argument.
   one that false-flags rules newer ruff removed:
   `uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .`
 - Tests use in-memory SQLite (`connect_sqlite(":memory:")`) and mocked HTTP;
-  no external services. PyMuPDF-needing tests sit behind
-  `skipif(not _HAS_FITZ)` and run locally now that the dev venv has it. To
-  run the PostgreSQL half of `test_backends.py`, set
-  `BMLIB_TEST_POSTGRESQL_DSN` to a database the tests may drop every table
-  in.
+  no external services. `BMLIB_TEST_POSTGRESQL_DSN` must point at a database
+  the tests may drop every table in (recipe under "Current state").
 - New functionality needs unit tests; see CLAUDE.md's test-file mapping
   table.
 - Session workflow lives in the `nextsession` skill
@@ -503,13 +496,11 @@ named source file; the entry here is the pointer, not the argument.
   the tag matches `bmlib.__version__`, runs `twine check --strict`, asserts
   `py.typed` survived packaging, and uploads via Trusted Publishing with no
   stored token. Approve the `pypi` environment gate to let it through.
-  **Do not also upload by hand:** the publish job has no `skip-existing`,
-  so a manual upload first makes it fail on a duplicate — which is why
-  v0.5.0's and v0.6.0's runs are still sitting unapproved, those two having
-  been published from a laptop. **v0.7.0 went the whole way through the
-  workflow and it worked**, so the hand-upload habit has no remaining
-  excuse. The tag may sit on any merge commit on main's first-parent line
-  that contains the version bump. Rehearse the whole path any time with a
-  `workflow_dispatch` run, which targets TestPyPI only. PyPI's JSON API
-  serves a stale CDN cache afterwards; verify against
-  `https://pypi.org/simple/bmlib/`, which is what installers actually read.
+  **Do not also upload by hand:** the publish job has no `skip-existing`, so
+  a manual upload first makes it fail on a duplicate — which is why v0.5.0's
+  and v0.6.0's runs still sit unapproved, both having been published from a
+  laptop. v0.7.0 went the whole way through the workflow, so the hand-upload
+  habit has no remaining excuse. Rehearse any time with a
+  `workflow_dispatch` run, which targets TestPyPI only. Afterwards verify
+  against `https://pypi.org/simple/bmlib/` — the JSON API serves a stale CDN
+  cache, the simple index is what installers read.
