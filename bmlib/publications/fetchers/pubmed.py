@@ -24,6 +24,7 @@ plain dictionaries suitable for downstream storage.
 from __future__ import annotations
 
 import logging
+import re
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
@@ -31,7 +32,13 @@ from datetime import date
 from typing import Any
 
 from bmlib.fulltext.models import FullTextSourceEntry
-from bmlib.publications.models import FetchedRecord, FetchResult, SyncProgress
+from bmlib.publications.models import (
+    AuthorAffiliation,
+    FetchedRecord,
+    FetchResult,
+    Grant,
+    SyncProgress,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,11 +78,177 @@ _MONTH_MAP: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
+# Inline markup PubMed carries inside titles and abstracts, and the Markdown
+# each maps to. Scientific prose depends on these: without ``sub``/``sup`` a
+# chemical formula and an exponent both flatten into an ambiguous "CO2" / "m2".
+#
+# ``u``/``underline`` are deliberately absent, so they fall through to the
+# undecorated path below. Markdown has no underline: ``__x__`` is *strong*
+# emphasis, so mapping ``<u>`` to it renders underlined text identically to
+# ``<b>`` — the same collapse this table exists to prevent for ``sub``/``sup``,
+# except that it also asserts something false about the source. Underline is
+# presentational, unlike a subscript, so dropping it loses nothing a reader
+# needs; claiming it was bold does.
+_INLINE_MARKUP: dict[str, tuple[str, str]] = {
+    "b": ("**", "**"),
+    "bold": ("**", "**"),
+    "i": ("*", "*"),
+    "italic": ("*", "*"),
+    "sup": ("^", "^"),
+    "sub": ("~", "~"),
+}
+
+# Characters escaped in prose taken from PubMed, so a value that is *declared*
+# Markdown cannot be re-read as markup it never carried.
+#
+# Measured against 3,403 real titles and abstract sections (1,000 records over
+# four days): this set alters 12 of them — 0.35% — and removes every construct
+# a CommonMark parser found in the unescaped text. The obvious extra
+# candidates buy nothing and cost a great deal. Intraword ``_`` is inert in
+# CommonMark, so gene names like ``TP53_R175H`` are already safe, and a bare
+# ``[...]`` is not a link without a following ``(...)``; escaping both churned
+# 4.3% of fields and fixed nothing further.
+#
+# ``~`` and ``^`` are here because *this module* made them meaningful. A
+# literal tilde is the commonest hazard of the three (8 fields to the
+# asterisk's 3): "AUC ~ 0.80", "(~88%)", "2.68 ~ 5.42" are ordinary scientific
+# prose, and against a Pandoc renderer — the one that reads the ``~2~`` this
+# module emits — an unescaped pair silently subscripts everything between
+# them. The measured asterisk case is the pharmacogenomic star allele:
+# ``CYP2C19 (*1, *2, *3, *17 alleles)`` renders as ``(<em>1, </em>2, ...)``.
+_MARKDOWN_SPECIALS = re.compile(r"([\\`*~^])")
+
+# NlmCategory values that mean "this section has no label". Rendering them as
+# headings would put the word UNASSIGNED in front of the prose.
+_UNLABELLED_CATEGORIES = frozenset({"UNASSIGNED", "UNLABELLED"})
+
+
 def _text(el: ET.Element | None) -> str | None:
     """Extract text content from an XML element, or return None."""
     if el is None:
         return None
     return el.text
+
+
+def _text_with_formatting(el: ET.Element | None) -> str:
+    """Extract an element's full text, mapping inline markup to Markdown.
+
+    Walks mixed content — an element's own text, each child's text, and the
+    tail text following each child — so nothing is lost. Recognised inline tags
+    (see :data:`_INLINE_MARKUP`) are wrapped in their Markdown markers;
+    an unrecognised tag contributes its text undecorated.
+
+    The result is Markdown, so the prose it is built from is escaped on the way
+    in (see :func:`_escape_markdown`) — otherwise declaring the field Markdown
+    would itself corrupt values that were fine before, such as the star alleles
+    in ``CYP2C19 (*1, *2, *3)``.
+
+    Note this is *not* interchangeable with :func:`_text`, which reads only
+    ``el.text``: for any element holding markup that is the text before the
+    first child, which truncates the value silently.
+
+    Whitespace at the edge of a formatted run is emitted *outside* that run's
+    markers, and stripped only once overall, by the outermost call. Both halves
+    matter, and upstream got the first wrong in a way that produced broken
+    Markdown rather than merely ugly text: it stripped at every recursion
+    level, so the space belonging to ``<b>Randomised </b><b>trial</b>``
+    vanished entirely and the runs welded into ``**Randomised****trial**``.
+    Keeping the space where it sat is no better — CommonMark requires an
+    emphasis delimiter to be adjacent to non-whitespace, so ``**Randomised **``
+    does not emphasise either. Moving it out yields
+    ``**Randomised** **trial**``.
+
+    Args:
+        el: The element to read, or ``None``.
+
+    Returns:
+        The element's text with inline markup rendered as Markdown; ``""``
+        when *el* is ``None`` or holds no text.
+    """
+    return _walk_formatting(el).strip()
+
+
+def _escape_markdown(text: str) -> str:
+    """Escape the Markdown-active characters in a run of PubMed prose.
+
+    Applied to text taken from the document, never to the markers this module
+    emits — see :data:`_MARKDOWN_SPECIALS` for the set and the measurement
+    behind it. Whitespace is untouched, so the caller's lead/trail bookkeeping
+    is unaffected.
+    """
+    return _MARKDOWN_SPECIALS.sub(r"\\\1", text)
+
+
+def _walk_formatting(el: ET.Element | None) -> str:
+    """Recursive, non-stripping worker for :func:`_text_with_formatting`.
+
+    Every text node is visited exactly once — an element's own text, then each
+    child's subtree, then that child's tail — and escaped as it is read, so the
+    markers added around a run are the only unescaped Markdown in the result.
+    """
+    if el is None:
+        return ""
+
+    parts: list[str] = [_escape_markdown(el.text or "")]
+    for child in el:
+        text = _walk_formatting(child)
+        prefix, suffix = _INLINE_MARKUP.get(child.tag.lower(), ("", ""))
+        core = text.strip()
+        if core:
+            # Re-emit the run's edge whitespace outside its markers, so the
+            # delimiters stay adjacent to non-whitespace (see the caller's
+            # docstring). A run of pure whitespace, or one with no markup,
+            # passes through untouched.
+            lead = text[: len(text) - len(text.lstrip())]
+            trail = text[len(text.rstrip()) :]
+            parts.append(f"{lead}{prefix}{core}{suffix}{trail}")
+        else:
+            # An empty run would otherwise render as stray markers ("****").
+            parts.append(text)
+        parts.append(_escape_markdown(child.tail or ""))
+
+    return "".join(parts)
+
+
+def _format_abstract_markdown(abstract_el: ET.Element | None) -> str | None:
+    """Render an ``Abstract`` element as Markdown, or return None.
+
+    Each ``AbstractText`` becomes one section. A section's label comes from the
+    ``Label`` attribute, falling back to ``NlmCategory`` — PubMed uses either,
+    and reading only ``Label`` drops the heading from every section labelled
+    the other way, running it into its neighbour. Labels render as
+    ``**HEADING:** text``; sections are separated by a blank line so the
+    structure survives into Markdown. Inline markup is preserved throughout
+    (see :func:`_text_with_formatting`).
+
+    Args:
+        abstract_el: The ``Abstract`` element, or ``None``.
+
+    Returns:
+        The formatted abstract, or ``None`` when there is no text at all —
+        ``FetchedRecord.abstract`` is ``str | None`` and an empty string would
+        read as "this paper has a blank abstract" rather than "none was given".
+    """
+    if abstract_el is None:
+        return None
+
+    sections: list[str] = []
+    for part in abstract_el.findall("AbstractText"):
+        text = _text_with_formatting(part)
+        if not text:
+            continue
+
+        label = (part.get("Label") or "").strip()
+        if not label:
+            category = (part.get("NlmCategory") or "").strip()
+            if category and category.upper() not in _UNLABELLED_CATEGORIES:
+                label = category
+
+        # The label is document text too, so it is escaped like any other run;
+        # *text* arrives already escaped from _text_with_formatting.
+        sections.append(f"**{_escape_markdown(label.upper())}:** {text}" if label else text)
+
+    return "\n\n".join(sections) or None
 
 
 def _parse_pubdate(pubdate_el: ET.Element | None) -> str | None:
@@ -119,6 +292,54 @@ def _parse_pubdate(pubdate_el: ET.Element | None) -> str | None:
     return f"{year}-{month}-{day_text.zfill(2)}"
 
 
+def _author_name(author_el: ET.Element) -> str | None:
+    """Format one ``<Author>`` as ``"Last, Fore"``, or return None.
+
+    Returns ``None`` for an author with no ``LastName`` — a ``<CollectiveName>``
+    consortium, which has no personal name to render.
+    """
+    last = _text(author_el.find("LastName"))
+    if not last:
+        return None
+    fore = _text(author_el.find("ForeName"))
+    return f"{last}, {fore}" if fore else last
+
+
+def _parse_grants(article_el: ET.Element) -> list[Grant]:
+    """Extract funding awards from an ``<Article>``'s ``<GrantList>``.
+
+    A grant naming neither an agency nor an award id is skipped: it identifies
+    no award, and storing it would put an empty row in front of anyone counting
+    a paper's funders.
+
+    Exact repeats are collapsed, keeping first-occurrence order. PubMed really
+    does repeat a `<Grant>` block verbatim — 31 of 575 entries across 200
+    NIH-funded records, affecting 14 of them — and stored as separate rows
+    those inflate every count of a paper's funders, with no way for a reader to
+    tell PubMed's repetition from a genuine second award. Two grants differing
+    in any field are two grants.
+
+    ``<Acronym>`` — NIH's institute code, e.g. "HL" — is read by neither the
+    key nor the row. It is an abbreviation of ``<Agency>`` for one funder
+    rather than an independent fact, so two entries alike in agency, id and
+    country but differing in acronym are the same award; keeping it out of the
+    key is what lets those collapse.
+    """
+    grants: list[Grant] = []
+    seen: set[tuple[str | None, str | None, str | None]] = set()
+    for grant_el in article_el.findall("GrantList/Grant"):
+        agency = _text(grant_el.find("Agency"))
+        grant_id = _text(grant_el.find("GrantID"))
+        if not agency and not grant_id:
+            continue
+        key = (agency, grant_id, _text(grant_el.find("Country")))
+        if key in seen:
+            continue
+        seen.add(key)
+        grants.append(Grant(agency=key[0], grant_id=key[1], country=key[2]))
+    return grants
+
+
 def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
     """Parse a PubmedArticle XML element into a :class:`FetchedRecord`."""
     medline = article_el.find("MedlineCitation")
@@ -128,39 +349,54 @@ def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
     # PMID
     pmid = _text(medline.find("PMID")) if medline is not None else None
 
-    # Title
-    title = _text(article.find("ArticleTitle")) if article is not None else None
+    # Title — read with _text_with_formatting, not _text: a title holding
+    # markup (a chemical formula, an italicised species name) is truncated at
+    # its first child element by a bare ``el.text`` read.
+    title = _text_with_formatting(article.find("ArticleTitle")) if article is not None else None
 
-    # Abstract — join multiple AbstractText parts
+    # Abstract — Markdown, preserving section labels and inline markup
     abstract: str | None = None
     if article is not None:
-        abstract_el = article.find("Abstract")
-        if abstract_el is not None:
-            parts = []
-            for part in abstract_el.findall("AbstractText"):
-                label = part.get("Label")
-                # itertext() captures mixed content (text + child elements)
-                text = "".join(part.itertext()).strip()
-                if text:
-                    if label:
-                        parts.append(f"{label}: {text}")
-                    else:
-                        parts.append(text)
-            if parts:
-                abstract = "\n".join(parts)
+        abstract = _format_abstract_markdown(article.find("Abstract"))
 
-    # Authors
+    # Authors, and the affiliations they state. Both come from one pass over
+    # <AuthorList> so an affiliation's author name is formatted by the same
+    # code that builds ``authors`` — the two are meant to be matched, and
+    # upstream's separate formatting made that guesswork.
     authors: list[str] = []
+    author_affiliations: list[AuthorAffiliation] = []
     if article is not None:
         author_list = article.find("AuthorList")
         if author_list is not None:
-            for author_el in author_list.findall("Author"):
-                last = _text(author_el.find("LastName"))
-                fore = _text(author_el.find("ForeName"))
-                if last and fore:
-                    authors.append(f"{last}, {fore}")
-                elif last:
-                    authors.append(last)
+            for position, author_el in enumerate(author_list.findall("Author")):
+                name = _author_name(author_el)
+                if name is None:
+                    # A <CollectiveName> consortium. Its affiliations are
+                    # dropped with it, deliberately: AuthorAffiliation.author
+                    # is contracted to match a name in ``authors``, which this
+                    # entry is absent from, so storing it would put a row in
+                    # the table that no join by author name can ever reach.
+                    continue
+                authors.append(name)
+                # Deduplicated per author, for the same reason grants are (see
+                # _parse_grants) — two authors at one institution each keep it.
+                seen_affiliations: set[str] = set()
+                for aff_el in author_el.findall("AffiliationInfo/Affiliation"):
+                    # Read with the walker, not ``.text``: NLM declares
+                    # ``<Affiliation>`` with the same ``(%text;)*`` content
+                    # model as ``<ArticleTitle>``, so a superscript footnote
+                    # marker truncates the institution — and a *leading* one
+                    # makes ``.text`` None, which the guard below then drops.
+                    affiliation = _text_with_formatting(aff_el)
+                    if affiliation and affiliation not in seen_affiliations:
+                        seen_affiliations.add(affiliation)
+                        author_affiliations.append(
+                            AuthorAffiliation(
+                                author=name,
+                                affiliation=affiliation,
+                                position=position,
+                            )
+                        )
 
     # Journal
     journal: str | None = None
@@ -234,6 +470,8 @@ def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
         keywords=keywords,
         publication_types=publication_types,
         fulltext_sources=fulltext_sources,
+        grants=_parse_grants(article) if article is not None else [],
+        author_affiliations=author_affiliations,
     )
 
 

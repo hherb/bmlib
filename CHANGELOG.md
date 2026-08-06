@@ -127,6 +127,114 @@ All notable changes to bmlib are documented here. The format is based on
   carrying no `risk_of_bias` section at all was accepted and turned into nine
   fabricated defaults; and the study label was derived by
   `first_author.split()[-1]`, which reads "van der Berg" as "Berg".
+- **PubMed grants and author affiliations** (`bmlib.publications.Grant`,
+  `AuthorAffiliation`) — Phase 2 row 11 of the bmlibrarian port, and the last
+  Phase 2 row. The PubMed fetcher now reads `<GrantList>` awards and
+  `<AffiliationInfo>` affiliations, and both are persisted: two new tables,
+  `publication_grants` and `publication_affiliations`, created by
+  `ensure_schema()` on both backends, read back by the new `get_grants()` and
+  `get_author_affiliations()`. They are child rows of a publication, following
+  the `FullTextSource` precedent, so `Publication` and its `to_dict()`
+  contract are unchanged; the new `FetchedRecord.grants` and
+  `FetchedRecord.author_affiliations` are declared last, for positional
+  stability. Affiliations are stored one row per *(author, affiliation)* pair
+  rather than upstream's nested grouping — the relational shape, which makes
+  "which papers have an author at this institution?" a join rather than a scan
+  through nested JSON (only `publication_id` is indexed; an index suiting a
+  search *by* institution is the consumer's to add) — and
+  carry the author's `position` in the `<AuthorList>`, because first-author
+  and senior-author affiliation are the conflict-of-interest signals and the
+  name alone cannot recover the ordering.
+
+  Both tables carry a `source` column, and storage is **replace-per-source**:
+  a record's rows replace the stored rows for the source that asserted them
+  and leave every other source's alone, so re-syncing PubMed cannot disturb
+  what OpenAlex found. That gives idempotent re-syncs and self-correcting
+  updates while letting two sources coexist — scoping by publication alone
+  made the stored set depend on whichever source synced last, flip-flopping on
+  every sync with no error and no warning, which matters because OpenAlex's
+  API does carry funder data. `sync()` stamps the column from the record's own
+  source rather than each fetcher setting it, so a new fetcher cannot forget.
+  A record carrying no rows at all still leaves everything alone: an absent
+  `<GrantList>` means the record did not carry the data, not that the funding
+  was withdrawn. A row naming *no* source raises `ValueError` rather than
+  being stored, because scoping is the whole mechanism: an unnamed row is
+  unreachable, so no later sync can replace it and each one stacks a
+  correctly-labelled duplicate beside it. The check is in the storage layer
+  rather than left to the `NOT NULL` column because the column rejects `None`
+  while `""` — the dataclass default, and so the value a forgetful caller
+  actually produces — was stored happily.
+
+  There is no UNIQUE constraint on the natural key, deliberately — every
+  column of a grant proper is nullable and both backends treat NULL as
+  *distinct* in a unique index, so it would protect nothing while appearing
+  to. Nothing is left for one to catch: exact repeats are collapsed at parse
+  time, since PubMed emits a `<Grant>` block verbatim twice often enough to
+  matter (31 of 575 entries across 200 NIH-funded records, affecting 14 of
+  them), and stored separately they inflate every count of a paper's funders.
+
+  Two upstream defects fixed, each with a named regression test: a grant
+  naming neither an agency nor an award id was stored as a row identifying no
+  award, and affiliations named their author `"Smith John"` while the author
+  list said `"Smith, John A"`, so joining the two was guesswork — one pass
+  over `<AuthorList>` now formats both. Which elements are read with the
+  formatting walker below is decided by NLM's DTD rather than by eye:
+  `<Affiliation>` is declared with the same `(%text;)*` content model as
+  `<ArticleTitle>`, so it gets the walker too — a trailing superscript
+  footnote marker would otherwise truncate the institution, and a *leading*
+  one would drop the affiliation row entirely. Upstream's `is_retracted` was
+  deliberately not ported: `publication_types` already carries "Retracted
+  Publication" verbatim, `bmlib.publications.retractions` answers the question
+  authoritatively, and upstream treats RefType `RetractionOf` as retracted
+  when it marks an article as *being* the retraction notice.
+
+### Changed
+
+- **PubMed titles and abstracts preserve inline markup, and abstracts are
+  Markdown.** `_text()` read `el.text`, which is the text *before the first
+  child element*, so any PubMed title carrying markup was truncated there and
+  the loss was silent: `"Effects of H<sub>2</sub>O and <i>E. coli</i> on
+  outcomes"` parsed as `"Effects of H"`. Titles drive dedup display, quality
+  assessment and citation building, and chemical formulas and italicised
+  species names are ordinary in PubMed titles. Titles and abstracts are now
+  read with a mixed-content walker that maps `<b>`/`<i>`/`<sup>`/`<sub>`
+  to Markdown, and each `AbstractText` becomes a `**LABEL:** text` section
+  separated by a blank line, with the label taken from `Label` *or*
+  `NlmCategory` — reading only `Label` dropped the heading from every section
+  labelled the other way, running it into its neighbour.
+
+  Prose taken from the document is escaped (`` \ ` * ~ ^ ``), so a field
+  *declared* Markdown cannot be re-read as markup it never carried. Without
+  this the change would corrupt values that were fine before: `CYP2C19 (*1,
+  *2, *3, *17 alleles)`, the standard star-allele notation, renders as
+  `(<em>1, </em>2, …)`, and the `~` of "AUC ~ 0.80" pairs with the next one to
+  subscript half a sentence — a hazard the `~x~` mapping itself created. The
+  escape set is measured against 3,403 real titles and abstract sections: it
+  alters 0.35% of them and removes every construct a CommonMark parser found,
+  while also escaping `_` and `[`/`]` churned 4.3% and fixed nothing further
+  (intraword `_` is inert in CommonMark, and a bare `[…]` is not a link).
+
+  `<u>`/`<underline>` is **not** mapped, and passes through undecorated.
+  Markdown has no underline — `__x__` is *strong* emphasis, so mapping `<u>`
+  to it renders underlined text identically to `<b>` while asserting the
+  source said "bold", which is exactly the ambiguity `<sub>`/`<sup>` earned
+  their Pandoc markers to avoid. Underline is presentational, unlike a
+  subscript, so dropping it loses nothing a reader needs.
+
+  A second upstream defect fixed on the way: upstream stripped whitespace at
+  every recursion level, so the space inside `<b>Randomised </b><b>trial</b>`
+  vanished and the runs welded into `**Randomised****trial**`, which is broken
+  Markdown rather than merely ugly text. Leaving the space where it sits is no
+  better — CommonMark requires an emphasis delimiter to be adjacent to
+  non-whitespace — so a run's edge whitespace is re-emitted *outside* its
+  markers, giving `**Randomised** **trial**`.
+
+  **Not comparable with previously stored values.** Every synced PubMed title
+  and abstract changes shape: titles because they were being truncated,
+  abstracts because they gain recovered `NlmCategory` labels, blank-line
+  section breaks, and `CO~2~` / `m^2^` where the old flattening produced an
+  ambiguous `CO2` / `m2`. Anything persisting abstracts should re-sync or
+  accept the mix.
 
 ## [0.7.0] — 2026-08-04
 

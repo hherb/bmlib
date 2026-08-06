@@ -175,6 +175,139 @@ class FullTextSource:
 
 
 # ---------------------------------------------------------------------------
+# Funding and affiliation (child rows of a publication)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Grant:
+    """A funding award backing a publication, from PubMed's ``<GrantList>``.
+
+    Every field is optional because PubMed's own records are: a grant may name
+    an agency with no award id, or an award id with no country. A grant naming
+    neither an agency nor an id carries no information and is not stored.
+
+    ``source`` names the publication source that asserted this grant (e.g.
+    ``"pubmed"``). It is what scopes storage: re-storing a source's grants
+    replaces that source's rows and leaves every other source's alone, so two
+    sources' funding data coexist instead of overwriting each other on
+    alternate syncs. :func:`~bmlib.publications.sync.sync` fills it in from the
+    record's own source, so a fetcher cannot forget it; a caller reaching
+    :func:`~bmlib.publications.storage.store_publication` directly must set it.
+
+    ``publication_id`` defaults to 0 so a fetcher can build one before the
+    publication has a row. On the way in it is **ignored** — the stored row
+    takes its id from the publication, and the object you passed is *not*
+    mutated (unlike ``store_publication``'s ``pub`` argument, which is). Read
+    the persisted form back with
+    :func:`~bmlib.publications.storage.get_grants`, whose results carry both
+    ``publication_id`` and ``id``.
+    """
+
+    agency: str | None = None
+    grant_id: str | None = None
+    country: str | None = None
+    source: str = ""
+    publication_id: int = 0
+    id: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a JSON-safe dictionary."""
+        return {
+            "id": self.id,
+            "publication_id": self.publication_id,
+            "source": self.source,
+            "agency": self.agency,
+            "grant_id": self.grant_id,
+            "country": self.country,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Grant:
+        """Deserialise from a dictionary produced by :meth:`to_dict`."""
+        return cls(
+            id=data.get("id"),
+            publication_id=data.get("publication_id", 0),
+            source=data.get("source", ""),
+            agency=data.get("agency"),
+            grant_id=data.get("grant_id"),
+            country=data.get("country"),
+        )
+
+
+@dataclass
+class AuthorAffiliation:
+    """One author's stated affiliation, from PubMed's ``<AffiliationInfo>``.
+
+    One row per *(author, affiliation)* pair — an author listing three
+    institutions produces three of these. That is the relational shape, and it
+    makes "which papers have an author at this institution?" a single join
+    rather than a scan through nested JSON.
+
+    Only ``publication_id`` is indexed, which serves the read this module
+    performs (a publication's own rows). A search *by* institution is a table
+    scan until a consumer adds its own index — deliberately left to them,
+    because an affiliation is long free text for which the useful index is
+    trigram or full-text, and both are backend-specific and costly to maintain
+    for callers who never run that query.
+
+    ``position`` is the author's 0-based index in the ``<AuthorList>``. It is
+    carried because first-author and senior-author affiliations are the ones a
+    conflict-of-interest check cares about, and the name alone cannot recover
+    the ordering.
+
+    ``author`` is formatted exactly as
+    :attr:`~bmlib.publications.models.Publication.authors` formats it
+    (``"Last, Fore"``), so the two can be matched **by name**. Not by index:
+    ``position`` counts every ``<Author>`` element, including the
+    ``<CollectiveName>`` consortia that ``authors`` omits, so the two lists
+    differ in length whenever one is present.
+
+    ``affiliation`` is Markdown, read by the same walker as the title and
+    abstract — an ``<Affiliation>`` shares ``<ArticleTitle>``'s content model
+    and can carry a superscript footnote marker. It is therefore escaped like
+    any other prose, which matters here in a way it does not for a title:
+    matching this column against an institution name obtained elsewhere must
+    compare against the escaped form.
+
+    ``source`` and ``publication_id`` behave exactly as :class:`Grant`'s do —
+    the first scopes storage to the source that asserted the row, the second is
+    ignored on the way in. Read the persisted form back with
+    :func:`~bmlib.publications.storage.get_author_affiliations`.
+    """
+
+    author: str
+    affiliation: str
+    position: int = 0
+    source: str = ""
+    publication_id: int = 0
+    id: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a JSON-safe dictionary."""
+        return {
+            "id": self.id,
+            "publication_id": self.publication_id,
+            "source": self.source,
+            "author": self.author,
+            "affiliation": self.affiliation,
+            "position": self.position,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AuthorAffiliation:
+        """Deserialise from a dictionary produced by :meth:`to_dict`."""
+        return cls(
+            id=data.get("id"),
+            publication_id=data.get("publication_id", 0),
+            source=data.get("source", ""),
+            author=data["author"],
+            affiliation=data["affiliation"],
+            position=data.get("position", 0),
+        )
+
+
+# ---------------------------------------------------------------------------
 # Download tracking
 # ---------------------------------------------------------------------------
 
@@ -303,6 +436,13 @@ class FetchedRecord:
 
     # -- Source-specific extras --
     extras: dict[str, Any] = field(default_factory=dict)
+
+    # New fields go last — downstream projects construct this positionally, so
+    # placing these beside the content fields they read best beside would shift
+    # every later argument silently. See ``Publication.pmcid`` for the same
+    # rule and the test that pins it.
+    grants: list[Grant] = field(default_factory=list)
+    author_affiliations: list[AuthorAffiliation] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

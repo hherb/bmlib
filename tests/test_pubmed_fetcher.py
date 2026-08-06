@@ -25,7 +25,9 @@ from unittest.mock import MagicMock, patch
 from bmlib.publications.fetchers.pubmed import (
     EFETCH_URL,
     ESEARCH_URL,
+    _format_abstract_markdown,
     _parse_article_xml,
+    _text_with_formatting,
     fetch_pubmed,
 )
 from bmlib.publications.models import FetchedRecord, SyncProgress
@@ -146,9 +148,9 @@ class TestParseArticleXml:
         assert isinstance(result, FetchedRecord)
         assert result.pmid == "12345678"
         assert result.title == "Effects of aspirin on cardiovascular outcomes"
-        assert "BACKGROUND: Heart disease is the leading cause of death." in result.abstract
-        assert "METHODS: We conducted a randomized trial." in result.abstract
-        assert "RESULTS: Aspirin reduced events by 20%." in result.abstract
+        assert "**BACKGROUND:** Heart disease is the leading cause of death." in result.abstract
+        assert "**METHODS:** We conducted a randomized trial." in result.abstract
+        assert "**RESULTS:** Aspirin reduced events by 20%." in result.abstract
         assert result.authors == ["Smith, John A", "Jones, Mary B"]
         assert result.journal == "The Lancet"
         assert result.publication_date == "2024-01-15"
@@ -589,3 +591,525 @@ class TestFetchPubmed:
             fetch_pubmed(client, target, on_record=on_record, api_key=None)
 
         mock_sleep.assert_called_once_with(0.34)
+
+
+# ---------------------------------------------------------------------------
+# Inline formatting and Markdown abstracts
+# ---------------------------------------------------------------------------
+
+
+class TestInlineFormatting:
+    """Tests for _text_with_formatting — mixed content and Markdown mapping."""
+
+    def test_a_title_with_markup_is_not_truncated(self):
+        """The whole title survives markup.
+
+        Regression guard. The previous implementation read ``el.text``, which is
+        only the text *before the first child*, so this title parsed as
+        "Effects of H" — silently discarding most of the primary field.
+        """
+        el = ET.fromstring(
+            "<ArticleTitle>Effects of H<sub>2</sub>O and <i>E. coli</i> on outcomes</ArticleTitle>"
+        )
+        assert _text_with_formatting(el) == "Effects of H~2~O and *E. coli* on outcomes"
+
+    def test_a_plain_element_is_its_text(self):
+        assert _text_with_formatting(ET.fromstring("<t>Plain text</t>")) == "Plain text"
+
+    def test_none_is_the_empty_string(self):
+        assert _text_with_formatting(None) == ""
+
+    def test_an_empty_element_is_the_empty_string(self):
+        assert _text_with_formatting(ET.fromstring("<t/>")) == ""
+
+    def test_each_inline_tag_maps_to_its_marker(self):
+        cases = [
+            ("<t><b>x</b></t>", "**x**"),
+            ("<t><bold>x</bold></t>", "**x**"),
+            ("<t><i>x</i></t>", "*x*"),
+            ("<t><italic>x</italic></t>", "*x*"),
+            ("<t><sup>x</sup></t>", "^x^"),
+            ("<t><sub>x</sub></t>", "~x~"),
+        ]
+        for xml, expected in cases:
+            assert _text_with_formatting(ET.fromstring(xml)) == expected, xml
+
+    def test_underline_is_not_rendered_as_bold(self):
+        """``<u>`` must not borrow ``<b>``'s markers.
+
+        Markdown has no underline, and ``__x__`` is *strong* emphasis — the
+        same output ``<b>`` produces. Mapping ``<u>`` to it would render the
+        two identically while asserting the source said "bold", which is the
+        ambiguity ``sub``/``sup`` earned their Pandoc markers to avoid. Passing
+        the text through undecorated loses only presentation.
+        """
+        for xml in ("<t><u>x</u></t>", "<t><underline>x</underline></t>"):
+            assert _text_with_formatting(ET.fromstring(xml)) == "x", xml
+
+    def test_an_unknown_tag_contributes_its_text_undecorated(self):
+        el = ET.fromstring("<t>a <unknown>b</unknown> c</t>")
+        assert _text_with_formatting(el) == "a b c"
+
+    def test_nested_formatting_nests(self):
+        el = ET.fromstring("<t><b>bold and <i>italic</i></b></t>")
+        assert _text_with_formatting(el) == "**bold and *italic***"
+
+    def test_a_space_inside_a_formatted_run_is_not_eaten(self):
+        """Whitespace inside a formatted run survives.
+
+        Upstream stripped at *every* recursion level, so the space belonging to
+        ``<b>Randomised </b>`` vanished and the two runs welded into
+        ``**Randomised****trial**`` — not merely ugly, but broken Markdown.
+        Stripping happens once, at the outermost call.
+        """
+        el = ET.fromstring("<t><b>Randomised </b><b>trial</b></t>")
+        assert _text_with_formatting(el) == "**Randomised** **trial**"
+
+    def test_a_trailing_space_before_a_sibling_run_is_not_eaten(self):
+        el = ET.fromstring("<t>A <b>bold </b><i>italic</i> tail</t>")
+        assert _text_with_formatting(el) == "A **bold** *italic* tail"
+
+    def test_surrounding_whitespace_is_stripped_once(self):
+        el = ET.fromstring("<t>  padded <b>x</b>  </t>")
+        assert _text_with_formatting(el) == "padded **x**"
+
+
+class TestProseIsEscapedAgainstItsOwnMarkup:
+    """Declaring a field Markdown must not corrupt text that was fine before.
+
+    The escape set is measured, not guessed: across 3,403 real titles and
+    abstract sections, escaping ``\\ ` * ~ ^`` altered 0.35% of them and removed
+    every construct a CommonMark parser found, while adding ``_`` and
+    ``[``/``]`` churned 4.3% and fixed nothing further.
+    """
+
+    def test_a_star_allele_is_not_emphasis(self):
+        """The measured asterisk case, from real records.
+
+        ``CYP2C19 (*1, *2, *3, *17 alleles)`` is standard pharmacogenomic
+        notation; unescaped, a CommonMark parser reads the run between the
+        first two stars as emphasis and renders ``(<em>1, </em>2, ...)``.
+        """
+        el = ET.fromstring("<t>CYP2C19 (*1, *2, *3, *17 alleles)</t>")
+        assert _text_with_formatting(el) == r"CYP2C19 (\*1, \*2, \*3, \*17 alleles)"
+
+    def test_an_approximately_tilde_cannot_pair_with_a_subscript_marker(self):
+        """The commonest case, and one this module created.
+
+        ``~`` means "approximately" throughout scientific prose ("AUC ~ 0.80",
+        "(~88%)"). Emitting ``~2~`` for ``<sub>`` made the character
+        meaningful, so an unescaped literal pair now silently subscripts
+        everything between them under a Pandoc renderer.
+        """
+        el = ET.fromstring("<t>AUC ~ 0.80 and ~88% of H<sub>2</sub>O</t>")
+        assert _text_with_formatting(el) == r"AUC \~ 0.80 and \~88% of H~2~O"
+
+    def test_a_caret_is_escaped_but_a_superscript_marker_is_not(self):
+        el = ET.fromstring("<t>2^10 vs m<sup>2</sup></t>")
+        assert _text_with_formatting(el) == r"2\^10 vs m^2^"
+
+    def test_a_backslash_is_escaped_so_the_escapes_are_unambiguous(self):
+        el = ET.fromstring(r"<t>path\to\file</t>")
+        assert _text_with_formatting(el) == r"path\\to\\file"
+
+    def test_a_backtick_cannot_open_a_code_span(self):
+        el = ET.fromstring("<t>the `gene` locus</t>")
+        assert _text_with_formatting(el) == r"the \`gene\` locus"
+
+    def test_an_intraword_underscore_is_left_alone(self):
+        """Escaping ``_`` would be pure noise.
+
+        CommonMark makes intraword ``_`` inert, so gene and variant names —
+        which is nearly every underscore PubMed carries — need no escape. The
+        measurement says escaping it alters 10 more fields and fixes none.
+        """
+        el = ET.fromstring("<t>TP53_R175H and BRCA1_var</t>")
+        assert _text_with_formatting(el) == "TP53_R175H and BRCA1_var"
+
+    def test_brackets_are_left_alone(self):
+        """A bare ``[...]`` is not a link without a following ``(...)``.
+
+        These are common in PubMed ("[This corrects the article ...]", "[grant
+        number X]") and were the whole cost of the wider escape set.
+        """
+        el = ET.fromstring("<t>[This corrects the article DOI: 10.1/x.]</t>")
+        assert _text_with_formatting(el) == "[This corrects the article DOI: 10.1/x.]"
+
+    def test_escaping_reaches_tail_text_as_well_as_element_text(self):
+        """Every text node is escaped, not merely the first.
+
+        Tails are a separate node from an element's own text; escaping only the
+        latter would leave everything after the first child unprotected.
+        """
+        el = ET.fromstring("<t>a*b <b>x</b> c*d</t>")
+        assert _text_with_formatting(el) == r"a\*b **x** c\*d"
+
+    def test_text_inside_a_formatted_run_is_escaped_too(self):
+        el = ET.fromstring("<t><b>2*3</b></t>")
+        assert _text_with_formatting(el) == r"**2\*3**"
+
+    def test_an_abstract_label_is_escaped(self):
+        el = ET.fromstring(
+            '<Abstract><AbstractText Label="Costs*">Prose.</AbstractText></Abstract>'
+        )
+        assert _format_abstract_markdown(el) == r"**COSTS\*:** Prose."
+
+    def test_an_affiliation_is_escaped_like_any_other_prose(self):
+        """Affiliations share the walker, so they share the contract.
+
+        Worth pinning separately because this column is a join key: anything
+        matching it against an institution name from elsewhere must compare
+        against the escaped form.
+        """
+        el = ET.fromstring("<Affiliation>Dept of Physics, Building C*, Univ X</Affiliation>")
+        assert _text_with_formatting(el) == r"Dept of Physics, Building C\*, Univ X"
+
+    def test_plain_prose_is_untouched(self):
+        """The negative control: escaping must not churn ordinary text.
+
+        Without this, a rule that escaped everything would pass every test
+        above while making 4% of stored abstracts worse.
+        """
+        text = "Patients (n = 42) improved by 15% [95% CI 3-27]; P < 0.05, TP53_R175H."
+        el = ET.fromstring(f"<t>{text.replace('<', '&lt;')}</t>")
+        assert _text_with_formatting(el) == text
+
+
+class TestAbstractMarkdown:
+    """Tests for _format_abstract_markdown."""
+
+    def test_none_yields_none(self):
+        assert _format_abstract_markdown(None) is None
+
+    def test_an_abstract_with_no_text_yields_none(self):
+        assert _format_abstract_markdown(ET.fromstring("<Abstract/>")) is None
+
+    def test_an_abstract_of_only_blank_text_yields_none(self):
+        el = ET.fromstring("<Abstract><AbstractText>   </AbstractText></Abstract>")
+        assert _format_abstract_markdown(el) is None
+
+    def test_an_unlabelled_abstract_is_bare_text(self):
+        el = ET.fromstring("<Abstract><AbstractText>Just prose.</AbstractText></Abstract>")
+        assert _format_abstract_markdown(el) == "Just prose."
+
+    def test_a_label_becomes_a_bold_upper_case_heading(self):
+        el = ET.fromstring(
+            '<Abstract><AbstractText Label="Background">Prose.</AbstractText></Abstract>'
+        )
+        assert _format_abstract_markdown(el) == "**BACKGROUND:** Prose."
+
+    def test_nlm_category_supplies_a_label_when_label_is_absent(self):
+        """A section labelled only by NlmCategory keeps its label.
+
+        The previous implementation read the ``Label`` attribute alone, so every
+        section labelled the other way lost its heading and ran into its
+        neighbour.
+        """
+        el = ET.fromstring(
+            '<Abstract><AbstractText NlmCategory="METHODS">Prose.</AbstractText></Abstract>'
+        )
+        assert _format_abstract_markdown(el) == "**METHODS:** Prose."
+
+    def test_label_wins_over_nlm_category(self):
+        el = ET.fromstring(
+            '<Abstract><AbstractText Label="Patients" NlmCategory="METHODS">P.</AbstractText>'
+            "</Abstract>"
+        )
+        assert _format_abstract_markdown(el) == "**PATIENTS:** P."
+
+    def test_a_placeholder_nlm_category_is_not_a_label(self):
+        """UNASSIGNED and UNLABELLED mean "no label", not a heading of that name."""
+        for category in ("UNASSIGNED", "UNLABELLED"):
+            el = ET.fromstring(
+                f'<Abstract><AbstractText NlmCategory="{category}">Prose.</AbstractText></Abstract>'
+            )
+            assert _format_abstract_markdown(el) == "Prose.", category
+
+    def test_sections_are_separated_by_a_blank_line(self):
+        el = ET.fromstring(
+            '<Abstract><AbstractText Label="BACKGROUND">One.</AbstractText>'
+            '<AbstractText Label="METHODS">Two.</AbstractText></Abstract>'
+        )
+        assert _format_abstract_markdown(el) == "**BACKGROUND:** One.\n\n**METHODS:** Two."
+
+    def test_a_section_with_no_text_is_skipped(self):
+        el = ET.fromstring(
+            '<Abstract><AbstractText Label="BACKGROUND">One.</AbstractText>'
+            '<AbstractText Label="METHODS"/></Abstract>'
+        )
+        assert _format_abstract_markdown(el) == "**BACKGROUND:** One."
+
+    def test_inline_formatting_survives_into_the_abstract(self):
+        el = ET.fromstring(
+            '<Abstract><AbstractText Label="RESULTS">CO<sub>2</sub> fell over 10 m<sup>2</sup>.'
+            "</AbstractText></Abstract>"
+        )
+        assert _format_abstract_markdown(el) == "**RESULTS:** CO~2~ fell over 10 m^2^."
+
+
+# ---------------------------------------------------------------------------
+# Grants and author affiliations
+# ---------------------------------------------------------------------------
+
+GRANTS_AND_AFFILIATIONS_XML = """\
+<PubmedArticle>
+  <MedlineCitation>
+    <PMID>55555555</PMID>
+    <Article>
+      <ArticleTitle>A funded study</ArticleTitle>
+      <GrantList>
+        <Grant>
+          <GrantID>R01 HL123456</GrantID>
+          <Agency>NHLBI NIH HHS</Agency>
+          <Country>United States</Country>
+        </Grant>
+        <Grant>
+          <Agency>Wellcome Trust</Agency>
+        </Grant>
+        <Grant>
+          <Country>Nowhere</Country>
+        </Grant>
+      </GrantList>
+      <AuthorList>
+        <Author>
+          <LastName>Smith</LastName>
+          <ForeName>John A</ForeName>
+          <AffiliationInfo>
+            <Affiliation>Department of Cardiology, St Elsewhere.</Affiliation>
+          </AffiliationInfo>
+          <AffiliationInfo>
+            <Affiliation>Institute of Statistics, Elsewhere University.</Affiliation>
+          </AffiliationInfo>
+        </Author>
+        <Author>
+          <LastName>Jones</LastName>
+          <ForeName>Mary B</ForeName>
+        </Author>
+        <Author>
+          <LastName>Brown</LastName>
+          <AffiliationInfo>
+            <Affiliation>Pfizer Inc, New York.</Affiliation>
+          </AffiliationInfo>
+        </Author>
+      </AuthorList>
+    </Article>
+  </MedlineCitation>
+</PubmedArticle>
+"""
+
+
+class TestGrantExtraction:
+    """Tests for <GrantList> parsing."""
+
+    def test_grants_are_extracted(self):
+        result = _parse_article_xml(ET.fromstring(GRANTS_AND_AFFILIATIONS_XML))
+
+        assert len(result.grants) == 2
+        first = result.grants[0]
+        assert first.agency == "NHLBI NIH HHS"
+        assert first.grant_id == "R01 HL123456"
+        assert first.country == "United States"
+
+    def test_a_grant_may_name_only_an_agency(self):
+        result = _parse_article_xml(ET.fromstring(GRANTS_AND_AFFILIATIONS_XML))
+
+        second = result.grants[1]
+        assert second.agency == "Wellcome Trust"
+        assert second.grant_id is None
+        assert second.country is None
+
+    def test_a_grant_naming_neither_agency_nor_id_is_dropped(self):
+        """A country alone identifies no award, so it is not a grant.
+
+        Storing it would put a row carrying no usable information in front of
+        anyone counting a paper's funders.
+        """
+        result = _parse_article_xml(ET.fromstring(GRANTS_AND_AFFILIATIONS_XML))
+
+        assert all(g.country != "Nowhere" for g in result.grants)
+
+    def test_a_record_without_grants_has_an_empty_list(self):
+        result = _parse_article_xml(ET.fromstring(MINIMAL_ARTICLE_XML))
+        assert result.grants == []
+
+
+class TestAffiliationExtraction:
+    """Tests for <AffiliationInfo> parsing."""
+
+    def test_one_row_per_author_affiliation_pair(self):
+        result = _parse_article_xml(ET.fromstring(GRANTS_AND_AFFILIATIONS_XML))
+
+        assert len(result.author_affiliations) == 3
+        assert [a.affiliation for a in result.author_affiliations] == [
+            "Department of Cardiology, St Elsewhere.",
+            "Institute of Statistics, Elsewhere University.",
+            "Pfizer Inc, New York.",
+        ]
+
+    def test_the_author_name_matches_the_authors_list_format(self):
+        """Affiliation rows name their author the way ``authors`` does.
+
+        Upstream formatted these "Smith John" while the author list uses
+        "Smith, John A", so joining the two on name was guesswork. They agree
+        here.
+        """
+        result = _parse_article_xml(ET.fromstring(GRANTS_AND_AFFILIATIONS_XML))
+
+        assert result.authors == ["Smith, John A", "Jones, Mary B", "Brown"]
+        assert result.author_affiliations[0].author == "Smith, John A"
+        assert result.author_affiliations[0].author in result.authors
+        assert result.author_affiliations[2].author == "Brown"
+
+    def test_position_is_the_index_in_the_author_list(self):
+        """Position survives so first and senior authorship stay recoverable."""
+        result = _parse_article_xml(ET.fromstring(GRANTS_AND_AFFILIATIONS_XML))
+
+        # Smith is author 0 (both affiliations); Jones (1) has none; Brown is 2.
+        assert [a.position for a in result.author_affiliations] == [0, 0, 2]
+
+    def test_an_author_without_an_affiliation_contributes_no_row(self):
+        result = _parse_article_xml(ET.fromstring(GRANTS_AND_AFFILIATIONS_XML))
+        assert all(a.author != "Jones, Mary B" for a in result.author_affiliations)
+
+    def test_a_record_without_affiliations_has_an_empty_list(self):
+        result = _parse_article_xml(ET.fromstring(MINIMAL_ARTICLE_XML))
+        assert result.author_affiliations == []
+
+    def test_position_indexes_the_xml_author_list_not_the_authors_field(self):
+        """A consortium consumes a position but contributes no name.
+
+        ``position`` is an index into ``<AuthorList>``, not into
+        ``FetchedRecord.authors`` — a ``<CollectiveName>`` author has no
+        personal name, so it is absent from ``authors`` while still occupying
+        its place in the paper's author order. The two lists therefore differ
+        in length whenever one is present, and ``authors[a.position]`` is the
+        wrong way to resolve an affiliation's author; match on ``author``
+        instead. What position is *for* — is this the first or the senior
+        author — is answered correctly either way.
+        """
+        el = ET.fromstring(
+            "<PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
+            "<ArticleTitle>T</ArticleTitle><AuthorList>"
+            "<Author><CollectiveName>The Trial Group</CollectiveName></Author>"
+            "<Author><LastName>Smith</LastName><ForeName>J</ForeName>"
+            "<AffiliationInfo><Affiliation>St Elsewhere</Affiliation></AffiliationInfo>"
+            "</Author>"
+            "</AuthorList></Article></MedlineCitation></PubmedArticle>"
+        )
+        result = _parse_article_xml(el)
+
+        assert result.authors == ["Smith, J"]
+        assert result.author_affiliations[0].author == "Smith, J"
+        assert result.author_affiliations[0].position == 1
+
+    def test_an_affiliation_carrying_markup_survives_whole(self):
+        """`<Affiliation>` is not a leaf element, so it needs the same walker.
+
+        NLM's DTD declares it ``(%text;)*`` — the same content model as
+        ``<ArticleTitle>``, admitting ``b``/``i``/``sup``/``sub``/``u``. Read
+        with a bare ``.text`` it fails in the two ways this port exists to fix:
+        trailing markup truncates the institution, and *leading* markup makes
+        ``.text`` ``None``, which the emptiness guard then drops — losing the
+        affiliation row altogether rather than merely shortening it.
+        """
+        el = ET.fromstring(
+            "<PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
+            "<ArticleTitle>T</ArticleTitle><AuthorList>"
+            "<Author><LastName>Smith</LastName>"
+            "<AffiliationInfo><Affiliation>Dept of Chemistry, Univ X<sup>1</sup>, Rome."
+            "</Affiliation></AffiliationInfo>"
+            "<AffiliationInfo><Affiliation><sup>2</sup>Istituto Nazionale, Rome."
+            "</Affiliation></AffiliationInfo>"
+            "</Author></AuthorList></Article></MedlineCitation></PubmedArticle>"
+        )
+        result = _parse_article_xml(el)
+
+        assert [a.affiliation for a in result.author_affiliations] == [
+            "Dept of Chemistry, Univ X^1^, Rome.",
+            "^2^Istituto Nazionale, Rome.",
+        ]
+
+
+class TestRepeatedEntriesAreDeduplicated:
+    """PubMed repeats identical entries; they must not become duplicate rows.
+
+    Measured against the live API: 31 of 575 `<Grant>` entries across 200
+    NIH-funded records were exact duplicates of another entry in the same
+    record, affecting 14 records. Stored verbatim they inflate any count of a
+    paper's funders, and no downstream reader can tell a real second award
+    from PubMed's repetition.
+    """
+
+    def test_an_exactly_repeated_grant_is_stored_once(self):
+        el = ET.fromstring(
+            "<PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
+            "<ArticleTitle>T</ArticleTitle><GrantList>"
+            "<Grant><GrantID>K23 NR020044</GrantID><Agency>NINR NIH HHS</Agency>"
+            "<Country>United States</Country></Grant>"
+            "<Grant><GrantID>K23 NR020044</GrantID><Agency>NINR NIH HHS</Agency>"
+            "<Country>United States</Country></Grant>"
+            "</GrantList></Article></MedlineCitation></PubmedArticle>"
+        )
+        result = _parse_article_xml(el)
+
+        assert len(result.grants) == 1
+        assert result.grants[0].grant_id == "K23 NR020044"
+
+    def test_grants_differing_in_any_field_are_both_kept(self):
+        """Only an *exact* repeat is a repeat."""
+        el = ET.fromstring(
+            "<PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
+            "<ArticleTitle>T</ArticleTitle><GrantList>"
+            "<Grant><GrantID>R01 A</GrantID><Agency>NHLBI</Agency></Grant>"
+            "<Grant><GrantID>R01 B</GrantID><Agency>NHLBI</Agency></Grant>"
+            "<Grant><GrantID>R01 A</GrantID><Agency>NINR</Agency></Grant>"
+            "</GrantList></Article></MedlineCitation></PubmedArticle>"
+        )
+        result = _parse_article_xml(el)
+
+        assert [(g.agency, g.grant_id) for g in result.grants] == [
+            ("NHLBI", "R01 A"),
+            ("NHLBI", "R01 B"),
+            ("NINR", "R01 A"),
+        ]
+
+    def test_the_first_occurrence_order_is_kept(self):
+        el = ET.fromstring(
+            "<PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
+            "<ArticleTitle>T</ArticleTitle><GrantList>"
+            "<Grant><Agency>First</Agency></Grant>"
+            "<Grant><Agency>Second</Agency></Grant>"
+            "<Grant><Agency>First</Agency></Grant>"
+            "</GrantList></Article></MedlineCitation></PubmedArticle>"
+        )
+        assert [g.agency for g in _parse_article_xml(el).grants] == ["First", "Second"]
+
+    def test_a_repeated_affiliation_for_one_author_is_stored_once(self):
+        el = ET.fromstring(
+            "<PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
+            "<ArticleTitle>T</ArticleTitle><AuthorList><Author><LastName>Smith</LastName>"
+            "<AffiliationInfo><Affiliation>St Elsewhere</Affiliation></AffiliationInfo>"
+            "<AffiliationInfo><Affiliation>St Elsewhere</Affiliation></AffiliationInfo>"
+            "</Author></AuthorList></Article></MedlineCitation></PubmedArticle>"
+        )
+        result = _parse_article_xml(el)
+
+        assert [a.affiliation for a in result.author_affiliations] == ["St Elsewhere"]
+
+    def test_two_authors_at_the_same_institution_both_keep_it(self):
+        """Deduplication is per author, not per paper."""
+        el = ET.fromstring(
+            "<PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
+            "<ArticleTitle>T</ArticleTitle><AuthorList>"
+            "<Author><LastName>Smith</LastName>"
+            "<AffiliationInfo><Affiliation>St Elsewhere</Affiliation></AffiliationInfo></Author>"
+            "<Author><LastName>Jones</LastName>"
+            "<AffiliationInfo><Affiliation>St Elsewhere</Affiliation></AffiliationInfo></Author>"
+            "</AuthorList></Article></MedlineCitation></PubmedArticle>"
+        )
+        result = _parse_article_xml(el)
+
+        assert [(a.author, a.position) for a in result.author_affiliations] == [
+            ("Smith", 0),
+            ("Jones", 1),
+        ]

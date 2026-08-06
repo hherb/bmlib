@@ -23,17 +23,20 @@ configured publication sources (PubMed, bioRxiv, medRxiv, OpenAlex).
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import replace
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, TypeVar
 
 from bmlib import __version__
 from bmlib.db import execute, fetch_all, placeholder, transaction
 from bmlib.publications.fetchers.registry import get_fetcher, source_names
 from bmlib.publications.models import (
+    AuthorAffiliation,
     FetchedRecord,
     FetchResult,
     FullTextSource,
+    Grant,
     Publication,
     SyncProgress,
     SyncReport,
@@ -42,6 +45,12 @@ from bmlib.publications.schema import ensure_schema
 from bmlib.publications.storage import store_publication
 
 logger = logging.getLogger(__name__)
+
+# Both carry ``source`` and are dataclasses, which is all _stamp_source needs.
+# Bound rather than bare, so ``dataclasses.replace`` — which accepts only a
+# dataclass instance — type-checks, and so the return type stays the caller's
+# own type rather than widening to the union.
+_ChildRow = TypeVar("_ChildRow", Grant, AuthorAffiliation)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -158,6 +167,20 @@ def _record_to_publication(record: FetchedRecord) -> Publication:
         sources=[record.source],
         first_seen_source=record.source,
     )
+
+
+def _stamp_source(rows: Sequence[_ChildRow], source: str) -> list[_ChildRow]:
+    """Return copies of *rows* whose ``source`` is the record's own.
+
+    Provenance is stamped here rather than in each fetcher because this is the
+    one place that authoritatively knows which source produced the record — a
+    fetcher can forget, and the cost of forgetting is silent: rows land in an
+    unnamed bucket and stop being scoped, which is the cross-source
+    flip-flopping that ``source`` exists to prevent. Whatever a fetcher may
+    have set is overwritten, which is correct: a row's provenance *is* the
+    source that reported the record carrying it.
+    """
+    return [replace(row, source=source) for row in rows]
 
 
 def _record_to_fulltext_sources(record: FetchedRecord) -> list[FullTextSource] | None:
@@ -407,7 +430,15 @@ def sync(
                         try:
                             pub = _record_to_publication(record)
                             fts = _record_to_fulltext_sources(record)
-                            result = store_publication(conn, pub, fulltext_sources=fts)
+                            result = store_publication(
+                                conn,
+                                pub,
+                                fulltext_sources=fts,
+                                grants=_stamp_source(record.grants, record.source),
+                                affiliations=_stamp_source(
+                                    record.author_affiliations, record.source
+                                ),
+                            )
                             if result == "added":
                                 day_added += 1
                             elif result == "merged":
