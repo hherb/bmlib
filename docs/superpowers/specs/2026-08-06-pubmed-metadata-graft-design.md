@@ -102,7 +102,8 @@ class Grant:
     agency: str | None = None
     grant_id: str | None = None
     country: str | None = None
-    publication_id: int = 0     # set by store_publication
+    source: str = ""            # who asserted it; scopes storage
+    publication_id: int = 0     # ignored on the way in
     id: int | None = None
 
 @dataclass
@@ -110,6 +111,7 @@ class AuthorAffiliation:
     author: str
     affiliation: str
     position: int = 0           # 0-based index in AuthorList
+    source: str = ""
     publication_id: int = 0
     id: int | None = None
 ```
@@ -140,6 +142,7 @@ positional-stability rule that `Publication.pmcid` and
 CREATE TABLE IF NOT EXISTS publication_grants (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,   -- SERIAL on PostgreSQL
     publication_id  INTEGER NOT NULL REFERENCES publications(id),
+    source          TEXT NOT NULL,
     agency          TEXT,
     grant_id        TEXT,
     country         TEXT,
@@ -150,6 +153,7 @@ CREATE INDEX … ON publication_grants (publication_id);
 CREATE TABLE IF NOT EXISTS publication_affiliations (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     publication_id  INTEGER NOT NULL REFERENCES publications(id),
+    source          TEXT NOT NULL,
     author          TEXT NOT NULL,
     affiliation     TEXT NOT NULL,
     position        INTEGER NOT NULL DEFAULT 0,
@@ -162,30 +166,56 @@ New *tables* need no `_ADDED_COLUMNS` entry: `CREATE TABLE IF NOT EXISTS` in
 `ensure_schema()` creates them on an existing database, which is exactly what
 that list exists to work around for columns.
 
-**No UNIQUE constraint on the natural key.** `UNIQUE(publication_id, agency,
-grant_id)` looks right and is a trap: both backends treat `NULL` as distinct in
-a unique index, and `agency`/`grant_id`/`country` are all nullable, so
-`(1, NULL, 'R01')` would insert twice and the constraint would silently protect
-nothing. Idempotency is handled in the storage layer instead (next section),
-where it can be tested directly.
+**`source` is not decoration — it scopes storage** (next section), and it is
+the column the sibling table `fulltext_sources` has carried all along. New
+*tables* need no `_ADDED_COLUMNS` entry either way, which is why adding this
+before release costs nothing and after release would cost a migration.
 
-### 4. `storage.py` — replace-if-nonempty
+**No UNIQUE constraint on the natural key.** `UNIQUE(publication_id, source,
+agency, grant_id)` looks right and is a trap: both backends treat `NULL` as
+distinct in a unique index, and `agency`/`grant_id`/`country` are all nullable,
+so `(1, 'pubmed', NULL, 'R01')` would insert twice and the constraint would
+silently protect nothing. An expression index over `COALESCE`d columns would
+work on both backends, but nothing is left for it to catch once repeats are
+collapsed at parse time and replacement is idempotent per source — and those
+two are reachable from a test in a way the index is not.
+
+### 4. `storage.py` — replace-per-source
 
 `store_publication()` gains keyword-only `grants` and `affiliations`. Both
 follow one rule:
 
-> If the incoming record carries any, delete this publication's existing rows
-> and insert the incoming set. If it carries none, leave what is there alone.
+> Incoming rows replace this publication's stored rows **for each source those
+> rows name**, and leave every other source's alone. A record carrying no rows
+> leaves everything alone.
 
-This makes re-syncing a day idempotent (no accumulating duplicates) and
-self-correcting (a corrected grant replaces the stale one) without a unique
-index that cannot be written correctly over nullable columns. The
-`if incoming:` guard is the same "fill, never clobber" rule
-`_merge_publication` already applies per field — a bioRxiv record merging into a
-PubMed row carries no grants and so erases nothing.
+This makes re-syncing a day idempotent (no accumulating duplicates),
+self-correcting (a corrected grant replaces the stale one), and safe across
+sources — all without a unique index that cannot be written correctly over
+nullable columns.
 
-The limit is honest and documented: if a second source ever supplies grants,
-successive syncs would alternate between the two sources' sets. Only PubMed
+**Revised after the first implementation.** The original rule scoped
+replacement by publication alone, and the limit was written down as acceptable
+because only PubMed produced grants: *"if a second source ever supplies grants,
+successive syncs would alternate."* That was too generous to itself. OpenAlex's
+API carries funder data, the failure is silent, and the fix — the `source`
+column that the sibling table `fulltext_sources` has always had — is free
+before release and needs a migration after it. Scoping by source is the design.
+
+`sync()` stamps `source` from `record.source` rather than each fetcher setting
+it: a fetcher that forgets fails silently, its rows landing in an unnamed
+bucket where scoping stops applying.
+
+The empty guard survives with a different justification than it started with.
+It was there to stop a bioRxiv record erasing PubMed's grants; source scoping
+now handles that structurally. What it still does is answer "no rows names no
+source, so there is nothing to scope a delete to" — and an absent
+`<GrantList>` means the record did not carry the data, not that the funding was
+withdrawn.
+
+Exact repeats are collapsed at parse time rather than by the database: PubMed
+emits a `<Grant>` block verbatim twice in 31 of 575 measured entries, affecting
+14 of 200 records. Only PubMed
 produces them today.
 
 Two readers, pure functions with the connection first:
@@ -224,8 +254,10 @@ TDD throughout — behaviour tests first, upstream's code as the spec.
 |---|---|---|
 | Formatting | `test_pubmed_fetcher.py` | A title with `<sub>`/`<i>` survives whole (the truncation regression); each inline tag maps to its Markdown; an unknown tag keeps its text; a space inside a formatted run is not eaten (the upstream defect, both cases in the table above); `NlmCategory` supplies a label when `Label` is absent; `UNASSIGNED`/`UNLABELLED` do not become labels; sections join with a blank line; an unlabelled abstract is bare text; an empty abstract stays `None` |
 | Extraction | `test_pubmed_fetcher.py` | Grants parse; a grant with neither agency nor id is skipped; affiliations carry author, position and one row per affiliation; the affiliation author name matches the `authors` list format; a record with none yields empty lists |
-| Storage | `test_publications.py` | Round-trip through both readers; re-storing the same record does not duplicate; a record with no grants does not erase stored ones; a record with grants replaces them; split-identity consolidation relocates children rather than raising; consolidation keeps the keep row's children when it has some |
-| Both dialects | `test_backends.py` | The same storage behaviours against PostgreSQL |
+| Storage | `test_publications.py` | Round-trip through both readers; re-storing the same record does not duplicate; a record with no grants does not erase stored ones; a record with grants replaces them; split-identity consolidation relocates children rather than raising; consolidation keeps the keep row's children when it has some; the caller's objects are not mutated |
+| Source scoping | `test_publications.py` | A second source does not displace the first; re-syncing one source replaces only its own rows; the stored row reports which source asserted it; consolidation keeps each source at most once |
+| Deduplication | `test_pubmed_fetcher.py` | An exactly repeated grant is stored once, first-occurrence order kept; grants differing in any field are both kept; a repeated affiliation for one author collapses while two authors at one institution both keep it |
+| Both dialects | `test_backends.py` | The same storage behaviours against PostgreSQL, including source scoping and consolidation |
 | Positional stability | existing test | `FetchedRecord`'s new fields are last |
 
 ## Rejected

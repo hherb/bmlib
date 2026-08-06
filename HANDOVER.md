@@ -59,15 +59,16 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   first markup tag; abstracts because they gain `NlmCategory` labels,
   blank-line section breaks and `CO~2~` notation). CHANGELOG says which, and
   the manual tells callers to re-sync or accept a mix.
-- **1652 tests passing + 55 skipped** (`uv run pytest tests/ -q`); **1705 + 2
-  with `BMLIB_TEST_POSTGRESQL_DSN` set**. 53 of the default skips are the
+- **1667 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1723 + 2
+  with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
   PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
   runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev
   venv** (PR #55 did it so the extraction tests run locally).
-- **Running the PostgreSQL half locally is worth the two minutes.** Postgres.app
-  ships the binaries; the socket directory must be short (`/tmp/bmlpg/run`, not
-  a scratchpad path — the 103-byte socket limit bites):
+- **Run the PostgreSQL half locally — it is two minutes and it finds real
+  bugs.** Postgres.app ships the binaries. The socket directory must be a
+  *short* path (the 103-byte limit bites, and a scratchpad path exceeds it;
+  `createdb` then fails while `pg_ctl` reports success):
   ```bash
   PGBIN=/Applications/Postgres.app/Contents/Versions/16/bin
   mkdir -p /tmp/bmlpg/run
@@ -300,11 +301,9 @@ named source file; the entry here is the pointer, not the argument.
   Pinned by `test_a_heading_split_across_spans_is_one_block` and
   `test_a_superscript_marker_does_not_restyle_the_line`.
 - **Nothing is dropped for being empty or unclassified**, each with a named
-  test: front matter is a 0.5-confidence section (what precedes the first
-  detected heading is a container, not a classification — if the real first
-  heading was missed, it has swallowed the introduction); a heading with no
-  body is reported with `content == ""` (dropping it says the paper has no
-  such section when it has an empty one); and `SectionType.TITLE`,
+  test: front matter is a 0.5-confidence section (if the real first heading
+  was missed, it has swallowed the introduction); a heading with no body is
+  reported with `content == ""`; and `SectionType.TITLE`,
   `SegmentedDocument.authors` and `Section.subsections` are reserved, not
   dead (the `outcome_switching_detected` precedent).
 - **`extract_blocks()` raises where `convert()` returns a failed result.**
@@ -312,11 +311,10 @@ named source file; the entry here is the pointer, not the argument.
   block list is indistinguishable from a sparse PDF, so degradation would be
   silent. Pinned by `test_a_corrupt_pdf_raises_rather_than_degrading`.
 - **A negative vertical gap (column/page boundary) inserts no paragraph
-  break, documented rather than "fixed"** — a PDF gives no signal that
-  distinguishes a paragraph continuing across a page from one ending at it.
-  Pinned by `test_a_page_boundary_is_not_a_paragraph_break`. The
-  `height == 0` degenerate-bbox case is likewise acknowledged in a comment
-  in `_join_blocks` and left — guessing a floor would be an assumed size.
+  break** — a PDF gives no signal distinguishing a paragraph continuing across
+  a page from one ending at it. Pinned by
+  `test_a_page_boundary_is_not_a_paragraph_break`; the `height == 0`
+  degenerate-bbox case is acknowledged in `_join_blocks` and left.
 - **CONFLICTS owns the disclosure family, in both numbers** — FUNDING once
   listed the singular `financial disclosure` while CONFLICTS listed both, so
   the two numbers of the same heading landed in different sections, decided
@@ -361,46 +359,59 @@ named source file; the entry here is the pointer, not the argument.
 
 ### publications — PubMed metadata graft (PR open)
 
-- **The child tables carry no UNIQUE constraint on their natural key**, and
-  one must not be added. Every column of a grant is nullable and both backends
-  treat `NULL` as *distinct* in a unique index, so
-  `UNIQUE(publication_id, agency, grant_id)` lets `(1, NULL, 'R01')` insert
-  twice — it protects nothing while looking like it protects something.
-  Idempotency is `_replace_child_rows()`'s job, pinned by
-  `test_re_storing_the_same_record_does_not_duplicate` on both backends.
-- **Replace-if-nonempty, not accumulate** — deliberately unlike
-  `fulltext_sources`, which accumulates because a paper genuinely has several
-  URLs. A grant set is one source's complete statement, so it replaces; the
-  empty guard is what stops a bioRxiv record erasing what PubMed found. Pinned
-  by `test_a_record_carrying_none_does_not_erase_stored_grants`. Known limit,
-  documented rather than fixed: two sources supplying grants would alternate.
+- **Replace-per-source is the whole design of these two tables.** Both carry a
+  `source` column and `_replace_child_rows()` scopes every delete to it, so a
+  record's rows replace that source's stored rows and leave other sources'
+  alone. Scoping by publication alone was a real defect caught before release:
+  PubMed's grants replaced OpenAlex's, then OpenAlex's replaced PubMed's, so
+  the stored answer depended on whichever source synced last, silently.
+  Deliberately unlike `fulltext_sources`, which simply accumulates — a paper
+  genuinely has several URLs, whereas each source states its funding
+  completely. Pinned by `test_a_second_source_does_not_displace_the_first` and
+  `test_re_syncing_one_source_replaces_only_its_own_rows`, both backends,
+  mutation-verified.
+- **`sync._stamp_source()` fills the column, not the fetchers.** A fetcher that
+  forgets fails silently — its rows land in an unnamed bucket and stop being
+  scoped — so provenance is stamped in the one place that authoritatively
+  knows it.
+- **The empty guard survives for a different reason than it started with.** It
+  was there to stop a bioRxiv record erasing PubMed's grants; source scoping
+  now handles that structurally. It stays because no rows names no source, so
+  there is nothing to scope a delete to, and an absent `<GrantList>` means the
+  record lacked the data rather than that funding was withdrawn.
+- **No UNIQUE constraint on the natural key, and one must not be added.** Every
+  column of a grant proper is nullable and both backends treat `NULL` as
+  *distinct* in a unique index, so
+  `UNIQUE(publication_id, source, agency, grant_id)` lets
+  `(1, 'pubmed', NULL, 'R01')` insert twice. An expression index over
+  `COALESCE`d columns would work, but nothing is left for it to catch: exact
+  repeats are collapsed at parse time and the per-source replace is idempotent.
+- **PubMed repeats a `<Grant>` block verbatim** — 31 of 575 entries across 200
+  NIH-funded records, affecting 14 — so `_parse_grants()` collapses exact
+  repeats, keeping first-occurrence order. Two grants differing in any field
+  are two grants.
 - **`_consolidate_rows()` relocates every child row before the parent DELETE**,
-  and moves them only when the keep row has none of its own. Both backends
-  enforce foreign keys, so a stranded row aborts the whole store — verified by
-  removing the relocation and watching both backends raise
+  per source: a source the keep row has wins, one only the drop row saw moves
+  across. Both backends enforce foreign keys, so a stranded row aborts the
+  whole store — verified by removing the relocation and watching both raise
   `ForeignKeyViolation`. Pinned by
-  `test_a_split_identity_merge_relocates_child_rows`.
-- **`position` counts every `<Author>` element, including the
-  `<CollectiveName>` consortia that `authors` skips.** It is an index into the
-  XML author list, not into `Publication.authors`; the two lists differ in
-  length whenever a consortium is present, so `authors[a.position]` is the
-  wrong way to resolve an affiliation's author — match on `author`. What
-  position is *for* — first or senior author — is answered correctly either
-  way. Pinned by
-  `test_position_indexes_the_xml_author_list_not_the_authors_field`. The
-  knock-on, accepted: a consortium that states an affiliation loses it, since
-  `_author_name()` returns `None` and the `continue` skips the affiliation
-  loop with it. Recording it under the consortium's name would put an `author`
-  in the table that is absent from `authors`, breaking the one join the column
-  exists for.
+  `test_a_split_identity_merge_relocates_child_rows` and
+  `test_consolidation_moves_only_sources_the_keep_row_lacks`.
+- **`position` indexes `<AuthorList>`, not `Publication.authors`** — it counts
+  the `<CollectiveName>` consortia that `authors` skips, so the two lists
+  differ in length whenever one is present and `authors[a.position]` is the
+  wrong way to resolve an affiliation's author (match on `author`). What
+  position is *for* — first or senior author — is right either way. The
+  knock-on, accepted: a consortium stating an affiliation loses it, since
+  recording it would put an `author` in the table that is absent from
+  `authors`, breaking the one join the column exists for. Pinned by
+  `test_position_indexes_the_xml_author_list_not_the_authors_field`.
 - **`store_publication()` does not write `publication_id` back onto the
   `Grant` / `AuthorAffiliation` objects it is given**, unlike its `pub`
-  argument, which it mutates in place and documents as such. This follows the
-  `FullTextSource` precedent; the caller reads the persisted form back with
-  `get_grants()` / `get_author_affiliations()`. Worth knowing because the
-  failure would be silent — `publication_id` reads `0`, a plausible id rather
-  than an obvious sentinel. Pinned by
-  `test_the_caller_s_objects_are_not_mutated`.
+  argument, which it mutates in place and documents as such — the
+  `FullTextSource` precedent. Worth knowing because the failure is silent:
+  the field reads `0`, a plausible id rather than an obvious sentinel. Pinned
+  by `test_the_caller_s_objects_are_not_mutated`.
 - **`is_retracted` was not ported.** `publication_types` already carries
   "Retracted Publication" verbatim, `retractions.py` answers authoritatively
   from Retraction Watch, and upstream reads RefType `RetractionOf` — which

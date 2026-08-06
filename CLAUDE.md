@@ -174,28 +174,43 @@ Both backends nest, but they must answer "is a block already open?" differently.
 
 That count is keyed by *(thread, `id(conn)`)*. The thread is part of the key because nesting is a property of one call stack — keyed by connection alone, a block held open on one thread makes an unrelated outermost block on another thread look nested, so it opens a savepoint, never commits, and loses its write with nothing raised. `id(conn)` is used because psycopg2's connection is a C type that rejects attribute assignment and `sqlite3.Connection` supports neither weak references nor useful equality; the entry holds a strong reference to the connection, which is what stops the id being recycled onto a different one while the entry lives. `tests/test_backends.py::test_a_block_on_another_thread_does_not_look_like_nesting` is the regression guard.
 
-### Replace-if-nonempty child rows
+### Replace-per-source child rows
 
-`publication_grants` and `publication_affiliations` carry **no UNIQUE
-constraint on their natural key**, on purpose. Every column of a grant is
-nullable, and both backends treat `NULL` as *distinct* in a unique index, so
-`UNIQUE(publication_id, agency, grant_id)` would let `(1, NULL, 'R01')` insert
-twice — protecting nothing while looking like it protects something.
-Idempotency lives in `storage._replace_child_rows()` instead, where a test can
-reach it: supplying rows deletes and reinserts, supplying none leaves what is
-stored alone. Delete-then-insert makes a re-sync both idempotent and
-self-correcting; the empty guard is `_merge_publication`'s "fill, never
-clobber" rule, and it is what stops a bioRxiv record — which carries no
-funding data — from erasing what PubMed found.
+`publication_grants` and `publication_affiliations` each carry a `source`
+column — the source that *asserted* the row — and `_replace_child_rows()`
+scopes every delete to it: a record's rows replace that source's stored rows
+and leave every other source's alone. Scoping by publication alone was a real
+defect, caught before release: PubMed's grants replaced OpenAlex's and then
+OpenAlex's replaced PubMed's, so the stored answer depended on whichever
+source synced last, with no error and no warning. `sync._stamp_source()` fills
+the column from `record.source` rather than each fetcher setting it, because a
+fetcher that forgets fails silently — its rows land in an unnamed bucket and
+stop being scoped.
+
+**No UNIQUE constraint on the natural key**, on purpose. Every column of a
+grant proper is nullable and both backends treat `NULL` as *distinct* in a
+unique index, so `UNIQUE(publication_id, source, agency, grant_id)` would let
+`(1, 'pubmed', NULL, 'R01')` insert twice — protecting nothing while looking
+like it protects something. An expression index over `COALESCE`d columns would
+work, but nothing is left for it to catch: the fetcher collapses PubMed's
+verbatim repeats at parse time (measured: 31 of 575 entries across 200
+records), and the per-source replace is idempotent. Both are reachable from a
+test in a way that index would not be.
+
+The empty guard stays for a different reason than it originally had: with no
+rows there is no source to scope a delete to, and an absent `<GrantList>`
+means the record did not carry the data, not that the funding was withdrawn.
 
 `_consolidate_rows()` must relocate **every** child row before deleting the
 dropped publication. Both backends enforce foreign keys
 (`connect_sqlite(foreign_keys=True)` is the default), so one stranded grant
-makes the `DELETE` raise and aborts the whole store. The rows move only when
-the keep row has none of its own — the same rule at table granularity, since
-layering two sources' grant sets together yields a set belonging to neither.
-Pinned on both backends by
-`test_a_split_identity_merge_relocates_child_rows`, verified by mutation.
+makes the `DELETE` raise and aborts the whole store. Rows move *per source* —
+a source the keep row already has wins, one only the drop row saw moves
+across — since merging two rows' accounts of what PubMed said yields a set
+PubMed never asserted. Pinned on both backends by
+`test_a_split_identity_merge_relocates_child_rows` and
+`test_consolidation_moves_only_sources_the_keep_row_lacks`; both guards
+verified by mutation.
 
 ### Markdown, measured against the markup
 

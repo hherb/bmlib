@@ -250,6 +250,7 @@ class Grant:
     agency: str | None = None
     grant_id: str | None = None
     country: str | None = None
+    source: str = ""            # which source asserted this; scopes storage
     publication_id: int = 0     # ignored on the way in; see below
     id: int | None = None
 
@@ -258,11 +259,14 @@ class AuthorAffiliation:
     author: str
     affiliation: str
     position: int = 0           # 0-based index in <AuthorList>
+    source: str = ""
     publication_id: int = 0
     id: int | None = None
 ```
 
-Every field of a `Grant` is optional because PubMed's own records are: an award may name an agency with no id, or an id with no country. A grant naming **neither** an agency nor an id is dropped at parse time — it identifies no award.
+Every field of a `Grant` is optional because PubMed's own records are: an award may name an agency with no id, or an id with no country. A grant naming **neither** an agency nor an id is dropped at parse time — it identifies no award. Exact repeats are collapsed there too: PubMed really does emit a `<Grant>` block verbatim twice (31 of 575 entries measured across 200 NIH-funded records), and stored separately they inflate any count of a paper's funders.
+
+`source` names the publication source that asserted the row, and it is what **scopes storage** — see [`store_publication`](#store_publication). `sync()` fills it in from the record's own source, so a fetcher cannot forget it; a caller reaching `store_publication()` directly must set it.
 
 `AuthorAffiliation` is one row per *(author, affiliation)* pair, so an author listing three institutions produces three rows. `author` is formatted exactly as `Publication.authors` formats it (`"Last, Fore"`), so the two can be matched **by name**. `position` is the author's index in the `<AuthorList>`, carried because first-author and senior-author affiliations are the ones a conflict-of-interest check cares about and the name alone cannot recover the ordering.
 
@@ -425,9 +429,9 @@ Create all publications tables if they do not exist, delegating to `bmlib.db.cre
 - **`fulltext_sources`** — Full-text source URLs linked to publications. Unique on `(publication_id, url)`.
 - **`download_days`** — Tracks which source/date combinations have been fetched. Unique on `(source, date)`.
 - **`retraction_notices`** — Retraction Watch notices, unique on `record_id`. See [Retractions](#retractions).
-- **`publication_grants`** and **`publication_affiliations`** — PubMed funding awards and author affiliations, each indexed on `publication_id`.
+- **`publication_grants`** and **`publication_affiliations`** — funding awards and author affiliations, each carrying a `source` column and indexed on `publication_id`.
 
-Neither of the last two carries a UNIQUE constraint on its natural key, and that is deliberate: every column of a grant is nullable, and both backends treat `NULL` as *distinct* in a unique index, so `UNIQUE(publication_id, agency, grant_id)` would let `(1, NULL, 'R01')` insert twice — protecting nothing while appearing to. Idempotency is the storage layer's job instead; see [`store_publication`](#store_publication).
+Neither of the last two carries a UNIQUE constraint on its natural key, and that is deliberate: every column of a grant proper is nullable, and both backends treat `NULL` as *distinct* in a unique index, so `UNIQUE(publication_id, source, agency, grant_id)` would let `(1, 'pubmed', NULL, 'R01')` insert twice — protecting nothing while appearing to. An expression index over `COALESCE`d columns would work on both backends, but there is nothing left for it to catch: repeats are collapsed at parse time and [`store_publication`](#store_publication) is idempotent per source, and both of those are reachable from a test in a way an index written around three nullable columns is not.
 
 Called automatically by `sync()`. Call manually if you need the schema before syncing. The raw DDL is available as `bmlib.publications.schema.SCHEMA_SQL` (SQLite) and `SCHEMA_SQL_POSTGRESQL`; `ensure_schema()` picks the matching one. The two differ only where the dialects do — surrogate keys and booleans. Everything the storage layer leans on exists in both.
 
@@ -502,7 +506,7 @@ When `store_publication()` detects this, it consolidates before merging:
 
 1. The **DOI row is kept**; the PMID row is dropped.
 2. The drop row's full-text sources are re-pointed at the keep row with `UPDATE OR IGNORE` (silently skipping any `(publication_id, url)` pair the keep row already has); leftover duplicates on the drop row are then deleted.
-3. The drop row's grants and affiliations move to the keep row — but **only if the keep row has none of its own**, otherwise they are deleted. That is the same "fill, never overwrite" rule the field merge follows, applied at table granularity: layering two sources' grant sets together would produce a merged set belonging to neither paper.
+3. The drop row's grants and affiliations move to the keep row **per source**: a source the keep row already has wins and the drop row's rows for it are discarded, while a source only the drop row saw moves across. That is the same "fill, never overwrite" rule the field merge follows, at source granularity — merging two rows' accounts of what PubMed said would produce a set PubMed never asserted, while a source the keep row has never seen is real information it should gain.
 4. The drop row's data is snapshotted, the drop row is deleted — freeing its unique identifier — and the snapshot is merged into the keep row.
 5. The keep row is re-read, and the incoming record is merged into it as usual. The call returns `"merged"`.
 
@@ -543,9 +547,21 @@ Store a publication, de-duplicating by DOI then PMID.
 - `is_open_access`: can only be upgraded from `0` to the incoming value, never downgraded.
 - `updated_at` is set to now.
 
-**Grants and affiliations are replace-if-nonempty**, which is *not* how `fulltext_sources` behaves. Full-text URLs accumulate — every source's are kept, because a paper genuinely has several. Grants and affiliations are a property of the paper that one source states completely, so supplying any **replaces** the stored set for that publication, and supplying none leaves it untouched.
+**Grants and affiliations are replace-per-source.** Supplying rows replaces the stored rows **for each source those rows name**, and leaves every other source's alone; supplying none leaves everything untouched. So re-syncing PubMed replaces PubMed's grants and does not disturb OpenAlex's.
 
-That makes re-syncing a day idempotent (no accumulating duplicates) and self-correcting (a corrected grant supersedes the stale one) without a unique index, which [cannot be written correctly here](#ensure_schema). The "supplying none leaves it alone" half is what stops a bioRxiv or OpenAlex record — which carries no funding data — from erasing what PubMed found. The limitation, since only `fetch_pubmed` produces these today: if a second source ever supplied them, successive syncs would alternate between the two sources' sets.
+This is the one rule to understand about these two tables, and it differs from `fulltext_sources`, which simply accumulates — a paper genuinely has several full-text URLs, whereas each source states that paper's funding completely and its statement should supersede its own previous one rather than pile up.
+
+The design makes three things true at once:
+
+| | |
+|---|---|
+| Re-syncing a day is **idempotent** | delete-then-insert within the source, so no duplicates accumulate |
+| A corrected record is **self-correcting** | PubMed's new set supersedes PubMed's stale set |
+| Sources **coexist** | scoping by source means the last sync no longer wins outright |
+
+That last one was a real defect before the `source` column existed: with replacement scoped by publication alone, PubMed's grants replaced OpenAlex's and then OpenAlex's replaced PubMed's, flip-flopping on every sync with no error and no warning. OpenAlex's API does carry funder data, so this was not hypothetical.
+
+The "supplying none leaves it alone" half is separate and still needed: an absent `<GrantList>` means the record did not carry the data, not that the funding was withdrawn — and with no rows there is no source to scope a delete to anyway.
 
 **Transactions:** the whole store (row consolidation, insert/merge, full-text
 sources, grants and affiliations) is one atomic transaction. Standalone calls
@@ -560,8 +576,8 @@ batches a whole day into one commit — see `bmlib.db.transaction`).
 | `conn` | `Any` | *(required)* | A DB-API connection with the publications schema. |
 | `pub` | `Publication` | *(required)* | The publication to store. **Mutated in place** to hold normalised identifiers. |
 | `fulltext_sources` | `Sequence[FullTextSource] \| None` | `None` | Optional full-text sources to associate with the publication. Their `publication_id` is ignored; the stored row's id is used. They accumulate across calls. |
-| `grants` | `Sequence[Grant] \| None` | `None` | Keyword-only. Funding awards. Replaces the stored set if non-empty; leaves it alone otherwise. |
-| `affiliations` | `Sequence[AuthorAffiliation] \| None` | `None` | Keyword-only. Author affiliations, same replace-or-leave rule. |
+| `grants` | `Sequence[Grant] \| None` | `None` | Keyword-only. Funding awards. Replaces the stored rows for each `source` they name; leaves other sources', and everything, alone if empty. |
+| `affiliations` | `Sequence[AuthorAffiliation] \| None` | `None` | Keyword-only. Author affiliations, same replace-per-source rule. |
 
 **Returns:** `"added"` for a new record, `"merged"` for an updated existing record.
 
@@ -615,9 +631,13 @@ def get_author_affiliations(conn: Any, publication_id: int) -> list[AuthorAffili
 
 Read back what [`store_publication`](#store_publication) persisted for one publication. Both return an empty list when nothing was stored. Affiliations come back ordered by `position`, so the first and senior authors are at the ends.
 
+Rows from every source come back together — filter on `source` when you want one source's account of the paper.
+
 ```python
 pub = get_publication_by_pmid(conn, "12345678")
 funders = {g.agency for g in get_grants(conn, pub.id) if g.agency}
+per_source = {g.source for g in get_grants(conn, pub.id)}   # e.g. {"pubmed"}
+
 first_author_affiliations = [
     a.affiliation for a in get_author_affiliations(conn, pub.id) if a.position == 0
 ]

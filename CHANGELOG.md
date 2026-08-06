@@ -144,16 +144,26 @@ All notable changes to bmlib are documented here. The format is based on
   and senior-author affiliation are the conflict-of-interest signals and the
   name alone cannot recover the ordering.
 
-  Storage is replace-if-nonempty: a record carrying grants replaces the stored
-  set, a record carrying none leaves it alone. That makes re-syncing a day
-  idempotent and self-correcting without a UNIQUE constraint on the natural
-  key — which cannot be written correctly here, since every column of a grant
-  is nullable and both backends treat NULL as *distinct* in a unique index, so
-  the constraint would protect nothing while appearing to. The
-  `if incoming:` guard is the same "fill, never clobber" rule the field merge
-  already applies: a bioRxiv or OpenAlex record merging into a PubMed row
-  carries no grants, and reading that silence as "this paper has no funders"
-  would destroy real data.
+  Both tables carry a `source` column, and storage is **replace-per-source**:
+  a record's rows replace the stored rows for the source that asserted them
+  and leave every other source's alone, so re-syncing PubMed cannot disturb
+  what OpenAlex found. That gives idempotent re-syncs and self-correcting
+  updates while letting two sources coexist — scoping by publication alone
+  made the stored set depend on whichever source synced last, flip-flopping on
+  every sync with no error and no warning, which matters because OpenAlex's
+  API does carry funder data. `sync()` stamps the column from the record's own
+  source rather than each fetcher setting it, so a new fetcher cannot forget.
+  A record carrying no rows at all still leaves everything alone: an absent
+  `<GrantList>` means the record did not carry the data, not that the funding
+  was withdrawn.
+
+  There is no UNIQUE constraint on the natural key, deliberately — every
+  column of a grant proper is nullable and both backends treat NULL as
+  *distinct* in a unique index, so it would protect nothing while appearing
+  to. Nothing is left for one to catch: exact repeats are collapsed at parse
+  time, since PubMed emits a `<Grant>` block verbatim twice often enough to
+  matter (31 of 575 entries across 200 NIH-funded records, affecting 14 of
+  them), and stored separately they inflate every count of a paper's funders.
 
   Two upstream defects fixed, each with a named regression test: a grant
   naming neither an agency nor an award id was stored as a row identifying no
