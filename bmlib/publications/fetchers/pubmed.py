@@ -31,7 +31,13 @@ from datetime import date
 from typing import Any
 
 from bmlib.fulltext.models import FullTextSourceEntry
-from bmlib.publications.models import FetchedRecord, FetchResult, SyncProgress
+from bmlib.publications.models import (
+    AuthorAffiliation,
+    FetchedRecord,
+    FetchResult,
+    Grant,
+    SyncProgress,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -236,6 +242,42 @@ def _parse_pubdate(pubdate_el: ET.Element | None) -> str | None:
     return f"{year}-{month}-{day_text.zfill(2)}"
 
 
+def _author_name(author_el: ET.Element) -> str | None:
+    """Format one ``<Author>`` as ``"Last, Fore"``, or return None.
+
+    Returns ``None`` for an author with no ``LastName`` — a ``<CollectiveName>``
+    consortium, which has no personal name to render.
+    """
+    last = _text(author_el.find("LastName"))
+    if not last:
+        return None
+    fore = _text(author_el.find("ForeName"))
+    return f"{last}, {fore}" if fore else last
+
+
+def _parse_grants(article_el: ET.Element) -> list[Grant]:
+    """Extract funding awards from an ``<Article>``'s ``<GrantList>``.
+
+    A grant naming neither an agency nor an award id is skipped: it identifies
+    no award, and storing it would put an empty row in front of anyone counting
+    a paper's funders.
+    """
+    grants: list[Grant] = []
+    for grant_el in article_el.findall("GrantList/Grant"):
+        agency = _text(grant_el.find("Agency"))
+        grant_id = _text(grant_el.find("GrantID"))
+        if not agency and not grant_id:
+            continue
+        grants.append(
+            Grant(
+                agency=agency,
+                grant_id=grant_id,
+                country=_text(grant_el.find("Country")),
+            )
+        )
+    return grants
+
+
 def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
     """Parse a PubmedArticle XML element into a :class:`FetchedRecord`."""
     medline = article_el.find("MedlineCitation")
@@ -255,18 +297,30 @@ def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
     if article is not None:
         abstract = _format_abstract_markdown(article.find("Abstract"))
 
-    # Authors
+    # Authors, and the affiliations they state. Both come from one pass over
+    # <AuthorList> so an affiliation's author name is formatted by the same
+    # code that builds ``authors`` — the two are meant to be matched, and
+    # upstream's separate formatting made that guesswork.
     authors: list[str] = []
+    author_affiliations: list[AuthorAffiliation] = []
     if article is not None:
         author_list = article.find("AuthorList")
         if author_list is not None:
-            for author_el in author_list.findall("Author"):
-                last = _text(author_el.find("LastName"))
-                fore = _text(author_el.find("ForeName"))
-                if last and fore:
-                    authors.append(f"{last}, {fore}")
-                elif last:
-                    authors.append(last)
+            for position, author_el in enumerate(author_list.findall("Author")):
+                name = _author_name(author_el)
+                if name is None:
+                    continue
+                authors.append(name)
+                for aff_el in author_el.findall("AffiliationInfo/Affiliation"):
+                    affiliation = (aff_el.text or "").strip()
+                    if affiliation:
+                        author_affiliations.append(
+                            AuthorAffiliation(
+                                author=name,
+                                affiliation=affiliation,
+                                position=position,
+                            )
+                        )
 
     # Journal
     journal: str | None = None
@@ -340,6 +394,8 @@ def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
         keywords=keywords,
         publication_types=publication_types,
         fulltext_sources=fulltext_sources,
+        grants=_parse_grants(article) if article is not None else [],
+        author_affiliations=author_affiliations,
     )
 
 

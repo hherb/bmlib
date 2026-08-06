@@ -516,3 +516,69 @@ class TestPublicAPI:
         assert get_publication_by_pmid is not None
         assert add_fulltext_source is not None
         assert ensure_schema is not None
+
+
+class TestSyncPersistsGrantsAndAffiliations:
+    """A fetcher's grants and affiliations must survive the whole sync path.
+
+    They are new fields on ``FetchedRecord``, and the fields that are *not*
+    persisted (``pmc_id``'s predecessor, ``extras``) show how quietly that can
+    go wrong: the fetcher populates them, sync drops them, and nothing raises.
+    """
+
+    def test_grants_and_affiliations_reach_the_database(self):
+        from bmlib.publications.models import AuthorAffiliation, Grant
+        from bmlib.publications.storage import get_author_affiliations, get_grants
+
+        conn = _fresh_conn()
+        day = date(2024, 6, 11)
+
+        record = _sample_raw_record(doi="10.1234/funded", title="A funded paper")
+        record.grants = [Grant(agency="NHLBI", grant_id="R01", country="United States")]
+        record.author_affiliations = [
+            AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere", position=0),
+            AuthorAffiliation(author="Brown, A", affiliation="Pfizer Inc", position=1),
+        ]
+
+        sync(
+            conn,
+            sources=["test_source"],
+            date_from=day,
+            date_to=day,
+            email="test@example.com",
+            _fetcher_override={"test_source": _make_fake_fetcher([record])},
+        )
+
+        pub = get_publication_by_doi(conn, "10.1234/funded")
+        assert pub is not None
+
+        grants = get_grants(conn, pub.id)
+        assert [(g.agency, g.grant_id, g.country) for g in grants] == [
+            ("NHLBI", "R01", "United States")
+        ]
+
+        affiliations = get_author_affiliations(conn, pub.id)
+        assert [(a.author, a.affiliation, a.position) for a in affiliations] == [
+            ("Smith, J", "St Elsewhere", 0),
+            ("Brown, A", "Pfizer Inc", 1),
+        ]
+
+    def test_a_record_without_them_stores_cleanly(self):
+        """The common case — every non-PubMed fetcher supplies neither."""
+        from bmlib.publications.storage import get_author_affiliations, get_grants
+
+        conn = _fresh_conn()
+        day = date(2024, 6, 11)
+
+        sync(
+            conn,
+            sources=["test_source"],
+            date_from=day,
+            date_to=day,
+            email="test@example.com",
+            _fetcher_override={"test_source": _make_fake_fetcher([_sample_raw_record()])},
+        )
+
+        pub = get_publication_by_doi(conn, "10.1234/test.001")
+        assert get_grants(conn, pub.id) == []
+        assert get_author_affiliations(conn, pub.id) == []

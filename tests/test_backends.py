@@ -45,9 +45,11 @@ from bmlib.db import (
     transaction_depth,
 )
 from bmlib.publications.models import (
+    AuthorAffiliation,
     FetchedRecord,
     FetchResult,
     FullTextSource,
+    Grant,
     Publication,
     RetractionNature,
     RetractionNotice,
@@ -61,6 +63,8 @@ from bmlib.publications.retractions import (
 from bmlib.publications.schema import ensure_schema
 from bmlib.publications.storage import (
     add_fulltext_source,
+    get_author_affiliations,
+    get_grants,
     get_publication_by_doi,
     get_publication_by_pmid,
     store_publication,
@@ -90,7 +94,14 @@ class TestSchema:
     def test_ensure_schema_creates_all_tables(self, backend_conn):
         ensure_schema(backend_conn)
 
-        for table in ("publications", "fulltext_sources", "download_days", "retraction_notices"):
+        for table in (
+            "publications",
+            "fulltext_sources",
+            "download_days",
+            "retraction_notices",
+            "publication_grants",
+            "publication_affiliations",
+        ):
             assert table_exists(backend_conn, table)
 
     def test_the_record_id_is_unique(self, backend_conn):
@@ -883,3 +894,98 @@ class TestRetractionStorage:
             assert not owns_commit(backend_conn)
 
         assert _count(backend_conn, "retraction_notices") == 1
+
+
+# ---------------------------------------------------------------------------
+# Grants and author affiliations
+# ---------------------------------------------------------------------------
+
+
+class TestGrantAndAffiliationStorage:
+    """The PubMed metadata graft's child tables, on both backends."""
+
+    @pytest.fixture(autouse=True)
+    def _schema(self, backend_conn):
+        ensure_schema(backend_conn)
+
+    def test_grants_and_affiliations_round_trip(self, backend_conn):
+        store_publication(
+            backend_conn,
+            _pub(pmid="1"),
+            grants=[Grant(agency="NHLBI", grant_id="R01", country="United States")],
+            affiliations=[
+                AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere", position=0)
+            ],
+        )
+
+        pub_id = get_publication_by_pmid(backend_conn, "1").id
+        grants = get_grants(backend_conn, pub_id)
+        assert [(g.agency, g.grant_id, g.country) for g in grants] == [
+            ("NHLBI", "R01", "United States")
+        ]
+        affiliations = get_author_affiliations(backend_conn, pub_id)
+        assert [(a.author, a.affiliation, a.position) for a in affiliations] == [
+            ("Smith, J", "St Elsewhere", 0)
+        ]
+
+    def test_a_grant_with_null_columns_round_trips(self, backend_conn):
+        store_publication(backend_conn, _pub(pmid="1"), grants=[Grant(agency="Wellcome Trust")])
+
+        stored = get_grants(backend_conn, get_publication_by_pmid(backend_conn, "1").id)
+        assert (stored[0].agency, stored[0].grant_id, stored[0].country) == (
+            "Wellcome Trust",
+            None,
+            None,
+        )
+
+    def test_re_storing_does_not_duplicate(self, backend_conn):
+        for _ in range(3):
+            store_publication(
+                backend_conn,
+                _pub(pmid="1"),
+                grants=[Grant(agency="NHLBI", grant_id="R01")],
+            )
+
+        assert _count(backend_conn, "publication_grants") == 1
+
+    def test_a_record_without_grants_does_not_erase_them(self, backend_conn):
+        store_publication(backend_conn, _pub(pmid="1"), grants=[Grant(agency="NHLBI")])
+        store_publication(backend_conn, _pub(pmid="1", sources=["biorxiv"]))
+
+        assert _count(backend_conn, "publication_grants") == 1
+
+    def test_a_split_identity_merge_relocates_child_rows(self, backend_conn):
+        """Consolidation must move the child rows before deleting their parent.
+
+        Both backends enforce foreign keys, so a grant left pointing at the
+        dropped publication makes the DELETE raise and aborts the whole store —
+        on PostgreSQL that also poisons the connection for everything after it.
+        """
+        store_publication(backend_conn, _pub(doi="10.1/x", sources=["openalex"]))
+        store_publication(
+            backend_conn,
+            _pub(pmid="1"),
+            grants=[Grant(agency="NHLBI")],
+            affiliations=[AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere")],
+        )
+
+        store_publication(backend_conn, _pub(doi="10.1/x", pmid="1"))
+
+        assert _count(backend_conn, "publications") == 1
+        kept = get_publication_by_doi(backend_conn, "10.1/x")
+        assert [g.agency for g in get_grants(backend_conn, kept.id)] == ["NHLBI"]
+        assert [a.author for a in get_author_affiliations(backend_conn, kept.id)] == ["Smith, J"]
+
+    def test_the_kept_rows_children_win_a_merge(self, backend_conn):
+        store_publication(
+            backend_conn,
+            _pub(doi="10.1/x", sources=["openalex"]),
+            grants=[Grant(agency="Keep Foundation")],
+        )
+        store_publication(backend_conn, _pub(pmid="1"), grants=[Grant(agency="Drop Foundation")])
+
+        store_publication(backend_conn, _pub(doi="10.1/x", pmid="1"))
+
+        kept = get_publication_by_doi(backend_conn, "10.1/x")
+        assert [g.agency for g in get_grants(backend_conn, kept.id)] == ["Keep Foundation"]
+        assert _count(backend_conn, "publication_grants") == 1

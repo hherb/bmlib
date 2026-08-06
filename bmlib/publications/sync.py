@@ -407,7 +407,13 @@ def sync(
                         try:
                             pub = _record_to_publication(record)
                             fts = _record_to_fulltext_sources(record)
-                            result = store_publication(conn, pub, fulltext_sources=fts)
+                            result = store_publication(
+                                conn,
+                                pub,
+                                fulltext_sources=fts,
+                                grants=record.grants,
+                                affiliations=record.author_affiliations,
+                            )
                             if result == "added":
                                 day_added += 1
                             elif result == "merged":

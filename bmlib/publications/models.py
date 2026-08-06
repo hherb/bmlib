@@ -175,6 +175,99 @@ class FullTextSource:
 
 
 # ---------------------------------------------------------------------------
+# Funding and affiliation (child rows of a publication)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Grant:
+    """A funding award backing a publication, from PubMed's ``<GrantList>``.
+
+    Every field is optional because PubMed's own records are: a grant may name
+    an agency with no award id, or an award id with no country. A grant naming
+    neither an agency nor an id carries no information and is not stored.
+
+    ``publication_id`` defaults to 0 and is set by
+    :func:`~bmlib.publications.storage.store_publication`, so a fetcher can
+    build one before the publication has a row.
+    """
+
+    agency: str | None = None
+    grant_id: str | None = None
+    country: str | None = None
+    publication_id: int = 0
+    id: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a JSON-safe dictionary."""
+        return {
+            "id": self.id,
+            "publication_id": self.publication_id,
+            "agency": self.agency,
+            "grant_id": self.grant_id,
+            "country": self.country,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Grant:
+        """Deserialise from a dictionary produced by :meth:`to_dict`."""
+        return cls(
+            id=data.get("id"),
+            publication_id=data.get("publication_id", 0),
+            agency=data.get("agency"),
+            grant_id=data.get("grant_id"),
+            country=data.get("country"),
+        )
+
+
+@dataclass
+class AuthorAffiliation:
+    """One author's stated affiliation, from PubMed's ``<AffiliationInfo>``.
+
+    One row per *(author, affiliation)* pair — an author listing three
+    institutions produces three of these. That is the relational shape, and it
+    makes "which papers have an author at this institution?" a single indexed
+    query rather than a scan through nested JSON.
+
+    ``position`` is the author's 0-based index in the ``<AuthorList>``. It is
+    carried because first-author and senior-author affiliations are the ones a
+    conflict-of-interest check cares about, and the name alone cannot recover
+    the ordering.
+
+    ``author`` is formatted exactly as
+    :attr:`~bmlib.publications.models.Publication.authors` formats it
+    (``"Last, Fore"``), so the two can be matched.
+    """
+
+    author: str
+    affiliation: str
+    position: int = 0
+    publication_id: int = 0
+    id: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a JSON-safe dictionary."""
+        return {
+            "id": self.id,
+            "publication_id": self.publication_id,
+            "author": self.author,
+            "affiliation": self.affiliation,
+            "position": self.position,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AuthorAffiliation:
+        """Deserialise from a dictionary produced by :meth:`to_dict`."""
+        return cls(
+            id=data.get("id"),
+            publication_id=data.get("publication_id", 0),
+            author=data["author"],
+            affiliation=data["affiliation"],
+            position=data.get("position", 0),
+        )
+
+
+# ---------------------------------------------------------------------------
 # Download tracking
 # ---------------------------------------------------------------------------
 
@@ -303,6 +396,13 @@ class FetchedRecord:
 
     # -- Source-specific extras --
     extras: dict[str, Any] = field(default_factory=dict)
+
+    # New fields go last — downstream projects construct this positionally, so
+    # placing these beside the content fields they read best beside would shift
+    # every later argument silently. See ``Publication.pmcid`` for the same
+    # rule and the test that pins it.
+    grants: list[Grant] = field(default_factory=list)
+    author_affiliations: list[AuthorAffiliation] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

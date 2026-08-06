@@ -24,13 +24,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from bmlib.db import connect_sqlite, execute, table_exists
+from bmlib.db import connect_sqlite, execute, fetch_one, table_exists
 from bmlib.publications.fetchers.biorxiv import PAGE_SIZE, _normalize, fetch_biorxiv
 from bmlib.publications.models import (
+    AuthorAffiliation,
     DownloadDay,
     FetchedRecord,
     FetchResult,
     FullTextSource,
+    Grant,
     Publication,
     SyncProgress,
     SyncReport,
@@ -38,6 +40,8 @@ from bmlib.publications.models import (
 from bmlib.publications.schema import ensure_schema
 from bmlib.publications.storage import (
     add_fulltext_source,
+    get_author_affiliations,
+    get_grants,
     get_publication_by_doi,
     get_publication_by_pmid,
     store_publication,
@@ -284,6 +288,8 @@ class TestSchema:
         assert table_exists(conn, "publications")
         assert table_exists(conn, "fulltext_sources")
         assert table_exists(conn, "download_days")
+        assert table_exists(conn, "publication_grants")
+        assert table_exists(conn, "publication_affiliations")
 
     def test_ensure_schema_idempotent(self):
         conn = connect_sqlite(":memory:")
@@ -1142,3 +1148,190 @@ class TestRecordToFulltextSources:
         assert result[0].source == "unknown"
         assert result[0].format == "html"
         assert result[0].version is None
+
+
+# ---------------------------------------------------------------------------
+# Grants and author affiliations
+# ---------------------------------------------------------------------------
+
+
+class TestGrantAndAffiliationModels:
+    def test_grant_round_trips_through_a_dict(self):
+        grant = Grant(agency="NHLBI", grant_id="R01", country="United States", publication_id=7)
+        assert Grant.from_dict(grant.to_dict()) == grant
+
+    def test_an_empty_grant_dict_loads_with_defaults(self):
+        assert Grant.from_dict({}) == Grant()
+
+    def test_affiliation_round_trips_through_a_dict(self):
+        aff = AuthorAffiliation(
+            author="Smith, John", affiliation="St Elsewhere", position=2, publication_id=7
+        )
+        assert AuthorAffiliation.from_dict(aff.to_dict()) == aff
+
+
+class TestGrantAndAffiliationStorage:
+    def test_grants_round_trip(self):
+        conn = _schema_conn()
+        pub = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
+        store_publication(
+            conn,
+            pub,
+            grants=[Grant(agency="NHLBI", grant_id="R01", country="United States")],
+        )
+
+        pub_id = get_publication_by_pmid(conn, "1").id
+        stored = get_grants(conn, pub_id)
+        assert len(stored) == 1
+        assert stored[0].agency == "NHLBI"
+        assert stored[0].grant_id == "R01"
+        assert stored[0].country == "United States"
+        assert stored[0].publication_id == pub_id
+        assert stored[0].id is not None
+
+    def test_a_grant_with_null_fields_round_trips(self):
+        conn = _schema_conn()
+        pub = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
+        store_publication(conn, pub, grants=[Grant(agency="Wellcome Trust")])
+
+        stored = get_grants(conn, get_publication_by_pmid(conn, "1").id)
+        assert stored[0].agency == "Wellcome Trust"
+        assert stored[0].grant_id is None
+        assert stored[0].country is None
+
+    def test_affiliations_round_trip_in_position_order(self):
+        conn = _schema_conn()
+        pub = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
+        store_publication(
+            conn,
+            pub,
+            affiliations=[
+                AuthorAffiliation(author="Brown", affiliation="Pfizer Inc", position=2),
+                AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere", position=0),
+            ],
+        )
+
+        pub_id = get_publication_by_pmid(conn, "1").id
+        stored = get_author_affiliations(conn, pub_id)
+        assert [a.position for a in stored] == [0, 2]
+        assert [a.author for a in stored] == ["Smith, J", "Brown"]
+        assert stored[0].affiliation == "St Elsewhere"
+
+    def test_a_publication_with_none_reads_back_empty(self):
+        conn = _schema_conn()
+        pub = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
+        store_publication(conn, pub)
+
+        pub_id = get_publication_by_pmid(conn, "1").id
+        assert get_grants(conn, pub_id) == []
+        assert get_author_affiliations(conn, pub_id) == []
+
+    def test_re_storing_the_same_record_does_not_duplicate(self):
+        """Re-syncing a day is idempotent.
+
+        There is no UNIQUE constraint to lean on — the natural key is entirely
+        nullable, and both backends treat NULL as distinct in a unique index, so
+        such a constraint would silently protect nothing. Idempotency is the
+        storage layer's job instead.
+        """
+        conn = _schema_conn()
+        grants = [Grant(agency="NHLBI", grant_id="R01"), Grant(agency="Wellcome Trust")]
+        affiliations = [AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere")]
+
+        for _ in range(3):
+            pub = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
+            store_publication(conn, pub, grants=grants, affiliations=affiliations)
+
+        pub_id = get_publication_by_pmid(conn, "1").id
+        assert len(get_grants(conn, pub_id)) == 2
+        assert len(get_author_affiliations(conn, pub_id)) == 1
+
+    def test_a_record_carrying_grants_replaces_the_stored_set(self):
+        """A corrected record supersedes the stale one rather than adding to it."""
+        conn = _schema_conn()
+        pub = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
+        store_publication(conn, pub, grants=[Grant(agency="Typo Foundation")])
+
+        pub2 = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
+        store_publication(conn, pub2, grants=[Grant(agency="NHLBI", grant_id="R01")])
+
+        stored = get_grants(conn, get_publication_by_pmid(conn, "1").id)
+        assert [g.agency for g in stored] == ["NHLBI"]
+
+    def test_a_record_carrying_none_does_not_erase_stored_grants(self):
+        """A source with no funding data must not wipe a source that had it.
+
+        bioRxiv and OpenAlex records merging into a PubMed row carry no grants;
+        treating that as "this paper has no funders" would destroy the data on
+        the next sync of any other source.
+        """
+        conn = _schema_conn()
+        pub = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
+        store_publication(
+            conn,
+            pub,
+            grants=[Grant(agency="NHLBI")],
+            affiliations=[AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere")],
+        )
+
+        merged = Publication(title="P", sources=["biorxiv"], first_seen_source="biorxiv", pmid="1")
+        store_publication(conn, merged)
+
+        pub_id = get_publication_by_pmid(conn, "1").id
+        assert len(get_grants(conn, pub_id)) == 1
+        assert len(get_author_affiliations(conn, pub_id)) == 1
+
+
+class TestConsolidationRelocatesChildRows:
+    """A split-identity consolidation must not orphan grant/affiliation rows.
+
+    ``_consolidate_rows`` deletes the dropped publication row. Both backends
+    enforce foreign keys, so a grant still pointing at that id makes the DELETE
+    raise and aborts the entire store.
+    """
+
+    def test_a_split_identity_merge_relocates_grants(self):
+        conn = _schema_conn()
+        # Two rows for one work: one known by DOI, one by PMID.
+        by_doi = Publication(
+            title="P", sources=["openalex"], first_seen_source="openalex", doi="10.1/x"
+        )
+        store_publication(conn, by_doi)
+        by_pmid = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
+        store_publication(
+            conn,
+            by_pmid,
+            grants=[Grant(agency="NHLBI")],
+            affiliations=[AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere")],
+        )
+
+        # A record carrying both identifiers consolidates them.
+        both = Publication(
+            title="P", sources=["pubmed"], first_seen_source="pubmed", doi="10.1/x", pmid="1"
+        )
+        store_publication(conn, both)
+
+        assert fetch_one(conn, "SELECT COUNT(*) AS n FROM publications")["n"] == 1
+        kept = get_publication_by_doi(conn, "10.1/x")
+        assert [g.agency for g in get_grants(conn, kept.id)] == ["NHLBI"]
+        assert [a.author for a in get_author_affiliations(conn, kept.id)] == ["Smith, J"]
+
+    def test_the_kept_rows_own_children_survive_a_merge(self):
+        """The keep row's data wins; the drop row's is not layered on top."""
+        conn = _schema_conn()
+        by_doi = Publication(
+            title="P", sources=["openalex"], first_seen_source="openalex", doi="10.1/x"
+        )
+        store_publication(conn, by_doi, grants=[Grant(agency="Keep Foundation")])
+        by_pmid = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
+        store_publication(conn, by_pmid, grants=[Grant(agency="Drop Foundation")])
+
+        both = Publication(
+            title="P", sources=["pubmed"], first_seen_source="pubmed", doi="10.1/x", pmid="1"
+        )
+        store_publication(conn, both)
+
+        kept = get_publication_by_doi(conn, "10.1/x")
+        assert [g.agency for g in get_grants(conn, kept.id)] == ["Keep Foundation"]
+        # And nothing is stranded pointing at the deleted row.
+        assert fetch_one(conn, "SELECT COUNT(*) AS n FROM publication_grants")["n"] == 1

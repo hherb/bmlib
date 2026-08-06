@@ -24,10 +24,12 @@ from bmlib.publications.fetchers.registry import (
     source_names,
 )
 from bmlib.publications.models import (
+    AuthorAffiliation,
     DownloadDay,
     FetchedRecord,
     FetchResult,
     FullTextSource,
+    Grant,
     Publication,
     RetractionNature,
     RetractionNotice,
@@ -45,6 +47,8 @@ from bmlib.publications.retractions import (
 from bmlib.publications.schema import ensure_schema
 from bmlib.publications.storage import (
     add_fulltext_source,
+    get_author_affiliations,
+    get_grants,
     get_publication_by_doi,
     get_publication_by_pmid,
     store_publication,
@@ -57,6 +61,8 @@ __all__ = [
     "Publication",
     "FetchedRecord",
     "FullTextSource",
+    "Grant",
+    "AuthorAffiliation",
     "DownloadDay",
     "SyncProgress",
     "FetchResult",
@@ -71,6 +77,8 @@ __all__ = [
     "get_publication_by_doi",
     "get_publication_by_pmid",
     "add_fulltext_source",
+    "get_grants",
+    "get_author_affiliations",
     "ensure_schema",
     "RetractionNature",
     "RetractionNotice",

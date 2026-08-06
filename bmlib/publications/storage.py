@@ -44,8 +44,16 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from bmlib.db import execute, fetch_one, is_sqlite, placeholder, placeholders, transaction
-from bmlib.publications.models import FullTextSource, Publication
+from bmlib.db import (
+    execute,
+    fetch_all,
+    fetch_one,
+    is_sqlite,
+    placeholder,
+    placeholders,
+    transaction,
+)
+from bmlib.publications.models import AuthorAffiliation, FullTextSource, Grant, Publication
 
 
 def _now_iso() -> str:
@@ -260,6 +268,143 @@ def _merge_publication(
 
 
 # ---------------------------------------------------------------------------
+# Grants and affiliations
+# ---------------------------------------------------------------------------
+
+# The two child tables carry no UNIQUE constraint on their natural key, and
+# that is deliberate. ``UNIQUE(publication_id, agency, grant_id)`` looks like
+# the obvious guard against a re-sync duplicating rows, but every column in a
+# grant's natural key is nullable and both backends treat NULL as *distinct*
+# in a unique index — so ``(1, NULL, 'R01')`` inserts twice and the constraint
+# protects nothing while appearing to. Idempotency lives in
+# :func:`_replace_child_rows` instead, where a test can reach it.
+
+
+def _replace_child_rows(
+    conn: Any,
+    table: str,
+    publication_id: int,
+    columns: Sequence[str],
+    rows: Sequence[tuple[Any, ...]],
+    now: str,
+) -> None:
+    """Replace *publication_id*'s rows in *table* with *rows*.
+
+    Does nothing when *rows* is empty. That guard is the same "fill, never
+    clobber" rule :func:`_merge_publication` applies per field: a bioRxiv or
+    OpenAlex record merging into a PubMed row carries no grants, and treating
+    that silence as "this paper has no funders" would destroy real data on the
+    next sync of any other source.
+
+    Delete-then-insert rather than insert-if-absent, so a re-sync is both
+    idempotent and self-correcting — a corrected grant supersedes the stale one
+    instead of accumulating beside it. The limit, since only PubMed produces
+    these today: if a second source ever supplied them, successive syncs would
+    alternate between the two sources' sets.
+    """
+    if not rows:
+        return
+
+    ph = placeholder(conn)
+    execute(conn, f"DELETE FROM {table} WHERE publication_id = {ph}", (publication_id,))
+
+    named = ("publication_id", *columns, "created_at")
+    sql = f"INSERT INTO {table} ({', '.join(named)}) VALUES ({placeholders(conn, len(named))})"
+    for row in rows:
+        execute(conn, sql, (publication_id, *row, now))
+
+
+def _relocate_child_rows(conn: Any, table: str, keep_id: int, drop_id: int) -> None:
+    """Move *drop_id*'s rows in *table* onto *keep_id*, or delete them.
+
+    Called before the drop row is deleted. Both backends enforce foreign keys
+    (:func:`~bmlib.db.connect_sqlite` sets ``PRAGMA foreign_keys=ON``), so a row
+    still pointing at the doomed publication makes the ``DELETE`` raise and
+    aborts the whole store.
+
+    The rows move only when the keep row has none of its own; otherwise they are
+    dropped. That is :func:`_merge_publication`'s "fill, never overwrite" rule
+    at table granularity — layering two sources' grant sets together would
+    produce a merged set belonging to neither.
+    """
+    ph = placeholder(conn)
+    existing = fetch_one(
+        conn,
+        f"SELECT COUNT(*) AS n FROM {table} WHERE publication_id = {ph}",
+        (keep_id,),
+    )
+    if existing is not None and existing["n"]:
+        execute(conn, f"DELETE FROM {table} WHERE publication_id = {ph}", (drop_id,))
+    else:
+        execute(
+            conn,
+            f"UPDATE {table} SET publication_id = {ph} WHERE publication_id = {ph}",
+            (keep_id, drop_id),
+        )
+
+
+def get_grants(conn: Any, publication_id: int) -> list[Grant]:
+    """Return the funding awards stored for a publication.
+
+    Args:
+        conn: An open DB-API connection.
+        publication_id: The publication's row id.
+
+    Returns:
+        Every :class:`~bmlib.publications.models.Grant` on record, in insertion
+        order; an empty list when none were stored.
+    """
+    ph = placeholder(conn)
+    rows = fetch_all(
+        conn,
+        "SELECT id, publication_id, agency, grant_id, country FROM publication_grants"
+        f" WHERE publication_id = {ph} ORDER BY id",
+        (publication_id,),
+    )
+    return [
+        Grant(
+            id=row["id"],
+            publication_id=row["publication_id"],
+            agency=row["agency"],
+            grant_id=row["grant_id"],
+            country=row["country"],
+        )
+        for row in rows
+    ]
+
+
+def get_author_affiliations(conn: Any, publication_id: int) -> list[AuthorAffiliation]:
+    """Return the author affiliations stored for a publication.
+
+    Args:
+        conn: An open DB-API connection.
+        publication_id: The publication's row id.
+
+    Returns:
+        Every :class:`~bmlib.publications.models.AuthorAffiliation` on record,
+        ordered by author position so the first and senior authors are found at
+        the ends; an empty list when none were stored.
+    """
+    ph = placeholder(conn)
+    rows = fetch_all(
+        conn,
+        "SELECT id, publication_id, author, affiliation, position"
+        f" FROM publication_affiliations WHERE publication_id = {ph} ORDER BY position, id",
+        (publication_id,),
+    )
+    return [
+        AuthorAffiliation(
+            id=row["id"],
+            publication_id=row["publication_id"],
+            author=row["author"],
+            affiliation=row["affiliation"],
+            position=row["position"],
+        )
+        for row in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -299,6 +444,11 @@ def _consolidate_rows(conn: Any, keep: Any, drop: Any, now: str) -> None:
     )
     execute(conn, f"DELETE FROM fulltext_sources WHERE publication_id = {ph}", (drop_id,))
 
+    # Same for the grant and affiliation rows — every child must be off the drop
+    # row before it is deleted, or the foreign key stops the DELETE.
+    _relocate_child_rows(conn, "publication_grants", keep_id, drop_id)
+    _relocate_child_rows(conn, "publication_affiliations", keep_id, drop_id)
+
     # Snapshot the drop row's data, delete the row (freeing its unique
     # identifier), then fold its data into the keep row.
     drop_pub = _row_to_publication(drop)
@@ -310,6 +460,9 @@ def store_publication(
     conn: Any,
     pub: Publication,
     fulltext_sources: Sequence[FullTextSource] | None = None,
+    *,
+    grants: Sequence[Grant] | None = None,
+    affiliations: Sequence[AuthorAffiliation] | None = None,
 ) -> str:
     """Store a publication, de-duplicating by DOI then PMID.
 
@@ -318,13 +471,25 @@ def store_publication(
     from different sources — which disagree on DOI case and prefixes — resolves
     to a single row. ``pub`` is mutated in place to hold the canonical forms.
 
-    The whole store (row consolidation, insert/merge, and full-text sources)
-    is one atomic transaction. Standalone calls commit on return; calls made
-    inside a caller's ``transaction(conn)`` block join it, deferring the
-    commit to the caller (see the module docstring).
+    The whole store (row consolidation, insert/merge, full-text sources, grants
+    and affiliations) is one atomic transaction. Standalone calls commit on
+    return; calls made inside a caller's ``transaction(conn)`` block join it,
+    deferring the commit to the caller (see the module docstring).
 
-    Returns ``"added"`` for a new record or ``"merged"`` if an existing
-    record was found and updated.
+    Args:
+        conn: An open DB-API connection.
+        pub: The publication to store; mutated in place to hold canonical
+            identifiers.
+        fulltext_sources: Full-text locations to record alongside it. These
+            accumulate — every source's URLs are kept.
+        grants: Funding awards. Supplying any **replaces** whatever is stored
+            for this publication; supplying none leaves it untouched (see
+            :func:`_replace_child_rows`).
+        affiliations: Author affiliations, with the same replace-or-leave rule.
+
+    Returns:
+        ``"added"`` for a new record, or ``"merged"`` if an existing record was
+        found and updated.
     """
     now = _now_iso()
     ph = placeholder(conn)
@@ -372,6 +537,23 @@ def store_publication(
         if fulltext_sources:
             for fts in fulltext_sources:
                 add_fulltext_source(conn, pub_id, fts.source, fts.url, fts.format, fts.version)
+
+        _replace_child_rows(
+            conn,
+            "publication_grants",
+            pub_id,
+            ("agency", "grant_id", "country"),
+            [(g.agency, g.grant_id, g.country) for g in grants or ()],
+            now,
+        )
+        _replace_child_rows(
+            conn,
+            "publication_affiliations",
+            pub_id,
+            ("author", "affiliation", "position"),
+            [(a.author, a.affiliation, a.position) for a in affiliations or ()],
+            now,
+        )
 
     return result
 

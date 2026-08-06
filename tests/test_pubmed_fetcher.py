@@ -734,3 +734,132 @@ class TestAbstractMarkdown:
             "</AbstractText></Abstract>"
         )
         assert _format_abstract_markdown(el) == "**RESULTS:** CO~2~ fell over 10 m^2^."
+
+
+# ---------------------------------------------------------------------------
+# Grants and author affiliations
+# ---------------------------------------------------------------------------
+
+GRANTS_AND_AFFILIATIONS_XML = """\
+<PubmedArticle>
+  <MedlineCitation>
+    <PMID>55555555</PMID>
+    <Article>
+      <ArticleTitle>A funded study</ArticleTitle>
+      <GrantList>
+        <Grant>
+          <GrantID>R01 HL123456</GrantID>
+          <Agency>NHLBI NIH HHS</Agency>
+          <Country>United States</Country>
+        </Grant>
+        <Grant>
+          <Agency>Wellcome Trust</Agency>
+        </Grant>
+        <Grant>
+          <Country>Nowhere</Country>
+        </Grant>
+      </GrantList>
+      <AuthorList>
+        <Author>
+          <LastName>Smith</LastName>
+          <ForeName>John A</ForeName>
+          <AffiliationInfo>
+            <Affiliation>Department of Cardiology, St Elsewhere.</Affiliation>
+          </AffiliationInfo>
+          <AffiliationInfo>
+            <Affiliation>Institute of Statistics, Elsewhere University.</Affiliation>
+          </AffiliationInfo>
+        </Author>
+        <Author>
+          <LastName>Jones</LastName>
+          <ForeName>Mary B</ForeName>
+        </Author>
+        <Author>
+          <LastName>Brown</LastName>
+          <AffiliationInfo>
+            <Affiliation>Pfizer Inc, New York.</Affiliation>
+          </AffiliationInfo>
+        </Author>
+      </AuthorList>
+    </Article>
+  </MedlineCitation>
+</PubmedArticle>
+"""
+
+
+class TestGrantExtraction:
+    """Tests for <GrantList> parsing."""
+
+    def test_grants_are_extracted(self):
+        result = _parse_article_xml(ET.fromstring(GRANTS_AND_AFFILIATIONS_XML))
+
+        assert len(result.grants) == 2
+        first = result.grants[0]
+        assert first.agency == "NHLBI NIH HHS"
+        assert first.grant_id == "R01 HL123456"
+        assert first.country == "United States"
+
+    def test_a_grant_may_name_only_an_agency(self):
+        result = _parse_article_xml(ET.fromstring(GRANTS_AND_AFFILIATIONS_XML))
+
+        second = result.grants[1]
+        assert second.agency == "Wellcome Trust"
+        assert second.grant_id is None
+        assert second.country is None
+
+    def test_a_grant_naming_neither_agency_nor_id_is_dropped(self):
+        """A country alone identifies no award, so it is not a grant.
+
+        Storing it would put a row carrying no usable information in front of
+        anyone counting a paper's funders.
+        """
+        result = _parse_article_xml(ET.fromstring(GRANTS_AND_AFFILIATIONS_XML))
+
+        assert all(g.country != "Nowhere" for g in result.grants)
+
+    def test_a_record_without_grants_has_an_empty_list(self):
+        result = _parse_article_xml(ET.fromstring(MINIMAL_ARTICLE_XML))
+        assert result.grants == []
+
+
+class TestAffiliationExtraction:
+    """Tests for <AffiliationInfo> parsing."""
+
+    def test_one_row_per_author_affiliation_pair(self):
+        result = _parse_article_xml(ET.fromstring(GRANTS_AND_AFFILIATIONS_XML))
+
+        assert len(result.author_affiliations) == 3
+        assert [a.affiliation for a in result.author_affiliations] == [
+            "Department of Cardiology, St Elsewhere.",
+            "Institute of Statistics, Elsewhere University.",
+            "Pfizer Inc, New York.",
+        ]
+
+    def test_the_author_name_matches_the_authors_list_format(self):
+        """Affiliation rows name their author the way ``authors`` does.
+
+        Upstream formatted these "Smith John" while the author list uses
+        "Smith, John A", so joining the two on name was guesswork. They agree
+        here.
+        """
+        result = _parse_article_xml(ET.fromstring(GRANTS_AND_AFFILIATIONS_XML))
+
+        assert result.authors == ["Smith, John A", "Jones, Mary B", "Brown"]
+        assert result.author_affiliations[0].author == "Smith, John A"
+        assert result.author_affiliations[0].author in result.authors
+        assert result.author_affiliations[2].author == "Brown"
+
+    def test_position_is_the_index_in_the_author_list(self):
+        """Position survives so first and senior authorship stay recoverable."""
+        result = _parse_article_xml(ET.fromstring(GRANTS_AND_AFFILIATIONS_XML))
+
+        # Smith is author 0 (both affiliations); Jones (1) has none; Brown is 2.
+        assert [a.position for a in result.author_affiliations] == [0, 0, 2]
+
+    def test_an_author_without_an_affiliation_contributes_no_row(self):
+        result = _parse_article_xml(ET.fromstring(GRANTS_AND_AFFILIATIONS_XML))
+        assert all(a.author != "Jones, Mary B" for a in result.author_affiliations)
+
+    def test_a_record_without_affiliations_has_an_empty_list(self):
+        result = _parse_article_xml(ET.fromstring(MINIMAL_ARTICLE_XML))
+        assert result.author_affiliations == []
