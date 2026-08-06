@@ -4,9 +4,9 @@ _Last updated: 2026-08-06. **0.7.0 is released and on PyPI.** **Phase 2 of the
 bmlibrarian port is complete**: `[Unreleased]` carries all four of its ports —
 the Cochrane assessment agent (row 9, PR #54), the PDF section segmenter
 (row 8, PR #55), the citation/reference stack (row 4, PR #58), and the PubMed
-metadata graft (row 11, PR open). Two open issues (#56, #57), both minor
-`fulltext` refinements deferred from PR #55's review. 1652 tests passing + 55
-skipped (1705 + 2 with a PostgreSQL DSN), ruff clean. **`[Unreleased]` is now
+metadata graft (row 11, PR #59). Two open issues (#56, #57), both minor
+`fulltext` refinements deferred from PR #55's review. 1668 tests passing + 58
+skipped (1724 + 2 with a PostgreSQL DSN), ruff clean. **`[Unreleased]` is now
 large enough to be worth cutting as 0.8.0** — see "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
@@ -48,7 +48,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   pure functions, Vancouver/APA/Harvard/Chicago formatters, and
   `build_references()`/`format_document()` with caller-injected
   `Mapping[int, DocumentMetadata]` (the upstream DB fetch severed). (4) The
-  **PubMed metadata graft** (row 11, PR open): `<GrantList>` and
+  **PubMed metadata graft** (row 11, PR #59): `<GrantList>` and
   `<AffiliationInfo>` become `Grant` / `AuthorAffiliation` child rows in two
   new tables, and titles and abstracts are read as Markdown. See
   `CHANGELOG.md` for the full entries and the upstream defects each port
@@ -136,7 +136,7 @@ transparency/quality reconciliation, no GRADE engine exists, SSRF guard).
 - **Phase 2 is done.** Its rows are rows in the analysis doc's master table,
   not GitHub issues: row 10 Retraction Watch (PR #51, shipped 0.7.0), row 9
   Cochrane assessor (PR #54), row 8 PDF section segmenter (PR #55), row 4
-  citation/reference stack (PR #58), row 11 PubMed metadata graft (PR open).
+  citation/reference stack (PR #58), row 11 PubMed metadata graft (PR #59).
 - **Phase 3 is next**: discovery (#12), `pubmed_search` (#13), MeSH (#21),
   ClinicalTrials.gov (#14 — **check the caveat first**, the legacy bulk XML
   the parser targets was deprecated in the 2024 API v2 migration). These are
@@ -357,7 +357,7 @@ named source file; the entry here is the pointer, not the argument.
   on the old semantics), and marker ids stay `int` only — a string-id variant
   is a spec change, noted out of scope in the design doc.
 
-### publications — PubMed metadata graft (PR open)
+### publications — PubMed metadata graft (PR #59)
 
 - **Replace-per-source is the whole design of these two tables.** Both carry a
   `source` column and `_replace_child_rows()` scopes every delete to it, so a
