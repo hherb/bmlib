@@ -387,8 +387,24 @@ named source file; the entry here is the pointer, not the argument.
 - **`position` counts every `<Author>` element, including the
   `<CollectiveName>` consortia that `authors` skips.** It is an index into the
   XML author list, not into `Publication.authors`; the two lists differ in
-  length whenever a consortium is present. What it is for — is this the first
-  or the senior author — is answered correctly either way.
+  length whenever a consortium is present, so `authors[a.position]` is the
+  wrong way to resolve an affiliation's author — match on `author`. What
+  position is *for* — first or senior author — is answered correctly either
+  way. Pinned by
+  `test_position_indexes_the_xml_author_list_not_the_authors_field`. The
+  knock-on, accepted: a consortium that states an affiliation loses it, since
+  `_author_name()` returns `None` and the `continue` skips the affiliation
+  loop with it. Recording it under the consortium's name would put an `author`
+  in the table that is absent from `authors`, breaking the one join the column
+  exists for.
+- **`store_publication()` does not write `publication_id` back onto the
+  `Grant` / `AuthorAffiliation` objects it is given**, unlike its `pub`
+  argument, which it mutates in place and documents as such. This follows the
+  `FullTextSource` precedent; the caller reads the persisted form back with
+  `get_grants()` / `get_author_affiliations()`. Worth knowing because the
+  failure would be silent — `publication_id` reads `0`, a plausible id rather
+  than an obvious sentinel. Pinned by
+  `test_the_caller_s_objects_are_not_mutated`.
 - **`is_retracted` was not ported.** `publication_types` already carries
   "Retracted Publication" verbatim, `retractions.py` answers authoritatively
   from Retraction Watch, and upstream reads RefType `RetractionOf` — which

@@ -1335,3 +1335,28 @@ class TestConsolidationRelocatesChildRows:
         assert [g.agency for g in get_grants(conn, kept.id)] == ["Keep Foundation"]
         # And nothing is stranded pointing at the deleted row.
         assert fetch_one(conn, "SELECT COUNT(*) AS n FROM publication_grants")["n"] == 1
+
+    def test_the_caller_s_objects_are_not_mutated(self):
+        """`publication_id` is ignored on the way in and not written back.
+
+        ``store_publication`` *does* mutate its ``pub`` argument in place, and
+        says so prominently, which gives a reader every reason to expect the
+        same of these. It does not — and the failure would be silent, since
+        ``publication_id`` reads back as ``0``, a plausible-looking id rather
+        than an obvious sentinel. Read the stored form back instead.
+        """
+        conn = _schema_conn()
+        grant = Grant(agency="NHLBI")
+        affiliation = AuthorAffiliation(author="Smith, J", affiliation="St Elsewhere")
+        pub = Publication(title="P", sources=["pubmed"], first_seen_source="pubmed", pmid="1")
+
+        store_publication(conn, pub, grants=[grant], affiliations=[affiliation])
+
+        assert grant.publication_id == 0
+        assert grant.id is None
+        assert affiliation.publication_id == 0
+
+        # The stored rows carry the real ids.
+        pub_id = get_publication_by_pmid(conn, "1").id
+        assert get_grants(conn, pub_id)[0].publication_id == pub_id
+        assert get_grants(conn, pub_id)[0].id is not None

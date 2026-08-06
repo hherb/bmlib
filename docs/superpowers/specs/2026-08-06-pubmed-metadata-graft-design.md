@@ -64,9 +64,24 @@ outermost call.** Both halves have a test.
 just its text. Returns `None` when nothing survives, matching the current
 contract (`abstract` is `str | None`).
 
-`ArticleTitle` switches to `_text_with_formatting`. `Journal/Title` and the MeSH
-and publication-type lists keep plain `.text` — they are leaf elements in
-practice, and widening the change is scope the port does not need.
+**Which elements get the walker is decided by NLM's DTD, not by guesswork.**
+`<!ENTITY % text "#PCDATA | b | i | sup | sub | u">`, and every element
+declared `(%text;)*` can carry markup: `ArticleTitle`, `AbstractText`, and
+**`Affiliation`**. All three use `_text_with_formatting`. `Journal/Title`,
+`DescriptorName` and `PublicationType` are declared `(#PCDATA)` — genuine
+leaves — and keep plain `.text`.
+
+`Affiliation` was missed on the first pass and caught in review, where it fails
+worse than a title does: trailing markup truncates the institution, and
+*leading* markup (`<sup>1</sup>Dept of…`, a footnote marker) makes `.text`
+`None`, so the emptiness guard drops the affiliation row altogether. Measured
+frequency is low — zero of 6,533 live `<Affiliation>` elements carried a child —
+but the rule is the rule, and the fix is one line.
+
+`ArticleTitle` and `AbstractText` may also contain `mml:math`. That degrades
+correctly without code: the namespace-expanded tag misses `_INLINE_MARKUP`, so
+the recursion flattens the math's text undecorated — no worse than the `.text`
+read it replaces.
 
 **Behaviour change, unflagged.** Every synced PubMed title and abstract changes
 shape. Titles change because they were being truncated; abstracts because they

@@ -187,9 +187,13 @@ class Grant:
     an agency with no award id, or an award id with no country. A grant naming
     neither an agency nor an id carries no information and is not stored.
 
-    ``publication_id`` defaults to 0 and is set by
-    :func:`~bmlib.publications.storage.store_publication`, so a fetcher can
-    build one before the publication has a row.
+    ``publication_id`` defaults to 0 so a fetcher can build one before the
+    publication has a row. On the way in it is **ignored** — the stored row
+    takes its id from the publication, and the object you passed is *not*
+    mutated (unlike ``store_publication``'s ``pub`` argument, which is). Read
+    the persisted form back with
+    :func:`~bmlib.publications.storage.get_grants`, whose results carry both
+    ``publication_id`` and ``id``.
     """
 
     agency: str | None = None
@@ -236,7 +240,14 @@ class AuthorAffiliation:
 
     ``author`` is formatted exactly as
     :attr:`~bmlib.publications.models.Publication.authors` formats it
-    (``"Last, Fore"``), so the two can be matched.
+    (``"Last, Fore"``), so the two can be matched **by name**. Not by index:
+    ``position`` counts every ``<Author>`` element, including the
+    ``<CollectiveName>`` consortia that ``authors`` omits, so the two lists
+    differ in length whenever one is present.
+
+    ``publication_id`` behaves exactly as :class:`Grant`'s does — ignored on
+    the way in, and read back with
+    :func:`~bmlib.publications.storage.get_author_affiliations`.
     """
 
     author: str

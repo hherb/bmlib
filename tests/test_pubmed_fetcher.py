@@ -890,3 +890,30 @@ class TestAffiliationExtraction:
         assert result.authors == ["Smith, J"]
         assert result.author_affiliations[0].author == "Smith, J"
         assert result.author_affiliations[0].position == 1
+
+    def test_an_affiliation_carrying_markup_survives_whole(self):
+        """`<Affiliation>` is not a leaf element, so it needs the same walker.
+
+        NLM's DTD declares it ``(%text;)*`` — the same content model as
+        ``<ArticleTitle>``, admitting ``b``/``i``/``sup``/``sub``/``u``. Read
+        with a bare ``.text`` it fails in the two ways this port exists to fix:
+        trailing markup truncates the institution, and *leading* markup makes
+        ``.text`` ``None``, which the emptiness guard then drops — losing the
+        affiliation row altogether rather than merely shortening it.
+        """
+        el = ET.fromstring(
+            "<PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
+            "<ArticleTitle>T</ArticleTitle><AuthorList>"
+            "<Author><LastName>Smith</LastName>"
+            "<AffiliationInfo><Affiliation>Dept of Chemistry, Univ X<sup>1</sup>, Rome."
+            "</Affiliation></AffiliationInfo>"
+            "<AffiliationInfo><Affiliation><sup>2</sup>Istituto Nazionale, Rome."
+            "</Affiliation></AffiliationInfo>"
+            "</Author></AuthorList></Article></MedlineCitation></PubmedArticle>"
+        )
+        result = _parse_article_xml(el)
+
+        assert [a.affiliation for a in result.author_affiliations] == [
+            "Dept of Chemistry, Univ X^1^, Rome.",
+            "^2^Istituto Nazionale, Rome.",
+        ]

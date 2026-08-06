@@ -250,7 +250,7 @@ class Grant:
     agency: str | None = None
     grant_id: str | None = None
     country: str | None = None
-    publication_id: int = 0     # set by store_publication
+    publication_id: int = 0     # ignored on the way in; see below
     id: int | None = None
 
 @dataclass
@@ -264,7 +264,11 @@ class AuthorAffiliation:
 
 Every field of a `Grant` is optional because PubMed's own records are: an award may name an agency with no id, or an id with no country. A grant naming **neither** an agency nor an id is dropped at parse time — it identifies no award.
 
-`AuthorAffiliation` is one row per *(author, affiliation)* pair, so an author listing three institutions produces three rows. `author` is formatted exactly as `Publication.authors` formats it (`"Last, Fore"`), so the two can be matched. `position` is the author's index in the `<AuthorList>`, carried because first-author and senior-author affiliations are the ones a conflict-of-interest check cares about and the name alone cannot recover the ordering.
+`AuthorAffiliation` is one row per *(author, affiliation)* pair, so an author listing three institutions produces three rows. `author` is formatted exactly as `Publication.authors` formats it (`"Last, Fore"`), so the two can be matched **by name**. `position` is the author's index in the `<AuthorList>`, carried because first-author and senior-author affiliations are the ones a conflict-of-interest check cares about and the name alone cannot recover the ordering.
+
+> **`authors[a.position]` is the wrong way to resolve an affiliation's author.** `position` counts every `<Author>` element, while `authors` omits `<CollectiveName>` consortia, which have no personal name — so the two lists differ in length whenever a consortium is present. Match on `author` instead. (A consortium's own affiliation, if it states one, is not recorded.)
+
+Neither model's `publication_id` is read on the way in: `store_publication()` takes the id from the publication being stored and does **not** write it back onto the object you passed, unlike its `pub` argument. Read the persisted form back with `get_grants()` / `get_author_affiliations()`, whose results carry `publication_id` and `id`.
 
 Both are serialisable via `to_dict()` / `from_dict()`, and both are read back with [`get_grants()` / `get_author_affiliations()`](#get_grants-and-get_author_affiliations).
 

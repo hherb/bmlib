@@ -312,7 +312,12 @@ def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
                     continue
                 authors.append(name)
                 for aff_el in author_el.findall("AffiliationInfo/Affiliation"):
-                    affiliation = (aff_el.text or "").strip()
+                    # Read with the walker, not ``.text``: NLM declares
+                    # ``<Affiliation>`` with the same ``(%text;)*`` content
+                    # model as ``<ArticleTitle>``, so a superscript footnote
+                    # marker truncates the institution — and a *leading* one
+                    # makes ``.text`` None, which the guard below then drops.
+                    affiliation = _text_with_formatting(aff_el)
                     if affiliation:
                         author_affiliations.append(
                             AuthorAffiliation(

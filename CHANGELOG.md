@@ -159,7 +159,12 @@ All notable changes to bmlib are documented here. The format is based on
   naming neither an agency nor an award id was stored as a row identifying no
   award, and affiliations named their author `"Smith John"` while the author
   list said `"Smith, John A"`, so joining the two was guesswork — one pass
-  over `<AuthorList>` now formats both. Upstream's `is_retracted` was
+  over `<AuthorList>` now formats both. Which elements are read with the
+  formatting walker below is decided by NLM's DTD rather than by eye:
+  `<Affiliation>` is declared with the same `(%text;)*` content model as
+  `<ArticleTitle>`, so it gets the walker too — a trailing superscript
+  footnote marker would otherwise truncate the institution, and a *leading*
+  one would drop the affiliation row entirely. Upstream's `is_retracted` was
   deliberately not ported: `publication_types` already carries "Retracted
   Publication" verbatim, `bmlib.publications.retractions` answers the question
   authoritatively, and upstream treats RefType `RetractionOf` as retracted
