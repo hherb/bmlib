@@ -236,6 +236,29 @@ All notable changes to bmlib are documented here. The format is based on
   ambiguous `CO2` / `m2`. Anything persisting abstracts should re-sync or
   accept the mix.
 
+### Fixed
+
+- **A password-protected PDF is a failed conversion, not an empty successful
+  one** (#57). `PyMuPDFConverter.convert()` returned `success=True` with
+  `text=""`, `converted_pages=0` and only warnings to show for it: PyMuPDF
+  opens an encrypted document without its password and fails only on *use*,
+  so metadata extraction and every page's `get_text()` failed inside the
+  handlers that exist to stop one bad page aborting the rest. A caller
+  testing `success` alone therefore read an unreadable file as a paper that
+  happens to contain no text — and the two need different responses, since
+  one is worth retrying from another source and the other is not.
+  `convert()` now checks `doc.needs_pass` immediately after opening and
+  returns `success=False` with `error_message="PDF is password-protected"`.
+  `extract_blocks()` gets the same explicit check: it already raised on such
+  a file, but only because `get_text()` failed of its own accord, under
+  PyMuPDF's message naming two causes at once ("document closed or
+  encrypted") — and had that call ever stopped raising it would have
+  returned `[]`, which is precisely what a legitimate image-only scan
+  returns. The test is `needs_pass`, not `is_encrypted`: an *owner* password
+  restricts permissions without blocking reads, so such a file is encrypted
+  and converts perfectly. Four regression tests, each guard paired with that
+  owner-password negative control.
+
 ## [0.7.0] — 2026-08-04
 
 Two new capabilities and two widened ones. `bmlib.publications` can answer
