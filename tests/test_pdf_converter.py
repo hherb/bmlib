@@ -39,6 +39,26 @@ from bmlib.fulltext.segmenter import SectionSegmenter
 _HAS_FITZ = importlib.util.find_spec("fitz") is not None
 
 
+def _write_encrypted_pdf(path: Path, *, user_pw: str = "", owner_pw: str = "") -> Path:
+    """Write a one-page AES-256 encrypted PDF and return its path.
+
+    A *user* password is required to open the file at all; an *owner*
+    password only restricts permissions, leaving the document readable.
+    """
+    import fitz
+
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 72), "Confidential trial results")
+    doc.save(
+        str(path),
+        encryption=fitz.PDF_ENCRYPT_AES_256,
+        user_pw=user_pw,
+        owner_pw=owner_pw,
+    )
+    doc.close()
+    return path
+
+
 class _StubConverter(PDFConverter):
     """Minimal concrete converter to exercise the shared ABC methods."""
 
@@ -186,6 +206,29 @@ class TestPyMuPDFConversion:
         assert result.success is False
         assert result.text == ""
         assert result.error_message
+
+    def test_a_password_protected_pdf_is_a_failed_conversion(self, tmp_path):
+        # PyMuPDF opens an encrypted file without the password, then fails
+        # every page's get_text() inside the per-page except. Reported as
+        # success, that reads as "this paper has no text" rather than "this
+        # file could not be read".
+        pdf_path = _write_encrypted_pdf(tmp_path / "locked.pdf", user_pw="user")
+
+        result = get_converter("pymupdf").convert(pdf_path)
+        assert result.success is False
+        assert result.text == ""
+        assert result.error_message == "PDF is password-protected"
+
+    def test_an_owner_password_alone_does_not_block_conversion(self, tmp_path):
+        # Negative control isolating the guard from `is_encrypted`. An
+        # owner password restricts permissions but not reading: the
+        # document opens and its text extracts, so this file is encrypted
+        # and perfectly convertible.
+        pdf_path = _write_encrypted_pdf(tmp_path / "restricted.pdf", owner_pw="owner")
+
+        result = get_converter("pymupdf").convert(pdf_path)
+        assert result.success is True
+        assert "Confidential trial results" in result.text
 
 
 class TestRenderHTML:
@@ -504,6 +547,21 @@ class TestExtractBlocks:
         pdf.write_bytes(b"%PDF-1.4 this is not a valid pdf body")
         with pytest.raises(ValueError, match="Failed to extract text blocks"):
             get_converter("pymupdf").extract_blocks(pdf)
+
+    def test_a_password_protected_pdf_names_the_password(self, tmp_path):
+        # This already raised, but only because get_text() happened to fail:
+        # the message named two causes ("document closed or encrypted") and
+        # an extraction that ever stopped raising would return [], which is
+        # what an image-only scan looks like. The check is explicit instead.
+        pdf = _write_encrypted_pdf(tmp_path / "locked.pdf", user_pw="user")
+        with pytest.raises(ValueError, match="password-protected"):
+            get_converter("pymupdf").extract_blocks(pdf)
+
+    def test_an_owner_password_alone_does_not_block_extraction(self, tmp_path):
+        # Negative control: encrypted, but readable, so blocks come back.
+        pdf = _write_encrypted_pdf(tmp_path / "restricted.pdf", owner_pw="owner")
+        blocks = get_converter("pymupdf").extract_blocks(pdf)
+        assert [b.text for b in blocks] == ["Confidential trial results"]
 
     def test_a_pdf_paper_segments_end_to_end(self, tmp_path):
         pdf = tmp_path / "paper.pdf"

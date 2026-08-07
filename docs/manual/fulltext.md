@@ -772,6 +772,7 @@ Conversion behaviour:
 - A page that raises adds `Page {n}: Extraction failed - {e}` and does **not** increment `converted_pages`, so `completion_ratio` drops below 1.0.
 - Page texts are joined with `"\n\n"`.
 - `fitz.FileDataError` returns `success=False` with `error_message=f"Invalid or corrupted PDF: {e}"` and `converted_pages=0`. Any other exception also returns `success=False`, but keeps the running `converted_pages`.
+- A PDF needing a password to open returns `success=False` with `error_message="PDF is password-protected"`. PyMuPDF opens such a file without the password and only fails on use, so without this check every page failed inside the per-page handler and the file came back as a *success* carrying no text — a caller testing `success` alone read an unreadable file as a paper with no text. The test is `doc.needs_pass`, not `doc.is_encrypted`: an owner password restricts permissions without blocking reads, and such a file converts normally.
 - Exceptions from `validate_pdf_path()` **propagate** — a missing or non-PDF path raises rather than returning a failed `ConversionResult`.
 
 ### Example
@@ -875,7 +876,12 @@ characters — so a superscript reference marker cannot restyle its line.
 `extract_blocks()` **raises** (`FileNotFoundError`, `ValueError`) rather
 than returning a partial result: unlike `convert()`, whose partial text is
 useful, a partial block list is indistinguishable from a sparse PDF. A
-page with no extractable text simply contributes no blocks.
+page with no extractable text simply contributes no blocks. A
+password-protected PDF is rejected by the same explicit `needs_pass` check
+`convert()` uses — it already raised, but only because `get_text()` failed
+of its own accord, under a message naming two causes at once; an extraction
+that stopped raising would have returned `[]`, which is exactly what an
+image-only scan returns.
 
 Blocks arrive in the PDF's *content-stream* order. For born-digital
 papers that is almost always reading order — column by column — but a

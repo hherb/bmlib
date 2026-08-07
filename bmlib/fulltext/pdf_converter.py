@@ -258,7 +258,9 @@ class PyMuPDFConverter(PDFConverter):
         """Convert a PDF to plaintext, extracting every page's text.
 
         All text is extracted even where formatting is imperfect; pages with
-        no extractable text are still counted as processed.
+        no extractable text are still counted as processed. A PDF needing a
+        password to open is a failed result rather than an empty successful
+        one — a file that cannot be read is not a paper without text.
         """
         self.validate_pdf_path(pdf_path)
 
@@ -273,6 +275,31 @@ class PyMuPDFConverter(PDFConverter):
             # non-fitz error escapes mid-extraction.
             with self._fitz.open(str(pdf_path)) as doc:
                 page_count = len(doc)
+
+                if doc.needs_pass:
+                    # PyMuPDF opens an encrypted document without its
+                    # password and only fails on use, so every page's
+                    # get_text() raises inside the per-page except below and
+                    # the file returns as a success with no text — an
+                    # unreadable paper indistinguishable from an image-only
+                    # scan. Tested on ``needs_pass`` rather than
+                    # ``is_encrypted`` because an owner password restricts
+                    # permissions without blocking reads: such a file is
+                    # encrypted and extracts perfectly.
+                    error_msg = "PDF is password-protected"
+                    logger.error("PDF conversion failed for %s: %s", pdf_path, error_msg)
+                    return ConversionResult(
+                        success=False,
+                        text="",
+                        format="plaintext",
+                        page_count=page_count,
+                        converted_pages=0,
+                        char_count=0,
+                        warnings=warnings,
+                        converter_name=self.name,
+                        converter_version=self.version,
+                        error_message=error_msg,
+                    )
 
                 try:
                     pdf_metadata = doc.metadata
@@ -379,6 +406,8 @@ class PyMuPDFConverter(PDFConverter):
         blocks: list[TextBlock] = []
         try:
             with self._fitz.open(str(pdf_path)) as doc:
+                if doc.needs_pass:
+                    raise ValueError("PDF is password-protected")
                 for page_num in range(len(doc)):
                     page_dict = doc[page_num].get_text("dict")
                     for raw_block in page_dict.get("blocks", []):
