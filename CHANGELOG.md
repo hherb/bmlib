@@ -6,6 +6,23 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-08-08
+
+Phase 2 of the bmlibrarian port, complete — four ports in one release. A new
+pure-stdlib `bmlib.citations` numbers and formats reference lists in four
+styles; `SectionSegmenter` turns a PDF's text lines into typed sections;
+`CochraneAssessor` becomes the quality pipeline's Tier 4, condensing an
+oversized paper to an evidence digest rather than truncating it; and the
+PubMed fetcher grafts on `<GrantList>` and `<AffiliationInfo>` as child rows
+while ending the silent truncation of every title that carried markup.
+
+Everything is additive, so a minor bump. But **three of the four move stored
+values**, and they compound: the PubMed change alters every synced title and
+abstract, a Cochrane-enriched assessment reports different bias domains, and
+a PDF that previously "converted" to empty text is now a failure. Anything
+persisting these should re-sync or accept a mix; each entry below says what
+moved.
+
 ### Added
 
 - **`bmlib.citations`** — citation-marker parsing, four citation styles, and
