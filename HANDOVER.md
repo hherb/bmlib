@@ -1,13 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-06. **0.7.0 is released and on PyPI.** **Phase 2 of the
-bmlibrarian port is complete**: `[Unreleased]` carries all four of its ports —
-the Cochrane assessment agent (row 9, PR #54), the PDF section segmenter
-(row 8, PR #55), the citation/reference stack (row 4, PR #58), and the PubMed
-metadata graft (row 11, PR #59). Two open issues (#56, #57), both minor
-`fulltext` refinements deferred from PR #55's review. 1685 tests passing + 58
-skipped (1741 + 2 with a PostgreSQL DSN), ruff clean. **`[Unreleased]` is now
-large enough to be worth cutting as 0.8.0** — see "Next up"._
+_Last updated: 2026-08-08. **0.8.0 is released and on PyPI**, and with it
+**Phase 2 of the bmlibrarian port is complete and shipped** — all four ports
+(Cochrane assessor PR #54, PDF section segmenter PR #55, citation/reference
+stack PR #58, PubMed metadata graft PR #59), plus the encrypted-PDF fix
+(#57, PR #60). One open issue, **#56**. 1689 tests passing + 58 skipped
+(1745 + 2 with a PostgreSQL DSN), ruff clean. `[Unreleased]` is empty.
+**Phase 3 is next, and each of its rows needs a design conversation before
+any porting** — see "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -17,49 +17,25 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ## Current state
 
-- **Version 0.7.0**, released 2026-08-04 and live on PyPI — the **first
-  release published by the Release workflow** rather than by hand, so that
-  path is now proven end to end (tag → GitHub release → `pypi` environment
-  gate → Trusted Publishing upload). Release history: 0.4.0 (2026-07-19) →
-  0.5.0 (2026-07-20) → 0.5.1 (2026-07-21) → 0.6.0 (2026-07-30) → 0.7.0.
-  0.3.0 was bumped in-tree but never released; its changes shipped inside
-  0.4.0. The version lives in **four** places — `pyproject.toml`,
-  `bmlib/__init__.py`, the README version line, `CLAUDE.md`'s header — and
-  all four agree.
+- **Version 0.8.0**, released 2026-08-08 and live on PyPI. Release history:
+  0.4.0 (2026-07-19) → 0.5.0 (2026-07-20) → 0.5.1 (2026-07-21) → 0.6.0
+  (2026-07-30) → 0.7.0 (2026-08-04) → 0.8.0. 0.3.0 was bumped in-tree but
+  never released; its changes shipped inside 0.4.0. The version lives in
+  **four** places — `pyproject.toml`, `bmlib/__init__.py`, the README version
+  line, `CLAUDE.md`'s header — and all four agree. 0.7.0 was the first
+  release the Release workflow published rather than a laptop, so that path
+  is proven end to end (tag → GitHub release → `pypi` environment gate →
+  Trusted Publishing upload); 0.8.0 went the same way.
 - **What each release shipped is in `CHANGELOG.md`** — do not re-narrate it
-  here. Both 0.6.0 (three changes) and 0.7.0 (four) moved stored values, none
-  behind a flag, and they compound for anyone upgrading across both.
+  here. 0.6.0 (three changes), 0.7.0 (four) and 0.8.0 (three) each moved
+  stored values, none behind a flag, and they compound for anyone upgrading
+  across them. 0.8.0's largest is the PubMed one: every synced title and
+  abstract changes shape, titles because they were being *truncated* at their
+  first markup tag.
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
-  now missed two releases. Widening it is a downstream change, not a bmlib
+  now missed three releases. Widening it is a downstream change, not a bmlib
   one.
-- **`[Unreleased]` carries all four Phase 2 ports.** (1) The **Cochrane
-  assessment agent** (row 9, PR #54, merged): `CochraneAssessor` (Tier 4)
-  turns a title and text into a `CochraneStudyAssessment`;
-  `collapse_risk_of_bias()` bridges its nine domains onto the five-domain
-  `BiasRisk`; `QualityFilter(use_cochrane_assessment=True)` plus
-  `full_text=` on `QualityManager.assess()` wire it in, enriching a
-  classification rather than replacing it. (2) The **PDF section
-  segmenter** (row 8, PR #55, merged): `SectionSegmenter` turns the
-  `TextBlock` lines from the new `PyMuPDFConverter.extract_blocks()`
-  (behind the `LayoutExtractor` protocol) into a `SegmentedDocument` of
-  typed sections — standalone, nothing wires it into `FullTextService` or
-  `quality/` yet. (3) The **citation/reference stack** (row 4, PR #58, merged):
-  new pure-stdlib `bmlib/citations/` — `[@id:N:Label]` marker parsing as
-  pure functions, Vancouver/APA/Harvard/Chicago formatters, and
-  `build_references()`/`format_document()` with caller-injected
-  `Mapping[int, DocumentMetadata]` (the upstream DB fetch severed). (4) The
-  **PubMed metadata graft** (row 11, PR #59): `<GrantList>` and
-  `<AffiliationInfo>` become `Grant` / `AuthorAffiliation` child rows in two
-  new tables, and titles and abstracts are read as Markdown. See
-  `CHANGELOG.md` for the full entries and the upstream defects each port
-  fixed.
-- **Three of the four move stored values, so `[Unreleased]` is not a
-  drop-in upgrade.** The largest is the PubMed one: every synced title and
-  abstract changes shape (titles because they were being *truncated* at their
-  first markup tag; abstracts because they gain `NlmCategory` labels,
-  blank-line section breaks and `CO~2~` notation). CHANGELOG says which, and
-  the manual tells callers to re-sync or accept a mix.
-- **1685 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1741 + 2
+- **1689 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1745 + 2
   with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
   PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
@@ -89,25 +65,22 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Two, both minor `fulltext` refinements deferred from PR #55's review rather
-than folded into it: **#56** (`_extract_title()` trusts junk PDF metadata
-titles — "Microsoft Word - manuscript.docx" wins over the large-font
-first-page line) and **#57** (`convert()` on a password-protected PDF
-returns `success=True` with empty text; `is_complete` already says `False`,
-and `extract_blocks()` already raises for the same file). Every closed
-design stays in `docs/superpowers/specs/` as the record of what was rejected
-and why.
+One: **#56** (`_extract_title()` trusts junk PDF metadata titles — "Microsoft
+Word - manuscript.docx" wins over the large-font first-page line), deferred
+from PR #55's review. Note what it will cost to do *properly*: this repo
+settles list-shaped questions by measuring a corpus, not by taste (the
+industry-funder stems, the Markdown escape set, the DataBankName allow-list
+are all precedents), so a reject-list for junk titles wants a sample of real
+PDF metadata behind it rather than a guessed set of prefixes and suffixes.
+The issue already asks for a regression test per rejected shape plus a
+negative control. Every closed design stays in `docs/superpowers/specs/` as
+the record of what was rejected and why.
 
 ### Worth doing, not yet an issue
 
-- **Cut 0.8.0.** Phase 2 is complete and `[Unreleased]` now holds four ports,
-  three of which move stored values. That is a release's worth of work sitting
-  unshipped, and the longer it sits the larger the "not comparable" note the
-  next upgrader has to read. Recipe at the bottom of this file; it is a minor
-  bump (everything is additive).
 - **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume
-  0.6.0 and 0.7.0. Read both releases' non-comparable behaviour changes
-  first — the transparency ones move stored scores, and 0.8.0 will move
+  0.6.0, 0.7.0 and 0.8.0. Read all three releases' non-comparable behaviour
+  changes first — the transparency ones move stored scores, and 0.8.0 moves
   every PubMed title and abstract.
 - **Wire the segmenter and the rule-based extractors in.** Two halves of the
   same roadmap item: the segmenter could give `CochraneAssessor`
@@ -120,7 +93,7 @@ and why.
   request — but it is a scoring change that moves stored values, so it needs
   its own decision, not a quiet optimisation.
 
-### bmlibrarian → bmlib porting (Phase 2 done)
+### bmlibrarian → bmlib porting (Phase 3 is next)
 
 The "mother project" `~/src/bmlibrarian` holds functionality that belongs in
 bmlib. The assessment and phased backlog live in
@@ -129,14 +102,14 @@ bmlib. The assessment and phased backlog live in
 with reasons, and open caveats (ClinicalTrials.gov legacy XML deprecation,
 transparency/quality reconciliation, no GRADE engine exists, SSRF guard).
 
-- **Phase 0 is done** (0.4.0): json_repair, text_utils, Cochrane models +
-  formatter, extractors + scoring_models, pdf_converter.
-- **Phase 1 is done**: BaseAgent enhancement (PR #34), `context_processor`
-  (#49, PR #50).
-- **Phase 2 is done.** Its rows are rows in the analysis doc's master table,
-  not GitHub issues: row 10 Retraction Watch (PR #51, shipped 0.7.0), row 9
-  Cochrane assessor (PR #54), row 8 PDF section segmenter (PR #55), row 4
-  citation/reference stack (PR #58), row 11 PubMed metadata graft (PR #59).
+- **Phases 0, 1 and 2 are all done and shipped.** Phase 0 in 0.4.0
+  (json_repair, text_utils, Cochrane models + formatter, extractors +
+  scoring_models, pdf_converter); Phase 1 in 0.7.0 (BaseAgent enhancement
+  PR #34, `context_processor` #49/PR #50); Phase 2 across 0.7.0 and 0.8.0 —
+  its rows are rows in the analysis doc's master table, not GitHub issues:
+  row 10 Retraction Watch (PR #51), row 9 Cochrane assessor (PR #54), row 8
+  PDF section segmenter (PR #55), row 4 citations (PR #58), row 11 PubMed
+  metadata graft (PR #59).
 - **Phase 3 is next**: discovery (#12), `pubmed_search` (#13), MeSH (#21),
   ClinicalTrials.gov (#14 — **check the caveat first**, the legacy bulk XML
   the parser targets was deprecated in the 2024 API v2 migration). These are
@@ -297,6 +270,22 @@ named source file; the entry here is the pointer, not the argument.
   `test_a_stub_with_no_article_raises` and
   `test_a_body_less_article_with_an_abstract_is_returned`.
 
+### fulltext — the PDF converter (PR #60)
+
+- **A password-protected PDF is rejected on `doc.needs_pass`, never on
+  `doc.is_encrypted`.** An *owner* password restricts permissions without
+  blocking reads, so such a file is encrypted and converts perfectly;
+  widening the check to `is_encrypted` would reject it. Both guards carry an
+  owner-password negative control for exactly that
+  (`test_an_owner_password_alone_does_not_block_conversion` /
+  `..._extraction`), so neither is a check that cannot fail.
+- **`extract_blocks()` keeps its explicit check even though it already
+  raised** — it raised only because `get_text()` failed of its own accord,
+  and had that stopped, it would have returned `[]`, exactly what an
+  image-only scan returns. The general lesson, and the reason #57 existed:
+  `except` blocks written to keep one bad page from aborting the rest will
+  also absorb a whole-file failure, and the result reports as a success.
+
 ### fulltext — PDF section segmenter (PR #55)
 
 - **`TextBlock` is one PDF *line*, not a span, with font attributes from the
@@ -365,44 +354,27 @@ named source file; the entry here is the pointer, not the argument.
 
 ### publications — PubMed metadata graft (PR #59)
 
-- **Replace-per-source is the whole design of these two tables.** Both carry a
-  `source` column and `_replace_child_rows()` scopes every delete to it, so a
-  record's rows replace that source's stored rows and leave other sources'
-  alone. Scoping by publication alone was a real defect caught before release:
-  PubMed's grants replaced OpenAlex's, then OpenAlex's replaced PubMed's, so
-  the stored answer depended on whichever source synced last, silently.
-  Deliberately unlike `fulltext_sources`, which simply accumulates — a paper
-  genuinely has several URLs, whereas each source states its funding
-  completely. Pinned by `test_a_second_source_does_not_displace_the_first` and
-  `test_re_syncing_one_source_replaces_only_its_own_rows`, both backends,
-  mutation-verified.
-- **`sync._stamp_source()` fills the column, not the fetchers.** A fetcher that
-  forgets fails silently — its rows land in an unnamed bucket and stop being
-  scoped — so provenance is stamped in the one place that authoritatively
-  knows it.
-- **The empty guard survives for a different reason than it started with.** It
-  was there to stop a bioRxiv record erasing PubMed's grants; source scoping
-  now handles that structurally. It stays because no rows names no source, so
-  there is nothing to scope a delete to, and an absent `<GrantList>` means the
-  record lacked the data rather than that funding was withdrawn.
-- **No UNIQUE constraint on the natural key, and one must not be added.** Every
-  column of a grant proper is nullable and both backends treat `NULL` as
-  *distinct* in a unique index, so
-  `UNIQUE(publication_id, source, agency, grant_id)` lets
-  `(1, 'pubmed', NULL, 'R01')` insert twice. An expression index over
-  `COALESCE`d columns would work, but nothing is left for it to catch: exact
-  repeats are collapsed at parse time and the per-source replace is idempotent.
+**CLAUDE.md argues most of this port in full, and is the place to read it.**
+"Replace-per-source child rows" covers why both tables carry a `source`
+column and `_replace_child_rows()` scopes every delete to it (scoping by
+publication alone made the stored answer depend on whichever source synced
+last, silently), why `sync._stamp_source()` fills that column rather than
+each fetcher, why a row naming **no** source raises `ValueError` instead of
+being left to `NOT NULL` (which rejects `None` but stored the `""` a
+forgetful caller actually produces), why there is deliberately **no** UNIQUE
+constraint on the natural key, why the empty guard survives on a new reason,
+and why `_consolidate_rows()` must relocate every child row before the
+parent DELETE. "Markdown, measured against the markup" covers the
+mixed-content walker, strip-once, edge whitespace re-emitted outside the
+markers, `Label` **or** `NlmCategory`, the measured escape set, and `<u>`.
+Each is pinned by a named test on both backends, several verified by
+mutation. Do not re-derive any of them. What follows is only what CLAUDE.md
+does not say.
+
 - **PubMed repeats a `<Grant>` block verbatim** — 31 of 575 entries across 200
   NIH-funded records, affecting 14 — so `_parse_grants()` collapses exact
   repeats, keeping first-occurrence order. Two grants differing in any field
   are two grants.
-- **`_consolidate_rows()` relocates every child row before the parent DELETE**,
-  per source: a source the keep row has wins, one only the drop row saw moves
-  across. Both backends enforce foreign keys, so a stranded row aborts the
-  whole store — verified by removing the relocation and watching both raise
-  `ForeignKeyViolation`. Pinned by
-  `test_a_split_identity_merge_relocates_child_rows` and
-  `test_consolidation_moves_only_sources_the_keep_row_lacks`.
 - **`position` indexes `<AuthorList>`, not `Publication.authors`** — it counts
   the `<CollectiveName>` consortia that `authors` skips, so the two lists
   differ in length whenever one is present and `authors[a.position]` is the
@@ -429,30 +401,6 @@ named source file; the entry here is the pointer, not the argument.
 - **`~x~` / `^x^` are Pandoc extensions, knowingly.** A renderer without them
   shows the tildes literally; the alternative flattened `CO<sub>2</sub>` and
   `CO<sup>2</sup>` to the same ambiguous `CO2`. Documented in the manual.
-- **The escape set is measured, and re-deciding it needs a measurement, not
-  an opinion.** `_escape_markdown()` escapes ``\ ` * ~ ^`` in document prose
-  and nothing else. Across 3,403 real titles and abstract sections that
-  alters 0.35% and removes every construct a CommonMark parser found;
-  escaping `_` and `[`/`]` too churned 4.3% and fixed nothing, because
-  intraword `_` is inert in CommonMark and a bare `[…]` is not a link. The
-  commonest real hazard is the tilde, which *this module* created by emitting
-  `~2~`: "AUC ~ 0.80" and "(~88%)" are ordinary prose and an unescaped pair
-  subscripts the span between them. The asterisk case is the star allele,
-  `CYP2C19 (*1, *2, *3)`. Affiliations share the walker and so are escaped
-  too — which is user-visible, because that column is a join key.
-- **`<u>` is deliberately not mapped and must not be re-added.** Markdown has
-  no underline; `__x__` is *strong* emphasis, so mapping `<u>` renders it
-  identically to `<b>` while asserting the source said "bold" — the ambiguity
-  `sub`/`sup` earned Pandoc markers to avoid. It falls through to the
-  undecorated path. Pinned by `test_underline_is_not_rendered_as_bold`.
-- **A grant or affiliation naming no source raises `ValueError`.** Scoping is
-  the whole mechanism, so an unnamed row is unreachable: nothing can name it,
-  so no sync can replace it and each one stacks a labelled duplicate beside
-  it. The check is in the storage layer, not left to `NOT NULL`, because the
-  column rejects `None` while `""` — the dataclass default, and the value a
-  forgetful caller actually produces — was stored happily. Nine tests were
-  silently exercising that path before the guard landed. Pinned by
-  `test_a_row_naming_no_source_is_rejected`.
 - **Which elements get the formatting walker is decided by NLM's DTD.**
   `ArticleTitle`, `AbstractText` and `Affiliation` are all declared
   `(%text;)*` — `#PCDATA | b | i | sup | sub | u` — so all three use
@@ -525,12 +473,13 @@ named source file; the entry here is the pointer, not the argument.
 - Session workflow lives in the `nextsession` skill
   (`.claude/skills/nextsession/`); the post-review fix-up workflow lives in
   the `fixall` skill (`.claude/skills/fixall/`).
-- **Cutting a release** (0.4.0 through 0.7.0 were all cut this way): bump
+- **Cutting a release** (0.4.0 through 0.8.0 were all cut this way): bump
   the version in the **four** places that carry it — `pyproject.toml`,
   `bmlib/__init__.py`, the README version line, `CLAUDE.md`'s header —
   promote the CHANGELOG's `[Unreleased]` body under a dated `## [X.Y.Z]`
-  heading (leaving `## [Unreleased]` above it), promote any `(unreleased)`
-  markers in `docs/manual/` and `ROADMAP.md`, then commit on a
+  heading (leaving `## [Unreleased]` above it) with a short prose summary
+  under it, promote any `(unreleased)` markers in `docs/manual/` and
+  `ROADMAP.md` (0.8.0's six were all in ROADMAP), then commit on a
   `release/X.Y.Z` branch and open a PR. After CI is green merge with
   `--merge` (**not** squash) so the tag lands on main's first-parent line,
   tag the *merge commit*, push the tag, and create the GitHub release.
@@ -542,8 +491,8 @@ named source file; the entry here is the pointer, not the argument.
   **Do not also upload by hand:** the publish job has no `skip-existing`, so
   a manual upload first makes it fail on a duplicate — which is why v0.5.0's
   and v0.6.0's runs still sit unapproved, both having been published from a
-  laptop. v0.7.0 went the whole way through the workflow, so the hand-upload
-  habit has no remaining excuse. Rehearse any time with a
+  laptop. v0.7.0 and v0.8.0 both went the whole way through the workflow, so
+  the hand-upload habit has no remaining excuse. Rehearse any time with a
   `workflow_dispatch` run, which targets TestPyPI only. Afterwards verify
   against `https://pypi.org/simple/bmlib/` — the JSON API serves a stale CDN
   cache, the simple index is what installers read.
