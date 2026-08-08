@@ -30,9 +30,11 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import quote
 
-import httpx
+if TYPE_CHECKING:  # Annotation only; the real import is guarded in __init__.
+    import httpx
 
 # The sanitizer's canonical implementation lives in bmlib.fulltext.cache so
 # the cache can apply the same scheme as a defense in depth for direct callers.
@@ -150,7 +152,21 @@ class FullTextService:
                 key's 10 requests/second allowance instead of the 3
                 requests/second shared by everything on the IP. Declared last
                 so positional construction stays stable.
+
+        Raises:
+            ImportError: If httpx is not installed, naming the extra that
+                supplies it. Raised before anything else happens, so a
+                construction that fails leaves no cache directory behind.
         """
+        try:
+            import httpx
+        except ImportError as e:
+            raise ImportError(
+                "httpx is required for full-text retrieval. "
+                "Install with: pip install bmlib[fulltext]"
+            ) from e
+        self._httpx = httpx
+
         self.email = email
         self.timeout = timeout
         self.cache = cache if cache is not None else FullTextCache()
@@ -162,7 +178,7 @@ class FullTextService:
 
     def _http_get(self, url: str, **kwargs: object) -> httpx.Response:
         """HTTP GET with timeout. Separated for testability."""
-        with httpx.Client(timeout=self.timeout, follow_redirects=True) as client:
+        with self._httpx.Client(timeout=self.timeout, follow_redirects=True) as client:
             return client.get(url, **kwargs)
 
     def fetch_fulltext(

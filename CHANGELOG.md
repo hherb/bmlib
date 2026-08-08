@@ -6,6 +6,42 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **`bmlib.fulltext` imports on a core install** (#64). `fulltext/__init__.py`
+  eagerly re-exported `service`, whose top-level `import httpx` was the last
+  unguarded optional import in bmlib — and since importing a submodule imports
+  its parent package first, it gated everything beside it. Measured against the
+  published 0.8.0 wheel in a venv holding only `bmlib`, `jinja2` and
+  `markupsafe`, **one fresh interpreter per module**: **ten** modules across two
+  packages raised a bare `ModuleNotFoundError`. All seven of `bmlib.fulltext.*`,
+  including the pure-dataclass `models` and the stdlib-only `SectionSegmenter`
+  — one of 0.8.0's headline additions, documented as standalone and making no
+  HTTP request — plus `publications.fetchers.{pubmed,biorxiv,openalex}`, which
+  borrow one dataclass from `models` and take an injected HTTP client rather
+  than importing httpx themselves. `FullTextService` and `FullTextError` now
+  resolve through a PEP 562 `__getattr__`, as `bmlib.context_processor` already
+  does for its LLM-backed half; the public API and `__all__` are unchanged, and
+  the same probe now reports **69 importable, 0 not**.
+
+- **Constructing `FullTextService` without httpx names the extra.** The import
+  moved into `__init__` behind the guarded `ImportError` the coding conventions
+  require (`Install with: pip install bmlib[fulltext]`), matching
+  `PyMuPDFConverter.__init__` one file over. The constructor, not the request
+  helper: the service builds its own client rather than taking an injected one,
+  so deferring further would only make the failure arrive on the first request
+  instead of at construction. The guard is the first statement, so a failed
+  construction leaves no cache directory behind.
+
+### Added
+
+- **`fulltext` extra** (`pip install bmlib[fulltext]`, httpx), included in
+  `all`. The manual previously sent readers to `bmlib[publications]` — a
+  publication-ingestion extra — for a PDF segmenter. `pdf` stays separate:
+  bundling pymupdf would duplicate an existing extra and drag a ~20 MB binary
+  wheel onto anyone who only wants JATS retrieval. `publications` and
+  `transparency` keep their own httpx, so no existing install changes.
+
 ## [0.8.0] — 2026-08-08
 
 Phase 2 of the bmlibrarian port, complete — four ports in one release. A new

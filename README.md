@@ -26,6 +26,7 @@ uv pip install -e ".[all,dev]"
 | `postgresql` | `pip install bmlib[postgresql]` | PostgreSQL database backend |
 | `transparency` | `pip install bmlib[transparency]` | Transparency analysis (httpx) |
 | `publications` | `pip install bmlib[publications]` | Publication ingestion and sync (httpx) |
+| `fulltext` | `pip install bmlib[fulltext]` | `FullTextService` retrieval (httpx). The rest of `bmlib.fulltext` — JATS parser, models, `SectionSegmenter` — needs nothing beyond core |
 | `pdf` | `pip install bmlib[pdf]` | PDF → text conversion (pymupdf) |
 | `dev` | `pip install bmlib[dev]` | pytest, pytest-cov, ruff |
 | `all` | `pip install bmlib[all]` | Every runtime extra above (**not** `dev`) |
