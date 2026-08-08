@@ -4,8 +4,10 @@ _Last updated: 2026-08-08. **0.8.0 is released and on PyPI**, and with it
 **Phase 2 of the bmlibrarian port is complete** — all four ports
 (Cochrane assessor PR #54, PDF section segmenter PR #55, citation/reference
 stack PR #58, PubMed metadata graft PR #59), plus the encrypted-PDF fix
-(#57, PR #60). Two open issues, **#64** and **#56**. 1689 tests + 58 skipped
-(1745 + 2 with a PostgreSQL DSN), ruff clean. `[Unreleased]` is empty.
+(#57, PR #60). **#64 is fixed** (PR #66) — `bmlib.fulltext` now imports on a
+core install, and a new `fulltext` extra exists. One open issue, **#56**.
+1700 tests + 58 skipped (1756 + 2 with a PostgreSQL DSN), ruff clean.
+`[Unreleased]` carries #64's fix, so the next release is at least a patch.
 **Phase 3 is next, and each of its rows needs a design conversation before
 any porting** — see "Next up"._
 
@@ -35,7 +37,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed three releases. Widening it is a downstream change, not a bmlib
   one.
-- **1689 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1745 + 2
+- **1700 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1756 + 2
   with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
   PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
@@ -54,34 +56,17 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   $PGBIN/createdb -h /tmp/bmlpg/run -p 55432 -U postgres bmlib_test
   export BMLIB_TEST_POSTGRESQL_DSN="host=/tmp/bmlpg/run port=55432 dbname=bmlib_test user=postgres"
   ```
-- **Documentation was rewritten for 0.4.0 and kept current through 0.7.0.**
+- **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; if you add one, it is the next release's job to promote it.
-  Markers inside `docs/superpowers/plans/` are historical records — leave
-  them alone.
+  release time; ROADMAP currently carries one, for #64. Markers inside
+  `docs/superpowers/plans/` are historical records — leave them alone.
 
 ## Next up
 
 ### Open GitHub issues
 
-Two.
-
-**#64 — nothing in `bmlib.fulltext` imports without `httpx`**, found by
-installing the published 0.8.0 wheel into a clean core-only venv. Every
-module in the package fails with a bare `ModuleNotFoundError`, including
-the pure-dataclass `models` and the stdlib-only `SectionSegmenter`, because
-`fulltext/__init__.py:47` eagerly re-exports `service`, which imports
-`httpx` at module top level — the one top-level optional import left,
-against CLAUDE.md's own "guarded at the call site" convention.
-**`context_processor` already fixed this exact shape** with a PEP 562
-`__getattr__`. One trap, recorded in the issue: measure with **one fresh
-interpreter per module**, since a single process leaves the half-initialised
-parent in `sys.modules` and three modules then falsely read as fine — that
-is how the issue was first mis-scoped, and a regression test must mask
-`httpx` in a subprocess for the same reason. Wants a decision, not a snap
-fix; likely PEP 562 *plus* a `fulltext` extra, the manual currently sending
-people to `bmlib[publications]` for a PDF segmenter.
+One.
 
 **#56 — `_extract_title()` trusts junk PDF metadata titles** ("Microsoft
 Word - manuscript.docx" wins over the large-font first-page line), deferred
@@ -96,6 +81,13 @@ the record of what was rejected and why.
 
 ### Worth doing, not yet an issue
 
+- **Cut 0.8.1.** `[Unreleased]` holds #64's fix, which is exactly the kind of
+  thing a patch release is for — a headline 0.8.0 addition
+  (`SectionSegmenter`) is unreachable for anyone who installed core bmlib,
+  and the fix is additive with no behaviour change to stored values. The
+  release recipe is at the bottom of this file; note the version now lives in
+  four places *and* the extras tables in README, `docs/manual/index.md` and
+  CLAUDE.md gained a `fulltext` row.
 - **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume
   0.6.0, 0.7.0 and 0.8.0. Read all three releases' non-comparable behaviour
   changes first — the transparency ones move stored scores, and 0.8.0 moves
@@ -191,17 +183,16 @@ named source file; the entry here is the pointer, not the argument.
   key of the ranking or `note_data_level()` raises by design; the deposition
   list deliberately excludes reference-only databases (dbSNP, OMIM, RefSeq…).
   Three tests in `test_transparency.py` pin it.
-- **Four more, each argued where it lives:**
+- **Four more, each argued where it lives and each with a test naming it:**
   `TransparencySettings.filtering_enabled` / `max_concurrent_analyses` /
   `cache_results` are caller-owned orchestration hints, not dead code;
-  `outcome_switching_detected` stays reserved and always `False` (real
-  false-positive risk, kept in the schema so persisted results need no
-  migration when detection lands); a PubMed record with no `<CoiStatement>`
-  leaves `coi_disclosed` alone (absence means the publisher supplied none,
-  not that the paper carries none); and `<DataBankList>` accessions are
+  `outcome_switching_detected` stays reserved and always `False` (kept in the
+  schema so persisted results need no migration when detection lands); a
+  PubMed record with no `<CoiStatement>` leaves `coi_disclosed` alone (absence
+  means the publisher supplied none); and `<DataBankList>` accessions are
   validated as `NCT\d{8}` before becoming a URL, though an entry failing
   validation still counts as registered — registration is separate from
-  followability. Each has a test naming it.
+  followability.
 
 ### Positional stability
 
@@ -228,10 +219,10 @@ named source file; the entry here is the pointer, not the argument.
   a third `bool` overload** (mypy does not expand `bool` into the two
   `Literal`s; CI runs ruff only, so nothing catches its removal), and
   **`salvage_json_fields()` bounds both passes with `RecursionError` caught
-  wherever a candidate is decoded**. `iter_json_spans()` dedupes candidates
-  by text, not position (argued inline in `llm/utils.py`). Eleven tests pin
-  these — seven in `test_json_extraction.py` (starting at
-  `TestExtractJsonPrefersWholeSpans`) and four in `test_agents.py`.
+  wherever a candidate is decoded**. `iter_json_spans()` dedupes candidates by
+  text, not position. Eleven tests pin these — seven in
+  `test_json_extraction.py` (from `TestExtractJsonPrefersWholeSpans`) and four
+  in `test_agents.py`.
 - **`PerformanceMetrics.elapsed_time_seconds` reads `time.monotonic()`**,
   not the wall-clock timestamps it stores; `snapshot()` must copy the
   monotonic marks by hand (`init=False`). Model-inference and prompt-eval
@@ -244,11 +235,9 @@ named source file; the entry here is the pointer, not the argument.
 - **The batcher measures the string it will actually send; it never assumes
   a size.** Three tempting arithmetic shortcuts each re-break
   `max_context_chars` the way upstream did; the invariant is
-  `Batch.total_chars == len(_format_batch_content(batch, config))`, pinned
-  by `test_every_batch_reports_the_size_it_actually_formats_to` and
-  `test_a_boundary_item_is_measured_where_it_lands`. `estimate_item_size()`
-  was deliberately not ported — it let the oversized decision disagree with
-  the packing measurement.
+  `Batch.total_chars == len(_format_batch_content(batch, config))`.
+  `estimate_item_size()` was deliberately not ported — it let the oversized
+  decision disagree with the packing measurement.
 - **Six more load-bearing "simplifications" refused**, each with a named test
   in `test_context_processor.py` / `test_llm_chunk_processor.py`: `_render()`
   substitutes in one regex pass (two-pass `.replace()` splices the batch into
@@ -285,6 +274,37 @@ named source file; the entry here is the pointer, not the argument.
   labelled `content_kind="abstract"`. Pinned by
   `test_a_stub_with_no_article_raises` and
   `test_a_body_less_article_with_an_abstract_is_returned`.
+
+### fulltext — importable on a core install (#64, PR #66)
+
+- **Both halves of the fix stay, and the reason is counter-intuitive — read
+  the mutation table in
+  `docs/superpowers/specs/2026-08-08-fulltext-import-without-httpx-design.md`
+  before removing either.** They overlap: once httpx moved into
+  `FullTextService.__init__`, `service.py` has no top-level `import httpx`,
+  so restoring the eager re-export in `__init__.py` gates nothing and **no
+  test failed**. Either change alone restores importability. What the PEP 562
+  deferral buys on its own is that `import bmlib.fulltext` never loads
+  `service`, so no future top-level import there can gate the parser, the
+  models or the segmenter again —
+  `test_importing_the_package_does_not_load_the_service` is the guard that
+  isolates it, and it was written *because* mutation testing found nothing
+  else did.
+- **Measure package-import claims with one fresh interpreter per module.** A
+  single process leaves the half-initialised parent in `sys.modules` and the
+  siblings then falsely read as importable; that is how #64 was first
+  mis-scoped to one module when the real blast radius was ten across two
+  packages. `TestPackageImports` masks `httpx` with a `sys.meta_path` finder
+  in a subprocess for the same reason, and carries a negative control
+  asserting the mask actually masks — every machine running this suite has
+  httpx, so a mask that silently failed would make the whole class vacuous.
+- **The guarded import is the first statement of `__init__`**, so a failed
+  construction leaves no cache directory behind (`FullTextCache()` creates
+  three); the extra-naming test asserts the redirected `HOME` stayed clean.
+- **`fulltext = ["httpx>=0.25"]` is httpx only**; `pdf` stays separate (it
+  already exists, is separately documented, and bundling would drag a ~20 MB
+  binary wheel onto anyone who only wants JATS retrieval). `publications` and
+  `transparency` keep their own httpx, so no existing install changed.
 
 ### fulltext — the PDF converter (PR #60)
 
@@ -323,46 +343,33 @@ named source file; the entry here is the pointer, not the argument.
   silent. Pinned by `test_a_corrupt_pdf_raises_rather_than_degrading`.
 - **A negative vertical gap (column/page boundary) inserts no paragraph
   break** — a PDF gives no signal distinguishing a paragraph continuing across
-  a page from one ending at it. Pinned by
-  `test_a_page_boundary_is_not_a_paragraph_break`; the `height == 0`
-  degenerate-bbox case is acknowledged in `_join_blocks` and left.
+  a page from one ending at it. The `height == 0` degenerate-bbox case is
+  acknowledged in `_join_blocks` and left.
 - **CONFLICTS owns the disclosure family, in both numbers** — FUNDING once
   listed the singular `financial disclosure` while CONFLICTS listed both, so
-  the two numbers of the same heading landed in different sections, decided
-  by dict iteration order. Pinned by
-  `test_financial_disclosure_classifies_the_same_in_both_numbers`; a comment
-  in FUNDING's pattern list wards off re-adding it.
-- **Two known spec-level limits, documented in the manual rather than
-  fixed:** the 0.7 partial-match pass can fire on a bold figure caption
-  ("Fig. 3 Study results" → RESULTS), and `min_heading_size` is an absolute
-  floor (10.0) in an otherwise median-relative design, so it can silence the
-  segmenter on a 9pt two-column layout. Callers are told to check
-  `Section.confidence`. The floor's test genuinely isolates it
-  (`test_a_font_below_the_minimum_is_not_a_heading`, 9.0 against median 6.0 —
-  an 8.0-vs-10.0 input is vacuous, rejected by the ratio rule too).
+  the two numbers of the same heading landed in different sections, decided by
+  dict iteration order. A comment in FUNDING's pattern list wards off
+  re-adding it.
+- **Two known spec-level limits, documented in `docs/manual/fulltext.md`
+  rather than fixed:** the 0.7 partial-match pass can fire on a bold figure
+  caption ("Fig. 3 Study results" → RESULTS), and `min_heading_size` is an
+  absolute floor (10.0) in an otherwise median-relative design, so it can
+  silence the segmenter on a 9pt two-column layout. Callers are told to check
+  `Section.confidence`.
 
 ### citations (merged, PR #58)
 
-- **Upstream's code is the output spec, not its docstrings** — where the two
-  disagreed (APA renders `"(2023) Title"`, no period after the year, though
-  upstream's docstring example shows one), the code's output was kept.
-  Only five confirmed defects were fixed, each with a named regression test
-  — four listed in the design doc
-  (`docs/superpowers/specs/2026-08-06-citations-port-design.md`), plus a
-  fifth from the PR #58 review: a whitespace-only author entry crashed
-  every style's `format_reference` with `IndexError` (upstream ran
-  `parts[-1]` on an empty split); blank entries are now dropped via
-  `_named_authors()`.
-- **Five upstream-faithful oddities kept rather than unified** — per-style
-  empty-title rendering, the ambiguous bare inverted `authors` string, the
-  `"\n---"` with no leading blank line, `"Smithn.d."`, and
-  `author_surname("Jan van der Berg") == "Berg"`. Each is pinned by a test
-  naming it and spelled out in `docs/manual/citations.md`; read it there
-  before "correcting" any of them.
-- **Two deliberate departures from upstream:** `Citation` compares by all
-  fields, not upstream's `document_id`-only equality (nothing ported relies
-  on the old semantics), and marker ids stay `int` only — a string-id variant
-  is a spec change, noted out of scope in the design doc.
+**Argued in full in `docs/manual/citations.md` and
+`docs/superpowers/specs/2026-08-06-citations-port-design.md` — read them
+before "correcting" anything here.** Upstream's *code* is the output spec,
+not its docstrings, where the two disagree. Five upstream-faithful oddities
+are kept rather than unified (per-style empty-title rendering, the ambiguous
+bare inverted `authors` string, `"\n---"` with no leading blank line,
+`"Smithn.d."`, `author_surname("Jan van der Berg") == "Berg"`), each pinned
+by a test naming it. Two deliberate departures: `Citation` compares by all
+fields, and marker ids stay `int` only. Five upstream defects were fixed,
+the fifth from PR #58's review — a whitespace-only author entry crashed every
+style with `IndexError`.
 
 ### publications — PubMed metadata graft (PR #59)
 
@@ -416,47 +423,38 @@ several verified by mutation. What follows is only what CLAUDE.md omits.
 ### publications — retractions
 
 - **`bmlib.publications.retractions` has no downloader** (the Crossref
-  endpoint 504s freely; acquiring the export is the caller's problem), **is
-  not a fetcher and never will be without a protocol change** (a notice
-  annotates a paper usually not in the caller's table — see the design
-  doc's "Why this is not a fetcher"), **is not wired into `transparency/`
-  or `quality/`** (both are scoring changes moving stored values — separate
-  decisions), and **has no `is_paper_retracted()` convenience wrapper**
-  (keeping the pure rule separable from the I/O is what makes it testable).
+  endpoint 504s freely), **is not a fetcher and never will be without a
+  protocol change** (a notice annotates a paper usually not in the caller's
+  table — see the design doc's "Why this is not a fetcher"), **is not wired
+  into `transparency/` or `quality/`** (both are scoring changes moving
+  stored values), and **has no `is_paper_retracted()` wrapper** (keeping the
+  pure rule separable from the I/O is what makes it testable).
 - **Two values measured against the live export, not reasoned about**: the
   `%m/%d/%Y` / `%d/%m/%Y` ambiguity resolves US-first (confirmed by same-file
   dates whose day exceeds 12), and `_ABSENT_IDENTIFIER_VALUES` holds exactly
-  `{"0", "unavailable"}` — a third sentinel needs its own measurement. Pinned
-  by `test_an_ambiguous_date_resolves_month_first` and
-  `TestIdentifierSentinels`.
+  `{"0", "unavailable"}` — a third sentinel needs its own measurement.
 
 ### quality — Cochrane assessor (merged, PR #54)
 
-- **Nothing is fabricated to fill a gap**, each with a named test:
-  `assess()` returns `None` on failure rather than nine defaulted "Unclear
-  risk" domains (indistinguishable from a real all-unclear judgement);
+Full reasoning in `docs/superpowers/specs/2026-08-05-cochrane-assessor-design.md`
+and `docs/manual/quality.md`; every claim below has a named test.
+
+- **Nothing is fabricated to fill a gap:** `assess()` returns `None` on
+  failure rather than nine defaulted "Unclear risk" domains;
   `collapse_risk_of_bias()` raises on an unrecognised `bias_type` rather than
   skipping it into a `BiasRisk` that looks complete; `unclear` outranks `low`
-  in its worst-wins reduction (an unreported domain is not a clean bill of
-  health); `_enrich_with_cochrane()` does not copy Cochrane's
-  `evidence_level` onto the assessment's (free-form model text vs Oxford
-  CEBM); and `study_id` comes from the caller, never parsed from an author
-  list (upstream's `first_author.split()[-1]` read "van der Berg" as "Berg").
+  in its worst-wins reduction; `_enrich_with_cochrane()` does not copy
+  Cochrane's `evidence_level` onto the assessment's; `study_id` comes from the
+  caller, never parsed from an author list.
 - **`_ASSESSMENT_ATTEMPTS = 2`, not 1 or 3** — `chat_json()` already retries
-  inside each attempt; two keeps the worst case at six model calls. Pinned
-  by `test_it_is_retried_once_before_giving_up`.
-- **Oversized text is condensed in exactly two passes — digest, then one
-  nine-domain judgement — with no per-chunk verdicts to merge** (a domain
-  like blinding needs the whole Methods in view; truncation drops exactly
-  the evidence the domains rest on), and **`_condense()` checks
-  `len(digest)` against the budget, not `ProcessingStatus`** — `TRUNCATED`
-  names the recursion ceiling, not the size of what it produced (a
-  21,269-char digest was measured emerging from a 200-char budget). Pinned
-  by `test_condensation_reduces_every_chunk_of_the_paper`,
-  `test_the_digest_reaches_the_model_instead_of_the_paper`,
-  `test_a_digest_that_still_exceeds_the_budget_is_not_judged` (with
-  `test_the_guard_does_not_reject_a_digest_that_actually_fits` as the
-  negative control).
+  inside each attempt; two keeps the worst case at six model calls.
+- **Oversized text is condensed in exactly two passes** — digest, then one
+  nine-domain judgement, no per-chunk verdicts to merge (blinding needs the
+  whole Methods in view) — and **`_condense()` checks `len(digest)` against
+  the budget, not `ProcessingStatus`**: `TRUNCATED` names the recursion
+  ceiling, not the size of what it produced (a 21,269-char digest was measured
+  emerging from a 200-char budget). Carries a negative control,
+  `test_the_guard_does_not_reject_a_digest_that_actually_fits`.
 
 ## Conventions and gotchas for the next session
 
