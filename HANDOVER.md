@@ -303,50 +303,25 @@ named source file; the entry here is the pointer, not the argument.
   `test_importing_the_package_does_not_load_the_service` is the guard that
   isolates it, and it was written *because* mutation testing found nothing
   else did.
-- **Measure package-import claims with one fresh interpreter per module.** A
-  single process leaves the half-initialised parent in `sys.modules` and the
-  siblings then falsely read as importable; that is how #64 was first
-  mis-scoped to one module when the real blast radius was ten across two
-  packages. `TestPackageImports` masks `httpx` with a `sys.meta_path` finder
-  in a subprocess for the same reason, and carries a negative control
-  asserting the mask actually masks — every machine running this suite has
-  httpx, so a mask that silently failed would make the whole class vacuous.
-- **The guard is the first statement of `__init__`**, so a failed
-  construction leaves no cache directory behind (`FullTextCache()` creates
-  three); the extra-naming test asserts the redirected home directory stayed
-  *entirely* empty, rather than naming platform cache paths — a named subset
-  passes vacuously wherever it guessed wrong.
-- **`_require_httpx()` returns the module; nothing stores it.** Review of PR
-  #66 killed the `self._httpx` the design had specified. A module object
-  cannot be pickled, so storing one silently cost the ability to hand a
-  configured service to a `ProcessPoolExecutor` — a regression against 0.8.0
-  — and reading it back as *instance* state makes anything that reaches
-  `_http_get` without running `__init__` raise `AttributeError`, which the
-  tier chain swallows at DEBUG and returns a success-shaped result for.
-  `PyMuPDFConverter` still stores `self._fitz`: it was never picklable, so
-  nothing there regressed. **Do not "simplify" this back.**
-- **The guard reports the caught exception instead of asserting the cause.**
-  `except ImportError` also catches the `ModuleNotFoundError` a *present*
-  httpx raises for its own missing dependency; "not installed" then
-  prescribes a `pip install` that answers "Requirement already satisfied",
-  so the reader runs it, sees success, retries and hits the same error.
-  `_attach_pdf_text` already documents this for PyMuPDF.
-- **`_http_get` had no test at all** until this review — all ~45 tests in the
+- **The three rules the review settled now live in CLAUDE.md**, under
+  "Optional dependencies guarded at the call site" — return the module rather
+  than storing it, report the caught exception rather than asserting "not
+  installed", and give a PEP 562 `__dir__` the union rather than `__all__`.
+  Read them there; each replaced something that had already shipped in a draft
+  of this PR, so they are not preferences. **Do not "simplify" `_require_httpx`
+  back into a stored `self._httpx`** — that is the one a reader is most likely
+  to think is redundant, and it costs picklability.
+- **`_http_get` had no test at all** until this review: all ~45 tests in the
   file patch `_http_get` itself, so replacing its body with `raise
-  AssertionError` left the suite green. `TestHttpGet` is what covers it now.
-  Any future change to how the client is built needs a test there, because
-  nothing else in the file will notice.
-- **A PEP 562 `__dir__` returns `sorted(set(__all__) | set(globals()))`.**
-  `sorted(__all__)` is a narrowing — it drops the submodules and every dunder
-  — and a test asserting only that the lazy names are present passes under
-  it. Fixed in `context_processor` at the same time.
+  AssertionError` left the suite green. `TestHttpGet` covers it now, and
+  nothing else in the file will notice a change to how the client is built.
 - **`fulltext = ["httpx>=0.25"]` is httpx only**; `pdf` stays separate (it
   already exists, is separately documented, and bundling would drag a ~20 MB
   binary wheel onto anyone who only wants JATS retrieval). `publications` and
   `transparency` keep their own httpx, so no existing install changed.
   `test_the_extra_the_error_message_names_is_a_real_one` reads
-  `Provides-Extra` from the installed metadata, so the message in
-  `_require_httpx` and `pyproject.toml` cannot drift apart.
+  `Provides-Extra` from the installed metadata, so the message and
+  `pyproject.toml` cannot drift apart.
 
 ### fulltext — the PDF converter (PR #60)
 
