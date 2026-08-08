@@ -1,22 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-08. **0.8.0 is tagged and released on GitHub**, and
-with it **Phase 2 of the bmlibrarian port is complete** — all four ports
+_Last updated: 2026-08-08. **0.8.0 is released and on PyPI**, and with it
+**Phase 2 of the bmlibrarian port is complete** — all four ports
 (Cochrane assessor PR #54, PDF section segmenter PR #55, citation/reference
 stack PR #58, PubMed metadata graft PR #59), plus the encrypted-PDF fix
 (#57, PR #60). One open issue, **#56**. 1689 tests passing + 58 skipped
 (1745 + 2 with a PostgreSQL DSN), ruff clean. `[Unreleased]` is empty.
 **Phase 3 is next, and each of its rows needs a design conversation before
 any porting** — see "Next up"._
-
-> **First thing to check: is 0.8.0 actually on PyPI?** The publish job is
-> held at the `pypi` environment gate awaiting approval
-> ([run 31228465617](https://github.com/hherb/bmlib/actions/runs/31228465617)).
-> Verify against `https://pypi.org/simple/bmlib/` — **not** the JSON API,
-> which serves a stale CDN cache — and **delete this block** once 0.8.0
-> appears there. If the run has instead been left to rot, that is the same
-> state v0.5.0's and v0.6.0's runs are still in; approving it is all that is
-> needed, and nothing else about the release has to be redone.
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
