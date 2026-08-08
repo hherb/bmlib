@@ -4,7 +4,7 @@ _Last updated: 2026-08-08. **0.8.0 is released and on PyPI**, and with it
 **Phase 2 of the bmlibrarian port is complete** — all four ports
 (Cochrane assessor PR #54, PDF section segmenter PR #55, citation/reference
 stack PR #58, PubMed metadata graft PR #59), plus the encrypted-PDF fix
-(#57, PR #60). One open issue, **#56**. 1689 tests passing + 58 skipped
+(#57, PR #60). Two open issues, **#64** and **#56**. 1689 tests + 58 skipped
 (1745 + 2 with a PostgreSQL DSN), ruff clean. `[Unreleased]` is empty.
 **Phase 3 is next, and each of its rows needs a design conversation before
 any porting** — see "Next up"._
@@ -65,7 +65,25 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-One: **#56** (`_extract_title()` trusts junk PDF metadata titles — "Microsoft
+Two.
+
+**#64 — nothing in `bmlib.fulltext` imports without `httpx`**, found by
+installing the published 0.8.0 wheel into a clean core-only venv. Every
+module in the package fails with a bare `ModuleNotFoundError`, including
+the pure-dataclass `models` and the stdlib-only `SectionSegmenter`, because
+`fulltext/__init__.py:47` eagerly re-exports `service`, which imports
+`httpx` at module top level — the one top-level optional import left,
+against CLAUDE.md's own "guarded at the call site" convention.
+**`context_processor` already fixed this exact shape** with a PEP 562
+`__getattr__`. One trap, recorded in the issue: measure with **one fresh
+interpreter per module**, since a single process leaves the half-initialised
+parent in `sys.modules` and three modules then falsely read as fine — that
+is how the issue was first mis-scoped, and a regression test must mask
+`httpx` in a subprocess for the same reason. Wants a decision, not a snap
+fix; likely PEP 562 *plus* a `fulltext` extra, the manual currently sending
+people to `bmlib[publications]` for a PDF segmenter.
+
+**#56 — `_extract_title()` trusts junk PDF metadata titles** ("Microsoft
 Word - manuscript.docx" wins over the large-font first-page line), deferred
 from PR #55's review. Note what it will cost to do *properly*: this repo
 settles list-shaped questions by measuring a corpus, not by taste (the
@@ -137,16 +155,14 @@ transparency/quality reconciliation, no GRADE engine exists, SSRF guard).
 6. **Record** each port in `CHANGELOG.md` under `[Unreleased]`.
 7. **Reconcile, don't fork:** where a port overlaps existing bmlib, build on
    the existing module.
-8. **When the code parses someone's XML, read their DTD** rather than
-   deciding by eye which elements are leaves. One of row 11's review findings
-   was exactly that: `<Affiliation>` looks like a leaf, is declared
-   `(%text;)*`, and a bare `.text` read silently dropped rows.
-9. **If the code declares an output format, it owes that format's rules.**
-   Row 11's later review found the same class of error twice over: having
-   decided titles were Markdown, the fetcher neither escaped the prose it
-   wrapped nor checked that `<u>` had a Markdown spelling that was not
-   already `<b>`'s. Deciding a format is a promise about every value, not
-   only the ones carrying markup.
+8. **Read the spec on both sides; do not decide by eye.** Row 11's reviews
+   found this three times. Reading someone's XML, check their DTD:
+   `<Affiliation>` looks like a leaf, is declared `(%text;)*`, and a bare
+   `.text` read silently dropped rows. Declaring an output format, you owe
+   that format's rules for *every* value, not only the ones carrying markup:
+   having decided titles were Markdown, the fetcher neither escaped the
+   prose it wrapped nor checked that `<u>` had a Markdown spelling that was
+   not already `<b>`'s.
 
 ## Deliberate non-fixes — do not "fix" these
 
@@ -337,16 +353,12 @@ named source file; the entry here is the pointer, not the argument.
   every style's `format_reference` with `IndexError` (upstream ran
   `parts[-1]` on an empty split); blank entries are now dropped via
   `_named_authors()`.
-- **Five upstream-faithful oddities kept rather than unified**, each pinned
-  by a test naming it: an empty title renders per style (Vancouver/APA
-  `Untitled`, Harvard `''`, Chicago `"."`); a lone inverted name as a bare
-  `authors` string is ambiguous, so `{"authors": "Smith, John"}` splits into
-  two authors and only a semicolon marks the string form as inverted;
-  `format_reference_list()` begins `"\n---"` with no leading blank line (a
-  document not ending in a blank line renders its last line as a setext
-  heading); `generate_label()` without a year yields `"Smithn.d."`; and
-  `author_surname("Jan van der Berg")` is `"Berg"` — particles survive only
-  in the inverted format. All are documented in the manual.
+- **Five upstream-faithful oddities kept rather than unified** — per-style
+  empty-title rendering, the ambiguous bare inverted `authors` string, the
+  `"\n---"` with no leading blank line, `"Smithn.d."`, and
+  `author_surname("Jan van der Berg") == "Berg"`. Each is pinned by a test
+  naming it and spelled out in `docs/manual/citations.md`; read it there
+  before "correcting" any of them.
 - **Two deliberate departures from upstream:** `Citation` compares by all
   fields, not upstream's `document_id`-only equality (nothing ported relies
   on the old semantics), and marker ids stay `int` only — a string-id variant
@@ -354,22 +366,15 @@ named source file; the entry here is the pointer, not the argument.
 
 ### publications — PubMed metadata graft (PR #59)
 
-**CLAUDE.md argues most of this port in full, and is the place to read it.**
-"Replace-per-source child rows" covers why both tables carry a `source`
-column and `_replace_child_rows()` scopes every delete to it (scoping by
-publication alone made the stored answer depend on whichever source synced
-last, silently), why `sync._stamp_source()` fills that column rather than
-each fetcher, why a row naming **no** source raises `ValueError` instead of
-being left to `NOT NULL` (which rejects `None` but stored the `""` a
-forgetful caller actually produces), why there is deliberately **no** UNIQUE
-constraint on the natural key, why the empty guard survives on a new reason,
-and why `_consolidate_rows()` must relocate every child row before the
-parent DELETE. "Markdown, measured against the markup" covers the
-mixed-content walker, strip-once, edge whitespace re-emitted outside the
-markers, `Label` **or** `NlmCategory`, the measured escape set, and `<u>`.
-Each is pinned by a named test on both backends, several verified by
-mutation. Do not re-derive any of them. What follows is only what CLAUDE.md
-does not say.
+**CLAUDE.md argues most of this port in full — read it there, and do not
+re-derive any of it.** Its "Replace-per-source child rows" settles the
+`source` column and the scoped delete, `_stamp_source()`, the `ValueError`
+on an unnamed row, the deliberate absence of a UNIQUE constraint, the empty
+guard, and `_consolidate_rows()`'s relocation; its "Markdown, measured
+against the markup" settles the mixed-content walker, strip-once, edge
+whitespace outside the markers, `Label` **or** `NlmCategory`, the measured
+escape set, and `<u>`. Each is pinned by a named test on both backends,
+several verified by mutation. What follows is only what CLAUDE.md omits.
 
 - **PubMed repeats a `<Grant>` block verbatim** — 31 of 575 entries across 200
   NIH-funded records, affecting 14 — so `_parse_grants()` collapses exact
