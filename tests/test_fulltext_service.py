@@ -1868,3 +1868,149 @@ class TestPackageImports:
 
         assert completed.returncode == 0, completed.stderr
         assert completed.stdout.split() == ["False", "True"]
+
+
+class TestAnExhaustedChainReportsItself:
+    """Issue #67 — a total retrieval failure must not read as "no free full text".
+
+    Every tier swallows its own exception at DEBUG and moves on, which is
+    right: a dead Unpaywall must not cost the DOI fallback. What it cost was
+    that the *more* complete the failure, the quieter it got — a caller who
+    had lost the network saw a normal-looking result for every paper in a
+    corpus, with nothing above DEBUG to say so.
+    """
+
+    def test_a_chain_where_every_tier_raised_says_so_and_counts_them(self, caplog):
+        """The case that was silent: every tier raised, nothing came back."""
+        service = FullTextService(email="test@example.com")
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service, "_http_get", side_effect=OSError("network is down")),
+        ):
+            result = service.fetch_fulltext(doi="10.1/test", pmid="456")
+
+        # The result itself is unchanged — the chain still degrades to a link.
+        assert result.source == "doi"
+        assert result.content_kind == "none"
+
+        assert "nothing was retrieved" in caplog.text
+        # Three tiers make a request on this path: the Europe PMC search, the
+        # ID Converter, and Unpaywall.
+        assert "3 tiers raised" in caplog.text
+        # Naming the exception is what separates a lost network from a paper
+        # nobody serves for free.
+        assert "OSError" in caplog.text
+
+    def test_a_chain_that_was_offered_nothing_says_no_tier_raised(self, caplog):
+        """The control: the same empty-handed result, a different cause.
+
+        Every tier answers, and answers that it has nothing. Point 2 of the
+        issue — "all nine raised" must read differently from "all nine
+        returned empty" — is exactly this pair of tests.
+        """
+        empty_search = MagicMock()
+        empty_search.status_code = 200
+        empty_search.json.return_value = {"resultList": {"result": []}}
+
+        service = FullTextService(email="test@example.com")
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service, "_http_get", side_effect=[empty_search, _idconv_miss()]),
+        ):
+            # No DOI, so Unpaywall — the one tier here that reports "nothing"
+            # by raising — never runs.
+            result = service.fetch_fulltext(pmid="456")
+
+        assert result.source == "pubmed"
+        assert "nothing was retrieved" in caplog.text
+        assert "no tier raised" in caplog.text
+
+    def test_the_abstract_only_exit_carries_the_same_report(self, caplog):
+        """The one warning that already existed keeps working, and gains the count.
+
+        It used to be the *only* warning on this path, which is what made the
+        total failure quieter than the partial one.
+        """
+        body_less = MagicMock()
+        body_less.status_code = 200
+        body_less.content = (FIXTURES / "abstract_only_article.xml").read_bytes()
+
+        service = FullTextService(email="test@example.com")
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(
+                service,
+                "_http_get",
+                side_effect=[body_less, OSError("network is down")],
+            ),
+        ):
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test")
+
+        assert result.content_kind == "abstract"
+        assert "returning the abstract only" in caplog.text
+        # Unpaywall raised; the search for a render URL did too.
+        assert "raised" in caplog.text
+
+    def test_a_successful_retrieval_reports_nothing(self, caplog):
+        """Negative control: the warning is not simply always emitted."""
+        full_text = MagicMock()
+        full_text.status_code = 200
+        full_text.content = (FIXTURES / "sample_article.xml").read_bytes()
+
+        service = FullTextService(email="test@example.com")
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service, "_http_get", return_value=full_text),
+        ):
+            result = service.fetch_fulltext(pmc_id="PMC123")
+
+        assert result.content_kind == "fulltext"
+        assert caplog.text == ""
+
+
+class TestCacheWriteFailuresAreReported:
+    """A cache that cannot be written to means every run re-fetches — say so once."""
+
+    @staticmethod
+    def _service_with_an_unwritable_cache(tmp_path) -> FullTextService:
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_html = MagicMock(side_effect=OSError("read-only file system"))
+        return FullTextService(email="test@example.com", cache=cache)
+
+    @staticmethod
+    def _full_text_response() -> MagicMock:
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "sample_article.xml").read_bytes()
+        return resp
+
+    def test_a_failed_cache_write_is_warned_about(self, tmp_path, caplog):
+        service = self._service_with_an_unwritable_cache(tmp_path)
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service, "_http_get", return_value=self._full_text_response()),
+        ):
+            result = service.fetch_fulltext(pmc_id="PMC123", identifier="10.1/test")
+
+        # The retrieval itself still succeeds — the content is already in hand.
+        assert result.content_kind == "fulltext"
+        assert "cache" in caplog.text.lower()
+        # Report what was raised rather than asserting the cause, as the
+        # conventions require of every guarded optional path.
+        assert "read-only file system" in caplog.text
+
+    def test_the_cache_write_warning_is_said_once(self, tmp_path, caplog):
+        """The cause is a property of the directory, not of the article.
+
+        Warning per article would put one line per paper into a bulk run's
+        log; the ``bmlib[pdf]`` warning set the one-shot precedent.
+        """
+        service = self._service_with_an_unwritable_cache(tmp_path)
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service, "_http_get", return_value=self._full_text_response()),
+        ):
+            for n in range(3):
+                service.fetch_fulltext(pmc_id="PMC123", identifier=f"10.1/test-{n}")
+
+        assert len([r for r in caplog.records if "cache" in r.getMessage().lower()]) == 1

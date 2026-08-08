@@ -17,6 +17,33 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A total full-text retrieval failure no longer reads as "no free full
+  text"** (#67). `fetch_fulltext()` wraps each of its nine tiers in `except
+  Exception` that logs at `DEBUG` and moves on — right in itself, since an
+  unreachable Unpaywall must not cost the DOI fallback — but the only
+  `WARNING` on the path sat inside the `if abstract_only is not None:` branch,
+  so the *more* complete the failure, the quieter it got. A caller who had
+  lost the network, hit a bmlib bug or misconfigured the service received
+  `source="doi"`, `html=None`, `content_kind="none"` for every paper in a
+  corpus — byte-identical to the legitimate outcome for a paywalled paper —
+  with nothing above `DEBUG` to say so. The tiers now count what they
+  swallowed, and the warning moved out to cover both empty-handed exits,
+  reporting how many tiers raised and which exception types they raised:
+  `3 tiers raised (ConnectError)` is a broken network, `no tier raised — no
+  free full text was offered` is an ordinary paywalled paper, and
+  `TypeError`/`AttributeError` in that list is a bug. The exception types are
+  carried because the count alone does not separate the two failures worth
+  telling apart. `FullTextResult` is unchanged, and a successful retrieval
+  still warns about nothing.
+
+- **A cache that cannot be written to says so, once** (#67, same file).
+  `_cache_html` swallowed every exception at `DEBUG`, so a read-only cache
+  directory or a full disk meant the whole corpus was silently re-fetched over
+  the network on every run, permanently. The first failed write now emits a
+  `WARNING` naming what was raised; later ones stay at `DEBUG`, since the
+  cause is a property of the directory rather than of the article — the
+  one-shot pattern the missing-`bmlib[pdf]` warning already used.
+
 - **`bmlib.fulltext` imports on a core install** (#64). `fulltext/__init__.py`
   eagerly re-exported `service`, whose top-level `import httpx` was the last
   unguarded optional import in bmlib — and since importing a submodule imports

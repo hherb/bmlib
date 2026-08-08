@@ -209,7 +209,7 @@ All arguments are **keyword-only**.
 
 **Returns:** `FullTextResult` — always populated with at least a `source` and one of `html` / `pdf_url` / `web_url` / `file_path`.
 
-**Raises:** `FullTextError` only when no identifiers are provided at all. Every individual tier failure is swallowed and logged at `DEBUG` (with `exc_info=True`), then the next tier is tried.
+**Raises:** `FullTextError` only when no identifiers are provided at all. Every individual tier failure is swallowed and logged at `DEBUG` (with `exc_info=True`), then the next tier is tried — but a chain that ends up empty-handed reports itself at `WARNING`, counting the tiers that raised and naming the exception types (see "Telling a failure from an absence" below).
 
 ### Retrieval sequence
 
@@ -241,6 +241,21 @@ Within Tier 0, an `xml` entry is fetched and JATS-parsed into HTML, a `pdf` entr
 - **PDF text extraction is best-effort and logged.** A missing `bmlib[pdf]` extra, a corrupt PDF, or a scan with no extractable text all leave `html` unset and emit a `WARNING`; a partial extraction is attached but flagged. Nothing here aborts a retrieval.
 - **Extracted PDF text is not cached; it is re-derived.** Only body-carrying JATS HTML is written to the HTML cache, so a cached HTML hit always means full text. A cached *PDF* hit re-runs extraction on the local file, so a second `fetch_fulltext()` returns the same `html` and `content_kind` as the first.
 - **Caching is opt-in per call.** The service holds a `FullTextCache` unconditionally, but reads and writes only occur when `identifier` is passed.
+- **A cache that cannot be written to is reported once.** A read-only cache directory or a full disk does not fail a retrieval — the content is already in hand — but it means every later run re-fetches the whole corpus over the network. The first failed write emits a `WARNING` naming what was raised; the rest stay at `DEBUG`, since the cause is a property of the directory rather than of the article.
+
+### Telling a failure from an absence
+
+Most papers have no free full text, and for those the chain legitimately ends at Tier 3 with a bare link. A caller who has lost the network, hit a bmlib bug or misconfigured the service gets a result of exactly the same shape — so `fetch_fulltext()` emits one `WARNING` whenever it comes up empty-handed, and that line carries the evidence needed to tell the two apart:
+
+```
+No full text found for doi=10.1/x pmid=456 — nothing was retrieved; 3 tiers raised (ConnectError)
+No full text found for doi=10.1/x pmid=456 — nothing was retrieved; no tier raised — no free full text was offered
+No full text found for doi=10.1/x pmid=456 — returning the abstract only; 1 tier raised (FullTextError)
+```
+
+Read it in two halves. The first says what came back: `nothing was retrieved`, or `returning the abstract only` when a body-less JATS document was held back earlier. The second says why: **`no tier raised`** means every source answered and answered that it had nothing, which is the ordinary outcome for a paywalled paper; a **count with exception types** means that many tiers threw. A run of `ConnectError` or `ReadTimeout` across a corpus is a network or firewall problem, not a corpus of paywalled papers, and `TypeError` or `AttributeError` is a bug worth reporting. The per-tier detail — which tier, with a traceback — remains at `DEBUG` on `bmlib.fulltext.service`.
+
+A retrieval that succeeds warns about nothing.
 
 ---
 
@@ -919,7 +934,7 @@ class FullTextError(Exception):
 
 Defined in `bmlib.fulltext.service` and used in two ways:
 
-- **Internally**, by the fetch helpers to signal a failed tier (`Europe PMC HTTP 503`, `No open-access PDF found for DOI ...`, and so on). These are caught by `fetch_fulltext()`, logged at `DEBUG`, and never reach the caller.
+- **Internally**, by the fetch helpers to signal a failed tier (`Europe PMC HTTP 503`, `No open-access PDF found for DOI ...`, and so on). These are caught by `fetch_fulltext()`, logged individually at `DEBUG`, and never reach the caller — though their *number* and type reach the log at `WARNING` if the whole chain then comes up empty.
 - **Externally**, from `fetch_fulltext()` itself — the only escaping case is `FullTextError("No identifiers provided")`, raised when `fulltext_sources`, `pmc_id`, `doi` and `pmid` are all empty.
 
 Helpers called directly (e.g. `JATSParser`) may raise their own exceptions unchanged.
