@@ -144,11 +144,38 @@ which is precisely the trap that mis-scoped the issue. Masking is a
 | `test_the_fetchers_import_without_httpx` | The three `publications.fetchers` modules import — the collateral half of the defect, in its own test so a regression names itself |
 | `test_the_service_names_the_extra_when_httpx_is_missing` | `FullTextService(email=...)` raises `ImportError` mentioning `bmlib[fulltext]`, not a bare `ModuleNotFoundError` |
 | `test_importing_the_package_does_not_import_httpx` | With httpx **present**, `import bmlib.fulltext` leaves `httpx` out of `sys.modules`. Proves the path is lazy, not merely that the modules import |
+| `test_importing_the_package_does_not_load_the_service` | With httpx present, `import bmlib.fulltext` leaves `bmlib.fulltext.service` out of `sys.modules`, and the first attribute access puts it there. **Added after mutation testing** — see below |
 | `test_the_service_is_still_reachable_from_the_package` | Deferred, not removed: `FullTextService.__module__ == "bmlib.fulltext.service"` |
 | `test_a_name_the_package_does_not_have_still_raises` | `AttributeError`, so `__getattr__` does not swallow typos |
 | `test_dir_lists_the_deferred_names_too` | `dir()` includes both lazy names |
 
-TDD: these are written first and watched fail.
+TDD: these are written first and watched fail. Five of the original ten did
+(the negative control and the API-preservation tests pass either way, which is
+their job).
+
+### What mutation testing found: the two changes overlap
+
+Reverting each change separately, with `__pycache__` cleared between runs:
+
+| Mutation | Expected to fail | Actually failed |
+|---|---|---|
+| Mask disabled in the test helper | `test_the_mask_itself_blocks_httpx` | ✅ that test, plus the extra-naming one |
+| Guarded `ImportError` → bare `import httpx` in `__init__` | `test_the_service_names_the_extra_when_httpx_is_missing` | ✅ exactly that test |
+| PEP 562 → eager re-export restored | an import test | ❌ **nothing failed** |
+
+The third result is the interesting one. Once the httpx import has moved into
+`FullTextService.__init__`, `service.py` has no top-level `import httpx` left,
+so re-exporting it eagerly no longer gates anything. **Either change alone
+restores importability** — they are not the independent halves the design
+above implies, and the original test set pinned only one of them.
+
+`test_importing_the_package_does_not_load_the_service` was added to state what
+PEP 562 does buy on its own: `import bmlib.fulltext` does not load `service`
+at all, and the first attribute access is what loads it. That is the
+structural half of the guarantee — no future top-level import in `service.py`
+can gate the parser, the models or the segmenter again — and it fails under
+the third mutation, which is what makes it a real guard rather than a
+restatement.
 
 ## Documentation
 

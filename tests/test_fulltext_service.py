@@ -1665,6 +1665,30 @@ class TestPackageImports:
         assert completed.returncode == 0, completed.stderr
         assert completed.stdout.strip() == "False"
 
+    def test_importing_the_package_does_not_load_the_service(self):
+        """What the PEP 562 indirection buys, stated on its own.
+
+        The guarded import in ``FullTextService.__init__`` already makes the
+        package importable without httpx, so the test above passes with or
+        without ``__getattr__`` — found by mutation, and the reason this test
+        exists. What deferring adds is that ``service`` is not loaded until
+        someone asks for it, which is what keeps the guarantee structural: no
+        future top-level import in that module can gate the parser, the models
+        or the segmenter again.
+        """
+        completed = _run(
+            "import sys\n"
+            "import bmlib.fulltext\n"
+            "print('bmlib.fulltext.service' in sys.modules)\n"
+            "bmlib.fulltext.FullTextService\n"
+            "print('bmlib.fulltext.service' in sys.modules)\n",
+            mask_httpx=False,
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        # Not loaded by the import; loaded by the first attribute access.
+        assert completed.stdout.split() == ["False", "True"]
+
     def test_the_service_is_still_reachable_from_the_package(self):
         """Deferred, not removed: the import path callers use must not change."""
         from bmlib.fulltext import FullTextError, FullTextService

@@ -22,7 +22,11 @@ All notable changes to bmlib are documented here. The format is based on
   than importing httpx themselves. `FullTextService` and `FullTextError` now
   resolve through a PEP 562 `__getattr__`, as `bmlib.context_processor` already
   does for its LLM-backed half; the public API and `__all__` are unchanged, and
-  the same probe now reports **69 importable, 0 not**.
+  the same probe now reports **69 importable, 0 not**. What deferring adds over
+  the guarded import below — which restores importability by itself, as
+  mutation testing showed — is that `import bmlib.fulltext` does not load
+  `service` at all, so no future top-level import in that module can gate the
+  parser, the models or the segmenter again.
 
 - **Constructing `FullTextService` without httpx names the extra.** The import
   moved into `__init__` behind the guarded `ImportError` the coding conventions
