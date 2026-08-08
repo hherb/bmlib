@@ -43,9 +43,13 @@ subpackage is gated behind httpx — including `models`, which is nothing but
 dataclasses, and `segmenter`, which imports `re`, `statistics`, `typing` and
 `bmlib.fulltext.models`.
 
-That line is **the only top-level optional import left in bmlib**. Every other
-one is already deferred: `transparency/analyzer.py:911`, `publications/sync.py:339`,
-`fulltext/pdf_converter.py:239`, `db/connection.py:82`, `llm/providers/ollama.py:340`.
+That line is **the only top-level optional import left in bmlib** — verified by
+AST-scanning the top-level `Import`/`ImportFrom` nodes of all 69 modules, not
+by grep. Every other optional import is already function-local:
+`transparency/analyzer.py:911`, `publications/sync.py:339`,
+`fulltext/pdf_converter.py:239`, `db/connection.py:82-83`,
+`llm/providers/ollama.py:340`, `llm/providers/anthropic.py:135`,
+`llm/providers/openai_compat.py:122`.
 
 ### Why the three fetchers are collateral, and why it matters
 
@@ -88,28 +92,51 @@ After (1), a caller without httpx who asks for the service still gets a bare
 `service.py` keeps `if TYPE_CHECKING: import httpx` for the
 `_http_get(...) -> httpx.Response` annotation (`from __future__ import
 annotations` is already in the module, so the annotation is a string at
-runtime), and the real import moves into the constructor:
+runtime), and the real import moves into a module-level helper:
 
 ```python
-try:
-    import httpx
-except ImportError as e:
-    raise ImportError(
-        "httpx is required for full-text retrieval. "
-        "Install with: pip install bmlib[fulltext]"
-    ) from e
-self._httpx = httpx
+def _require_httpx() -> ModuleType:
+    try:
+        import httpx
+    except ImportError as e:
+        raise ImportError(
+            f"httpx is required for full-text retrieval, but importing it failed "
+            f"({e}). Install with: pip install bmlib[fulltext]"
+        ) from e
+    return httpx
 ```
 
-with `_http_get` using `self._httpx.Client(...)`. This is exactly
-`PyMuPDFConverter.__init__`'s shape one file over
-(`pdf_converter.py:236-243`, storing `self._fitz`).
+called first thing in `__init__` (for the result's side effect only) and again
+in `_http_get`, which binds it locally to build the client.
 
-**The constructor, not `_http_get`.** The service builds its own client — it
-is not dependency-injected the way the fetchers are — so deferring further
-would not make the module usable without httpx, only make the failure arrive
-later. A missing dependency should stop you when you construct the service,
-not on the first request an hour into a batch job.
+**The constructor, not only `_http_get`.** The service builds its own client —
+it is not dependency-injected the way the fetchers are — so a missing
+dependency should stop you when you construct the service, not on the first
+request an hour into a batch job.
+
+**Returned, not stored.** The first draft did what
+`PyMuPDFConverter.__init__` does one file over (`pdf_converter.py:236-245`,
+storing `self._fitz`) and kept `self._httpx`. Review rejected it on two
+measured counts: a module object cannot be pickled, so a configured service
+could no longer be handed to a `ProcessPoolExecutor` — a regression against
+`main`, where every attribute was a `str`/`float`/`bool`/`FullTextCache` — and
+reading the module back as *instance* state means anything reaching
+`_http_get` without having run `__init__` raises `AttributeError`, which the
+tier chain's nine `except Exception` blocks swallow at DEBUG and return a
+success-shaped `FullTextResult` for. A `sys.modules` lookup per request, on a
+path that then makes a network round-trip, costs nothing measurable.
+`PyMuPDFConverter` is not changed to match: it was never picklable, so nothing
+there regressed.
+
+**The message reports the cause rather than asserting it.** `except
+ImportError` also catches a `ModuleNotFoundError` raised by a *present* httpx
+for its own missing dependency, and an `ImportError` from a version skew
+inside httpx. Both were verified to produce the old "not installed" wording,
+whose prescribed `pip install bmlib[fulltext]` then answers "Requirement
+already satisfied" and changes nothing. `_attach_pdf_text` already documents
+this exact reasoning for PyMuPDF (`service.py:573-585`): *"report what was
+actually raised rather than asserting the cause, so a broken PyMuPDF install
+is not misreported as an uninstalled one."*
 
 ### 3. A `fulltext` extra
 
@@ -137,19 +164,31 @@ in a **subprocess** — `sys.modules` in the test process already holds httpx,
 which is precisely the trap that mis-scoped the issue. Masking is a
 `sys.meta_path` finder that raises `ModuleNotFoundError` for `httpx`.
 
+Seventeen tests in all: fifteen in `TestPackageImports`, plus two in a new
+`TestHttpGet` covering the request helper. The last six rows were added in
+review — see "What review added" below.
+
 | Test | Asserts |
 |---|---|
-| `test_the_mask_itself_blocks_httpx` | **Negative control.** With the mask installed, `import httpx` genuinely raises — otherwise every test below is vacuous |
-| `test_the_stdlib_only_modules_import_without_httpx` | All seven `bmlib.fulltext.*` modules import, and `SectionSegmenter` is reachable from the package |
+| `test_the_mask_itself_blocks_httpx` | **Negative control.** With the mask installed, `import httpx` genuinely raises — otherwise the four masked tests below are vacuous |
+| `test_the_stdlib_only_modules_import_without_httpx` | All seven `bmlib.fulltext.*` modules import, one fresh interpreter each |
+| `test_the_segmenter_is_reachable_from_the_package_without_httpx` | The reported symptom: `from bmlib.fulltext import SectionSegmenter` resolves |
 | `test_the_fetchers_import_without_httpx` | The three `publications.fetchers` modules import — the collateral half of the defect, in its own test so a regression names itself |
-| `test_the_service_names_the_extra_when_httpx_is_missing` | `FullTextService(email=...)` raises `ImportError` mentioning `bmlib[fulltext]`, not a bare `ModuleNotFoundError` |
+| `test_the_service_names_the_extra_when_httpx_is_missing` | `FullTextService(email=...)` raises `ImportError` mentioning `bmlib[fulltext]`, not a bare `ModuleNotFoundError`, and leaves the redirected home directory **entirely** empty |
 | `test_importing_the_package_does_not_import_httpx` | With httpx **present**, `import bmlib.fulltext` leaves `httpx` out of `sys.modules`. Proves the path is lazy, not merely that the modules import |
 | `test_importing_the_package_does_not_load_the_service` | With httpx present, `import bmlib.fulltext` leaves `bmlib.fulltext.service` out of `sys.modules`, and the first attribute access puts it there. **Added after mutation testing** — see below |
 | `test_the_service_is_still_reachable_from_the_package` | Deferred, not removed: `FullTextService.__module__ == "bmlib.fulltext.service"` |
+| `test_the_deferred_names_are_still_exported` | Both names remain in `__all__` |
 | `test_a_name_the_package_does_not_have_still_raises` | `AttributeError`, so `__getattr__` does not swallow typos |
-| `test_dir_lists_the_deferred_names_too` | `dir()` includes both lazy names |
+| `TestHttpGet::…_carries_the_configured_timeout_and_follows_redirects` | The client is built with `timeout=` and `follow_redirects=True`, and the URL and kwargs reach `client.get`. **The only test that executes `_http_get`'s body** |
+| `TestHttpGet::…_is_closed_even_when_the_request_raises` | A raising GET still leaves the `with` block, so the socket is not leaked |
+| `test_a_broken_httpx_is_not_reported_as_an_absent_one` | With a shim httpx that raises on import, the message carries the real cause *and* the extra, and `__cause__` survives |
+| `test_the_service_survives_pickling_and_deep_copying` | The service holds no module object, so a process pool can take one |
+| `test_the_extra_the_error_message_names_is_a_real_one` | `fulltext` is in the built distribution's `Provides-Extra`, so the message and `pyproject.toml` cannot drift apart |
+| `test_dir_lists_the_deferred_names_without_hiding_anything` | `dir()` gains both lazy names **and** keeps the submodules and dunders |
+| `test_a_resolved_name_is_bound_and_not_re_resolved` | The resolved name lands in `vars(package)`, so repeat access skips `__getattr__` |
 
-TDD: these are written first and watched fail. Five of the original ten did
+TDD: the original ten were written first and watched fail. Five of them did
 (the negative control and the API-preservation tests pass either way, which is
 their job).
 
@@ -177,6 +216,27 @@ can gate the parser, the models or the segmenter again — and it fails under
 the third mutation, which is what makes it a real guard rather than a
 restatement.
 
+### What review added
+
+A four-agent review of the PR confirmed the headline measurements — the ten
+modules, the "last unguarded optional import" claim, and the mutation table
+above all reproduced exactly — and found four things the tests had not.
+
+| Finding | Change |
+|---|---|
+| `_http_get`'s body was executed by **no test**: all ~45 existing tests patch `_http_get` itself, and `--cov` reported its two lines missing. Replacing the body with `raise AssertionError` left the suite green | `TestHttpGet`, two tests |
+| Storing `self._httpx` made the service unpicklable (`TypeError: cannot pickle 'module' object`) — a regression against `main` — and turned a skipped `__init__` into an `AttributeError` the tier chain swallows at DEBUG | `_require_httpx()` returns the module instead; pickling test |
+| `except ImportError` relabelled a *broken* httpx as an absent one, prescribing a no-op `pip install` | Message interpolates the real cause; shim-httpx test |
+| `__dir__` returning `__all__` alone dropped the submodules and dunders, and the test asserting presence passed under the narrowing | Union; test asserts both halves. Same fix in `context_processor` |
+
+Three smaller ones: the subprocess helper replaced the environment rather than
+merging it (dropping `PYTHONPATH`, and on Windows the `USERPROFILE` that
+`Path.home()` actually reads there, which made the cache assertions vacuous);
+the cache assertion named two of the three platform cache directories; and two
+comments miscounted — `_FULLTEXT_MODULES`' "all ten names below" over a
+seven-element list, and the negative control's "every test below" over four
+masked ones.
+
 ## Documentation
 
 `pyproject.toml`; README's extras table; `docs/manual/index.md`'s extras
@@ -192,3 +252,7 @@ table; `docs/manual/fulltext.md:8`; CLAUDE.md's extras table and its
   roadmap item is unrelated to reachability.
 - Severing the fetchers' dependency on `bmlib.fulltext.models`. It is one
   dataclass, the import is legitimate, and after (1) it costs nothing.
+- The tier chain's total-failure path (`service.py:379-380`) logging nothing
+  above DEBUG, so "every tier raised" is indistinguishable from "this paper
+  has no free full text". Pre-existing, surfaced by this review, filed
+  separately rather than widened into this PR.

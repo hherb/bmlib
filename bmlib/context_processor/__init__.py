@@ -93,13 +93,23 @@ def __getattr__(name: str) -> Any:
     if name in _LAZY_EXPORTS:
         from bmlib.context_processor import llm_processor
 
-        return getattr(llm_processor, name)
+        value = getattr(llm_processor, name)
+        # Bind it, so later accesses skip this function entirely (:pep:`562`'s
+        # own recommendation) and the name shows up in ``globals()``.
+        globals()[name] = value
+        return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:
-    """List the lazy exports too, which the default would omit."""
-    return sorted(__all__)
+    """List the lazy exports alongside what the default would show.
+
+    Returning ``__all__`` alone would be a narrowing, not an addition: it
+    drops the submodules (``base``, ``data_types``, …) and every dunder,
+    breaking REPL completion and shrinking :func:`inspect.getmembers`. The
+    union adds the deferred names without taking anything away.
+    """
+    return sorted(set(__all__) | set(globals()))
 
 
 __all__ = [

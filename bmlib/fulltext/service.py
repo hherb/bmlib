@@ -30,10 +30,11 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
+from types import ModuleType
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
-if TYPE_CHECKING:  # Annotation only; the real import is guarded in __init__.
+if TYPE_CHECKING:  # Annotation only; the real import is guarded in _require_httpx.
     import httpx
 
 # The sanitizer's canonical implementation lives in bmlib.fulltext.cache so
@@ -69,6 +70,37 @@ _PMC_ID_RE = re.compile(r"PMC\d+")
 
 class FullTextError(Exception):
     """Error during full-text retrieval."""
+
+
+def _require_httpx() -> ModuleType:
+    """Import httpx, naming the extra that supplies it.
+
+    Returns the module rather than binding it on the service. A module object
+    cannot be pickled, so storing one would make ``FullTextService`` unusable
+    across a process pool, and reading it as instance state would let any
+    object that reached :meth:`FullTextService._http_get` without running
+    ``__init__`` fail with an ``AttributeError`` that the tier chain swallows.
+    After the first call this costs a ``sys.modules`` lookup.
+
+    Returns:
+        The imported ``httpx`` module.
+
+    Raises:
+        ImportError: If httpx cannot be imported, naming the extra *and*
+            reporting what was actually raised. ``ImportError`` also covers
+            ``ModuleNotFoundError`` from httpx's own dependencies, so
+            asserting the cause would tell someone with a broken httpx to
+            install one they already have — the reasoning `_attach_pdf_text`
+            spells out for the analogous PyMuPDF case.
+    """
+    try:
+        import httpx
+    except ImportError as e:
+        raise ImportError(
+            f"httpx is required for full-text retrieval, but importing it failed "
+            f"({e}). Install with: pip install bmlib[fulltext]"
+        ) from e
+    return httpx
 
 
 def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
@@ -154,18 +186,14 @@ class FullTextService:
                 so positional construction stays stable.
 
         Raises:
-            ImportError: If httpx is not installed, naming the extra that
-                supplies it. Raised before anything else happens, so a
-                construction that fails leaves no cache directory behind.
+            ImportError: If httpx cannot be imported, naming the extra that
+                supplies it — see :func:`_require_httpx`. Checked before
+                anything else happens, so a construction that fails leaves no
+                cache directory behind. The module is not retained; the check
+                is here so the failure lands at construction rather than on
+                the first request.
         """
-        try:
-            import httpx
-        except ImportError as e:
-            raise ImportError(
-                "httpx is required for full-text retrieval. "
-                "Install with: pip install bmlib[fulltext]"
-            ) from e
-        self._httpx = httpx
+        _require_httpx()
 
         self.email = email
         self.timeout = timeout
@@ -178,7 +206,8 @@ class FullTextService:
 
     def _http_get(self, url: str, **kwargs: object) -> httpx.Response:
         """HTTP GET with timeout. Separated for testability."""
-        with self._httpx.Client(timeout=self.timeout, follow_redirects=True) as client:
+        httpx = _require_httpx()
+        with httpx.Client(timeout=self.timeout, follow_redirects=True) as client:
             return client.get(url, **kwargs)
 
     def fetch_fulltext(

@@ -63,9 +63,10 @@ def __getattr__(name: str) -> Any:
     """Resolve the retrieval service on first use (:pep:`562`).
 
     Every other module in this package runs on the standard library — the
-    JATS parser, the pure-dataclass models, the PDF converter (which loads
-    PyMuPDF lazily) and the section segmenter. Only ``service`` makes an HTTP
-    request, and re-exporting it eagerly gated all of them behind ``httpx``:
+    JATS parser, the pure-dataclass models, the disk cache, the PDF converter
+    (which loads PyMuPDF lazily) and the section segmenter. Only ``service``
+    makes an HTTP request, and re-exporting it eagerly gated all of them
+    behind ``httpx``:
     importing a submodule imports its parent package first, so ``pip install
     bmlib`` left ten modules across two packages raising a bare
     ``ModuleNotFoundError`` — including :class:`SectionSegmenter`, which is
@@ -79,13 +80,24 @@ def __getattr__(name: str) -> Any:
     if name in _LAZY_EXPORTS:
         from bmlib.fulltext import service
 
-        return getattr(service, name)
+        value = getattr(service, name)
+        # Bind it, so later accesses skip this function entirely (:pep:`562`'s
+        # own recommendation) and the name shows up in ``globals()``.
+        globals()[name] = value
+        return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:
-    """List the lazy exports too, which the default would omit."""
-    return sorted(__all__)
+    """List the lazy exports alongside what the default would show.
+
+    Returning ``__all__`` alone would be a narrowing, not an addition: it
+    drops the submodules (``cache``, ``models``, ``segmenter``, …) and every
+    dunder, breaking REPL completion for ``bmlib.fulltext.models`` and
+    shrinking :func:`inspect.getmembers`. The union adds the deferred names
+    without taking anything away.
+    """
+    return sorted(set(__all__) | set(globals()))
 
 
 __all__ = [

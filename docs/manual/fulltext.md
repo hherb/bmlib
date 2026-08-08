@@ -10,7 +10,7 @@ pip install bmlib[fulltext]         # + FullTextService retrieval (httpx)
 pip install bmlib[pdf]              # + PDF → text conversion (pymupdf)
 ```
 
-Only `FullTextService` needs `httpx`, and it is resolved on first access, so `import bmlib.fulltext` costs nothing on a core install. Constructing the service without the extra raises `ImportError: httpx is required for full-text retrieval. Install with: pip install bmlib[fulltext]`. `pymupdf` is required **only** for `PyMuPDFConverter`; everything else in the module works without it.
+Only `FullTextService` needs `httpx`, and it is resolved on first access, so `import bmlib.fulltext` loads no httpx and does not even load `service` — the parser, the models, the cache and the segmenter all import on core bmlib alone. Constructing the service without the extra raises `ImportError: httpx is required for full-text retrieval, but importing it failed (No module named 'httpx'). Install with: pip install bmlib[fulltext]`. The parenthesised cause is what was actually raised, so a *broken* httpx install is not misreported as an absent one. `pymupdf` is required **only** for `PyMuPDFConverter`; everything else in the module works without it.
 
 ## Module layout
 

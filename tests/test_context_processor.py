@@ -1003,12 +1003,18 @@ class TestPackageImports:
         with pytest.raises(AttributeError, match="no attribute 'not_a_real_name'"):
             package.not_a_real_name
 
-    def test_dir_lists_the_deferred_names_too(self) -> None:
+    def test_dir_lists_the_deferred_names_without_hiding_anything(self) -> None:
+        """Adding the lazy names must not drop the submodules and dunders.
+
+        Returning ``__all__`` alone does exactly that; the presence check
+        alone passes under it, so the second half is what makes this a guard.
+        """
         import bmlib.context_processor as package
 
         listed = dir(package)
-        assert "LLMChunkProcessor" in listed
-        assert "IterativeContextProcessor" in listed
+        assert {"LLMChunkProcessor", "IterativeContextProcessor"} <= set(listed)
+        assert {"base", "data_types"} <= set(listed)
+        assert "__name__" in listed
 
 
 class TestProgressReporting:

@@ -6,6 +6,15 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`fulltext` extra** (`pip install bmlib[fulltext]`, httpx), included in
+  `all`. The manual previously sent readers to `bmlib[publications]` — a
+  publication-ingestion extra — for a PDF segmenter. `pdf` stays separate:
+  bundling pymupdf would duplicate an existing extra and drag a ~20 MB binary
+  wheel onto anyone who only wants JATS retrieval. `publications` and
+  `transparency` keep their own httpx, so no existing install changes.
+
 ### Fixed
 
 - **`bmlib.fulltext` imports on a core install** (#64). `fulltext/__init__.py`
@@ -29,22 +38,33 @@ All notable changes to bmlib are documented here. The format is based on
   parser, the models or the segmenter again.
 
 - **Constructing `FullTextService` without httpx names the extra.** The import
-  moved into `__init__` behind the guarded `ImportError` the coding conventions
-  require (`Install with: pip install bmlib[fulltext]`), matching
-  `PyMuPDFConverter.__init__` one file over. The constructor, not the request
-  helper: the service builds its own client rather than taking an injected one,
-  so deferring further would only make the failure arrive on the first request
-  instead of at construction. The guard is the first statement, so a failed
-  construction leaves no cache directory behind.
+  moved out of the module top level into `_require_httpx()`, called first thing
+  in `__init__` so the failure lands at construction rather than on the first
+  request, and again in `_http_get` where the client is actually built. The
+  module is deliberately **not** stored on the instance: a module object cannot
+  be pickled, so holding one would have broken handing a configured service to
+  a process pool, and reading it back as instance state would let anything that
+  reached `_http_get` without running `__init__` fail with an `AttributeError`
+  that the tier chain swallows at DEBUG. The check is the first statement, so a
+  failed construction leaves no cache directory behind.
 
-### Added
+- **A broken httpx is no longer reported as an absent one.** `except
+  ImportError` also catches the `ModuleNotFoundError` a *present* httpx raises
+  for its own missing dependency, so the message now reports what was actually
+  raised — `httpx is required for full-text retrieval, but importing it failed
+  (…). Install with: pip install bmlib[fulltext]`. Asserting the cause instead
+  prescribed a `pip install` that answers "Requirement already satisfied" and
+  changes nothing, leaving the reader to run it, see success, retry and hit the
+  identical error. This is the reasoning `_attach_pdf_text` already spells out
+  for the analogous PyMuPDF case.
 
-- **`fulltext` extra** (`pip install bmlib[fulltext]`, httpx), included in
-  `all`. The manual previously sent readers to `bmlib[publications]` — a
-  publication-ingestion extra — for a PDF segmenter. `pdf` stays separate:
-  bundling pymupdf would duplicate an existing extra and drag a ~20 MB binary
-  wheel onto anyone who only wants JATS retrieval. `publications` and
-  `transparency` keep their own httpx, so no existing install changes.
+- **`dir()` on `bmlib.fulltext` and `bmlib.context_processor` no longer hides
+  the submodules.** Both `__dir__` implementations returned `__all__` alone,
+  which added the two deferred names while dropping `cache`, `models`,
+  `segmenter` and every dunder — breaking REPL completion for
+  `bmlib.fulltext.models` and shrinking `inspect.getmembers()`. They now return
+  the union. Resolved lazy names are also bound into `globals()`, as PEP 562
+  recommends, so repeat access skips `__getattr__` entirely.
 
 ## [0.8.0] — 2026-08-08
 
