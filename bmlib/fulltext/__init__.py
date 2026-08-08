@@ -14,7 +14,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Full-text retrieval and JATS XML parsing for biomedical literature."""
+"""Full-text retrieval and JATS XML parsing for biomedical literature.
+
+Everything here is importable with core bmlib alone. Only
+:class:`FullTextService` needs the ``bmlib[fulltext]`` extra, and it is
+resolved on first use — see :func:`__getattr__` below.
+"""
+
+from typing import TYPE_CHECKING, Any
 
 from bmlib.fulltext.cache import FullTextCache
 from bmlib.fulltext.jats_parser import JATSParser
@@ -44,7 +51,53 @@ from bmlib.fulltext.pdf_converter import (
     render_html,
 )
 from bmlib.fulltext.segmenter import SectionSegmenter
-from bmlib.fulltext.service import FullTextError, FullTextService
+
+if TYPE_CHECKING:  # Names a type checker needs eagerly; see __getattr__ below.
+    from bmlib.fulltext.service import FullTextError, FullTextService
+
+#: Names living in ``service``, resolved on first access.
+_LAZY_EXPORTS = frozenset({"FullTextError", "FullTextService"})
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve the retrieval service on first use (:pep:`562`).
+
+    Every other module in this package runs on the standard library — the
+    JATS parser, the pure-dataclass models, the disk cache, the PDF converter
+    (which loads PyMuPDF lazily) and the section segmenter. Only ``service``
+    makes an HTTP request, and re-exporting it eagerly gated all of them
+    behind ``httpx``: importing a submodule imports its parent package first,
+    so ``pip install bmlib`` left ten modules across two packages raising a
+    bare ``ModuleNotFoundError`` — including :class:`SectionSegmenter`, which
+    is documented as standalone, and the three publication fetchers, which
+    merely borrow one dataclass from ``models``.
+
+    Deferring keeps the claim true of the package and not merely of the
+    modules, exactly as ``bmlib.context_processor`` does for its LLM-backed
+    half.
+    """
+    if name in _LAZY_EXPORTS:
+        from bmlib.fulltext import service
+
+        value = getattr(service, name)
+        # Bind it, so later accesses skip this function entirely (:pep:`562`'s
+        # own recommendation) and the name shows up in ``globals()``.
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """List the lazy exports alongside what the default would show.
+
+    Returning ``__all__`` alone would be a narrowing, not an addition: it
+    drops the submodules (``cache``, ``models``, ``segmenter``, …) and every
+    dunder, breaking REPL completion for ``bmlib.fulltext.models`` and
+    shrinking :func:`inspect.getmembers`. The union adds the deferred names
+    without taking anything away.
+    """
+    return sorted(set(__all__) | set(globals()))
+
 
 __all__ = [
     "ContentKind",

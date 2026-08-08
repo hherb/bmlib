@@ -16,6 +16,12 @@
 
 """Tests for bmlib.fulltext.service."""
 
+import copy
+import importlib.metadata
+import os
+import pickle
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -1496,3 +1502,369 @@ class TestPMCIDFallbackChain:
 
         assert result.source == "doi"
         assert mock_get.call_count == 3
+
+
+class TestHttpGet:
+    """The one method that actually builds an httpx client.
+
+    Every other test in this file patches ``_http_get`` itself, so its body is
+    otherwise never executed — measured: replacing it with an unconditional
+    ``raise AssertionError`` left the whole suite green, which is how the
+    ``self._httpx`` indirection reached review unpinned.
+    """
+
+    def _fake_httpx(self, response):
+        """An httpx stand-in whose ``Client()`` context yields a mock client."""
+        client = MagicMock()
+        client.get.return_value = response
+        fake = MagicMock()
+        fake.Client.return_value.__enter__.return_value = client
+        return fake, client
+
+    def test_the_client_carries_the_configured_timeout_and_follows_redirects(self):
+        """``follow_redirects`` is load-bearing, not decoration.
+
+        The DOI tier resolves through ``doi.org``, which answers with a 302 to
+        the publisher; without this the chain would store the redirect stub.
+        """
+        response = MagicMock()
+        fake_httpx, client = self._fake_httpx(response)
+
+        service = FullTextService(email="test@example.com", timeout=12.5)
+        with patch("bmlib.fulltext.service._require_httpx", return_value=fake_httpx):
+            result = service._http_get("https://example.org/x", params={"a": "1"})
+
+        assert result is response
+        fake_httpx.Client.assert_called_once_with(timeout=12.5, follow_redirects=True)
+        client.get.assert_called_once_with("https://example.org/x", params={"a": "1"})
+
+    def test_the_client_is_closed_even_when_the_request_raises(self):
+        """The ``with`` block owns the socket; a raising GET must not leak it."""
+        fake_httpx, client = self._fake_httpx(MagicMock())
+        client.get.side_effect = RuntimeError("connection reset")
+
+        service = FullTextService(email="test@example.com")
+        with patch("bmlib.fulltext.service._require_httpx", return_value=fake_httpx):
+            with pytest.raises(RuntimeError, match="connection reset"):
+                service._http_get("https://example.org/x")
+
+        fake_httpx.Client.return_value.__exit__.assert_called_once()
+
+
+# --- Package imports (issue #64) --------------------------------------------
+
+#: Prelude that makes ``httpx`` unimportable, as a core-only install would.
+#:
+#: A ``sys.meta_path`` finder rather than a ``sys.modules`` sentinel, so the
+#: failure is the ``ModuleNotFoundError`` a real absent dependency raises
+#: rather than the "halted; None in sys.modules" ``ImportError`` a sentinel
+#: produces.
+_MASK_HTTPX = """
+import sys
+
+
+class _NoHttpx:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "httpx" or fullname.startswith("httpx."):
+            raise ModuleNotFoundError(f"No module named {fullname!r}", name=fullname)
+        return None
+
+
+sys.meta_path.insert(0, _NoHttpx())
+for _name in [m for m in sys.modules if m == "httpx" or m.startswith("httpx.")]:
+    del sys.modules[_name]
+"""
+
+#: Every module in ``bmlib.fulltext`` — seven of the ten that were unimportable
+#: in a core-only install before this fix. ``_FETCHER_MODULES`` below holds the
+#: other three. Measured one fresh interpreter per module, since a failed
+#: import leaves the half-initialised parent in ``sys.modules`` and its
+#: siblings then falsely read as fine.
+_FULLTEXT_MODULES = [
+    "bmlib.fulltext",
+    "bmlib.fulltext.cache",
+    "bmlib.fulltext.jats_parser",
+    "bmlib.fulltext.models",
+    "bmlib.fulltext.pdf_converter",
+    "bmlib.fulltext.segmenter",
+    "bmlib.fulltext.service",
+]
+
+#: The collateral half: each imports ``bmlib.fulltext.models`` for one
+#: dataclass, and all three take an injected HTTP client rather than importing
+#: httpx themselves.
+_FETCHER_MODULES = [
+    "bmlib.publications.fetchers.biorxiv",
+    "bmlib.publications.fetchers.openalex",
+    "bmlib.publications.fetchers.pubmed",
+]
+
+
+def _run(body: str, *, mask_httpx: bool = True, env: dict[str, str] | None = None):
+    """Run ``body`` in a fresh interpreter, optionally with httpx masked.
+
+    A subprocess because ``sys.modules`` in this process already holds httpx
+    and every module under test — the trap that under-reported the defect when
+    it was first measured.
+
+    ``env`` is merged **over** the caller's environment rather than replacing
+    it. Replacing drops ``PYTHONPATH``, which is the only way bmlib is
+    reachable in an uninstalled checkout, and on Windows drops the
+    ``USERPROFILE``/``HOMEPATH`` pair that :meth:`pathlib.Path.home` reads
+    there — leaving a home-redirecting test asserting against a directory
+    nothing could ever have been written to.
+    """
+    prelude = _MASK_HTTPX if mask_httpx else ""
+    return subprocess.run(
+        [sys.executable, "-c", prelude + body],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, **env} if env else None,
+    )
+
+
+class TestPackageImports:
+    """What importing the package requires, and what it still offers.
+
+    Issue #64: ``fulltext/__init__.py`` eagerly re-exported the service, whose
+    top-level ``import httpx`` gated the whole subpackage — including the
+    pure-dataclass ``models`` and the stdlib-only ``SectionSegmenter``.
+    """
+
+    def test_the_mask_itself_blocks_httpx(self):
+        """Negative control: without this, every masked test below is vacuous.
+
+        Four of the tests in this class run under the mask. A mask that
+        silently failed to mask would let all four pass on a machine where
+        httpx is installed, which is every machine that runs this suite.
+        """
+        completed = _run("import httpx\n")
+
+        assert completed.returncode != 0
+        assert "No module named 'httpx'" in completed.stderr
+
+    def test_the_stdlib_only_modules_import_without_httpx(self):
+        """Every module in the package, each in its own fresh interpreter."""
+        for name in _FULLTEXT_MODULES:
+            completed = _run(f"import {name}\n")
+            assert completed.returncode == 0, f"{name}: {completed.stderr}"
+
+    def test_the_segmenter_is_reachable_from_the_package_without_httpx(self):
+        """The reported symptom: a segmenter that makes no HTTP request.
+
+        It imports ``re``, ``statistics``, ``typing`` and
+        ``bmlib.fulltext.models``, and is documented as standalone.
+        """
+        completed = _run(
+            "from bmlib.fulltext import SectionSegmenter\nprint(SectionSegmenter.__module__)\n"
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        assert completed.stdout.strip() == "bmlib.fulltext.segmenter"
+
+    def test_the_fetchers_import_without_httpx(self):
+        """Collateral damage, in its own test so a regression names itself.
+
+        Each fetcher imports ``bmlib.fulltext.models`` for
+        ``FullTextSourceEntry`` and so inherited the gate. None imports httpx
+        itself — all three take an injected client, and ``sync()`` builds the
+        default one behind its own deferred import.
+        """
+        for name in _FETCHER_MODULES:
+            completed = _run(f"import {name}\n")
+            assert completed.returncode == 0, f"{name}: {completed.stderr}"
+
+    def test_the_service_names_the_extra_when_httpx_is_missing(self, tmp_path):
+        """Constructing the service without httpx is the guarded ImportError.
+
+        Not the bare ``ModuleNotFoundError`` the eager import raised — the
+        class name is the discriminator, since ``ModuleNotFoundError`` is a
+        subclass of ``ImportError`` and an ``except ImportError`` would catch
+        both.
+
+        The home directory is redirected because the constructor otherwise
+        creates a default ``FullTextCache`` on disk; asserting it stayed
+        *entirely* empty pins the guard as the **first** statement, so a
+        failed construction leaves nothing behind. Emptiness rather than three
+        named paths, because ``_default_cache_dir()`` picks a different one per
+        platform (``Library/Caches`` on darwin, ``AppData/Local`` on Windows,
+        ``.cache`` elsewhere) and naming a subset lets the assertion pass
+        vacuously wherever it guessed wrong. ``USERPROFILE`` is set alongside
+        ``HOME`` since :meth:`pathlib.Path.home` reads only the former on
+        Windows.
+        """
+        home = tmp_path / "home"
+        home.mkdir()
+        completed = _run(
+            "from bmlib.fulltext import FullTextService\n"
+            "try:\n"
+            "    FullTextService(email='test@example.com')\n"
+            "except ImportError as e:\n"
+            "    print(type(e).__name__)\n"
+            "    print(e)\n"
+            "else:\n"
+            "    print('NO ERROR')\n",
+            env={"HOME": str(home), "USERPROFILE": str(home)},
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        kind, message = completed.stdout.strip().splitlines()[:2]
+        assert kind == "ImportError", f"expected the guarded error, got {kind}"
+        assert "bmlib[fulltext]" in message
+        assert not any(home.iterdir()), f"construction left {list(home.iterdir())}"
+
+    def test_a_broken_httpx_is_not_reported_as_an_absent_one(self, tmp_path):
+        """The guard reports what was raised instead of asserting the cause.
+
+        ``except ImportError`` also catches the ``ModuleNotFoundError`` a
+        *present* httpx raises for its own missing dependency, and an
+        ``ImportError`` raised inside httpx on a version skew. Diagnosing
+        either as "not installed" sends the reader to ``pip install
+        bmlib[fulltext]``, which reports "Requirement already satisfied" and
+        changes nothing — so they run it, see success, retry, and get the
+        identical error. ``_attach_pdf_text`` spells out the same reasoning
+        for PyMuPDF.
+        """
+        shim = tmp_path / "shim"
+        shim.mkdir()
+        (shim / "httpx.py").write_text(
+            "raise ImportError(\"cannot import name 'HTTPTransport' from 'httpx._core'\")\n"
+        )
+        completed = _run(
+            "from bmlib.fulltext import FullTextService\n"
+            "try:\n"
+            "    FullTextService(email='test@example.com')\n"
+            "except ImportError as e:\n"
+            "    print(e)\n"
+            "    print(type(e.__cause__).__name__)\n",
+            mask_httpx=False,
+            env={"PYTHONPATH": os.pathsep.join([str(shim), os.environ.get("PYTHONPATH", "")])},
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        message, cause = completed.stdout.strip().splitlines()[:2]
+        assert "HTTPTransport" in message, f"the real cause was dropped: {message}"
+        assert "bmlib[fulltext]" in message
+        assert cause == "ImportError"
+
+    def test_the_service_survives_pickling_and_deep_copying(self, tmp_path):
+        """It retains no module object, which nothing can pickle.
+
+        A configured service is exactly what a bulk caller hands to a
+        ``ProcessPoolExecutor``; holding the httpx module on the instance made
+        that a ``TypeError: cannot pickle 'module' object`` far from its cause.
+        """
+        service = FullTextService(
+            email="test@example.com", cache=FullTextCache(cache_dir=tmp_path), timeout=7.0
+        )
+
+        restored = pickle.loads(pickle.dumps(service))
+
+        assert restored.email == "test@example.com"
+        assert restored.timeout == 7.0
+        assert restored.cache.cache_dir == tmp_path
+        assert copy.deepcopy(service).email == "test@example.com"
+
+    def test_the_extra_the_error_message_names_is_a_real_one(self):
+        """Otherwise the message and the packaging can drift apart silently.
+
+        ``_require_httpx`` prescribes ``pip install bmlib[fulltext]`` as a
+        string; nothing else ties that name to ``pyproject.toml``.
+        """
+        extras = importlib.metadata.metadata("bmlib").get_all("Provides-Extra") or []
+
+        assert "fulltext" in extras
+        assert "all" in extras
+
+    def test_importing_the_package_does_not_import_httpx(self):
+        """Lazy, not merely importable — measured where httpx *is* installed.
+
+        Every other test here masks httpx, so all of them would still pass if
+        the package imported it eagerly on a machine that has it. This one
+        catches that.
+        """
+        completed = _run(
+            "import sys\nimport bmlib.fulltext\nprint('httpx' in sys.modules)\n",
+            mask_httpx=False,
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        assert completed.stdout.strip() == "False"
+
+    def test_importing_the_package_does_not_load_the_service(self):
+        """What the PEP 562 indirection buys, stated on its own.
+
+        The guarded import in ``FullTextService.__init__`` already makes the
+        package importable without httpx, so the test above passes with or
+        without ``__getattr__`` — found by mutation, and the reason this test
+        exists. What deferring adds is that ``service`` is not loaded until
+        someone asks for it, which is what keeps the guarantee structural: no
+        future top-level import in that module can gate the parser, the models
+        or the segmenter again.
+        """
+        completed = _run(
+            "import sys\n"
+            "import bmlib.fulltext\n"
+            "print('bmlib.fulltext.service' in sys.modules)\n"
+            "bmlib.fulltext.FullTextService\n"
+            "print('bmlib.fulltext.service' in sys.modules)\n",
+            mask_httpx=False,
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        # Not loaded by the import; loaded by the first attribute access.
+        assert completed.stdout.split() == ["False", "True"]
+
+    def test_the_service_is_still_reachable_from_the_package(self):
+        """Deferred, not removed: the import path callers use must not change."""
+        from bmlib.fulltext import FullTextError, FullTextService
+
+        assert FullTextService.__module__ == "bmlib.fulltext.service"
+        assert FullTextError.__module__ == "bmlib.fulltext.service"
+
+    def test_the_deferred_names_are_still_exported(self):
+        import bmlib.fulltext as package
+
+        assert "FullTextService" in package.__all__
+        assert "FullTextError" in package.__all__
+
+    def test_a_name_the_package_does_not_have_still_raises(self):
+        """``__getattr__`` must not swallow a typo into something falsy."""
+        import bmlib.fulltext as package
+
+        with pytest.raises(AttributeError, match="no attribute 'not_a_real_name'"):
+            package.not_a_real_name
+
+    def test_dir_lists_the_deferred_names_without_hiding_anything(self):
+        """The default ``__dir__`` omits them — they are not attributes yet.
+
+        Adding them by returning ``__all__`` alone would trade one omission
+        for a larger one: the submodules and every dunder disappear, breaking
+        REPL completion for ``bmlib.fulltext.models``. Both halves are
+        asserted, since the presence check alone passes under the narrowing.
+        """
+        import bmlib.fulltext as package
+
+        listed = dir(package)
+        assert {"FullTextService", "FullTextError"} <= set(listed)
+        assert {"cache", "models", "jats_parser", "segmenter"} <= set(listed)
+        assert "__name__" in listed
+
+    def test_a_resolved_name_is_bound_and_not_re_resolved(self):
+        """PEP 562's own recommendation: cache the lookup in ``globals()``.
+
+        Pinned because the binding is what keeps repeat attribute access off
+        this code path, and what puts the name in ``__dict__`` for tooling
+        that reads it directly.
+        """
+        completed = _run(
+            "import bmlib.fulltext as p\n"
+            "print('FullTextService' in vars(p))\n"
+            "p.FullTextService\n"
+            "print('FullTextService' in vars(p))\n",
+            mask_httpx=False,
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        assert completed.stdout.split() == ["False", "True"]

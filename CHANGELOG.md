@@ -6,6 +6,66 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`fulltext` extra** (`pip install bmlib[fulltext]`, httpx), included in
+  `all`. The manual previously sent readers to `bmlib[publications]` — a
+  publication-ingestion extra — for a PDF segmenter. `pdf` stays separate:
+  bundling pymupdf would duplicate an existing extra and drag a ~20 MB binary
+  wheel onto anyone who only wants JATS retrieval. `publications` and
+  `transparency` keep their own httpx, so no existing install changes.
+
+### Fixed
+
+- **`bmlib.fulltext` imports on a core install** (#64). `fulltext/__init__.py`
+  eagerly re-exported `service`, whose top-level `import httpx` was the last
+  unguarded optional import in bmlib — and since importing a submodule imports
+  its parent package first, it gated everything beside it. Measured against the
+  published 0.8.0 wheel in a venv holding only `bmlib`, `jinja2` and
+  `markupsafe`, **one fresh interpreter per module**: **ten** modules across two
+  packages raised a bare `ModuleNotFoundError`. All seven of `bmlib.fulltext.*`,
+  including the pure-dataclass `models` and the stdlib-only `SectionSegmenter`
+  — one of 0.8.0's headline additions, documented as standalone and making no
+  HTTP request — plus `publications.fetchers.{pubmed,biorxiv,openalex}`, which
+  borrow one dataclass from `models` and take an injected HTTP client rather
+  than importing httpx themselves. `FullTextService` and `FullTextError` now
+  resolve through a PEP 562 `__getattr__`, as `bmlib.context_processor` already
+  does for its LLM-backed half; the public API and `__all__` are unchanged, and
+  the same probe now reports **69 importable, 0 not**. What deferring adds over
+  the guarded import below — which restores importability by itself, as
+  mutation testing showed — is that `import bmlib.fulltext` does not load
+  `service` at all, so no future top-level import in that module can gate the
+  parser, the models or the segmenter again.
+
+- **Constructing `FullTextService` without httpx names the extra.** The import
+  moved out of the module top level into `_require_httpx()`, called first thing
+  in `__init__` so the failure lands at construction rather than on the first
+  request, and again in `_http_get` where the client is actually built. The
+  module is deliberately **not** stored on the instance: a module object cannot
+  be pickled, so holding one would have broken handing a configured service to
+  a process pool, and reading it back as instance state would let anything that
+  reached `_http_get` without running `__init__` fail with an `AttributeError`
+  that the tier chain swallows at DEBUG. The check is the first statement, so a
+  failed construction leaves no cache directory behind.
+
+- **A broken httpx is no longer reported as an absent one.** `except
+  ImportError` also catches the `ModuleNotFoundError` a *present* httpx raises
+  for its own missing dependency, so the message now reports what was actually
+  raised — `httpx is required for full-text retrieval, but importing it failed
+  (…). Install with: pip install bmlib[fulltext]`. Asserting the cause instead
+  prescribed a `pip install` that answers "Requirement already satisfied" and
+  changes nothing, leaving the reader to run it, see success, retry and hit the
+  identical error. This is the reasoning `_attach_pdf_text` already spells out
+  for the analogous PyMuPDF case.
+
+- **`dir()` on `bmlib.fulltext` and `bmlib.context_processor` no longer hides
+  the submodules.** Both `__dir__` implementations returned `__all__` alone,
+  which added the two deferred names while dropping `cache`, `models`,
+  `segmenter` and every dunder — breaking REPL completion for
+  `bmlib.fulltext.models` and shrinking `inspect.getmembers()`. They now return
+  the union. Resolved lazy names are also bound into `globals()`, as PEP 562
+  recommends, so repeat access skips `__getattr__` entirely.
+
 ## [0.8.0] — 2026-08-08
 
 Phase 2 of the bmlibrarian port, complete — four ports in one release. A new

@@ -5,11 +5,12 @@ Full-text retrieval for biomedical literature. Provides a multi-tier retrieval c
 ## Installation
 
 ```bash
-pip install bmlib[publications]     # FullTextService, JATSParser, FullTextCache (httpx)
-pip install bmlib[pdf]              # PDF → text conversion (pymupdf)
+pip install bmlib                   # JATSParser, FullTextCache, SectionSegmenter, models
+pip install bmlib[fulltext]         # + FullTextService retrieval (httpx)
+pip install bmlib[pdf]              # + PDF → text conversion (pymupdf)
 ```
 
-`httpx` is required for HTTP requests to external APIs (shared with the `publications` dependency group). `pymupdf` is required **only** for `PyMuPDFConverter`; everything else in the module works without it.
+Only `FullTextService` needs `httpx`, and it is resolved on first access, so `import bmlib.fulltext` loads no httpx and does not even load `service` — the parser, the models, the cache and the segmenter all import on core bmlib alone. Constructing the service without the extra raises `ImportError: httpx is required for full-text retrieval, but importing it failed (No module named 'httpx'). Install with: pip install bmlib[fulltext]`. The parenthesised cause is what was actually raised, so a *broken* httpx install is not misreported as an absent one. `pymupdf` is required **only** for `PyMuPDFConverter`; everything else in the module works without it.
 
 ## Module layout
 

@@ -58,12 +58,16 @@ openai = ["openai>=1.0"]
 postgresql = ["psycopg2-binary>=2.9"]
 transparency = ["httpx>=0.25"]
 publications = ["httpx>=0.25"]
+# `fulltext` supplies httpx only. PDF→text extraction stays behind `pdf`,
+# which is separately useful and would otherwise drag a ~20 MB binary wheel
+# onto anyone who only wants JATS retrieval.
+fulltext = ["httpx>=0.25"]
 pdf = ["pymupdf>=1.23"]
 dev = ["pytest>=7.0", "pytest-cov", "ruff"]
 # `all` deliberately excludes `dev`: it is what a consumer installs to get
 # every runtime feature, and it should not drag pytest and ruff into their
 # environment. For a full development install use `.[all,dev]`.
-all = ["bmlib[anthropic,ollama,openai,postgresql,transparency,publications,pdf]"]
+all = ["bmlib[anthropic,ollama,openai,postgresql,transparency,publications,fulltext,pdf]"]
 
 # Explicit discovery. Auto-discovery works today but is order-dependent in a
 # flat layout with tests/, docs/ and scripts/ beside the package; naming the
