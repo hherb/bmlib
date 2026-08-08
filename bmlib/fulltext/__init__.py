@@ -66,12 +66,11 @@ def __getattr__(name: str) -> Any:
     JATS parser, the pure-dataclass models, the disk cache, the PDF converter
     (which loads PyMuPDF lazily) and the section segmenter. Only ``service``
     makes an HTTP request, and re-exporting it eagerly gated all of them
-    behind ``httpx``:
-    importing a submodule imports its parent package first, so ``pip install
-    bmlib`` left ten modules across two packages raising a bare
-    ``ModuleNotFoundError`` — including :class:`SectionSegmenter`, which is
-    documented as standalone, and the three publication fetchers, which merely
-    borrow one dataclass from ``models``.
+    behind ``httpx``: importing a submodule imports its parent package first,
+    so ``pip install bmlib`` left ten modules across two packages raising a
+    bare ``ModuleNotFoundError`` — including :class:`SectionSegmenter`, which
+    is documented as standalone, and the three publication fetchers, which
+    merely borrow one dataclass from ``models``.
 
     Deferring keeps the claim true of the package and not merely of the
     modules, exactly as ``bmlib.context_processor`` does for its LLM-backed

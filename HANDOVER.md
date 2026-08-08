@@ -1,12 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-08. **0.8.0 is released and on PyPI**, and with it
+_Last updated: 2026-08-09. **0.8.0 is released and on PyPI**, and with it
 **Phase 2 of the bmlibrarian port is complete** — all four ports
 (Cochrane assessor PR #54, PDF section segmenter PR #55, citation/reference
 stack PR #58, PubMed metadata graft PR #59), plus the encrypted-PDF fix
-(#57, PR #60). **#64 is fixed** (PR #66) — `bmlib.fulltext` now imports on a
-core install, and a new `fulltext` extra exists. One open issue, **#56**.
-1700 tests + 58 skipped (1756 + 2 with a PostgreSQL DSN), ruff clean.
+(#57, PR #60). **#64 is fixed** (PR #66, review round applied) —
+`bmlib.fulltext` now imports on a core install, and a new `fulltext` extra
+exists. Two open issues, **#56** and **#67**.
+1706 tests + 58 skipped (1762 + 2 with a PostgreSQL DSN), ruff clean.
 `[Unreleased]` carries #64's fix, so the next release is at least a patch.
 **Phase 3 is next, and each of its rows needs a design conversation before
 any porting** — see "Next up"._
@@ -37,7 +38,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed three releases. Widening it is a downstream change, not a bmlib
   one.
-- **1700 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1756 + 2
+- **1706 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1762 + 2
   with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
   PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
@@ -66,7 +67,19 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-One.
+Two.
+
+**#67 — a total retrieval failure is indistinguishable from "no free full
+text"**, found by the review of PR #66 and filed rather than folded into it,
+since it predates that PR. `fetch_fulltext()` wraps all nine tiers in `except
+Exception` logging at DEBUG; when every one fails, `service.py:379-380`
+returns a normal-looking `FullTextResult` and emits nothing above DEBUG. The
+only WARNING on that path sits inside `if abstract_only is not None:`, so the
+*more* complete the failure, the quieter it is — a caller who has lost
+network or hit a bmlib bug sees "no full text" for a whole corpus with nothing
+in the logs. `_cache_html` (`service.py:508-514`) has the same shape: a
+read-only cache directory means every run silently re-fetches. `_attach_pdf_text`
+is the standard to fix them to — every empty path there logs at WARNING.
 
 **#56 — `_extract_title()` trusts junk PDF metadata titles** ("Microsoft
 Word - manuscript.docx" wins over the large-font first-page line), deferred
@@ -298,13 +311,42 @@ named source file; the entry here is the pointer, not the argument.
   in a subprocess for the same reason, and carries a negative control
   asserting the mask actually masks — every machine running this suite has
   httpx, so a mask that silently failed would make the whole class vacuous.
-- **The guarded import is the first statement of `__init__`**, so a failed
+- **The guard is the first statement of `__init__`**, so a failed
   construction leaves no cache directory behind (`FullTextCache()` creates
-  three); the extra-naming test asserts the redirected `HOME` stayed clean.
+  three); the extra-naming test asserts the redirected home directory stayed
+  *entirely* empty, rather than naming platform cache paths — a named subset
+  passes vacuously wherever it guessed wrong.
+- **`_require_httpx()` returns the module; nothing stores it.** Review of PR
+  #66 killed the `self._httpx` the design had specified. A module object
+  cannot be pickled, so storing one silently cost the ability to hand a
+  configured service to a `ProcessPoolExecutor` — a regression against 0.8.0
+  — and reading it back as *instance* state makes anything that reaches
+  `_http_get` without running `__init__` raise `AttributeError`, which the
+  tier chain swallows at DEBUG and returns a success-shaped result for.
+  `PyMuPDFConverter` still stores `self._fitz`: it was never picklable, so
+  nothing there regressed. **Do not "simplify" this back.**
+- **The guard reports the caught exception instead of asserting the cause.**
+  `except ImportError` also catches the `ModuleNotFoundError` a *present*
+  httpx raises for its own missing dependency; "not installed" then
+  prescribes a `pip install` that answers "Requirement already satisfied",
+  so the reader runs it, sees success, retries and hits the same error.
+  `_attach_pdf_text` already documents this for PyMuPDF.
+- **`_http_get` had no test at all** until this review — all ~45 tests in the
+  file patch `_http_get` itself, so replacing its body with `raise
+  AssertionError` left the suite green. `TestHttpGet` is what covers it now.
+  Any future change to how the client is built needs a test there, because
+  nothing else in the file will notice.
+- **A PEP 562 `__dir__` returns `sorted(set(__all__) | set(globals()))`.**
+  `sorted(__all__)` is a narrowing — it drops the submodules and every dunder
+  — and a test asserting only that the lazy names are present passes under
+  it. Fixed in `context_processor` at the same time.
 - **`fulltext = ["httpx>=0.25"]` is httpx only**; `pdf` stays separate (it
   already exists, is separately documented, and bundling would drag a ~20 MB
   binary wheel onto anyone who only wants JATS retrieval). `publications` and
   `transparency` keep their own httpx, so no existing install changed.
+  `test_the_extra_the_error_message_names_is_a_real_one` reads
+  `Provides-Extra` from the installed metadata, so the message in
+  `_require_httpx` and `pyproject.toml` cannot drift apart.
 
 ### fulltext — the PDF converter (PR #60)
 
