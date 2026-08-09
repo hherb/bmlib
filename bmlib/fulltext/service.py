@@ -280,9 +280,9 @@ class FullTextService:
         self.cache = cache if cache is not None else FullTextCache()
         self.convert_pdfs = convert_pdfs
         self.ncbi_api_key = ncbi_api_key
-        # Guards the one-off warning in _attach_pdf_text when the bmlib[pdf]
-        # extra is missing: worth saying once, not once per article.
-        self._pdf_extra_warned = False
+        # Guards the one-off warning in _attach_pdf_text when no PDF backend
+        # can be constructed: worth saying once, not once per article.
+        self._pdf_backend_warned = False
         # Same, for a cache directory that cannot be written to.
         self._cache_write_warned = False
 
@@ -327,7 +327,47 @@ class FullTextService:
 
         # Cache check — return immediately if content already on disk
         if cache_id and self.cache:
-            cached = self._check_cache(cache_id)
+            try:
+                cached = self._check_cache(cache_id)
+            except Exception as exc:
+                # A cache *read* is best-effort exactly as a cache write is.
+                # An entry truncated by a killed process or a filesystem fault
+                # raised UnicodeDecodeError straight out of this method (#71):
+                # it broke the documented FullTextError-only contract, and it
+                # was a hard stop where re-fetching over the network was
+                # available, so one bad file made a paper permanently
+                # unfetchable and took a bulk sync down with it.
+                #
+                # The guard covers everything _check_cache does, which is a
+                # read and — for a cached PDF — the re-extraction that follows
+                # it. Both are better re-fetched than raised, and neither can
+                # be told apart from here, which is why the exception type is
+                # reported rather than a cause asserted: _TierFailures does the
+                # same, so that a TypeError among the faults reads as the bug
+                # it is instead of hiding behind a sentence about bad files.
+                #
+                # Warned per article, unlike the once-per-service write
+                # warning: an unwritable directory is a property of the
+                # directory, while this is a property of one file. Not counted
+                # on the exhaustion report below — the cache is not a retrieval
+                # attempt, and this line already says more than that report's
+                # two buckets could.
+                logger.warning(
+                    "Could not read the cached full text for %s (%s: %s); re-fetching.",
+                    cache_id,
+                    type(exc).__name__,
+                    exc,
+                )
+                logger.debug("Cache read failed for %s", cache_id, exc_info=True)
+                # Moved aside, not deleted: the bytes stay available under a
+                # .corrupt suffix, but out of the lookup path. Left where it
+                # was, an undecodable HTML entry is consulted ahead of the PDF
+                # entry, so it hides a good PDF behind it and the same warning
+                # and the same network fetch repeat on every run forever — a
+                # re-fetch only overwrites it when the chain happens to return
+                # JATS full text.
+                self._quarantine_cache_entry(cache_id)
+                cached = None
             if cached is not None:
                 return cached
 
@@ -671,6 +711,21 @@ class FullTextService:
             return result
         return None
 
+    def _quarantine_cache_entry(self, cache_id: str) -> None:
+        """Move an unreadable cache entry aside, never raising.
+
+        :meth:`FullTextCache.quarantine` is already best-effort, but this runs
+        from inside the handler that exists to keep ``fetch_fulltext`` to its
+        ``FullTextError``-only contract. Tidying up must not become the thing
+        that breaks it, so a caller-supplied cache that does not implement the
+        method, or an unforeseen fault inside one that does, is logged and
+        dropped rather than allowed to escape.
+        """
+        try:
+            self.cache.quarantine(cache_id)
+        except Exception:
+            logger.debug("Could not quarantine the cache entry for %s", cache_id, exc_info=True)
+
     def _warn_cache_write_failed(self, exc: BaseException) -> None:
         """Report an unwritable cache, once per service.
 
@@ -775,11 +830,12 @@ class FullTextService:
         A no-op when ``convert_pdfs`` is off or ``result.html`` is already
         populated — an earlier tier's text is never overwritten.
 
-        Otherwise best-effort: a missing ``bmlib[pdf]`` extra or an unreadable
-        PDF leaves the result untouched, so the caller still has the PDF
-        itself. ``result.pdf_url`` and ``result.file_path`` are deliberately
-        left in place — extracted text recovers the prose but not figures,
-        tables or layout, so the original stays worth offering.
+        Otherwise best-effort: a PDF backend that cannot be constructed (the
+        ``bmlib[pdf]`` extra missing, or broken) or an unreadable PDF leaves
+        the result untouched, so the caller still has the PDF itself.
+        ``result.pdf_url`` and ``result.file_path`` are deliberately left in
+        place — extracted text recovers the prose but not figures, tables or
+        layout, so the original stays worth offering.
 
         Every way this can come up empty is logged at WARNING: a scanned PDF
         that yields nothing is invisible otherwise, and a partial extraction
@@ -789,18 +845,25 @@ class FullTextService:
             return
         try:
             converter = get_converter()
-        except ImportError as e:
-            # Only constructing the backend can raise this, and only for a
-            # missing extra — but report what was actually raised rather than
-            # asserting the cause, so a broken PyMuPDF install is not
-            # misreported as an uninstalled one.
-            if not self._pdf_extra_warned:
+        except Exception as e:
+            # Report what was actually raised rather than asserting the cause,
+            # so a broken PyMuPDF install is not misreported as an uninstalled
+            # one. Not narrowed to ImportError: get_converter() documents a
+            # ValueError for an unknown backend name, and a third-party
+            # backend's __init__ may raise anything at all. Narrowed, those
+            # escaped this method entirely and came out in the handler that
+            # wraps the _check_cache call, where a perfectly readable cached
+            # PDF was blamed on an unreadable cache file and re-downloaded
+            # into the identical deterministic fault.
+            if not self._pdf_backend_warned:
                 logger.warning(
-                    "convert_pdfs is enabled but no PDF backend is usable (%s); "
-                    "PDFs will be returned as links only. Install bmlib[pdf].",
+                    "convert_pdfs is enabled but no PDF backend is usable (%s: %s); "
+                    "PDFs will be returned as links only. Install bmlib[pdf] if the "
+                    "extra is missing.",
+                    type(e).__name__,
                     e,
                 )
-                self._pdf_extra_warned = True
+                self._pdf_backend_warned = True
             return
 
         try:

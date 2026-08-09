@@ -245,6 +245,8 @@ Within Tier 0, an `xml` entry is fetched and JATS-parsed into HTML, a `pdf` entr
 - **Extracted PDF text is not cached; it is re-derived.** Only body-carrying JATS HTML is written to the HTML cache, so a cached HTML hit always means full text. A cached *PDF* hit re-runs extraction on the local file, so a second `fetch_fulltext()` returns the same `html` and `content_kind` as the first.
 - **Caching is opt-in per call.** The service holds a `FullTextCache` unconditionally, but reads and writes only occur when `identifier` is passed.
 - **A cache that cannot be written to is reported once.** A read-only cache directory or a full disk does not fail a retrieval — the content is already in hand — but it means every later run re-fetches the whole corpus over the network. The first failed write emits a `WARNING` naming what was raised; the rest stay at `DEBUG`, since the cause is a property of the directory rather than of the article. HTML and PDF writes share the one warning, so a PDF-only corpus is not left silent.
+- **A cache entry is never half-written.** Both writes go to a temporary file and are published with `os.replace`, so a write that fails partway leaves the previous entry — or nothing — rather than a truncated article. This matters because a truncated HTML file decodes perfectly and would then be served as `content_kind="fulltext"` from `source="cached"` on every later run, with nothing logged at any level: `quality/` would score a paper whose Methods and Results do not exist. Note the scope: this closes the window in which such an entry is *written*. It does not detect one already on disk — a truncation of English-language prose usually lands on an ASCII boundary and decodes fine — so a cache written by bmlib before 0.8.1 is best cleared once.
+- **A cache entry that cannot be *read* does not fail the retrieval either.** An entry corrupted by something outside bmlib — a killed process, a manual edit, a filesystem fault — is reported with a `WARNING` naming the cache key and the exception type, and the retrieval chain runs as though the cache had missed. Unlike the write warning above this is emitted per article, because the cause is a property of that one file. The bad entry is not deleted, but it *is* renamed with a `.corrupt` suffix, which takes it out of the lookup path while leaving the bytes for you to inspect. Leaving it in place was not viable: only a re-fetch that returns JATS full text overwrites the HTML entry, so an article served as a PDF kept warning and re-downloading on every run — the undecodable entry is read first, so it hid the freshly cached PDF behind it. `clear()` sweeps the `.corrupt` files up.
 
 ### Telling a failure from an absence
 
@@ -589,6 +591,7 @@ class FullTextCache:
     def get_html(self, identifier: str) -> str | None: ...
 
     # Shared
+    def quarantine(self, identifier: str) -> list[str]: ...
     def delete(self, identifier: str) -> None: ...
     def clear(self) -> None: ...
 ```
@@ -597,14 +600,21 @@ class FullTextCache:
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `save_pdf(data, id)` | `str \| None` | Save PDF bytes; returns the path, or `None` (with a warning log) if the data is not a valid PDF |
+| `save_pdf(data, id)` | `str \| None` | Save PDF bytes; returns the path, or `None` (with a warning log) if the data is not a valid PDF. Raises `OSError` if the write fails |
 | `get_pdf(id)` | `str \| None` | Returns the cached file path, or `None` |
-| `save_html(html, id)` | `str` | Save an HTML string as UTF-8; always returns the file path |
+| `save_html(html, id)` | `str` | Save an HTML string as UTF-8; returns the file path. Raises `OSError` if the write fails |
 | `get_html(id)` | `str \| None` | Returns the cached HTML content, or `None` |
-| `delete(id)` | `None` | Remove both cached files for the identifier (missing files are ignored) |
-| `clear()` | `None` | Remove every file directly inside `pdfs/` and `html/`; subdirectories are skipped |
+| `quarantine(id)` | `list[str]` | Rename any entry for the identifier that cannot be read to `<name>.corrupt`; returns the paths moved. A readable entry is left alone |
+| `delete(id)` | `None` | Remove both cached entries for the identifier (missing ones are ignored) |
+| `clear()` | `None` | Remove everything directly inside `pdfs/` and `html/`, including `.corrupt` and leftover temporary files |
 
 PDF validation uses magic-byte checking against `PDF_MAGIC_BYTES = b"%PDF"`. Non-PDF data is **rejected with a warning log and a `None` return** — no exception is raised.
+
+Both saves are **atomic**: the bytes go to a uniquely-named temporary file beside the target and are published with `os.replace`, so a write that runs out of space raises `OSError` and leaves the previous entry intact instead of a truncated one. The temporary file is dot-prefixed and removed on failure; `clear()` sweeps up any left by a killed process. The file's permissions are those an ordinary write would produce (0666 filtered by the umask), so a cache directory shared between users keeps working.
+
+**Both saves can raise `OSError`**, and for a direct caller this is a real change rather than a relocation: a bare `write_text` under delayed allocation *returned a path* on a disk that was about to fill, leaving a truncated file behind. `FullTextService` catches it at both call sites and reports it once per service.
+
+Reads carry no such guarantee, and **`get_html()` can raise** — a file corrupted by something other than bmlib fails its UTF-8 decode. `FullTextService` guards its own read, falls through to the network, and calls `quarantine()` so the next run is a clean miss; a direct caller of `FullTextCache` sees the error and can call `quarantine()` itself.
 
 The cache has **no TTL, no size limit, and no eviction policy.** Entries live until `delete()` or `clear()` is called, or the directory is removed. Long-running processes should prune it themselves.
 
@@ -620,12 +630,12 @@ sanitize_identifier("10.1/a/b")   # "10.1_a_b_0f7d1c325e"
 ```
 
 ```python
-safe   = re.sub(r"[^\w.\-]", "_", raw)
+safe   = re.sub(r"[^\w.\-]", "_", raw)[:160]
 digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
 return f"{safe}_{digest}"
 ```
 
-The readable prefix is kept for debuggability; the ten-character digest of the **raw** identifier makes the key collision-free.
+The readable prefix is kept for debuggability; the ten-character digest of the **raw** identifier makes the key collision-free. The prefix is capped at 160 characters because the atomic write's temporary name adds 38 more, which would otherwise put a long identifier over `NAME_MAX` and fail a write that used to succeed. Truncation cannot cause a collision — the digest is taken over the whole raw identifier — but it does change the key for an identifier longer than that, so an entry cached for one by an older version is orphaned and re-fetched once.
 
 > **This replaces a plain `re.sub(r"[^\w.\-]", "_", raw)` key, which was a correctness bug.**
 > Every character outside `[\w.\-]` mapped to `_`, so distinct DOIs such as `10.1/a:b` and `10.1/a/b` collapsed onto the same cache file — and a lookup for one could return the **wrong article's** full text. Old cache files written under the un-hashed scheme are not found by the new key and are simply re-fetched; delete them or clear the cache directory to reclaim the space.

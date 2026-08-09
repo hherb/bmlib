@@ -1,17 +1,19 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-09. **0.8.0 is released and on PyPI**, and with it
+_Last updated: 2026-08-10. **0.8.0 is released and on PyPI**, and with it
 **Phase 2 of the bmlibrarian port is complete** — all four ports
 (Cochrane assessor PR #54, PDF section segmenter PR #55, citation/reference
 stack PR #58, PubMed metadata graft PR #59), plus the encrypted-PDF fix
-(#57, PR #60). **#64 is fixed** (PR #66) and **#67 is fixed** (PR #69) —
-`bmlib.fulltext` imports on a core install, and an exhausted retrieval chain
-now reports itself instead of passing for a paywalled paper. Five open issues:
-**#56**, **#68**, and **#70**/**#71**/**#72** filed from #69's review.
-1726 tests + 58 skipped (1782 + 2 with a PostgreSQL DSN), ruff clean.
-`[Unreleased]` carries #64's and #67's fixes, so the next release is at least
-a patch. **Phase 3 is next, and each of its rows needs a design conversation
-before any porting** — see "Next up"._
+(#57, PR #60). Four `fulltext` bugs are fixed: **#64** (PR #66), **#67**
+(PR #69), and **#70**/**#71** (PR #74) — the package imports on a core
+install, an exhausted chain reports itself, the cache is written atomically,
+and a corrupt cache entry falls through to the network instead of aborting
+the run. Five open issues: **#56**, **#68**, **#72**, **#73** (filed while
+fixing #70) and **#75** (filed reviewing PR #74). 1758 tests + 58 skipped
+(1814 + 2 with a PostgreSQL DSN), ruff clean. **`[Unreleased]` now carries
+four fixes and 0.8.1 is the obvious next move** — see "Worth doing".
+**Phase 3 follows, and each of its rows needs a design conversation before
+any porting** — see "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -38,7 +40,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed three releases. Widening it is a downstream change, not a bmlib
   one.
-- **1726 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1782 + 2
+- **1758 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1814 + 2
   with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
   PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
@@ -60,35 +62,28 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; ROADMAP currently carries two, for #64 and #67. Markers inside
-  `docs/superpowers/plans/` are historical records — leave them alone.
+  release time; ROADMAP currently carries four, for #64, #67, #70 and #71.
+  Markers inside `docs/superpowers/plans/` are historical records — leave them
+  alone.
 
 ## Next up
 
 ### Open GitHub issues
 
-Five. **#70, #71 and #72 all came out of #69's review** — all three are
-`fulltext` cache or visibility bugs found while fixing #67, none of them in
-#67's scope.
+Five. **#72 came out of #69's review** (with #70 and #71, both now fixed in
+PR #74); **#73 was found while fixing #70**; **#75 came out of PR #74's own
+review**.
 
-**#70 — a truncated cache file is served as complete full text.** The most
-serious of the three, and the only one worth doing before a release.
-`save_html` writes with a bare non-atomic `write_text` and `get_html` reads
-back with no validation, so a disk that fills mid-write — one of the two
-causes #67's own new cache warning names — leaves a truncated file that
-decodes fine and is returned as `content_kind="fulltext"` from
-`source="cached"` on every later run, with no log at any level. Strictly worse
-than #67: that lost data in a shape resembling absence, this fabricates a
-complete-looking article for `quality/` to score. `os.replace` via a temp
-file, in both `save_html` and `save_pdf`.
-
-**#71 — a corrupt cache entry aborts the run instead of falling through.**
-`_check_cache` is unguarded and `get_html` does a bare `read_text`, so a file
-truncated mid-multibyte-sequence raises `UnicodeDecodeError` out of
-`fetch_fulltext()` — contradicting the documented contract, contradicting
-#67's own new bullet that a bad cache does not fail a retrieval, and making
-one bad file permanently fatal for that paper where re-fetching was available.
-Cheap; pairs naturally with #70.
+**#75 — an uncreatable cache directory aborts `FullTextService`
+construction.** `FullTextCache.__init__`'s three `mkdir` calls are unguarded,
+so a file standing where the cache directory should be raises out of the
+constructor. Same class as #71 — an environment fault about the *cache*
+killing a run where degrading to no-caching was available — and the last place
+in `fulltext/` where the cache is not best-effort. Pre-existing, kept out of
+PR #74 because it carries a decision: degrade with a one-shot warning, or keep
+raising and document it. The guard probably belongs around `FullTextService`'s
+*default* construction rather than in `FullTextCache`, since a caller who
+constructed the cache directly asked for one specifically.
 
 **#72 — a bmlib bug hides behind any tier that still works.** #67's summary is
 consulted only on *total* exhaustion, so an `AttributeError` from every PMC
@@ -109,6 +104,15 @@ from Europe PMC's `fullTextUrlList` and Unpaywall, and a `Free` PDF URL that
 how often that happens before choosing a level — this repo settles list-shaped
 questions by measuring.
 
+**#73 — `install_defaults()` copies templates non-atomically**, found while
+fixing #70 and deliberately not folded into it. A copy interrupted partway
+leaves a truncated template that `if not dest.exists()` then skips forever, so
+a prompt missing its last half renders and is sent to a model. Milder than #70
+— one-time setup from a local file, degrading a prompt rather than fabricating
+an article — and it carries a decision: `_atomic_write` is private to
+`fulltext/cache.py`, so fixing this means either promoting it to a shared
+internal module or accepting a second copy. Worth deciding once.
+
 **#56 — `_extract_title()` trusts junk PDF metadata titles** ("Microsoft
 Word - manuscript.docx" wins over the large-font first-page line), deferred
 from PR #55's review. Note what it will cost to do *properly*: this repo
@@ -122,14 +126,24 @@ the record of what was rejected and why.
 
 ### Worth doing, not yet an issue
 
-- **Cut 0.8.1.** `[Unreleased]` now holds two fixes, both exactly what a patch
-  release is for — a headline 0.8.0 addition (`SectionSegmenter`) is
-  unreachable for anyone who installed core bmlib (#64), and an exhausted
-  retrieval chain passed silently for a paywalled paper (#67). Both are
-  additive: no stored value changes, and the only new output is log lines.
-  The release recipe is at the bottom of this file; note the version now lives
-  in four places *and* the extras tables in README, `docs/manual/index.md` and
-  CLAUDE.md gained a `fulltext` row.
+- **Cut 0.8.1 — this is the obvious next move.** `[Unreleased]` now holds four
+  fixes, all exactly what a patch release is for: a headline 0.8.0 addition
+  (`SectionSegmenter`) was unreachable for anyone who installed core bmlib
+  (#64); an exhausted retrieval chain passed silently for a paywalled paper
+  (#67); a truncated cache file was served as a complete article forever
+  (#70); and one corrupt cache entry aborted a bulk sync (#71). All additive:
+  no stored value changes, and the only new output is log lines. Three API
+  notes for the release summary, all in `FullTextCache` and all reaching a
+  *direct* caller only: `save_html`/`save_pdf` now raise `OSError` where they
+  previously wrote a partial file (both `FullTextService` call sites already
+  reported a failed write); `quarantine()` is new; and `sanitize_identifier()`
+  caps its readable prefix at 160 characters, so an entry cached for a longer
+  identifier is orphaned and re-fetched once. Worth a line for operators too:
+  #70 stops a truncated entry being *written* and does not detect one already
+  on disk, so a cache written by an older version is best cleared once. The
+  release recipe is at the bottom of this file;
+  note the version lives in four places *and* the extras tables in README,
+  `docs/manual/index.md` and CLAUDE.md gained a `fulltext` row.
 - **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume
   0.6.0, 0.7.0 and 0.8.0. Read all three releases' non-comparable behaviour
   changes first — the transparency ones move stored scores, and 0.8.0 moves
@@ -196,350 +210,14 @@ transparency/quality reconciliation, no GRADE engine exists, SSRF guard).
 
 ## Deliberate non-fixes — do not "fix" these
 
-Each was investigated and closed as correct. Reopening them wastes a session.
-Entries marked "argued inline" carry their full reasoning as comments in the
-named source file; the entry here is the pointer, not the argument.
-
-### Transparency
-
-- **`_INDUSTRY_STEMS` and `_INDUSTRY_WORDS` must not be merged into one
-  list**, and neither may be extended without re-running
-  `scripts/sample_funder_names.py` against `tests/data/funder_names.json` —
-  the corpus *removed* intuitive members (`pharma`, `biotech`) on measured
-  false positives. Metric test:
-  `tests/test_funder_matching.py::TestAgainstTheLabelledCorpus`.
-- **`_is_industry_funder()` is deliberately not applied to COI prose**;
-  `_INDUSTRY_COI_KEYWORDS` stays separate — org suffixes match far too
-  freely in running text.
-- **Every `analyze()` sub-step takes `_Analysis`, mutates it, and returns
-  `None`** — one step threading a value while four mutate is the
-  inconsistency that makes the next contributor guess. Pinned by
-  `test_the_merge_applies_both_of_its_branches_to_one_list`.
-- **The data-deposition rank-merge machinery** (`_DATA_LEVEL_RANK`,
-  `note_data_level()`, `_DEPOSITION_DATABANK_LEVELS`) is argued inline in
-  `transparency/analyzer.py`. Two rules: every producible level must be a
-  key of the ranking or `note_data_level()` raises by design; the deposition
-  list deliberately excludes reference-only databases (dbSNP, OMIM, RefSeq…).
-  Three tests in `test_transparency.py` pin it.
-- **Four more, each argued where it lives and each with a test naming it:**
-  `TransparencySettings.filtering_enabled` / `max_concurrent_analyses` /
-  `cache_results` are caller-owned orchestration hints, not dead code;
-  `outcome_switching_detected` stays reserved and always `False` (kept in the
-  schema so persisted results need no migration when detection lands); a
-  PubMed record with no `<CoiStatement>` leaves `coi_disclosed` alone (absence
-  means the publisher supplied none); and `<DataBankList>` accessions are
-  validated as `NCT\d{8}` before becoming a URL, though an entry failing
-  validation still counts as registered — registration is separate from
-  followability.
-
-### Positional stability
-
-- **`Publication.pmcid`, `BaseAgent.__init__`'s `embedding_model`, and
-  `TransparencyResult.unknown_reason` are each declared last** on their
-  dataclass/signature — downstream projects construct positionally, and any
-  other placement shifts every following argument silently. Pinned by
-  `test_positional_construction_is_stable_across_versions`.
-
-### db / llm / agents
-
-- **PostgreSQL transaction nesting is detected from bmlib's own open-block
-  count, not psycopg2's status**, keyed by *(thread, `id(conn)`)* — see
-  CLAUDE.md for why both parts are load-bearing.
-- **The Ollama raw `/api/tags` path re-implements httpx's safety defaults on
-  purpose** (HTTP(S)-only scheme, bearer token stripped across cross-origin
-  redirects, `"<word>:<digits>"` read as host:port). Each has a regression
-  test naming it.
-- **The JSON extractors prefer a whole span to a nested fragment in three
-  places** (argued inline in `llm/utils.py`, `llm/json_repair.py`,
-  `agents/base.py` — all guarding #33's silent truncation), **a fenced
-  candidate wins on parse alone**, **`parse_json()` enforces `dict | list`**
-  (a bare scalar raises → retry inside `chat_json()`), **`require_dict` has
-  a third `bool` overload** (mypy does not expand `bool` into the two
-  `Literal`s; CI runs ruff only, so nothing catches its removal), and
-  **`salvage_json_fields()` bounds both passes with `RecursionError` caught
-  wherever a candidate is decoded**. `iter_json_spans()` dedupes candidates by
-  text, not position. Eleven tests pin these — seven in
-  `test_json_extraction.py` (from `TestExtractJsonPrefersWholeSpans`) and four
-  in `test_agents.py`.
-- **`PerformanceMetrics.elapsed_time_seconds` reads `time.monotonic()`**,
-  not the wall-clock timestamps it stores; `snapshot()` must copy the
-  monotonic marks by hand (`init=False`). Model-inference and prompt-eval
-  timers are deliberately omitted — no provider reports them through bmlib.
-  Pinned by `test_elapsed_survives_a_wall_clock_step` and
-  `test_snapshot_carries_the_monotonic_marks`.
-
-### context_processor
-
-- **The batcher measures the string it will actually send; it never assumes
-  a size.** Three tempting arithmetic shortcuts each re-break
-  `max_context_chars` the way upstream did; the invariant is
-  `Batch.total_chars == len(_format_batch_content(batch, config))`.
-  `estimate_item_size()` was deliberately not ported — it let the oversized
-  decision disagree with the packing measurement.
-- **Six more load-bearing "simplifications" refused**, each with a named test
-  in `test_context_processor.py` / `test_llm_chunk_processor.py`: `_render()`
-  substitutes in one regex pass (two-pass `.replace()` splices the batch into
-  a query containing `{content}`); the package `__init__` reaches
-  `llm_processor` through PEP 562 `__getattr__` (a plain re-export drags
-  jinja2 into the LLM-free harness); `process()` keeps statistics in a local,
-  not on `self`; `success_rate` cannot return 1.0 for a batch-less run that
-  dropped everything; the recursion wraps results in `ConsolidatedItem`, not
-  a tuple (what made upstream's `format_consolidated_item()` dead code), and
-  `min_items_for_recursion` stopping at one result is correct; and
-  `LLMChunkProcessor` renders with `str.replace`, not `str.format` (templates
-  legitimately hold literal braces).
-
-### fulltext — retrieval and JATS
-
-- **`_JATSHandler.endElement` tests `in_figure or in_table_wrap` before any
-  prose branch and routes on `in_caption`** — asking about the section first
-  blanks the caption and renames the section; the same branch deliberately
-  drops non-caption `<p>` inside figures/tables. Pinned by
-  `TestJATSParserCaptionScoping` and
-  `TestJATSParserUnsectionedBodyFurniture`.
-- **NCBI's ID Converter is consulted *after* the Europe PMC search** (the
-  search also carries the free-PDF URL) **but *outside* the search's
-  `except`, in its own statement** — a search that raised is exactly when a
-  second resolver is worth its request, and one enclosing handler would
-  swallow the error before the converter was reached. A converter-discovered
-  PMC ID is tried at Europe PMC even when the search said `inEPMC="N"`, since
-  a stale flag is one reason the converter exists. Two tests in
-  `test_fulltext_service.py` pin it, starting at
-  `test_the_converter_is_consulted_when_the_search_itself_failed`.
-- **`_fetch_ncbi_pmc()` raises on a reply with neither body nor abstract** —
-  efetch answers a publisher-withheld article with a stub that is HTTP 200
-  and parses cleanly; returned instead of raised, it becomes near-empty HTML
-  labelled `content_kind="abstract"`. Pinned by
-  `test_a_stub_with_no_article_raises` and
-  `test_a_body_less_article_with_an_abstract_is_returned`.
-
-### fulltext — importable on a core install (#64, PR #66)
-
-**CLAUDE.md argues this one in full too**, under "Optional dependencies
-guarded at the call site" — the package-not-module rule, one fresh
-interpreter per module, return the module rather than storing it, report the
-caught exception rather than asserting "not installed", and `__dir__`'s union.
-Read it there. What CLAUDE.md omits:
-
-- **Both halves of the fix stay, and the reason is counter-intuitive — read
-  the mutation table in
-  `docs/superpowers/specs/2026-08-08-fulltext-import-without-httpx-design.md`
-  before removing either.** They overlap: once httpx moved into
-  `FullTextService.__init__`, restoring the eager re-export gates nothing and
-  **no test failed**. What the PEP 562 deferral buys on its own is that
-  `import bmlib.fulltext` never loads `service`, so no future top-level import
-  there can gate the parser, the models or the segmenter again —
-  `test_importing_the_package_does_not_load_the_service` is the guard that
-  isolates it, written *because* mutation testing found nothing else did.
-- **`_http_get` had no test at all** until this review: all ~45 tests in the
-  file patch `_http_get` itself, so replacing its body with `raise
-  AssertionError` left the suite green. `TestHttpGet` covers it now.
-- **`fulltext = ["httpx>=0.25"]` is httpx only**; `pdf` stays separate (a
-  ~20 MB binary wheel for anyone who only wants JATS retrieval).
-  `test_the_extra_the_error_message_names_is_a_real_one` reads
-  `Provides-Extra` from the installed metadata, so the message and
-  `pyproject.toml` cannot drift apart.
-
-### fulltext — the exhausted-chain report (#67, PR #69)
-
-- **The warning belongs outside the `if abstract_only is not None:` branch,
-  and that placement is the whole fix.** Inside it, the *more* complete
-  failure was the quieter one. Mutation testing confirms it: putting the
-  warning back inside the branch — the original bug — fails two tests.
-- **Faults and absences are counted apart, and that is the discrimination
-  the report exists to make.** `N attempts failed (ConnectError)` is a lost
-  network; `N sources had nothing` is an ordinary paywalled paper; a
-  `TypeError` among the faults is a bug. A single count could not say this.
-- **Review found the first cut still printed the reassuring line during a
-  total outage, and the two causes are worth remembering.** (1) Both
-  resolvers reported an HTTP failure by *returning* — `(None, None)`, which
-  is also what an empty result set returns — so a 503 from Europe PMC and
-  NCBI incremented nothing and the summary read "no free full text was
-  offered". A swallowed exception is not the only way a tier goes wrong;
-  anything that reports failure in the same shape as absence has the same
-  bug. (2) `FullTextError` was raised alike for `Unpaywall HTTP 503` and
-  `DOI not found in Unpaywall`, so the type name carried no information at
-  the one tier that matters most for a DOI. Hence
-  `FullTextUnavailableError`, and hence `note_absence()` for the sources
-  that report an absence by returning.
-- **The counter says *attempts*, never tiers.** `_try_known_sources` records
-  once per fetcher-supplied source, so the number is not bounded by the
-  chain's eight tiers — "9 tiers raised" was emittable from a run that
-  attempted four.
-- **`_download_and_cache_pdf`'s *download* half is deliberately not wired to
-  the counter** — see #68 above. All three of its call sites return
-  immediately after it, so a recorded failure could never be reported;
-  threading it would be dead plumbing that reads as coverage. There is a
-  comment at the handler saying so, because eight of the nine swallowers were
-  wired and the ninth reads as an oversight otherwise. Its *cache-write* half
-  is a different question and was split out into `_save_pdf_to_cache`: an
-  unwritable directory is not a download failure, and folding the two meant a
-  PDF-only corpus never saw the cache warning at all.
-- **`_resolve_pmc_id_via_idconv` takes `failures` as *optional*, and the
-  reason is its own direct callers** — fourteen of them in the tests, with no
-  report to feed it. Not "because it swallows its own exceptions": Tier 0
-  swallows too and takes the parameter as required.
-- **A successful retrieval emits no *exhaustion* warning** — pinned by two
-  controls, one where nothing fails and one where an attempt fails and a
-  later tier recovers. The narrower wording is deliberate: a successful
-  retrieval may still warn about an unwritable cache or an unextractable
-  PDF, and the blanket claim was contradicted by this PR's own cache test.
-- **A 404 is an absence from an *article* endpoint and a fault from a
-  *search* endpoint**, and the asymmetry is deliberate. Europe PMC answers
-  "no such paper" with HTTP 200 and an empty result list, so a 404 on the
-  search path means the API moved. On an article path — Europe PMC, NCBI,
-  Unpaywall, a fetcher-supplied URL — it means the paper is not there, which
-  for a stored fetcher URL is ordinary staleness rather than something to act
-  on. Three of the four article fetchers called it a fault until review
-  caught it.
-- **`describe()`'s wording is pinned at its source**, not only through a tier
-  chain. It is a documented interface — the manual tells operators to grep
-  for it — and asserting it through `fetch_fulltext` left the singular branch
-  untested and the counts matched by substring, where `"13 attempts failed"`
-  satisfies `"3 attempts failed"`.
-
-### fulltext — the PDF converter (PR #60)
-
-- **A password-protected PDF is rejected on `doc.needs_pass`, never on
-  `doc.is_encrypted`.** An *owner* password restricts permissions without
-  blocking reads, so such a file is encrypted and converts perfectly;
-  widening the check to `is_encrypted` would reject it. Both guards carry an
-  owner-password negative control for exactly that
-  (`test_an_owner_password_alone_does_not_block_conversion` /
-  `..._extraction`), so neither is a check that cannot fail.
-- **`extract_blocks()` keeps its explicit check even though it already
-  raised** — it raised only because `get_text()` failed of its own accord,
-  and had that stopped, it would have returned `[]`, exactly what an
-  image-only scan returns. The general lesson, and the reason #57 existed:
-  `except` blocks written to keep one bad page from aborting the rest will
-  also absorb a whole-file failure, and the result reports as a success.
-
-### fulltext — PDF section segmenter (PR #55)
-
-- **`TextBlock` is one PDF *line*, not a span, with font attributes from the
-  dominant span** (most non-whitespace characters, ties to the first).
-  PyMuPDF starts a new span at every font change, so span-level blocks —
-  upstream's shape — shatter a mixed-font heading into fragments no anchored
-  pattern can match, and a superscript marker must not restyle its line.
-  Pinned by `test_a_heading_split_across_spans_is_one_block` and
-  `test_a_superscript_marker_does_not_restyle_the_line`.
-- **Nothing is dropped for being empty or unclassified**, each with a named
-  test: front matter is a 0.5-confidence section (if the real first heading
-  was missed, it has swallowed the introduction); a heading with no body is
-  reported with `content == ""`; and `SectionType.TITLE`,
-  `SegmentedDocument.authors` and `Section.subsections` are reserved, not
-  dead (the `outcome_switching_detected` precedent).
-- **`extract_blocks()` raises where `convert()` returns a failed result.**
-  Partial text is useful and `converted_pages` says how partial; a partial
-  block list is indistinguishable from a sparse PDF, so degradation would be
-  silent. Pinned by `test_a_corrupt_pdf_raises_rather_than_degrading`.
-- **A negative vertical gap (column/page boundary) inserts no paragraph
-  break** — a PDF gives no signal distinguishing a paragraph continuing across
-  a page from one ending at it. The `height == 0` degenerate-bbox case is
-  acknowledged in `_join_blocks` and left.
-- **CONFLICTS owns the disclosure family, in both numbers** — listing the
-  singular under FUNDING put the two numbers of one heading in different
-  sections, decided by dict iteration order. A comment wards off re-adding it.
-- **Two known spec-level limits, documented in `docs/manual/fulltext.md`
-  rather than fixed:** the 0.7 partial-match pass can fire on a bold figure
-  caption ("Fig. 3 Study results" → RESULTS), and `min_heading_size` is an
-  absolute floor (10.0) in an otherwise median-relative design, so it can
-  silence the segmenter on a 9pt two-column layout. Callers are told to check
-  `Section.confidence`.
-
-### citations (merged, PR #58)
-
-**Argued in full in `docs/manual/citations.md` and
-`docs/superpowers/specs/2026-08-06-citations-port-design.md` — read them
-before "correcting" anything here.** Upstream's *code* is the output spec,
-not its docstrings, where the two disagree. Five upstream-faithful oddities
-are kept rather than unified (per-style empty-title rendering, the ambiguous
-bare inverted `authors` string, `"\n---"` with no leading blank line,
-`"Smithn.d."`, `author_surname("Jan van der Berg") == "Berg"`), each pinned
-by a test naming it. Two deliberate departures: `Citation` compares by all
-fields, and marker ids stay `int` only. Five upstream defects were fixed,
-the fifth from PR #58's review — a whitespace-only author entry crashed every
-style with `IndexError`.
-
-### publications — PubMed metadata graft (PR #59)
-
-**CLAUDE.md argues most of this port in full — read it there, and do not
-re-derive any of it.** "Replace-per-source child rows" settles the `source`
-column and scoped delete, `_stamp_source()`, the `ValueError` on an unnamed
-row, the absent UNIQUE constraint, the empty guard and `_consolidate_rows()`;
-"Markdown, measured against the markup" settles the mixed-content walker,
-strip-once, edge whitespace outside the markers, `Label` **or**
-`NlmCategory`, the measured escape set, and `<u>`. Each is pinned by a named
-test on both backends, several verified by mutation. Only what it omits:
-
-- **PubMed repeats a `<Grant>` block verbatim** — 31 of 575 entries across 200
-  NIH-funded records — so `_parse_grants()` collapses exact repeats, keeping
-  first-occurrence order. Two grants differing in any field are two grants.
-- **`position` indexes `<AuthorList>`, not `Publication.authors`** — it counts
-  the `<CollectiveName>` consortia that `authors` skips, so the lists differ
-  in length whenever one is present and `authors[a.position]` is the wrong way
-  to resolve an affiliation's author (match on `author`). What position is
-  *for* — first or senior author — is right either way. Accepted knock-on: a
-  consortium stating an affiliation loses it, since recording it would put an
-  `author` in the table that is absent from `authors`, breaking the one join
-  the column exists for. Pinned by
-  `test_position_indexes_the_xml_author_list_not_the_authors_field`.
-- **`store_publication()` does not write `publication_id` back onto the
-  `Grant` / `AuthorAffiliation` objects it is given**, unlike `pub`, which it
-  mutates in place and documents as such — the `FullTextSource` precedent. The
-  failure is silent: the field reads `0`, a plausible id rather than an
-  obvious sentinel. Pinned by `test_the_caller_s_objects_are_not_mutated`.
-- **`is_retracted` and upstream's `_extract_date` were not ported.**
-  `publication_types` already carries "Retracted Publication",
-  `retractions.py` answers authoritatively, and upstream reads RefType
-  `RetractionOf` (this article *is* the notice) as retracted. `_parse_pubdate`
-  is strictly better than `_extract_date`, which defaults a missing month and
-  day to `01` — inventing precision — and swallows every failure bare.
-- **`~x~` / `^x^` are Pandoc extensions, knowingly.** A renderer without them
-  shows the tildes literally; the alternative flattened `CO<sub>2</sub>` and
-  `CO<sup>2</sup>` to the same ambiguous `CO2`. Documented in the manual.
-- **Which elements get the formatting walker is decided by NLM's DTD.**
-  `ArticleTitle`, `AbstractText` and `Affiliation` are declared `(%text;)*` —
-  `#PCDATA | b | i | sup | sub | u` — so all three use
-  `_text_with_formatting`. `Journal/Title`, `DescriptorName` and
-  `PublicationType` are `(#PCDATA)`, genuine leaves, and keep plain `.text`.
-  Do not widen or narrow this list by eye; check the DTD.
-
-### publications — retractions
-
-- **`bmlib.publications.retractions` has no downloader** (the Crossref
-  endpoint 504s freely), **is not a fetcher and never will be without a
-  protocol change** (a notice annotates a paper usually not in the caller's
-  table — see the design doc's "Why this is not a fetcher"), **is not wired
-  into `transparency/` or `quality/`** (both are scoring changes moving
-  stored values), and **has no `is_paper_retracted()` wrapper** (keeping the
-  pure rule separable from the I/O is what makes it testable).
-- **Two values measured against the live export, not reasoned about**: the
-  `%m/%d/%Y` / `%d/%m/%Y` ambiguity resolves US-first (confirmed by same-file
-  dates whose day exceeds 12), and `_ABSENT_IDENTIFIER_VALUES` holds exactly
-  `{"0", "unavailable"}` — a third sentinel needs its own measurement.
-
-### quality — Cochrane assessor (merged, PR #54)
-
-Full reasoning in `docs/superpowers/specs/2026-08-05-cochrane-assessor-design.md`
-and `docs/manual/quality.md`; every claim below has a named test.
-
-- **Nothing is fabricated to fill a gap:** `assess()` returns `None` on
-  failure rather than nine defaulted "Unclear risk" domains;
-  `collapse_risk_of_bias()` raises on an unrecognised `bias_type` rather than
-  skipping it into a `BiasRisk` that looks complete; `unclear` outranks `low`
-  in its worst-wins reduction; `_enrich_with_cochrane()` does not copy
-  Cochrane's `evidence_level` onto the assessment's; `study_id` comes from the
-  caller, never parsed from an author list.
-- **`_ASSESSMENT_ATTEMPTS = 2`, not 1 or 3** — `chat_json()` already retries
-  inside each attempt; two keeps the worst case at six model calls.
-- **Oversized text is condensed in exactly two passes** — digest, then one
-  nine-domain judgement, no per-chunk verdicts to merge (blinding needs the
-  whole Methods in view) — and **`_condense()` checks `len(digest)` against
-  the budget, not `ProcessingStatus`**: `TRUNCATED` names the recursion
-  ceiling, not the size of what it produced (a 21,269-char digest was measured
-  emerging from a 200-char budget). Carries a negative control,
-  `test_the_guard_does_not_reject_a_digest_that_actually_fits`.
+**Moved to [`docs/DECISIONS.md`](docs/DECISIONS.md). Read it before
+"correcting" anything that looks wrong in `db/`, `llm/`, `agents/`,
+`context_processor/`, `citations/`, `quality/`, `transparency/`,
+`publications/` or `fulltext/`.** Each entry there was investigated and closed
+as correct, so reopening one wastes a session; the file also records where
+each argument lives in full (CLAUDE.md, `docs/manual/`,
+`docs/superpowers/specs/`). Add new entries there, not here — this file is for
+what still needs doing.
 
 ## Conventions and gotchas for the next session
 

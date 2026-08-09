@@ -71,6 +71,67 @@ All notable changes to bmlib are documented here. The format is based on
   the warning at all — leaving a corpus served mostly by Unpaywall, which
   never writes HTML, completely silent.
 
+- **A truncated cache file is no longer written** (#70, found reviewing #67's
+  fix). `save_html` and `save_pdf` wrote with a bare
+  `write_text`/`write_bytes` and `get_html` read back with no validation, so a
+  disk that filled mid-write — one of the two causes the warning above names —
+  left a truncated file that decodes perfectly and was then returned as
+  `content_kind="fulltext"` from `source="cached"` on every later run, with no
+  log at any level: `quality/` would score a paper whose Methods and Results
+  do not exist. Strictly worse than #67, which lost data in a shape resembling
+  absence. Both writes now go to a uniquely-named temporary file beside the
+  target and are published with `os.replace`, so a failed write leaves the
+  previous entry or nothing. The headline says *written* deliberately: this
+  closes the window rather than detecting an entry already truncated on disk,
+  and a real truncation of English-language prose usually lands on an ASCII
+  boundary and decodes fine, so `clear()` is the remedy for a cache an older
+  version wrote. Several details are load-bearing and each has a named test:
+  the `fsync` before the replace is not durability theatre — under delayed
+  allocation the `write(2)` that `flush()` issues returns success and ENOSPC
+  reaches userspace only at `fsync`, so without it `os.replace` would publish
+  a file whose blocks were never written; the temporary name carries a UUID,
+  because the loser of a race between two processes would otherwise unlink the
+  winner's in-flight temp file and leave neither having cached anything;
+  `O_BINARY` is added where the platform has it, since a descriptor `os.open`
+  leaves in the CRT's default text mode would rewrite every LF in a cached PDF
+  as CRLF on Windows; the mode is 0666 filtered by the umask — exactly what
+  `write_bytes` requests, and neither `tempfile.mkstemp`'s 0600 nor 0644,
+  both of which silently break a cache directory shared between users; and the
+  cleanup's own `unlink` is guarded so it cannot replace the exception it is
+  tidying up after. `sanitize_identifier` now truncates its readable prefix,
+  since the temporary name is 38 characters longer than the entry's and a long
+  identifier would otherwise fail a write that used to succeed. `save_html`
+  and `save_pdf` now raise `OSError` where they previously wrote a partial
+  file — both call sites in `FullTextService` already report a failed cache
+  write, so a retrieval is unaffected, and both docstrings carry a `Raises:`
+  section for direct callers.
+
+- **A corrupt cache entry no longer aborts the run** (#71, same review).
+  `_check_cache` was called unguarded and `get_html` does a bare `read_text`,
+  so an entry truncated mid-multibyte-sequence raised `UnicodeDecodeError`
+  straight out of `fetch_fulltext()`: it broke the documented
+  `FullTextError`-only contract, contradicted #67's own new bullet that a bad
+  cache does not fail a retrieval, and was a hard stop where re-fetching over
+  the network was available — one bad file made a paper permanently
+  unfetchable and took a bulk sync down mid-corpus. A cache *read* is now
+  best-effort exactly as a cache write is. The guard is deliberately broad: a
+  decode failure is only the shape it was reported in, and a file the process
+  cannot read raises `OSError` instead, so narrowing it to `UnicodeDecodeError`
+  restores the bug — pinned by its own test after mutation testing found the
+  first cut survived that narrowing. It reports the exception type as well as
+  its message, so a bmlib bug does not read as an ordinary bad file. Warned
+  per article rather than once per service, unlike the write warning above: an
+  unwritable directory is a property of the directory, an unreadable file is a
+  property of that file. The unreadable entry is not deleted but **moved aside**
+  to a `.corrupt` name by the new `FullTextCache.quarantine()`: leaving it in
+  place healed only when the re-fetch happened to return JATS full text, since
+  an article served as a PDF never rewrites the HTML entry and the undecodable
+  entry is read first — so it hid the freshly cached PDF behind it and the
+  article warned and re-downloaded on every run, forever. `delete()` and
+  `clear()` now also remove an entry that is not a regular file, which is the
+  corrupt shape an operator is most likely to meet and the one both of them
+  previously failed on.
+
 - **`bmlib.fulltext` imports on a core install** (#64). `fulltext/__init__.py`
   eagerly re-exported `service`, whose top-level `import httpx` was the last
   unguarded optional import in bmlib — and since importing a submodule imports
