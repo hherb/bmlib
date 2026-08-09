@@ -327,7 +327,31 @@ class FullTextService:
 
         # Cache check — return immediately if content already on disk
         if cache_id and self.cache:
-            cached = self._check_cache(cache_id)
+            try:
+                cached = self._check_cache(cache_id)
+            except Exception as exc:
+                # A cache *read* is best-effort exactly as a cache write is.
+                # An entry truncated by a killed process or a filesystem fault
+                # raised UnicodeDecodeError straight out of this method (#71):
+                # it broke the documented FullTextError-only contract, and it
+                # was a hard stop where re-fetching over the network was
+                # available, so one bad file made a paper permanently
+                # unfetchable and took a bulk sync down with it.
+                #
+                # Warned per article, unlike the once-per-service write
+                # warning: an unwritable directory is a property of the
+                # directory, while this is a property of one file, and naming
+                # that file is what lets an operator delete it. Not counted on
+                # the exhaustion report below — the cache is not a retrieval
+                # attempt, and this line already says more than that report's
+                # two buckets could.
+                logger.warning(
+                    "Could not read the cached full text for %s (%s); re-fetching.",
+                    cache_id,
+                    exc,
+                )
+                logger.debug("Cache read failed for %s", cache_id, exc_info=True)
+                cached = None
             if cached is not None:
                 return cached
 

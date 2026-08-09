@@ -29,8 +29,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import platform
 import re
+import uuid
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -68,6 +70,50 @@ def _safe_filename(identifier: str) -> str:
     if _SAFE_IDENTIFIER_RE.fullmatch(identifier):
         return identifier
     return sanitize_identifier(identifier)
+
+
+def _atomic_write(path: Path, data: bytes) -> None:
+    """Write *data* to *path* so no partial file is ever visible under it.
+
+    The bytes go to a uniquely-named temporary file beside the target and are
+    published with :func:`os.replace`, which is atomic within a filesystem.
+    A write that fails partway therefore leaves the cache untouched — either
+    the previous entry or nothing — instead of a truncated file that decodes
+    perfectly and is served as a complete article forever after.
+
+    Three details are load-bearing:
+
+    * **The flush is not durability theatre.** Under delayed allocation a
+      ``write()`` that will fail for want of space returns success, and the
+      error surfaces at flush time; without ``fsync`` here, ``os.replace``
+      would publish a file whose blocks were never written.
+    * **The temporary name carries a UUID**, so two processes caching the
+      same article cannot interleave into one temp file — which would
+      manufacture exactly the corruption this function exists to prevent.
+      It is dot-prefixed so a leftover from a killed process is unobtrusive;
+      :meth:`FullTextCache.clear` removes them.
+    * **The mode is 0644 filtered by the umask**, as an ordinary write would
+      be, rather than :func:`tempfile.mkstemp`'s 0600. A cache directory
+      shared between users otherwise breaks silently: the second user cannot
+      read what the first cached.
+
+    Raises:
+        OSError: whatever the underlying write raised. Both call sites in
+            :class:`~bmlib.fulltext.service.FullTextService` already report a
+            failed cache write, and a caller that cannot write is better told
+            than left believing the article was cached.
+    """
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _default_cache_dir() -> Path:
@@ -126,7 +172,7 @@ class FullTextCache:
             logger.warning("Rejected non-PDF data for %s", identifier)
             return None
         path = self._pdf_dir / f"{_safe_filename(identifier)}.pdf"
-        path.write_bytes(data)
+        _atomic_write(path, data)
         logger.info("Cached PDF for %s (%d bytes)", identifier, len(data))
         return str(path)
 
@@ -140,10 +186,13 @@ class FullTextCache:
     def save_html(self, html: str, identifier: str) -> str:
         """Save parsed HTML full text to the cache.
 
+        The file is published atomically, so a write that fails partway
+        leaves no half-written article behind — see :func:`_atomic_write`.
+
         Returns the file path.
         """
         path = self._html_dir / f"{_safe_filename(identifier)}.html"
-        path.write_text(html, encoding="utf-8")
+        _atomic_write(path, html.encode("utf-8"))
         logger.info("Cached HTML for %s (%d chars)", identifier, len(html))
         return str(path)
 

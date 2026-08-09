@@ -2186,6 +2186,113 @@ class TestAnExhaustedChainReportsItself:
         assert "2 attempts failed (FullTextError); 1 source had nothing" in caplog.text
 
 
+class TestACorruptCacheEntryDoesNotAbortTheRun:
+    """A cache read is best-effort, exactly as a cache write is (#71).
+
+    ``_check_cache`` was called unguarded and ``get_html`` does a bare
+    ``read_text``, so a file truncated mid-multibyte-sequence raised
+    ``UnicodeDecodeError`` straight out of ``fetch_fulltext()`` — a hard stop
+    where re-fetching over the network was available, and one bad file made a
+    paper permanently unfetchable.
+    """
+
+    CACHE_ID = _sanitize_identifier("10.1234/test")
+
+    def _cache_holding_a_corrupt_entry(self, tmp_path) -> FullTextCache:
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_html("<p>whatever was there before</p>", self.CACHE_ID)
+        path = tmp_path / "html" / f"{self.CACHE_ID}.html"
+        # Truncated mid-multibyte-sequence: what a killed process, a full
+        # disk or a filesystem fault leaves behind.
+        path.write_bytes("<p>Ω</p>".encode()[:4])
+        return cache
+
+    @staticmethod
+    def _full_text_response() -> MagicMock:
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "sample_article.xml").read_bytes()
+        return resp
+
+    def test_the_corrupt_entry_really_is_unreadable(self, tmp_path):
+        """Negative control: without it every test below could be vacuous."""
+        cache = self._cache_holding_a_corrupt_entry(tmp_path)
+
+        with pytest.raises(UnicodeDecodeError):
+            cache.get_html(self.CACHE_ID)
+
+    def test_an_unreadable_entry_falls_through_to_the_network(self, tmp_path):
+        cache = self._cache_holding_a_corrupt_entry(tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+
+        with patch.object(service, "_http_get", return_value=self._full_text_response()):
+            result = service.fetch_fulltext(pmc_id="PMC123", identifier="10.1234/test")
+
+        assert result.source == "europepmc"
+        assert result.content_kind == "fulltext"
+
+    def test_the_unreadable_entry_is_warned_about(self, tmp_path, caplog):
+        """Per article, unlike the write warning.
+
+        A failed *write* is a property of the directory, so it is said once;
+        an unreadable file is a property of that one file, and naming it is
+        what lets an operator delete it.
+        """
+        cache = self._cache_holding_a_corrupt_entry(tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service, "_http_get", return_value=self._full_text_response()),
+        ):
+            service.fetch_fulltext(pmc_id="PMC123", identifier="10.1234/test")
+
+        assert "cache" in caplog.text.lower()
+        assert self.CACHE_ID in caplog.text
+
+    def test_an_entry_that_fails_for_any_other_reason_falls_through_too(self, tmp_path):
+        """The guard is deliberately broad, and narrowing it restores the bug.
+
+        A decode error is only the shape #71 was reported in. A cached file
+        the process cannot read — wrong permissions, an I/O fault, a path
+        that is not a regular file — fails with an ``OSError`` instead, and a
+        guard written for ``UnicodeDecodeError`` alone would let that abort
+        the run exactly as before. Provoked with a directory standing where
+        the file should be, which raises for every user including root.
+        """
+        cache = FullTextCache(cache_dir=tmp_path)
+        (tmp_path / "html" / f"{self.CACHE_ID}.html").mkdir()
+        service = FullTextService(email="test@example.com", cache=cache)
+
+        with patch.object(service, "_http_get", return_value=self._full_text_response()):
+            result = service.fetch_fulltext(pmc_id="PMC123", identifier="10.1234/test")
+
+        assert result.source == "europepmc"
+        assert result.content_kind == "fulltext"
+
+    def test_a_successful_re_fetch_replaces_the_bad_entry(self, tmp_path):
+        """Which is why the guard does not delete the file it could not read."""
+        cache = self._cache_holding_a_corrupt_entry(tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+
+        with patch.object(service, "_http_get", return_value=self._full_text_response()):
+            service.fetch_fulltext(pmc_id="PMC123", identifier="10.1234/test")
+
+        assert "<h1>" in (cache.get_html(self.CACHE_ID) or "")
+
+    def test_a_readable_entry_is_still_served_from_cache(self, tmp_path):
+        """Negative control: the guard does not swallow good cache hits."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_html("<h1>Cached</h1>", self.CACHE_ID)
+        service = FullTextService(email="test@example.com", cache=cache)
+
+        with patch.object(service, "_http_get") as mock_get:
+            result = service.fetch_fulltext(pmc_id="PMC123", identifier="10.1234/test")
+            mock_get.assert_not_called()
+
+        assert result.source == "cached"
+
+
 class TestCacheWriteFailuresAreReported:
     """A cache that cannot be written to means every run re-fetches — say so once."""
 

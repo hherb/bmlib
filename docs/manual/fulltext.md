@@ -245,6 +245,8 @@ Within Tier 0, an `xml` entry is fetched and JATS-parsed into HTML, a `pdf` entr
 - **Extracted PDF text is not cached; it is re-derived.** Only body-carrying JATS HTML is written to the HTML cache, so a cached HTML hit always means full text. A cached *PDF* hit re-runs extraction on the local file, so a second `fetch_fulltext()` returns the same `html` and `content_kind` as the first.
 - **Caching is opt-in per call.** The service holds a `FullTextCache` unconditionally, but reads and writes only occur when `identifier` is passed.
 - **A cache that cannot be written to is reported once.** A read-only cache directory or a full disk does not fail a retrieval — the content is already in hand — but it means every later run re-fetches the whole corpus over the network. The first failed write emits a `WARNING` naming what was raised; the rest stay at `DEBUG`, since the cause is a property of the directory rather than of the article. HTML and PDF writes share the one warning, so a PDF-only corpus is not left silent.
+- **A cache entry is never half-written.** Both writes go to a temporary file and are published with `os.replace`, so a write that fails partway leaves the previous entry — or nothing — rather than a truncated article. This matters because a truncated HTML file decodes perfectly and would then be served as `content_kind="fulltext"` from `source="cached"` on every later run, with nothing logged at any level: `quality/` would score a paper whose Methods and Results do not exist.
+- **A cache entry that cannot be *read* does not fail the retrieval either.** An entry corrupted by something outside bmlib — a killed process, a manual edit, a filesystem fault — is reported with a `WARNING` naming the cache key, and the retrieval chain runs as though the cache had missed. The bad file is left in place, not deleted: a successful re-fetch overwrites it, and a failed one leaves the evidence for you to inspect. Unlike the write warning above this is emitted per article, because the cause is a property of that one file and naming it is what lets you delete it.
 
 ### Telling a failure from an absence
 
@@ -605,6 +607,10 @@ class FullTextCache:
 | `clear()` | `None` | Remove every file directly inside `pdfs/` and `html/`; subdirectories are skipped |
 
 PDF validation uses magic-byte checking against `PDF_MAGIC_BYTES = b"%PDF"`. Non-PDF data is **rejected with a warning log and a `None` return** — no exception is raised.
+
+Both saves are **atomic**: the bytes go to a uniquely-named temporary file beside the target and are published with `os.replace`, so a write that runs out of space raises `OSError` and leaves the previous entry intact instead of a truncated one. The temporary file is dot-prefixed and removed on failure; `clear()` would sweep up any left by a killed process. The file's permissions are those an ordinary write would produce (0644 filtered by the umask), so a cache directory shared between users keeps working.
+
+Reads make no such guarantee, and **`get_html()` can raise** — a file corrupted by something other than bmlib fails its UTF-8 decode. `FullTextService` guards its own read and falls through to the network; a direct caller of `FullTextCache` sees the error.
 
 The cache has **no TTL, no size limit, and no eviction policy.** Entries live until `delete()` or `clear()` is called, or the directory is removed. Long-running processes should prune it themselves.
 

@@ -16,6 +16,13 @@
 
 """Tests for bmlib.fulltext.cache."""
 
+import errno
+import os
+import stat
+from pathlib import Path
+
+import pytest
+
 from bmlib.fulltext.cache import FullTextCache
 
 PDF_MAGIC = b"%PDF-1.4 fake content"
@@ -61,6 +68,100 @@ class TestHTMLCaching:
         cache.save_html("<p>text</p>", "PMC123")
         cache.delete("PMC123")
         assert cache.get_html("PMC123") is None
+
+
+class TestWritesAreAtomic:
+    """A write that fails partway must leave no cache entry behind (#70).
+
+    A bare ``write_text``/``write_bytes`` that runs out of space leaves a
+    truncated file that decodes perfectly and is then served as complete full
+    text on every later run, with nothing logged at any level.
+
+    The fault is injected at ``os.fsync`` because that is where a full disk
+    reports itself: under delayed allocation the ``write()`` succeeds and the
+    blocks are never allocated, so a fix that skipped the flush would publish
+    a file of zeros and still pass a test that faulted the write call.
+    """
+
+    @staticmethod
+    def _disk_fills_mid_write(monkeypatch) -> None:
+        def no_space(fd: int) -> None:
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+        monkeypatch.setattr(os, "fsync", no_space)
+
+    def test_a_failed_html_write_leaves_no_cache_entry(self, tmp_path, monkeypatch):
+        cache = FullTextCache(cache_dir=tmp_path)
+        self._disk_fills_mid_write(monkeypatch)
+
+        with pytest.raises(OSError):
+            cache.save_html("<h1>Title</h1><p>Body</p>", "PMC123")
+
+        assert cache.get_html("PMC123") is None
+
+    def test_a_failed_pdf_write_leaves_no_cache_entry(self, tmp_path, monkeypatch):
+        cache = FullTextCache(cache_dir=tmp_path)
+        self._disk_fills_mid_write(monkeypatch)
+
+        with pytest.raises(OSError):
+            cache.save_pdf(PDF_MAGIC, "12345")
+
+        assert cache.get_pdf("12345") is None
+
+    def test_a_failed_rewrite_keeps_the_entry_that_was_already_there(self, tmp_path, monkeypatch):
+        """The replacement is all-or-nothing, not a truncate-then-fill."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_html("<p>the whole article</p>", "PMC123")
+        self._disk_fills_mid_write(monkeypatch)
+
+        with pytest.raises(OSError):
+            cache.save_html("<p>a longer article that will not fit</p>", "PMC123")
+
+        assert cache.get_html("PMC123") == "<p>the whole article</p>"
+
+    def test_a_failed_write_leaves_no_temp_file_behind(self, tmp_path, monkeypatch):
+        cache = FullTextCache(cache_dir=tmp_path)
+        self._disk_fills_mid_write(monkeypatch)
+
+        with pytest.raises(OSError):
+            cache.save_html("<p>x</p>", "PMC123")
+        with pytest.raises(OSError):
+            cache.save_pdf(PDF_MAGIC, "12345")
+
+        leftovers = [p for directory in ("html", "pdfs") for p in (tmp_path / directory).iterdir()]
+        assert leftovers == []
+
+    def test_an_ordinary_write_still_round_trips(self, tmp_path):
+        """Negative control: the guard is not simply refusing every write."""
+        cache = FullTextCache(cache_dir=tmp_path)
+
+        cache.save_html("<p>body</p>", "PMC123")
+        pdf_path = cache.save_pdf(PDF_MAGIC, "12345")
+
+        assert cache.get_html("PMC123") == "<p>body</p>"
+        assert pdf_path is not None
+        assert Path(pdf_path).read_bytes() == PDF_MAGIC
+
+    def test_a_cached_file_is_as_readable_as_an_ordinary_write(self, tmp_path):
+        """Permissions must not narrow on the way through the temp file.
+
+        ``tempfile.mkstemp`` creates at 0600, which would silently break a
+        cache directory shared between users: the second user cannot read
+        what the first cached, re-fetches everything, and replaces the file
+        with one the first user then cannot read either. Compared against a
+        file written the ordinary way in the same directory, so the
+        assertion holds whatever the umask is.
+        """
+        cache = FullTextCache(cache_dir=tmp_path)
+        reference = tmp_path / "reference"
+        reference.write_bytes(b"x")
+
+        html_path = Path(cache.save_html("<p>x</p>", "PMC123"))
+        pdf_path = Path(cache.save_pdf(PDF_MAGIC, "12345"))
+
+        expected = stat.S_IMODE(reference.stat().st_mode)
+        assert stat.S_IMODE(html_path.stat().st_mode) == expected
+        assert stat.S_IMODE(pdf_path.stat().st_mode) == expected
 
 
 class TestCacheClear:
