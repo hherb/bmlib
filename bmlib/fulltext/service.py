@@ -366,7 +366,7 @@ class FullTextService:
         cache_id = _sanitize_identifier(identifier) if identifier else None
 
         # Cache check — return immediately if content already on disk
-        if cache_id and self.cache:
+        if cache_id and self.cache is not None:
             try:
                 cached = self._check_cache(cache_id)
             except Exception as exc:
@@ -791,7 +791,7 @@ class FullTextService:
 
     def _cache_html(self, html: str, cache_id: str | None) -> None:
         """Save HTML to disk cache if caching is enabled."""
-        if cache_id and self.cache:
+        if cache_id and self.cache is not None:
             try:
                 self.cache.save_html(html, cache_id)
             except Exception as e:
@@ -812,7 +812,21 @@ class FullTextService:
         On failure (network error or invalid PDF), leaves result unchanged
         so the caller can still use ``result.pdf_url`` as a fallback.
         """
-        if not cache_id or not self.cache:
+        if self.cache is None:
+            # Reachable only when the default cache could not be created,
+            # which already warned once at construction (#75). Repeating it
+            # per article would put one line per paper into a bulk run's log
+            # to say what the operator has already been told, so this stays at
+            # DEBUG — and it must not borrow the message below, which would
+            # assert a cause that is false.
+            if self.convert_pdfs:
+                logger.debug(
+                    "convert_pdfs is on but no cache is configured — a PDF is only "
+                    "extracted once cached, so %s is left as a URL",
+                    pdf_url,
+                )
+            return
+        if not cache_id:
             if self.convert_pdfs:
                 logger.info(
                     "convert_pdfs is on but no identifier was given — a PDF is only "

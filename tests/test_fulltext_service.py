@@ -2690,3 +2690,58 @@ class TestAnUncreatableCacheDirectoryDoesNotAbortConstruction:
 
         assert blocker.is_file()
         assert blocker.read_text() == "I am a file, not a directory"
+
+    @staticmethod
+    def _unpaywall_pdf_only() -> list[MagicMock]:
+        """Europe PMC finds nothing; Unpaywall offers a free PDF."""
+        search = MagicMock()
+        search.status_code = 200
+        search.json.return_value = {"resultList": {"result": []}}
+
+        unpaywall = MagicMock()
+        unpaywall.status_code = 200
+        unpaywall.json.return_value = {
+            "best_oa_location": {"url_for_pdf": "https://example.com/paper.pdf"}
+        }
+        return [search, _idconv_miss(), unpaywall]
+
+    def test_a_pdf_left_as_a_url_does_not_blame_a_missing_identifier(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        """The one dead branch that starts lying once it is reachable.
+
+        ``if not cache_id or not self.cache:`` logged "no identifier was
+        given" for both. With a failed cache and an identifier in hand that is
+        simply false, and it is the only line the operator gets about why a
+        PDF they asked to have extracted was left as a URL.
+        """
+        self._blocked_default_dir(tmp_path, monkeypatch)
+        service = FullTextService(email="test@example.com", convert_pdfs=True)
+
+        with (
+            caplog.at_level("DEBUG"),
+            patch.object(service, "_http_get", side_effect=self._unpaywall_pdf_only()),
+        ):
+            result = service.fetch_fulltext(doi="10.1/test", identifier="10.1/test")
+
+        assert result.pdf_url == "https://example.com/paper.pdf"
+        assert "no identifier was given" not in caplog.text
+        assert "no cache" in caplog.text.lower()
+
+    def test_a_genuinely_missing_identifier_still_says_so(self, tmp_path, caplog):
+        """Negative control: the message above is suppressed, not deleted.
+
+        Without this, deleting the "no identifier was given" line outright
+        would pass the test above while losing a real diagnostic.
+        """
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache, convert_pdfs=True)
+
+        with (
+            caplog.at_level("INFO"),
+            patch.object(service, "_http_get", side_effect=self._unpaywall_pdf_only()),
+        ):
+            result = service.fetch_fulltext(doi="10.1/test")
+
+        assert result.pdf_url == "https://example.com/paper.pdf"
+        assert "no identifier was given" in caplog.text
