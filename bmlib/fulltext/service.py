@@ -285,7 +285,14 @@ class FullTextService:
         Args:
             email: Contact address sent to Unpaywall, as its API requires.
             timeout: Per-request timeout in seconds.
-            cache: Disk cache to use. A default one is created when omitted.
+            cache: Disk cache to use. A default one is created when omitted;
+                if that directory cannot be created — a file standing where it
+                should be, a read-only parent, no determinable home directory —
+                the service warns once and runs without a cache rather than
+                failing to construct, since retrieval does not need one, and
+                :attr:`cache` is then ``None``. A cache passed here is used as
+                given, and one constructed directly still raises. See
+                :func:`_default_cache`.
             convert_pdfs: Whether to extract text from a retrieved PDF into
                 :attr:`FullTextResult.html` (marked
                 ``content_kind="extracted"``), so a PDF-only article can still
@@ -368,7 +375,7 @@ class FullTextService:
         # Cache check — return immediately if content already on disk
         if cache_id and self.cache is not None:
             try:
-                cached = self._check_cache(cache_id)
+                cached = self._check_cache(self.cache, cache_id)
             except Exception as exc:
                 # A cache *read* is best-effort exactly as a cache write is.
                 # An entry truncated by a killed process or a filesystem fault
@@ -406,7 +413,7 @@ class FullTextService:
                 # and the same network fetch repeat on every run forever — a
                 # re-fetch only overwrites it when the chain happens to return
                 # JATS full text.
-                self._quarantine_cache_entry(cache_id)
+                self._quarantine_cache_entry(self.cache, cache_id)
                 cached = None
             if cached is not None:
                 return cached
@@ -727,7 +734,7 @@ class FullTextService:
 
     # --- Cache helpers --------------------------------------------------------
 
-    def _check_cache(self, cache_id: str) -> FullTextResult | None:
+    def _check_cache(self, cache: FullTextCache, cache_id: str) -> FullTextResult | None:
         """Return a cached FullTextResult if available on disk.
 
         Only HTML that came from a JATS ``<body>`` is ever written to the
@@ -738,12 +745,19 @@ class FullTextService:
         Re-extraction is local CPU work on a file already on disk; caching the
         output instead would make it indistinguishable from real full text on
         the next hit.
+
+        Args:
+            cache: The cache to read. Taken as an argument rather than off
+                ``self`` because :attr:`cache` became optional in #75, and a
+                precondition the caller has to remember is one it can forget;
+                as a parameter it is checked rather than trusted.
+            cache_id: Sanitised cache key.
         """
-        html = self.cache.get_html(cache_id)
+        html = cache.get_html(cache_id)
         if html:
             logger.info("Cache hit (HTML) for %s", cache_id)
             return FullTextResult(source="cached", html=html, content_kind="fulltext")
-        pdf_path = self.cache.get_pdf(cache_id)
+        pdf_path = cache.get_pdf(cache_id)
         if pdf_path:
             logger.info("Cache hit (PDF) for %s", cache_id)
             result = FullTextResult(source="cached", file_path=pdf_path)
@@ -751,7 +765,7 @@ class FullTextService:
             return result
         return None
 
-    def _quarantine_cache_entry(self, cache_id: str) -> None:
+    def _quarantine_cache_entry(self, cache: FullTextCache, cache_id: str) -> None:
         """Move an unreadable cache entry aside, never raising.
 
         :meth:`FullTextCache.quarantine` is already best-effort, but this runs
@@ -762,7 +776,7 @@ class FullTextService:
         dropped rather than allowed to escape.
         """
         try:
-            self.cache.quarantine(cache_id)
+            cache.quarantine(cache_id)
         except Exception:
             logger.debug("Could not quarantine the cache entry for %s", cache_id, exc_info=True)
 
@@ -839,7 +853,7 @@ class FullTextService:
             if resp.status_code != 200:
                 logger.debug("PDF download HTTP %s for %s", resp.status_code, pdf_url)
                 return
-            path = self._save_pdf_to_cache(resp.content, cache_id)
+            path = self._save_pdf_to_cache(self.cache, resp.content, cache_id)
             if path:
                 result.file_path = path
                 logger.info("PDF cached to %s", path)
@@ -853,7 +867,7 @@ class FullTextService:
             # the rate wants measuring first.
             logger.debug("PDF download failed for %s", pdf_url, exc_info=True)
 
-    def _save_pdf_to_cache(self, data: bytes, cache_id: str) -> str | None:
+    def _save_pdf_to_cache(self, cache: FullTextCache, data: bytes, cache_id: str) -> str | None:
         """Write a downloaded PDF to the disk cache, best-effort.
 
         Split out of the download so a failed *write* is reported like
@@ -869,7 +883,7 @@ class FullTextService:
             in miniature.
         """
         try:
-            path = self.cache.save_pdf(data, cache_id)
+            path = cache.save_pdf(data, cache_id)
         except Exception as e:
             self._warn_cache_write_failed(e)
             logger.debug("Failed to cache PDF for %s", cache_id, exc_info=True)
