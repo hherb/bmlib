@@ -229,6 +229,46 @@ def _normalise_pmc_id(pmc_id: str) -> str:
     return normalized
 
 
+def _default_cache() -> FullTextCache | None:
+    """Construct the default disk cache, or degrade to no caching.
+
+    The cache is best-effort everywhere else in this module — a failed write
+    warns once and retrieval continues, a failed read falls through to the
+    network — and construction was the last place an environment fault about
+    the *cache* could abort a run that had every chance of succeeding without
+    one.
+
+    Only the *default* is guarded. A caller who constructs a
+    :class:`~bmlib.fulltext.cache.FullTextCache` themselves asked for a cache
+    specifically, and still gets the raise: degrading there would return an
+    object whose every method then fails one at a time, rather than failing
+    once, clearly, at construction.
+
+    ``OSError`` covers the three ``mkdir`` calls — a file standing where the
+    directory should be (``FileExistsError``; ``exist_ok=True`` suppresses that
+    only when the target *is* a directory), a read-only parent, a file as an
+    intermediate component, a full disk. ``RuntimeError`` covers the step
+    before them: ``_default_cache_dir()`` calls ``Path.home()``, which raises
+    that, not ``OSError``, when there is no ``HOME`` and no passwd entry. The
+    pair is deliberately not ``Exception`` — inside this one constructor
+    ``RuntimeError`` has exactly one source, so the guard stays narrow enough
+    that a bmlib bug still surfaces as one.
+
+    Returns:
+        The cache, or ``None`` if it could not be created.
+    """
+    try:
+        return FullTextCache()
+    except (OSError, RuntimeError) as exc:
+        logger.warning(
+            "Could not create the full-text cache directory (%s: %s); retrieval "
+            "still works, but nothing will be cached, so every run re-fetches.",
+            type(exc).__name__,
+            exc,
+        )
+        return None
+
+
 class FullTextService:
     """Retrieves full text from multiple sources with fallback."""
 
@@ -277,7 +317,7 @@ class FullTextService:
 
         self.email = email
         self.timeout = timeout
-        self.cache = cache if cache is not None else FullTextCache()
+        self.cache: FullTextCache | None = cache if cache is not None else _default_cache()
         self.convert_pdfs = convert_pdfs
         self.ncbi_api_key = ncbi_api_key
         # Guards the one-off warning in _attach_pdf_text when no PDF backend

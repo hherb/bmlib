@@ -2562,3 +2562,89 @@ class TestCacheWriteFailuresAreReported:
                 service.fetch_fulltext(doi="10.1/test", identifier="10.1/pdf")
 
         assert len([r for r in caplog.records if "full-text cache" in r.getMessage()]) == 1
+
+
+class TestAnUncreatableCacheDirectoryDoesNotAbortConstruction:
+    """#75 — the last place in fulltext/ where the cache was not best-effort.
+
+    Everywhere else already degrades: a failed write warns once (#67), a
+    failed read falls through to the network and quarantines the entry (#71).
+    The one place it was fatal is the one place the caller has done nothing
+    wrong yet.
+
+    The faults below are real filesystem and stdlib faults, not a stubbed
+    constructor, so each test exercises the exception the platform actually
+    raises rather than one chosen to match the guard.
+    """
+
+    @staticmethod
+    def _blocked_default_dir(tmp_path, monkeypatch) -> Path:
+        """Point the default cache location at a file, and return it."""
+        blocker = tmp_path / "notadir"
+        blocker.write_text("I am a file, not a directory")
+        monkeypatch.setattr("bmlib.fulltext.cache._default_cache_dir", lambda: blocker)
+        return blocker
+
+    def test_a_file_in_the_way_leaves_a_service_with_no_cache(self, tmp_path, monkeypatch):
+        self._blocked_default_dir(tmp_path, monkeypatch)
+
+        service = FullTextService(email="test@example.com")
+
+        assert service.cache is None
+
+    def test_a_usable_default_directory_still_yields_a_cache(self, tmp_path, monkeypatch):
+        """Negative control for every ``cache is None`` assertion here.
+
+        A guard that returned ``None`` unconditionally — or a fault that never
+        fired — would satisfy those assertions while proving nothing.
+        """
+        monkeypatch.setattr("bmlib.fulltext.cache._default_cache_dir", lambda: tmp_path / "fresh")
+
+        service = FullTextService(email="test@example.com")
+
+        assert isinstance(service.cache, FullTextCache)
+
+    def test_a_home_directory_that_cannot_be_determined_is_survived(self, monkeypatch):
+        """The half ``except OSError`` alone would miss.
+
+        ``_default_cache_dir()`` runs before any ``mkdir`` and calls
+        ``Path.home()``, which raises ``RuntimeError`` — not ``OSError`` —
+        when there is no ``HOME`` and no passwd entry, which is an ordinary
+        distroless container.
+        """
+        monkeypatch.setattr(os.path, "expanduser", lambda p: p)
+        # Precondition: assert the mechanism, so a future Python changing how
+        # Path.home() resolves fails loudly here instead of leaving the test
+        # passing for the wrong reason.
+        with pytest.raises(RuntimeError):
+            Path.home()
+
+        service = FullTextService(email="test@example.com")
+
+        assert service.cache is None
+
+    def test_the_warning_names_what_was_raised(self, tmp_path, monkeypatch, caplog):
+        """A bmlib bug must not read as an ordinary environment fault (#71).
+
+        ``str()`` on a ``FileExistsError`` carries the errno and the path but
+        never the class name, so the type is interpolated separately.
+        """
+        blocker = self._blocked_default_dir(tmp_path, monkeypatch)
+
+        with caplog.at_level("WARNING"):
+            FullTextService(email="test@example.com")
+
+        assert "FileExistsError" in caplog.text
+        assert str(blocker) in caplog.text
+        # Says what it costs the operator, in the words the unwritable-cache
+        # warning already uses — the same fault with the same consequence.
+        assert "re-fetch" in caplog.text.lower()
+
+    def test_a_caller_supplied_cache_never_reaches_the_guard(self, tmp_path, monkeypatch):
+        """An explicit cache is used as given, fault in the default or not."""
+        self._blocked_default_dir(tmp_path, monkeypatch)
+        supplied = FullTextCache(cache_dir=tmp_path / "mine")
+
+        service = FullTextService(email="test@example.com", cache=supplied)
+
+        assert service.cache is supplied
