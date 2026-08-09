@@ -2648,3 +2648,45 @@ class TestAnUncreatableCacheDirectoryDoesNotAbortConstruction:
         service = FullTextService(email="test@example.com", cache=supplied)
 
         assert service.cache is supplied
+
+    def test_retrieval_still_works_with_no_cache(self, tmp_path, monkeypatch):
+        """Degrading must degrade, not relocate the crash to the first fetch.
+
+        Every ``self.cache`` use site is already guarded, so no new plumbing
+        was needed — but "already guarded" is a claim about code that had
+        never run, since ``self.cache`` could not be ``None`` before #75.
+        This is what executes it.
+        """
+        self._blocked_default_dir(tmp_path, monkeypatch)
+        service = FullTextService(email="test@example.com")
+        assert service.cache is None
+
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "sample_article.xml").read_bytes()
+
+        with patch.object(service, "_http_get", return_value=resp):
+            result = service.fetch_fulltext(pmc_id="PMC123", identifier="10.1/test")
+
+        assert result.source == "europepmc"
+        assert result.content_kind == "fulltext"
+        assert result.html is not None
+
+    def test_nothing_is_written_where_the_cache_would_have_gone(self, tmp_path, monkeypatch):
+        """The blocking file is left exactly as it was.
+
+        A guard that swallowed the fault but left a half-built cache behind
+        would pass every assertion above.
+        """
+        blocker = self._blocked_default_dir(tmp_path, monkeypatch)
+        service = FullTextService(email="test@example.com")
+
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = (FIXTURES / "sample_article.xml").read_bytes()
+
+        with patch.object(service, "_http_get", return_value=resp):
+            service.fetch_fulltext(pmc_id="PMC123", identifier="10.1/test")
+
+        assert blocker.is_file()
+        assert blocker.read_text() == "I am a file, not a directory"
