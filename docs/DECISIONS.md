@@ -309,6 +309,42 @@ whose stated reason was wrong, so the claim is meant literally.
   window that closes as entries are rewritten. Not done; `clear()` is the
   remedy for a cache written by an older version.
 
+## fulltext — the service degrades but the cache still raises (#75)
+
+`FullTextService` survives a cache directory it cannot create;
+`FullTextCache(cache_dir=...)` constructed directly still raises. **This
+asymmetry is deliberate — do not "make it consistent".** A caller who
+constructs a cache asked for one specifically, and returning an object whose
+every method then fails one at a time is worse than failing once, clearly, at
+construction. Pinned by
+`test_fulltext_cache.py::TestADirectlyConstructedCacheStillRaises`, which is
+the only thing standing between the decision and a silent tidy-up.
+
+Three further choices, each with a named test and each verified by mutation:
+
+- **The guard catches `RuntimeError` as well as `OSError`.** Not defensive
+  padding: `_default_cache_dir()` runs before any `mkdir` and calls
+  `Path.home()`, which raises `RuntimeError` where there is no `HOME` and no
+  passwd entry. Narrowing to `OSError` fixes the shape #75 was reported in and
+  leaves the identical defect one layer up —
+  `test_a_home_directory_that_cannot_be_determined_is_survived` fails under
+  exactly that mutation.
+- **It does not catch `Exception`.** Inside that one constructor
+  `RuntimeError` has exactly one source, so the pair stays narrow enough that
+  a bmlib bug still surfaces as one.
+- **No fallback cache location, and no writability probe.** Relocating to a
+  temp directory surprises a caller who set `cache_dir` deliberately, and a
+  cache that vanishes on reboot looks like one that never hits. A directory
+  that exists but is read-only passes `mkdir(exist_ok=True)` and is already
+  #67's warn-once on the first failed write; probing would be TOCTOU and would
+  litter the operator's cache directory.
+
+One consequence worth not undoing: **the three private cache helpers take the
+cache as a parameter** rather than reading `self.cache`. Once `self.cache`
+became optional their precondition — "the caller checked" — was a comment a
+caller could forget; as a parameter it is checked. Same reasoning as
+`sync._stamp_source()`.
+
 ## fulltext — the PDF converter (PR #60)
 
 - **A password-protected PDF is rejected on `doc.needs_pass`, never on

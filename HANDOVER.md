@@ -4,16 +4,17 @@ _Last updated: 2026-08-10. **0.8.0 is released and on PyPI**, and with it
 **Phase 2 of the bmlibrarian port is complete** — all four ports
 (Cochrane assessor PR #54, PDF section segmenter PR #55, citation/reference
 stack PR #58, PubMed metadata graft PR #59), plus the encrypted-PDF fix
-(#57, PR #60). Four `fulltext` bugs are fixed: **#64** (PR #66), **#67**
-(PR #69), and **#70**/**#71** (PR #74) — the package imports on a core
-install, an exhausted chain reports itself, the cache is written atomically,
-and a corrupt cache entry falls through to the network instead of aborting
-the run. Five open issues: **#56**, **#68**, **#72**, **#73** (filed while
-fixing #70) and **#75** (filed reviewing PR #74). 1758 tests + 58 skipped
-(1814 + 2 with a PostgreSQL DSN), ruff clean. **`[Unreleased]` now carries
-four fixes and 0.8.1 is the obvious next move** — see "Worth doing".
-**Phase 3 follows, and each of its rows needs a design conversation before
-any porting** — see "Next up"._
+(#57, PR #60). Five `fulltext` bugs are fixed: **#64** (PR #66), **#67**
+(PR #69), **#70**/**#71** (PR #74) and **#75** — the package imports on a
+core install, an exhausted chain reports itself, the cache is written
+atomically, a corrupt cache entry falls through to the network instead of
+aborting the run, and an uncreatable cache directory degrades to no caching
+instead of killing construction. With #75 the cache is best-effort
+everywhere. Four open issues: **#56**, **#68**, **#72** and **#73** (filed
+while fixing #70). 1769 tests + 58 skipped (1825 + 2 with a PostgreSQL DSN),
+ruff clean. **`[Unreleased]` now carries five fixes and 0.8.1 is the obvious
+next move** — see "Worth doing". **Phase 3 follows, and each of its rows
+needs a design conversation before any porting** — see "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -40,7 +41,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed three releases. Widening it is a downstream change, not a bmlib
   one.
-- **1758 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1814 + 2
+- **1769 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1825 + 2
   with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
   PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
@@ -62,7 +63,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; ROADMAP currently carries four, for #64, #67, #70 and #71.
+  release time; ROADMAP currently carries five, for #64, #67, #70, #71 and #75.
   Markers inside `docs/superpowers/plans/` are historical records — leave them
   alone.
 
@@ -70,20 +71,9 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Five. **#72 came out of #69's review** (with #70 and #71, both now fixed in
-PR #74); **#73 was found while fixing #70**; **#75 came out of PR #74's own
-review**.
-
-**#75 — an uncreatable cache directory aborts `FullTextService`
-construction.** `FullTextCache.__init__`'s three `mkdir` calls are unguarded,
-so a file standing where the cache directory should be raises out of the
-constructor. Same class as #71 — an environment fault about the *cache*
-killing a run where degrading to no-caching was available — and the last place
-in `fulltext/` where the cache is not best-effort. Pre-existing, kept out of
-PR #74 because it carries a decision: degrade with a one-shot warning, or keep
-raising and document it. The guard probably belongs around `FullTextService`'s
-*default* construction rather than in `FullTextCache`, since a caller who
-constructed the cache directly asked for one specifically.
+Four. **#72 came out of #69's review** (with #70 and #71, both fixed in
+PR #74); **#73 was found while fixing #70**. #75, filed reviewing PR #74, is
+now fixed.
 
 **#72 — a bmlib bug hides behind any tier that still works.** #67's summary is
 consulted only on *total* exhaustion, so an `AttributeError` from every PMC
@@ -126,22 +116,25 @@ the record of what was rejected and why.
 
 ### Worth doing, not yet an issue
 
-- **Cut 0.8.1 — this is the obvious next move.** `[Unreleased]` now holds four
+- **Cut 0.8.1 — this is the obvious next move.** `[Unreleased]` now holds five
   fixes, all exactly what a patch release is for: a headline 0.8.0 addition
   (`SectionSegmenter`) was unreachable for anyone who installed core bmlib
   (#64); an exhausted retrieval chain passed silently for a paywalled paper
   (#67); a truncated cache file was served as a complete article forever
-  (#70); and one corrupt cache entry aborted a bulk sync (#71). All additive:
-  no stored value changes, and the only new output is log lines. Three API
-  notes for the release summary, all in `FullTextCache` and all reaching a
+  (#70); one corrupt cache entry aborted a bulk sync (#71); and a cache
+  directory that could not be created aborted `FullTextService` construction
+  outright (#75). All additive: no stored value changes, and the only new
+  output is log lines. Four API notes for the release summary, all reaching a
   *direct* caller only: `save_html`/`save_pdf` now raise `OSError` where they
   previously wrote a partial file (both `FullTextService` call sites already
-  reported a failed write); `quarantine()` is new; and `sanitize_identifier()`
+  reported a failed write); `quarantine()` is new; `sanitize_identifier()`
   caps its readable prefix at 160 characters, so an entry cached for a longer
-  identifier is orphaned and re-fetched once. Worth a line for operators too:
-  #70 stops a truncated entry being *written* and does not detect one already
-  on disk, so a cache written by an older version is best cleared once. The
-  release recipe is at the bottom of this file;
+  identifier is orphaned and re-fetched once; and **`FullTextService.cache` is
+  now `FullTextCache | None`** — code that dereferences it without a check
+  should guard, though every path inside bmlib already did. Worth a line for
+  operators too: #70 stops a truncated entry being *written* and does not
+  detect one already on disk, so a cache written by an older version is best
+  cleared once. The release recipe is at the bottom of this file;
   note the version lives in four places *and* the extras tables in README,
   `docs/manual/index.md` and CLAUDE.md gained a `fulltext` row.
 - **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume

@@ -132,6 +132,34 @@ All notable changes to bmlib are documented here. The format is based on
   corrupt shape an operator is most likely to meet and the one both of them
   previously failed on.
 
+- **A cache directory that cannot be created no longer aborts construction**
+  (#75, found reviewing PR #74). `FullTextCache.__init__`'s three `mkdir`
+  calls were unguarded and ran inside `FullTextService.__init__` whenever no
+  cache was passed, so a file standing where the cache directory should be —
+  or a read-only parent, or a full disk — took down a run that had every
+  chance of succeeding without a cache. It was the last place in `fulltext/`
+  where the cache was not best-effort: a failed write already warned once
+  (#67) and a failed read already fell through to the network (#71). The
+  default construction now warns once, naming what was raised, and leaves
+  `service.cache` as `None`; retrieval proceeds and caches nothing. A
+  `FullTextCache` constructed *directly* still raises — that caller asked for
+  a cache specifically, and degrading would return an object whose every
+  method then failed one at a time instead of failing once at construction.
+  The guard catches `RuntimeError` as well as `OSError`, because
+  `_default_cache_dir()` runs before any `mkdir` and calls `Path.home()`,
+  which raises the former where there is no `HOME` and no passwd entry — an
+  ordinary distroless container — so `except OSError` would have fixed the
+  reported shape and left the same defect one layer up. It is not
+  `except Exception`: inside that one constructor `RuntimeError` has exactly
+  one source, so the guard stays narrow enough that a bmlib bug still surfaces
+  as one. `FullTextService.__init__`'s `Raises:` section, which documented
+  only `ImportError`, becomes accurate rather than needing a new entry. One
+  log line changes: `_download_and_cache_pdf`'s `self.cache` check was dead
+  code — `FullTextCache` is always truthy and `self.cache` could not be `None`
+  — and reaching it now would have printed "no identifier was given" when an
+  identifier had been given, so the two conditions are split and the no-cache
+  one logs at `DEBUG`, the construction warning having already said it.
+
 - **`bmlib.fulltext` imports on a core install** (#64). `fulltext/__init__.py`
   eagerly re-exported `service`, whose top-level `import httpx` was the last
   unguarded optional import in bmlib — and since importing a submodule imports

@@ -191,7 +191,7 @@ class FullTextService:
 |-----------|------|-------------|
 | `email` | `str` | Contact email, required by the Unpaywall API. No default — always supply a real address |
 | `timeout` | `float` | HTTP request timeout in seconds (default `30.0`) |
-| `cache` | `FullTextCache \| None` | Cache instance. When `None`, a default `FullTextCache()` is constructed, so a cache always exists |
+| `cache` | `FullTextCache \| None` | Cache instance. When `None`, a default `FullTextCache()` is constructed — and if that directory cannot be created, the service warns once and runs uncached rather than raising, so `service.cache` may be `None` |
 | `convert_pdfs` | `bool` | Extract a retrieved PDF's text into `html` (default `True`). Requires `bmlib[pdf]`, and only applies once the PDF is cached — so `fetch_fulltext()` must be given an `identifier`. `pdf_url` and `file_path` stay set either way |
 | `ncbi_api_key` | `str \| None` | Optional NCBI API key (default `None`), sent with the Tier 1b′ and Tier 1c requests. Moves them into the key's 10 requests/second allowance instead of the 3/s shared by everything on the IP. It does **not** change bmlib's pacing — the package still throttles nothing. Declared last, so positional construction stays stable |
 
@@ -243,7 +243,8 @@ Within Tier 0, an `xml` entry is fetched and JATS-parsed into HTML, a `pdf` entr
 - **PDF download failure is non-fatal.** When a PDF cannot be downloaded or fails magic-byte validation, the result is still returned with `pdf_url` set, so the URL remains a usable fallback; only `file_path` is left unset. If a body-less JATS document was seen earlier in the chain, its abstract is merged into that result rather than discarded, so the caller gets an abstract plus a link instead of a bare link.
 - **PDF text extraction is best-effort and logged.** A missing `bmlib[pdf]` extra, a corrupt PDF, or a scan with no extractable text all leave `html` unset and emit a `WARNING`; a partial extraction is attached but flagged. Nothing here aborts a retrieval.
 - **Extracted PDF text is not cached; it is re-derived.** Only body-carrying JATS HTML is written to the HTML cache, so a cached HTML hit always means full text. A cached *PDF* hit re-runs extraction on the local file, so a second `fetch_fulltext()` returns the same `html` and `content_kind` as the first.
-- **Caching is opt-in per call.** The service holds a `FullTextCache` unconditionally, but reads and writes only occur when `identifier` is passed.
+- **Caching is opt-in per call.** The service normally holds a `FullTextCache`, but reads and writes only occur when `identifier` is passed.
+- **A cache directory that cannot be *created* does not fail construction.** When the service builds the default cache itself and the directory cannot be made — a file standing where it should be, a read-only parent, no determinable home directory — it emits one `WARNING` naming what was raised, sets `service.cache` to `None`, and retrieves normally without caching. Retrieval never needed a cache, so aborting there would have taken down a run that had every chance of succeeding. A cache you construct and pass in yourself still raises; see [FullTextCache](#fulltextcache).
 - **A cache that cannot be written to is reported once.** A read-only cache directory or a full disk does not fail a retrieval — the content is already in hand — but it means every later run re-fetches the whole corpus over the network. The first failed write emits a `WARNING` naming what was raised; the rest stay at `DEBUG`, since the cause is a property of the directory rather than of the article. HTML and PDF writes share the one warning, so a PDF-only corpus is not left silent.
 - **A cache entry is never half-written.** Both writes go to a temporary file and are published with `os.replace`, so a write that fails partway leaves the previous entry — or nothing — rather than a truncated article. This matters because a truncated HTML file decodes perfectly and would then be served as `content_kind="fulltext"` from `source="cached"` on every later run, with nothing logged at any level: `quality/` would score a paper whose Methods and Results do not exist. Note the scope: this closes the window in which such an entry is *written*. It does not detect one already on disk — a truncation of English-language prose usually lands on an ASCII boundary and decodes fine — so a cache written by bmlib before 0.8.1 is best cleared once.
 - **A cache entry that cannot be *read* does not fail the retrieval either.** An entry corrupted by something outside bmlib — a killed process, a manual edit, a filesystem fault — is reported with a `WARNING` naming the cache key and the exception type, and the retrieval chain runs as though the cache had missed. Unlike the write warning above this is emitted per article, because the cause is a property of that one file. The bad entry is not deleted, but it *is* renamed with a `.corrupt` suffix, which takes it out of the lookup path while leaving the bytes for you to inspect. Leaving it in place was not viable: only a re-fetch that returns JATS full text overwrites the HTML entry, so an article served as a PDF kept warning and re-downloading on every run — the undecodable entry is read first, so it hid the freshly cached PDF behind it. `clear()` sweeps the `.corrupt` files up.
@@ -578,6 +579,8 @@ class JATSReferenceInfo:
 
 Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html/` subdirectories.
 
+**The constructor raises if it cannot create those directories** — a file standing where the directory should be, a read-only parent, a full disk. `FullTextService` does *not*: when it builds the default cache itself and that fails, it warns once and runs uncached, leaving `service.cache` as `None`. The asymmetry is deliberate. A caller who constructs a `FullTextCache` asked for a cache specifically, and handing back an object whose every method then failed one at a time would be worse than failing once, clearly, here.
+
 ```python
 class FullTextCache:
     def __init__(self, cache_dir: str | Path | None = None) -> None: ...
@@ -656,6 +659,8 @@ When `cache_dir` is not specified, the cache uses a platform-appropriate default
 | Linux / other | `~/.cache/bmlib/fulltext_cache/` |
 
 Despite the module docstring's reference to the XDG convention, **`XDG_CACHE_HOME` is not read**; the Linux path is hardcoded to `Path.home() / ".cache"`. Set `cache_dir` explicitly if you need to honour XDG.
+
+Every default above goes through `Path.home()`, which raises `RuntimeError` — not `OSError` — where there is no `HOME` and no passwd entry, as in a distroless container. `FullTextService` catches that alongside the directory errors and degrades to no caching; a `FullTextCache()` constructed directly propagates it. Passing `cache_dir` avoids the call entirely.
 
 ### Directory layout
 
@@ -986,7 +991,7 @@ from bmlib.fulltext import FullTextError, FullTextService, get_converter
 
 service = FullTextService(
     email="lab@university.edu",
-    cache=None,          # a default FullTextCache() is created
+    cache=None,          # a default FullTextCache() is created, or None if it cannot be
 )
 
 def get_fulltext_text(doi: str, pmc_id: str = "", pmid: str = "") -> str | None:
