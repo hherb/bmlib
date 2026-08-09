@@ -71,6 +71,47 @@ All notable changes to bmlib are documented here. The format is based on
   the warning at all — leaving a corpus served mostly by Unpaywall, which
   never writes HTML, completely silent.
 
+- **A truncated cache file is no longer served as a complete article** (#70,
+  found reviewing #67's fix). `save_html` and `save_pdf` wrote with a bare
+  `write_text`/`write_bytes` and `get_html` read back with no validation, so a
+  disk that filled mid-write — one of the two causes the warning above names —
+  left a truncated file that decodes perfectly and was then returned as
+  `content_kind="fulltext"` from `source="cached"` on every later run, with no
+  log at any level: `quality/` would score a paper whose Methods and Results
+  do not exist. Strictly worse than #67, which lost data in a shape resembling
+  absence. Both writes now go to a uniquely-named temporary file beside the
+  target and are published with `os.replace`, so a failed write leaves the
+  previous entry or nothing. Three details are load-bearing and each has a
+  test: the flush before the replace is not durability theatre — under delayed
+  allocation a `write()` that will fail for want of space returns success and
+  the error surfaces at flush time, so without it `os.replace` would publish a
+  file whose blocks were never written; the temporary name carries a UUID, so
+  two processes caching one article cannot interleave into a single temp file
+  and manufacture the very corruption this prevents; and the mode is 0644
+  filtered by the umask rather than `tempfile.mkstemp`'s 0600, which would
+  silently break a cache directory shared between users. `save_html` and
+  `save_pdf` now raise `OSError` where they previously wrote a partial file —
+  both call sites in `FullTextService` already report a failed cache write, so
+  a retrieval is unaffected.
+
+- **A corrupt cache entry no longer aborts the run** (#71, same review).
+  `_check_cache` was called unguarded and `get_html` does a bare `read_text`,
+  so an entry truncated mid-multibyte-sequence raised `UnicodeDecodeError`
+  straight out of `fetch_fulltext()`: it broke the documented
+  `FullTextError`-only contract, contradicted #67's own new bullet that a bad
+  cache does not fail a retrieval, and was a hard stop where re-fetching over
+  the network was available — one bad file made a paper permanently
+  unfetchable and took a bulk sync down mid-corpus. A cache *read* is now
+  best-effort exactly as a cache write is. The guard is deliberately broad: a
+  decode failure is only the shape it was reported in, and a file the process
+  cannot read raises `OSError` instead, so narrowing it to `UnicodeDecodeError`
+  restores the bug — pinned by its own test after mutation testing found the
+  first cut survived that narrowing. Warned per article rather than once per
+  service, unlike the write warning above: an unwritable directory is a
+  property of the directory, an unreadable file is a property of that file,
+  and naming it is what lets an operator delete it. The file is left in place
+  — a successful re-fetch overwrites it, and a failed one leaves the evidence.
+
 - **`bmlib.fulltext` imports on a core install** (#64). `fulltext/__init__.py`
   eagerly re-exported `service`, whose top-level `import httpx` was the last
   unguarded optional import in bmlib — and since importing a submodule imports
