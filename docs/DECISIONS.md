@@ -200,26 +200,66 @@ at the call site". What it omits:
 
 Each of these looks like a line worth simplifying, and each re-opens the bug.
 All are pinned by a named test in `test_fulltext_cache.py` /
-`test_fulltext_service.py`, and all six mutations were run.
+`test_fulltext_service.py`, and every one was verified by mutation — review of
+the first cut found two bullets here whose named test did not exist, and one
+whose stated reason was wrong, so the claim is meant literally.
 
-- **The `flush()` + `os.fsync()` before `os.replace` is not durability
-  theatre.** Under delayed allocation a `write()` that will fail for want of
-  space *returns success*, and the error surfaces only at flush time — so
-  without it `os.replace` publishes a file whose blocks were never written,
-  which is #70 again one layer down. Removing those two lines fails four
-  tests, because the fault the tests inject is the real disk-full one.
-- **The temp file's name carries a UUID.** A fixed `.tmp` suffix lets two
-  processes caching the same article interleave into one temp file and
-  manufacture exactly the corruption the function exists to prevent.
-- **The mode is `0o644` filtered by the umask, not `tempfile.mkstemp`'s
-  0600.** A cache directory shared between users otherwise breaks silently:
-  the second user cannot read what the first cached, re-fetches everything,
-  and replaces the file with one the first then cannot read. Pinned by
-  comparing against an ordinary write in the same directory, so the assertion
-  holds whatever the umask is.
+- **The `os.fsync()` before `os.replace` is not durability theatre.** Under
+  delayed allocation the `write(2)` that `flush()` issues *returns success* on
+  a disk about to fill; the blocks are allocated at writeback and ENOSPC
+  reaches userspace only at `fsync`. Without it `os.replace` publishes a file
+  whose blocks were never written, which is #70 again one layer down. The
+  `flush()` is needed for a separate reason — `os.fsync` acts on the
+  descriptor, so anything still in Python's `BufferedWriter` is not covered.
+  Removing the two lines fails four tests. Note what those four *can* pin:
+  delayed allocation is not observable from userspace, so they assert that
+  `os.fsync` is called, not the kernel behaviour making it necessary. A
+  refactor reaching the same guarantee via `O_DSYNC` would break them while
+  being correct.
+- **The temp file's name carries a UUID — but not for the reason first
+  given.** Two processes cannot interleave into one temp file: `O_EXCL`
+  already stops that. The real hazard is that the loser of the race runs the
+  cleanup handler and unlinks the *winner's* in-flight file, whose
+  `os.replace` then fails with `FileNotFoundError`, leaving neither writer
+  having cached anything. Mutating the UUID to `os.getpid()` survived the
+  whole suite *and* ruff until
+  `test_two_writers_racing_on_one_article_do_not_destroy_each_other` was
+  added.
+- **The mode is `0o666` filtered by the umask, not `tempfile.mkstemp`'s
+  0600 — and not `0o644` either.** A cache directory shared between users
+  otherwise breaks silently: the second user cannot read what the first
+  cached, re-fetches everything, and replaces the file with one the first then
+  cannot read. `0o666` is what `write_bytes` requests, so the umask does the
+  narrowing; the first cut requested `0o644`, which is the same bug a step
+  smaller — it drops the group-write bit a umask of 002 grants, which is
+  precisely the shared-group case, and it made the pinning test fail under
+  that umask while passing under 022.
+- **`os.open` adds `O_BINARY` where the platform has it.** Windows only, and
+  a no-op elsewhere via `getattr(os, "O_BINARY", 0)`. Without it the CRT opens
+  the descriptor in text mode — `os.fdopen(fd, "wb")` cannot undo that, since
+  only `io.FileIO`'s path-opening branch sets the flag — and every LF in a
+  cached PDF is written as CRLF, which is #70's own failure mode restored on
+  one platform. The `PDF_MAGIC` fixture carries LF and CRLF bytes so the
+  round-trip assertions are able to see it.
+- **The cleanup's `unlink` is itself guarded.** `missing_ok=True` covers only
+  `ENOENT`; an unlink failing for any other reason replaces the original
+  exception, and that exception is what `FullTextService` interpolates into
+  the one warning an operator sees — reporting a full disk as a permissions
+  problem.
+- **`sanitize_identifier` truncates its readable prefix.** The temp name is 38
+  characters longer than the entry's, which lowered the effective `NAME_MAX`
+  ceiling to ~217 and made a long identifier fail a write a bare `write_text`
+  had completed. That per-article fault then tripped the once-per-service
+  "nothing is being cached" warning — untrue, and it silences the
+  directory-wide fault that warning exists to report. The prefix is only there
+  to be read; the hash over the whole raw identifier carries the collision
+  guarantee.
 - **`save_html`/`save_pdf` raise rather than swallowing.** Both
   `FullTextService` call sites already report a failed cache write (#67), and
-  a caller told nothing would believe the article was cached.
+  a caller told nothing would believe the article was cached. Both docstrings
+  carry a `Raises:` section, because for a direct caller this is a real change
+  and not a relocation: under delayed allocation `write_text` *returned a
+  path* in exactly the case that now raises.
 - **#71's guard is `except Exception`, and narrowing it restores the bug.** A
   decode failure is only the shape #71 was reported in; a cached file the
   process cannot read raises `OSError` instead. Mutation testing found the
@@ -227,16 +267,47 @@ All are pinned by a named test in `test_fulltext_cache.py` /
   (`test_an_entry_that_fails_for_any_other_reason_falls_through_too`, which
   puts a directory where the file should be, so it raises for root too) exists
   because of that.
-- **The unreadable file is not deleted.** A successful re-fetch overwrites it
-  — pinned by a test — and a failed one leaves the evidence to inspect.
-  Deleting a user's data on a read error is a larger action than the bug asks
-  for.
+- **The guard reports the exception *type*, not just its message.** The same
+  reason `_TierFailures` does: a `TypeError` printed under a sentence about an
+  unreadable file reads as a bad cache entry rather than the bmlib bug it is,
+  and a bare `OSError()` renders as an empty pair of brackets.
+- **The unreadable file is not deleted — it is moved aside.** Deleting a
+  user's data on a read error is a larger action than the bug asks for, so a
+  failed re-fetch must leave the evidence. But leaving it *in place* does not
+  work: the first cut justified that on "a successful re-fetch overwrites it",
+  which holds only when the chain returns JATS full text. An article served as
+  a PDF writes `pdfs/` and never touches `html/`, and since the undecodable
+  HTML entry is read *first*, it hides the freshly cached PDF behind it — the
+  article then warns and re-downloads on every run, forever. `quarantine()`
+  renames it to `.corrupt`: out of the lookup path, still on disk. Only
+  entries that actually fail to read are moved, pinned by a negative control.
+- **`_remove` handles an entry that is not a regular file.** The corrupt shape
+  the #71 test itself constructs is a directory standing where the file should
+  be, and both documented ways to clear it failed on it: `delete()` raised and
+  `clear()` skipped it silently, while the warning told the operator to go and
+  delete that file.
 - **That warning is per article, where the *write* warning is once per
   service.** An unwritable directory is a property of the directory; an
-  unreadable file is a property of that one file, and naming it is what lets
-  an operator delete it. It is also not counted on #67's exhaustion report:
+  unreadable file is a property of that one file. Pinned with two *different*
+  corrupt articles rather than two runs over one, since a run now heals the
+  entry it could not read. It is also not counted on #67's exhaustion report:
   the cache is not a retrieval attempt, and the line already says more than
   that report's two buckets could.
+- **`_attach_pdf_text` catches everything `get_converter()` can raise, not
+  just `ImportError`.** `_check_cache` re-extracts a cached PDF, so it runs
+  inside #71's guard: narrowed, a `ValueError` for an unknown backend name (or
+  anything a third-party backend's `__init__` raises) escaped this method and
+  surfaced two frames up as "could not read the cached full text" — blaming a
+  cached PDF that read perfectly, and re-downloading it into the identical
+  deterministic fault.
+- **#70's fix is prospective, and that is accepted.** It stops a truncated
+  entry being *written*; it does not detect one already on disk. A real
+  truncation of English-language biomedical HTML almost always lands on an
+  ASCII boundary and decodes perfectly, so such an entry is still served as
+  `content_kind="fulltext"` with nothing logged. Detecting it needs a length
+  or checksum sidecar beside every entry — a cache format change, for a
+  window that closes as entries are rewritten. Not done; `clear()` is the
+  remedy for a cache written by an older version.
 
 ## fulltext — the PDF converter (PR #60)
 

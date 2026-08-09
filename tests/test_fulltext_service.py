@@ -17,6 +17,7 @@
 """Tests for bmlib.fulltext.service."""
 
 import copy
+import errno
 import importlib.metadata
 import os
 import pickle
@@ -2236,7 +2237,38 @@ class TestACorruptCacheEntryDoesNotAbortTheRun:
 
         A failed *write* is a property of the directory, so it is said once;
         an unreadable file is a property of that one file, and naming it is
-        what lets an operator delete it.
+        what lets an operator find it.
+
+        Two *different* corrupt articles are used rather than two runs over
+        one, because a run heals the entry it could not read. Once-per-service
+        gating would suppress the second line, which is the regression this
+        guards; asserting a single warning from a single fetch would not.
+        """
+        cache = self._cache_holding_a_corrupt_entry(tmp_path)
+        other = _sanitize_identifier("10.1234/other")
+        cache.save_html("<p>x</p>", other)
+        (tmp_path / "html" / f"{other}.html").write_bytes("<p>Ω</p>".encode()[:4])
+        service = FullTextService(email="test@example.com", cache=cache)
+
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service, "_http_get", return_value=self._full_text_response()),
+        ):
+            service.fetch_fulltext(pmc_id="PMC123", identifier="10.1234/test")
+            service.fetch_fulltext(pmc_id="PMC123", identifier="10.1234/other")
+
+        warnings = [r for r in caplog.records if "Could not read the cached" in r.message]
+        assert len(warnings) == 2
+        assert {self.CACHE_ID, other} == {w.args[0] for w in warnings}
+
+    def test_the_warning_names_the_exception_type(self, tmp_path, caplog):
+        """So a bmlib bug does not read as an ordinary bad file.
+
+        ``%s`` on the exception renders its message alone, and an
+        ``AttributeError`` printed under a sentence about an unreadable cache
+        file is #72's failure in miniature. ``_TierFailures`` renders the type
+        for exactly this reason, and a bare ``OSError()`` would otherwise
+        print an empty pair of brackets.
         """
         cache = self._cache_holding_a_corrupt_entry(tmp_path)
         service = FullTextService(email="test@example.com", cache=cache)
@@ -2247,8 +2279,7 @@ class TestACorruptCacheEntryDoesNotAbortTheRun:
         ):
             service.fetch_fulltext(pmc_id="PMC123", identifier="10.1234/test")
 
-        assert "cache" in caplog.text.lower()
-        assert self.CACHE_ID in caplog.text
+        assert "UnicodeDecodeError" in caplog.text
 
     def test_an_entry_that_fails_for_any_other_reason_falls_through_too(self, tmp_path):
         """The guard is deliberately broad, and narrowing it restores the bug.
@@ -2293,6 +2324,105 @@ class TestACorruptCacheEntryDoesNotAbortTheRun:
         assert result.source == "cached"
 
 
+class TestACorruptCacheEntryHeals:
+    """Falling through to the network is not enough on its own.
+
+    "A successful re-fetch overwrites it" holds only when the chain returns
+    JATS full text. An article served as a PDF writes ``pdfs/`` and never
+    touches ``html/``, and because the undecodable HTML entry is consulted
+    *first*, the freshly cached PDF is unreachable behind it — so the article
+    warns and re-downloads on every run, permanently. The unreadable entry is
+    therefore moved aside rather than left in place.
+    """
+
+    CACHE_ID = _sanitize_identifier("10.1234/test")
+    PDF_MAGIC = b"%PDF-1.4 fake content for testing"
+
+    def _cache_holding_a_corrupt_entry(self, tmp_path) -> FullTextCache:
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_html("<p>whatever was there before</p>", self.CACHE_ID)
+        (tmp_path / "html" / f"{self.CACHE_ID}.html").write_bytes("<p>Ω</p>".encode()[:4])
+        return cache
+
+    def _resolve_via_unpaywall_pdf(self, service) -> object:
+        search_empty = MagicMock()
+        search_empty.status_code = 200
+        search_empty.json.return_value = {"resultList": {"result": []}}
+        unpaywall = MagicMock()
+        unpaywall.status_code = 200
+        unpaywall.json.return_value = {
+            "best_oa_location": {"url_for_pdf": "https://example.com/paper.pdf"}
+        }
+        pdf = MagicMock()
+        pdf.status_code = 200
+        pdf.content = self.PDF_MAGIC
+        return patch.object(
+            service,
+            "_http_get",
+            side_effect=[search_empty, _idconv_miss(), unpaywall, pdf],
+        )
+
+    def test_an_article_served_as_a_pdf_is_cached_on_the_next_run(self, tmp_path):
+        cache = self._cache_holding_a_corrupt_entry(tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache, convert_pdfs=False)
+
+        with self._resolve_via_unpaywall_pdf(service):
+            first = service.fetch_fulltext(doi="10.1234/test", identifier="10.1234/test")
+        assert first.source == "unpaywall"
+
+        with patch.object(service, "_http_get") as mock_get:
+            second = service.fetch_fulltext(doi="10.1234/test", identifier="10.1234/test")
+            mock_get.assert_not_called()
+
+        assert second.source == "cached"
+        assert second.file_path is not None
+
+    def test_the_unreadable_bytes_are_kept_beside_the_cache(self, tmp_path):
+        """Moved aside, not deleted — a failed re-fetch leaves the evidence."""
+        cache = self._cache_holding_a_corrupt_entry(tmp_path)
+        corrupt = (tmp_path / "html" / f"{self.CACHE_ID}.html").read_bytes()
+        service = FullTextService(email="test@example.com", cache=cache, convert_pdfs=False)
+
+        with self._resolve_via_unpaywall_pdf(service):
+            service.fetch_fulltext(doi="10.1234/test", identifier="10.1234/test")
+
+        aside = tmp_path / "html" / f"{self.CACHE_ID}.html.corrupt"
+        assert aside.read_bytes() == corrupt
+
+    def test_a_retrieval_that_also_fails_does_not_lose_the_entry(self, tmp_path):
+        """Negative control: nothing is destroyed when the network is down too."""
+        cache = self._cache_holding_a_corrupt_entry(tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache, convert_pdfs=False)
+
+        with patch.object(service, "_http_get", side_effect=OSError("network down")):
+            service.fetch_fulltext(doi="10.1234/test", identifier="10.1234/test")
+
+        assert (tmp_path / "html" / f"{self.CACHE_ID}.html.corrupt").exists()
+
+    def test_a_broken_pdf_backend_is_not_blamed_on_the_cache(self, tmp_path):
+        """``_check_cache`` re-extracts, so a converter fault reaches its guard.
+
+        Narrowed to ``ImportError``, a ``ValueError`` from ``get_converter()``
+        escaped ``_attach_pdf_text`` entirely and surfaced two frames up as
+        "could not read the cached full text" — discarding a cached PDF that
+        read perfectly, and re-downloading it into the identical deterministic
+        fault. It is reported where it happens instead.
+        """
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_pdf(self.PDF_MAGIC, self.CACHE_ID)
+        service = FullTextService(email="test@example.com", cache=cache, convert_pdfs=True)
+
+        with (
+            patch("bmlib.fulltext.service.get_converter", side_effect=ValueError("no such")),
+            patch.object(service, "_http_get") as mock_get,
+        ):
+            result = service.fetch_fulltext(doi="10.1234/test", identifier="10.1234/test")
+            mock_get.assert_not_called()
+
+        assert result.source == "cached"
+        assert result.file_path is not None
+
+
 class TestCacheWriteFailuresAreReported:
     """A cache that cannot be written to means every run re-fetches — say so once."""
 
@@ -2323,6 +2453,35 @@ class TestCacheWriteFailuresAreReported:
         # Report what was raised rather than asserting the cause, as the
         # conventions require of every guarded optional path.
         assert "read-only file system" in caplog.text
+
+    def test_a_real_full_disk_is_reported_the_same_way(self, tmp_path, caplog, monkeypatch):
+        """The seam #70 actually changed, exercised without a mock.
+
+        Every other test in this class fakes the failure by replacing
+        ``save_html`` outright, so the real ``_atomic_write`` never runs in a
+        service-level test at all — and #70 turned ``save_html`` from a method
+        that never raised into one that does. Faulting ``os.fsync`` instead
+        drives the genuine path: the write raises, the retrieval still
+        succeeds, and nothing is left in the cache directory.
+        """
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+
+        def no_space(fd: int) -> None:
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+        monkeypatch.setattr(os, "fsync", no_space)
+
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service, "_http_get", return_value=self._full_text_response()),
+        ):
+            result = service.fetch_fulltext(pmc_id="PMC123", identifier="10.1/test")
+
+        assert result.content_kind == "fulltext"
+        assert "No space left on device" in caplog.text
+        assert cache.get_html(_sanitize_identifier("10.1/test")) is None
+        assert list((tmp_path / "html").iterdir()) == []
 
     def test_the_cache_write_warning_is_said_once(self, tmp_path, caplog):
         """The cause is a property of the directory, not of the article.
