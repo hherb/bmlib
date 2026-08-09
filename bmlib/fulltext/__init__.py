@@ -53,10 +53,14 @@ from bmlib.fulltext.pdf_converter import (
 from bmlib.fulltext.segmenter import SectionSegmenter
 
 if TYPE_CHECKING:  # Names a type checker needs eagerly; see __getattr__ below.
-    from bmlib.fulltext.service import FullTextError, FullTextService
+    from bmlib.fulltext.service import (
+        FullTextError,
+        FullTextService,
+        FullTextUnavailableError,
+    )
 
 #: Names living in ``service``, resolved on first access.
-_LAZY_EXPORTS = frozenset({"FullTextError", "FullTextService"})
+_LAZY_EXPORTS = frozenset({"FullTextError", "FullTextService", "FullTextUnavailableError"})
 
 
 def __getattr__(name: str) -> Any:
@@ -107,6 +111,7 @@ __all__ = [
     "FullTextResult",
     "FullTextService",
     "FullTextSourceEntry",
+    "FullTextUnavailableError",
     "JATSAbstractSection",
     "JATSArticle",
     "JATSAuthorInfo",

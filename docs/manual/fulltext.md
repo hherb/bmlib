@@ -209,7 +209,10 @@ All arguments are **keyword-only**.
 
 **Returns:** `FullTextResult` — always populated with at least a `source` and one of `html` / `pdf_url` / `web_url` / `file_path`.
 
-**Raises:** `FullTextError` only when no identifiers are provided at all. Every individual tier failure is swallowed and logged at `DEBUG` (with `exc_info=True`), then the next tier is tried.
+**Raises:** `FullTextError`, in exactly two cases, both needing `doi` and `pmid` to be absent:
+
+- `"No identifiers provided"` — `fulltext_sources`, `pmc_id`, `doi` and `pmid` are all empty. Raised before any request, and before the warning below, since nothing was asked of any source.
+- `"Nothing retrieved and no DOI or PMID to fall back on — <summary>"` — a `pmc_id` or `fulltext_sources` *was* given and the chain exhausted, leaving no link to degrade to. It used to raise the message above, which sent the reader looking for a missing argument that was not missing. Every individual tier failure is swallowed and logged at `DEBUG` (with `exc_info=True`), then the next tier is tried — but a chain that ends up empty-handed reports itself at `WARNING` (see "Telling a failure from an absence" below).
 
 ### Retrieval sequence
 
@@ -228,7 +231,7 @@ The chain is longer than three tiers. In order:
 | Tier 2 | `doi` given | Unpaywall `GET .../{doi}?email=...`; picks `best_oa_location.url_for_pdf` or `.url`, else iterates `oa_locations`; downloads and caches | `"unpaywall"` |
 | Tier 3 | `doi` given | Return `https://doi.org/{doi}` | `"doi"` |
 | Final | `pmid` given | Return `https://pubmed.ncbi.nlm.nih.gov/{pmid}/` | `"pubmed"` |
-| — | nothing given | `raise FullTextError("No identifiers provided")` | — |
+| — | no `doi` and no `pmid`, and nothing was retrieved | `raise FullTextError` — `"No identifiers provided"` when nothing at all was given, otherwise a message naming the missing fallback and summarising the failures | — |
 
 Within Tier 0, an `xml` entry is fetched and JATS-parsed into HTML, a `pdf` entry sets `pdf_url` and is downloaded into the cache, and an `html` entry sets `web_url` only — HTML sources are never cached.
 
@@ -241,6 +244,36 @@ Within Tier 0, an `xml` entry is fetched and JATS-parsed into HTML, a `pdf` entr
 - **PDF text extraction is best-effort and logged.** A missing `bmlib[pdf]` extra, a corrupt PDF, or a scan with no extractable text all leave `html` unset and emit a `WARNING`; a partial extraction is attached but flagged. Nothing here aborts a retrieval.
 - **Extracted PDF text is not cached; it is re-derived.** Only body-carrying JATS HTML is written to the HTML cache, so a cached HTML hit always means full text. A cached *PDF* hit re-runs extraction on the local file, so a second `fetch_fulltext()` returns the same `html` and `content_kind` as the first.
 - **Caching is opt-in per call.** The service holds a `FullTextCache` unconditionally, but reads and writes only occur when `identifier` is passed.
+- **A cache that cannot be written to is reported once.** A read-only cache directory or a full disk does not fail a retrieval — the content is already in hand — but it means every later run re-fetches the whole corpus over the network. The first failed write emits a `WARNING` naming what was raised; the rest stay at `DEBUG`, since the cause is a property of the directory rather than of the article. HTML and PDF writes share the one warning, so a PDF-only corpus is not left silent.
+
+### Telling a failure from an absence
+
+Most papers have no free full text, and for those the chain legitimately ends at Tier 3 with a bare link. A caller who has lost the network, hit a bmlib bug or misconfigured the service gets a result of exactly the same shape — so `fetch_fulltext()` emits one `WARNING` whenever it comes up empty-handed, and that line carries the evidence needed to tell the two apart:
+
+```
+No full text found for doi=10.1/x pmid=456 — nothing was retrieved; 3 attempts failed (ConnectError)
+No full text found for doi=10.1/x pmid=456 — nothing was retrieved; 3 sources had nothing
+No full text found for doi=10.1/x pmid=456 — returning the abstract only; 2 attempts failed (OSError); 1 source had nothing
+```
+
+Read it in two halves. The first says what came back — one of three:
+
+- `nothing was retrieved` — the chain fell through to a DOI or PubMed link.
+- `returning the abstract only` — a body-less JATS document was held back earlier and is returned with the link hung off it.
+- `nothing was retrieved and there is no link to fall back on` — no `doi` and no `pmid`, so there is nothing to degrade to and `fetch_fulltext()` raises after this line.
+
+The second half sorts what happened into two buckets, and only one of them is worth acting on:
+
+- **`N sources had nothing`** — that many sources answered, and answered that they hold no free full text. This is the ordinary outcome for a paywalled paper, and a corpus of these lines is not a problem.
+- **`N attempts failed (types…)`** — that many attempts could not get an answer. `ConnectError` or `ReadTimeout` across a corpus is a network or firewall problem; a bare `FullTextError` is a source returning a 5xx or unparseable data; `TypeError` or `AttributeError` is a bug worth reporting.
+
+The two are decided by exception class, not by wording: `FullTextUnavailableError` (a subclass of `FullTextError`) is what a source raises when it answered and has nothing, and a source that reports an absence by *returning* is counted in the same bucket. So an Unpaywall 404 and an Unpaywall 503 no longer look alike.
+
+The word is **attempts**, not tiers: Tier 0 makes one attempt per fetcher-supplied source, so the number is not bounded by the chain's eight tiers. Which attempt failed, and its traceback, stays at `DEBUG` on `bmlib.fulltext.service`.
+
+`no attempt reported a failure` is the remaining case: nothing raised and no source reported an absence, which happens when every attempt returned something — a body-less JATS document, say — rather than failing.
+
+A successful retrieval emits no *exhaustion* warning. It may still warn about something else: a cache it could not write to, or a PDF whose text would not extract.
 
 ---
 
@@ -910,17 +943,23 @@ with `isinstance(converter, LayoutExtractor)`.
 
 ---
 
-## FullTextError
+## FullTextError and FullTextUnavailableError
 
 ```python
 class FullTextError(Exception):
     """Error during full-text retrieval."""
+
+
+class FullTextUnavailableError(FullTextError):
+    """A source answered, and it has no free full text for this article."""
 ```
 
-Defined in `bmlib.fulltext.service` and used in two ways:
+Both are defined in `bmlib.fulltext.service` and exported from `bmlib.fulltext`. `FullTextError` is used in two ways:
 
-- **Internally**, by the fetch helpers to signal a failed tier (`Europe PMC HTTP 503`, `No open-access PDF found for DOI ...`, and so on). These are caught by `fetch_fulltext()`, logged at `DEBUG`, and never reach the caller.
-- **Externally**, from `fetch_fulltext()` itself — the only escaping case is `FullTextError("No identifiers provided")`, raised when `fulltext_sources`, `pmc_id`, `doi` and `pmid` are all empty.
+- **Internally**, by the fetch helpers to signal a failed attempt (`Europe PMC HTTP 503`, `Unpaywall HTTP 500`, and so on). These are caught by `fetch_fulltext()`, logged individually at `DEBUG`, and never reach the caller — though their *number* and type reach the log at `WARNING` if the whole chain then comes up empty.
+- **Externally**, from `fetch_fulltext()` itself, when nothing was retrieved and neither a `doi` nor a `pmid` is available for a fallback URL. See **Raises** under `fetch_fulltext()` for the two messages.
+
+`FullTextUnavailableError` is the subclass raised where a source *answered* and had nothing: any 404 from Europe PMC, NCBI, Unpaywall or a fetcher-supplied URL, an Unpaywall record with no OA location, an NCBI reply carrying no article at all. It is an **internal signal and never escapes** — every tier swallows it, and both of `fetch_fulltext()`'s own raises construct a plain `FullTextError`. It exists so the exhaustion summary can separate "this paper is paywalled" from "this source is down", which one type could not do (`Unpaywall HTTP 503` and `DOI not found in Unpaywall` were both plain `FullTextError`). Nothing that catches `FullTextError` is affected by the split.
 
 Helpers called directly (e.g. `JATSParser`) may raise their own exceptions unchanged.
 

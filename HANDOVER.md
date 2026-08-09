@@ -4,13 +4,14 @@ _Last updated: 2026-08-09. **0.8.0 is released and on PyPI**, and with it
 **Phase 2 of the bmlibrarian port is complete** — all four ports
 (Cochrane assessor PR #54, PDF section segmenter PR #55, citation/reference
 stack PR #58, PubMed metadata graft PR #59), plus the encrypted-PDF fix
-(#57, PR #60). **#64 is fixed** (PR #66, review round applied) —
-`bmlib.fulltext` now imports on a core install, and a new `fulltext` extra
-exists. Two open issues, **#56** and **#67**.
-1706 tests + 58 skipped (1762 + 2 with a PostgreSQL DSN), ruff clean.
-`[Unreleased]` carries #64's fix, so the next release is at least a patch.
-**Phase 3 is next, and each of its rows needs a design conversation before
-any porting** — see "Next up"._
+(#57, PR #60). **#64 is fixed** (PR #66) and **#67 is fixed** (PR #69) —
+`bmlib.fulltext` imports on a core install, and an exhausted retrieval chain
+now reports itself instead of passing for a paywalled paper. Five open issues:
+**#56**, **#68**, and **#70**/**#71**/**#72** filed from #69's review.
+1726 tests + 58 skipped (1782 + 2 with a PostgreSQL DSN), ruff clean.
+`[Unreleased]` carries #64's and #67's fixes, so the next release is at least
+a patch. **Phase 3 is next, and each of its rows needs a design conversation
+before any porting** — see "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -21,14 +22,13 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 ## Current state
 
 - **Version 0.8.0**, released 2026-08-08 and live on PyPI. Release history:
-  0.4.0 (2026-07-19) → 0.5.0 (2026-07-20) → 0.5.1 (2026-07-21) → 0.6.0
-  (2026-07-30) → 0.7.0 (2026-08-04) → 0.8.0. 0.3.0 was bumped in-tree but
-  never released; its changes shipped inside 0.4.0. The version lives in
-  **four** places — `pyproject.toml`, `bmlib/__init__.py`, the README version
-  line, `CLAUDE.md`'s header — and all four agree. 0.7.0 was the first
-  release the Release workflow published rather than a laptop, so that path
-  is proven end to end (tag → GitHub release → `pypi` environment gate →
-  Trusted Publishing upload); 0.8.0 went the same way.
+  0.4.0 (2026-07-19) → 0.5.0 → 0.5.1 → 0.6.0 (2026-07-30) → 0.7.0
+  (2026-08-04) → 0.8.0. 0.3.0 was bumped in-tree but never released; its
+  changes shipped inside 0.4.0. The version lives in **four** places —
+  `pyproject.toml`, `bmlib/__init__.py`, the README version line,
+  `CLAUDE.md`'s header — and all four agree. 0.7.0 and 0.8.0 were both
+  published by the Release workflow rather than a laptop, so that path is
+  proven end to end (tag → GitHub release → `pypi` gate → Trusted Publishing).
 - **What each release shipped is in `CHANGELOG.md`** — do not re-narrate it
   here. 0.6.0 (three changes), 0.7.0 (four) and 0.8.0 (three) each moved
   stored values, none behind a flag, and they compound for anyone upgrading
@@ -38,7 +38,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed three releases. Widening it is a downstream change, not a bmlib
   one.
-- **1706 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1762 + 2
+- **1726 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1782 + 2
   with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
   PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
@@ -60,26 +60,54 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; ROADMAP currently carries one, for #64. Markers inside
+  release time; ROADMAP currently carries two, for #64 and #67. Markers inside
   `docs/superpowers/plans/` are historical records — leave them alone.
 
 ## Next up
 
 ### Open GitHub issues
 
-Two.
+Five. **#70, #71 and #72 all came out of #69's review** — all three are
+`fulltext` cache or visibility bugs found while fixing #67, none of them in
+#67's scope.
 
-**#67 — a total retrieval failure is indistinguishable from "no free full
-text"**, found by the review of PR #66 and filed rather than folded into it,
-since it predates that PR. `fetch_fulltext()` wraps all nine tiers in `except
-Exception` logging at DEBUG; when every one fails, `service.py:379-380`
-returns a normal-looking `FullTextResult` and emits nothing above DEBUG. The
-only WARNING on that path sits inside `if abstract_only is not None:`, so the
-*more* complete the failure, the quieter it is — a caller who has lost
-network or hit a bmlib bug sees "no full text" for a whole corpus with nothing
-in the logs. `_cache_html` (`service.py:508-514`) has the same shape: a
-read-only cache directory means every run silently re-fetches. `_attach_pdf_text`
-is the standard to fix them to — every empty path there logs at WARNING.
+**#70 — a truncated cache file is served as complete full text.** The most
+serious of the three, and the only one worth doing before a release.
+`save_html` writes with a bare non-atomic `write_text` and `get_html` reads
+back with no validation, so a disk that fills mid-write — one of the two
+causes #67's own new cache warning names — leaves a truncated file that
+decodes fine and is returned as `content_kind="fulltext"` from
+`source="cached"` on every later run, with no log at any level. Strictly worse
+than #67: that lost data in a shape resembling absence, this fabricates a
+complete-looking article for `quality/` to score. `os.replace` via a temp
+file, in both `save_html` and `save_pdf`.
+
+**#71 — a corrupt cache entry aborts the run instead of falling through.**
+`_check_cache` is unguarded and `get_html` does a bare `read_text`, so a file
+truncated mid-multibyte-sequence raises `UnicodeDecodeError` out of
+`fetch_fulltext()` — contradicting the documented contract, contradicting
+#67's own new bullet that a bad cache does not fail a retrieval, and making
+one bad file permanently fatal for that paper where re-fetching was available.
+Cheap; pairs naturally with #70.
+
+**#72 — a bmlib bug hides behind any tier that still works.** #67's summary is
+consulted only on *total* exhaustion, so an `AttributeError` from every PMC
+tier with Unpaywall healthy silently degrades a whole corpus from JATS full
+text to bare links. Wants the same level decision as #68, so do them together.
+
+**#68 — a failed PDF download is invisible at default log level**, split out
+of #67 rather than folded into its fix. `_download_and_cache_pdf`'s download
+half is the one of #67's nine swallowers that was left alone, and it *cannot*
+usefully feed the exhaustion counter: all three of its call sites return after
+it, so a failure there never reaches the report. It is a milder bug than #67
+— `pdf_url` set with no `file_path` is a real signal, where #67's result was
+byte-identical to a paywalled paper — but with `convert_pdfs=True` the caller
+asked for text and got none, and a full disk looks exactly like 10,000
+publishers 404ing. **The issue is a decision, not a patch**: these URLs come
+from Europe PMC's `fullTextUrlList` and Unpaywall, and a `Free` PDF URL that
+404s is common enough that per-article WARNINGs could drown a bulk run. Sample
+how often that happens before choosing a level — this repo settles list-shaped
+questions by measuring.
 
 **#56 — `_extract_title()` trusts junk PDF metadata titles** ("Microsoft
 Word - manuscript.docx" wins over the large-font first-page line), deferred
@@ -94,12 +122,13 @@ the record of what was rejected and why.
 
 ### Worth doing, not yet an issue
 
-- **Cut 0.8.1.** `[Unreleased]` holds #64's fix, which is exactly the kind of
-  thing a patch release is for — a headline 0.8.0 addition
-  (`SectionSegmenter`) is unreachable for anyone who installed core bmlib,
-  and the fix is additive with no behaviour change to stored values. The
-  release recipe is at the bottom of this file; note the version now lives in
-  four places *and* the extras tables in README, `docs/manual/index.md` and
+- **Cut 0.8.1.** `[Unreleased]` now holds two fixes, both exactly what a patch
+  release is for — a headline 0.8.0 addition (`SectionSegmenter`) is
+  unreachable for anyone who installed core bmlib (#64), and an exhausted
+  retrieval chain passed silently for a paywalled paper (#67). Both are
+  additive: no stored value changes, and the only new output is log lines.
+  The release recipe is at the bottom of this file; note the version now lives
+  in four places *and* the extras tables in README, `docs/manual/index.md` and
   CLAUDE.md gained a `fulltext` row.
 - **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume
   0.6.0, 0.7.0 and 0.8.0. Read all three releases' non-comparable behaviour
@@ -125,14 +154,10 @@ bmlib. The assessment and phased backlog live in
 with reasons, and open caveats (ClinicalTrials.gov legacy XML deprecation,
 transparency/quality reconciliation, no GRADE engine exists, SSRF guard).
 
-- **Phases 0, 1 and 2 are all done and shipped.** Phase 0 in 0.4.0
-  (json_repair, text_utils, Cochrane models + formatter, extractors +
-  scoring_models, pdf_converter); Phase 1 in 0.7.0 (BaseAgent enhancement
-  PR #34, `context_processor` #49/PR #50); Phase 2 across 0.7.0 and 0.8.0 —
-  its rows are rows in the analysis doc's master table, not GitHub issues:
-  row 10 Retraction Watch (PR #51), row 9 Cochrane assessor (PR #54), row 8
-  PDF section segmenter (PR #55), row 4 citations (PR #58), row 11 PubMed
-  metadata graft (PR #59).
+- **Phases 0, 1 and 2 are all done and shipped** — Phase 0 in 0.4.0, Phase 1
+  in 0.7.0, Phase 2 across 0.7.0 and 0.8.0 (rows 10, 9, 8, 4 and 11 of the
+  analysis doc's master table; PRs #51, #54, #55, #58, #59). Note those are
+  rows in that table, not GitHub issues. CHANGELOG has what each shipped.
 - **Phase 3 is next**: discovery (#12), `pubmed_search` (#13), MeSH (#21),
   ClinicalTrials.gov (#14 — **check the caveat first**, the legacy bulk XML
   the parser targets was deprecated in the 2024 API v2 migration). These are
@@ -290,38 +315,88 @@ named source file; the entry here is the pointer, not the argument.
 
 ### fulltext — importable on a core install (#64, PR #66)
 
+**CLAUDE.md argues this one in full too**, under "Optional dependencies
+guarded at the call site" — the package-not-module rule, one fresh
+interpreter per module, return the module rather than storing it, report the
+caught exception rather than asserting "not installed", and `__dir__`'s union.
+Read it there. What CLAUDE.md omits:
+
 - **Both halves of the fix stay, and the reason is counter-intuitive — read
   the mutation table in
   `docs/superpowers/specs/2026-08-08-fulltext-import-without-httpx-design.md`
   before removing either.** They overlap: once httpx moved into
-  `FullTextService.__init__`, `service.py` has no top-level `import httpx`,
-  so restoring the eager re-export in `__init__.py` gates nothing and **no
-  test failed**. Either change alone restores importability. What the PEP 562
-  deferral buys on its own is that `import bmlib.fulltext` never loads
-  `service`, so no future top-level import there can gate the parser, the
-  models or the segmenter again —
+  `FullTextService.__init__`, restoring the eager re-export gates nothing and
+  **no test failed**. What the PEP 562 deferral buys on its own is that
+  `import bmlib.fulltext` never loads `service`, so no future top-level import
+  there can gate the parser, the models or the segmenter again —
   `test_importing_the_package_does_not_load_the_service` is the guard that
-  isolates it, and it was written *because* mutation testing found nothing
-  else did.
-- **The three rules the review settled now live in CLAUDE.md**, under
-  "Optional dependencies guarded at the call site" — return the module rather
-  than storing it, report the caught exception rather than asserting "not
-  installed", and give a PEP 562 `__dir__` the union rather than `__all__`.
-  Read them there; each replaced something that had already shipped in a draft
-  of this PR, so they are not preferences. **Do not "simplify" `_require_httpx`
-  back into a stored `self._httpx`** — that is the one a reader is most likely
-  to think is redundant, and it costs picklability.
+  isolates it, written *because* mutation testing found nothing else did.
 - **`_http_get` had no test at all** until this review: all ~45 tests in the
   file patch `_http_get` itself, so replacing its body with `raise
-  AssertionError` left the suite green. `TestHttpGet` covers it now, and
-  nothing else in the file will notice a change to how the client is built.
-- **`fulltext = ["httpx>=0.25"]` is httpx only**; `pdf` stays separate (it
-  already exists, is separately documented, and bundling would drag a ~20 MB
-  binary wheel onto anyone who only wants JATS retrieval). `publications` and
-  `transparency` keep their own httpx, so no existing install changed.
+  AssertionError` left the suite green. `TestHttpGet` covers it now.
+- **`fulltext = ["httpx>=0.25"]` is httpx only**; `pdf` stays separate (a
+  ~20 MB binary wheel for anyone who only wants JATS retrieval).
   `test_the_extra_the_error_message_names_is_a_real_one` reads
   `Provides-Extra` from the installed metadata, so the message and
   `pyproject.toml` cannot drift apart.
+
+### fulltext — the exhausted-chain report (#67, PR #69)
+
+- **The warning belongs outside the `if abstract_only is not None:` branch,
+  and that placement is the whole fix.** Inside it, the *more* complete
+  failure was the quieter one. Mutation testing confirms it: putting the
+  warning back inside the branch — the original bug — fails two tests.
+- **Faults and absences are counted apart, and that is the discrimination
+  the report exists to make.** `N attempts failed (ConnectError)` is a lost
+  network; `N sources had nothing` is an ordinary paywalled paper; a
+  `TypeError` among the faults is a bug. A single count could not say this.
+- **Review found the first cut still printed the reassuring line during a
+  total outage, and the two causes are worth remembering.** (1) Both
+  resolvers reported an HTTP failure by *returning* — `(None, None)`, which
+  is also what an empty result set returns — so a 503 from Europe PMC and
+  NCBI incremented nothing and the summary read "no free full text was
+  offered". A swallowed exception is not the only way a tier goes wrong;
+  anything that reports failure in the same shape as absence has the same
+  bug. (2) `FullTextError` was raised alike for `Unpaywall HTTP 503` and
+  `DOI not found in Unpaywall`, so the type name carried no information at
+  the one tier that matters most for a DOI. Hence
+  `FullTextUnavailableError`, and hence `note_absence()` for the sources
+  that report an absence by returning.
+- **The counter says *attempts*, never tiers.** `_try_known_sources` records
+  once per fetcher-supplied source, so the number is not bounded by the
+  chain's eight tiers — "9 tiers raised" was emittable from a run that
+  attempted four.
+- **`_download_and_cache_pdf`'s *download* half is deliberately not wired to
+  the counter** — see #68 above. All three of its call sites return
+  immediately after it, so a recorded failure could never be reported;
+  threading it would be dead plumbing that reads as coverage. There is a
+  comment at the handler saying so, because eight of the nine swallowers were
+  wired and the ninth reads as an oversight otherwise. Its *cache-write* half
+  is a different question and was split out into `_save_pdf_to_cache`: an
+  unwritable directory is not a download failure, and folding the two meant a
+  PDF-only corpus never saw the cache warning at all.
+- **`_resolve_pmc_id_via_idconv` takes `failures` as *optional*, and the
+  reason is its own direct callers** — fourteen of them in the tests, with no
+  report to feed it. Not "because it swallows its own exceptions": Tier 0
+  swallows too and takes the parameter as required.
+- **A successful retrieval emits no *exhaustion* warning** — pinned by two
+  controls, one where nothing fails and one where an attempt fails and a
+  later tier recovers. The narrower wording is deliberate: a successful
+  retrieval may still warn about an unwritable cache or an unextractable
+  PDF, and the blanket claim was contradicted by this PR's own cache test.
+- **A 404 is an absence from an *article* endpoint and a fault from a
+  *search* endpoint**, and the asymmetry is deliberate. Europe PMC answers
+  "no such paper" with HTTP 200 and an empty result list, so a 404 on the
+  search path means the API moved. On an article path — Europe PMC, NCBI,
+  Unpaywall, a fetcher-supplied URL — it means the paper is not there, which
+  for a stored fetcher URL is ordinary staleness rather than something to act
+  on. Three of the four article fetchers called it a fault until review
+  caught it.
+- **`describe()`'s wording is pinned at its source**, not only through a tier
+  chain. It is a documented interface — the manual tells operators to grep
+  for it — and asserting it through `fetch_fulltext` left the singular branch
+  untested and the counts matched by substring, where `"13 attempts failed"`
+  satisfies `"3 attempts failed"`.
 
 ### fulltext — the PDF converter (PR #60)
 
@@ -362,11 +437,9 @@ named source file; the entry here is the pointer, not the argument.
   break** — a PDF gives no signal distinguishing a paragraph continuing across
   a page from one ending at it. The `height == 0` degenerate-bbox case is
   acknowledged in `_join_blocks` and left.
-- **CONFLICTS owns the disclosure family, in both numbers** — FUNDING once
-  listed the singular `financial disclosure` while CONFLICTS listed both, so
-  the two numbers of the same heading landed in different sections, decided by
-  dict iteration order. A comment in FUNDING's pattern list wards off
-  re-adding it.
+- **CONFLICTS owns the disclosure family, in both numbers** — listing the
+  singular under FUNDING put the two numbers of one heading in different
+  sections, decided by dict iteration order. A comment wards off re-adding it.
 - **Two known spec-level limits, documented in `docs/manual/fulltext.md`
   rather than fixed:** the 0.7 partial-match pass can fire on a bold figure
   caption ("Fig. 3 Study results" → RESULTS), and `min_heading_size` is an
@@ -391,51 +464,46 @@ style with `IndexError`.
 ### publications — PubMed metadata graft (PR #59)
 
 **CLAUDE.md argues most of this port in full — read it there, and do not
-re-derive any of it.** Its "Replace-per-source child rows" settles the
-`source` column and the scoped delete, `_stamp_source()`, the `ValueError`
-on an unnamed row, the deliberate absence of a UNIQUE constraint, the empty
-guard, and `_consolidate_rows()`'s relocation; its "Markdown, measured
-against the markup" settles the mixed-content walker, strip-once, edge
-whitespace outside the markers, `Label` **or** `NlmCategory`, the measured
-escape set, and `<u>`. Each is pinned by a named test on both backends,
-several verified by mutation. What follows is only what CLAUDE.md omits.
+re-derive any of it.** "Replace-per-source child rows" settles the `source`
+column and scoped delete, `_stamp_source()`, the `ValueError` on an unnamed
+row, the absent UNIQUE constraint, the empty guard and `_consolidate_rows()`;
+"Markdown, measured against the markup" settles the mixed-content walker,
+strip-once, edge whitespace outside the markers, `Label` **or**
+`NlmCategory`, the measured escape set, and `<u>`. Each is pinned by a named
+test on both backends, several verified by mutation. Only what it omits:
 
 - **PubMed repeats a `<Grant>` block verbatim** — 31 of 575 entries across 200
-  NIH-funded records, affecting 14 — so `_parse_grants()` collapses exact
-  repeats, keeping first-occurrence order. Two grants differing in any field
-  are two grants.
+  NIH-funded records — so `_parse_grants()` collapses exact repeats, keeping
+  first-occurrence order. Two grants differing in any field are two grants.
 - **`position` indexes `<AuthorList>`, not `Publication.authors`** — it counts
-  the `<CollectiveName>` consortia that `authors` skips, so the two lists
-  differ in length whenever one is present and `authors[a.position]` is the
-  wrong way to resolve an affiliation's author (match on `author`). What
-  position is *for* — first or senior author — is right either way. The
-  knock-on, accepted: a consortium stating an affiliation loses it, since
-  recording it would put an `author` in the table that is absent from
-  `authors`, breaking the one join the column exists for. Pinned by
+  the `<CollectiveName>` consortia that `authors` skips, so the lists differ
+  in length whenever one is present and `authors[a.position]` is the wrong way
+  to resolve an affiliation's author (match on `author`). What position is
+  *for* — first or senior author — is right either way. Accepted knock-on: a
+  consortium stating an affiliation loses it, since recording it would put an
+  `author` in the table that is absent from `authors`, breaking the one join
+  the column exists for. Pinned by
   `test_position_indexes_the_xml_author_list_not_the_authors_field`.
 - **`store_publication()` does not write `publication_id` back onto the
-  `Grant` / `AuthorAffiliation` objects it is given**, unlike its `pub`
-  argument, which it mutates in place and documents as such — the
-  `FullTextSource` precedent. Worth knowing because the failure is silent:
-  the field reads `0`, a plausible id rather than an obvious sentinel. Pinned
-  by `test_the_caller_s_objects_are_not_mutated`.
-- **`is_retracted` was not ported.** `publication_types` already carries
-  "Retracted Publication" verbatim, `retractions.py` answers authoritatively
-  from Retraction Watch, and upstream reads RefType `RetractionOf` — which
-  marks an article as *being* the retraction notice — as retracted.
-- **Upstream's `_extract_date` was not ported.** `_parse_pubdate` is strictly
-  better: upstream defaults a missing month and day to `01`, inventing
-  precision the record does not have, and swallows every failure in a bare
-  `except:`.
+  `Grant` / `AuthorAffiliation` objects it is given**, unlike `pub`, which it
+  mutates in place and documents as such — the `FullTextSource` precedent. The
+  failure is silent: the field reads `0`, a plausible id rather than an
+  obvious sentinel. Pinned by `test_the_caller_s_objects_are_not_mutated`.
+- **`is_retracted` and upstream's `_extract_date` were not ported.**
+  `publication_types` already carries "Retracted Publication",
+  `retractions.py` answers authoritatively, and upstream reads RefType
+  `RetractionOf` (this article *is* the notice) as retracted. `_parse_pubdate`
+  is strictly better than `_extract_date`, which defaults a missing month and
+  day to `01` — inventing precision — and swallows every failure bare.
 - **`~x~` / `^x^` are Pandoc extensions, knowingly.** A renderer without them
   shows the tildes literally; the alternative flattened `CO<sub>2</sub>` and
   `CO<sup>2</sup>` to the same ambiguous `CO2`. Documented in the manual.
 - **Which elements get the formatting walker is decided by NLM's DTD.**
-  `ArticleTitle`, `AbstractText` and `Affiliation` are all declared
-  `(%text;)*` — `#PCDATA | b | i | sup | sub | u` — so all three use
+  `ArticleTitle`, `AbstractText` and `Affiliation` are declared `(%text;)*` —
+  `#PCDATA | b | i | sup | sub | u` — so all three use
   `_text_with_formatting`. `Journal/Title`, `DescriptorName` and
-  `PublicationType` are declared `(#PCDATA)`, genuine leaves, and keep plain
-  `.text`. Do not widen or narrow this list by eye; check the DTD.
+  `PublicationType` are `(#PCDATA)`, genuine leaves, and keep plain `.text`.
+  Do not widen or narrow this list by eye; check the DTD.
 
 ### publications — retractions
 

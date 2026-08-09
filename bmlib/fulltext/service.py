@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING
@@ -70,6 +71,85 @@ _PMC_ID_RE = re.compile(r"PMC\d+")
 
 class FullTextError(Exception):
     """Error during full-text retrieval."""
+
+
+class FullTextUnavailableError(FullTextError):
+    """A source answered, and it has no free full text for this article.
+
+    Split from its base because the exhaustion report (issue #67) is built on
+    telling a broken chain from an ordinary paywalled paper, and
+    ``FullTextError`` alone cannot carry that: ``Unpaywall HTTP 503`` and
+    ``DOI not found in Unpaywall`` were the same type, so a total outage and
+    a paper nobody serves for free produced byte-identical summaries.
+
+    Raised where a source replied and had nothing. A transport or protocol
+    fault — a 5xx, a timeout, unparseable JSON — stays a plain
+    ``FullTextError``. Nothing that catches ``FullTextError`` is affected,
+    and the tier chain swallows both alike.
+    """
+
+
+def _plural(n: int, noun: str) -> str:
+    """Render ``n`` with its noun, pluralised the naive way."""
+    return f"1 {noun}" if n == 1 else f"{n} {noun}s"
+
+
+@dataclass
+class _TierFailures:
+    """Why one :meth:`FullTextService.fetch_fulltext` call came up empty.
+
+    Every tier that makes a request catches its own exception, logs at DEBUG
+    and moves on. That is correct — an unreachable Unpaywall must not cost
+    the DOI fallback — but it left a chain that failed *everywhere*
+    indistinguishable from one that was simply offered nothing, and silent at
+    any level a caller normally runs at (issue #67).
+
+    Faults and absences are kept apart rather than counted together, because
+    the only question an operator can act on is whether anything went
+    *wrong*. A source replying "no free full text" is the ordinary outcome
+    for most papers; a ``ConnectError`` across a corpus is a lost network,
+    and a ``TypeError`` is a bug. :class:`FullTextUnavailableError` is what sorts
+    one from the other, so a source that reports an absence by raising is
+    counted beside one that reports it by returning.
+
+    Faults are a list because their type *names* are rendered; absences are a
+    count because only their number is. Nothing here holds two fields
+    describing the same events, so they cannot drift apart.
+
+    Type names, not messages: a message carries the URL and the identifier,
+    so nine of them would be as long as the DEBUG log this summary exists to
+    replace. Each full message and traceback is already at DEBUG.
+    """
+
+    faults: list[str] = field(default_factory=list)
+    absences: int = 0
+
+    def record(self, exc: BaseException) -> None:
+        """Note one swallowed exception, filed by what it means."""
+        if isinstance(exc, FullTextUnavailableError):
+            self.absences += 1
+        else:
+            self.faults.append(type(exc).__name__)
+
+    def note_absence(self) -> None:
+        """Note a source that reported an absence by returning, not raising."""
+        self.absences += 1
+
+    def describe(self) -> str:
+        """Summarise the attempts for a log line.
+
+        Worded as *attempts*, never tiers: Tier 0 records once per
+        fetcher-supplied source, so the number is not bounded by the chain's
+        eight tiers and "9 tiers raised" was emittable from a run that
+        attempted four.
+        """
+        parts = []
+        if self.faults:
+            kinds = ", ".join(sorted(set(self.faults)))
+            parts.append(f"{_plural(len(self.faults), 'attempt')} failed ({kinds})")
+        if self.absences:
+            parts.append(f"{_plural(self.absences, 'source')} had nothing")
+        return "; ".join(parts) if parts else "no attempt reported a failure"
 
 
 def _require_httpx() -> ModuleType:
@@ -203,6 +283,8 @@ class FullTextService:
         # Guards the one-off warning in _attach_pdf_text when the bmlib[pdf]
         # extra is missing: worth saying once, not once per article.
         self._pdf_extra_warned = False
+        # Same, for a cache directory that cannot be written to.
+        self._cache_write_warned = False
 
     def _http_get(self, url: str, **kwargs: object) -> httpx.Response:
         """HTTP GET with timeout. Separated for testability."""
@@ -254,9 +336,15 @@ class FullTextService:
         # abstract while a later tier may still find the whole article.
         abstract_only: FullTextResult | None = None
 
+        # Every tier below swallows its own exception so the next one still
+        # runs; this is what remembers that they did.
+        failures = _TierFailures()
+
         # Tier 0: Try fetcher-provided sources
         if fulltext_sources:
-            result, abstract_only = self._try_known_sources(fulltext_sources, cache_id=cache_id)
+            result, abstract_only = self._try_known_sources(
+                fulltext_sources, cache_id=cache_id, failures=failures
+            )
             if result is not None:
                 return self._with_abstract_fallback(result, abstract_only)
 
@@ -280,8 +368,9 @@ class FullTextService:
                     )
                 # Treated as a failure so the free-PDF lookup below still runs.
                 xml_failed = True
-            except Exception:
+            except Exception as exc:
                 logger.debug("Europe PMC failed for %s", pmc_id, exc_info=True)
+                failures.record(exc)
                 xml_failed = True
 
         # Tier 1b: Discover PMC ID via Europe PMC search, then fetch XML
@@ -290,15 +379,16 @@ class FullTextService:
             discovered_pmc_id: str | None = None
             try:
                 discovered_pmc_id, pdf_render_url = self._resolve_pmc_id_and_pdf_url(
-                    doi=doi, pmid=pmid
+                    doi=doi, pmid=pmid, failures=failures
                 )
-            except Exception:
+            except Exception as exc:
                 logger.debug(
                     "Europe PMC search failed for doi=%s pmid=%s",
                     doi,
                     pmid,
                     exc_info=True,
                 )
+                failures.record(exc)
 
             # Tier 1b′: the search reports a PMC ID only for what Europe PMC
             # both indexed and holds. NCBI's converter depends on neither, and
@@ -308,7 +398,9 @@ class FullTextService:
             # independent resolver is worth having, and folding this back into
             # that block would skip it there.
             if not discovered_pmc_id:
-                discovered_pmc_id = self._resolve_pmc_id_via_idconv(doi=doi, pmid=pmid)
+                discovered_pmc_id = self._resolve_pmc_id_via_idconv(
+                    doi=doi, pmid=pmid, failures=failures
+                )
 
             if discovered_pmc_id:
                 resolved_pmc_id = discovered_pmc_id
@@ -331,12 +423,13 @@ class FullTextService:
                         abstract_only = FullTextResult(
                             source="europepmc", html=html, content_kind="abstract"
                         )
-                except Exception:
+                except Exception as exc:
                     logger.debug(
                         "Europe PMC fetch failed for discovered %s",
                         discovered_pmc_id,
                         exc_info=True,
                     )
+                    failures.record(exc)
 
         # Tier 1c: NCBI's own copy, for whichever PMC ID we hold. Reaching here
         # means Europe PMC gave no body for it — it serves the corpus its
@@ -355,8 +448,9 @@ class FullTextService:
                     abstract_only = FullTextResult(
                         source="ncbi_pmc", html=html, content_kind="abstract"
                     )
-            except Exception:
+            except Exception as exc:
                 logger.debug("NCBI PMC failed for %s", resolved_pmc_id, exc_info=True)
+                failures.record(exc)
 
         # When XML failed with a known PMC ID, search for PDF render URL
         if xml_failed and not pdf_render_url and (doi or pmid):
@@ -364,9 +458,11 @@ class FullTextService:
                 _, pdf_render_url = self._resolve_pmc_id_and_pdf_url(
                     doi=doi,
                     pmid=pmid,
+                    failures=failures,
                 )
-            except Exception:
+            except Exception as exc:
                 logger.debug("PDF URL resolution failed", exc_info=True)
+                failures.record(exc)
 
         # Tier 1d: Europe PMC PDF render (when XML unavailable but free PDF exists)
         if pdf_render_url:
@@ -383,8 +479,9 @@ class FullTextService:
                 result = FullTextResult(source="unpaywall", pdf_url=pdf_url)
                 self._download_and_cache_pdf(pdf_url, cache_id, result)
                 return self._with_abstract_fallback(result, abstract_only)
-            except Exception:
+            except Exception as exc:
                 logger.debug("Unpaywall failed for DOI %s", doi, exc_info=True)
+                failures.record(exc)
 
         # Tier 3: DOI / PubMed fallback. When a body-less JATS was seen
         # earlier, keep its abstract and hang the link off it — the reader
@@ -397,18 +494,48 @@ class FullTextService:
             logger.info("Falling back to PubMed URL for PMID %s", pmid)
             web_url = f"{PUBMED_BASE}/{pmid}/"
 
+        # An empty call is not an exhausted chain: nothing was asked of any
+        # source, so there is no failure to summarise and the report below
+        # would claim otherwise. Raised ahead of it for that reason.
+        if not (fulltext_sources or pmc_id or doi or pmid):
+            raise FullTextError("No identifiers provided")
+
+        # One report for every empty-handed exit — the two returns below and
+        # the raise. The reason it is not inside the abstract branch where it
+        # started: keeping it there made the *more* complete failure the
+        # quieter one. A caller whose every attempt failed got a result shaped
+        # exactly like a paper that genuinely has no free full text, and
+        # nothing above DEBUG to tell them apart (issue #67). The summary is
+        # what distinguishes them.
+        if abstract_only is not None:
+            outcome = "returning the abstract only"
+        elif web_url is not None:
+            outcome = "nothing was retrieved"
+        else:
+            outcome = "nothing was retrieved and there is no link to fall back on"
+        logger.warning(
+            "No full text found for doi=%s pmid=%s — %s; %s",
+            doi,
+            pmid,
+            outcome,
+            failures.describe(),
+        )
+
         if abstract_only is not None:
             if web_url:
                 abstract_only.web_url = web_url
-            logger.warning(
-                "No full text found for doi=%s pmid=%s — returning the abstract only", doi, pmid
-            )
             return abstract_only
 
-        if web_url:
-            return FullTextResult(source="doi" if doi else "pubmed", web_url=web_url)
+        if web_url is None:
+            # Identifiers were given — the empty call raised above — so this
+            # is an exhausted chain with no link to degrade to. Saying "no
+            # identifiers provided" here, as it used to, sent the reader
+            # looking in the wrong place.
+            raise FullTextError(
+                f"Nothing retrieved and no DOI or PMID to fall back on — {failures.describe()}"
+            )
 
-        raise FullTextError("No identifiers provided")
+        return FullTextResult(source="doi" if doi else "pubmed", web_url=web_url)
 
     def _with_abstract_fallback(
         self,
@@ -442,10 +569,19 @@ class FullTextService:
         sources: list[FullTextSourceEntry],
         *,
         cache_id: str | None = None,
+        failures: _TierFailures,
     ) -> tuple[FullTextResult | None, FullTextResult | None]:
         """Try fetcher-provided fulltext sources in priority order.
 
         Priority: xml (JATS) > pdf > html.
+
+        Args:
+            sources: The fetcher's known source URLs.
+            cache_id: Sanitised cache key, or ``None`` to skip caching.
+            failures: The caller's exhaustion report. Every entry that raised
+                is recorded on it — once per *entry*, not once for the tier —
+                so the caller can say whether an empty-handed chain broke or
+                was simply offered nothing.
 
         Returns:
             A tuple of ``(result, abstract_only)``. ``result`` is the best
@@ -497,13 +633,14 @@ class FullTextService:
                 elif entry.format == "html":
                     logger.info("HTML source from %s", entry.source)
                     return FullTextResult(source=entry.source, web_url=entry.url), abstract_only
-            except Exception:
+            except Exception as exc:
                 logger.debug(
                     "Known source %s (%s) failed",
                     entry.source,
                     entry.url,
                     exc_info=True,
                 )
+                failures.record(exc)
                 continue
 
         return None, abstract_only
@@ -534,12 +671,36 @@ class FullTextService:
             return result
         return None
 
+    def _warn_cache_write_failed(self, exc: BaseException) -> None:
+        """Report an unwritable cache, once per service.
+
+        Best-effort: the content is already in hand, so a write that fails
+        costs nothing this call. It costs every *later* call — a read-only
+        cache directory or a full disk means the whole corpus is re-fetched
+        over the network on every run, permanently. Said once, like the
+        missing-``bmlib[pdf]`` warning: the cause is a property of the
+        directory, not of the article, so one line per paper would be noise.
+
+        Shared by the HTML and PDF writes rather than living in either. A
+        corpus served mostly by PDFs never writes HTML, so a warning that
+        only the HTML path could emit stayed silent for exactly the callers
+        it was meant to reach.
+        """
+        if not self._cache_write_warned:
+            logger.warning(
+                "Could not write to the full-text cache (%s); retrieval still "
+                "works, but nothing is being cached, so every run re-fetches.",
+                exc,
+            )
+            self._cache_write_warned = True
+
     def _cache_html(self, html: str, cache_id: str | None) -> None:
         """Save HTML to disk cache if caching is enabled."""
         if cache_id and self.cache:
             try:
                 self.cache.save_html(html, cache_id)
-            except Exception:
+            except Exception as e:
+                self._warn_cache_write_failed(e)
                 logger.debug("Failed to cache HTML for %s", cache_id, exc_info=True)
 
     def _download_and_cache_pdf(
@@ -569,15 +730,44 @@ class FullTextService:
             if resp.status_code != 200:
                 logger.debug("PDF download HTTP %s for %s", resp.status_code, pdf_url)
                 return
-            path = self.cache.save_pdf(resp.content, cache_id)
+            path = self._save_pdf_to_cache(resp.content, cache_id)
             if path:
                 result.file_path = path
                 logger.info("PDF cached to %s", path)
                 self._attach_pdf_text(path, result)
-            else:
-                logger.debug("PDF validation failed for %s", pdf_url)
         except Exception:
+            # Deliberately not recorded on the exhaustion report: all three
+            # call sites return the result immediately after this, so a
+            # failure noted here could never reach the report that reads it.
+            # Whether the download itself deserves a level above DEBUG is
+            # issue #68 — a `Free` PDF URL that 404s is common enough that
+            # the rate wants measuring first.
             logger.debug("PDF download failed for %s", pdf_url, exc_info=True)
+
+    def _save_pdf_to_cache(self, data: bytes, cache_id: str) -> str | None:
+        """Write a downloaded PDF to the disk cache, best-effort.
+
+        Split out of the download so a failed *write* is reported like
+        :meth:`_cache_html`'s. Left inside the download's own handler it was
+        indistinguishable from a failed fetch, logged as "PDF download
+        failed", and invisible above DEBUG.
+
+        Returns:
+            The cached file's path, or ``None`` if the write failed or the
+            payload did not validate as a PDF. Each logs its own cause here,
+            rather than leaving the caller to name one for both — a read-only
+            directory reported as "PDF validation failed" is the same mistake
+            in miniature.
+        """
+        try:
+            path = self.cache.save_pdf(data, cache_id)
+        except Exception as e:
+            self._warn_cache_write_failed(e)
+            logger.debug("Failed to cache PDF for %s", cache_id, exc_info=True)
+            return None
+        if not path:
+            logger.debug("PDF failed magic-byte validation for %s", cache_id)
+        return path
 
     def _attach_pdf_text(self, pdf_path: str, result: FullTextResult) -> None:
         """Extract a cached PDF's text into ``result.html``.
@@ -657,8 +847,16 @@ class FullTextService:
             A tuple of the rendered HTML and whether the document actually
             had a body. A body-less document renders to little more than the
             abstract, so the caller must keep looking for the real full text.
+
+        Raises:
+            FullTextError: On a non-200 response other than 404.
+            FullTextUnavailableError: On a 404. A fetcher's stored URL going
+                stale is common, and counting it as a fault would inflate the
+                one bucket the exhaustion report asks the operator to act on.
         """
         resp = self._http_get(url, headers={"Accept": "application/xml"})
+        if resp.status_code == 404:
+            raise FullTextUnavailableError(f"JATS XML not found: {url}")
         if resp.status_code != 200:
             raise FullTextError(f"JATS XML fetch failed: HTTP {resp.status_code}")
         article, html = JATSParser(resp.content).parse_with_html()
@@ -669,13 +867,28 @@ class FullTextService:
         *,
         doi: str | None = None,
         pmid: str = "",
+        failures: _TierFailures,
     ) -> tuple[str | None, str | None]:
         """Search Europe PMC to discover a PMC ID and free PDF URL.
 
-        Returns a tuple of (pmc_id, pdf_render_url). Either or both may
-        be None. The PDF render URL comes from the ``fullTextUrlList``
-        in the search response and provides a free PDF when JATS XML is
-        unavailable.
+        Args:
+            doi: Digital Object Identifier, preferred when present.
+            pmid: PubMed ID, used when there is no DOI.
+            failures: The caller's exhaustion report. A search that finds no
+                record is noted on it as an absence.
+
+        Returns:
+            A tuple of (pmc_id, pdf_render_url). Either or both may be None.
+            The PDF render URL comes from the ``fullTextUrlList`` in the
+            search response and provides a free PDF when JATS XML is
+            unavailable.
+
+        Raises:
+            FullTextError: On a non-200 response. Reported rather than
+                returned as ``(None, None)``, which is also what an empty
+                result set looks like: an unreachable Europe PMC then read as
+                "this paper has no free full text", the misdiagnosis issue
+                #67 exists to prevent. Both call sites catch it.
         """
         if doi:
             query = f"DOI:{doi}"
@@ -690,11 +903,12 @@ class FullTextService:
         )
         resp = self._http_get(url, headers={"Accept": "application/json"})
         if resp.status_code != 200:
-            return None, None
+            raise FullTextError(f"Europe PMC search HTTP {resp.status_code}")
 
         data = resp.json()
         results = data.get("resultList", {}).get("result", [])
         if not results:
+            failures.note_absence()
             return None, None
 
         hit = results[0]
@@ -722,6 +936,7 @@ class FullTextService:
         *,
         doi: str | None = None,
         pmid: str = "",
+        failures: _TierFailures,
     ) -> str | None:
         """Resolve a PMC ID through NCBI's ID Converter.
 
@@ -734,11 +949,26 @@ class FullTextService:
         otherwise, since a DOI-formatting miss is one of the divergences this
         recovers.
 
+        Args:
+            doi: Digital Object Identifier, used when there is no PMID.
+            pmid: PubMed ID, preferred when present.
+            failures: The caller's exhaustion report. Required, like every
+                other recorder here, even though this method has direct
+                callers of its own in the tests: it has more recording sites
+                than any other helper, and a future call site that omitted it
+                would fail exactly the way issue #67 failed — silently, with
+                the summary reading as an ordinary paywalled paper. A
+                throwaway ``_TierFailures()`` costs a test one argument.
+
         Returns:
             The PMC ID, or ``None`` if the converter has no live record for the
             identifier, reports an error, answers with something unusable, or
             cannot be reached. It never raises: the caller has a free-PDF URL
-            in hand by this point, and an exception would cost it.
+            in hand by this point, and an exception would cost it. A converter
+            that could not be reached is still recorded as a *fault* on
+            ``failures``, and one that answered "no such record" as an
+            absence — returning ``None`` for both is what let an outage read
+            as an ordinary paywalled paper (issue #67).
         """
         if pmid:
             ids = pmid
@@ -754,32 +984,43 @@ class FullTextService:
                 headers={"Accept": "application/json"},
             )
             if resp.status_code != 200:
-                logger.debug("ID Converter HTTP %s for %s", resp.status_code, ids)
-                return None
+                # Raised, not returned: the handler below files it as a fault
+                # and still returns None, so the caller is unaffected while an
+                # unreachable converter stops counting as an absence.
+                raise FullTextError(f"ID Converter HTTP {resp.status_code} for {ids}")
 
             records = resp.json().get("records") or []
             if not records:
+                failures.note_absence()
                 return None
 
             record = records[0]
             if record.get("status") == "error":
                 logger.debug("ID Converter has no record for %s: %s", ids, record.get("errmsg"))
+                failures.note_absence()
                 return None
             # Reported as the string "false" for a record PMC no longer serves.
             if str(record.get("live", "true")).lower() == "false":
                 logger.debug("ID Converter record for %s is no longer live", ids)
+                failures.note_absence()
                 return None
 
             pmc_id = record.get("pmcid")
             if not isinstance(pmc_id, str) or not _PMC_ID_RE.fullmatch(pmc_id):
                 if pmc_id:
                     logger.warning("ID Converter returned an unusable PMC ID: %r", pmc_id)
+                    # A malformed id is the converter misbehaving, not an
+                    # absence — the record exists and says something unusable.
+                    failures.record(FullTextError(f"Unusable PMC ID: {pmc_id!r}"))
+                else:
+                    failures.note_absence()
                 return None
 
             logger.info("PMC ID %s resolved via NCBI ID Converter for %s", pmc_id, ids)
             return pmc_id
-        except Exception:
+        except Exception as exc:
             logger.debug("ID Converter lookup failed for %s", ids, exc_info=True)
+            failures.record(exc)
             return None
 
     def _fetch_europepmc(self, pmc_id: str) -> tuple[str, bool]:
@@ -794,7 +1035,7 @@ class FullTextService:
 
         resp = self._http_get(url, headers={"Accept": "application/xml"})
         if resp.status_code == 404:
-            raise FullTextError(f"No full text in Europe PMC for {normalized}")
+            raise FullTextUnavailableError(f"No full text in Europe PMC for {normalized}")
         if resp.status_code != 200:
             raise FullTextError(f"Europe PMC HTTP {resp.status_code}")
 
@@ -814,13 +1055,14 @@ class FullTextService:
             as for :meth:`_fetch_europepmc`.
 
         Raises:
-            FullTextError: On a bad ID, a non-200 response, or a reply
-                carrying no article at all. That last case is efetch's answer
-                for an article whose publisher does not release XML: it is
-                HTTP 200 and parses cleanly into a document with no body *and*
-                no abstract. Returned rather than raised, it would be promoted
-                to the last-resort abstract and become near-empty HTML
-                labelled as one.
+            FullTextError: On a bad ID or a non-200 response.
+            FullTextUnavailableError: On a reply carrying no article at all —
+                efetch's answer for an article whose publisher does not
+                release XML. It is HTTP 200 and parses cleanly into a
+                document with no body *and* no abstract. Returned rather than
+                raised, it would be promoted to the last-resort abstract and
+                become near-empty HTML labelled as one. Raised as an absence
+                rather than a fault because the source answered.
         """
         normalized = _normalise_pmc_id(pmc_id)
         resp = self._http_get(
@@ -832,23 +1074,33 @@ class FullTextService:
             ),
             headers={"Accept": "application/xml"},
         )
+        if resp.status_code == 404:
+            raise FullTextUnavailableError(f"NCBI PMC has no record for {normalized}")
         if resp.status_code != 200:
             raise FullTextError(f"NCBI PMC HTTP {resp.status_code}")
 
         article, html = JATSParser(resp.content, known_pmc_id=normalized).parse_with_html()
         if not article.has_body and not article.abstract_sections:
-            raise FullTextError(f"NCBI PMC returned no article content for {normalized}")
+            raise FullTextUnavailableError(f"NCBI PMC returned no article content for {normalized}")
         return html, article.has_body
 
     def _fetch_unpaywall(self, doi: str) -> str:
-        """Query Unpaywall for open-access PDF URL."""
+        """Query Unpaywall for open-access PDF URL.
+
+        Raises:
+            FullTextError: On a non-200 response other than 404.
+            FullTextUnavailableError: When Unpaywall has no record of the DOI, or
+                holds one with no open-access location. Both are the service
+                answering that there is nothing free — the ordinary outcome
+                for most papers, and not something to act on.
+        """
         encoded_doi = quote(doi, safe="")
         encoded_email = quote(self.email, safe="")
         url = f"{UNPAYWALL_BASE}/{encoded_doi}?email={encoded_email}"
 
         resp = self._http_get(url, headers={"Accept": "application/json"})
         if resp.status_code == 404:
-            raise FullTextError(f"DOI not found in Unpaywall: {doi}")
+            raise FullTextUnavailableError(f"DOI not found in Unpaywall: {doi}")
         if resp.status_code != 200:
             raise FullTextError(f"Unpaywall HTTP {resp.status_code}")
 
@@ -863,4 +1115,4 @@ class FullTextService:
             if pdf_url:
                 return pdf_url
 
-        raise FullTextError(f"No open-access PDF found for DOI {doi}")
+        raise FullTextUnavailableError(f"No open-access PDF found for DOI {doi}")
