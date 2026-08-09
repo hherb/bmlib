@@ -33,8 +33,10 @@ from bmlib.fulltext.pdf_converter import ConversionResult
 from bmlib.fulltext.service import (
     FullTextError,
     FullTextService,
+    FullTextUnavailableError,
     _normalise_pmc_id,
     _sanitize_identifier,
+    _TierFailures,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -1026,27 +1028,32 @@ class TestIDConverter:
     def test_a_pmcid_is_returned(self):
         service = FullTextService(email="test@example.com")
         with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC7614751")):
-            assert service._resolve_pmc_id_via_idconv(doi="10.1/test") == "PMC7614751"
+            assert (
+                service._resolve_pmc_id_via_idconv(doi="10.1/test", failures=_TierFailures())
+                == "PMC7614751"
+            )
 
     def test_the_pmid_is_preferred_when_both_are_known(self):
         """A PMID is an exact key; a DOI is text whose formatting is what missed."""
         service = FullTextService(email="test@example.com")
         with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
-            service._resolve_pmc_id_via_idconv(doi="10.1/test", pmid="12345")
+            service._resolve_pmc_id_via_idconv(
+                doi="10.1/test", pmid="12345", failures=_TierFailures()
+            )
 
         assert mock_get.call_args.kwargs["params"]["ids"] == "12345"
 
     def test_the_doi_is_used_when_there_is_no_pmid(self):
         service = FullTextService(email="test@example.com")
         with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
-            service._resolve_pmc_id_via_idconv(doi="10.1/test")
+            service._resolve_pmc_id_via_idconv(doi="10.1/test", failures=_TierFailures())
 
         assert mock_get.call_args.kwargs["params"]["ids"] == "10.1/test"
 
     def test_no_identifier_makes_no_request(self):
         service = FullTextService(email="test@example.com")
         with patch.object(service, "_http_get") as mock_get:
-            assert service._resolve_pmc_id_via_idconv() is None
+            assert service._resolve_pmc_id_via_idconv(failures=_TierFailures()) is None
             mock_get.assert_not_called()
 
     def test_an_error_record_resolves_to_nothing(self):
@@ -1054,14 +1061,14 @@ class TestIDConverter:
         service = FullTextService(email="test@example.com")
         reply = self._reply(status="error", errmsg="invalid article id")
         with patch.object(service, "_http_get", return_value=reply):
-            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures()) is None
 
     def test_a_record_no_longer_live_resolves_to_nothing(self):
         """``live: "false"`` means PMC no longer serves it — the fetch would fail."""
         service = FullTextService(email="test@example.com")
         reply = self._reply(pmcid="PMC123", live="false")
         with patch.object(service, "_http_get", return_value=reply):
-            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures()) is None
 
     @pytest.mark.parametrize("pmcid", ["../../etc/passwd", "PMC123\n"])
     def test_a_malformed_pmcid_is_refused(self, pmcid):
@@ -1074,7 +1081,7 @@ class TestIDConverter:
         service = FullTextService(email="test@example.com")
         reply = self._reply(pmcid=pmcid)
         with patch.object(service, "_http_get", return_value=reply):
-            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures()) is None
 
     def test_an_empty_record_list_resolves_to_nothing(self):
         service = FullTextService(email="test@example.com")
@@ -1082,14 +1089,14 @@ class TestIDConverter:
         resp.status_code = 200
         resp.json.return_value = {"status": "ok", "records": []}
         with patch.object(service, "_http_get", return_value=resp):
-            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures()) is None
 
     def test_a_failed_request_resolves_to_nothing(self):
         service = FullTextService(email="test@example.com")
         resp = MagicMock()
         resp.status_code = 500
         with patch.object(service, "_http_get", return_value=resp):
-            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures()) is None
 
     def test_a_transport_failure_is_not_raised(self):
         """It is called where a free-PDF URL is already in hand.
@@ -1100,7 +1107,7 @@ class TestIDConverter:
         """
         service = FullTextService(email="test@example.com")
         with patch.object(service, "_http_get", side_effect=RuntimeError("connection reset")):
-            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures()) is None
 
     def test_unparseable_json_resolves_to_nothing(self):
         service = FullTextService(email="test@example.com")
@@ -1108,26 +1115,26 @@ class TestIDConverter:
         resp.status_code = 200
         resp.json.side_effect = ValueError("not json")
         with patch.object(service, "_http_get", return_value=resp):
-            assert service._resolve_pmc_id_via_idconv(pmid="99") is None
+            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures()) is None
 
     def test_the_api_key_is_sent_only_when_configured(self):
         without = FullTextService(email="test@example.com")
         with patch.object(without, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
-            without._resolve_pmc_id_via_idconv(pmid="99")
+            without._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures())
         assert "api_key" not in mock_get.call_args.kwargs["params"]
 
         with_key = FullTextService(email="test@example.com", ncbi_api_key="secret")
         with patch.object(
             with_key, "_http_get", return_value=self._reply(pmcid="PMC1")
         ) as mock_get:
-            with_key._resolve_pmc_id_via_idconv(pmid="99")
+            with_key._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures())
         assert mock_get.call_args.kwargs["params"]["api_key"] == "secret"
 
     def test_the_caller_is_identified_to_ncbi(self):
         """NCBI asks for tool and email on every request."""
         service = FullTextService(email="test@example.com")
         with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
-            service._resolve_pmc_id_via_idconv(pmid="99")
+            service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures())
 
         params = mock_get.call_args.kwargs["params"]
         assert params["tool"] == "bmlib"
@@ -1870,6 +1877,59 @@ class TestPackageImports:
         assert completed.stdout.split() == ["False", "True"]
 
 
+class TestTheFailureSummaryReadsCorrectly:
+    """``_TierFailures.describe()`` at its source, not through a tier chain.
+
+    The wording is a documented interface — ``docs/manual/fulltext.md`` tells
+    operators to grep for it — so it is pinned where it is produced. Reached
+    only through ``fetch_fulltext``, three of its four shapes were asserted by
+    loose substring and the singular branch not at all.
+    """
+
+    def test_nothing_recorded_says_so_without_claiming_an_absence(self):
+        """Reachable when every attempt returned something, just not full text.
+
+        It must not read as "every source answered that it had nothing" —
+        that is a claim about sources this object never saw.
+        """
+        assert _TierFailures().describe() == "no attempt reported a failure"
+
+    def test_one_fault_is_singular(self):
+        failures = _TierFailures()
+        failures.record(OSError("network is down"))
+        assert failures.describe() == "1 attempt failed (OSError)"
+
+    def test_many_faults_are_counted_and_their_types_sorted_and_deduplicated(self):
+        """Types are a set for the reader's benefit; the count is not."""
+        failures = _TierFailures()
+        failures.record(OSError("a"))
+        failures.record(TypeError("b"))
+        failures.record(OSError("c"))
+        assert failures.describe() == "3 attempts failed (OSError, TypeError)"
+
+    def test_an_absence_is_counted_apart_from_a_fault(self):
+        """The distinction the whole report exists to draw."""
+        failures = _TierFailures()
+        failures.record(FullTextUnavailableError("no OA copy"))
+        failures.note_absence()
+        assert failures.describe() == "2 sources had nothing"
+
+    def test_faults_and_absences_are_reported_side_by_side(self):
+        failures = _TierFailures()
+        failures.record(OSError("down"))
+        failures.record(FullTextUnavailableError("no OA copy"))
+        assert failures.describe() == "1 attempt failed (OSError); 1 source had nothing"
+
+    def test_an_unavailable_error_is_an_absence_not_a_fault(self):
+        """``FullTextUnavailableError`` subclasses ``FullTextError`` — the
+        sorting must key on the subclass, not on the base."""
+        failures = _TierFailures()
+        failures.record(FullTextError("Unpaywall HTTP 503"))
+        failures.record(FullTextUnavailableError("DOI not found in Unpaywall"))
+        assert failures.faults == ["FullTextError"]
+        assert failures.absences == 1
+
+
 class TestAnExhaustedChainReportsItself:
     """Issue #67 — a total retrieval failure must not read as "no free full text".
 
@@ -1880,8 +1940,8 @@ class TestAnExhaustedChainReportsItself:
     corpus, with nothing above DEBUG to say so.
     """
 
-    def test_a_chain_where_every_tier_raised_says_so_and_counts_them(self, caplog):
-        """The case that was silent: every tier raised, nothing came back."""
+    def test_a_chain_where_every_attempt_failed_says_so_and_counts_them(self, caplog):
+        """The case that was silent: every attempt raised, nothing came back."""
         service = FullTextService(email="test@example.com")
         with (
             caplog.at_level("WARNING"),
@@ -1893,47 +1953,29 @@ class TestAnExhaustedChainReportsItself:
         assert result.source == "doi"
         assert result.content_kind == "none"
 
-        assert "nothing was retrieved" in caplog.text
-        # Three tiers make a request on this path: the Europe PMC search, the
-        # ID Converter, and Unpaywall.
-        assert "3 tiers raised" in caplog.text
-        # Naming the exception is what separates a lost network from a paper
-        # nobody serves for free.
-        assert "OSError" in caplog.text
+        # Anchored, not a bare substring: "13 attempts failed" contains
+        # "3 attempts failed", and Tier 0 records once per fetcher-supplied
+        # source, so a two-digit count is reachable in production.
+        assert "nothing was retrieved; 3 attempts failed (OSError)" in caplog.text
+        # Three attempts are made on this path: the Europe PMC search, the ID
+        # Converter, and Unpaywall. The PDF-render lookup does not run — it is
+        # gated on xml_failed, which only the Tier 1a block sets, and Tier 1a
+        # is skipped without a pmc_id.
+        assert "had nothing" not in caplog.text
 
-    def test_a_chain_that_was_offered_nothing_says_no_tier_raised(self, caplog):
+    def test_a_chain_that_was_offered_nothing_reports_absences_not_failures(self, caplog):
         """The control: the same empty-handed result, a different cause.
 
-        Every tier answers, and answers that it has nothing. Point 2 of the
+        Every source answers, and answers that it has nothing. Point 2 of the
         issue — "all nine raised" must read differently from "all nine
-        returned empty" — is exactly this pair of tests.
+        returned empty" — is exactly this pair of tests, and the pair only
+        works if the two produce different text.
         """
         empty_search = MagicMock()
         empty_search.status_code = 200
         empty_search.json.return_value = {"resultList": {"result": []}}
-
-        service = FullTextService(email="test@example.com")
-        with (
-            caplog.at_level("WARNING"),
-            patch.object(service, "_http_get", side_effect=[empty_search, _idconv_miss()]),
-        ):
-            # No DOI, so Unpaywall — the one tier here that reports "nothing"
-            # by raising — never runs.
-            result = service.fetch_fulltext(pmid="456")
-
-        assert result.source == "pubmed"
-        assert "nothing was retrieved" in caplog.text
-        assert "no tier raised" in caplog.text
-
-    def test_the_abstract_only_exit_carries_the_same_report(self, caplog):
-        """The one warning that already existed keeps working, and gains the count.
-
-        It used to be the *only* warning on this path, which is what made the
-        total failure quieter than the partial one.
-        """
-        body_less = MagicMock()
-        body_less.status_code = 200
-        body_less.content = (FIXTURES / "abstract_only_article.xml").read_bytes()
+        unpaywall_404 = MagicMock()
+        unpaywall_404.status_code = 404
 
         service = FullTextService(email="test@example.com")
         with (
@@ -1941,15 +1983,77 @@ class TestAnExhaustedChainReportsItself:
             patch.object(
                 service,
                 "_http_get",
-                side_effect=[body_less, OSError("network is down")],
+                side_effect=[empty_search, _idconv_miss(), unpaywall_404],
+            ),
+        ):
+            result = service.fetch_fulltext(doi="10.1/test", pmid="456")
+
+        assert result.source == "doi"
+        # Same three attempts as the test above, same empty-handed result —
+        # and it must not say anything failed.
+        assert "nothing was retrieved; 3 sources had nothing" in caplog.text
+        assert "failed" not in caplog.text
+
+    def test_an_unreachable_source_is_a_failure_not_an_absence(self, caplog):
+        """The regression this pair was blind to.
+
+        Every source returning HTTP 503 is a lost network or a firewall. Both
+        resolvers used to report it by returning ``None`` — the same thing an
+        empty result set returns — so a total outage produced the summary that
+        means "an ordinary paywalled paper", which is issue #67 verbatim.
+        """
+        down = MagicMock()
+        down.status_code = 503
+
+        service = FullTextService(email="test@example.com")
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service, "_http_get", return_value=down),
+        ):
+            result = service.fetch_fulltext(doi="10.1/test", pmid="456")
+
+        assert result.source == "doi"
+        assert "3 attempts failed (FullTextError)" in caplog.text
+        assert "had nothing" not in caplog.text
+
+    def test_the_abstract_only_exit_carries_the_same_report(self, caplog):
+        """The one warning that already existed keeps working, and gains the count.
+
+        It used to be the *only* warning on this path, which is what made the
+        total failure quieter than the partial one — so its count is asserted
+        exactly, not by a substring both branches satisfy.
+        """
+        body_less = MagicMock()
+        body_less.status_code = 200
+        body_less.content = (FIXTURES / "abstract_only_article.xml").read_bytes()
+        unpaywall_404 = MagicMock()
+        unpaywall_404.status_code = 404
+
+        service = FullTextService(email="test@example.com")
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(
+                service,
+                "_http_get",
+                # Every request the chain makes is supplied. Letting the list
+                # run out instead made StopIteration the second recorded type,
+                # so the only multi-type summary in the suite was a mock
+                # artefact and the count moved whenever a tier was added.
+                side_effect=[
+                    body_less,  # Tier 1a: Europe PMC, abstract but no body
+                    OSError("network is down"),  # Tier 1c: NCBI PMC
+                    OSError("network is down"),  # PDF render URL lookup
+                    unpaywall_404,  # Tier 2: Unpaywall has no OA copy
+                ],
             ),
         ):
             result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test")
 
         assert result.content_kind == "abstract"
-        assert "returning the abstract only" in caplog.text
-        # Unpaywall raised; the search for a render URL did too.
-        assert "raised" in caplog.text
+        assert (
+            "returning the abstract only; 2 attempts failed (OSError); 1 source had nothing"
+            in caplog.text
+        )
 
     def test_a_successful_retrieval_reports_nothing(self, caplog):
         """Negative control: the warning is not simply always emitted."""
@@ -1966,6 +2070,120 @@ class TestAnExhaustedChainReportsItself:
 
         assert result.content_kind == "fulltext"
         assert caplog.text == ""
+
+    def test_a_chain_that_failed_and_then_recovered_stays_silent(self, caplog):
+        """Stronger than the control above, which never fails an attempt.
+
+        A per-attempt warning would put a line into every bulk run for every
+        transient blip on a chain that went on to succeed. Only exhaustion is
+        worth a WARNING.
+        """
+        full_text = MagicMock()
+        full_text.status_code = 200
+        full_text.content = (FIXTURES / "sample_article.xml").read_bytes()
+        idconv_hit = MagicMock()
+        idconv_hit.status_code = 200
+        idconv_hit.json.return_value = {"records": [{"pmcid": "PMC123", "live": "true"}]}
+
+        service = FullTextService(email="test@example.com")
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(
+                service,
+                "_http_get",
+                # The Europe PMC search blips; the ID Converter recovers the
+                # PMC ID and Europe PMC then serves the article.
+                side_effect=[OSError("transient"), idconv_hit, full_text],
+            ),
+        ):
+            result = service.fetch_fulltext(doi="10.1/test")
+
+        assert result.content_kind == "fulltext"
+        assert caplog.text == ""
+
+    def test_a_call_with_identifiers_that_all_failed_does_not_blame_the_caller(self, caplog):
+        """The third empty-handed exit, which reported nothing at all.
+
+        With a ``pmc_id`` and no DOI or PMID there is no fallback URL, so the
+        chain raises. It used to raise ``No identifiers provided`` — an
+        identifier *was* provided — and skipped the summary entirely, which is
+        the same misdirection as #67 on the one path that has no result to
+        return.
+        """
+        service = FullTextService(email="test@example.com")
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service, "_http_get", side_effect=OSError("network is down")),
+            pytest.raises(FullTextError, match="no DOI or PMID to fall back on"),
+        ):
+            service.fetch_fulltext(pmc_id="PMC123")
+
+        assert "2 attempts failed (OSError)" in caplog.text
+
+    def test_a_call_with_no_identifiers_at_all_still_says_so(self, caplog):
+        """The documented escaping case keeps its message — and stays quiet.
+
+        An empty call is not an exhausted chain: no source was asked
+        anything, so summarising the attempts would describe a run that never
+        happened.
+        """
+        service = FullTextService(email="test@example.com")
+        with caplog.at_level("WARNING"):
+            with pytest.raises(FullTextError, match="No identifiers provided"):
+                service.fetch_fulltext()
+
+        assert caplog.text == ""
+
+    def test_an_article_404_is_an_absence_from_every_source(self, caplog):
+        """One status code must not land in two buckets for the same reason.
+
+        Europe PMC mapped an article 404 to an absence while NCBI and the
+        fetcher-URL helper mapped it to a fault, so a paper both PMC endpoints
+        404 on reported failures beside its absences — putting an ordinary
+        stale URL into the bucket the manual tells operators to act on.
+
+        A *search* endpoint is the exception, and deliberately so: Europe PMC
+        answers "no such paper" with HTTP 200 and an empty result list, so a
+        404 there means the API path is wrong, which is a fault. Hence the
+        one failed attempt below.
+        """
+        missing = MagicMock()
+        missing.status_code = 404
+
+        service = FullTextService(email="test@example.com")
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service, "_http_get", return_value=missing),
+        ):
+            result = service.fetch_fulltext(pmc_id="PMC123", doi="10.1/test")
+
+        assert result.source == "doi"
+        # Europe PMC, NCBI and Unpaywall each answered "not here"; only the
+        # render-URL search counts as broken.
+        assert "1 attempt failed (FullTextError); 3 sources had nothing" in caplog.text
+
+    def test_a_fetcher_supplied_url_that_404s_is_an_absence(self, caplog):
+        """Tier 0's own 404, which used to be a fault.
+
+        A stored source URL going stale is ordinary — bioRxiv reorganises,
+        a publisher moves a path — and counting it as a failure inflated the
+        actionable bucket for every corpus with fetcher-supplied sources.
+        """
+        missing = MagicMock()
+        missing.status_code = 404
+        sources = [FullTextSourceEntry(source="biorxiv", url="http://x/a.xml", format="xml")]
+
+        service = FullTextService(email="test@example.com")
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service, "_http_get", return_value=missing),
+        ):
+            service.fetch_fulltext(fulltext_sources=sources, pmid="456")
+
+        # The Tier 0 entry is the absence. The two faults are the Europe PMC
+        # search and the ID Converter, both endpoint 404s — see the test above
+        # for why those stay faults.
+        assert "2 attempts failed (FullTextError); 1 source had nothing" in caplog.text
 
 
 class TestCacheWriteFailuresAreReported:
@@ -2014,3 +2232,67 @@ class TestCacheWriteFailuresAreReported:
                 service.fetch_fulltext(pmc_id="PMC123", identifier=f"10.1/test-{n}")
 
         assert len([r for r in caplog.records if "cache" in r.getMessage().lower()]) == 1
+
+    def test_a_failed_pdf_cache_write_is_warned_about_too(self, tmp_path, caplog):
+        """The half that was silent.
+
+        An unwritable directory stops PDFs caching exactly as it stops HTML,
+        and a corpus served mostly by Unpaywall never writes HTML at all — so
+        a warning only the HTML path could emit stayed silent for precisely
+        the callers it was meant to reach. Worse, the failure was folded into
+        the download's own handler and logged as "PDF download failed", which
+        names the wrong thing.
+        """
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_pdf = MagicMock(side_effect=OSError("read-only file system"))
+        service = FullTextService(email="test@example.com", cache=cache)
+
+        empty_search = MagicMock()
+        empty_search.status_code = 200
+        empty_search.json.return_value = {"resultList": {"result": []}}
+        unpaywall = MagicMock()
+        unpaywall.status_code = 200
+        unpaywall.json.return_value = {"best_oa_location": {"url_for_pdf": "http://x/a.pdf"}}
+        pdf = MagicMock()
+        pdf.status_code = 200
+        pdf.content = b"%PDF-1.4 fake"
+
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(
+                service, "_http_get", side_effect=[empty_search, _idconv_miss(), unpaywall, pdf]
+            ),
+        ):
+            result = service.fetch_fulltext(doi="10.1/test", identifier="10.1/test")
+
+        # The PDF URL is still returned — only the caching failed.
+        assert result.pdf_url == "http://x/a.pdf"
+        assert result.file_path is None
+        assert "read-only file system" in caplog.text
+
+    def test_html_and_pdf_write_failures_share_one_warning(self, tmp_path, caplog):
+        """One unwritable directory, one line — not one per format."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_html = MagicMock(side_effect=OSError("read-only file system"))
+        cache.save_pdf = MagicMock(side_effect=OSError("read-only file system"))
+        service = FullTextService(email="test@example.com", cache=cache)
+
+        empty_search = MagicMock()
+        empty_search.status_code = 200
+        empty_search.json.return_value = {"resultList": {"result": []}}
+        unpaywall = MagicMock()
+        unpaywall.status_code = 200
+        unpaywall.json.return_value = {"best_oa_location": {"url_for_pdf": "http://x/a.pdf"}}
+        pdf = MagicMock()
+        pdf.status_code = 200
+        pdf.content = b"%PDF-1.4 fake"
+
+        with caplog.at_level("WARNING"):
+            with patch.object(service, "_http_get", return_value=self._full_text_response()):
+                service.fetch_fulltext(pmc_id="PMC123", identifier="10.1/html")
+            with patch.object(
+                service, "_http_get", side_effect=[empty_search, _idconv_miss(), unpaywall, pdf]
+            ):
+                service.fetch_fulltext(doi="10.1/test", identifier="10.1/pdf")
+
+        assert len([r for r in caplog.records if "full-text cache" in r.getMessage()]) == 1

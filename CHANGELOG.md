@@ -18,23 +18,46 @@ All notable changes to bmlib are documented here. The format is based on
 ### Fixed
 
 - **A total full-text retrieval failure no longer reads as "no free full
-  text"** (#67). `fetch_fulltext()` wraps each of its nine tiers in `except
-  Exception` that logs at `DEBUG` and moves on — right in itself, since an
-  unreachable Unpaywall must not cost the DOI fallback — but the only
+  text"** (#67). `fetch_fulltext()` wraps each of its nine swallowers in
+  `except Exception` that logs at `DEBUG` and moves on — right in itself,
+  since an unreachable Unpaywall must not cost the DOI fallback — but the only
   `WARNING` on the path sat inside the `if abstract_only is not None:` branch,
   so the *more* complete the failure, the quieter it got. A caller who had
   lost the network, hit a bmlib bug or misconfigured the service received
   `source="doi"`, `html=None`, `content_kind="none"` for every paper in a
   corpus — byte-identical to the legitimate outcome for a paywalled paper —
-  with nothing above `DEBUG` to say so. The tiers now count what they
-  swallowed, and the warning moved out to cover both empty-handed exits,
-  reporting how many tiers raised and which exception types they raised:
-  `3 tiers raised (ConnectError)` is a broken network, `no tier raised — no
-  free full text was offered` is an ordinary paywalled paper, and
-  `TypeError`/`AttributeError` in that list is a bug. The exception types are
-  carried because the count alone does not separate the two failures worth
-  telling apart. `FullTextResult` is unchanged, and a successful retrieval
-  still warns about nothing.
+  with nothing above `DEBUG` to say so. Attempts are now accounted for, and
+  the warning moved out to cover every empty-handed exit, sorting what
+  happened into the two buckets that read differently:
+  `3 attempts failed (ConnectError)` is a broken network, `3 sources had
+  nothing` is an ordinary paywalled paper, and `TypeError`/`AttributeError`
+  among the failures is a bug. `FullTextResult` is unchanged, and a successful
+  retrieval emits no exhaustion warning.
+
+- **An unreachable source no longer counts as an absence** (#67). Two things
+  made a broken chain look like a paywalled one even with the report above.
+  Both resolvers signalled an HTTP failure by *returning* — `(None, None)`,
+  which is also what an empty result set returns — so a Europe PMC or NCBI
+  outage was counted as nothing having happened; they now raise, and the
+  callers that already caught them record the fault. And `FullTextError` was
+  raised alike for `Unpaywall HTTP 503` and `DOI not found in Unpaywall`, so
+  an outage and a paper nobody serves for free produced byte-identical
+  summaries. The absences now raise `FullTextUnavailableError`, a subclass, so
+  nothing that catches `FullTextError` is affected; it is an internal signal
+  and never escapes `fetch_fulltext()`. An article 404 is an absence from
+  *every* source — Europe PMC, NCBI, Unpaywall and a fetcher-supplied URL
+  alike, where three of the four called it a failure — since a stored source
+  URL going stale is ordinary, and counting it as broken inflates the one
+  bucket the summary asks the operator to act on. A 404 from a *search*
+  endpoint stays a fault: Europe PMC answers "no such paper" with HTTP 200 and
+  an empty list, so a 404 there means the API path is wrong.
+
+- **A call whose identifiers all failed is no longer told it gave none**
+  (#67). With a `pmc_id` or `fulltext_sources` but no `doi`/`pmid`, an
+  exhausted chain raised `FullTextError("No identifiers provided")` and
+  skipped the summary entirely — the same misdirection as the bug above, on
+  the one path with no result to return. It now reports the failures and says
+  what was actually missing.
 
 - **A cache that cannot be written to says so, once** (#67, same file).
   `_cache_html` swallowed every exception at `DEBUG`, so a read-only cache
@@ -42,7 +65,11 @@ All notable changes to bmlib are documented here. The format is based on
   the network on every run, permanently. The first failed write now emits a
   `WARNING` naming what was raised; later ones stay at `DEBUG`, since the
   cause is a property of the directory rather than of the article — the
-  one-shot pattern the missing-`bmlib[pdf]` warning already used.
+  one-shot pattern the missing-`bmlib[pdf]` warning already used. HTML and PDF
+  writes share that one warning: the PDF write was folded into the download's
+  own handler, so it was reported as "PDF download failed" and never reached
+  the warning at all — leaving a corpus served mostly by Unpaywall, which
+  never writes HTML, completely silent.
 
 - **`bmlib.fulltext` imports on a core install** (#64). `fulltext/__init__.py`
   eagerly re-exported `service`, whose top-level `import httpx` was the last

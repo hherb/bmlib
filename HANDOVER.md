@@ -6,9 +6,9 @@ _Last updated: 2026-08-09. **0.8.0 is released and on PyPI**, and with it
 stack PR #58, PubMed metadata graft PR #59), plus the encrypted-PDF fix
 (#57, PR #60). **#64 is fixed** (PR #66) and **#67 is fixed** (PR #69) —
 `bmlib.fulltext` imports on a core install, and an exhausted retrieval chain
-now reports itself instead of passing for a paywalled paper. Two open issues,
-**#56** and the new **#68**.
-1712 tests + 58 skipped (1768 + 2 with a PostgreSQL DSN), ruff clean.
+now reports itself instead of passing for a paywalled paper. Five open issues:
+**#56**, **#68**, and **#70**/**#71**/**#72** filed from #69's review.
+1726 tests + 58 skipped (1782 + 2 with a PostgreSQL DSN), ruff clean.
 `[Unreleased]` carries #64's and #67's fixes, so the next release is at least
 a patch. **Phase 3 is next, and each of its rows needs a design conversation
 before any porting** — see "Next up"._
@@ -38,7 +38,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed three releases. Widening it is a downstream change, not a bmlib
   one.
-- **1712 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1768 + 2
+- **1726 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1782 + 2
   with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
   PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
@@ -67,12 +67,38 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Two.
+Five. **#70, #71 and #72 all came out of #69's review** — all three are
+`fulltext` cache or visibility bugs found while fixing #67, none of them in
+#67's scope.
+
+**#70 — a truncated cache file is served as complete full text.** The most
+serious of the three, and the only one worth doing before a release.
+`save_html` writes with a bare non-atomic `write_text` and `get_html` reads
+back with no validation, so a disk that fills mid-write — one of the two
+causes #67's own new cache warning names — leaves a truncated file that
+decodes fine and is returned as `content_kind="fulltext"` from
+`source="cached"` on every later run, with no log at any level. Strictly worse
+than #67: that lost data in a shape resembling absence, this fabricates a
+complete-looking article for `quality/` to score. `os.replace` via a temp
+file, in both `save_html` and `save_pdf`.
+
+**#71 — a corrupt cache entry aborts the run instead of falling through.**
+`_check_cache` is unguarded and `get_html` does a bare `read_text`, so a file
+truncated mid-multibyte-sequence raises `UnicodeDecodeError` out of
+`fetch_fulltext()` — contradicting the documented contract, contradicting
+#67's own new bullet that a bad cache does not fail a retrieval, and making
+one bad file permanently fatal for that paper where re-fetching was available.
+Cheap; pairs naturally with #70.
+
+**#72 — a bmlib bug hides behind any tier that still works.** #67's summary is
+consulted only on *total* exhaustion, so an `AttributeError` from every PMC
+tier with Unpaywall healthy silently degrades a whole corpus from JATS full
+text to bare links. Wants the same level decision as #68, so do them together.
 
 **#68 — a failed PDF download is invisible at default log level**, split out
-of #67 rather than folded into its fix. `_download_and_cache_pdf` is the one
-of #67's nine swallowers that was left alone, and it *cannot* usefully feed
-the exhaustion counter: all three of its call sites return immediately after
+of #67 rather than folded into its fix. `_download_and_cache_pdf`'s download
+half is the one of #67's nine swallowers that was left alone, and it *cannot*
+usefully feed the exhaustion counter: all three of its call sites return after
 it, so a failure there never reaches the report. It is a milder bug than #67
 — `pdf_url` set with no `file_path` is a real signal, where #67's result was
 byte-identical to a paywalled paper — but with `convert_pdfs=True` the caller
@@ -320,23 +346,57 @@ Read it there. What CLAUDE.md omits:
   and that placement is the whole fix.** Inside it, the *more* complete
   failure was the quieter one. Mutation testing confirms it: putting the
   warning back inside the branch — the original bug — fails two tests.
-- **The exception *types* are carried alongside the count on purpose.** The
-  count alone does not separate the two failures worth telling apart: a run of
-  `ConnectError` is a lost network, a run of `FullTextError` is every source
-  answering that it has nothing, and a `TypeError` in the list is a bug. All
-  six guards were verified by mutation, including a dedicated one for dropping
-  `kinds` from `describe()`.
-- **`_download_and_cache_pdf` is deliberately not wired to the counter** — see
-  #68 above. All three of its call sites return immediately after it, so a
-  recorded failure could never be reported; threading it would be dead
-  plumbing that reads as coverage.
-- **`_resolve_pmc_id_via_idconv` takes `failures` as *optional*.** It swallows
-  its own exception and returns `None` by contract, so a direct caller need
-  not supply one; every other tier raises into `fetch_fulltext`'s own handler,
-  which always has one.
-- **A successful retrieval warns about nothing**, pinned by a negative control
-  (`test_a_successful_retrieval_reports_nothing`) so an unconditional warning
-  cannot pass for a working guard.
+- **Faults and absences are counted apart, and that is the discrimination
+  the report exists to make.** `N attempts failed (ConnectError)` is a lost
+  network; `N sources had nothing` is an ordinary paywalled paper; a
+  `TypeError` among the faults is a bug. A single count could not say this.
+- **Review found the first cut still printed the reassuring line during a
+  total outage, and the two causes are worth remembering.** (1) Both
+  resolvers reported an HTTP failure by *returning* — `(None, None)`, which
+  is also what an empty result set returns — so a 503 from Europe PMC and
+  NCBI incremented nothing and the summary read "no free full text was
+  offered". A swallowed exception is not the only way a tier goes wrong;
+  anything that reports failure in the same shape as absence has the same
+  bug. (2) `FullTextError` was raised alike for `Unpaywall HTTP 503` and
+  `DOI not found in Unpaywall`, so the type name carried no information at
+  the one tier that matters most for a DOI. Hence
+  `FullTextUnavailableError`, and hence `note_absence()` for the sources
+  that report an absence by returning.
+- **The counter says *attempts*, never tiers.** `_try_known_sources` records
+  once per fetcher-supplied source, so the number is not bounded by the
+  chain's eight tiers — "9 tiers raised" was emittable from a run that
+  attempted four.
+- **`_download_and_cache_pdf`'s *download* half is deliberately not wired to
+  the counter** — see #68 above. All three of its call sites return
+  immediately after it, so a recorded failure could never be reported;
+  threading it would be dead plumbing that reads as coverage. There is a
+  comment at the handler saying so, because eight of the nine swallowers were
+  wired and the ninth reads as an oversight otherwise. Its *cache-write* half
+  is a different question and was split out into `_save_pdf_to_cache`: an
+  unwritable directory is not a download failure, and folding the two meant a
+  PDF-only corpus never saw the cache warning at all.
+- **`_resolve_pmc_id_via_idconv` takes `failures` as *optional*, and the
+  reason is its own direct callers** — fourteen of them in the tests, with no
+  report to feed it. Not "because it swallows its own exceptions": Tier 0
+  swallows too and takes the parameter as required.
+- **A successful retrieval emits no *exhaustion* warning** — pinned by two
+  controls, one where nothing fails and one where an attempt fails and a
+  later tier recovers. The narrower wording is deliberate: a successful
+  retrieval may still warn about an unwritable cache or an unextractable
+  PDF, and the blanket claim was contradicted by this PR's own cache test.
+- **A 404 is an absence from an *article* endpoint and a fault from a
+  *search* endpoint**, and the asymmetry is deliberate. Europe PMC answers
+  "no such paper" with HTTP 200 and an empty result list, so a 404 on the
+  search path means the API moved. On an article path — Europe PMC, NCBI,
+  Unpaywall, a fetcher-supplied URL — it means the paper is not there, which
+  for a stored fetcher URL is ordinary staleness rather than something to act
+  on. Three of the four article fetchers called it a fault until review
+  caught it.
+- **`describe()`'s wording is pinned at its source**, not only through a tier
+  chain. It is a documented interface — the manual tells operators to grep
+  for it — and asserting it through `fetch_fulltext` left the singular branch
+  untested and the counts matched by substring, where `"13 attempts failed"`
+  satisfies `"3 attempts failed"`.
 
 ### fulltext — the PDF converter (PR #60)
 
