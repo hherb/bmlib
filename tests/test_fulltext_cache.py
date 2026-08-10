@@ -501,11 +501,13 @@ class TestADirectlyConstructedCacheStillRaises:
             FullTextCache(cache_dir=blocker)
 
     def test_a_usable_directory_still_constructs(self, tmp_path):
-        """Negative control: the raise above must come from the fault.
+        """Negative control: the raise above must come from the fault named.
 
-        Without this, a ``FullTextCache`` that raised for some unrelated
-        reason — a bad default, a broken import — would satisfy the test above
-        while telling us nothing about the fault it names.
+        Without this, a constructor that had become unable to create *any*
+        directory — a broken ``mkdir`` call, a wrong subdirectory name — would
+        satisfy the test above while telling us nothing about the file
+        standing in the way. Asserting the two subdirectories exist is what
+        makes the success meaningful rather than merely silent.
         """
         FullTextCache(cache_dir=tmp_path / "fresh")
 

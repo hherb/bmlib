@@ -19,6 +19,7 @@
 import copy
 import errno
 import importlib.metadata
+import logging
 import os
 import pickle
 import subprocess
@@ -2578,14 +2579,29 @@ class TestAnUncreatableCacheDirectoryDoesNotAbortConstruction:
     """
 
     @staticmethod
-    def _blocked_default_dir(tmp_path, monkeypatch) -> Path:
+    def _default_dir_at(path, monkeypatch) -> Path:
+        """Point the default cache location at ``path``, and return it.
+
+        Every test here goes through this one seam so a rename of
+        ``_default_cache_dir`` breaks them together rather than breaking the
+        negative controls separately from what they control.
+        """
+        monkeypatch.setattr("bmlib.fulltext.cache._default_cache_dir", lambda: path)
+        return path
+
+    @classmethod
+    def _blocked_default_dir(cls, tmp_path, monkeypatch) -> Path:
         """Point the default cache location at a file, and return it."""
         blocker = tmp_path / "notadir"
         blocker.write_text("I am a file, not a directory")
-        monkeypatch.setattr("bmlib.fulltext.cache._default_cache_dir", lambda: blocker)
-        return blocker
+        return cls._default_dir_at(blocker, monkeypatch)
 
     def test_a_file_in_the_way_leaves_a_service_with_no_cache(self, tmp_path, monkeypatch):
+        """Also the "no fallback location" half of the decision.
+
+        A guard that relocated to a temp directory would leave
+        ``service.cache`` set, so this fails under that change too.
+        """
         self._blocked_default_dir(tmp_path, monkeypatch)
 
         service = FullTextService(email="test@example.com")
@@ -2598,11 +2614,29 @@ class TestAnUncreatableCacheDirectoryDoesNotAbortConstruction:
         A guard that returned ``None`` unconditionally — or a fault that never
         fired — would satisfy those assertions while proving nothing.
         """
-        monkeypatch.setattr("bmlib.fulltext.cache._default_cache_dir", lambda: tmp_path / "fresh")
+        self._default_dir_at(tmp_path / "fresh", monkeypatch)
 
         service = FullTextService(email="test@example.com")
 
         assert isinstance(service.cache, FullTextCache)
+
+    def test_an_unexpected_error_from_the_cache_still_propagates(self, monkeypatch):
+        """The upper bound on the guard, which prose alone cannot hold.
+
+        ``except (OSError, RuntimeError)`` is deliberately not
+        ``except Exception``: inside that one constructor ``RuntimeError`` has
+        exactly one source, so a bmlib bug must still surface as one. Widening
+        the guard catches strictly more, so nothing already here can fail on
+        it — this is the test that does.
+        """
+
+        def _exploding_cache():
+            raise ValueError("a bmlib bug, not an environment fault")
+
+        monkeypatch.setattr("bmlib.fulltext.service.FullTextCache", _exploding_cache)
+
+        with pytest.raises(ValueError, match="a bmlib bug"):
+            FullTextService(email="test@example.com")
 
     def test_a_home_directory_that_cannot_be_determined_is_survived(self, monkeypatch):
         """The half ``except OSError`` alone would miss.
@@ -2640,6 +2674,24 @@ class TestAnUncreatableCacheDirectoryDoesNotAbortConstruction:
         # warning already uses — the same fault with the same consequence.
         assert "re-fetch" in caplog.text.lower()
 
+    def test_the_warning_names_the_cost_and_a_remedy(self, tmp_path, monkeypatch, caplog):
+        """ "Nothing will be cached" alone understates the degraded run.
+
+        A PDF is fetched *into* the cache, so with no cache it is not fetched
+        at all and a PDF-only article comes back as a bare URL. That is lost
+        content, not repeated traffic, and an operator told only about caching
+        would go looking for a network fault. The remedy is named because it
+        is the one sentence that ends the problem, as
+        :meth:`_attach_pdf_text`'s warning already does for ``bmlib[pdf]``.
+        """
+        self._blocked_default_dir(tmp_path, monkeypatch)
+
+        with caplog.at_level("WARNING"):
+            FullTextService(email="test@example.com")
+
+        assert "bare URL" in caplog.text
+        assert "cache_dir" in caplog.text
+
     def test_a_caller_supplied_cache_never_reaches_the_guard(self, tmp_path, monkeypatch):
         """An explicit cache is used as given, fault in the default or not."""
         self._blocked_default_dir(tmp_path, monkeypatch)
@@ -2649,13 +2701,23 @@ class TestAnUncreatableCacheDirectoryDoesNotAbortConstruction:
 
         assert service.cache is supplied
 
-    def test_retrieval_still_works_with_no_cache(self, tmp_path, monkeypatch):
+    def test_retrieval_still_works_with_no_cache(self, tmp_path, monkeypatch, caplog):
         """Degrading must degrade, not relocate the crash to the first fetch.
 
         Every ``self.cache`` use site is already guarded, so no new plumbing
         was needed — but "already guarded" is a claim about code that had
         never run, since ``self.cache`` could not be ``None`` before #75.
         This is what executes it.
+
+        The silence assertion is what *pins* those guards, and it is not a
+        stylistic preference about logs. Delete either
+        ``self.cache is not None`` check and the retrieval still succeeds:
+        ``_check_cache(None, ...)`` raises ``AttributeError`` into #71's
+        best-effort read handler and ``_cache_html`` raises into #67's write
+        handler, so the only symptom is a pair of WARNINGs blaming the
+        environment for a bmlib bug — per article, per run. That is the exact
+        failure those two issues exist to prevent, and without this assertion
+        the whole suite stays green through it.
         """
         self._blocked_default_dir(tmp_path, monkeypatch)
         service = FullTextService(email="test@example.com")
@@ -2665,18 +2727,30 @@ class TestAnUncreatableCacheDirectoryDoesNotAbortConstruction:
         resp.status_code = 200
         resp.content = (FIXTURES / "sample_article.xml").read_bytes()
 
-        with patch.object(service, "_http_get", return_value=resp):
+        # The construction warning above is expected; only the retrieval is
+        # required to be quiet.
+        caplog.clear()
+        with (
+            caplog.at_level(logging.DEBUG),
+            patch.object(service, "_http_get", return_value=resp),
+        ):
             result = service.fetch_fulltext(pmc_id="PMC123", identifier="10.1/test")
 
         assert result.source == "europepmc"
         assert result.content_kind == "fulltext"
         assert result.html is not None
 
+        noisy = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+        assert noisy == []
+
     def test_nothing_is_written_where_the_cache_would_have_gone(self, tmp_path, monkeypatch):
-        """The blocking file is left exactly as it was.
+        """Nothing is created, and the blocking file is left exactly as it was.
 
         A guard that swallowed the fault but left a half-built cache behind
-        would pass every assertion above.
+        would pass every assertion above. This is also the "no writability
+        probe" half of the decision: a probe would litter the operator's cache
+        directory with a file that is not an article, and this asserts the
+        directory holds nothing but what the test put there.
         """
         blocker = self._blocked_default_dir(tmp_path, monkeypatch)
         service = FullTextService(email="test@example.com")
@@ -2690,6 +2764,7 @@ class TestAnUncreatableCacheDirectoryDoesNotAbortConstruction:
 
         assert blocker.is_file()
         assert blocker.read_text() == "I am a file, not a directory"
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["notadir"]
 
     @staticmethod
     def _unpaywall_pdf_only() -> list[MagicMock]:
@@ -2718,15 +2793,82 @@ class TestAnUncreatableCacheDirectoryDoesNotAbortConstruction:
         self._blocked_default_dir(tmp_path, monkeypatch)
         service = FullTextService(email="test@example.com", convert_pdfs=True)
 
+        caplog.clear()
         with (
-            caplog.at_level("DEBUG"),
+            caplog.at_level(logging.DEBUG),
             patch.object(service, "_http_get", side_effect=self._unpaywall_pdf_only()),
         ):
             result = service.fetch_fulltext(doi="10.1/test", identifier="10.1/test")
 
         assert result.pdf_url == "https://example.com/paper.pdf"
         assert "no identifier was given" not in caplog.text
-        assert "no cache" in caplog.text.lower()
+        assert "cache could not be created" in caplog.text
+
+    def test_the_no_cache_pdf_line_stays_at_debug(self, tmp_path, monkeypatch, caplog):
+        """It repeats per article, and construction already said it.
+
+        ``caplog.text`` cannot tell DEBUG from WARNING, so the test above
+        would pass just as well if this line were promoted — and a bulk run
+        would then carry one operator-visible line per paper restating the
+        startup warning. The sibling "no identifier" line stays at INFO
+        because nothing warned about an identifier the caller had not passed.
+        """
+        self._blocked_default_dir(tmp_path, monkeypatch)
+        service = FullTextService(email="test@example.com", convert_pdfs=True)
+
+        caplog.clear()
+        with (
+            caplog.at_level(logging.DEBUG),
+            patch.object(service, "_http_get", side_effect=self._unpaywall_pdf_only()),
+        ):
+            service.fetch_fulltext(doi="10.1/test", identifier="10.1/test")
+
+        matched = [r for r in caplog.records if "cache could not be created" in r.getMessage()]
+        assert [r.levelno for r in matched] == [logging.DEBUG]
+
+    def test_the_no_cache_pdf_line_is_not_gated_on_convert_pdfs(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        """The caller who turned extraction off is the one who wanted the file.
+
+        The ``convert_pdfs`` gate on the sibling branch is right there — that
+        message is *about* extraction. Here the download is skipped either
+        way, so ``file_path`` is lost whatever the flag says, and gating the
+        only diagnostic on it leaves that caller with nothing at any level.
+        """
+        self._blocked_default_dir(tmp_path, monkeypatch)
+        service = FullTextService(email="test@example.com", convert_pdfs=False)
+
+        caplog.clear()
+        with (
+            caplog.at_level(logging.DEBUG),
+            patch.object(service, "_http_get", side_effect=self._unpaywall_pdf_only()),
+        ):
+            result = service.fetch_fulltext(doi="10.1/test", identifier="10.1/test")
+
+        assert result.file_path is None
+        assert "cache could not be created" in caplog.text
+
+    def test_no_cache_and_no_identifier_reports_the_cache(self, tmp_path, monkeypatch, caplog):
+        """Which diagnostic wins when both are absent, now that both can be.
+
+        Splitting the old single guard made the order a decided behaviour. The
+        cache is reported because it is the fault the caller cannot fix per
+        call: passing an ``identifier`` would change nothing here.
+        """
+        self._blocked_default_dir(tmp_path, monkeypatch)
+        service = FullTextService(email="test@example.com", convert_pdfs=True)
+
+        caplog.clear()
+        with (
+            caplog.at_level(logging.DEBUG),
+            patch.object(service, "_http_get", side_effect=self._unpaywall_pdf_only()),
+        ):
+            result = service.fetch_fulltext(doi="10.1/test")
+
+        assert result.pdf_url == "https://example.com/paper.pdf"
+        assert "cache could not be created" in caplog.text
+        assert "no identifier was given" not in caplog.text
 
     def test_a_genuinely_missing_identifier_still_says_so(self, tmp_path, caplog):
         """Negative control: the message above is suppressed, not deleted.

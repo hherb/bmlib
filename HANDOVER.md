@@ -9,9 +9,11 @@ stack PR #58, PubMed metadata graft PR #59), plus the encrypted-PDF fix
 core install, an exhausted chain reports itself, the cache is written
 atomically, a corrupt cache entry falls through to the network instead of
 aborting the run, and an uncreatable cache directory degrades to no caching
-instead of killing construction. With #75 the cache is best-effort
-everywhere. Four open issues: **#56**, **#68**, **#72** and **#73** (filed
-while fixing #70). 1769 tests + 58 skipped (1825 + 2 with a PostgreSQL DSN),
+instead of killing construction. With #75 the cache is best-effort everywhere
+`FullTextService` touches it — `FullTextCache`'s own methods still raise to a
+direct caller, deliberately. Four open issues: **#56**, **#68**, **#72** and
+**#73** (filed while fixing #70). 1774 tests + 58 skipped (1830 + 2 with a
+PostgreSQL DSN),
 ruff clean. **`[Unreleased]` now carries five fixes and 0.8.1 is the obvious
 next move** — see "Worth doing". **Phase 3 follows, and each of its rows
 needs a design conversation before any porting** — see "Next up"._
@@ -41,7 +43,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed three releases. Widening it is a downstream change, not a bmlib
   one.
-- **1769 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1825 + 2
+- **1774 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1830 + 2
   with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
   PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
@@ -124,14 +126,19 @@ the record of what was rejected and why.
   (#70); one corrupt cache entry aborted a bulk sync (#71); and a cache
   directory that could not be created aborted `FullTextService` construction
   outright (#75). All additive: no stored value changes, and the only new
-  output is log lines. Four API notes for the release summary, all reaching a
-  *direct* caller only: `save_html`/`save_pdf` now raise `OSError` where they
-  previously wrote a partial file (both `FullTextService` call sites already
-  reported a failed write); `quarantine()` is new; `sanitize_identifier()`
-  caps its readable prefix at 160 characters, so an entry cached for a longer
-  identifier is orphaned and re-fetched once; and **`FullTextService.cache` is
-  now `FullTextCache | None`** — code that dereferences it without a check
-  should guard, though every path inside bmlib already did. Worth a line for
+  output is log lines. Four API notes for the release summary. The first three
+  reach a *direct* `FullTextCache` caller only: `save_html`/`save_pdf` now
+  raise `OSError` where they previously wrote a partial file (both
+  `FullTextService` call sites already reported a failed write);
+  `quarantine()` is new; and `sanitize_identifier()` caps its readable prefix
+  at 160 characters, so an entry cached for a longer identifier is orphaned
+  and re-fetched once. The fourth reaches anyone who dereferences
+  `service.cache`: **`FullTextService.cache` is now `FullTextCache | None`**,
+  so `service.cache.clear()` needs a guard, and because bmlib ships
+  `py.typed` a downstream running mypy or pyright sees a new error on that
+  line even though bmlib's own ruff-only CI does not. It is `None` solely
+  when `cache=` was omitted *and* the default could not be built; every path
+  inside bmlib already guarded. Worth a line for
   operators too: #70 stops a truncated entry being *written* and does not
   detect one already on disk, so a cache written by an older version is best
   cleared once. The release recipe is at the bottom of this file;

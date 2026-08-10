@@ -244,6 +244,12 @@ def _default_cache() -> FullTextCache | None:
     object whose every method then fails one at a time, rather than failing
     once, clearly, at construction.
 
+    Taking **no parameters** is what makes that asymmetry structural rather
+    than conventional: there is no way to route a caller-supplied
+    ``cache_dir`` through the degrading path, so the only caller who can
+    reach it is one who expressed no preference. Adding a ``cache_dir``
+    argument here would quietly undo the decision.
+
     ``OSError`` covers the three ``mkdir`` calls — a file standing where the
     directory should be (``FileExistsError``; ``exist_ok=True`` suppresses that
     only when the target *is* a directory), a read-only parent, a file as an
@@ -251,8 +257,18 @@ def _default_cache() -> FullTextCache | None:
     before them: ``_default_cache_dir()`` calls ``Path.home()``, which raises
     that, not ``OSError``, when there is no ``HOME`` and no passwd entry. The
     pair is deliberately not ``Exception`` — inside this one constructor
-    ``RuntimeError`` has exactly one source, so the guard stays narrow enough
-    that a bmlib bug still surfaces as one.
+    ``RuntimeError`` has exactly one *source*, so the guard stays narrow enough
+    that a bmlib bug still surfaces as one. Its subclasses ``RecursionError``
+    and ``NotImplementedError`` come along by inheritance, which is why the
+    message interpolates the type: such a case reads as itself rather than
+    passing for an ordinary environment fault.
+
+    The warning names what the degraded run costs, not just that it is
+    degraded. Saying only "nothing will be cached" would understate it: a
+    PDF is fetched *into* the cache, so with no cache there is no download at
+    all and a PDF-only article comes back as a bare URL. That is lost content,
+    not merely repeated network traffic, and it is the half an operator would
+    otherwise discover from the results.
 
     Returns:
         The cache, or ``None`` if it could not be created.
@@ -262,7 +278,11 @@ def _default_cache() -> FullTextCache | None:
     except (OSError, RuntimeError) as exc:
         logger.warning(
             "Could not create the full-text cache directory (%s: %s); retrieval "
-            "still works, but nothing will be cached, so every run re-fetches.",
+            "still works and full text still parses, but nothing will be cached, "
+            "so every run re-fetches — and a PDF-only article comes back as a bare "
+            "URL, since a PDF is downloaded into the cache and extracted only once "
+            "cached. Pass cache=FullTextCache(cache_dir=...) to use a writable "
+            "location.",
             type(exc).__name__,
             exc,
         )
@@ -270,7 +290,16 @@ def _default_cache() -> FullTextCache | None:
 
 
 class FullTextService:
-    """Retrieves full text from multiple sources with fallback."""
+    """Retrieves full text from multiple sources with fallback.
+
+    Attributes:
+        cache: The disk cache, or ``None``. It is ``None`` only when the
+            ``cache`` argument was omitted *and* the default could not be
+            built — a caller who passes one always gets it back. Code that
+            calls a method on it needs a ``None`` check; code that supplied
+            the cache can reason that the branch is unreachable, but the type
+            no longer records that, so the check is still required to type.
+    """
 
     def __init__(
         self,
@@ -290,9 +319,10 @@ class FullTextService:
                 should be, a read-only parent, no determinable home directory —
                 the service warns once and runs without a cache rather than
                 failing to construct, since retrieval does not need one, and
-                :attr:`cache` is then ``None``. A cache passed here is used as
-                given, and one constructed directly still raises. See
-                :func:`_default_cache`.
+                :attr:`cache` is then ``None``. In that state a JATS article
+                still parses to full text, but a PDF is never downloaded, so a
+                PDF-only article carries only ``pdf_url``. A cache passed here
+                is used as given, and one constructed directly still raises.
             convert_pdfs: Whether to extract text from a retrieved PDF into
                 :attr:`FullTextResult.html` (marked
                 ``content_kind="extracted"``), so a PDF-only article can still
@@ -747,10 +777,14 @@ class FullTextService:
         the next hit.
 
         Args:
-            cache: The cache to read. Taken as an argument rather than off
-                ``self`` because :attr:`cache` became optional in #75, and a
-                precondition the caller has to remember is one it can forget;
-                as a parameter it is checked rather than trusted.
+            cache: The cache to read, known non-``None``. Taken as an argument
+                rather than off ``self`` because :attr:`cache` became optional
+                in #75, and a precondition the caller has to remember is one it
+                can forget. As a parameter it is *checkable*: the narrowing and
+                the use sit in one function body, where a type checker can
+                discharge the obligation. Nothing in this repository does —
+                CI runs ruff, not mypy — so the guarantee is one a downstream's
+                checker gets, and one a reader can verify locally.
             cache_id: Sanitised cache key.
         """
         html = cache.get_html(cache_id)
@@ -774,6 +808,11 @@ class FullTextService:
         that breaks it, so a caller-supplied cache that does not implement the
         method, or an unforeseen fault inside one that does, is logged and
         dropped rather than allowed to escape.
+
+        Args:
+            cache: The cache to quarantine in, known non-``None``. A parameter
+                for the same reason as :meth:`_check_cache`'s.
+            cache_id: Sanitised cache key of the entry to move aside.
         """
         try:
             cache.quarantine(cache_id)
@@ -804,7 +843,20 @@ class FullTextService:
             self._cache_write_warned = True
 
     def _cache_html(self, html: str, cache_id: str | None) -> None:
-        """Save HTML to disk cache if caching is enabled."""
+        """Save HTML to disk cache if caching is enabled.
+
+        Reads :attr:`cache` directly, unlike :meth:`_check_cache`,
+        :meth:`_quarantine_cache_entry` and :meth:`_save_pdf_to_cache`. Those
+        three are reached only from a site that has already established a
+        cache, so they take it as a parameter; this method and
+        :meth:`_download_and_cache_pdf` *are* those sites. Giving it a
+        parameter too would push the same branch out into its four
+        unconditional call sites.
+
+        Failing to write costs only a re-fetch next run — the HTML is already
+        in hand and is returned either way — so no cache means nothing to say
+        here beyond the warning construction has already emitted.
+        """
         if cache_id and self.cache is not None:
             try:
                 self.cache.save_html(html, cache_id)
@@ -825,20 +877,29 @@ class FullTextService:
         and ``result.content_kind`` from the PDF's extracted text.
         On failure (network error or invalid PDF), leaves result unchanged
         so the caller can still use ``result.pdf_url`` as a fallback.
+
+        Returns without downloading at all when there is nowhere to put the
+        file: no cache (#75) or no ``identifier`` to key one by. The URL stays
+        on the result in both cases.
         """
         if self.cache is None:
-            # Reachable only when the default cache could not be created,
-            # which already warned once at construction (#75). Repeating it
-            # per article would put one line per paper into a bulk run's log
-            # to say what the operator has already been told, so this stays at
-            # DEBUG — and it must not borrow the message below, which would
-            # assert a cause that is false.
-            if self.convert_pdfs:
-                logger.debug(
-                    "convert_pdfs is on but no cache is configured — a PDF is only "
-                    "extracted once cached, so %s is left as a URL",
-                    pdf_url,
-                )
+            # Reachable only when the default cache could not be created (#75).
+            # DEBUG because the construction warning already named this exact
+            # consequence — not because one line per paper would be noise,
+            # which is equally true of the INFO branch below. What separates
+            # them is that nobody warned at construction about an identifier
+            # the caller had not passed yet.
+            #
+            # Not gated on convert_pdfs: the download is skipped either way, so
+            # `file_path` is lost even for a caller who turned extraction off
+            # precisely because they wanted the file. Nor does it borrow the
+            # message below, which would assert a cause that is false.
+            logger.debug(
+                "The full-text cache could not be created, so %s is not downloaded — "
+                "the URL is left on the result, and there is no file to extract "
+                "text from",
+                pdf_url,
+            )
             return
         if not cache_id:
             if self.convert_pdfs:
@@ -874,6 +935,12 @@ class FullTextService:
         :meth:`_cache_html`'s. Left inside the download's own handler it was
         indistinguishable from a failed fetch, logged as "PDF download
         failed", and invisible above DEBUG.
+
+        Args:
+            cache: The cache to write to, known non-``None``. A parameter for
+                the same reason as :meth:`_check_cache`'s.
+            data: The downloaded PDF bytes.
+            cache_id: Sanitised cache key.
 
         Returns:
             The cached file's path, or ``None`` if the write failed or the
