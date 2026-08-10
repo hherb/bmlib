@@ -15,6 +15,20 @@ All notable changes to bmlib are documented here. The format is based on
   wheel onto anyone who only wants JATS retrieval. `publications` and
   `transparency` keep their own httpx, so no existing install changes.
 
+### Changed
+
+- **`FullTextService.cache` is now `FullTextCache | None`** (#75). It is `None`
+  only when the `cache` argument was omitted *and* the default could not be
+  built — a caller who passes a cache always gets it back. Code that calls a
+  method on the attribute (`service.cache.clear()`) needs a `None` check, and
+  because bmlib ships `py.typed`, a downstream running mypy or pyright will
+  see a new error on that line even though bmlib's own CI, which runs ruff
+  only, does not. Flagged separately from the fix below because the break is
+  latent: it never fires on a developer machine or in CI, only in the broken
+  environment where the operator already has a problem, and there it turns a
+  `FileExistsError` naming the cache directory into an `AttributeError` far
+  from its cause.
+
 ### Fixed
 
 - **A total full-text retrieval failure no longer reads as "no free full
@@ -131,6 +145,50 @@ All notable changes to bmlib are documented here. The format is based on
   `clear()` now also remove an entry that is not a regular file, which is the
   corrupt shape an operator is most likely to meet and the one both of them
   previously failed on.
+
+- **A cache directory that cannot be created no longer aborts construction**
+  (#75, found reviewing PR #74). `FullTextCache.__init__`'s three `mkdir`
+  calls were unguarded and ran inside `FullTextService.__init__` whenever no
+  cache was passed, so a file standing where the cache directory should be —
+  or a read-only parent, or a full disk — took down a run that had every
+  chance of succeeding without a cache. It was the last place *`FullTextService`
+  touches the cache* that was not best-effort: a failed write already warned
+  once (#67) and a failed read already fell through to the network (#71). The
+  default construction now warns once, naming what was raised, and leaves
+  `service.cache` as `None`; retrieval proceeds and caches nothing. A
+  `FullTextCache` constructed *directly* still raises — that caller asked for
+  a cache specifically, and degrading would return an object whose every
+  method then failed one at a time instead of failing once at construction.
+  The scoping in that first sentence is meant literally: `FullTextCache`'s own
+  methods are unchanged and still raise to a direct caller, so "the cache is
+  best-effort" is true of the service, not of the class.
+  The warning says what the degraded run costs rather than only that it is
+  degraded — a PDF is fetched *into* the cache, so with no cache there is no
+  download at all and a PDF-only article comes back as a bare URL. That is
+  lost content, not merely repeated traffic, and an operator told only that
+  "nothing will be cached" would go looking for a network fault. It names
+  `cache=FullTextCache(cache_dir=...)` as the remedy, as the missing-`bmlib[pdf]`
+  warning already names its extra.
+  The guard catches `RuntimeError` as well as `OSError`, because
+  `_default_cache_dir()` runs before any `mkdir` and calls `Path.home()`,
+  which raises the former where there is no `HOME` and no passwd entry — an
+  ordinary distroless container — so `except OSError` would have fixed the
+  reported shape and left the same defect one layer up. It is not
+  `except Exception`: inside that one constructor `RuntimeError` has exactly
+  one *source*, so the guard stays narrow enough that a bmlib bug still
+  surfaces as one — pinned by a test that raises a `ValueError` from the
+  constructor and demands it escape, since widening a guard catches strictly
+  more and no test that merely uses the cache could fail on it.
+  `FullTextService.__init__`'s `Raises:` section, which documented only
+  `ImportError`, becomes accurate rather than needing a new entry. One log
+  line changes: `_download_and_cache_pdf`'s `self.cache` check was dead code —
+  `FullTextCache` is always truthy and `self.cache` could not be `None` — and
+  reaching it now would have printed "no identifier was given" when an
+  identifier had been given, so the two conditions are split. The no-cache one
+  logs at `DEBUG`, the construction warning having already named that exact
+  consequence, and unlike its sibling it is *not* gated on `convert_pdfs`: the
+  download is skipped either way, so `file_path` is lost even for the caller
+  who turned extraction off precisely because they wanted the file.
 
 - **`bmlib.fulltext` imports on a core install** (#64). `fulltext/__init__.py`
   eagerly re-exported `service`, whose top-level `import httpx` was the last

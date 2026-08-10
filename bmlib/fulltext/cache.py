@@ -22,7 +22,15 @@ location follows the XDG convention:
 
 * macOS: ``~/Library/Caches/bmlib/fulltext_cache``
 * Linux: ``~/.cache/bmlib/fulltext_cache``
-* Windows: ``%LOCALAPPDATA%/bmlib/fulltext_cache``
+* Windows: ``~/AppData/Local/bmlib/fulltext_cache``, falling back to
+  ``~/.cache/bmlib/fulltext_cache`` when that directory does not exist
+
+Every one of those is built from ``Path.home()``; no environment variable is
+read, so neither ``XDG_CACHE_HOME`` nor ``%LOCALAPPDATA%`` is honoured. That
+matters beyond pedantry: ``Path.home()`` raises ``RuntimeError`` — not
+``OSError`` — where there is no ``HOME`` and no passwd entry, which is why
+``service._default_cache()`` catches both. Pass ``cache_dir`` to skip the
+call entirely.
 """
 
 from __future__ import annotations
@@ -221,7 +229,26 @@ class FullTextCache:
         Root directory for cached files.  Defaults to a platform-appropriate
         location under ``~/Library/Caches/bmlib/fulltext_cache`` (macOS),
         ``~/.cache/bmlib/fulltext_cache`` (Linux), or
-        ``%LOCALAPPDATA%/bmlib/fulltext_cache`` (Windows).
+        ``~/AppData/Local/bmlib/fulltext_cache`` (Windows) — see
+        :func:`_default_cache_dir`.
+
+    Raises
+    ------
+    OSError
+        If any of the three directories cannot be created — a file standing
+        where one should be, a read-only parent, a full disk.
+    RuntimeError
+        From ``Path.home()`` when ``cache_dir`` is omitted and no home
+        directory can be determined.
+
+    Notes
+    -----
+    Both are raised, deliberately, rather than degraded: a caller who
+    constructs a cache asked for one specifically, and an object whose every
+    method then failed one at a time would be worse than failing once here.
+    ``FullTextService`` does degrade when it builds this default itself —
+    ``service._default_cache()`` enumerates what these raise, so a fourth
+    ``mkdir`` here wants a matching edit there.
     """
 
     def __init__(self, cache_dir: str | Path | None = None) -> None:

@@ -480,3 +480,36 @@ class TestIdentifierSanitization:
         cache = FullTextCache(cache_dir=tmp_path)
         path = cache.save_html("x", "10.1234_x.y-z_ab12cd34ef")
         assert Path(path).name == "10.1234_x.y-z_ab12cd34ef.html"
+
+
+class TestADirectlyConstructedCacheStillRaises:
+    """The half of #75's decision that has no code behind it.
+
+    ``FullTextService`` degrades when the *default* cache cannot be built, but
+    a caller who constructed a ``FullTextCache`` asked for a cache
+    specifically: degrading here would hand back an object whose every method
+    then fails one at a time, instead of failing once, clearly, at
+    construction. Nothing else in the suite would notice if that guard were
+    "tidied" down into this class, so this test is what holds the asymmetry.
+    """
+
+    def test_a_file_where_the_cache_directory_should_be_raises(self, tmp_path):
+        blocker = tmp_path / "notadir"
+        blocker.write_text("I am a file, not a directory")
+
+        with pytest.raises(OSError):
+            FullTextCache(cache_dir=blocker)
+
+    def test_a_usable_directory_still_constructs(self, tmp_path):
+        """Negative control: the raise above must come from the fault named.
+
+        Without this, a constructor that had become unable to create *any*
+        directory — a broken ``mkdir`` call, a wrong subdirectory name — would
+        satisfy the test above while telling us nothing about the file
+        standing in the way. Asserting the two subdirectories exist is what
+        makes the success meaningful rather than merely silent.
+        """
+        FullTextCache(cache_dir=tmp_path / "fresh")
+
+        assert (tmp_path / "fresh" / "pdfs").is_dir()
+        assert (tmp_path / "fresh" / "html").is_dir()

@@ -309,6 +309,77 @@ whose stated reason was wrong, so the claim is meant literally.
   window that closes as entries are rewritten. Not done; `clear()` is the
   remedy for a cache written by an older version.
 
+## fulltext — the service degrades but the cache still raises (#75)
+
+`FullTextService` survives a cache directory it cannot create;
+`FullTextCache(cache_dir=...)` constructed directly still raises. **This
+asymmetry is deliberate — do not "make it consistent".** A caller who
+constructs a cache asked for one specifically, and returning an object whose
+every method then fails one at a time is worse than failing once, clearly, at
+construction. Pinned by
+`test_fulltext_cache.py::TestADirectlyConstructedCacheStillRaises`, which is
+the only thing standing between the decision and a silent tidy-up.
+
+Three further choices, each with a named test and each verified by mutation:
+
+- **The guard catches `RuntimeError` as well as `OSError`.** Not defensive
+  padding: `_default_cache_dir()` runs before any `mkdir` and calls
+  `Path.home()`, which raises `RuntimeError` where there is no `HOME` and no
+  passwd entry. Narrowing to `OSError` fixes the shape #75 was reported in and
+  leaves the identical defect one layer up —
+  `test_a_home_directory_that_cannot_be_determined_is_survived` fails under
+  exactly that mutation.
+- **It does not catch `Exception`.** Inside that one constructor
+  `RuntimeError` has exactly one *source*, so the pair stays narrow enough
+  that a bmlib bug still surfaces as one. Widening a guard catches strictly
+  more, so no test that merely uses the cache can fail on it — which is why
+  `test_an_unexpected_error_from_the_cache_still_propagates` exists and does
+  nothing else: it raises a `ValueError` from the constructor and demands it
+  escape. Without it this bullet was prose with nothing behind it.
+- **No fallback cache location, and no writability probe.** Relocating to a
+  temp directory surprises a caller who set `cache_dir` deliberately, and a
+  cache that vanishes on reboot looks like one that never hits; probing would
+  be TOCTOU and would litter the operator's cache directory with a file that
+  is not an article. Pinned by
+  `test_a_file_in_the_way_leaves_a_service_with_no_cache` (a relocating guard
+  leaves `service.cache` set) and
+  `test_nothing_is_written_where_the_cache_would_have_gone`, which asserts the
+  directory holds nothing but the blocking file.
+
+**`test_retrieval_still_works_with_no_cache` asserts the retrieval logs
+nothing at `WARNING` or above. That assertion is not log tidiness — it is the
+only thing pinning the two `self.cache is not None` guards.** Delete either
+one and the retrieval still succeeds: `_check_cache(None, ...)` raises
+`AttributeError` into #71's best-effort read handler and `_cache_html` raises
+into #67's write handler, so the whole suite stays green and the only symptom
+is a pair of WARNINGs blaming the environment for a bmlib bug, per article,
+per run — the exact failure those two issues exist to prevent. Measured: with
+both guards removed and the assertion absent, 1774 tests pass. Do not relax it
+to "no errors" or drop it as noise.
+
+**A read-only cache directory splits between #75 and #67, and the boundary is
+not where it looks.** `FullTextCache.__init__` makes *three* `mkdir` calls and
+only the first is suppressed by `exist_ok=True`, so a read-only root whose
+`pdfs/` and `html/` do not yet exist raises `PermissionError` from the second
+— #75's degrade, not #67's warn-once. #67 is reached only when the
+subdirectories already exist and the *write* fails: an unwritable subdirectory,
+or a full disk. Measured, not reasoned: `mkdir(exist_ok=True)` on a `0o555`
+root gives `PermissionError: [Errno 13] … /pdfs`. The earlier version of this
+entry claimed the whole read-only case was #67's and used that to justify the
+no-probe non-goal; the non-goal stands on the two reasons above without it.
+
+One consequence worth not undoing: **the three *post-check* cache helpers take
+the cache as a parameter** rather than reading `self.cache`. Once `self.cache`
+became optional their precondition — "the caller checked" — was a comment a
+caller could forget; as a parameter the narrowing and the use sit in one
+function body, where a type checker can discharge it. Note what that does and
+does not claim: nothing in this repo checks it, since CI runs ruff and not
+mypy, so unlike `sync._stamp_source()` — which raises `ValueError` at runtime —
+the guarantee here is one a downstream's checker gets and a reader can verify
+locally. `_cache_html` and `_download_and_cache_pdf` are deliberately *not*
+in the set: they are the sites that do the checking, and giving them the same
+shape would push one branch out into their seven unconditional call sites.
+
 ## fulltext — the PDF converter (PR #60)
 
 - **A password-protected PDF is rejected on `doc.needs_pass`, never on
