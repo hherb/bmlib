@@ -1,22 +1,16 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-10. **0.8.0 is released and on PyPI**, and with it
-**Phase 2 of the bmlibrarian port is complete** — all four ports
-(Cochrane assessor PR #54, PDF section segmenter PR #55, citation/reference
-stack PR #58, PubMed metadata graft PR #59), plus the encrypted-PDF fix
-(#57, PR #60). Five `fulltext` bugs are fixed: **#64** (PR #66), **#67**
-(PR #69), **#70**/**#71** (PR #74) and **#75** — the package imports on a
-core install, an exhausted chain reports itself, the cache is written
-atomically, a corrupt cache entry falls through to the network instead of
-aborting the run, and an uncreatable cache directory degrades to no caching
-instead of killing construction. With #75 the cache is best-effort everywhere
-`FullTextService` touches it — `FullTextCache`'s own methods still raise to a
-direct caller, deliberately. Four open issues: **#56**, **#68**, **#72** and
-**#73** (filed while fixing #70). 1774 tests + 58 skipped (1830 + 2 with a
-PostgreSQL DSN),
-ruff clean. **`[Unreleased]` now carries five fixes and 0.8.1 is the obvious
-next move** — see "Worth doing". **Phase 3 follows, and each of its rows
-needs a design conversation before any porting** — see "Next up"._
+_Last updated: 2026-08-10. **0.9.0 is cut on `release/0.8.1`** — the branch
+kept its original name after review moved the release from 0.8.1 to 0.9.0, so
+the name is stale and the version is not. Five `fulltext` fixes (#64, #67,
+#70, #71, #75); nothing stored moved, but three of them change a public API,
+which is what makes it a minor rather than a patch bump. **The release is not
+finished until the tag and the GitHub release exist** — see "Finishing 0.9.0"
+immediately below, which is the first thing the next session should check.
+Five open issues: **#56**, **#68**, **#72**, **#73**, **#78**.
+1774 tests + 58 skipped (1830 + 2 with a PostgreSQL DSN), ruff clean.
+**After the release, Phase 3 of the bmlibrarian port is next, and each of its
+rows needs a design conversation before any porting** — see "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -24,24 +18,63 @@ plan; delete sections that are finished and no longer instructive. Per-PR
 implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 — do not re-narrate it here.
 
+## Finishing 0.9.0
+
+Check this first: `git tag --list 'v0.9.0'` and `gh release view v0.9.0`. If
+both exist and https://pypi.org/simple/bmlib/ lists 0.9.0, delete this
+section and move on. Otherwise the version bump is merged but the release was
+never published, and these steps remain:
+
+1. Merge the release PR with **`--merge`, not squash**, so the tag lands on
+   main's first-parent line. Nothing enforces this — the repo still allows
+   squash and rebase merges, tracked as #78 — so it is on whoever merges.
+2. Tag the **merge commit** `v0.9.0` and push the tag.
+3. Create the GitHub release. **This is what publishes** —
+   `.github/workflows/release.yml` rebuilds, refuses to go on unless the tag
+   matches `bmlib.__version__`, runs `twine check --strict`, asserts
+   `py.typed` survived packaging, and uploads via Trusted Publishing.
+4. **Stop here and hand over the `pypi` environment gate.** Do not approve it
+   yourself even when `gh api .../pending_deployments` reports
+   `current_user_can_approve: true` — a PyPI upload is irreversible, the
+   version number cannot be reused, and the gate exists as the human
+   checkpoint for exactly that. Nothing is lost by waiting; the run stays
+   approvable indefinitely.
+5. Once approved, verify against `https://pypi.org/simple/bmlib/` — the JSON
+   API serves a stale CDN cache, and the simple index is what installers
+   read. A failed `pip install` immediately after is propagation, not a bad
+   upload.
+
+The release-workflow gates were already rehearsed locally on the release
+branch — `uv build`, `twine check --strict` on both artifacts, `py.typed`
+present in the wheel — and the wheel was installed into a venv holding only
+`bmlib`, `jinja2` and `markupsafe` and probed one fresh interpreter per
+module: **69 importable, 0 not**, which is #64's claim verified against the
+artefact rather than the source tree. Worth repeating on any release that
+touches an `__init__.py`.
+
+**Do not upload by hand.** The publish job has no `skip-existing`, so a manual
+upload makes it fail on a duplicate — which is why v0.5.0's and v0.6.0's runs
+still sit unapproved. v0.7.0 and v0.8.0 both went the whole way through the
+workflow.
+
 ## Current state
 
-- **Version 0.8.0**, released 2026-08-08 and live on PyPI. Release history:
-  0.4.0 (2026-07-19) → 0.5.0 → 0.5.1 → 0.6.0 (2026-07-30) → 0.7.0
-  (2026-08-04) → 0.8.0. 0.3.0 was bumped in-tree but never released; its
-  changes shipped inside 0.4.0. The version lives in **four** places —
+- **Version 0.9.0.** Release history: 0.4.0 (2026-07-19) → 0.5.0 → 0.5.1 →
+  0.6.0 (2026-07-30) → 0.7.0 (2026-08-04) → 0.8.0 (2026-08-08) → 0.9.0
+  (2026-08-10). 0.3.0 was bumped in-tree but never released; its changes
+  shipped inside 0.4.0. The version lives in **four** places —
   `pyproject.toml`, `bmlib/__init__.py`, the README version line,
-  `CLAUDE.md`'s header — and all four agree. 0.7.0 and 0.8.0 were both
-  published by the Release workflow rather than a laptop, so that path is
-  proven end to end (tag → GitHub release → `pypi` gate → Trusted Publishing).
+  `CLAUDE.md`'s header — and all four agree.
 - **What each release shipped is in `CHANGELOG.md`** — do not re-narrate it
-  here. 0.6.0 (three changes), 0.7.0 (four) and 0.8.0 (three) each moved
-  stored values, none behind a flag, and they compound for anyone upgrading
-  across them. 0.8.0's largest is the PubMed one: every synced title and
-  abstract changes shape, titles because they were being *truncated* at their
-  first markup tag.
+  here. 0.6.0, 0.7.0 and 0.8.0 each moved stored values, none behind a flag,
+  and they compound for anyone upgrading across them; 0.8.0's largest is the
+  PubMed one, which changes the shape of every synced title and abstract.
+  **0.9.0 moves nothing stored** — it is five fixes and some log lines. It is
+  a minor bump because three of those fixes change a public API, not because
+  anything stored moved; the two questions are independent and the version
+  number answers the API one.
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
-  now missed three releases. Widening it is a downstream change, not a bmlib
+  now missed four releases. Widening it is a downstream change, not a bmlib
   one.
 - **1774 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1830 + 2
   with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
@@ -65,7 +98,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; ROADMAP currently carries five, for #64, #67, #70, #71 and #75.
+  release time; **none is outstanding** — 0.9.0 promoted the last five.
   Markers inside `docs/superpowers/plans/` are historical records — leave them
   alone.
 
@@ -73,9 +106,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Four. **#72 came out of #69's review** (with #70 and #71, both fixed in
-PR #74); **#73 was found while fixing #70**. #75, filed reviewing PR #74, is
-now fixed.
+Four, all found by review rather than by a failing test.
 
 **#72 — a bmlib bug hides behind any tier that still works.** #67's summary is
 consulted only on *total* exhaustion, so an `AttributeError` from every PMC
@@ -118,36 +149,12 @@ the record of what was rejected and why.
 
 ### Worth doing, not yet an issue
 
-- **Cut 0.8.1 — this is the obvious next move.** `[Unreleased]` now holds five
-  fixes, all exactly what a patch release is for: a headline 0.8.0 addition
-  (`SectionSegmenter`) was unreachable for anyone who installed core bmlib
-  (#64); an exhausted retrieval chain passed silently for a paywalled paper
-  (#67); a truncated cache file was served as a complete article forever
-  (#70); one corrupt cache entry aborted a bulk sync (#71); and a cache
-  directory that could not be created aborted `FullTextService` construction
-  outright (#75). All additive: no stored value changes, and the only new
-  output is log lines. Four API notes for the release summary. The first three
-  reach a *direct* `FullTextCache` caller only: `save_html`/`save_pdf` now
-  raise `OSError` where they previously wrote a partial file (both
-  `FullTextService` call sites already reported a failed write);
-  `quarantine()` is new; and `sanitize_identifier()` caps its readable prefix
-  at 160 characters, so an entry cached for a longer identifier is orphaned
-  and re-fetched once. The fourth reaches anyone who dereferences
-  `service.cache`: **`FullTextService.cache` is now `FullTextCache | None`**,
-  so `service.cache.clear()` needs a guard, and because bmlib ships
-  `py.typed` a downstream running mypy or pyright sees a new error on that
-  line even though bmlib's own ruff-only CI does not. It is `None` solely
-  when `cache=` was omitted *and* the default could not be built; every path
-  inside bmlib already guarded. Worth a line for
-  operators too: #70 stops a truncated entry being *written* and does not
-  detect one already on disk, so a cache written by an older version is best
-  cleared once. The release recipe is at the bottom of this file;
-  note the version lives in four places *and* the extras tables in README,
-  `docs/manual/index.md` and CLAUDE.md gained a `fulltext` row.
 - **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume
-  0.6.0, 0.7.0 and 0.8.0. Read all three releases' non-comparable behaviour
-  changes first — the transparency ones move stored scores, and 0.8.0 moves
-  every PubMed title and abstract.
+  0.6.0 through 0.9.0. Read the three intervening releases' non-comparable
+  behaviour changes first — the transparency ones move stored scores, and
+  0.8.0 moves every PubMed title and abstract. 0.9.0 adds nothing to that
+  list, but it does carry three API changes, so the widened pin should clear
+  `FullTextService.cache` being nullable.
 - **Wire the segmenter and the rule-based extractors in.** Two halves of the
   same roadmap item: the segmenter could give `CochraneAssessor`
   Methods/Results boundaries and `TransparencyAnalyzer` the paper's own
@@ -194,7 +201,10 @@ transparency/quality reconciliation, no GRADE engine exists, SSRF guard).
    with injected connections/params; guard optional deps with
    `try/except ImportError` raising `pip install bmlib[extra]`; route LLM
    calls through `bmlib.llm` / `bmlib.agents.BaseAgent`, never raw `ollama`.
-4. **Export** the public names from the package `__init__.py` `__all__`.
+4. **Export** the public names from the package `__init__.py` `__all__` —
+   and if the new module needs an extra, resolve it through a PEP 562
+   `__getattr__` rather than re-exporting it eagerly (issue #64: one eager
+   re-export made ten modules unimportable on a core install).
 5. **Verify:** tests + both ruff commands clean before done.
 6. **Record** each port in `CHANGELOG.md` under `[Unreleased]`.
 7. **Reconcile, don't fork:** where a port overlaps existing bmlib, build on
@@ -239,26 +249,15 @@ what still needs doing.
 - Session workflow lives in the `nextsession` skill
   (`.claude/skills/nextsession/`); the post-review fix-up workflow lives in
   the `fixall` skill (`.claude/skills/fixall/`).
-- **Cutting a release** (0.4.0 through 0.8.0 were all cut this way): bump
+- **Cutting a release** (0.4.0 through 0.9.0 were all cut this way): bump
   the version in the **four** places that carry it — `pyproject.toml`,
   `bmlib/__init__.py`, the README version line, `CLAUDE.md`'s header —
   promote the CHANGELOG's `[Unreleased]` body under a dated `## [X.Y.Z]`
   heading (leaving `## [Unreleased]` above it) with a short prose summary
   under it, promote any `(unreleased)` markers in `docs/manual/` and
-  `ROADMAP.md` (0.8.0's six were all in ROADMAP), then commit on a
-  `release/X.Y.Z` branch and open a PR. After CI is green merge with
-  `--merge` (**not** squash) so the tag lands on main's first-parent line,
-  tag the *merge commit*, push the tag, and create the GitHub release.
-  **The workflow publishes to PyPI, not you** — creating the release fires
-  `.github/workflows/release.yml`, which rebuilds, refuses to go on unless
-  the tag matches `bmlib.__version__`, runs `twine check --strict`, asserts
-  `py.typed` survived packaging, and uploads via Trusted Publishing with no
-  stored token. Approve the `pypi` environment gate to let it through.
-  **Do not also upload by hand:** the publish job has no `skip-existing`, so
-  a manual upload first makes it fail on a duplicate — which is why v0.5.0's
-  and v0.6.0's runs still sit unapproved, both having been published from a
-  laptop. v0.7.0 and v0.8.0 both went the whole way through the workflow, so
-  the hand-upload habit has no remaining excuse. Rehearse any time with a
-  `workflow_dispatch` run, which targets TestPyPI only. Afterwards verify
-  against `https://pypi.org/simple/bmlib/` — the JSON API serves a stale CDN
-  cache, the simple index is what installers read.
+  `ROADMAP.md`, then commit on a `release/X.Y.Z` branch and open a PR. After
+  CI is green, the publishing half is the numbered list under "Finishing
+  0.9.0" at the top of this file — merge with `--merge`, tag the *merge
+  commit*, create the release, approve the gate, verify the simple index.
+  Rehearse any time with a `workflow_dispatch` run, which targets TestPyPI
+  only.

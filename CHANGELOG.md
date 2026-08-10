@@ -6,6 +6,56 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-08-10
+
+Five fixes, every one of them in the full-text retrieval path and every one of
+them the kind a bugfix release exists for: a failure that looked like a
+success. A headline 0.8.0 addition — the stdlib-only `SectionSegmenter` —
+turned out to be unreachable for anyone who installed core bmlib; an exhausted
+retrieval chain returned a result byte-identical to a paywalled paper's; a
+cache file truncated by a full disk was served as a complete article forever
+after; one corrupt entry aborted a whole bulk sync; and a cache directory that
+could not be created killed `FullTextService` construction outright, on a run
+that would have succeeded without a cache at all.
+
+None was found by a failing test. Three came out of reviewing the previous fix
+in the chain — #70 and #71 from #67's, #75 from #74's — and #64 from
+smoke-testing the published 0.8.0 wheel in a venv holding nothing else.
+
+**Nothing stored moves.** No score, no parsed value and no cached content
+changes shape, so unlike 0.6.0 through 0.8.0 — which each moved stored values,
+compounding — this release needs no re-sync. The only new output is log lines,
+and a retrieval that succeeds without a cache fault emits none of them. A
+cache that cannot be written to or read back now warns on a run that otherwise
+succeeds, which is the point of those two fixes.
+
+**A minor bump, for a release that is only bugfixes.** Three of the fixes
+change a public API — `save_html`/`save_pdf` raise where they used to write a
+partial file, `sanitize_identifier()`'s output moves for a long identifier,
+and `FullTextService.cache` is now nullable. "Nothing stored moves" is a
+statement about *data*, not about the API, and bmlib's downstream pins are
+written on the convention that a minor bump is the one that may change the
+API. A patch number would have delivered all three to anyone on a `<0.9.0`
+range with no decision on their part.
+
+**Four API notes.** `save_html`/`save_pdf` now raise `OSError` where they
+previously wrote a partial file — a break for a *direct* `FullTextCache`
+caller only, both `FullTextService` call sites having already reported a
+failed cache write. `quarantine()` is new. `sanitize_identifier()` caps its
+readable prefix at 160 characters, and this one reaches every caller rather
+than only a direct one, since `fetch_fulltext()` builds its cache key through
+it: an entry cached under a longer identifier is orphaned and re-fetched once.
+The fourth reaches anyone who dereferences the attribute:
+**`FullTextService.cache` is now `FullTextCache | None`**, so
+`service.cache.clear()` wants a `None` check.
+Because bmlib ships `py.typed`, a downstream running mypy or pyright sees a
+new error on that line even though bmlib's own ruff-only CI does not.
+
+**One note for operators.** #70 closes the window in which a truncated cache
+entry is *written*; it does not detect one already on disk, and a truncation
+of English-language prose usually lands on an ASCII boundary and decodes
+perfectly. A cache written by an older version is best cleared once.
+
 ### Added
 
 - **`fulltext` extra** (`pip install bmlib[fulltext]`, httpx), included in
@@ -32,39 +82,45 @@ All notable changes to bmlib are documented here. The format is based on
 ### Fixed
 
 - **A total full-text retrieval failure no longer reads as "no free full
-  text"** (#67). `fetch_fulltext()` wraps each of its nine swallowers in
-  `except Exception` that logs at `DEBUG` and moves on — right in itself,
+  text"** (#67). `fetch_fulltext()` wraps each of the swallowers on its path
+  in `except Exception` that logs at `DEBUG` and moves on — right in itself,
   since an unreachable Unpaywall must not cost the DOI fallback — but the only
   `WARNING` on the path sat inside the `if abstract_only is not None:` branch,
   so the *more* complete the failure, the quieter it got. A caller who had
   lost the network, hit a bmlib bug or misconfigured the service received
   `source="doi"`, `html=None`, `content_kind="none"` for every paper in a
   corpus — byte-identical to the legitimate outcome for a paywalled paper —
-  with nothing above `DEBUG` to say so. Attempts are now accounted for, and
-  the warning moved out to cover every empty-handed exit, sorting what
-  happened into the two buckets that read differently:
-  `3 attempts failed (ConnectError)` is a broken network, `3 sources had
-  nothing` is an ordinary paywalled paper, and `TypeError`/`AttributeError`
-  among the failures is a bug. `FullTextResult` is unchanged, and a successful
-  retrieval emits no exhaustion warning.
+  with nothing above `DEBUG` to say so. Attempts on the tier chain are now
+  accounted for — the download half of the PDF tier is deliberately not, since
+  every one of its call sites returns immediately after it and it could never
+  feed the report (#68) — and the warning moved out to cover every
+  empty-handed exit, sorting what happened into the two buckets that read
+  differently: `3 attempts failed (ConnectError)` is a broken network,
+  `3 sources had nothing` is an ordinary paywalled paper, and
+  `TypeError`/`AttributeError` among the failures is a bug. `FullTextResult`
+  is unchanged, and a successful retrieval emits no exhaustion warning.
 
 - **An unreachable source no longer counts as an absence** (#67). Two things
   made a broken chain look like a paywalled one even with the report above.
-  Both resolvers signalled an HTTP failure by *returning* — `(None, None)`,
-  which is also what an empty result set returns — so a Europe PMC or NCBI
-  outage was counted as nothing having happened; they now raise, and the
-  callers that already caught them record the fault. And `FullTextError` was
-  raised alike for `Unpaywall HTTP 503` and `DOI not found in Unpaywall`, so
-  an outage and a paper nobody serves for free produced byte-identical
-  summaries. The absences now raise `FullTextUnavailableError`, a subclass, so
-  nothing that catches `FullTextError` is affected; it is an internal signal
-  and never escapes `fetch_fulltext()`. An article 404 is an absence from
+  Both resolvers signalled an HTTP failure by *returning* what an empty result
+  set returns, so a Europe PMC or NCBI outage was counted as nothing having
+  happened. Both now raise, but only one raises to its caller: the search
+  resolver's `FullTextError` reaches the callers that already caught it, and
+  they record the fault, while the ID converter's is caught by its own handler,
+  which records the fault and still returns `None` — a caller that already
+  holds a free-PDF URL by that point must not be made to pay for the converter
+  being down. And `FullTextError` was raised alike for `Unpaywall HTTP 503`
+  and `DOI not found in Unpaywall`, so an outage and a paper nobody serves for
+  free produced byte-identical summaries. The absences now raise
+  `FullTextUnavailableError`, a subclass, so nothing that catches
+  `FullTextError` is affected; it is an internal signal and never escapes
+  `fetch_fulltext()`. An article 404 is an absence from
   *every* source — Europe PMC, NCBI, Unpaywall and a fetcher-supplied URL
-  alike, where three of the four called it a failure — since a stored source
-  URL going stale is ordinary, and counting it as broken inflates the one
-  bucket the summary asks the operator to act on. A 404 from a *search*
-  endpoint stays a fault: Europe PMC answers "no such paper" with HTTP 200 and
-  an empty list, so a 404 there means the API path is wrong.
+  alike, where all four used to raise the same `FullTextError` a 5xx did —
+  since a stored source URL going stale is ordinary, and counting it as broken
+  inflates the one bucket the summary asks the operator to act on. A 404 from
+  a *search* endpoint stays a fault: Europe PMC answers "no such paper" with
+  HTTP 200 and an empty list, so a 404 there means the API path is wrong.
 
 - **A call whose identifiers all failed is no longer told it gave none**
   (#67). With a `pmc_id` or `fulltext_sources` but no `doi`/`pmid`, an
@@ -99,7 +155,8 @@ All notable changes to bmlib are documented here. The format is based on
   closes the window rather than detecting an entry already truncated on disk,
   and a real truncation of English-language prose usually lands on an ASCII
   boundary and decodes fine, so `clear()` is the remedy for a cache an older
-  version wrote. Several details are load-bearing and each has a named test:
+  version wrote. Several details are load-bearing, and each has a named test
+  except `O_BINARY`, which no run off Windows can observe:
   the `fsync` before the replace is not durability theatre — under delayed
   allocation the `write(2)` that `flush()` issues returns success and ENOSPC
   reaches userspace only at `fsync`, so without it `os.replace` would publish
