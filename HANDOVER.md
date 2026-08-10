@@ -1,10 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-10. **0.8.1 is cut on `release/0.8.1`** — five
-`fulltext` fixes (#64, #67, #70, #71, #75), nothing stored moved. **The
-release is not finished until the tag and the GitHub release exist** — see
-"Finishing 0.8.1" immediately below, which is the first thing the next
-session should check. Four open issues: **#56**, **#68**, **#72**, **#73**.
+_Last updated: 2026-08-10. **0.9.0 is cut on `release/0.8.1`** — the branch
+kept its original name after review moved the release from 0.8.1 to 0.9.0, so
+the name is stale and the version is not. Five `fulltext` fixes (#64, #67,
+#70, #71, #75); nothing stored moved, but three of them change a public API,
+which is what makes it a minor rather than a patch bump. **The release is not
+finished until the tag and the GitHub release exist** — see "Finishing 0.9.0"
+immediately below, which is the first thing the next session should check.
+Five open issues: **#56**, **#68**, **#72**, **#73**, **#78**.
 1774 tests + 58 skipped (1830 + 2 with a PostgreSQL DSN), ruff clean.
 **After the release, Phase 3 of the bmlibrarian port is next, and each of its
 rows needs a design conversation before any porting** — see "Next up"._
@@ -15,16 +18,17 @@ plan; delete sections that are finished and no longer instructive. Per-PR
 implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 — do not re-narrate it here.
 
-## Finishing 0.8.1
+## Finishing 0.9.0
 
-Check this first: `git tag --list 'v0.8.1'` and `gh release view v0.8.1`. If
-both exist and https://pypi.org/simple/bmlib/ lists 0.8.1, delete this
+Check this first: `git tag --list 'v0.9.0'` and `gh release view v0.9.0`. If
+both exist and https://pypi.org/simple/bmlib/ lists 0.9.0, delete this
 section and move on. Otherwise the version bump is merged but the release was
 never published, and these steps remain:
 
 1. Merge the release PR with **`--merge`, not squash**, so the tag lands on
-   main's first-parent line.
-2. Tag the **merge commit** `v0.8.1` and push the tag.
+   main's first-parent line. Nothing enforces this — the repo still allows
+   squash and rebase merges, tracked as #78 — so it is on whoever merges.
+2. Tag the **merge commit** `v0.9.0` and push the tag.
 3. Create the GitHub release. **This is what publishes** —
    `.github/workflows/release.yml` rebuilds, refuses to go on unless the tag
    matches `bmlib.__version__`, runs `twine check --strict`, asserts
@@ -55,8 +59,8 @@ workflow.
 
 ## Current state
 
-- **Version 0.8.1.** Release history: 0.4.0 (2026-07-19) → 0.5.0 → 0.5.1 →
-  0.6.0 (2026-07-30) → 0.7.0 (2026-08-04) → 0.8.0 (2026-08-08) → 0.8.1
+- **Version 0.9.0.** Release history: 0.4.0 (2026-07-19) → 0.5.0 → 0.5.1 →
+  0.6.0 (2026-07-30) → 0.7.0 (2026-08-04) → 0.8.0 (2026-08-08) → 0.9.0
   (2026-08-10). 0.3.0 was bumped in-tree but never released; its changes
   shipped inside 0.4.0. The version lives in **four** places —
   `pyproject.toml`, `bmlib/__init__.py`, the README version line,
@@ -65,7 +69,10 @@ workflow.
   here. 0.6.0, 0.7.0 and 0.8.0 each moved stored values, none behind a flag,
   and they compound for anyone upgrading across them; 0.8.0's largest is the
   PubMed one, which changes the shape of every synced title and abstract.
-  **0.8.1 moves nothing stored** — it is five fixes and some log lines.
+  **0.9.0 moves nothing stored** — it is five fixes and some log lines. It is
+  a minor bump because three of those fixes change a public API, not because
+  anything stored moved; the two questions are independent and the version
+  number answers the API one.
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed four releases. Widening it is a downstream change, not a bmlib
   one.
@@ -91,7 +98,7 @@ workflow.
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; **none is outstanding** — 0.8.1 promoted the last five.
+  release time; **none is outstanding** — 0.9.0 promoted the last five.
   Markers inside `docs/superpowers/plans/` are historical records — leave them
   alone.
 
@@ -143,10 +150,11 @@ the record of what was rejected and why.
 ### Worth doing, not yet an issue
 
 - **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume
-  0.6.0 through 0.8.1. Read the three intervening releases' non-comparable
+  0.6.0 through 0.9.0. Read the three intervening releases' non-comparable
   behaviour changes first — the transparency ones move stored scores, and
-  0.8.0 moves every PubMed title and abstract. 0.8.1 adds nothing to that
-  list.
+  0.8.0 moves every PubMed title and abstract. 0.9.0 adds nothing to that
+  list, but it does carry three API changes, so the widened pin should clear
+  `FullTextService.cache` being nullable.
 - **Wire the segmenter and the rule-based extractors in.** Two halves of the
   same roadmap item: the segmenter could give `CochraneAssessor`
   Methods/Results boundaries and `TransparencyAnalyzer` the paper's own
@@ -241,7 +249,7 @@ what still needs doing.
 - Session workflow lives in the `nextsession` skill
   (`.claude/skills/nextsession/`); the post-review fix-up workflow lives in
   the `fixall` skill (`.claude/skills/fixall/`).
-- **Cutting a release** (0.4.0 through 0.8.1 were all cut this way): bump
+- **Cutting a release** (0.4.0 through 0.9.0 were all cut this way): bump
   the version in the **four** places that carry it — `pyproject.toml`,
   `bmlib/__init__.py`, the README version line, `CLAUDE.md`'s header —
   promote the CHANGELOG's `[Unreleased]` body under a dated `## [X.Y.Z]`
@@ -249,7 +257,7 @@ what still needs doing.
   under it, promote any `(unreleased)` markers in `docs/manual/` and
   `ROADMAP.md`, then commit on a `release/X.Y.Z` branch and open a PR. After
   CI is green, the publishing half is the numbered list under "Finishing
-  0.8.1" at the top of this file — merge with `--merge`, tag the *merge
+  0.9.0" at the top of this file — merge with `--merge`, tag the *merge
   commit*, create the release, approve the gate, verify the simple index.
   Rehearse any time with a `workflow_dispatch` run, which targets TestPyPI
   only.
