@@ -6,6 +6,43 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-08-10
+
+Five fixes, every one of them in the full-text retrieval path and every one of
+them the kind a patch release exists for: a failure that looked like a
+success. A headline 0.8.0 addition — the stdlib-only `SectionSegmenter` —
+turned out to be unreachable for anyone who installed core bmlib; an exhausted
+retrieval chain returned a result byte-identical to a paywalled paper's; a
+cache file truncated by a full disk was served as a complete article forever
+after; one corrupt entry aborted a whole bulk sync; and a cache directory that
+could not be created killed `FullTextService` construction outright, on a run
+that would have succeeded without a cache at all.
+
+None was found by a failing test. Three came out of reviewing the previous fix
+in the chain — #70 and #71 from #67's, #75 from #74's — and #64 from
+smoke-testing the published 0.8.0 wheel in a venv holding nothing else.
+
+**Nothing stored moves.** No score, no parsed value and no cached content
+changes shape, so unlike 0.6.0 through 0.8.0 — which each moved stored values,
+compounding — this release needs no re-sync. The only new output is log lines,
+and a successful retrieval emits none of them.
+
+**Four API notes.** Three reach a *direct* `FullTextCache` caller only, both
+`FullTextService` call sites having already handled the paths in question:
+`save_html`/`save_pdf` now raise `OSError` where they previously wrote a
+partial file; `quarantine()` is new; and `sanitize_identifier()` caps its
+readable prefix at 160 characters, so an entry cached under a longer
+identifier is orphaned and re-fetched once. The fourth reaches anyone who
+dereferences the attribute: **`FullTextService.cache` is now
+`FullTextCache | None`**, so `service.cache.clear()` wants a `None` check.
+Because bmlib ships `py.typed`, a downstream running mypy or pyright sees a
+new error on that line even though bmlib's own ruff-only CI does not.
+
+**One note for operators.** #70 closes the window in which a truncated cache
+entry is *written*; it does not detect one already on disk, and a truncation
+of English-language prose usually lands on an ASCII boundary and decodes
+perfectly. A cache written by an older version is best cleared once.
+
 ### Added
 
 - **`fulltext` extra** (`pip install bmlib[fulltext]`, httpx), included in
