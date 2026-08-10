@@ -20,7 +20,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 Check this first: `git tag --list 'v0.8.1'` and `gh release view v0.8.1`. If
 both exist and https://pypi.org/simple/bmlib/ lists 0.8.1, delete this
 section and move on. Otherwise the version bump is merged but the release was
-never published, and the remaining steps are the ones only a human can take:
+never published, and these steps remain:
 
 1. Merge the release PR with **`--merge`, not squash**, so the tag lands on
    main's first-parent line.
@@ -29,9 +29,24 @@ never published, and the remaining steps are the ones only a human can take:
    `.github/workflows/release.yml` rebuilds, refuses to go on unless the tag
    matches `bmlib.__version__`, runs `twine check --strict`, asserts
    `py.typed` survived packaging, and uploads via Trusted Publishing.
-4. Approve the `pypi` environment gate.
-5. Verify against `https://pypi.org/simple/bmlib/` — the JSON API serves a
-   stale CDN cache; the simple index is what installers read.
+4. **Stop here and hand over the `pypi` environment gate.** Do not approve it
+   yourself even when `gh api .../pending_deployments` reports
+   `current_user_can_approve: true` — a PyPI upload is irreversible, the
+   version number cannot be reused, and the gate exists as the human
+   checkpoint for exactly that. Nothing is lost by waiting; the run stays
+   approvable indefinitely.
+5. Once approved, verify against `https://pypi.org/simple/bmlib/` — the JSON
+   API serves a stale CDN cache, and the simple index is what installers
+   read. A failed `pip install` immediately after is propagation, not a bad
+   upload.
+
+The release-workflow gates were already rehearsed locally on the release
+branch — `uv build`, `twine check --strict` on both artifacts, `py.typed`
+present in the wheel — and the wheel was installed into a venv holding only
+`bmlib`, `jinja2` and `markupsafe` and probed one fresh interpreter per
+module: **69 importable, 0 not**, which is #64's claim verified against the
+artefact rather than the source tree. Worth repeating on any release that
+touches an `__init__.py`.
 
 **Do not upload by hand.** The publish job has no `skip-existing`, so a manual
 upload makes it fail on a duplicate — which is why v0.5.0's and v0.6.0's runs
