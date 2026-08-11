@@ -8,8 +8,8 @@ source tree: it installs on jinja2 alone and all 69 modules import, one fresh
 interpreter each. Since the release, `fix/68-72-79-pdf-download-reporting` has
 closed #79, #68 and #72 (unreleased) — Tier 1d now takes the free PDFs Europe
 PMC actually labels `"Open access"`, and a failed PDF download or a swallowed
-bmlib bug is reported instead of hiding behind a tier that still works. Three
-open issues: **#56**, **#73**, **#78**. 1893 tests + 58 skipped (1949 + 2
+bmlib bug is reported instead of hiding behind a tier that still works. Four
+open issues: **#56**, **#73**, **#78**, **#81**. 1893 tests + 58 skipped (1949 + 2
 with a PostgreSQL DSN), ruff clean.
 **Phase 3 of the bmlibrarian port is next, and each of its rows needs a design
 conversation before any porting** — see "Next up"._
@@ -101,6 +101,17 @@ the requirement is prose only and GitHub's default merge button can silently
 defeat it. Latent — 0.4.0 through 0.9.0 were all merged correctly — the fix
 is one `gh api -X PATCH` disabling the other two strategies, or a protection
 rule if squash is wanted for ordinary feature PRs.
+
+**#81 — CI runs ruff only, so `py.typed` claims a guarantee nothing checks**,
+split out of the review of PR #80. That review found three correctness
+properties in one file being carried by comments where a type could carry
+them; two became `Literal`s in that branch, but the enforcement is at the
+desk and not at the gate, and a downstream's mypy run is currently the first
+thing in the world to check bmlib's types. `uv run mypy bmlib/` reports 24
+errors in 15 files, 11 of them one recurring `**dict[str, object]` splat and
+8 of them optional-extra imports, so this is one design call plus a handful
+of one-offs rather than a long slog. Deliberately not done in #80: it touches
+`llm/`, `agents/` and `publications/`, which that branch goes nowhere near.
 
 ### Worth doing, not yet an issue
 
