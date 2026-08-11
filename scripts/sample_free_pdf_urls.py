@@ -47,14 +47,40 @@ those are the ones that reach Tier 2. The third calls ``fetch_biorxiv`` rather
 than re-spelling its URL template, so the URL under test cannot drift from the
 one bmlib builds.
 
+``europepmc`` was originally split further, into ``europepmc/in`` and
+``europepmc/out`` by ``inEPMC``, meant to approximate "XML unusable" for the
+subgroup Tier 1d actually reaches. Run 1 measured it and killed it:
+``europepmc/out`` sampled zero URLs, and the reason is structural, not bad
+luck. A ``?pdf=render`` URL embeds a PMC ID, so *every* record that carries one
+is in Europe PMC by construction — the "out" half of the split could never be
+populated, so it could never approximate anything. ``sample_europepmc`` now
+returns one ``europepmc`` population; ``dois`` for the Unpaywall population
+still comes from ``inEPMC != "Y"`` records in the same search, since those are
+the ones that genuinely reach Tier 2.
+
 Probes are a ranged GET for the first kilobyte, so measuring does not mean
 downloading 900 whole PDFs, and they record both of bmlib's failure modes: the
-status code, and whether the bytes begin ``%PDF``.
+status code, and whether the bytes begin ``%PDF``. A 403 is counted as a real
+failure — bmlib would hit the identical 403 on the identical URL and fail the
+identical way — but a 429 is not a property of the URL population at all: its
+rate depends on how fast the *caller* asked, not on what is being asked for,
+so it cannot inform a default (see "unmeasured" below).
 
 A population that could not be sampled prints ``ERROR``, never a zero — a 0%
 failure rate is what a perfectly healthy population looks like. An individual
 probe that raises is the opposite: that is a real finding, one of the three
 causes bmlib swallows, and it is counted.
+
+The same principle covers throttling. A 429 or 503 is retried — honouring
+``Retry-After`` when the server sends a usable integer, otherwise backing off
+2s then 4s — for up to three attempts total; a probe still throttled after
+that is ``measured=False``, not a failure, because bmlib never actually asked
+the question "does this URL serve a PDF" and got an answer for it. And when
+throttling leaves more than 20% of a population's attempts unmeasured
+(``UNMEASURED_SHARE_ERROR_THRESHOLD``), the probes that did get through are
+not a random sample of it — they are the *early* ones, made before the host
+started refusing — so that population prints ``ERROR`` too, the same rule
+extended from "zero sampled" to "too few measured to trust."
 
     uv run python scripts/sample_free_pdf_urls.py --email you@example.org
 
@@ -71,6 +97,7 @@ import math
 import sys
 import time
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
@@ -84,17 +111,37 @@ except ImportError:  # pragma: no cover - the script is a live runner
 
 from bmlib import __version__
 from bmlib.fulltext.service import _extract_free_pdf_url
+from bmlib.publications.fetchers.biorxiv import BASE_URL as BIORXIV_BASE_URL
 from bmlib.publications.fetchers.biorxiv import fetch_biorxiv
 
 EUROPE_PMC_SEARCH = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 UNPAYWALL_BASE = "https://api.unpaywall.org/v2"
 PAGE_SIZE = 100
 PROBE_BYTES = 1024
-# One request per second per host. The probe walks third-party publisher hosts
-# that never agreed to be measured; Europe PMC's own guidance is the ceiling,
-# not the target.
-REQUEST_INTERVAL_SECONDS = 1.0
-DEFAULT_TARGET = 300
+# Minimum seconds between two requests to the *same* host, tracked
+# independently per host (see `_make_pacer`). Run 1 paced every request off
+# one shared clock, so one host's throttling paced every other host too, for
+# no reason. Overridable with --per-host-interval when a re-run needs it
+# wider.
+PER_HOST_INTERVAL_SECONDS = 3.0
+# The decision issue #68 feeds only needs to separate "under 5%" from "at or
+# above 5%" — the Wilson interval half-width at a true 5% rate is about
+# ±3.6% at this size — and 150 clean, actually-measured probes settle that.
+# 150 clean probes are worth more evidence than 300 that ran into throttling,
+# which is what run 1 spent its budget on instead.
+DEFAULT_TARGET = 150
+# A rate computed from probes that got through despite heavy throttling is
+# not a random sample of the population: the ones that got through are the
+# *early* ones, made before the host started refusing, and the later attempts
+# it would have refused are exactly the ones missing from the sample. Past
+# this share of unmeasured attempts, summarise() reports ERROR instead of a
+# number that looks precise but is not evidence of anything.
+UNMEASURED_SHARE_ERROR_THRESHOLD = 0.20
+# Retry budget for a throttled (429/503) probe, and the backoff used when the
+# server gives no usable Retry-After. Index 0 is the wait before the 2nd
+# attempt, index 1 the wait before the 3rd.
+MAX_PROBE_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = (2.0, 4.0)
 
 
 @dataclass(frozen=True)
@@ -104,16 +151,21 @@ class ProbeOutcome:
     Attributes:
         ok: Whether bmlib would have cached a PDF.
         cause: ``None`` on success, else the failure bucket — ``http-<status>``,
-            ``not-a-pdf``, or ``exception-<TypeName>``. The three are kept
-            apart because they are the three bmlib swallows, and merging them
-            would answer #68's question with a number that cannot tell a full
-            disk from a publisher 404.
+            ``not-a-pdf``, ``exception-<TypeName>``, or ``unmeasured-<status>``.
+            The first three are kept apart because they are the three bmlib
+            swallows, and merging them would answer #68's question with a
+            number that cannot tell a full disk from a publisher 404.
         status: The HTTP status, when there was one.
+        measured: Whether this probe reached a real answer. ``False`` when a
+            429 or 503 persisted through every retry — the *sampler* was
+            throttled, not the URL population, so ``summarise()`` must
+            exclude it from the failure rate rather than count it as one.
     """
 
     ok: bool
     cause: str | None
     status: int | None
+    measured: bool = True
 
 
 def is_probeable(url: str) -> bool:
@@ -129,27 +181,83 @@ def is_probeable(url: str) -> bool:
     return urlsplit(url).scheme in ("http", "https")
 
 
+def _sleep_for(seconds: float) -> None:
+    """Sleep for *seconds*. Separated so tests can stub it out."""
+    time.sleep(seconds)
+
+
+def _retry_after_seconds(resp: Any) -> int | None:
+    """Parse a ``Retry-After`` header's integer-seconds form.
+
+    Args:
+        resp: The throttled response.
+
+    Returns:
+        The number of seconds to wait, or ``None`` when the header is
+        absent, an HTTP-date, or otherwise not a bare integer — the caller
+        falls back to exponential backoff in that case. Handling the
+        HTTP-date form is not worth it here: it is rare on a 429/503 in
+        practice, and a wrong guess only costs one extra backoff step, not a
+        wrong measurement.
+    """
+    headers = getattr(resp, "headers", None)
+    if not headers:
+        return None
+    value = headers.get("Retry-After")
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def probe(client: Any, url: str) -> ProbeOutcome:
     """Attempt *url* the way ``_download_and_cache_pdf`` would, and classify it.
+
+    A 429 or 503 is retried rather than reported immediately: that status
+    means the probe itself could not be made, not that bmlib's download would
+    have failed, and run 1 showed the difference matters — the sampler had
+    throttled itself into being the dominant "failure" it reported. Up to
+    ``MAX_PROBE_ATTEMPTS`` attempts total; a ``Retry-After`` header is honoured
+    when it is a bare integer, otherwise ``RETRY_BACKOFF_SECONDS`` applies.
 
     Args:
         client: An HTTP client with ``get(url, headers=...)``.
         url: The PDF URL to probe.
 
     Returns:
-        The outcome, in one of the three buckets bmlib swallows.
+        The outcome. ``measured`` is ``False`` only when every attempt ended
+        in 429/503 — that probe never got an answer, and must not be counted
+        as a failure by ``summarise()``.
     """
-    try:
-        resp = client.get(url, headers={"Range": f"bytes=0-{PROBE_BYTES - 1}"})
-    except Exception as exc:
-        return ProbeOutcome(ok=False, cause=f"exception-{type(exc).__name__}", status=None)
-    # 206 Partial Content is the success for a ranged GET; a server ignoring
-    # Range answers 200 with the whole body, which is equally fine.
-    if resp.status_code not in (200, 206):
-        return ProbeOutcome(ok=False, cause=f"http-{resp.status_code}", status=resp.status_code)
-    if not resp.content.startswith(b"%PDF"):
-        return ProbeOutcome(ok=False, cause="not-a-pdf", status=resp.status_code)
-    return ProbeOutcome(ok=True, cause=None, status=resp.status_code)
+    for attempt in range(1, MAX_PROBE_ATTEMPTS + 1):
+        try:
+            resp = client.get(url, headers={"Range": f"bytes=0-{PROBE_BYTES - 1}"})
+        except Exception as exc:
+            return ProbeOutcome(ok=False, cause=f"exception-{type(exc).__name__}", status=None)
+        if resp.status_code in (429, 503):
+            if attempt == MAX_PROBE_ATTEMPTS:
+                return ProbeOutcome(
+                    ok=False,
+                    cause=f"unmeasured-{resp.status_code}",
+                    status=resp.status_code,
+                    measured=False,
+                )
+            retry_after = _retry_after_seconds(resp)
+            fallback = RETRY_BACKOFF_SECONDS[attempt - 1]
+            delay: float = retry_after if retry_after is not None else fallback
+            _sleep_for(delay)
+            continue
+        # 206 Partial Content is the success for a ranged GET; a server
+        # ignoring Range answers 200 with the whole body, which is equally
+        # fine.
+        if resp.status_code not in (200, 206):
+            return ProbeOutcome(ok=False, cause=f"http-{resp.status_code}", status=resp.status_code)
+        if not resp.content.startswith(b"%PDF"):
+            return ProbeOutcome(ok=False, cause="not-a-pdf", status=resp.status_code)
+        return ProbeOutcome(ok=True, cause=None, status=resp.status_code)
+    raise AssertionError("unreachable: the loop above always returns")  # pragma: no cover
 
 
 def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
@@ -183,51 +291,111 @@ def summarise(name: str, outcomes: list[ProbeOutcome] | None) -> list[str]:
             not a population with no failures.
 
     Returns:
-        The lines to print. A population that could not be measured yields a
-        single ``ERROR`` line and no rate, because a zero is exactly what a
-        healthy population looks like.
+        The lines to print.
+
+        A population that could not be sampled at all yields a single
+        ``ERROR`` line and no rate, because a zero is exactly what a healthy
+        population looks like. So does a population where throttling
+        (429/503, even after retries) left more than
+        ``UNMEASURED_SHARE_ERROR_THRESHOLD`` of its attempts unmeasured: the
+        probes that got through are not a random sample of it. Otherwise the
+        failure rate and its Wilson interval are computed over the *measured*
+        probes only, and the unmeasured count — if any — is reported on its
+        own line rather than folded into either number.
     """
     if not outcomes:
         return [f"{name:<12} ERROR — could not sample this population; no rate is reported"]
     n = len(outcomes)
-    failures = [o for o in outcomes if not o.ok]
-    lo, hi = wilson(len(failures), n)
+    unmeasured = [o for o in outcomes if not o.measured]
+    if len(unmeasured) / n > UNMEASURED_SHARE_ERROR_THRESHOLD:
+        return [
+            f"{name:<12} ERROR — {len(unmeasured)}/{n} probes were throttled (429/503) "
+            "even after retries; no rate is reported"
+        ]
+    measured = [o for o in outcomes if o.measured]
+    m = len(measured)
+    failures = [o for o in measured if not o.ok]
+    lo, hi = wilson(len(failures), m)
     lines = [
-        f"{name:<12} {n:>4} probed   "
-        f"{len(failures):>4} failed = {100 * len(failures) / n:.1f}%   "
+        f"{name:<12} {m:>4} probed   "
+        f"{len(failures):>4} failed = {100 * len(failures) / m:.1f}%   "
         f"95% CI [{100 * lo:.1f}%, {100 * hi:.1f}%]"
     ]
+    if unmeasured:
+        lines.append(
+            f"{'':<12}   {len(unmeasured)} unmeasured (429/503 after retries; excluded above)"
+        )
     for cause, count in sorted(Counter(o.cause for o in failures).items()):
         lines.append(f"{'':<12}   {cause:<28} {count:>4}")
     return lines
 
 
-def _sleep() -> None:
-    """Pace requests. Separated so tests can stub it out."""
-    time.sleep(REQUEST_INTERVAL_SECONDS)
+def _make_pacer(
+    interval: float, clock: Callable[[], float] = time.monotonic
+) -> Callable[[str], None]:
+    """Build a function that paces requests to a minimum interval *per host*.
 
+    A global pause (run 1's approach) punishes every host for one host's
+    throttling — 300 requests to Europe PMC at one request per second is what
+    triggered its 429s, and pausing bioRxiv in lockstep with it bought
+    nothing. Tracking the last request time per host instead lets a
+    cooperative host go at its own pace while a throttling one gets slowed
+    down on its own.
 
-def sample_europepmc(client: Any, target: int) -> tuple[list[str], list[str], list[str]] | None:
-    """Collect free PDF render URLs, split by whether the record is in EPMC.
+    Args:
+        interval: Minimum seconds between two requests to the same host.
+        clock: Source of the current time, injected so tests can drive it
+            without a real clock or a real sleep.
 
     Returns:
-        ``(in_epmc_urls, not_in_epmc_urls, dois)``, or ``None`` when the search
-        could not be completed — the caller must then print ``ERROR`` rather
-        than a rate. The split is the spec's stated approximation of "XML
-        unusable", which is the subgroup Tier 1d actually reaches; measuring it
-        exactly would cost one ``fullTextXML`` request per sampled record.
-        ``dois`` are the DOIs of records not already in EPMC (``inEPMC !=
-        "Y"``) seen in this same search — Unpaywall must be sampled from these,
-        never from a separate search, which would destroy the comparability
-        the measurement depends on.
+        A function ``pace(url)`` that sleeps only as long as *url*'s host
+        still needs to have waited *interval* seconds since its last request
+        through this same pacer.
+    """
+    last_request: dict[str, float] = {}
+
+    def pace(url: str) -> None:
+        host = urlsplit(url).netloc
+        now = clock()
+        last = last_request.get(host)
+        if last is None:
+            last_request[host] = now
+            return
+        remaining = interval - (now - last)
+        if remaining > 0:
+            _sleep_for(remaining)
+            last_request[host] = now + remaining
+        else:
+            last_request[host] = now
+
+    return pace
+
+
+def sample_europepmc(
+    client: Any, target: int, pace: Callable[[str], None]
+) -> tuple[list[str], list[str]] | None:
+    """Collect free PDF render URLs and the DOIs the Unpaywall population needs.
+
+    Returns:
+        ``(urls, dois)``, or ``None`` when the search could not be completed —
+        the caller must then print ``ERROR`` rather than a rate. ``dois`` are
+        the DOIs of records not already in Europe PMC (``inEPMC != "Y"``) seen
+        in this same search — Unpaywall must be sampled from these, never from
+        a separate search, which would destroy the comparability the
+        measurement depends on.
+
+        This used to also split ``urls`` by ``inEPMC``, printed as
+        ``europepmc/in`` / ``europepmc/out``, meant to approximate "XML
+        unusable" for the subgroup Tier 1d actually serves. See the module
+        docstring for why that split was removed rather than fixed: it was
+        structurally incapable of ever populating its "out" half.
     """
     query = "(SRC:MED) AND (FIRST_PDATE:[2024-01-01 TO 2025-12-31])"
-    inside: list[str] = []
-    outside: list[str] = []
+    urls: list[str] = []
     dois: list[str] = []
     cursor = "*"
-    while len(inside) + len(outside) < target:
-        _sleep()
+    while len(urls) < target:
+        pace(EUROPE_PMC_SEARCH)
         try:
             resp = client.get(
                 EUROPE_PMC_SEARCH,
@@ -254,14 +422,16 @@ def sample_europepmc(client: Any, target: int) -> tuple[list[str], list[str], li
                 dois.append(hit["doi"])
             url = _extract_free_pdf_url(hit)
             if url and is_probeable(url):
-                (inside if hit.get("inEPMC") == "Y" else outside).append(url)
+                urls.append(url)
         cursor = payload.get("nextCursorMark") or ""
         if not cursor:
             break
-    return inside[:target], outside[:target], dois
+    return urls[:target], dois
 
 
-def sample_unpaywall(client: Any, dois: list[str], email: str, target: int) -> list[str] | None:
+def sample_unpaywall(
+    client: Any, dois: list[str], email: str, target: int, pace: Callable[[str], None]
+) -> list[str] | None:
     """Resolve DOIs to open-access PDF URLs exactly as ``_fetch_unpaywall`` does."""
     urls: list[str] = []
     asked = 0
@@ -269,7 +439,7 @@ def sample_unpaywall(client: Any, dois: list[str], email: str, target: int) -> l
         if len(urls) >= target:
             break
         asked += 1
-        _sleep()
+        pace(UNPAYWALL_BASE)
         try:
             resp = client.get(
                 f"{UNPAYWALL_BASE}/{quote(doi, safe='')}?email={quote(email, safe='')}"
@@ -296,7 +466,9 @@ def sample_unpaywall(client: Any, dois: list[str], email: str, target: int) -> l
     return urls if asked else None
 
 
-def sample_biorxiv(client: Any, target: int, server: str = "biorxiv") -> list[str] | None:
+def sample_biorxiv(
+    client: Any, target: int, pace: Callable[[str], None], server: str = "biorxiv"
+) -> list[str] | None:
     """Collect the PDF URLs ``fetch_biorxiv`` itself builds."""
     urls: list[str] = []
     day = date.today() - timedelta(days=30)
@@ -304,7 +476,7 @@ def sample_biorxiv(client: Any, target: int, server: str = "biorxiv") -> list[st
         if len(urls) >= target:
             break
         records: list[Any] = []
-        _sleep()
+        pace(BIORXIV_BASE_URL)
         try:
             fetch_biorxiv(client, day, on_record=records.append, server=server)
         except Exception as exc:
@@ -319,39 +491,53 @@ def sample_biorxiv(client: Any, target: int, server: str = "biorxiv") -> list[st
     return urls or None
 
 
-def main() -> int:
-    """Probe all three populations and print the table."""
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser. Separated so tests can inspect defaults."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--email", required=True, help="Contact address Unpaywall requires.")
     parser.add_argument("--target", type=int, default=DEFAULT_TARGET, help="URLs per population.")
+    parser.add_argument(
+        "--per-host-interval",
+        type=float,
+        default=PER_HOST_INTERVAL_SECONDS,
+        help="Minimum seconds between two requests to the same host.",
+    )
+    return parser
+
+
+def main() -> int:
+    """Probe all populations and print the table."""
+    parser = _build_arg_parser()
     args = parser.parse_args()
 
     headers = {
         "User-Agent": f"bmlib-sampler/{__version__} (+https://github.com/hherb/bmlib; {args.email})"
     }
+    pace = _make_pacer(args.per_host_interval)
     with httpx.Client(timeout=45.0, headers=headers, follow_redirects=True) as client:
-        epmc = sample_europepmc(client, args.target)
+        epmc = sample_europepmc(client, args.target, pace)
         if epmc is not None:
-            epmc_in, epmc_out, dois = epmc
+            epmc_urls, dois = epmc
         else:
-            epmc_in, epmc_out, dois = None, None, []
+            epmc_urls, dois = None, []
         unpaywall = (
-            sample_unpaywall(client, dois, args.email, args.target) if epmc is not None else None
+            sample_unpaywall(client, dois, args.email, args.target, pace)
+            if epmc is not None
+            else None
         )
-        biorxiv = sample_biorxiv(client, args.target)
+        biorxiv = sample_biorxiv(client, args.target, pace)
 
         def run(urls: list[str] | None) -> list[ProbeOutcome] | None:
             if urls is None:
                 return None
             outcomes: list[ProbeOutcome] = []
             for url in urls:
-                _sleep()
+                pace(url)
                 outcomes.append(probe(client, url))
             return outcomes
 
         populations = [
-            ("europepmc/in", run(epmc_in)),
-            ("europepmc/out", run(epmc_out)),
+            ("europepmc", run(epmc_urls)),
             ("unpaywall", run(unpaywall)),
             ("biorxiv", run(biorxiv)),
         ]
