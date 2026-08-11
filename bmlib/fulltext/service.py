@@ -1314,14 +1314,14 @@ class FullTextService:
 
         Europe PMC and bioRxiv had **zero** server-side failures: each
         population's single failure was a transport exception, which takes
-        the one-shot-per-exception-type path in :meth:`_download_and_cache_pdf`
-        regardless of this rule. Every one of the 18 server-side failures
-        counted above is Unpaywall's. 14 of those 28 were landing pages
-        rather than PDFs (the magic-byte rejection, ``not-a-pdf``) rather than
-        an HTTP failure — which is why the key is per ``(origin, cause)``
-        rather than per origin: the rate is a property of the population
-        Unpaywall draws from, not a property of bmlib. Re-run the sampler
-        before revisiting this.
+        the one-shot-per-exception-type path in
+        :meth:`_report_pdf_download_exception` regardless of this rule. Every
+        one of the 18 server-side failures counted above is Unpaywall's, and
+        14 of those 18 were landing pages rather than PDFs (the magic-byte
+        rejection, ``not-a-pdf``) rather than an HTTP failure — which is why
+        the key is per ``(origin, cause)`` rather than per origin: the rate is
+        a property of the population Unpaywall draws from, not a property of
+        bmlib. Re-run the sampler before revisiting this.
 
         The message says the report is one-shot; it does **not** say the
         failure is common. That distinction is load-bearing after issue #79.
@@ -1574,7 +1574,9 @@ class FullTextService:
                 than any other helper, and a future call site that omitted it
                 would fail exactly the way issue #67 failed — silently, with
                 the summary reading as an ordinary paywalled paper. A
-                throwaway ``_TierFailures()`` costs a test one argument.
+                throwaway :meth:`_TierFailures.unreported` costs a test one
+                argument. ``on_bug`` is mandatory on the same reasoning, one
+                level in.
 
         Returns:
             The PMC ID, or ``None`` if the converter has no live record for the

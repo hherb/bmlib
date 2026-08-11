@@ -9,7 +9,7 @@ interpreter each. Since the release, `fix/68-72-79-pdf-download-reporting` has
 closed #79, #68 and #72 (unreleased) — Tier 1d now takes the free PDFs Europe
 PMC actually labels `"Open access"`, and a failed PDF download or a swallowed
 bmlib bug is reported instead of hiding behind a tier that still works. Three
-open issues: **#56**, **#73**, **#78**. 1826 tests + 58 skipped (1882 + 2
+open issues: **#56**, **#73**, **#78**. 1893 tests + 58 skipped (1949 + 2
 with a PostgreSQL DSN), ruff clean.
 **Phase 3 of the bmlibrarian port is next, and each of its rows needs a design
 conversation before any porting** — see "Next up"._
@@ -39,7 +39,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed four releases. Widening it is a downstream change, not a bmlib
   one.
-- **1826 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1882 + 2
+- **1893 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1949 + 2
   with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
   PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which

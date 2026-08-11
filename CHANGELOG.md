@@ -47,8 +47,13 @@ All notable changes to bmlib are documented here. The format is based on
   disk) is separate and needed no measurement: it fails every article once
   it starts failing, so it is one-shot per `(tier, exception type)`
   regardless of the rate rule. `_save_pdf_to_cache` now returns
-  `tuple[str | None, str]` so a failed cache *write* is reported as a write
-  failure rather than blamed on the publisher's bytes.
+  `tuple[str | None, Literal["saved", "write-failed", "not-a-pdf"]]` so a
+  failed cache *write* is reported as a write failure rather than blamed on
+  the publisher's bytes. `FullTextCache.save_pdf`'s own magic-byte rejection
+  drops to `DEBUG` with it: at `WARNING` it emitted a line per article for
+  the dominant measured failure — Unpaywall landing pages, 14 of 28 probes —
+  behind a message promising the report was one-shot, defeating the one-shot
+  for the very cause the 5% rule selected it for.
 
   Both keys are built from a bounded `origin` — `"europepmc_pdf"`,
   `"unpaywall"` or `"known_source"`, written out at each of the three call
@@ -81,6 +86,65 @@ All notable changes to bmlib are documented here. The format is based on
   `WARNING`, once per `(service, exception type)` — a defect that hits one
   tier hits it for every article, so per-article would be unreadable exactly
   when it mattered, but a second, different defect still gets its own line.
+  `on_bug` is a mandatory field, not an optional one: an unwired callback is
+  not a quieter channel but total silence, since `describe()` is read only at
+  the exit this case never reaches. `_TierFailures.unreported()` is the
+  deliberate opt-out for direct helper calls and tests.
+
+- **A malformed `fullTextUrlList` is skipped, not reported as a bmlib defect.**
+  `_extract_free_pdf_url` iterated `.get("fullTextUrl", [])`, which is `None`
+  rather than `[]` for a key present with a JSON null, and the resulting
+  `TypeError` is a `_BUG_TYPES` member — so Europe PMC's malformed bytes were
+  reported as a defect in bmlib *and* spent the one-shot `bug:TypeError` slot
+  a later genuine defect needs. `_entry_is_free` guards its own two reads the
+  same way; this is the container one level up.
+
+- **A cache-write failure is reported per cause, not per site.** The key was
+  the bare literal `"cache-write"` while `_warn_once`'s own documented rule is
+  to name the cause. Both writers catch bare `Exception` and funnel here, so a
+  transient `OSError` early in a run permanently silenced a genuine bmlib
+  `TypeError` inside `save_pdf` — held at `DEBUG`, which is the failure mode
+  #72 exists to fix — and, in the other order, presented a type error to the
+  operator as a full disk.
+
+- **An unquarantinable cache entry is reported** — the last swallow-to-`DEBUG`
+  of a bmlib defect in `fulltext/service.py`. The consequence is permanent:
+  the corrupt entry stays in the lookup path, so the per-article "could not
+  read the cached full text" warning repeats every run for that article for
+  ever, and an undecodable HTML entry keeps hiding a good PDF behind it. The
+  operator saw the symptom on every run and never the cause.
+
+- **A failing text extraction is no longer reported as a failed download.**
+  `_attach_pdf_text` ran under `_download_and_cache_pdf`'s handler, after
+  `result.file_path` was set, so an exception escaping it produced "there is
+  no file and no extracted text" about an article whose file was cached and on
+  the result — and a defect-shaped exception was filed as a transport fault.
+  It now reports as the defect it is and keeps the cached PDF, since the
+  download did succeed.
+
+### Added
+
+- **`scripts/sample_free_pdf_urls.py` now measures the access-label
+  distribution** it was already cited as the evidence for. It read neither
+  `availability` nor `availabilityCode`, so a maintainer following the
+  instruction to run it before changing `_FREE_PDF_AVAILABILITY_CODES` got a
+  failure-rate table and no evidence either way. It counts every
+  `documentStyle=pdf` entry by `(availability, availabilityCode)` and marks
+  each row taken/SKIPPED — counted **before** the allow-list filters, since a
+  distribution counted after it could only ever confirm it, and #79 was
+  precisely a value that never appeared in what bmlib accepted.
+
+  Three further corrections to the instrument: a 429/503 in the Unpaywall
+  *resolution* phase is now unmeasured rather than invisible (that is where
+  that API's limiter bites, and a throttled resolution phase printed as a
+  confident rate over whatever got through first); `Retry-After` is clamped
+  at a maximum as well as at zero, since an honoured `86400` is a run that
+  prints nothing, gets killed, and loses every population — the same loss the
+  zero clamp was reasoned about preventing; and `ProbeOutcome.ok` becomes a
+  property of `cause`, because `ok=True` beside `cause="http-403"`
+  constructed happily and would silently lower the rate that sets a
+  production log level. bioRxiv now honours `--target`, and `main()` exits
+  non-zero when any population printed `ERROR`.
 
 ## [0.9.0] — 2026-08-10
 
