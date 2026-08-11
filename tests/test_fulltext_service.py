@@ -2998,3 +2998,131 @@ class TestWarnOnce:
             one._warn_once("k", "the fault")
             two._warn_once("k", "the fault")
         assert caplog.text.count("the fault") == 2
+
+
+class TestASwallowedBugDoesNotStayAtDebug:
+    """Issue #72 — ``describe()`` is consulted at one exit: total exhaustion.
+
+    A bug that every PMC tier hits, papered over by one tier that still works,
+    was reported nowhere. The scenario: an ``AttributeError`` from every PMC
+    tier — the shape a ``JATSArticle`` API change takes — with Unpaywall
+    healthy. Every article in a corpus silently drops from structured JATS to a
+    bare ``pdf_url``, and the library reports success.
+    """
+
+    @staticmethod
+    def _unpaywall_ok() -> MagicMock:
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"best_oa_location": {"url_for_pdf": "https://e/a.pdf"}}
+        return resp
+
+    def _run(
+        self, service: FullTextService, exc: BaseException, caplog: pytest.LogCaptureFixture
+    ) -> object:
+        """Europe PMC's search raises *exc*; Unpaywall then succeeds."""
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(
+                service,
+                "_http_get",
+                side_effect=[exc, _idconv_miss(), self._unpaywall_ok()],
+            ),
+        ):
+            return service.fetch_fulltext(doi="10.1/test")
+
+    def test_an_attribute_error_is_reported_even_though_a_later_tier_succeeds(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The issue verbatim."""
+        service = FullTextService(email="test@example.com", convert_pdfs=False)
+        result = self._run(service, AttributeError("no attribute 'has_body'"), caplog)
+
+        assert result.source == "unpaywall"  # the run still "succeeds"
+        assert "AttributeError" in caplog.text
+        assert "defect" in caplog.text
+
+    def test_a_type_error_is_reported(self, caplog: pytest.LogCaptureFixture) -> None:
+        service = FullTextService(email="test@example.com", convert_pdfs=False)
+        self._run(service, TypeError("str expected"), caplog)
+        assert "TypeError" in caplog.text
+
+    def test_a_network_error_is_not_reported_as_a_defect(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The control. An unreachable host is not a bmlib bug, and #67's
+        exhaustion report already covers it."""
+        service = FullTextService(email="test@example.com", convert_pdfs=False)
+        self._run(service, OSError("network is down"), caplog)
+        assert "defect" not in caplog.text
+
+    def test_a_malformed_json_body_is_not_reported_as_a_defect(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """``json.JSONDecodeError`` **is** a ``ValueError``.
+
+        This is why ``ValueError`` can never be a member of ``_BUG_TYPES``:
+        every ``resp.json()`` on a malformed body raises one, and they are
+        ordinary remote-data failures.
+        """
+        import json
+
+        service = FullTextService(email="test@example.com", convert_pdfs=False)
+        self._run(service, json.JSONDecodeError("bad", "doc", 0), caplog)
+        assert "defect" not in caplog.text
+
+    def test_malformed_xml_is_not_reported_as_a_defect(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """``ET.ParseError`` **is** a ``SyntaxError``.
+
+        The companion exclusion, and the less obvious of the two: "a
+        SyntaxError is always a bug" is intuitive and exactly backwards here.
+        """
+        import xml.etree.ElementTree as ET
+
+        service = FullTextService(email="test@example.com", convert_pdfs=False)
+        self._run(service, ET.ParseError("mismatched tag"), caplog)
+        assert "defect" not in caplog.text
+
+    def test_two_different_defect_types_are_both_reported(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Per type, not per service: the second must not hide behind the first."""
+        service = FullTextService(email="test@example.com", convert_pdfs=False)
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(
+                service,
+                "_http_get",
+                side_effect=[
+                    AttributeError("first"),
+                    _idconv_miss(),
+                    TypeError("second"),
+                ],
+            ),
+        ):
+            service.fetch_fulltext(doi="10.1/test")
+
+        assert "AttributeError" in caplog.text
+        assert "TypeError" in caplog.text
+
+    def test_the_same_defect_type_is_reported_once_per_service(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A defect that hits every article must not produce a line per article."""
+        service = FullTextService(email="test@example.com", convert_pdfs=False)
+        for _ in range(3):
+            with (
+                caplog.at_level("WARNING"),
+                patch.object(service, "_http_get", side_effect=AttributeError("boom")),
+            ):
+                service.fetch_fulltext(doi="10.1/test")
+
+        assert caplog.text.count("which bmlib does not raise deliberately") == 1
+
+    def test_a_bare_tier_failures_record_still_works(self) -> None:
+        """``on_bug`` defaults to ``None``: existing direct construction is safe."""
+        failures = _TierFailures()
+        failures.record(TypeError("boom"))
+        assert failures.faults == ["TypeError"]

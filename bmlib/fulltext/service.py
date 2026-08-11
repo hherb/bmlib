@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -94,6 +95,40 @@ def _plural(n: int, noun: str) -> str:
     return f"1 {noun}" if n == 1 else f"{n} {noun}s"
 
 
+# Exception types that can only mean a bmlib defect, never a remote-data or
+# environment failure. `except Exception` at the tier level is right for
+# transport errors; it is wrong to hold a TypeError at DEBUG under any
+# circumstances (issue #72).
+#
+# A deny-list rather than an allow-list because the legitimate failures are
+# varied — FullTextError, httpx.HTTPError, json.JSONDecodeError, ET.ParseError,
+# OSError — while the set that always means a defect is small and stable.
+# NameError carries UnboundLocalError in by inheritance.
+#
+# What is *excluded* is the load-bearing part, and two of them are counter-
+# intuitive, so they are named rather than left to be rediscovered:
+#
+#   ValueError    json.JSONDecodeError IS a ValueError — every resp.json() on
+#                 a malformed body raises one.
+#   SyntaxError   xml.etree.ElementTree.ParseError IS a SyntaxError — malformed
+#                 remote XML raises one.
+#   RuntimeError  RecursionError is one, and Path.home() raises one.
+#   OSError       environment, not defect.
+#
+# AttributeError is knowingly imperfect in the other direction: it is reachable
+# from remote data, since `data.get("resultList", {}).get("result", [])` raises
+# it when Europe PMC returns a non-dict there. It stays, because that is a bmlib
+# defect too — a missing shape check — and the message describes what happened
+# rather than accusing the article.
+_BUG_TYPES: tuple[type[BaseException], ...] = (
+    TypeError,
+    AttributeError,
+    NameError,
+    KeyError,
+    IndexError,
+)
+
+
 @dataclass
 class _TierFailures:
     """Why one :meth:`FullTextService.fetch_fulltext` call came up empty.
@@ -123,13 +158,22 @@ class _TierFailures:
 
     faults: list[str] = field(default_factory=list)
     absences: int = 0
+    # Called at the moment a defect-shaped exception is swallowed, not at an
+    # exit. Every alternative reads this record at some exit, which is exactly
+    # issue #72: `describe()` is already consulted at one exit, and that is why
+    # the bug was invisible. Reporting at the swallow is the only shape a new
+    # early return cannot silently re-break. Optional so that a bare
+    # `_TierFailures()` — which the tests construct — still works.
+    on_bug: Callable[[BaseException], None] | None = None
 
     def record(self, exc: BaseException) -> None:
         """Note one swallowed exception, filed by what it means."""
         if isinstance(exc, FullTextUnavailableError):
             self.absences += 1
-        else:
-            self.faults.append(type(exc).__name__)
+            return
+        self.faults.append(type(exc).__name__)
+        if self.on_bug is not None and isinstance(exc, _BUG_TYPES):
+            self.on_bug(exc)
 
     def note_absence(self) -> None:
         """Note a source that reported an absence by returning, not raising."""
@@ -505,7 +549,7 @@ class FullTextService:
 
         # Every tier below swallows its own exception so the next one still
         # runs; this is what remembers that they did.
-        failures = _TierFailures()
+        failures = _TierFailures(on_bug=self._warn_swallowed_bug)
 
         # Tier 0: Try fetcher-provided sources
         if fulltext_sources:
@@ -889,6 +933,28 @@ class FullTextService:
             "Could not write to the full-text cache (%s); retrieval still "
             "works, but nothing is being cached, so every run re-fetches.",
             exc,
+        )
+
+    def _warn_swallowed_bug(self, exc: BaseException) -> None:
+        """Report a tier failure that can only be a bmlib defect.
+
+        Once per exception type per service: a defect that hits one tier hits
+        it for every article, so a line per article would be unreadable at
+        exactly the moment it mattered — but a *second*, different defect must
+        still be reported rather than hidden by the first.
+        """
+        name = type(exc).__name__
+        self._warn_once(
+            f"bug:{name}",
+            "A full-text tier failed with %s (%s), which bmlib does not raise "
+            "deliberately — this is a defect, possibly provoked by an "
+            "unexpected API response. Full text may be silently degraded for "
+            "every article in this run while later tiers keep succeeding. Run "
+            "with DEBUG logging for the traceback and please report it; "
+            "further %s failures will not be repeated.",
+            name,
+            exc,
+            name,
         )
 
     def _warn_once(self, key: str, msg: str, *args: object) -> None:
