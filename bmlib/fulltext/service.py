@@ -29,10 +29,11 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import quote
 
 if TYPE_CHECKING:  # Annotation only; the real import is guarded in _require_httpx.
@@ -54,6 +55,21 @@ logger = logging.getLogger(__name__)
 EUROPE_PMC_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 UNPAYWALL_BASE = "https://api.unpaywall.org/v2"
 DOI_BASE = "https://doi.org"
+
+# Which tier is downloading a PDF. A Literal, not a str, because the value set
+# being bounded is a correctness property and not a matter of taste: it keys
+# the one-shot download-failure warnings, and `_warn_once` is only one-shot if
+# its keyspace cannot grow with the corpus. `result.source` — the obvious
+# wrong answer, in scope at all three call sites — is remote-data-derived at
+# Tier 0, so a checker rejecting it here is worth more than the paragraph that
+# used to ask a reader not to write it. See `_download_and_cache_pdf`.
+_PdfOrigin = Literal["europepmc_pdf", "unpaywall", "known_source"]
+
+# What `_save_pdf_to_cache` did with the bytes. The same reasoning as
+# `ContentKind` in bmlib.fulltext.models: a bounded set of strings that a
+# caller branches on gets a Literal, so a typo on either side is a type error
+# rather than a branch that silently never matches.
+_PdfSaveOutcome = Literal["saved", "write-failed", "not-a-pdf"]
 PUBMED_BASE = "https://pubmed.ncbi.nlm.nih.gov"
 NCBI_IDCONV_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/"
 EUTILS_EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -94,6 +110,40 @@ def _plural(n: int, noun: str) -> str:
     return f"1 {noun}" if n == 1 else f"{n} {noun}s"
 
 
+# Exception types that can only mean a bmlib defect, never a remote-data or
+# environment failure. `except Exception` at the tier level is right for
+# transport errors; it is wrong to hold a TypeError at DEBUG under any
+# circumstances (issue #72).
+#
+# A deny-list rather than an allow-list because the legitimate failures are
+# varied — FullTextError, httpx.HTTPError, json.JSONDecodeError, ET.ParseError,
+# OSError — while the set that always means a defect is small and stable.
+# NameError carries UnboundLocalError in by inheritance.
+#
+# What is *excluded* is the load-bearing part, and two of them are counter-
+# intuitive, so they are named rather than left to be rediscovered:
+#
+#   ValueError    json.JSONDecodeError IS a ValueError — every resp.json() on
+#                 a malformed body raises one.
+#   SyntaxError   xml.etree.ElementTree.ParseError IS a SyntaxError — malformed
+#                 remote XML raises one.
+#   RuntimeError  RecursionError is one, and Path.home() raises one.
+#   OSError       environment, not defect.
+#
+# AttributeError is knowingly imperfect in the other direction: it is reachable
+# from remote data, since `data.get("resultList", {}).get("result", [])` raises
+# it when Europe PMC returns a non-dict there. It stays, because that is a bmlib
+# defect too — a missing shape check — and the message describes what happened
+# rather than accusing the article.
+_BUG_TYPES: tuple[type[BaseException], ...] = (
+    TypeError,
+    AttributeError,
+    NameError,
+    KeyError,
+    IndexError,
+)
+
+
 @dataclass
 class _TierFailures:
     """Why one :meth:`FullTextService.fetch_fulltext` call came up empty.
@@ -123,13 +173,44 @@ class _TierFailures:
 
     faults: list[str] = field(default_factory=list)
     absences: int = 0
+    # Called at the moment a defect-shaped exception is swallowed, not at an
+    # exit. Every alternative reads this record at some exit, which is exactly
+    # issue #72: `describe()` is already consulted at one exit, and that is why
+    # the bug was invisible. Reporting at the swallow is the only shape a new
+    # early return cannot silently re-break.
+    #
+    # Mandatory, like `_resolve_pmc_id_via_idconv`'s `failures` and for the
+    # same reason: an unwired callback is not a quieter channel but total
+    # silence, since `describe()` is read only on total exhaustion and #72's
+    # whole case is a defect masked by a later tier succeeding. Defaulting it
+    # to None would have made the one wiring that matters optional to save
+    # tests an argument — which is how a wiring hole survives. `unreported()`
+    # is the deliberate opt-out.
+    #
+    # It must not raise: `record()` runs inside a tier's `except` block, so an
+    # exception here propagates out and kills the chain — strictly worse than
+    # the silence #72 fixed. kw_only so a mandatory field may follow the two
+    # defaulted ones; compare/repr off because a behavioural collaborator is
+    # not part of what makes two records equal.
+    on_bug: Callable[[BaseException], None] = field(kw_only=True, compare=False, repr=False)
+
+    @classmethod
+    def unreported(cls) -> _TierFailures:
+        """A record nobody is listening to — direct helper calls and tests.
+
+        Spelled out so an unwired callback reads as a decision at the call
+        site rather than as an omission.
+        """
+        return cls(on_bug=lambda exc: None)
 
     def record(self, exc: BaseException) -> None:
         """Note one swallowed exception, filed by what it means."""
         if isinstance(exc, FullTextUnavailableError):
             self.absences += 1
-        else:
-            self.faults.append(type(exc).__name__)
+            return
+        self.faults.append(type(exc).__name__)
+        if isinstance(exc, _BUG_TYPES):
+            self.on_bug(exc)
 
     def note_absence(self) -> None:
         """Note a source that reported an absence by returning, not raising."""
@@ -183,24 +264,121 @@ def _require_httpx() -> ModuleType:
     return httpx
 
 
-def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
-    """Extract free PDF URL from Europe PMC fullTextUrlList.
+# Europe PMC labels a fullTextUrl entry's access twice over: a display string
+# (`availability`) and a short controlled code (`availabilityCode`). Both are
+# read — the code decides when present, the string is the fallback for an entry
+# carrying none.
+#
+# An allow-list, never a deny-list on "Subscription required": an unknown future
+# value must under-credit, costing one retrieval, rather than send bmlib to
+# download a paywalled PDF. Transparency's _DEPOSITION_DATABANK_LEVELS is the
+# same decision for the same reason.
+#
+# Measured over 600 recent MEDLINE records — all 1,263 fullTextUrl entries,
+# of which 326 were documentStyle=pdf (scripts/sample_free_pdf_urls.py):
+#
+#     availability             code   pdf entries   share
+#     Open access              OA             312   95.7%
+#     Free                     F               14    4.3%
+#     Subscription required    S                0      --
+#
+# There was no fourth value and every entry carried a code. Accepting only
+# "Free" — which is what this did until issue #79 — therefore discarded 95.7%
+# of the free PDFs Tier 1d exists to find, silently: both accepted labels are
+# the identical https://europepmc.org/articles/PMC…?pdf=render shape on the
+# identical host, and there is no log line for "a PDF entry was seen and not
+# taken".
+_FREE_PDF_AVAILABILITY_CODES = frozenset({"OA", "F"})
+_FREE_PDF_AVAILABILITY_LABELS = frozenset({"Open access", "Free"})
 
-    The Europe PMC search API includes ``fullTextUrlList`` with entries
-    for free PDFs (``?pdf=render`` URLs) even when JATS XML is unavailable.
+
+def _entry_is_free(entry: dict[str, object]) -> bool:
+    """Whether a ``fullTextUrl`` entry is one bmlib may download.
+
+    Args:
+        entry: One entry from Europe PMC's ``fullTextUrlList``.
+
+    Returns:
+        ``True`` when the entry's access code is one bmlib accepts, or — for an
+        entry carrying no code — its display string is. A code that is present
+        but unrecognised returns ``False`` **without** consulting the string:
+        falling back there would let a future code bmlib has never evaluated
+        through on the strength of a label, which is the opposite of the
+        under-credit rule the allow-list exists to keep.
+
+        Both values are type-checked before they are compared, and a code that
+        is not a string is treated as no code at all rather than as an
+        unrecognised one — it carries no access claim to under-credit. ``x in
+        frozenset`` *hashes* ``x``, so an ``availability`` arriving as a JSON
+        object or array — a shape Europe PMC does not document itself out of —
+        would raise ``TypeError: unhashable type``. That is in
+        :data:`_BUG_TYPES`, so a malformed remote payload would be reported as
+        a bmlib defect (issue #72's warning) rather than as an entry to skip.
+    """
+    code = entry.get("availabilityCode")
+    if isinstance(code, str) and code:
+        return code in _FREE_PDF_AVAILABILITY_CODES
+    availability = entry.get("availability")
+    return isinstance(availability, str) and availability in _FREE_PDF_AVAILABILITY_LABELS
+
+
+def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
+    """Extract a free PDF URL from Europe PMC's ``fullTextUrlList``.
+
+    The search API includes ``fullTextUrlList`` with ``?pdf=render`` entries
+    for PDFs it serves itself, even when JATS XML is unavailable — which is
+    exactly when Tier 1d needs one.
+
+    Both container shapes are checked, for the reason :func:`_entry_is_free`
+    checks its two values: ``.get(k, [])`` returns ``None``, not ``[]``, for a
+    key present with a JSON null, and iterating that raises ``TypeError`` —
+    a :data:`_BUG_TYPES` member. A malformed payload would then be reported
+    as a bmlib defect *and* spend the one-shot ``bug:TypeError`` slot, so a
+    later genuine ``TypeError`` in the same run would go unreported.
     """
     url_list = result.get("fullTextUrlList")
     if not isinstance(url_list, dict):
         return None
-    for entry in url_list.get("fullTextUrl", []):
+    entries = url_list.get("fullTextUrl")
+    if not isinstance(entries, list):
+        return None
+    for entry in entries:
         if (
             isinstance(entry, dict)
             and entry.get("documentStyle") == "pdf"
-            and entry.get("availability") == "Free"
+            and _entry_is_free(entry)
         ):
             url = entry.get("url")
             if isinstance(url, str):
                 return url
+    return None
+
+
+def _pick_oa_pdf_url(data: Any) -> str | None:
+    """Pick an Unpaywall record's best PDF URL, or ``None`` if it has none.
+
+    A module-level function rather than part of :meth:`FullTextService._fetch_unpaywall`
+    so ``scripts/sample_free_pdf_urls.py`` can measure the population bmlib
+    actually downloads — the same reason that sampler calls ``fetch_biorxiv``
+    rather than re-spelling its URL template. Measured against a hand-copy, the
+    number the log level was set from would drift from the code it describes
+    the moment either changed.
+
+    Args:
+        data: A decoded Unpaywall record.
+
+    Returns:
+        ``best_oa_location``'s PDF URL, else the first of ``oa_locations`` to
+        offer one, else ``None``.
+    """
+    best = data.get("best_oa_location") or {}
+    pdf_url = best.get("url_for_pdf") or best.get("url")
+    if pdf_url:
+        return pdf_url
+    for loc in data.get("oa_locations") or []:
+        pdf_url = loc.get("url_for_pdf") or loc.get("url")
+        if pdf_url:
+            return pdf_url
     return None
 
 
@@ -357,11 +535,12 @@ class FullTextService:
         self.cache: FullTextCache | None = cache if cache is not None else _default_cache()
         self.convert_pdfs = convert_pdfs
         self.ncbi_api_key = ncbi_api_key
-        # Guards the one-off warning in _attach_pdf_text when no PDF backend
-        # can be constructed: worth saying once, not once per article.
-        self._pdf_backend_warned = False
-        # Same, for a cache directory that cannot be written to.
-        self._cache_write_warned = False
+        # Faults that are a property of the environment or of bmlib itself
+        # rather than of one article: warned once each, keyed by cause, so a
+        # second distinct fault is still reported instead of hiding behind the
+        # first. Per service, not process-wide — a caller that builds a fresh
+        # service has a fresh environment to learn about.
+        self._warned: set[str] = set()
 
     def _http_get(self, url: str, **kwargs: object) -> httpx.Response:
         """HTTP GET with timeout. Separated for testability."""
@@ -455,7 +634,7 @@ class FullTextService:
 
         # Every tier below swallows its own exception so the next one still
         # runs; this is what remembers that they did.
-        failures = _TierFailures()
+        failures = _TierFailures(on_bug=self._warn_swallowed_bug)
 
         # Tier 0: Try fetcher-provided sources
         if fulltext_sources:
@@ -585,7 +764,7 @@ class FullTextService:
         if pdf_render_url:
             logger.info("PDF available from Europe PMC render: %s", pdf_render_url)
             result = FullTextResult(source="europepmc_pdf", pdf_url=pdf_render_url)
-            self._download_and_cache_pdf(pdf_render_url, cache_id, result)
+            self._download_and_cache_pdf(pdf_render_url, cache_id, result, origin="europepmc_pdf")
             return self._with_abstract_fallback(result, abstract_only)
 
         # Tier 2: Unpaywall
@@ -594,7 +773,7 @@ class FullTextService:
                 pdf_url = self._fetch_unpaywall(doi)
                 logger.info("PDF URL found via Unpaywall for DOI %s", doi)
                 result = FullTextResult(source="unpaywall", pdf_url=pdf_url)
-                self._download_and_cache_pdf(pdf_url, cache_id, result)
+                self._download_and_cache_pdf(pdf_url, cache_id, result, origin="unpaywall")
                 return self._with_abstract_fallback(result, abstract_only)
             except Exception as exc:
                 logger.debug("Unpaywall failed for DOI %s", doi, exc_info=True)
@@ -745,7 +924,7 @@ class FullTextService:
                 elif entry.format == "pdf":
                     logger.info("PDF available from %s", entry.source)
                     result = FullTextResult(source=entry.source, pdf_url=entry.url)
-                    self._download_and_cache_pdf(entry.url, cache_id, result)
+                    self._download_and_cache_pdf(entry.url, cache_id, result, origin="known_source")
                     return result, abstract_only
                 elif entry.format == "html":
                     logger.info("HTML source from %s", entry.source)
@@ -809,6 +988,14 @@ class FullTextService:
         method, or an unforeseen fault inside one that does, is logged and
         dropped rather than allowed to escape.
 
+        Reported once per exception type, not held at DEBUG. The consequence
+        is not cosmetic and it is permanent: the corrupt entry stays in the
+        lookup path, so an undecodable HTML entry keeps hiding a good PDF
+        behind it and the per-article "could not read the cached full text"
+        warning repeats on every run for that article, for ever. Left at DEBUG
+        the operator sees that symptom every run and never its cause — the
+        shape of issue #72, and the last instance of it in this module.
+
         Args:
             cache: The cache to quarantine in, known non-``None``. A parameter
                 for the same reason as :meth:`_check_cache`'s.
@@ -816,7 +1003,17 @@ class FullTextService:
         """
         try:
             cache.quarantine(cache_id)
-        except Exception:
+        except Exception as exc:
+            self._warn_once(
+                f"quarantine:{type(exc).__name__}",
+                "Could not move an unreadable cache entry aside (%s: %s). It stays in "
+                "the lookup path, so it will be re-read and re-rejected on every run "
+                "for this article, and it may be hiding a usable entry behind it. "
+                "Further %s failures will not be repeated.",
+                type(exc).__name__,
+                exc,
+                type(exc).__name__,
+            )
             logger.debug("Could not quarantine the cache entry for %s", cache_id, exc_info=True)
 
     def _warn_cache_write_failed(self, exc: BaseException) -> None:
@@ -833,14 +1030,59 @@ class FullTextService:
         corpus served mostly by PDFs never writes HTML, so a warning that
         only the HTML path could emit stayed silent for exactly the callers
         it was meant to reach.
+
+        Keyed by exception type, not by the site alone — :meth:`_warn_once`'s
+        own rule, and this is the module's widest catch. Both writers catch
+        bare ``Exception``, so a key of ``"cache-write"`` let a transient
+        ``OSError`` early in a run permanently silence a genuine bmlib
+        ``TypeError`` inside ``save_pdf``: held at DEBUG, which is the failure
+        mode issue #72 exists to fix. The type is named in the message for the
+        same reason ``_default_cache`` names it — so a defect reads as itself
+        rather than passing for a full disk.
         """
-        if not self._cache_write_warned:
-            logger.warning(
-                "Could not write to the full-text cache (%s); retrieval still "
-                "works, but nothing is being cached, so every run re-fetches.",
-                exc,
-            )
-            self._cache_write_warned = True
+        self._warn_once(
+            f"cache-write:{type(exc).__name__}",
+            "Could not write to the full-text cache (%s: %s); retrieval still "
+            "works, but nothing is being cached, so every run re-fetches.",
+            type(exc).__name__,
+            exc,
+        )
+
+    def _warn_swallowed_bug(self, exc: BaseException) -> None:
+        """Report a tier failure that can only be a bmlib defect.
+
+        Once per exception type per service: a defect that hits one tier hits
+        it for every article, so a line per article would be unreadable at
+        exactly the moment it mattered — but a *second*, different defect must
+        still be reported rather than hidden by the first.
+        """
+        name = type(exc).__name__
+        self._warn_once(
+            f"bug:{name}",
+            "A full-text tier failed with %s (%s), which bmlib does not raise "
+            "deliberately — this is a defect, possibly provoked by an "
+            "unexpected API response. Full text may be silently degraded for "
+            "every article in this run while later tiers keep succeeding. Run "
+            "with DEBUG logging for the traceback and please report it; "
+            "further %s failures will not be repeated.",
+            name,
+            exc,
+            name,
+        )
+
+    def _warn_once(self, key: str, msg: str, *args: object) -> None:
+        """Emit a WARNING the first time *key* is seen on this service.
+
+        Args:
+            key: What is being reported. Include the *cause* — not just the
+                site — so two different faults at one site are both reported.
+            msg: A ``%``-style format string, interpolated lazily by logging.
+            args: Its arguments.
+        """
+        if key in self._warned:
+            return
+        self._warned.add(key)
+        logger.warning(msg, *args)
 
     def _cache_html(self, html: str, cache_id: str | None) -> None:
         """Save HTML to disk cache if caching is enabled.
@@ -869,6 +1111,8 @@ class FullTextService:
         pdf_url: str,
         cache_id: str | None,
         result: FullTextResult,
+        *,
+        origin: _PdfOrigin,
     ) -> None:
         """Download a PDF and save it to the disk cache.
 
@@ -881,6 +1125,29 @@ class FullTextService:
         Returns without downloading at all when there is nowhere to put the
         file: no cache (#75) or no ``identifier`` to key one by. The URL stays
         on the result in both cases.
+
+        Args:
+            pdf_url: The PDF to fetch.
+            cache_id: Sanitised cache key, or ``None`` to skip the download.
+            result: The tier's result, modified in place.
+            origin: Which tier is downloading — see :data:`_PdfOrigin`. Used,
+                and *only* used, to key the one-shot download-failure warnings.
+
+                It exists because ``result.source`` cannot key them.
+                :meth:`_warn_once`'s suppression is only one-shot if its
+                keyspace is bounded, and Tier 0's ``result.source`` comes from
+                a fetcher-supplied :class:`FullTextSourceEntry`: OpenAlex
+                derives it from the location's **venue display name**
+                (``bmlib/publications/fetchers/openalex.py``), so it is one
+                distinct, remote-data-derived string per journal or
+                repository. Keyed on that, a bulk sync warns once *per
+                article*, each one claiming the report is one-shot. Tier 0's
+                PDF locations are drawn from the same arbitrary-repository
+                population Unpaywall draws from — the one measured worst, at
+                64.3% — though the single Tier 0 population actually sampled
+                (bioRxiv, serving its own host) measured 0.7%. The source
+                still appears in the message text, so the first report names
+                the specific venue either way.
         """
         if self.cache is None:
             # Reachable only when the default cache could not be created (#75).
@@ -912,23 +1179,173 @@ class FullTextService:
         try:
             resp = self._http_get(pdf_url)
             if resp.status_code != 200:
-                logger.debug("PDF download HTTP %s for %s", resp.status_code, pdf_url)
+                self._report_pdf_download_failure(
+                    source=result.source,
+                    origin=origin,
+                    pdf_url=pdf_url,
+                    reason=f"HTTP {resp.status_code}",
+                    cause=f"http-{resp.status_code}",
+                )
                 return
-            path = self._save_pdf_to_cache(self.cache, resp.content, cache_id)
-            if path:
-                result.file_path = path
-                logger.info("PDF cached to %s", path)
-                self._attach_pdf_text(path, result)
-        except Exception:
-            # Deliberately not recorded on the exhaustion report: all three
-            # call sites return the result immediately after this, so a
-            # failure noted here could never reach the report that reads it.
-            # Whether the download itself deserves a level above DEBUG is
-            # issue #68 — a `Free` PDF URL that 404s is common enough that
-            # the rate wants measuring first.
-            logger.debug("PDF download failed for %s", pdf_url, exc_info=True)
+            path, outcome = self._save_pdf_to_cache(self.cache, resp.content, cache_id)
+        except Exception as exc:
+            self._report_pdf_download_exception(
+                source=result.source, origin=origin, pdf_url=pdf_url, exc=exc
+            )
+            return
+        if path is None:
+            if outcome == "not-a-pdf":
+                self._report_pdf_download_failure(
+                    source=result.source,
+                    origin=origin,
+                    pdf_url=pdf_url,
+                    reason="the response is not a PDF",
+                    cause="not-a-pdf",
+                )
+            # Otherwise "write-failed": _warn_cache_write_failed has already
+            # spoken, and it names the right cause. Saying anything more here
+            # would blame the publisher for a read-only directory.
+            return
+        result.file_path = path
+        logger.info("PDF cached to %s", path)
+        # Deliberately not under the download's handler. Extraction runs after
+        # `file_path` is set, so an exception escaping it there was reported as
+        # a download failure — "there is no file and no extracted text" about
+        # an article whose file is cached and on the result — and a _BUG_TYPES
+        # exception was filed as a transport fault rather than as the defect it
+        # is. `_attach_pdf_text` guards both the backend construction and the
+        # conversion itself, so anything still escaping is a defect in bmlib's
+        # own tail logic, reported as one.
+        #
+        # Caught rather than allowed to propagate, because the download did
+        # succeed: letting it reach the tier handler would lose a perfectly
+        # good cached PDF over a failure to extract text from it, and would
+        # cost the caller the whole tier's result.
+        try:
+            self._attach_pdf_text(path, result)
+        except Exception as exc:
+            self._warn_swallowed_bug(exc)
+            logger.debug("PDF text extraction raised for %s", path, exc_info=True)
 
-    def _save_pdf_to_cache(self, cache: FullTextCache, data: bytes, cache_id: str) -> str | None:
+    def _report_pdf_download_exception(
+        self, *, source: str, origin: _PdfOrigin, pdf_url: str, exc: BaseException
+    ) -> None:
+        """Report a PDF download that raised rather than answering (issue #68).
+
+        Args:
+            source: ``result.source`` — the specific venue, named in the message.
+            origin: The downloading tier, which is what the key is built from.
+            pdf_url: The URL that failed.
+            exc: What was raised.
+
+        The environment, not the server: a lost network or a full disk fails
+        *every* article once it starts failing, so this is one-shot per
+        ``(origin, exception type)`` and needed no measurement to decide —
+        unlike the two server-side causes in
+        :meth:`_report_pdf_download_failure`, whose level was set from a rate.
+        The wording differs for that reason and the difference is pinned by
+        tests: this line says the fault "will affect every article served this
+        way", which is an assertion about the *environment* and would be
+        measurably false said of a publisher's 404.
+
+        Still not recorded on the exhaustion report: all three call sites
+        return the result immediately after this, so a failure noted there
+        could never reach the report that reads it (issue #68).
+        """
+        name = type(exc).__name__
+        self._warn_once(
+            f"pdf-download:{origin}:{name}",
+            "Could not download a %s PDF (%s: %s). The URL is left on the "
+            "result, but there is no file and no extracted text, and this "
+            "will affect every article served this way. Further %s "
+            "failures will not be repeated.",
+            source,
+            name,
+            exc,
+            name,
+        )
+        logger.debug("PDF download failed for %s", pdf_url, exc_info=True)
+
+    def _report_pdf_download_failure(
+        self, *, source: str, origin: _PdfOrigin, pdf_url: str, reason: str, cause: str
+    ) -> None:
+        """Report a server-side PDF download failure (issue #68).
+
+        Args:
+            source: ``result.source`` — the specific venue or service, named in
+                the message so the first report loses no detail.
+            origin: The downloading tier, which is what the key is built from.
+                See :meth:`_download_and_cache_pdf` for why ``source`` cannot
+                be: it is remote-data-derived at Tier 0 and would make the
+                keyspace unbounded, turning the one-shot into one per article.
+                Every parameter here is keyword-only because ``source`` and
+                ``origin`` are adjacent same-typed strings whose transposition
+                is exactly the defect this parameter exists to prevent, and is
+                invisible to a reader and to a type checker alike.
+            pdf_url: The URL that failed, quoted as "first seen at".
+            reason: Human-readable cause, e.g. ``"HTTP 404"``.
+            cause: Its stable key fragment, e.g. ``"http-404"``. Not typed as a
+                ``Literal``, unlike ``origin``: ``http-{status}`` is bounded
+                only by what a server can answer, so this is an enumeration in
+                spirit and not in fact. That is tolerable where ``origin`` was
+                not — a stray status yields a handful more keys, whereas an
+                unbounded ``origin`` yields one per article.
+
+        Once per (origin, cause), with the per-article detail at DEBUG. The
+        level was chosen from a measured rate rather than by taste, against a
+        rule fixed before the numbers landed: under 5% of attempts a
+        per-article WARNING is affordable, and at or above it a bulk run's log
+        would be drowned at exactly the moment it mattered.
+
+        Measured by ``scripts/sample_free_pdf_urls.py --target 150
+        --per-host-interval 4.0``, one interpreter run, 2026-08-11:
+
+        =========== ====== ======== ======= ================ ==========================
+        Population   Probed Failed   Rate    95% CI            Cause breakdown
+        =========== ====== ======== ======= ================ ==========================
+        europepmc    150    1        0.7%    [0.1%, 3.7%]     exception-ConnectError: 1
+        unpaywall    28     18       64.3%   [45.8%, 79.3%]   http-403: 4, not-a-pdf: 14
+        biorxiv      150    1        0.7%    [0.1%, 3.7%]     exception-ReadTimeout: 1
+        =========== ====== ======== ======= ================ ==========================
+
+        The worst population is Unpaywall at 64.3%, whose CI lower bound
+        (45.8%) is roughly nine times the 5% threshold — not a close call
+        despite ``n=28`` being small. That selects this variant.
+
+        Europe PMC and bioRxiv had **zero** server-side failures: each
+        population's single failure was a transport exception, which takes
+        the one-shot-per-exception-type path in
+        :meth:`_report_pdf_download_exception` regardless of this rule. Every
+        one of the 18 server-side failures counted above is Unpaywall's, and
+        14 of those 18 were landing pages rather than PDFs (the magic-byte
+        rejection, ``not-a-pdf``) rather than an HTTP failure — which is why
+        the key is per ``(origin, cause)`` rather than per origin: the rate is
+        a property of the population Unpaywall draws from, not a property of
+        bmlib. Re-run the sampler before revisiting this.
+
+        The message says the report is one-shot; it does **not** say the
+        failure is common. That distinction is load-bearing after issue #79.
+        Widening Tier 1d's availability allow-list made ``europepmc_pdf`` the
+        dominant caller of this line, and the table above records *zero*
+        server-side failures for Europe PMC — so the earlier wording ("this is
+        common enough that it is reported once") was measurably false for the
+        source that now emits it most.
+        """
+        self._warn_once(
+            f"pdf-download:{origin}:{cause}",
+            "Could not download a %s PDF (%s; first seen at %s). The URL is "
+            "left on the result, but there is no file and no extracted text. "
+            "This is reported once — run with DEBUG logging to see every "
+            "affected article.",
+            source,
+            reason,
+            pdf_url,
+        )
+        logger.debug("PDF download failed (%s) for %s", cause, pdf_url)
+
+    def _save_pdf_to_cache(
+        self, cache: FullTextCache, data: bytes, cache_id: str
+    ) -> tuple[str | None, _PdfSaveOutcome]:
         """Write a downloaded PDF to the disk cache, best-effort.
 
         Split out of the download so a failed *write* is reported like
@@ -943,21 +1360,23 @@ class FullTextService:
             cache_id: Sanitised cache key.
 
         Returns:
-            The cached file's path, or ``None`` if the write failed or the
-            payload did not validate as a PDF. Each logs its own cause here,
-            rather than leaving the caller to name one for both — a read-only
-            directory reported as "PDF validation failed" is the same mistake
-            in miniature.
+            ``(path, outcome)`` — see :data:`_PdfSaveOutcome`, and note that
+            ``path`` is non-``None`` if and only if the outcome is ``"saved"``.
+            The two failures are told apart rather than both returning
+            ``None``, because the caller reports them and blaming a read-only
+            directory on the publisher's bytes is the mistake this method
+            already avoids in its own logging.
         """
         try:
             path = cache.save_pdf(data, cache_id)
         except Exception as e:
             self._warn_cache_write_failed(e)
             logger.debug("Failed to cache PDF for %s", cache_id, exc_info=True)
-            return None
+            return None, "write-failed"
         if not path:
             logger.debug("PDF failed magic-byte validation for %s", cache_id)
-        return path
+            return None, "not-a-pdf"
+        return path, "saved"
 
     def _attach_pdf_text(self, pdf_path: str, result: FullTextResult) -> None:
         """Extract a cached PDF's text into ``result.html``.
@@ -990,15 +1409,14 @@ class FullTextService:
             # wraps the _check_cache call, where a perfectly readable cached
             # PDF was blamed on an unreadable cache file and re-downloaded
             # into the identical deterministic fault.
-            if not self._pdf_backend_warned:
-                logger.warning(
-                    "convert_pdfs is enabled but no PDF backend is usable (%s: %s); "
-                    "PDFs will be returned as links only. Install bmlib[pdf] if the "
-                    "extra is missing.",
-                    type(e).__name__,
-                    e,
-                )
-                self._pdf_backend_warned = True
+            self._warn_once(
+                f"pdf-backend:{type(e).__name__}",
+                "convert_pdfs is enabled but no PDF backend is usable (%s: %s); "
+                "PDFs will be returned as links only. Install bmlib[pdf] if the "
+                "extra is missing.",
+                type(e).__name__,
+                e,
+            )
             return
 
         try:
@@ -1156,7 +1574,9 @@ class FullTextService:
                 than any other helper, and a future call site that omitted it
                 would fail exactly the way issue #67 failed — silently, with
                 the summary reading as an ordinary paywalled paper. A
-                throwaway ``_TierFailures()`` costs a test one argument.
+                throwaway :meth:`_TierFailures.unreported` costs a test one
+                argument. ``on_bug`` is mandatory on the same reasoning, one
+                level in.
 
         Returns:
             The PMC ID, or ``None`` if the converter has no live record for the
@@ -1302,15 +1722,7 @@ class FullTextService:
         if resp.status_code != 200:
             raise FullTextError(f"Unpaywall HTTP {resp.status_code}")
 
-        data = resp.json()
-        best = data.get("best_oa_location") or {}
-        pdf_url = best.get("url_for_pdf") or best.get("url")
+        pdf_url = _pick_oa_pdf_url(resp.json())
         if pdf_url:
             return pdf_url
-
-        for loc in data.get("oa_locations") or []:
-            pdf_url = loc.get("url_for_pdf") or loc.get("url")
-            if pdf_url:
-                return pdf_url
-
         raise FullTextUnavailableError(f"No open-access PDF found for DOI {doi}")

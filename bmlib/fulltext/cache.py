@@ -279,6 +279,14 @@ class FullTextCache:
         Returns the file path on success, or ``None`` if the data is not a
         valid PDF.
 
+        The rejection is logged at DEBUG, not WARNING: ``FullTextService``
+        owns reporting this outcome and does so once per ``(tier, cause)``,
+        because the population it happens in was measured at 64.3% — an
+        Unpaywall URL that resolves to a landing page rather than a PDF is
+        ordinary, not exceptional. A WARNING here defeated that one-shot,
+        emitting a line per article for the very cause the measurement
+        selected the one-shot for. A direct caller still has the ``None``.
+
         Raises:
             OSError: if the write itself fails — a full disk, a read-only
                 directory. A bare ``write_bytes`` under delayed allocation
@@ -287,7 +295,7 @@ class FullTextCache:
                 ``FullTextService`` catches it and reports it.
         """
         if len(data) < len(PDF_MAGIC_BYTES) or data[: len(PDF_MAGIC_BYTES)] != PDF_MAGIC_BYTES:
-            logger.warning("Rejected non-PDF data for %s", identifier)
+            logger.debug("Rejected non-PDF data for %s", identifier)
             return None
         path = self._pdf_dir / f"{_safe_filename(identifier)}.pdf"
         _atomic_write(path, data)
