@@ -3106,6 +3106,7 @@ class TestASwallowedBugDoesNotStayAtDebug:
 
         assert "AttributeError" in caplog.text
         assert "TypeError" in caplog.text
+        assert caplog.text.count("which bmlib does not raise deliberately") == 2
 
     def test_the_same_defect_type_is_reported_once_per_service(
         self, caplog: pytest.LogCaptureFixture
