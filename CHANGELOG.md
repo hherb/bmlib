@@ -6,6 +6,70 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- **Europe PMC's free PDFs are now taken under their common label, not just
+  their rare one** (#79). `_extract_free_pdf_url` accepted
+  `availability == "Free"` only. Measured over 600 recent MEDLINE records,
+  that is the rare label: of 326 `documentStyle=pdf` entries, 312 (95.7%) read
+  `"Open access"` and 14 (4.3%) read `"Free"` — both the identical
+  `?pdf=render` URL on the identical host. Tier 1d was silently discarding
+  about 95% of the PDFs it exists to find; there is no log line for "a PDF
+  entry was seen and not taken." It now allow-lists on `availabilityCode`
+  (`OA`, `F`), falls back to the display string only for an entry carrying no
+  code, and rejects a present-but-unknown code rather than trusting the label
+  — an unknown value must under-credit, not risk a paywalled download. **This
+  moves what downstream stores**: many more articles now come back with
+  `pdf_url` / `file_path` / extracted text instead of a bare link, so a
+  corpus's stored full text is not comparable across the change, and outbound
+  traffic to Europe PMC rises, since PDFs the old code skipped are now
+  downloaded.
+
+### Fixed
+
+- **A failed PDF download is no longer invisible** (#68).
+  `_download_and_cache_pdf` swallowed a non-200 response, a failed
+  magic-byte validation, and any exception, all at `DEBUG` — so with
+  `convert_pdfs=True` the caller asked for text, got a bare `pdf_url`, and
+  could not tell a full disk from a publisher 404. The two server-side
+  causes are now reported per `(source, cause)`, at a level chosen from a
+  measured rate against a rule fixed beforehand: under 5% of attempts, a
+  per-article `WARNING`; at or above it, one line per `(source, cause)` plus
+  per-article `DEBUG`. Measured with `scripts/sample_free_pdf_urls.py
+  --target 150 --per-host-interval 4.0`: `europepmc` 0.7% failed (n=150, 95%
+  CI [0.1%, 3.7%], 1 transport exception), `unpaywall` 64.3% failed (n=28,
+  95% CI [45.8%, 79.3%], 4 HTTP 403 + 14 not-a-pdf), `biorxiv` 0.7% failed
+  (n=150, 95% CI [0.1%, 3.7%], 1 transport exception). Europe PMC and
+  bioRxiv had **zero** server-side failures — every one of the 18 counted
+  above is Unpaywall's, and 14 of those are landing pages rather than PDFs —
+  so Unpaywall's rate, whose CI lower bound is roughly 9x the threshold,
+  selected the one-shot variant. The exception path (a lost network, a full
+  disk) is separate and needed no measurement: it fails every article once
+  it starts failing, so it is one-shot per `(source, exception type)`
+  regardless of the rate rule. `_save_pdf_to_cache` now returns
+  `tuple[str | None, str]` so a failed cache *write* is reported as a write
+  failure rather than blamed on the publisher's bytes.
+
+- **A bmlib bug no longer hides behind a tier that still works** (#72).
+  `_TierFailures.describe()` is consulted only on total exhaustion, so an
+  `AttributeError` raised by every PMC tier — the shape a `JATSArticle` API
+  change takes — with Unpaywall still healthy silently degraded a whole
+  corpus from structured JATS to bare links, reporting success throughout.
+  `_TierFailures` gains an `on_bug` callback fired at the moment a
+  defect-shaped exception is swallowed, not at an exit: every exit-based
+  alternative is the defect itself, since the next early return would
+  silently re-break it. `_BUG_TYPES` deny-lists `TypeError`,
+  `AttributeError`, `NameError`, `KeyError`, `IndexError` — a deny-list
+  because the legitimate failures are varied (`FullTextError`,
+  `httpx.HTTPError`, `OSError`, ...) while the always-a-defect set is small;
+  `ValueError` and `SyntaxError` are deliberately excluded, since
+  `json.JSONDecodeError` *is* a `ValueError` and
+  `xml.etree.ElementTree.ParseError` *is* a `SyntaxError`, so either would
+  misreport an ordinary malformed remote response as a bmlib defect.
+  `WARNING`, once per `(service, exception type)` — a defect that hits one
+  tier hits it for every article, so per-article would be unreadable exactly
+  when it mattered, but a second, different defect still gets its own line.
+
 ## [0.9.0] — 2026-08-10
 
 Five fixes, every one of them in the full-text retrieval path and every one of

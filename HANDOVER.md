@@ -1,12 +1,16 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-10. **0.9.0 is released and on PyPI** — five `fulltext`
+_Last updated: 2026-08-11. **0.9.0 is released and on PyPI** — five `fulltext`
 fixes (#64, #67, #70, #71, #75). Nothing stored moved, so nothing needs
 re-syncing; it is a minor rather than a patch bump because three of the fixes
 change a public API. Verified against the *published* wheel, not just the
 source tree: it installs on jinja2 alone and all 69 modules import, one fresh
-interpreter each. Five open issues: **#56**, **#68**, **#72**, **#73**,
-**#78**. 1774 tests + 58 skipped (1830 + 2 with a PostgreSQL DSN), ruff clean.
+interpreter each. Since the release, `fix/68-72-79-pdf-download-reporting` has
+closed #79, #68 and #72 (unreleased) — Tier 1d now takes the free PDFs Europe
+PMC actually labels `"Open access"`, and a failed PDF download or a swallowed
+bmlib bug is reported instead of hiding behind a tier that still works. Three
+open issues: **#56**, **#73**, **#78**. 1826 tests + 58 skipped (1882 + 2
+with a PostgreSQL DSN), ruff clean.
 **Phase 3 of the bmlibrarian port is next, and each of its rows needs a design
 conversation before any porting** — see "Next up"._
 
@@ -35,7 +39,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed four releases. Widening it is a downstream change, not a bmlib
   one.
-- **1774 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1830 + 2
+- **1826 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1882 + 2
   with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
   PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
@@ -57,7 +61,9 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; **none is outstanding** — 0.9.0 promoted the last five.
+  release time; **four are outstanding** — the `fix/68-72-79-pdf-download-reporting`
+  branch's `ROADMAP.md` rows for #79, #68, #72 and
+  `scripts/sample_free_pdf_urls.py`, none yet promoted to a version number.
   Markers inside `docs/superpowers/plans/` are historical records — leave them
   alone.
 
@@ -65,26 +71,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Four, all found by review rather than by a failing test.
-
-**#72 — a bmlib bug hides behind any tier that still works.** #67's summary is
-consulted only on *total* exhaustion, so an `AttributeError` from every PMC
-tier with Unpaywall healthy silently degrades a whole corpus from JATS full
-text to bare links. Wants the same level decision as #68, so do them together.
-
-**#68 — a failed PDF download is invisible at default log level**, split out
-of #67 rather than folded into its fix. `_download_and_cache_pdf`'s download
-half is the one of #67's nine swallowers that was left alone, and it *cannot*
-usefully feed the exhaustion counter: all three of its call sites return after
-it, so a failure there never reaches the report. It is a milder bug than #67
-— `pdf_url` set with no `file_path` is a real signal, where #67's result was
-byte-identical to a paywalled paper — but with `convert_pdfs=True` the caller
-asked for text and got none, and a full disk looks exactly like 10,000
-publishers 404ing. **The issue is a decision, not a patch**: these URLs come
-from Europe PMC's `fullTextUrlList` and Unpaywall, and a `Free` PDF URL that
-404s is common enough that per-article WARNINGs could drown a bulk run. Sample
-how often that happens before choosing a level — this repo settles list-shaped
-questions by measuring.
+Three, all found by review rather than by a failing test.
 
 **#73 — `install_defaults()` copies templates non-atomically**, found while
 fixing #70 and deliberately not folded into it. A copy interrupted partway
@@ -105,6 +92,15 @@ PDF metadata behind it rather than a guessed set of prefixes and suffixes.
 The issue already asks for a regression test per rejected shape plus a
 negative control. Every closed design stays in `docs/superpowers/specs/` as
 the record of what was rejected and why.
+
+**#78 — the release merge strategy is enforced by prose only**, found
+reviewing PR #77. `HANDOVER.md` requires a release PR be merged with
+`--merge` so the tag lands on `main`'s first-parent line, but the repo still
+allows squash and rebase merges and no branch protection covers `main`, so
+the requirement is prose only and GitHub's default merge button can silently
+defeat it. Latent — 0.4.0 through 0.9.0 were all merged correctly — the fix
+is one `gh api -X PATCH` disabling the other two strategies, or a protection
+rule if squash is wanted for ordinary feature PRs.
 
 ### Worth doing, not yet an issue
 
