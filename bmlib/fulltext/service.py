@@ -1041,23 +1041,98 @@ class FullTextService:
         try:
             resp = self._http_get(pdf_url)
             if resp.status_code != 200:
-                logger.debug("PDF download HTTP %s for %s", resp.status_code, pdf_url)
+                self._report_pdf_download_failure(
+                    result.source, pdf_url, f"HTTP {resp.status_code}", f"http-{resp.status_code}"
+                )
                 return
-            path = self._save_pdf_to_cache(self.cache, resp.content, cache_id)
-            if path:
-                result.file_path = path
-                logger.info("PDF cached to %s", path)
-                self._attach_pdf_text(path, result)
-        except Exception:
-            # Deliberately not recorded on the exhaustion report: all three
-            # call sites return the result immediately after this, so a
-            # failure noted here could never reach the report that reads it.
-            # Whether the download itself deserves a level above DEBUG is
-            # issue #68 — a `Free` PDF URL that 404s is common enough that
-            # the rate wants measuring first.
+            path, outcome = self._save_pdf_to_cache(self.cache, resp.content, cache_id)
+            if outcome == "not-a-pdf":
+                self._report_pdf_download_failure(
+                    result.source, pdf_url, "the response is not a PDF", "not-a-pdf"
+                )
+                return
+            if path is None:
+                # write-failed: _warn_cache_write_failed has already spoken, and
+                # it names the right cause. Saying anything more here would
+                # blame the publisher for a read-only directory.
+                return
+            result.file_path = path
+            logger.info("PDF cached to %s", path)
+            self._attach_pdf_text(path, result)
+        except Exception as exc:
+            # The environment, not the server. A lost network or a full disk
+            # fails *every* article once it starts failing, so this is one-shot
+            # per (source, type) and needed no measurement to decide — unlike
+            # the two server-side causes above.
+            #
+            # Still not recorded on the exhaustion report: all three call sites
+            # return the result immediately after this, so a failure noted
+            # there could never reach the report that reads it (issue #68).
+            self._warn_once(
+                f"pdf-download:{result.source}:{type(exc).__name__}",
+                "Could not download a %s PDF (%s: %s). The URL is left on the "
+                "result, but there is no file and no extracted text, and this "
+                "will affect every article served this way. Further %s "
+                "failures will not be repeated.",
+                result.source,
+                type(exc).__name__,
+                exc,
+                type(exc).__name__,
+            )
             logger.debug("PDF download failed for %s", pdf_url, exc_info=True)
 
-    def _save_pdf_to_cache(self, cache: FullTextCache, data: bytes, cache_id: str) -> str | None:
+    def _report_pdf_download_failure(
+        self, source: str, pdf_url: str, reason: str, cause: str
+    ) -> None:
+        """Report a server-side PDF download failure (issue #68).
+
+        Once per (source, cause), with the per-article detail at DEBUG. The
+        level was chosen from a measured rate rather than by taste, against a
+        rule fixed before the numbers landed: under 5% of attempts a
+        per-article WARNING is affordable, and at or above it a bulk run's log
+        would be drowned at exactly the moment it mattered.
+
+        Measured by ``scripts/sample_free_pdf_urls.py --target 150
+        --per-host-interval 4.0``, one interpreter run, 2026-08-11:
+
+        =========== ====== ======== ======= ================ ==========================
+        Population   Probed Failed   Rate    95% CI            Cause breakdown
+        =========== ====== ======== ======= ================ ==========================
+        europepmc    150    1        0.7%    [0.1%, 3.7%]     exception-ConnectError: 1
+        unpaywall    28     18       64.3%   [45.8%, 79.3%]   http-403: 4, not-a-pdf: 14
+        biorxiv      150    1        0.7%    [0.1%, 3.7%]     exception-ReadTimeout: 1
+        =========== ====== ======== ======= ================ ==========================
+
+        The worst population is Unpaywall at 64.3%, whose CI lower bound
+        (45.8%) is roughly nine times the 5% threshold — not a close call
+        despite ``n=28`` being small. That selects this variant.
+
+        Europe PMC and bioRxiv had **zero** server-side failures: each
+        population's single failure was a transport exception, which takes
+        the one-shot-per-exception-type path in :meth:`_download_and_cache_pdf`
+        regardless of this rule. Every one of the 18 server-side failures
+        counted above is Unpaywall's. 14 of those 28 were landing pages
+        rather than PDFs (the magic-byte rejection, ``not-a-pdf``) rather than
+        an HTTP failure — which is why the key is per ``(source, cause)``
+        rather than per source: the rate is a property of the population
+        Unpaywall draws from, not a property of bmlib. Re-run the sampler
+        before revisiting this.
+        """
+        self._warn_once(
+            f"pdf-download:{source}:{cause}",
+            "Could not download a %s PDF (%s; first seen at %s). The URL is "
+            "left on the result, but there is no file and no extracted text. "
+            "This is common enough that it is reported once — run with DEBUG "
+            "logging to see every affected article.",
+            source,
+            reason,
+            pdf_url,
+        )
+        logger.debug("PDF download failed (%s) for %s", cause, pdf_url)
+
+    def _save_pdf_to_cache(
+        self, cache: FullTextCache, data: bytes, cache_id: str
+    ) -> tuple[str | None, str]:
         """Write a downloaded PDF to the disk cache, best-effort.
 
         Split out of the download so a failed *write* is reported like
@@ -1072,21 +1147,22 @@ class FullTextService:
             cache_id: Sanitised cache key.
 
         Returns:
-            The cached file's path, or ``None`` if the write failed or the
-            payload did not validate as a PDF. Each logs its own cause here,
-            rather than leaving the caller to name one for both — a read-only
-            directory reported as "PDF validation failed" is the same mistake
-            in miniature.
+            ``(path, outcome)``. ``outcome`` is ``"saved"``, ``"write-failed"``
+            or ``"not-a-pdf"``. The two failures are told apart rather than
+            both returning ``None``, because the caller reports them and
+            blaming a read-only directory on the publisher's bytes is the
+            mistake this method already avoids in its own logging.
         """
         try:
             path = cache.save_pdf(data, cache_id)
         except Exception as e:
             self._warn_cache_write_failed(e)
             logger.debug("Failed to cache PDF for %s", cache_id, exc_info=True)
-            return None
+            return None, "write-failed"
         if not path:
             logger.debug("PDF failed magic-byte validation for %s", cache_id)
-        return path
+            return None, "not-a-pdf"
+        return path, "saved"
 
     def _attach_pdf_text(self, pdf_path: str, result: FullTextResult) -> None:
         """Extract a cached PDF's text into ``result.html``.

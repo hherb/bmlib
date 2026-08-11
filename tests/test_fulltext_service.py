@@ -30,7 +30,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from bmlib.fulltext.cache import FullTextCache
-from bmlib.fulltext.models import FullTextSourceEntry
+from bmlib.fulltext.models import FullTextResult, FullTextSourceEntry
 from bmlib.fulltext.pdf_converter import ConversionResult
 from bmlib.fulltext.service import (
     FullTextError,
@@ -3127,3 +3127,162 @@ class TestASwallowedBugDoesNotStayAtDebug:
         failures = _TierFailures()
         failures.record(TypeError("boom"))
         assert failures.faults == ["TypeError"]
+
+
+class TestAFailedPDFDownloadIsReported:
+    """Issue #68 — three distinct outcomes, all swallowed at DEBUG.
+
+    A non-200 for a URL some tier just declared a free PDF, a magic-byte
+    rejection, and any exception at all. With ``convert_pdfs=True`` the caller
+    asked for text and got none, and a full disk across a 10,000-paper run
+    looked exactly like 10,000 publishers 404ing.
+
+    The three stay distinguishable in the message: reporting a read-only
+    directory as "PDF validation failed" is the mistake ``_save_pdf_to_cache``
+    already avoids between a failed write and a failed validation.
+    """
+
+    @staticmethod
+    def _service(tmp_path: Path) -> FullTextService:
+        return FullTextService(
+            email="test@example.com",
+            cache=FullTextCache(cache_dir=tmp_path),
+            convert_pdfs=False,
+        )
+
+    def _fetch(
+        self,
+        service: FullTextService,
+        response_or_exc: object,
+        caplog: pytest.LogCaptureFixture,
+    ) -> FullTextResult:
+        search = MagicMock()
+        search.status_code = 200
+        search.json.return_value = {
+            "resultList": {
+                "result": [
+                    {
+                        "inEPMC": "N",
+                        "fullTextUrlList": {
+                            "fullTextUrl": [
+                                {
+                                    "documentStyle": "pdf",
+                                    "availabilityCode": "OA",
+                                    "url": "https://e/a.pdf",
+                                }
+                            ]
+                        },
+                    }
+                ]
+            }
+        }
+        with (
+            caplog.at_level("DEBUG"),
+            patch.object(
+                service, "_http_get", side_effect=[search, _idconv_miss(), response_or_exc]
+            ),
+        ):
+            return service.fetch_fulltext(doi="10.1/test", identifier="10.1/test")
+
+    def test_a_404_is_reported_as_an_http_failure(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        resp = MagicMock()
+        resp.status_code = 404
+        result = self._fetch(self._service(tmp_path), resp, caplog)
+
+        assert result.pdf_url == "https://e/a.pdf"
+        assert result.file_path is None
+        assert "404" in caplog.text
+
+    def test_a_landing_page_is_reported_as_not_a_pdf(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """HTTP 200 whose body is HTML — the Unpaywall failure mode."""
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = b"<!DOCTYPE html><html>not a pdf</html>"
+        self._fetch(self._service(tmp_path), resp, caplog)
+
+        assert "not a PDF" in caplog.text
+        assert "404" not in caplog.text
+
+    def test_a_network_failure_is_reported_as_an_exception(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        self._fetch(self._service(tmp_path), OSError("no route to host"), caplog)
+        assert "OSError" in caplog.text
+
+    def test_an_exception_is_warned_once_per_source_and_type(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A lost network fails every article, so this can never be per-article
+        — the one cause whose cadence needed no measurement.
+
+        Asserted on text unique to the WARNING rather than
+        ``"no route to host"``: the DEBUG line right below the warning logs
+        with ``exc_info=True``, and the traceback text repeats
+        ``"no route to host"`` on every one of the three iterations, so that
+        substring's count is never 1 regardless of suppression.
+        """
+        service = self._service(tmp_path)
+        with caplog.at_level("WARNING"):
+            for _ in range(3):
+                self._fetch(service, OSError("no route to host"), caplog)
+        assert caplog.text.count("Further OSError failures will not be repeated") == 1
+
+    def test_a_successful_download_reports_nothing(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The control: a working download must stay quiet."""
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = b"%PDF-1.7\n" + b"x" * 100
+        result = self._fetch(self._service(tmp_path), resp, caplog)
+
+        assert result.file_path is not None
+        assert "not a PDF" not in caplog.text
+        assert "Could not download" not in caplog.text
+
+    def test_a_failed_cache_write_is_not_reported_as_a_bad_pdf(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The distinction the signature change exists for.
+
+        ``_save_pdf_to_cache`` returned ``None`` for both a failed write and a
+        failed validation, so reporting on ``None`` alone would blame a
+        read-only directory on the publisher's bytes.
+        """
+        service = self._service(tmp_path)
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = b"%PDF-1.7\n" + b"x" * 100
+        with patch.object(service.cache, "save_pdf", side_effect=OSError("read-only file system")):
+            self._fetch(service, resp, caplog)
+
+        assert "nothing is being cached" in caplog.text
+        assert "not a PDF" not in caplog.text
+
+    def test_two_different_causes_on_the_same_source_are_both_reported(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Per (source, cause), not per source.
+
+        The exact regression that bit this plan's Task 4: a test that could
+        not fail if the key collapsed to just the source, since a single
+        failing case would still pass with a fixed or source-only key. Driven
+        through two distinct causes — an HTTP failure, then a landing page —
+        on the same source, and both messages must appear.
+        """
+        service = self._service(tmp_path)
+        not_found = MagicMock()
+        not_found.status_code = 404
+        landing_page = MagicMock()
+        landing_page.status_code = 200
+        landing_page.content = b"<!DOCTYPE html><html>not a pdf</html>"
+
+        self._fetch(service, not_found, caplog)
+        self._fetch(service, landing_page, caplog)
+
+        assert "404" in caplog.text
+        assert "not a PDF" in caplog.text
