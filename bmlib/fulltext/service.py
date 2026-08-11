@@ -268,11 +268,19 @@ def _entry_is_free(entry: dict[str, object]) -> bool:
         falling back there would let a future code bmlib has never evaluated
         through on the strength of a label, which is the opposite of the
         under-credit rule the allow-list exists to keep.
+
+        Both values are type-checked before they are compared. ``x in
+        frozenset`` *hashes* ``x``, so an ``availability`` arriving as a JSON
+        object or array — a shape Europe PMC does not document itself out of —
+        raised ``TypeError: unhashable type``. That is in :data:`_BUG_TYPES`,
+        so a malformed remote payload would have been reported as a bmlib
+        defect (issue #72's warning) rather than as an entry to skip.
     """
     code = entry.get("availabilityCode")
     if isinstance(code, str) and code:
         return code in _FREE_PDF_AVAILABILITY_CODES
-    return entry.get("availability") in _FREE_PDF_AVAILABILITY_LABELS
+    availability = entry.get("availability")
+    return isinstance(availability, str) and availability in _FREE_PDF_AVAILABILITY_LABELS
 
 
 def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
@@ -679,7 +687,7 @@ class FullTextService:
         if pdf_render_url:
             logger.info("PDF available from Europe PMC render: %s", pdf_render_url)
             result = FullTextResult(source="europepmc_pdf", pdf_url=pdf_render_url)
-            self._download_and_cache_pdf(pdf_render_url, cache_id, result)
+            self._download_and_cache_pdf(pdf_render_url, cache_id, result, origin="europepmc_pdf")
             return self._with_abstract_fallback(result, abstract_only)
 
         # Tier 2: Unpaywall
@@ -688,7 +696,7 @@ class FullTextService:
                 pdf_url = self._fetch_unpaywall(doi)
                 logger.info("PDF URL found via Unpaywall for DOI %s", doi)
                 result = FullTextResult(source="unpaywall", pdf_url=pdf_url)
-                self._download_and_cache_pdf(pdf_url, cache_id, result)
+                self._download_and_cache_pdf(pdf_url, cache_id, result, origin="unpaywall")
                 return self._with_abstract_fallback(result, abstract_only)
             except Exception as exc:
                 logger.debug("Unpaywall failed for DOI %s", doi, exc_info=True)
@@ -839,7 +847,7 @@ class FullTextService:
                 elif entry.format == "pdf":
                     logger.info("PDF available from %s", entry.source)
                     result = FullTextResult(source=entry.source, pdf_url=entry.url)
-                    self._download_and_cache_pdf(entry.url, cache_id, result)
+                    self._download_and_cache_pdf(entry.url, cache_id, result, origin="known_source")
                     return result, abstract_only
                 elif entry.format == "html":
                     logger.info("HTML source from %s", entry.source)
@@ -998,6 +1006,8 @@ class FullTextService:
         pdf_url: str,
         cache_id: str | None,
         result: FullTextResult,
+        *,
+        origin: str,
     ) -> None:
         """Download a PDF and save it to the disk cache.
 
@@ -1010,6 +1020,32 @@ class FullTextService:
         Returns without downloading at all when there is nowhere to put the
         file: no cache (#75) or no ``identifier`` to key one by. The URL stays
         on the result in both cases.
+
+        Args:
+            pdf_url: The PDF to fetch.
+            cache_id: Sanitised cache key, or ``None`` to skip the download.
+            result: The tier's result, modified in place.
+            origin: Which tier is downloading — one of ``"europepmc_pdf"``,
+                ``"unpaywall"`` or ``"known_source"``. Used, and *only* used,
+                to key the one-shot download-failure warnings.
+
+                It exists because ``result.source`` cannot key them.
+                :data:`_warn_once`'s suppression is only one-shot if its
+                keyspace is bounded, and Tier 0's ``result.source`` comes from
+                a fetcher-supplied :class:`FullTextSourceEntry`: OpenAlex
+                derives it from the location's **venue display name**
+                (``bmlib/publications/fetchers/openalex.py``), so it is one
+                distinct, remote-data-derived string per journal or
+                repository. Keyed on that, a bulk sync warns once *per
+                article* — each one claiming the report is one-shot — at the
+                site with the worst measured failure rate (Tier 0's PDF
+                locations are the same arbitrary-repository population
+                Unpaywall draws from, measured at 64.3% failure). This
+                parameter is written out at each call site so the value set is
+                the enumeration above and cannot grow with the corpus. Do not
+                "simplify" it back to ``result.source``; the source still
+                appears in the message text, so the first report still names
+                the specific venue.
         """
         if self.cache is None:
             # Reachable only when the default cache could not be created (#75).
@@ -1042,13 +1078,17 @@ class FullTextService:
             resp = self._http_get(pdf_url)
             if resp.status_code != 200:
                 self._report_pdf_download_failure(
-                    result.source, pdf_url, f"HTTP {resp.status_code}", f"http-{resp.status_code}"
+                    result.source,
+                    origin,
+                    pdf_url,
+                    f"HTTP {resp.status_code}",
+                    f"http-{resp.status_code}",
                 )
                 return
             path, outcome = self._save_pdf_to_cache(self.cache, resp.content, cache_id)
             if outcome == "not-a-pdf":
                 self._report_pdf_download_failure(
-                    result.source, pdf_url, "the response is not a PDF", "not-a-pdf"
+                    result.source, origin, pdf_url, "the response is not a PDF", "not-a-pdf"
                 )
                 return
             if path is None:
@@ -1069,7 +1109,7 @@ class FullTextService:
             # return the result immediately after this, so a failure noted
             # there could never reach the report that reads it (issue #68).
             self._warn_once(
-                f"pdf-download:{result.source}:{type(exc).__name__}",
+                f"pdf-download:{origin}:{type(exc).__name__}",
                 "Could not download a %s PDF (%s: %s). The URL is left on the "
                 "result, but there is no file and no extracted text, and this "
                 "will affect every article served this way. Further %s "
@@ -1082,11 +1122,22 @@ class FullTextService:
             logger.debug("PDF download failed for %s", pdf_url, exc_info=True)
 
     def _report_pdf_download_failure(
-        self, source: str, pdf_url: str, reason: str, cause: str
+        self, source: str, origin: str, pdf_url: str, reason: str, cause: str
     ) -> None:
         """Report a server-side PDF download failure (issue #68).
 
-        Once per (source, cause), with the per-article detail at DEBUG. The
+        Args:
+            source: ``result.source`` — the specific venue or service, named in
+                the message so the first report loses no detail.
+            origin: The downloading tier, which is what the key is built from.
+                See :meth:`_download_and_cache_pdf` for why ``source`` cannot
+                be: it is remote-data-derived at Tier 0 and would make the
+                keyspace unbounded, turning the one-shot into one per article.
+            pdf_url: The URL that failed, quoted as "first seen at".
+            reason: Human-readable cause, e.g. ``"HTTP 404"``.
+            cause: Its stable key fragment, e.g. ``"http-404"``.
+
+        Once per (origin, cause), with the per-article detail at DEBUG. The
         level was chosen from a measured rate rather than by taste, against a
         rule fixed before the numbers landed: under 5% of attempts a
         per-article WARNING is affordable, and at or above it a bulk run's log
@@ -1113,17 +1164,25 @@ class FullTextService:
         regardless of this rule. Every one of the 18 server-side failures
         counted above is Unpaywall's. 14 of those 28 were landing pages
         rather than PDFs (the magic-byte rejection, ``not-a-pdf``) rather than
-        an HTTP failure — which is why the key is per ``(source, cause)``
-        rather than per source: the rate is a property of the population
+        an HTTP failure — which is why the key is per ``(origin, cause)``
+        rather than per origin: the rate is a property of the population
         Unpaywall draws from, not a property of bmlib. Re-run the sampler
         before revisiting this.
+
+        The message says the report is one-shot; it does **not** say the
+        failure is common. That distinction is load-bearing after issue #79.
+        Widening Tier 1d's availability allow-list made ``europepmc_pdf`` the
+        dominant caller of this line, and the table above records *zero*
+        server-side failures for Europe PMC — so the earlier wording ("this is
+        common enough that it is reported once") was measurably false for the
+        source that now emits it most.
         """
         self._warn_once(
-            f"pdf-download:{source}:{cause}",
+            f"pdf-download:{origin}:{cause}",
             "Could not download a %s PDF (%s; first seen at %s). The URL is "
             "left on the result, but there is no file and no extracted text. "
-            "This is common enough that it is reported once — run with DEBUG "
-            "logging to see every affected article.",
+            "This is reported once — run with DEBUG logging to see every "
+            "affected article.",
             source,
             reason,
             pdf_url,

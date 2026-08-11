@@ -284,6 +284,46 @@ class TestAThrottledProbeIsRetriedNotImmediatelyGivenUp:
         # last attempt, since there is nothing left to retry.
         assert recorded == [2.0, 4.0]
 
+    def test_a_zero_retry_after_is_honoured_as_zero_not_treated_as_absent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``Retry-After: 0`` is a value, not a missing header.
+
+        The code tests ``retry_after is not None`` rather than truthiness
+        precisely so a server saying "retry immediately" is not silently
+        promoted to a 2-second backoff. Nothing pinned that, so a
+        simplification to ``retry_after or fallback`` would have passed.
+        """
+        recorded: list[Any] = []
+        monkeypatch.setattr(sampler, "_sleep_for", recorded.append)
+        client = _SequencedClient(
+            [_Resp(429, headers={"Retry-After": "0"}), _Resp(200, b"%PDF-1.7 body")]
+        )
+        outcome = sampler.probe(client, "https://e/a.pdf")
+        assert outcome.ok is True
+        assert recorded == [0]
+        assert all(seconds >= 0 for seconds in recorded)
+
+    def test_a_negative_retry_after_does_not_abort_the_run(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A hostile or broken header must not cost 25 minutes of live probing.
+
+        ``int("-1")`` parses fine and ``time.sleep(-1)`` raises ``ValueError``
+        — from a line that sits *outside* the ``try`` wrapping ``client.get``,
+        so it propagates out of ``probe()`` through ``run()`` to ``main()``
+        and loses every population's data. The delay is clamped at zero.
+        """
+        recorded: list[Any] = []
+        monkeypatch.setattr(sampler, "_sleep_for", recorded.append)
+        client = _SequencedClient(
+            [_Resp(429, headers={"Retry-After": "-1"}), _Resp(200, b"%PDF-1.7 body")]
+        )
+        outcome = sampler.probe(client, "https://e/a.pdf")
+        assert outcome.ok is True
+        assert outcome.measured is True
+        assert all(seconds >= 0 for seconds in recorded)
+
 
 class TestThrottledProbesAreExcludedFromTheRateNotCountedAsFailures:
     """``summarise`` must not let a self-inflicted 429 inflate the failure rate."""

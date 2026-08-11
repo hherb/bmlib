@@ -246,7 +246,13 @@ def probe(client: Any, url: str) -> ProbeOutcome:
                 )
             retry_after = _retry_after_seconds(resp)
             fallback = RETRY_BACKOFF_SECONDS[attempt - 1]
-            delay: float = retry_after if retry_after is not None else fallback
+            # Clamped at zero because the header is remote input and this
+            # sleep sits *outside* the try that wraps client.get: `int("-1")`
+            # parses fine, `time.sleep(-1)` raises ValueError, and that
+            # exception propagates out of probe() -> run() -> main(), losing
+            # every population's data after ~25 minutes of live probing. The
+            # clamp closes the `Retry-After: 0` case with it.
+            delay: float = max(0.0, retry_after if retry_after is not None else fallback)
             _sleep_for(delay)
             continue
         # 206 Partial Content is the success for a ranged GET; a server

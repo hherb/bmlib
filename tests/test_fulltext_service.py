@@ -2903,41 +2903,72 @@ class TestFreePDFAvailability:
     """
 
     @staticmethod
-    def _hit(style="pdf", availability="Open access", code="OA", url="https://ex/a.pdf"):
+    def _hit(
+        style: str = "pdf",
+        availability: object = "Open access",
+        code: str | None = "OA",
+        url: str = "https://ex/a.pdf",
+    ) -> dict[str, object]:
         """One search hit carrying a single ``fullTextUrl`` entry.
 
         One builder for every test in this class, so a rejection test cannot
         pass because its fixture was malformed in some unrelated way — the
         acceptance tests use the same builder and would fail too.
+
+        ``availability`` is typed ``object`` rather than ``str | None``
+        because one test deliberately supplies the malformed non-string shape
+        that used to raise ``TypeError`` out of the hashing ``in`` test.
         """
-        entry = {"documentStyle": style, "url": url}
+        entry: dict[str, object] = {"documentStyle": style, "url": url}
         if availability is not None:
             entry["availability"] = availability
         if code is not None:
             entry["availabilityCode"] = code
         return {"fullTextUrlList": {"fullTextUrl": [entry]}}
 
-    def test_an_open_access_pdf_is_taken(self):
+    def test_an_open_access_pdf_is_taken(self) -> None:
         """The 95.7% case that was being discarded."""
         assert _extract_free_pdf_url(self._hit()) == "https://ex/a.pdf"
 
-    def test_a_free_pdf_is_still_taken(self):
+    def test_a_free_pdf_is_still_taken(self) -> None:
         """The 4.3% case that already worked — the widening must not narrow."""
         hit = self._hit(availability="Free", code="F")
         assert _extract_free_pdf_url(hit) == "https://ex/a.pdf"
 
-    def test_a_subscription_entry_is_rejected(self):
+    def test_a_subscription_entry_is_rejected(self) -> None:
         """The whole point of an allow-list: never download a paywalled PDF."""
         hit = self._hit(availability="Subscription required", code="S")
         assert _extract_free_pdf_url(hit) is None
 
-    def test_an_entry_with_no_code_falls_back_to_the_label(self):
+    def test_an_entry_with_no_code_falls_back_to_the_label(self) -> None:
         """Every entry in the 1,263-entry sample carried a code; nothing
         documents that they must, so the display string stays a fallback."""
         hit = self._hit(code=None)
         assert _extract_free_pdf_url(hit) == "https://ex/a.pdf"
 
-    def test_an_unknown_code_is_rejected_even_when_the_label_looks_free(self):
+    def test_an_empty_code_falls_back_to_the_label_rather_than_rejecting(self) -> None:
+        """``if isinstance(code, str) and code:`` — the ``and code`` half.
+
+        An empty ``availabilityCode`` is not a code bmlib failed to
+        recognise; it is an entry that carried none, so it takes the display
+        string's fallback. Nothing else in this class distinguishes that from
+        ``if isinstance(code, str):``, which would reject this entry outright.
+        """
+        hit = self._hit(availability="Open access", code="")
+        assert _extract_free_pdf_url(hit) == "https://ex/a.pdf"
+
+    def test_a_non_string_availability_is_rejected_without_raising(self) -> None:
+        """A malformed payload is an entry to skip, not a bmlib defect.
+
+        ``x in frozenset`` hashes ``x``, so an ``availability`` arriving as a
+        JSON object raised ``TypeError: unhashable type: 'dict'`` — and
+        ``TypeError`` is in ``_BUG_TYPES``, so issue #72's new warning would
+        have accused bmlib of a defect over Europe PMC's bytes.
+        """
+        hit = self._hit(availability={"value": "Open access"}, code=None)
+        assert _extract_free_pdf_url(hit) is None
+
+    def test_an_unknown_code_is_rejected_even_when_the_label_looks_free(self) -> None:
         """The under-credit rule, and the reason the code is authoritative.
 
         A future code bmlib has never seen must cost a retrieval rather than
@@ -2947,12 +2978,12 @@ class TestFreePDFAvailability:
         hit = self._hit(availability="Open access", code="OA2")
         assert _extract_free_pdf_url(hit) is None
 
-    def test_a_non_pdf_entry_is_rejected_however_free(self):
+    def test_a_non_pdf_entry_is_rejected_however_free(self) -> None:
         """``documentStyle`` still gates: the HTML entry is not a PDF."""
         hit = self._hit(style="html")
         assert _extract_free_pdf_url(hit) is None
 
-    def test_an_open_access_render_url_now_reaches_the_pdf_tier(self):
+    def test_an_open_access_render_url_now_reaches_the_pdf_tier(self) -> None:
         """End to end: the tier fires where it used to fall through to a link."""
         search = MagicMock()
         search.status_code = 200
@@ -3187,13 +3218,24 @@ class TestAFailedPDFDownloadIsReported:
     def test_a_404_is_reported_as_an_http_failure(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
+        """Asserted on text unique to the WARNING, not merely on ``"404"``.
+
+        The helper captures at DEBUG, and the pre-existing
+        ``logger.debug("PDF download failed (%s) for %s", "http-404", ...)``
+        line already contains "404" — so the bare substring stayed green with
+        the whole ``_warn_once`` call deleted from
+        ``_report_pdf_download_failure``. "Could not download" appears in no
+        other line, and only the WARNING renders the status as ``HTTP 404``
+        rather than as the key fragment ``http-404``.
+        """
         resp = MagicMock()
         resp.status_code = 404
         result = self._fetch(self._service(tmp_path), resp, caplog)
 
         assert result.pdf_url == "https://e/a.pdf"
         assert result.file_path is None
-        assert "404" in caplog.text
+        assert "Could not download" in caplog.text
+        assert "HTTP 404" in caplog.text
 
     def test_a_landing_page_is_reported_as_not_a_pdf(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
@@ -3210,8 +3252,17 @@ class TestAFailedPDFDownloadIsReported:
     def test_a_network_failure_is_reported_as_an_exception(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
+        """Asserted on WARNING-unique text for the same reason as the 404 case.
+
+        ``"OSError"`` alone is satisfied by the ``exc_info=True`` traceback on
+        the DEBUG line below the warning. This test is backstopped by
+        ``test_an_exception_is_warned_once_per_source_and_type``, so it was a
+        redundancy rather than a hole — tightened anyway, so no test in this
+        class asserts on text a different log line also emits.
+        """
         self._fetch(self._service(tmp_path), OSError("no route to host"), caplog)
-        assert "OSError" in caplog.text
+        assert "Could not download" in caplog.text
+        assert "Further OSError failures will not be repeated" in caplog.text
 
     def test_an_exception_is_warned_once_per_source_and_type(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
@@ -3266,13 +3317,13 @@ class TestAFailedPDFDownloadIsReported:
     def test_two_different_causes_on_the_same_source_are_both_reported(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Per (source, cause), not per source.
+        """Per (origin, cause), not per origin.
 
         The exact regression that bit this plan's Task 4: a test that could
-        not fail if the key collapsed to just the source, since a single
-        failing case would still pass with a fixed or source-only key. Driven
+        not fail if the key collapsed to just the origin, since a single
+        failing case would still pass with a fixed or origin-only key. Driven
         through two distinct causes — an HTTP failure, then a landing page —
-        on the same source, and both messages must appear.
+        from the same tier, and both messages must appear.
         """
         service = self._service(tmp_path)
         not_found = MagicMock()
@@ -3284,5 +3335,129 @@ class TestAFailedPDFDownloadIsReported:
         self._fetch(service, not_found, caplog)
         self._fetch(service, landing_page, caplog)
 
-        assert "404" in caplog.text
+        assert "HTTP 404" in caplog.text
         assert "not a PDF" in caplog.text
+
+
+class TestTheDownloadFailureKeyspaceIsBounded:
+    """The one-shot is only one-shot if its keyspace cannot grow with the corpus.
+
+    ``_report_pdf_download_failure`` originally keyed on ``result.source``.
+    That is a constant for Tier 1d (``"europepmc_pdf"``) and Tier 2
+    (``"unpaywall"``), but Tier 0 sets it from a fetcher-supplied
+    :class:`FullTextSourceEntry`, and OpenAlex derives that from the
+    location's **venue display name** — one distinct, remote-data-derived
+    string per journal or repository.
+
+    So a bulk sync over an OpenAlex-fed corpus warned once *per article*, each
+    line claiming the report was one-shot, at the site with the worst measured
+    failure rate: Tier 0's PDF locations are the same arbitrary-repository
+    population as Unpaywall's, measured at 64.3% failure with 14 of 28 being
+    landing pages. That is precisely the drowned bulk log the pre-registered
+    5% rule and the live sampler existed to prevent.
+
+    The fix is a bounded ``origin`` written out at each of the three call
+    sites, so the key's value set is an enumeration rather than a function of
+    the data. The venue still appears in the *message*, so the first report
+    loses nothing.
+    """
+
+    @staticmethod
+    def _service(tmp_path: Path) -> FullTextService:
+        return FullTextService(
+            email="test@example.com",
+            cache=FullTextCache(cache_dir=tmp_path),
+            convert_pdfs=False,
+        )
+
+    @staticmethod
+    def _fetch_from(service: FullTextService, source: str, response: object) -> FullTextResult:
+        """Drive Tier 0 with one fetcher-supplied PDF entry named *source*."""
+        entry = FullTextSourceEntry(url=f"https://ex/{source}.pdf", format="pdf", source=source)
+        with patch.object(service, "_http_get", side_effect=[response]):
+            return service.fetch_fulltext(fulltext_sources=[entry], identifier=f"10.1/{source}")
+
+    def test_two_venues_failing_the_same_way_are_reported_once(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Two OpenAlex-shaped venue names, one identical HTTP failure.
+
+        Keyed on ``result.source`` this warns twice — and, over a real
+        corpus, once per article.
+        """
+        service = self._service(tmp_path)
+        not_found = MagicMock()
+        not_found.status_code = 404
+
+        with caplog.at_level("WARNING"):
+            first = self._fetch_from(service, "The Lancet", not_found)
+            second = self._fetch_from(service, "Zenodo", not_found)
+
+        # Both articles still come back with their URL as a fallback.
+        assert first.pdf_url == "https://ex/The Lancet.pdf"
+        assert second.pdf_url == "https://ex/Zenodo.pdf"
+        assert caplog.text.count("Could not download") == 1
+
+    def test_the_first_report_still_names_the_specific_venue(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Bounding the *key* must not cost the reader the detail.
+
+        The guard against "fix" it by dropping the source from the message
+        too, which would leave an operator with no idea which repository
+        failed.
+        """
+        service = self._service(tmp_path)
+        not_found = MagicMock()
+        not_found.status_code = 404
+
+        with caplog.at_level("WARNING"):
+            self._fetch_from(service, "The Lancet", not_found)
+
+        assert "The Lancet" in caplog.text
+
+    def test_two_venues_raising_the_same_exception_are_reported_once(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The exception path builds its own key and had the same defect."""
+        service = self._service(tmp_path)
+
+        with caplog.at_level("WARNING"):
+            self._fetch_from(service, "The Lancet", OSError("no route to host"))
+            self._fetch_from(service, "Zenodo", OSError("no route to host"))
+
+        assert caplog.text.count("Could not download") == 1
+
+    def test_a_different_tier_is_still_reported_separately(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The negative control, and a deliberate property: bounding the key
+        must not collapse it to the cause alone.
+
+        Unpaywall's landing-page noise suppressing a Europe PMC report is the
+        outcome the per-origin half of the key exists to prevent, so a Tier 0
+        failure must not silence the identical failure from Tier 2.
+        """
+        service = self._service(tmp_path)
+        not_found = MagicMock()
+        not_found.status_code = 404
+        empty_search = MagicMock()
+        empty_search.status_code = 200
+        empty_search.json.return_value = {"resultList": {"result": []}}
+        unpaywall = MagicMock()
+        unpaywall.status_code = 200
+        unpaywall.json.return_value = {"best_oa_location": {"url_for_pdf": "https://u/a.pdf"}}
+
+        with caplog.at_level("WARNING"):
+            self._fetch_from(service, "The Lancet", not_found)
+            with patch.object(
+                service,
+                "_http_get",
+                side_effect=[empty_search, _idconv_miss(), unpaywall, not_found],
+            ):
+                result = service.fetch_fulltext(doi="10.1/unpaywall", identifier="10.1/unpaywall")
+
+        # The Unpaywall tier really did reach its download, rather than the
+        # chain ending somewhere earlier and the count passing by accident.
+        assert result.source == "unpaywall"
+        assert caplog.text.count("Could not download") == 2
