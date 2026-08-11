@@ -32,9 +32,9 @@ All notable changes to bmlib are documented here. The format is based on
   magic-byte validation, and any exception, all at `DEBUG` — so with
   `convert_pdfs=True` the caller asked for text, got a bare `pdf_url`, and
   could not tell a full disk from a publisher 404. The two server-side
-  causes are now reported per `(source, cause)`, at a level chosen from a
+  causes are now reported per `(tier, cause)`, at a level chosen from a
   measured rate against a rule fixed beforehand: under 5% of attempts, a
-  per-article `WARNING`; at or above it, one line per `(source, cause)` plus
+  per-article `WARNING`; at or above it, one line per `(tier, cause)` plus
   per-article `DEBUG`. Measured with `scripts/sample_free_pdf_urls.py
   --target 150 --per-host-interval 4.0`: `europepmc` 0.7% failed (n=150, 95%
   CI [0.1%, 3.7%], 1 transport exception), `unpaywall` 64.3% failed (n=28,
@@ -45,10 +45,22 @@ All notable changes to bmlib are documented here. The format is based on
   so Unpaywall's rate, whose CI lower bound is roughly 9x the threshold,
   selected the one-shot variant. The exception path (a lost network, a full
   disk) is separate and needed no measurement: it fails every article once
-  it starts failing, so it is one-shot per `(source, exception type)`
+  it starts failing, so it is one-shot per `(tier, exception type)`
   regardless of the rate rule. `_save_pdf_to_cache` now returns
   `tuple[str | None, str]` so a failed cache *write* is reported as a write
   failure rather than blamed on the publisher's bytes.
+
+  Both keys are built from a bounded `origin` — `"europepmc_pdf"`,
+  `"unpaywall"` or `"known_source"`, written out at each of the three call
+  sites — rather than from `result.source`. For Tiers 1d and 2 those
+  coincide, but a Tier 0 `source` comes from the fetcher's
+  `FullTextSourceEntry`, and OpenAlex derives it from the location's venue
+  display name: one distinct, remote-data-derived string per journal or
+  repository, which would turn "reported once" into one warning per article
+  over a bulk sync. The source still appears in the message, so the first
+  report names the specific venue. The message says the report is one-shot
+  without asserting the failure is common: #79 makes `europepmc_pdf` the
+  dominant emitter, and Europe PMC measured zero server-side failures.
 
 - **A bmlib bug no longer hides behind a tier that still works** (#72).
   `_TierFailures.describe()` is consulted only on total exhaustion, so an
