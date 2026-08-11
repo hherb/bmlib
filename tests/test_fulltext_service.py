@@ -1032,7 +1032,9 @@ class TestIDConverter:
         service = FullTextService(email="test@example.com")
         with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC7614751")):
             assert (
-                service._resolve_pmc_id_via_idconv(doi="10.1/test", failures=_TierFailures())
+                service._resolve_pmc_id_via_idconv(
+                    doi="10.1/test", failures=_TierFailures.unreported()
+                )
                 == "PMC7614751"
             )
 
@@ -1041,7 +1043,7 @@ class TestIDConverter:
         service = FullTextService(email="test@example.com")
         with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
             service._resolve_pmc_id_via_idconv(
-                doi="10.1/test", pmid="12345", failures=_TierFailures()
+                doi="10.1/test", pmid="12345", failures=_TierFailures.unreported()
             )
 
         assert mock_get.call_args.kwargs["params"]["ids"] == "12345"
@@ -1049,14 +1051,14 @@ class TestIDConverter:
     def test_the_doi_is_used_when_there_is_no_pmid(self):
         service = FullTextService(email="test@example.com")
         with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
-            service._resolve_pmc_id_via_idconv(doi="10.1/test", failures=_TierFailures())
+            service._resolve_pmc_id_via_idconv(doi="10.1/test", failures=_TierFailures.unreported())
 
         assert mock_get.call_args.kwargs["params"]["ids"] == "10.1/test"
 
     def test_no_identifier_makes_no_request(self):
         service = FullTextService(email="test@example.com")
         with patch.object(service, "_http_get") as mock_get:
-            assert service._resolve_pmc_id_via_idconv(failures=_TierFailures()) is None
+            assert service._resolve_pmc_id_via_idconv(failures=_TierFailures.unreported()) is None
             mock_get.assert_not_called()
 
     def test_an_error_record_resolves_to_nothing(self):
@@ -1064,14 +1066,20 @@ class TestIDConverter:
         service = FullTextService(email="test@example.com")
         reply = self._reply(status="error", errmsg="invalid article id")
         with patch.object(service, "_http_get", return_value=reply):
-            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures()) is None
+            assert (
+                service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures.unreported())
+                is None
+            )
 
     def test_a_record_no_longer_live_resolves_to_nothing(self):
         """``live: "false"`` means PMC no longer serves it — the fetch would fail."""
         service = FullTextService(email="test@example.com")
         reply = self._reply(pmcid="PMC123", live="false")
         with patch.object(service, "_http_get", return_value=reply):
-            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures()) is None
+            assert (
+                service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures.unreported())
+                is None
+            )
 
     @pytest.mark.parametrize("pmcid", ["../../etc/passwd", "PMC123\n"])
     def test_a_malformed_pmcid_is_refused(self, pmcid):
@@ -1084,7 +1092,10 @@ class TestIDConverter:
         service = FullTextService(email="test@example.com")
         reply = self._reply(pmcid=pmcid)
         with patch.object(service, "_http_get", return_value=reply):
-            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures()) is None
+            assert (
+                service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures.unreported())
+                is None
+            )
 
     def test_an_empty_record_list_resolves_to_nothing(self):
         service = FullTextService(email="test@example.com")
@@ -1092,14 +1103,20 @@ class TestIDConverter:
         resp.status_code = 200
         resp.json.return_value = {"status": "ok", "records": []}
         with patch.object(service, "_http_get", return_value=resp):
-            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures()) is None
+            assert (
+                service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures.unreported())
+                is None
+            )
 
     def test_a_failed_request_resolves_to_nothing(self):
         service = FullTextService(email="test@example.com")
         resp = MagicMock()
         resp.status_code = 500
         with patch.object(service, "_http_get", return_value=resp):
-            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures()) is None
+            assert (
+                service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures.unreported())
+                is None
+            )
 
     def test_a_transport_failure_is_not_raised(self):
         """It is called where a free-PDF URL is already in hand.
@@ -1110,7 +1127,10 @@ class TestIDConverter:
         """
         service = FullTextService(email="test@example.com")
         with patch.object(service, "_http_get", side_effect=RuntimeError("connection reset")):
-            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures()) is None
+            assert (
+                service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures.unreported())
+                is None
+            )
 
     def test_unparseable_json_resolves_to_nothing(self):
         service = FullTextService(email="test@example.com")
@@ -1118,26 +1138,29 @@ class TestIDConverter:
         resp.status_code = 200
         resp.json.side_effect = ValueError("not json")
         with patch.object(service, "_http_get", return_value=resp):
-            assert service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures()) is None
+            assert (
+                service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures.unreported())
+                is None
+            )
 
     def test_the_api_key_is_sent_only_when_configured(self):
         without = FullTextService(email="test@example.com")
         with patch.object(without, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
-            without._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures())
+            without._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures.unreported())
         assert "api_key" not in mock_get.call_args.kwargs["params"]
 
         with_key = FullTextService(email="test@example.com", ncbi_api_key="secret")
         with patch.object(
             with_key, "_http_get", return_value=self._reply(pmcid="PMC1")
         ) as mock_get:
-            with_key._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures())
+            with_key._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures.unreported())
         assert mock_get.call_args.kwargs["params"]["api_key"] == "secret"
 
     def test_the_caller_is_identified_to_ncbi(self):
         """NCBI asks for tool and email on every request."""
         service = FullTextService(email="test@example.com")
         with patch.object(service, "_http_get", return_value=self._reply(pmcid="PMC1")) as mock_get:
-            service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures())
+            service._resolve_pmc_id_via_idconv(pmid="99", failures=_TierFailures.unreported())
 
         params = mock_get.call_args.kwargs["params"]
         assert params["tool"] == "bmlib"
@@ -1895,16 +1918,16 @@ class TestTheFailureSummaryReadsCorrectly:
         It must not read as "every source answered that it had nothing" —
         that is a claim about sources this object never saw.
         """
-        assert _TierFailures().describe() == "no attempt reported a failure"
+        assert _TierFailures.unreported().describe() == "no attempt reported a failure"
 
     def test_one_fault_is_singular(self):
-        failures = _TierFailures()
+        failures = _TierFailures.unreported()
         failures.record(OSError("network is down"))
         assert failures.describe() == "1 attempt failed (OSError)"
 
     def test_many_faults_are_counted_and_their_types_sorted_and_deduplicated(self):
         """Types are a set for the reader's benefit; the count is not."""
-        failures = _TierFailures()
+        failures = _TierFailures.unreported()
         failures.record(OSError("a"))
         failures.record(TypeError("b"))
         failures.record(OSError("c"))
@@ -1912,13 +1935,13 @@ class TestTheFailureSummaryReadsCorrectly:
 
     def test_an_absence_is_counted_apart_from_a_fault(self):
         """The distinction the whole report exists to draw."""
-        failures = _TierFailures()
+        failures = _TierFailures.unreported()
         failures.record(FullTextUnavailableError("no OA copy"))
         failures.note_absence()
         assert failures.describe() == "2 sources had nothing"
 
     def test_faults_and_absences_are_reported_side_by_side(self):
-        failures = _TierFailures()
+        failures = _TierFailures.unreported()
         failures.record(OSError("down"))
         failures.record(FullTextUnavailableError("no OA copy"))
         assert failures.describe() == "1 attempt failed (OSError); 1 source had nothing"
@@ -1926,7 +1949,7 @@ class TestTheFailureSummaryReadsCorrectly:
     def test_an_unavailable_error_is_an_absence_not_a_fault(self):
         """``FullTextUnavailableError`` subclasses ``FullTextError`` — the
         sorting must key on the subclass, not on the base."""
-        failures = _TierFailures()
+        failures = _TierFailures.unreported()
         failures.record(FullTextError("Unpaywall HTTP 503"))
         failures.record(FullTextUnavailableError("DOI not found in Unpaywall"))
         assert failures.faults == ["FullTextError"]
@@ -2906,7 +2929,7 @@ class TestFreePDFAvailability:
     def _hit(
         style: str = "pdf",
         availability: object = "Open access",
-        code: str | None = "OA",
+        code: object = "OA",
         url: str = "https://ex/a.pdf",
     ) -> dict[str, object]:
         """One search hit carrying a single ``fullTextUrl`` entry.
@@ -2915,9 +2938,11 @@ class TestFreePDFAvailability:
         pass because its fixture was malformed in some unrelated way — the
         acceptance tests use the same builder and would fail too.
 
-        ``availability`` is typed ``object`` rather than ``str | None``
-        because one test deliberately supplies the malformed non-string shape
-        that used to raise ``TypeError`` out of the hashing ``in`` test.
+        *Both* access fields are typed ``object`` rather than ``str | None``,
+        because both are read from remote JSON and both are type-checked
+        before being hashed. Typed narrowly, the malformed-code case could not
+        be written at all — which is how the ``isinstance(code, str)`` guard
+        came to be unpinned while its ``availability`` twin was covered.
         """
         entry: dict[str, object] = {"documentStyle": style, "url": url}
         if availability is not None:
@@ -2967,6 +2992,64 @@ class TestFreePDFAvailability:
         """
         hit = self._hit(availability={"value": "Open access"}, code=None)
         assert _extract_free_pdf_url(hit) is None
+
+    def test_a_non_string_code_falls_back_to_the_label_without_raising(self) -> None:
+        """The ``isinstance(code, str)`` half, which nothing else drives.
+
+        A code arriving as a JSON object is not a code bmlib failed to
+        recognise — it carries no access claim to under-credit — so it is read
+        as no code at all and the label decides. Without the guard, ``x in
+        frozenset`` hashes the dict and raises ``TypeError: unhashable type``,
+        which is in ``_BUG_TYPES``: Europe PMC's malformed bytes would be
+        reported as a bmlib defect, and would spend the one-shot
+        ``bug:TypeError`` slot that a later real defect needs.
+        """
+        hit = self._hit(availability="Open access", code={"value": "OA"})
+        assert _extract_free_pdf_url(hit) == "https://ex/a.pdf"
+
+    def test_a_non_string_code_beside_a_paywalled_label_is_still_rejected(self) -> None:
+        """The negative control for the fallback above: the label really decides."""
+        hit = self._hit(availability="Subscription required", code={"value": "OA"})
+        assert _extract_free_pdf_url(hit) is None
+
+    def test_a_null_fulltexturl_is_skipped_rather_than_raising(self) -> None:
+        """``.get(k, [])`` returns ``None``, not ``[]``, for a key present with a null.
+
+        Iterating that raises ``TypeError`` — the same ``_BUG_TYPES`` false
+        accusation ``_entry_is_free`` guards its own two reads against, one
+        level up in the same payload.
+        """
+        assert _extract_free_pdf_url({"fullTextUrlList": {"fullTextUrl": None}}) is None
+        assert _extract_free_pdf_url({"fullTextUrlList": {"fullTextUrl": 7}}) is None
+        assert _extract_free_pdf_url({"fullTextUrlList": {}}) is None
+
+    def test_a_free_entry_behind_a_paywalled_one_is_still_found(self) -> None:
+        """The loop must keep looking, not stop at the first entry it cannot take.
+
+        Real ``fullTextUrlList`` payloads carry several entries. First-match-
+        wins would discard every render URL sitting behind a paywalled
+        sibling — issue #79's failure mode in another guise — and every other
+        test in this class drives a single-entry list.
+        """
+        hit: dict[str, object] = {
+            "fullTextUrlList": {
+                "fullTextUrl": [
+                    {
+                        "documentStyle": "pdf",
+                        "availability": "Subscription required",
+                        "availabilityCode": "S",
+                        "url": "https://publisher/paywalled.pdf",
+                    },
+                    {
+                        "documentStyle": "pdf",
+                        "availability": "Open access",
+                        "availabilityCode": "OA",
+                        "url": "https://ex/free.pdf?pdf=render",
+                    },
+                ]
+            }
+        }
+        assert _extract_free_pdf_url(hit) == "https://ex/free.pdf?pdf=render"
 
     def test_an_unknown_code_is_rejected_even_when_the_label_looks_free(self) -> None:
         """The under-credit rule, and the reason the code is authoritative.
@@ -3153,11 +3236,22 @@ class TestASwallowedBugDoesNotStayAtDebug:
 
         assert caplog.text.count("which bmlib does not raise deliberately") == 1
 
-    def test_a_bare_tier_failures_record_still_works(self) -> None:
-        """``on_bug`` defaults to ``None``: existing direct construction is safe."""
-        failures = _TierFailures()
+    def test_an_unreported_record_still_files_the_fault(self) -> None:
+        """``unreported()`` is silent, not inert: the exhaustion report is unaffected."""
+        failures = _TierFailures.unreported()
         failures.record(TypeError("boom"))
         assert failures.faults == ["TypeError"]
+
+    def test_a_record_cannot_be_built_without_deciding_about_on_bug(self) -> None:
+        """The wiring is mandatory, so a new call site cannot omit it silently.
+
+        An unwired ``on_bug`` is not a quieter channel — ``describe()`` is read
+        only on total exhaustion, which is precisely the exit issue #72's case
+        never reaches — so a defaulted ``None`` would have left the one wiring
+        that matters optional. Opting out has to be spelled ``unreported()``.
+        """
+        with pytest.raises(TypeError):
+            _TierFailures()  # type: ignore[call-arg]
 
 
 class TestAFailedPDFDownloadIsReported:
@@ -3461,3 +3555,429 @@ class TestTheDownloadFailureKeyspaceIsBounded:
         # chain ending somewhere earlier and the count passing by accident.
         assert result.source == "unpaywall"
         assert caplog.text.count("Could not download") == 2
+
+
+class TestASecondDistinctFaultIsStillReported:
+    """The other half of every one-shot: suppression must not become silence.
+
+    Each ``_warn_once`` key names a *cause*, not just a site, so a second
+    different fault at the same site is still reported. Four of the six keys
+    had that half pinned; these are the two that did not, plus the
+    cache-write key, which named no cause at all.
+    """
+
+    @staticmethod
+    def _service(tmp_path: Path) -> FullTextService:
+        return FullTextService(
+            email="test@example.com",
+            cache=FullTextCache(cache_dir=tmp_path),
+            convert_pdfs=False,
+        )
+
+    @staticmethod
+    def _download(service: FullTextService, response_or_exc: object, n: int) -> None:
+        """Drive Tier 0's download once, with *n* distinguishing the article."""
+        entry = FullTextSourceEntry(url=f"https://ex/{n}.pdf", format="pdf", source="repo")
+        with patch.object(service, "_http_get", side_effect=[response_or_exc]):
+            service.fetch_fulltext(fulltext_sources=[entry], identifier=f"10.1/{n}")
+
+    def test_two_different_http_statuses_from_one_tier_are_both_reported(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """404 then 403 — the realistic Unpaywall sequence, per the measured table.
+
+        Keyed per origin rather than per ``(origin, status)``, the 403 is
+        silently suppressed. Nothing drove two statuses from one tier before:
+        the existing two-causes test pairs a 404 with a magic-byte rejection,
+        which survives a status-independent key.
+        """
+        service = self._service(tmp_path)
+        not_found = MagicMock()
+        not_found.status_code = 404
+        forbidden = MagicMock()
+        forbidden.status_code = 403
+
+        with caplog.at_level("WARNING"):
+            self._download(service, not_found, 1)
+            self._download(service, forbidden, 2)
+
+        assert "HTTP 404" in caplog.text
+        assert "HTTP 403" in caplog.text
+
+    def test_the_same_http_status_twice_is_still_reported_once(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The negative control: keying by status must not defeat the one-shot."""
+        service = self._service(tmp_path)
+        not_found = MagicMock()
+        not_found.status_code = 404
+
+        with caplog.at_level("WARNING"):
+            self._download(service, not_found, 1)
+            self._download(service, not_found, 2)
+
+        assert caplog.text.count("Could not download") == 1
+
+    def test_two_different_exception_types_from_one_tier_are_both_reported(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A ConnectError storm must not hide a later ReadTimeout.
+
+        The sampler's own live run recorded both types. The existing test
+        drives the same ``OSError`` three times, pinning only the
+        suppressing half.
+        """
+        service = self._service(tmp_path)
+        with caplog.at_level("WARNING"):
+            self._download(service, OSError("network down"), 1)
+            self._download(service, TimeoutError("slow"), 2)
+
+        assert "OSError" in caplog.text
+        assert "TimeoutError" in caplog.text
+
+    def test_two_different_cache_write_failures_are_both_reported(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The cache-write key named the site and not the cause.
+
+        Both writers catch bare ``Exception`` and funnel here, so a transient
+        ``OSError`` permanently silenced a genuine bmlib ``TypeError`` inside
+        ``save_pdf`` — held at DEBUG, which is the failure mode issue #72
+        exists to fix. It also left the operator reading a type error as a
+        full disk and checking directory permissions that were fine.
+        """
+        service = self._service(tmp_path)
+        assert service.cache is not None
+        with caplog.at_level("WARNING"):
+            with patch.object(service.cache, "save_html", side_effect=OSError("disk full")):
+                service._cache_html("<p>a</p>", "10.1/a")
+            with patch.object(service.cache, "save_html", side_effect=TypeError("bmlib bug")):
+                service._cache_html("<p>b</p>", "10.1/b")
+
+        assert "OSError: disk full" in caplog.text
+        assert "TypeError: bmlib bug" in caplog.text
+
+    def test_the_same_cache_write_failure_twice_is_still_reported_once(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        service = self._service(tmp_path)
+        assert service.cache is not None
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service.cache, "save_html", side_effect=OSError("disk full")),
+        ):
+            service._cache_html("<p>a</p>", "10.1/a")
+            service._cache_html("<p>b</p>", "10.1/b")
+
+        assert caplog.text.count("Could not write to the full-text cache") == 1
+
+    def test_two_different_pdf_backend_failures_are_both_reported(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The backend warning was widened from one boolean to one key per type."""
+        service = FullTextService(
+            email="test@example.com", cache=FullTextCache(cache_dir=tmp_path), convert_pdfs=True
+        )
+        with caplog.at_level("WARNING"):
+            with patch(
+                "bmlib.fulltext.service.get_converter", side_effect=ImportError("no pymupdf")
+            ):
+                service._attach_pdf_text("/tmp/a.pdf", FullTextResult(source="s"))
+            with patch(
+                "bmlib.fulltext.service.get_converter", side_effect=RuntimeError("broken build")
+            ):
+                service._attach_pdf_text("/tmp/b.pdf", FullTextResult(source="s"))
+
+        assert "ImportError" in caplog.text
+        assert "RuntimeError" in caplog.text
+
+
+class TestEveryDefectShapedTypeIsReported:
+    """``_BUG_TYPES``' *exclusions* were pinned; three of its five members were not.
+
+    Removing ``KeyError``, ``IndexError`` or ``NameError`` left the suite
+    green, and ``KeyError`` is the member most likely to be argued away later
+    as "remote data".
+    """
+
+    @staticmethod
+    def _run(exc: BaseException, caplog: pytest.LogCaptureFixture) -> None:
+        service = FullTextService(email="test@example.com", convert_pdfs=False)
+        with caplog.at_level("WARNING"), patch.object(service, "_http_get", side_effect=exc):
+            service.fetch_fulltext(doi="10.1/test")
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            TypeError("boom"),
+            AttributeError("boom"),
+            NameError("boom"),
+            KeyError("boom"),
+            IndexError("boom"),
+        ],
+        ids=lambda e: type(e).__name__,
+    )
+    def test_each_member_is_reported_as_a_defect(
+        self, exc: BaseException, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        self._run(exc, caplog)
+        assert "which bmlib does not raise deliberately" in caplog.text
+
+    def test_an_unbound_local_error_is_carried_in_by_name_error(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The inheritance the ``_BUG_TYPES`` comment claims, actually exercised."""
+        self._run(UnboundLocalError("boom"), caplog)
+        assert "which bmlib does not raise deliberately" in caplog.text
+
+    def test_a_tier_zero_defect_is_reported_too(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Every other #72 test drives the Europe PMC search swallow site.
+
+        ``on_bug`` is wired once and threaded through several helpers, so a
+        second swallow site is what would catch a future helper building its
+        own record.
+        """
+        service = FullTextService(email="test@example.com", convert_pdfs=False)
+        entry = FullTextSourceEntry(url="https://ex/a.xml", format="xml", source="repo")
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service, "_http_get", side_effect=AttributeError("boom")),
+        ):
+            # No DOI or PMID to fall back on, so the chain exhausts and raises;
+            # the report under test is emitted at the swallow, well before it.
+            with pytest.raises(FullTextError):
+                service.fetch_fulltext(fulltext_sources=[entry], identifier="10.1/a")
+
+        assert "which bmlib does not raise deliberately" in caplog.text
+
+
+class TestThePerArticleDetailThatTheWarningPromises:
+    """The message says "run with DEBUG logging to see every affected article".
+
+    Nothing checked that a *suppressed* article's URL still reaches DEBUG, so
+    folding the debug line inside ``_warn_once`` would have broken the
+    message's own promise silently — the same defect class as #68 itself.
+    """
+
+    @staticmethod
+    def _service(tmp_path: Path) -> FullTextService:
+        return FullTextService(
+            email="test@example.com",
+            cache=FullTextCache(cache_dir=tmp_path),
+            convert_pdfs=False,
+        )
+
+    @staticmethod
+    def _download(service: FullTextService, response_or_exc: object, url: str) -> None:
+        entry = FullTextSourceEntry(url=url, format="pdf", source="repo")
+        with patch.object(service, "_http_get", side_effect=[response_or_exc]):
+            service.fetch_fulltext(fulltext_sources=[entry], identifier=url)
+
+    def test_a_suppressed_server_side_failure_still_names_its_article_at_debug(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        service = self._service(tmp_path)
+        not_found = MagicMock()
+        not_found.status_code = 404
+
+        with caplog.at_level("DEBUG"):
+            self._download(service, not_found, "https://ex/first.pdf")
+            self._download(service, not_found, "https://ex/second.pdf")
+
+        assert caplog.text.count("Could not download") == 1
+        assert "https://ex/first.pdf" in caplog.text
+        assert "https://ex/second.pdf" in caplog.text
+
+    def test_a_suppressed_exception_still_names_its_article_at_debug(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        service = self._service(tmp_path)
+        with caplog.at_level("DEBUG"):
+            self._download(service, OSError("down"), "https://ex/first.pdf")
+            self._download(service, OSError("down"), "https://ex/second.pdf")
+
+        assert caplog.text.count("Could not download") == 1
+        assert "https://ex/first.pdf" in caplog.text
+        assert "https://ex/second.pdf" in caplog.text
+
+
+class TestTheDownloadReportsOnlyWhatItIsResponsibleFor:
+    """Two boundaries the download's failure message must not cross."""
+
+    @staticmethod
+    def _service(tmp_path: Path, convert_pdfs: bool = False) -> FullTextService:
+        return FullTextService(
+            email="test@example.com",
+            cache=FullTextCache(cache_dir=tmp_path),
+            convert_pdfs=convert_pdfs,
+        )
+
+    def test_a_failed_write_is_not_reported_as_a_download_failure_at_all(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The strengthened form: not merely "not a bad PDF", but not the publisher's.
+
+        The earlier test asserted only that ``"not a PDF"`` was absent, so an
+        added ``write-failed`` report would have passed it. A read-only
+        directory is the environment's fault and ``_warn_cache_write_failed``
+        already names it correctly.
+        """
+        service = self._service(tmp_path)
+        assert service.cache is not None
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.content = b"%PDF-1.7 real pdf"
+        entry = FullTextSourceEntry(url="https://ex/a.pdf", format="pdf", source="repo")
+
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service.cache, "save_pdf", side_effect=OSError("read-only")),
+            patch.object(service, "_http_get", side_effect=[ok]),
+        ):
+            result = service.fetch_fulltext(fulltext_sources=[entry], identifier="10.1/a")
+
+        assert "nothing is being cached" in caplog.text
+        assert "Could not download" not in caplog.text
+        assert "not a PDF" not in caplog.text
+        assert result.file_path is None
+        assert result.pdf_url == "https://ex/a.pdf"
+
+    def test_a_failing_extraction_is_reported_as_a_defect_not_a_failed_download(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Extraction runs after the file is cached, so it is not the download's.
+
+        Under the download's handler, anything escaping ``_attach_pdf_text``
+        produced "there is no file and no extracted text" about an article
+        whose file is cached and on the result, and a ``_BUG_TYPES`` exception
+        was filed as a transport fault rather than as the defect it is.
+        ``_attach_pdf_text`` guards its own backend and conversion, so an
+        escape is a bmlib defect.
+        """
+        service = self._service(tmp_path, convert_pdfs=True)
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.content = b"%PDF-1.7 real pdf"
+        entry = FullTextSourceEntry(url="https://ex/a.pdf", format="pdf", source="repo")
+
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service, "_attach_pdf_text", side_effect=TypeError("bmlib bug")),
+            patch.object(service, "_http_get", side_effect=[ok]),
+        ):
+            result = service.fetch_fulltext(fulltext_sources=[entry], identifier="10.1/a")
+
+        assert "Could not download" not in caplog.text
+        assert "which bmlib does not raise deliberately" in caplog.text
+        assert result.file_path is not None
+
+    def test_a_failing_extraction_does_not_cost_the_cached_pdf(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The download succeeded; failing to read the file must not undo that.
+
+        Letting the exception reach the tier handler would report it correctly
+        and then lose a perfectly good cached PDF — and, with no DOI to fall
+        back on, cost the caller the whole retrieval.
+        """
+        service = self._service(tmp_path, convert_pdfs=True)
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.content = b"%PDF-1.7 real pdf"
+        entry = FullTextSourceEntry(url="https://ex/a.pdf", format="pdf", source="repo")
+
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service, "_attach_pdf_text", side_effect=AttributeError("bmlib bug")),
+            patch.object(service, "_http_get", side_effect=[ok]),
+        ):
+            result = service.fetch_fulltext(fulltext_sources=[entry], identifier="10.1/a")
+
+        assert Path(result.file_path or "").exists()
+        assert result.pdf_url == "https://ex/a.pdf"
+
+    def test_a_rejected_non_pdf_is_reported_once_by_the_service_not_per_article(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """``FullTextCache.save_pdf`` must not WARN behind the service's one-shot.
+
+        This is the dominant measured failure — 14 of Unpaywall's 28 probes —
+        and the cause the pre-registered 5% rule selected the one-shot for. A
+        WARNING inside the cache emitted a line per article for exactly it,
+        while the service's message promised the report was one-shot.
+        """
+        service = self._service(tmp_path)
+        landing_page = MagicMock()
+        landing_page.status_code = 200
+        landing_page.content = b"<!DOCTYPE html><html>not a pdf</html>"
+
+        with caplog.at_level("WARNING"):
+            for n in range(3):
+                entry = FullTextSourceEntry(url=f"https://ex/{n}.pdf", format="pdf", source="repo")
+                with patch.object(service, "_http_get", side_effect=[landing_page]):
+                    service.fetch_fulltext(fulltext_sources=[entry], identifier=f"10.1/{n}")
+
+        assert caplog.text.count("Could not download") == 1
+        assert "Rejected non-PDF data" not in caplog.text
+
+    def test_the_rejection_is_still_visible_at_debug(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The negative control: demoting it must not delete it."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        with caplog.at_level("DEBUG"):
+            assert cache.save_pdf(b"<!DOCTYPE html>", "10.1/a") is None
+        assert "Rejected non-PDF data" in caplog.text
+
+
+class TestAnUnquarantinableCacheEntryIsReported:
+    """The last swallow-to-DEBUG of a bmlib defect in this module (issue #72).
+
+    Its consequence is permanent, not cosmetic: the corrupt entry stays in the
+    lookup path, so the per-article "could not read the cached full text"
+    warning repeats every run for that article for ever, and an undecodable
+    HTML entry keeps hiding a good PDF behind it. At DEBUG the operator sees
+    that symptom on every run and never its cause.
+    """
+
+    def test_a_cache_without_quarantine_is_reported_once(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        service = FullTextService(
+            email="test@example.com", cache=FullTextCache(cache_dir=tmp_path), convert_pdfs=False
+        )
+        assert service.cache is not None
+        with (
+            caplog.at_level("WARNING"),
+            patch.object(service.cache, "quarantine", side_effect=AttributeError("no quarantine")),
+        ):
+            service._quarantine_cache_entry(service.cache, "10.1/a")
+            service._quarantine_cache_entry(service.cache, "10.1/b")
+
+        assert caplog.text.count("Could not move an unreadable cache entry aside") == 1
+        assert "AttributeError" in caplog.text
+
+    def test_a_second_distinct_quarantine_failure_is_still_reported(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        service = FullTextService(
+            email="test@example.com", cache=FullTextCache(cache_dir=tmp_path), convert_pdfs=False
+        )
+        assert service.cache is not None
+        with caplog.at_level("WARNING"):
+            with patch.object(service.cache, "quarantine", side_effect=OSError("read-only")):
+                service._quarantine_cache_entry(service.cache, "10.1/a")
+            with patch.object(service.cache, "quarantine", side_effect=TypeError("bmlib bug")):
+                service._quarantine_cache_entry(service.cache, "10.1/b")
+
+        assert "OSError" in caplog.text
+        assert "TypeError" in caplog.text
+
+    def test_quarantining_never_raises_out_of_the_handler(self, tmp_path: Path) -> None:
+        """The contract the method exists for: tidying must not break the caller."""
+        service = FullTextService(
+            email="test@example.com", cache=FullTextCache(cache_dir=tmp_path), convert_pdfs=False
+        )
+        assert service.cache is not None
+        with patch.object(service.cache, "quarantine", side_effect=RuntimeError("boom")):
+            service._quarantine_cache_entry(service.cache, "10.1/a")

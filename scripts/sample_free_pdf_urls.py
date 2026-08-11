@@ -72,22 +72,41 @@ probe that raises is the opposite: that is a real finding, one of the three
 causes bmlib swallows, and it is counted.
 
 The same principle covers throttling. A 429 or 503 is retried — honouring
-``Retry-After`` when the server sends a usable integer, otherwise backing off
-2s then 4s — for up to three attempts total; a probe still throttled after
-that is ``measured=False``, not a failure, because bmlib never actually asked
-the question "does this URL serve a PDF" and got an answer for it. And when
-throttling leaves more than 20% of a population's attempts unmeasured
-(``UNMEASURED_SHARE_ERROR_THRESHOLD``), the probes that did get through are
-not a random sample of it — they are the *early* ones, made before the host
-started refusing — so that population prints ``ERROR`` too, the same rule
-extended from "zero sampled" to "too few measured to trust."
+``Retry-After`` when the server sends a usable integer, clamped to
+``MAX_RETRY_AFTER_SECONDS``, otherwise backing off 2s then 4s — for up to
+three attempts total (``MAX_PROBE_ATTEMPTS``, so two retries); an attempt
+still throttled after that is ``measured=False``, not a failure, because
+bmlib never actually asked the question "does this URL serve a PDF" and got
+an answer for it. And when throttling leaves more than 20% of a population's
+attempts unmeasured (``UNMEASURED_SHARE_ERROR_THRESHOLD``), the attempts that
+did get through are not a random sample of it — they are the *early* ones,
+made before the host started refusing — so that population prints ``ERROR``
+too, the same rule extended from "zero sampled" to "too few measured to
+trust."
+
+That rule covers the Unpaywall *resolution* phase as well as the probe phase,
+because that is where Unpaywall's own rate limiter actually bites. A DOI
+throttled out of resolution is an attempt on the population that reached no
+answer, so it is carried into the outcome list as an unmeasured attempt
+rather than silently shrinking the denominator.
+
+The second table is the access-label distribution: every ``documentStyle=pdf``
+entry the search returned, counted by ``(availability, availabilityCode)`` and
+marked with whether ``_entry_is_free`` takes it. It is counted over *all* pdf
+entries, not the accepted ones — a distribution filtered by the allow-list
+could only ever confirm the allow-list, and issue #79 was exactly a value that
+never appeared in what bmlib accepted. This is the table that makes the
+allow-list answerable to the records, the way ``sample_databank_names.py``
+does for the DataBankName lists.
+
+Exits non-zero if any population printed ``ERROR`` instead of a rate.
 
     uv run python scripts/sample_free_pdf_urls.py --email you@example.org
 
 Companion to ``scripts/sample_databank_names.py`` and
 ``scripts/sample_funder_names.py``. Run it before changing
 ``_FREE_PDF_AVAILABILITY_CODES`` or the log levels in
-``_download_and_cache_pdf``.
+``_report_pdf_download_failure``.
 """
 
 from __future__ import annotations
@@ -110,7 +129,7 @@ except ImportError:  # pragma: no cover - the script is a live runner
     raise SystemExit(1) from None
 
 from bmlib import __version__
-from bmlib.fulltext.service import _extract_free_pdf_url
+from bmlib.fulltext.service import _entry_is_free, _extract_free_pdf_url, _pick_oa_pdf_url
 from bmlib.publications.fetchers.biorxiv import BASE_URL as BIORXIV_BASE_URL
 from bmlib.publications.fetchers.biorxiv import fetch_biorxiv
 
@@ -137,11 +156,23 @@ DEFAULT_TARGET = 150
 # this share of unmeasured attempts, summarise() reports ERROR instead of a
 # number that looks precise but is not evidence of anything.
 UNMEASURED_SHARE_ERROR_THRESHOLD = 0.20
-# Retry budget for a throttled (429/503) probe, and the backoff used when the
-# server gives no usable Retry-After. Index 0 is the wait before the 2nd
+# Retry budget for a throttled (429/503) request, and the backoff used when
+# the server gives no usable Retry-After. Index 0 is the wait before the 2nd
 # attempt, index 1 the wait before the 3rd.
 MAX_PROBE_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = (2.0, 4.0)
+# Both ends of `Retry-After` are clamped, because both ends lose the run. A
+# negative parses fine and makes time.sleep raise; an hour — routine from a
+# CDN rate limiter or a 503 maintenance window — is honoured silently, and
+# since nothing prints until every population has finished, the operator sees
+# a process producing no output, kills it, and loses the same data the
+# zero-clamp exists to protect. A host asking for longer than this does not
+# want to be sampled now, which is what `measured=False` is for.
+MAX_RETRY_AFTER_SECONDS = 60.0
+# How many days back to walk for the bioRxiv population before giving up on
+# reaching --target. Ten days of postings is several hundred preprints, so
+# this bounds a fetch loop rather than limiting the sample.
+BIORXIV_DAYS_TO_WALK = 10
 
 
 @dataclass(frozen=True)
@@ -149,7 +180,6 @@ class ProbeOutcome:
     """What one download attempt would have produced for bmlib.
 
     Attributes:
-        ok: Whether bmlib would have cached a PDF.
         cause: ``None`` on success, else the failure bucket — ``http-<status>``,
             ``not-a-pdf``, ``exception-<TypeName>``, or ``unmeasured-<status>``.
             The first three are kept apart because they are the three bmlib
@@ -160,12 +190,134 @@ class ProbeOutcome:
             429 or 503 persisted through every retry — the *sampler* was
             throttled, not the URL population, so ``summarise()`` must
             exclude it from the failure rate rather than count it as one.
+
+    ``ok`` is a property, not a field, for the reason ``_TierFailures``'
+    docstring gives for holding no two fields describing one event: a stored
+    ``ok=True`` beside ``cause="http-403"`` constructs happily and would drop
+    that probe out of ``failures``, silently lowering the very rate this
+    script exists to measure and that a production log level is set from.
     """
 
-    ok: bool
     cause: str | None
     status: int | None
     measured: bool = True
+
+    @property
+    def ok(self) -> bool:
+        """Whether bmlib would have cached a PDF. Success is the absence of a cause."""
+        return self.cause is None
+
+
+@dataclass(frozen=True)
+class EuropePMCSample:
+    """One Europe PMC search, read for everything the two allow-lists rest on.
+
+    Attributes:
+        urls: The free PDF render URLs ``_extract_free_pdf_url`` accepted —
+            the ``europepmc`` population.
+        dois: DOIs of records not already in Europe PMC (``inEPMC != "Y"``),
+            which are the ones that reach Tier 2. Unpaywall must be sampled
+            from these, never from a separate search, or the two populations
+            stop being comparable.
+        availability: How every ``documentStyle=pdf`` entry in the search
+            labelled its access, keyed ``(availability, availabilityCode)``.
+            This is the evidence behind ``_FREE_PDF_AVAILABILITY_CODES``, and
+            it is collected over *all* pdf entries rather than the accepted
+            ones — a distribution counted after the allow-list has filtered it
+            could only ever confirm the allow-list. Issue #79 was precisely a
+            value that never appeared in what bmlib accepted.
+    """
+
+    urls: list[str]
+    dois: list[str]
+    availability: Counter[tuple[str, str]]
+
+
+@dataclass(frozen=True)
+class UnpaywallSample:
+    """The Unpaywall population, and how much of it was never reached.
+
+    Attributes:
+        urls: The open-access PDF URLs that resolved.
+        unmeasured: How many DOIs were throttled out of the resolution phase
+            entirely. Carried rather than discarded so ``main()`` can put them
+            back into the population as unmeasured attempts, where the same
+            ``UNMEASURED_SHARE_ERROR_THRESHOLD`` rule that governs throttled
+            *probes* applies to throttled *resolutions* too.
+    """
+
+    urls: list[str]
+    unmeasured: int
+
+
+def count_pdf_availability(result: dict[str, Any]) -> Counter[tuple[str, str]]:
+    """Tally how one search hit's PDF entries label their access.
+
+    Args:
+        result: One Europe PMC search result.
+
+    Returns:
+        A count keyed ``(availability, availabilityCode)``, with ``"-"`` for
+        either value absent and ``"?"`` for one present in a shape that is not
+        a string. The two are distinguished because
+        ``_entry_is_free`` distinguishes them: it reads a non-string code as
+        no code at all and falls through to the label, so a run where those
+        differ is a run where the fallback path is load-bearing.
+
+        Only ``documentStyle == "pdf"`` entries are counted; the allow-list
+        governs nothing else.
+    """
+    counts: Counter[tuple[str, str]] = Counter()
+    url_list = result.get("fullTextUrlList")
+    if not isinstance(url_list, dict):
+        return counts
+    entries = url_list.get("fullTextUrl")
+    if not isinstance(entries, list):
+        return counts
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("documentStyle") != "pdf":
+            continue
+        availability = _label_of(entry.get("availability"))
+        code = _label_of(entry.get("availabilityCode"))
+        counts[(availability, code)] += 1
+    return counts
+
+
+def _label_of(value: object) -> str:
+    """Render one access field for the distribution table."""
+    if value is None:
+        return "-"
+    return value if isinstance(value, str) else "?"
+
+
+def summarise_availability(counts: Counter[tuple[str, str]]) -> list[str]:
+    """Render the access-label distribution, and say which values bmlib takes.
+
+    Args:
+        counts: The tally from :class:`EuropePMCSample`.
+
+    Returns:
+        The lines to print. An empty tally prints ``ERROR`` rather than an
+        empty table, on the same principle as :func:`summarise`: no entries
+        seen is a sample that failed, not a vocabulary with nothing in it.
+
+        Each row is marked with whether ``_entry_is_free`` would accept it, so
+        a value bmlib has never evaluated reads as a finding at a glance
+        rather than having to be cross-checked against the source. That is the
+        drift issue #79 went unnoticed as: ``Open access``/``OA`` was 95.7% of
+        the PDF entries on offer and bmlib took none of it.
+    """
+    if not counts:
+        return ["availability  ERROR — no documentStyle=pdf entries were seen; nothing to report"]
+    total = sum(counts.values())
+    lines = [f"PDF entries by access label ({total} entries)", ""]
+    for (availability, code), count in counts.most_common():
+        taken = _entry_is_free({"availability": availability, "availabilityCode": code})
+        lines.append(
+            f"  {availability:<24} {code:<6} {count:>5}  {100 * count / total:>5.1f}%  "
+            f"{'taken' if taken else 'SKIPPED'}"
+        )
+    return lines
 
 
 def is_probeable(url: str) -> bool:
@@ -212,6 +364,26 @@ def _retry_after_seconds(resp: Any) -> int | None:
         return None
 
 
+def _throttle_delay(resp: Any, attempt: int) -> float:
+    """Seconds to wait before retrying a throttled request, clamped at both ends.
+
+    Args:
+        resp: The 429/503 response, read for its ``Retry-After``.
+        attempt: Which attempt just failed, 1-based, indexing the backoff.
+
+    Returns:
+        The wait, honouring ``Retry-After`` when it parses and falling back to
+        the backoff otherwise, bounded to ``[0, MAX_RETRY_AFTER_SECONDS]``.
+        The header is remote input and this sleep sits *outside* the ``try``
+        that wraps the request, so an unclamped value is not a slow retry but
+        a lost run — see :data:`MAX_RETRY_AFTER_SECONDS`.
+    """
+    retry_after = _retry_after_seconds(resp)
+    fallback = RETRY_BACKOFF_SECONDS[attempt - 1]
+    wanted = float(retry_after if retry_after is not None else fallback)
+    return min(MAX_RETRY_AFTER_SECONDS, max(0.0, wanted))
+
+
 def probe(client: Any, url: str) -> ProbeOutcome:
     """Attempt *url* the way ``_download_and_cache_pdf`` would, and classify it.
 
@@ -235,34 +407,24 @@ def probe(client: Any, url: str) -> ProbeOutcome:
         try:
             resp = client.get(url, headers={"Range": f"bytes=0-{PROBE_BYTES - 1}"})
         except Exception as exc:
-            return ProbeOutcome(ok=False, cause=f"exception-{type(exc).__name__}", status=None)
+            return ProbeOutcome(cause=f"exception-{type(exc).__name__}", status=None)
         if resp.status_code in (429, 503):
             if attempt == MAX_PROBE_ATTEMPTS:
                 return ProbeOutcome(
-                    ok=False,
                     cause=f"unmeasured-{resp.status_code}",
                     status=resp.status_code,
                     measured=False,
                 )
-            retry_after = _retry_after_seconds(resp)
-            fallback = RETRY_BACKOFF_SECONDS[attempt - 1]
-            # Clamped at zero because the header is remote input and this
-            # sleep sits *outside* the try that wraps client.get: `int("-1")`
-            # parses fine, `time.sleep(-1)` raises ValueError, and that
-            # exception propagates out of probe() -> run() -> main(), losing
-            # every population's data after ~25 minutes of live probing. The
-            # clamp closes the `Retry-After: 0` case with it.
-            delay: float = max(0.0, retry_after if retry_after is not None else fallback)
-            _sleep_for(delay)
+            _sleep_for(_throttle_delay(resp, attempt))
             continue
         # 206 Partial Content is the success for a ranged GET; a server
         # ignoring Range answers 200 with the whole body, which is equally
         # fine.
         if resp.status_code not in (200, 206):
-            return ProbeOutcome(ok=False, cause=f"http-{resp.status_code}", status=resp.status_code)
+            return ProbeOutcome(cause=f"http-{resp.status_code}", status=resp.status_code)
         if not resp.content.startswith(b"%PDF"):
-            return ProbeOutcome(ok=False, cause="not-a-pdf", status=resp.status_code)
-        return ProbeOutcome(ok=True, cause=None, status=resp.status_code)
+            return ProbeOutcome(cause="not-a-pdf", status=resp.status_code)
+        return ProbeOutcome(cause=None, status=resp.status_code)
     raise AssertionError("unreachable: the loop above always returns")  # pragma: no cover
 
 
@@ -285,6 +447,28 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     centre = (p + z * z / (2 * n)) / denominator
     half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denominator
     return max(0.0, centre - half), min(1.0, centre + half)
+
+
+def is_reportable(outcomes: list[ProbeOutcome] | None) -> bool:
+    """Whether a population yielded a rate rather than an ``ERROR`` line.
+
+    The single predicate behind both of :func:`summarise`'s ERROR branches and
+    :func:`main`'s exit status, so a caller's exit code cannot disagree with
+    what was printed.
+
+    Args:
+        outcomes: A population's attempts, or ``None`` if it could not be
+            sampled.
+
+    Returns:
+        ``False`` when nothing was sampled, or when more than
+        ``UNMEASURED_SHARE_ERROR_THRESHOLD`` of the attempts never reached an
+        answer.
+    """
+    if not outcomes:
+        return False
+    unmeasured = sum(1 for o in outcomes if not o.measured)
+    return unmeasured / len(outcomes) <= UNMEASURED_SHARE_ERROR_THRESHOLD
 
 
 def summarise(name: str, outcomes: list[ProbeOutcome] | None) -> list[str]:
@@ -313,9 +497,9 @@ def summarise(name: str, outcomes: list[ProbeOutcome] | None) -> list[str]:
         return [f"{name:<12} ERROR — could not sample this population; no rate is reported"]
     n = len(outcomes)
     unmeasured = [o for o in outcomes if not o.measured]
-    if len(unmeasured) / n > UNMEASURED_SHARE_ERROR_THRESHOLD:
+    if not is_reportable(outcomes):
         return [
-            f"{name:<12} ERROR — {len(unmeasured)}/{n} probes were throttled (429/503) "
+            f"{name:<12} ERROR — {len(unmeasured)}/{n} attempts were throttled (429/503) "
             "even after retries; no rate is reported"
         ]
     measured = [o for o in outcomes if o.measured]
@@ -379,16 +563,12 @@ def _make_pacer(
 
 def sample_europepmc(
     client: Any, target: int, pace: Callable[[str], None]
-) -> tuple[list[str], list[str]] | None:
-    """Collect free PDF render URLs and the DOIs the Unpaywall population needs.
+) -> EuropePMCSample | None:
+    """Collect free PDF render URLs, the Unpaywall DOIs, and the access vocabulary.
 
     Returns:
-        ``(urls, dois)``, or ``None`` when the search could not be completed —
-        the caller must then print ``ERROR`` rather than a rate. ``dois`` are
-        the DOIs of records not already in Europe PMC (``inEPMC != "Y"``) seen
-        in this same search — Unpaywall must be sampled from these, never from
-        a separate search, which would destroy the comparability the
-        measurement depends on.
+        An :class:`EuropePMCSample`, or ``None`` when the search could not be
+        completed — the caller must then print ``ERROR`` rather than a rate.
 
         This used to also split ``urls`` by ``inEPMC``, printed as
         ``europepmc/in`` / ``europepmc/out``, meant to approximate "XML
@@ -399,6 +579,7 @@ def sample_europepmc(
     query = "(SRC:MED) AND (FIRST_PDATE:[2024-01-01 TO 2025-12-31])"
     urls: list[str] = []
     dois: list[str] = []
+    availability: Counter[tuple[str, str]] = Counter()
     cursor = "*"
     while len(urls) < target:
         pace(EUROPE_PMC_SEARCH)
@@ -426,59 +607,109 @@ def sample_europepmc(
         for hit in hits:
             if hit.get("doi") and hit.get("inEPMC") != "Y":
                 dois.append(hit["doi"])
+            availability.update(count_pdf_availability(hit))
             url = _extract_free_pdf_url(hit)
             if url and is_probeable(url):
                 urls.append(url)
         cursor = payload.get("nextCursorMark") or ""
         if not cursor:
             break
-    return urls[:target], dois
+    return EuropePMCSample(urls=urls[:target], dois=dois, availability=availability)
 
 
 def sample_unpaywall(
     client: Any, dois: list[str], email: str, target: int, pace: Callable[[str], None]
-) -> list[str] | None:
-    """Resolve DOIs to open-access PDF URLs exactly as ``_fetch_unpaywall`` does."""
+) -> UnpaywallSample | None:
+    """Resolve DOIs to open-access PDF URLs exactly as ``_fetch_unpaywall`` does.
+
+    Args:
+        client: An HTTP client with ``get(url)``.
+        dois: DOIs from the same Europe PMC search, so the two populations
+            stay comparable.
+        email: The contact address Unpaywall requires.
+        target: Stop once this many URLs have resolved.
+        pace: Per-host pacer.
+
+    Returns:
+        An :class:`UnpaywallSample`, or ``None`` when no DOI was even asked
+        about — nothing resolved out of nothing asked is a failed sample, not
+        a finding.
+
+        A 429/503 here is retried and then counted as **unmeasured**, exactly
+        as :func:`probe` treats one, rather than dropped. Unpaywall's own rate
+        limiter bites in this phase and not in the probe phase, so leaving it
+        uncounted was the one place the script's central rule did not hold: a
+        run whose resolutions were throttled printed a confident rate over the
+        handful that got through, with nothing recording that the rest of the
+        population was never reached.
+    """
     urls: list[str] = []
     asked = 0
+    unmeasured = 0
     for doi in dois:
         if len(urls) >= target:
             break
         asked += 1
+        resolved, was_measured = _resolve_one_doi(client, doi, email, pace)
+        if not was_measured:
+            unmeasured += 1
+            continue
+        if resolved and is_probeable(resolved):
+            urls.append(resolved)
+    if not asked:
+        return None
+    return UnpaywallSample(urls=urls, unmeasured=unmeasured)
+
+
+def _resolve_one_doi(
+    client: Any, doi: str, email: str, pace: Callable[[str], None]
+) -> tuple[str | None, bool]:
+    """Ask Unpaywall for one DOI's best PDF URL.
+
+    Returns:
+        ``(url, measured)``. ``measured`` is ``False`` only when 429/503
+        persisted through every retry, which means the question was never
+        answered for this DOI and it must not be read as "no open access".
+        A 404 *is* an answer — Unpaywall has no record — and reports
+        ``(None, True)``.
+    """
+    url = f"{UNPAYWALL_BASE}/{quote(doi, safe='')}?email={quote(email, safe='')}"
+    for attempt in range(1, MAX_PROBE_ATTEMPTS + 1):
         pace(UNPAYWALL_BASE)
         try:
-            resp = client.get(
-                f"{UNPAYWALL_BASE}/{quote(doi, safe='')}?email={quote(email, safe='')}"
-            )
-            if resp.status_code == 404:
+            resp = client.get(url)
+            if resp.status_code in (429, 503):
+                if attempt == MAX_PROBE_ATTEMPTS:
+                    print(f"  Unpaywall throttled for {doi}; unmeasured", file=sys.stderr)
+                    return None, False
+                _sleep_for(_throttle_delay(resp, attempt))
                 continue
+            if resp.status_code == 404:
+                return None, True
             if resp.status_code != 200:
                 print(f"  Unpaywall HTTP {resp.status_code} for {doi}", file=sys.stderr)
-                continue
-            data = resp.json()
+                return None, True
+            return _pick_oa_pdf_url(resp.json()), True
         except Exception as exc:
             print(f"  Unpaywall failed for {doi}: {exc}", file=sys.stderr)
-            continue
-        best = data.get("best_oa_location") or {}
-        url = best.get("url_for_pdf") or best.get("url")
-        if not url:
-            for loc in data.get("oa_locations") or []:
-                url = loc.get("url_for_pdf") or loc.get("url")
-                if url:
-                    break
-        if url and is_probeable(url):
-            urls.append(url)
-    # Nothing resolved out of nothing asked is a failed sample, not a finding.
-    return urls if asked else None
+            return None, True
+    raise AssertionError("unreachable: the loop above always returns")  # pragma: no cover
 
 
 def sample_biorxiv(
     client: Any, target: int, pace: Callable[[str], None], server: str = "biorxiv"
 ) -> list[str] | None:
-    """Collect the PDF URLs ``fetch_biorxiv`` itself builds."""
+    """Collect the PDF URLs ``fetch_biorxiv`` itself builds.
+
+    Truncated to *target* like the other two populations. bioRxiv posts well
+    over a hundred preprints a day and the length is only re-checked between
+    days, so an untruncated return probed several hundred URLs against one
+    third-party host — spending the run's time budget on a sample no more
+    informative than the one that was asked for.
+    """
     urls: list[str] = []
     day = date.today() - timedelta(days=30)
-    for _ in range(10):
+    for _ in range(BIORXIV_DAYS_TO_WALK):
         if len(urls) >= target:
             break
         records: list[Any] = []
@@ -494,7 +725,7 @@ def sample_biorxiv(
                 if entry.format == "pdf" and is_probeable(entry.url):
                     urls.append(entry.url)
         day -= timedelta(days=1)
-    return urls or None
+    return urls[:target] or None
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -511,8 +742,34 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def probe_all(
+    client: Any, urls: list[str] | None, pace: Callable[[str], None]
+) -> list[ProbeOutcome] | None:
+    """Probe every URL in *urls*, pacing each request by host.
+
+    ``None`` in, ``None`` out: a population that could not be sampled must
+    stay unsampled all the way to :func:`summarise`, which prints ``ERROR``
+    for it. An empty list in its place would be reported as a rate.
+    """
+    if urls is None:
+        return None
+    outcomes: list[ProbeOutcome] = []
+    for url in urls:
+        pace(url)
+        outcomes.append(probe(client, url))
+    return outcomes
+
+
 def main() -> int:
-    """Probe all populations and print the table."""
+    """Probe all populations and print the tables.
+
+    Returns:
+        ``1`` if any population printed ``ERROR`` instead of a rate, else
+        ``0``. A caller — a re-run loop, or a maintainer chaining this into
+        anything — otherwise cannot tell "measured, here are the rates" from
+        "nothing could be sampled", which is the script's own central
+        distinction made illegible at its outermost boundary.
+    """
     parser = _build_arg_parser()
     args = parser.parse_args()
 
@@ -522,37 +779,54 @@ def main() -> int:
     pace = _make_pacer(args.per_host_interval)
     with httpx.Client(timeout=45.0, headers=headers, follow_redirects=True) as client:
         epmc = sample_europepmc(client, args.target, pace)
-        if epmc is not None:
-            epmc_urls, dois = epmc
+        if epmc is None:
+            epmc_outcomes: list[ProbeOutcome] | None = None
+            unpaywall_outcomes: list[ProbeOutcome] | None = None
+            availability: Counter[tuple[str, str]] = Counter()
         else:
-            epmc_urls, dois = None, []
-        unpaywall = (
-            sample_unpaywall(client, dois, args.email, args.target, pace)
-            if epmc is not None
-            else None
-        )
-        biorxiv = sample_biorxiv(client, args.target, pace)
+            availability = epmc.availability
+            epmc_outcomes = probe_all(client, epmc.urls, pace)
+            unpaywall = sample_unpaywall(client, epmc.dois, args.email, args.target, pace)
+            unpaywall_outcomes = _unpaywall_population(client, unpaywall, pace)
+        biorxiv_outcomes = probe_all(client, sample_biorxiv(client, args.target, pace), pace)
 
-        def run(urls: list[str] | None) -> list[ProbeOutcome] | None:
-            if urls is None:
-                return None
-            outcomes: list[ProbeOutcome] = []
-            for url in urls:
-                pace(url)
-                outcomes.append(probe(client, url))
-            return outcomes
-
-        populations = [
-            ("europepmc", run(epmc_urls)),
-            ("unpaywall", run(unpaywall)),
-            ("biorxiv", run(biorxiv)),
-        ]
+    populations = [
+        ("europepmc", epmc_outcomes),
+        ("unpaywall", unpaywall_outcomes),
+        ("biorxiv", biorxiv_outcomes),
+    ]
 
     print("\nPDF download failure rates, by population\n")
     for name, outcomes in populations:
         for line in summarise(name, outcomes):
             print(line)
-    return 0
+    print()
+    for line in summarise_availability(availability):
+        print(line)
+
+    reportable = [is_reportable(o) for _, o in populations] + [bool(availability)]
+    return 0 if all(reportable) else 1
+
+
+def _unpaywall_population(
+    client: Any, sample: UnpaywallSample | None, pace: Callable[[str], None]
+) -> list[ProbeOutcome] | None:
+    """Probe an Unpaywall sample, putting its throttled resolutions back in.
+
+    A DOI that could not be resolved because Unpaywall throttled it is an
+    attempt on this population that never reached an answer — exactly what
+    ``measured=False`` means for a probe — so it is carried into the outcome
+    list rather than dropped. Without it, a resolution phase that was throttled
+    away prints as a confident rate over whatever got through first.
+    """
+    if sample is None:
+        return None
+    outcomes = probe_all(client, sample.urls, pace) or []
+    return (
+        outcomes
+        + [ProbeOutcome(cause="unmeasured-resolution", status=None, measured=False)]
+        * sample.unmeasured
+    )
 
 
 if __name__ == "__main__":
