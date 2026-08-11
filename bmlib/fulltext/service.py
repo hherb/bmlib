@@ -1102,8 +1102,10 @@ class FullTextService:
         except Exception as exc:
             # The environment, not the server. A lost network or a full disk
             # fails *every* article once it starts failing, so this is one-shot
-            # per (source, type) and needed no measurement to decide — unlike
-            # the two server-side causes above.
+            # per (origin, type) and needed no measurement to decide — unlike
+            # the two server-side causes above. `origin` is the bounded tier
+            # literal, never `result.source`, which a fetcher derives from
+            # remote data; see the `origin` parameter's docstring above.
             #
             # Still not recorded on the exhaustion report: all three call sites
             # return the result immediately after this, so a failure noted

@@ -3256,7 +3256,7 @@ class TestAFailedPDFDownloadIsReported:
 
         ``"OSError"`` alone is satisfied by the ``exc_info=True`` traceback on
         the DEBUG line below the warning. This test is backstopped by
-        ``test_an_exception_is_warned_once_per_source_and_type``, so it was a
+        ``test_an_exception_is_warned_once_per_origin_and_type``, so it was a
         redundancy rather than a hole — tightened anyway, so no test in this
         class asserts on text a different log line also emits.
         """
@@ -3264,7 +3264,7 @@ class TestAFailedPDFDownloadIsReported:
         assert "Could not download" in caplog.text
         assert "Further OSError failures will not be repeated" in caplog.text
 
-    def test_an_exception_is_warned_once_per_source_and_type(
+    def test_an_exception_is_warned_once_per_origin_and_type(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         """A lost network fails every article, so this can never be per-article
@@ -3314,7 +3314,7 @@ class TestAFailedPDFDownloadIsReported:
         assert "nothing is being cached" in caplog.text
         assert "not a PDF" not in caplog.text
 
-    def test_two_different_causes_on_the_same_source_are_both_reported(
+    def test_two_different_causes_from_the_same_tier_are_both_reported(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Per (origin, cause), not per origin.
