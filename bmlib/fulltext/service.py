@@ -406,11 +406,12 @@ class FullTextService:
         self.cache: FullTextCache | None = cache if cache is not None else _default_cache()
         self.convert_pdfs = convert_pdfs
         self.ncbi_api_key = ncbi_api_key
-        # Guards the one-off warning in _attach_pdf_text when no PDF backend
-        # can be constructed: worth saying once, not once per article.
-        self._pdf_backend_warned = False
-        # Same, for a cache directory that cannot be written to.
-        self._cache_write_warned = False
+        # Faults that are a property of the environment or of bmlib itself
+        # rather than of one article: warned once each, keyed by cause, so a
+        # second distinct fault is still reported instead of hiding behind the
+        # first. Per service, not process-wide — a caller that builds a fresh
+        # service has a fresh environment to learn about.
+        self._warned: set[str] = set()
 
     def _http_get(self, url: str, **kwargs: object) -> httpx.Response:
         """HTTP GET with timeout. Separated for testability."""
@@ -883,13 +884,26 @@ class FullTextService:
         only the HTML path could emit stayed silent for exactly the callers
         it was meant to reach.
         """
-        if not self._cache_write_warned:
-            logger.warning(
-                "Could not write to the full-text cache (%s); retrieval still "
-                "works, but nothing is being cached, so every run re-fetches.",
-                exc,
-            )
-            self._cache_write_warned = True
+        self._warn_once(
+            "cache-write",
+            "Could not write to the full-text cache (%s); retrieval still "
+            "works, but nothing is being cached, so every run re-fetches.",
+            exc,
+        )
+
+    def _warn_once(self, key: str, msg: str, *args: object) -> None:
+        """Emit a WARNING the first time *key* is seen on this service.
+
+        Args:
+            key: What is being reported. Include the *cause* — not just the
+                site — so two different faults at one site are both reported.
+            msg: A ``%``-style format string, interpolated lazily by logging.
+            args: Its arguments.
+        """
+        if key in self._warned:
+            return
+        self._warned.add(key)
+        logger.warning(msg, *args)
 
     def _cache_html(self, html: str, cache_id: str | None) -> None:
         """Save HTML to disk cache if caching is enabled.
@@ -1039,15 +1053,14 @@ class FullTextService:
             # wraps the _check_cache call, where a perfectly readable cached
             # PDF was blamed on an unreadable cache file and re-downloaded
             # into the identical deterministic fault.
-            if not self._pdf_backend_warned:
-                logger.warning(
-                    "convert_pdfs is enabled but no PDF backend is usable (%s: %s); "
-                    "PDFs will be returned as links only. Install bmlib[pdf] if the "
-                    "extra is missing.",
-                    type(e).__name__,
-                    e,
-                )
-                self._pdf_backend_warned = True
+            self._warn_once(
+                f"pdf-backend:{type(e).__name__}",
+                "convert_pdfs is enabled but no PDF backend is usable (%s: %s); "
+                "PDFs will be returned as links only. Install bmlib[pdf] if the "
+                "extra is missing.",
+                type(e).__name__,
+                e,
+            )
             return
 
         try:

@@ -2963,3 +2963,38 @@ class TestFreePDFAvailability:
 
         assert result.source == "europepmc_pdf"
         assert result.pdf_url == "https://ex/a.pdf"
+
+
+class TestWarnOnce:
+    """The one-shot mechanism shared by #68's exception path and #72's bug path.
+
+    Both failure modes hit every article in a run when they hit at all, so
+    per-article is never right for either; and both need *per-cause* keys, so
+    a second distinct fault is not hidden by the first — the "the more complete
+    the failure, the quieter it gets" shape #67 existed to fix.
+    """
+
+    def test_the_same_key_warns_once(self, caplog: pytest.LogCaptureFixture) -> None:
+        service = FullTextService(email="test@example.com")
+        with caplog.at_level("WARNING"):
+            service._warn_once("k", "something went wrong: %s", "detail")
+            service._warn_once("k", "something went wrong: %s", "detail")
+        assert caplog.text.count("something went wrong") == 1
+
+    def test_different_keys_each_warn(self, caplog: pytest.LogCaptureFixture) -> None:
+        """The reason it is a keyed set and not a boolean."""
+        service = FullTextService(email="test@example.com")
+        with caplog.at_level("WARNING"):
+            service._warn_once("a", "first fault")
+            service._warn_once("b", "second fault")
+        assert "first fault" in caplog.text
+        assert "second fault" in caplog.text
+
+    def test_two_services_do_not_share_suppression(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Per service, like the booleans it replaces — not process-wide."""
+        one = FullTextService(email="test@example.com")
+        two = FullTextService(email="test@example.com")
+        with caplog.at_level("WARNING"):
+            one._warn_once("k", "the fault")
+            two._warn_once("k", "the fault")
+        assert caplog.text.count("the fault") == 2
