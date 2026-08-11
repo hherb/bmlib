@@ -36,6 +36,7 @@ from bmlib.fulltext.service import (
     FullTextError,
     FullTextService,
     FullTextUnavailableError,
+    _extract_free_pdf_url,
     _normalise_pmc_id,
     _sanitize_identifier,
     _TierFailures,
@@ -2887,3 +2888,78 @@ class TestAnUncreatableCacheDirectoryDoesNotAbortConstruction:
 
         assert result.pdf_url == "https://example.com/paper.pdf"
         assert "no identifier was given" in caplog.text
+
+
+class TestFreePDFAvailability:
+    """Issue #79 — Tier 1d accepted ``availability == "Free"`` only.
+
+    Europe PMC labels a ``fullTextUrl`` entry with a display string *and* a
+    short code, and "Free" is the rare label. Measured over 600 recent
+    MEDLINE records (``scripts/sample_free_pdf_urls.py``), of 326 entries with
+    ``documentStyle == "pdf"``: 312 were "Open access" (95.7%) and 14 were
+    "Free" (4.3%). Both are the identical ``?pdf=render`` URL on the identical
+    host, so the tier was discarding about 95% of the PDFs it exists to find,
+    with nothing logged at any level.
+    """
+
+    @staticmethod
+    def _hit(style="pdf", availability="Open access", code="OA", url="https://ex/a.pdf"):
+        """One search hit carrying a single ``fullTextUrl`` entry.
+
+        One builder for every test in this class, so a rejection test cannot
+        pass because its fixture was malformed in some unrelated way — the
+        acceptance tests use the same builder and would fail too.
+        """
+        entry = {"documentStyle": style, "url": url}
+        if availability is not None:
+            entry["availability"] = availability
+        if code is not None:
+            entry["availabilityCode"] = code
+        return {"fullTextUrlList": {"fullTextUrl": [entry]}}
+
+    def test_an_open_access_pdf_is_taken(self):
+        """The 95.7% case that was being discarded."""
+        assert _extract_free_pdf_url(self._hit()) == "https://ex/a.pdf"
+
+    def test_a_free_pdf_is_still_taken(self):
+        """The 4.3% case that already worked — the widening must not narrow."""
+        hit = self._hit(availability="Free", code="F")
+        assert _extract_free_pdf_url(hit) == "https://ex/a.pdf"
+
+    def test_a_subscription_entry_is_rejected(self):
+        """The whole point of an allow-list: never download a paywalled PDF."""
+        hit = self._hit(availability="Subscription required", code="S")
+        assert _extract_free_pdf_url(hit) is None
+
+    def test_an_entry_with_no_code_falls_back_to_the_label(self):
+        """Every entry in the 1,263-entry sample carried a code; nothing
+        documents that they must, so the display string stays a fallback."""
+        hit = self._hit(code=None)
+        assert _extract_free_pdf_url(hit) == "https://ex/a.pdf"
+
+    def test_an_unknown_code_is_rejected_even_when_the_label_looks_free(self):
+        """The under-credit rule, and the reason the code is authoritative.
+
+        A future code bmlib has never seen must cost a retrieval rather than
+        risk a paywalled download, so a present-but-unknown code is *not*
+        allowed to fall back to the label it happens to carry.
+        """
+        hit = self._hit(availability="Open access", code="OA2")
+        assert _extract_free_pdf_url(hit) is None
+
+    def test_a_non_pdf_entry_is_rejected_however_free(self):
+        """``documentStyle`` still gates: the HTML entry is not a PDF."""
+        hit = self._hit(style="html")
+        assert _extract_free_pdf_url(hit) is None
+
+    def test_an_open_access_render_url_now_reaches_the_pdf_tier(self):
+        """End to end: the tier fires where it used to fall through to a link."""
+        search = MagicMock()
+        search.status_code = 200
+        search.json.return_value = {"resultList": {"result": [dict(self._hit(), inEPMC="N")]}}
+        service = FullTextService(email="test@example.com", convert_pdfs=False)
+        with patch.object(service, "_http_get", side_effect=[search, _idconv_miss()]):
+            result = service.fetch_fulltext(doi="10.1/test", identifier=None)
+
+        assert result.source == "europepmc_pdf"
+        assert result.pdf_url == "https://ex/a.pdf"

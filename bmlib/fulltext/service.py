@@ -183,11 +183,60 @@ def _require_httpx() -> ModuleType:
     return httpx
 
 
-def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
-    """Extract free PDF URL from Europe PMC fullTextUrlList.
+# Europe PMC labels a fullTextUrl entry's access twice over: a display string
+# (`availability`) and a short controlled code (`availabilityCode`). Both are
+# read — the code decides when present, the string is the fallback for an entry
+# carrying none.
+#
+# An allow-list, never a deny-list on "Subscription required": an unknown future
+# value must under-credit, costing one retrieval, rather than send bmlib to
+# download a paywalled PDF. Transparency's _DEPOSITION_DATABANK_LEVELS is the
+# same decision for the same reason.
+#
+# Measured over 600 recent MEDLINE records — all 1,263 fullTextUrl entries,
+# of which 326 were documentStyle=pdf (scripts/sample_free_pdf_urls.py):
+#
+#     availability             code   pdf entries   share
+#     Open access              OA             312   95.7%
+#     Free                     F               14    4.3%
+#     Subscription required    S                0      --
+#
+# There was no fourth value and every entry carried a code. Accepting only
+# "Free" — which is what this did until issue #79 — therefore discarded 95.7%
+# of the free PDFs Tier 1d exists to find, silently: both accepted labels are
+# the identical https://europepmc.org/articles/PMC…?pdf=render shape on the
+# identical host, and there is no log line for "a PDF entry was seen and not
+# taken".
+_FREE_PDF_AVAILABILITY_CODES = frozenset({"OA", "F"})
+_FREE_PDF_AVAILABILITY_LABELS = frozenset({"Open access", "Free"})
 
-    The Europe PMC search API includes ``fullTextUrlList`` with entries
-    for free PDFs (``?pdf=render`` URLs) even when JATS XML is unavailable.
+
+def _entry_is_free(entry: dict[str, object]) -> bool:
+    """Whether a ``fullTextUrl`` entry is one bmlib may download.
+
+    Args:
+        entry: One entry from Europe PMC's ``fullTextUrlList``.
+
+    Returns:
+        ``True`` when the entry's access code is one bmlib accepts, or — for an
+        entry carrying no code — its display string is. A code that is present
+        but unrecognised returns ``False`` **without** consulting the string:
+        falling back there would let a future code bmlib has never evaluated
+        through on the strength of a label, which is the opposite of the
+        under-credit rule the allow-list exists to keep.
+    """
+    code = entry.get("availabilityCode")
+    if isinstance(code, str) and code:
+        return code in _FREE_PDF_AVAILABILITY_CODES
+    return entry.get("availability") in _FREE_PDF_AVAILABILITY_LABELS
+
+
+def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
+    """Extract a free PDF URL from Europe PMC's ``fullTextUrlList``.
+
+    The search API includes ``fullTextUrlList`` with ``?pdf=render`` entries
+    for PDFs it serves itself, even when JATS XML is unavailable — which is
+    exactly when Tier 1d needs one.
     """
     url_list = result.get("fullTextUrlList")
     if not isinstance(url_list, dict):
@@ -196,7 +245,7 @@ def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
         if (
             isinstance(entry, dict)
             and entry.get("documentStyle") == "pdf"
-            and entry.get("availability") == "Free"
+            and _entry_is_free(entry)
         ):
             url = entry.get("url")
             if isinstance(url, str):
