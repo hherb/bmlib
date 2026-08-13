@@ -363,7 +363,7 @@ CI runs this against a `postgres:16` service on every matrix entry and also sets
 uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
 ```
 
-`main` carries a `protect_main` ruleset: no deletion, no non-fast-forward push, and **CodeQL code scanning plus code quality required** at the `errors` / `high_or_higher` thresholds. CodeQL runs from GitHub's *default setup*, so there is no workflow file in `.github/workflows/` to read or edit — and its generated workflow does not listen for a pull request's `reopened` action, so a PR that predates the setup needs a fresh commit, not a close/reopen, to get its first analysis. The ruleset says nothing about which merge strategy is used; that requirement is still prose only (issue #78).
+`main` carries a `protect_main` ruleset: no deletion, no non-fast-forward push, and **CodeQL code scanning plus code quality required** at the `errors` / `high_or_higher` thresholds. CodeQL runs from GitHub's *default setup*, so there is no workflow file in `.github/workflows/` to read or edit — and its generated workflow does not listen for a pull request's `reopened` action, so a PR that predates the setup needs a fresh commit, not a close/reopen, to get its first analysis. The ruleset says nothing about which merge strategy is used, and neither does anything else — squash, rebase and merge commits are all enabled and all fine. The release recipe no longer depends on which one you press: it tags `main`'s tip after pulling, which is on `main`'s first-parent line under every strategy (issue #78, closed).
 
 ## Test file mapping
 

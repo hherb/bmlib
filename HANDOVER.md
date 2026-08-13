@@ -11,7 +11,8 @@ downstream stores** — many more articles now come back with extracted text
 instead of a bare link — and it is the only entry in the release that does.
 It is a patch bump because nothing here breaks a public API: the one addition,
 `ConversionResult.title`, is additive and declared last. Three open issues:
-**#73**, **#78**, **#81**. On `main`: 2048 tests + 58 skipped (2104 + 2 with a
+**#73** and **#81** (#78 closed with the release recipe below).
+On `main`: 2048 tests + 58 skipped (2104 + 2 with a
 PostgreSQL DSN), ruff 0.15.20 clean.
 **Phase 3 of the bmlibrarian port is next, and each of its rows needs a design
 conversation before any porting** — see "Next up"._
@@ -80,14 +81,29 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   there is no workflow file in the repo — and its generated workflow ignores a
   pull request's `reopened` action, so a PR that predates the setup needs a
   fresh commit rather than a close/reopen before its first analysis exists.
-  The ruleset does **not** constrain the merge strategy; see #78.
+  The ruleset does **not** constrain the merge strategy, and nothing does —
+  see the next bullet.
+- **The release tag does not depend on the merge button** (#78, closed
+  2026-08-13). The old recipe required a release PR be merged with `--merge`,
+  enforced by prose alone, and that was measurably not holding: **8 of the
+  last 40 merged PRs landed as single-parent commits** (#60, #62, #63, #65,
+  #66, #69, #74, #76), each collapsing a 3–7 commit branch. The fix #78
+  proposed — disabling squash and rebase repo-wide — was rejected because
+  that habit is deliberate and squash is wanted for ordinary feature PRs;
+  GitHub cannot condition the merge method on the branch, so there was no
+  setting that gives release PRs one rule and feature PRs another.
+  **The requirement was removed instead of enforced.** `main`'s tip is on
+  `main`'s first-parent line under *every* merge strategy, so the recipe now
+  tags `main`'s tip after pulling, guarded by two checks (see "Cutting a
+  release"). Squash away.
 
 ## Next up
 
 ### Open GitHub issues
 
-Three, all found by review rather than by a failing test. (**#56, #68, #72 and
-#79 are closed** and shipped in 0.9.1.)
+Two, both found by review rather than by a failing test. (**#56, #68, #72 and
+#79 are closed** and shipped in 0.9.1; **#78 is closed** — see "The release
+tag does not depend on the merge button" below.)
 
 **#73 — `install_defaults()` copies templates non-atomically**, found while
 fixing #70 and deliberately not folded into it. A copy interrupted partway
@@ -97,18 +113,6 @@ a prompt missing its last half renders and is sent to a model. Milder than #70
 an article — and it carries a decision: `_atomic_write` is private to
 `fulltext/cache.py`, so fixing this means either promoting it to a shared
 internal module or accepting a second copy. Worth deciding once.
-
-**#78 — the release merge strategy is enforced by prose only**, found
-reviewing PR #77. `HANDOVER.md` requires a release PR be merged with
-`--merge` so the tag lands on `main`'s first-parent line, but the repo still
-allows squash and rebase merges, so the requirement is prose only and
-GitHub's default merge button can silently defeat it. **The `protect_main`
-ruleset added on 2026-08-13 does not close this** — it covers deletion,
-non-fast-forward pushes and code scanning, and is silent on merge strategy,
-so do not read "main is protected now" as "#78 is handled". Latent — 0.4.0
-through 0.9.1 were all merged correctly — the fix is one `gh api -X PATCH`
-disabling the other two strategies, or extending the ruleset if squash is
-wanted for ordinary feature PRs.
 
 **#81 — CI runs ruff only, so `py.typed` claims a guarantee nothing checks**,
 split out of the review of PR #80. That review found three correctness
@@ -238,10 +242,30 @@ what still needs doing.
   0.9.1 is the other side of that same convention: #79 moves stored full text
   while nothing breaks an API, so it is a patch.
   After CI **and CodeQL** are green — the `protect_main` ruleset requires the
-  scan, and a release PR is subject to it like any other: merge with
-  **`--merge`, not squash**, so the tag lands on
-  main's first-parent line — nothing enforces this, see #78; tag the **merge
-  commit** `vX.Y.Z` and push it; then create the GitHub release, which is
+  scan, and a release PR is subject to it like any other — merge it with any
+  button, then **tag `main`'s tip rather than a particular commit** (#78):
+
+  ```bash
+  git checkout main && git pull --ff-only
+  test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || exit 1
+  grep -q '__version__ = "X.Y.Z"' bmlib/__init__.py || exit 1
+  git tag -a vX.Y.Z -m "bmlib X.Y.Z" && git push origin vX.Y.Z
+  ```
+
+  The two checks are the whole point: the first catches a stale local `main`
+  (someone else's merge landing between yours and your pull), the second
+  catches tagging a commit that does not carry the version — which is the
+  failure `release.yml` would otherwise find *after* the release is public.
+  Checking the tag *afterwards* needs one piece of git arcana: these are
+  **annotated** tags, so `git rev-parse vX.Y.Z` returns the tag object's SHA
+  and not the commit's, and a comparison against a commit SHA fails for a
+  reason that has nothing to do with the release. Dereference it —
+  `git rev-parse 'vX.Y.Z^{commit}'`. Verified on v0.9.1: dereferenced, it is
+  `main`'s tip and is on `main`'s first-parent line; undereferenced, the same
+  check reports a mismatch.
+  A merge commit is still the nicer shape for a release, since it keeps the
+  branch's commits on `main`, but it is now a preference and not a
+  correctness requirement; then create the GitHub release, which is
   **what publishes** — `.github/workflows/release.yml` rebuilds, refuses to go
   on unless the tag matches `bmlib.__version__`, runs `twine check --strict`,
   asserts `py.typed` survived packaging, and uploads via Trusted Publishing.
