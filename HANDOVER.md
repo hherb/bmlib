@@ -10,9 +10,11 @@ interpreter each. Since the release, PR #80 closed #79, #68 and #72
 `"Open access"`, and a failed PDF download or a swallowed bmlib bug is
 reported instead of hiding behind a tier that still works. And
 **`fix/56-junk-pdf-metadata-titles` closes #56** (unreleased): a PDF's
-metadata title is believed only where page 1 prints it, measured against a
-committed corpus of real PDFs rather than a guessed reject-list. Three open
-issues: **#73**, **#78**, **#81**.
+metadata title is believed only where page 1 prints it, measured over 235
+real PDFs rather than guessed — 0 of 126 good titles wrongly rejected, 34 of
+35 junk rejected, and not one of the shapes the issue proposed appears in the
+corpus at all. Three open issues: **#73**, **#78**, **#81**. On that branch:
+1994 tests + 58 skipped (2050 + 2 with a PostgreSQL DSN), ruff clean.
 **Phase 3 of the bmlibrarian port is next, and each of its rows needs a design
 conversation before any porting** — see "Next up"._
 
@@ -63,9 +65,9 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; **seven are outstanding** — `ROADMAP.md`'s rows for #79, #68,
+  release time; **eight are outstanding** — `ROADMAP.md`'s rows for #79, #68,
   #72 and `scripts/sample_free_pdf_urls.py` (all on `main` via PR #80), plus
-  #56's three rows and the `docs/manual/fulltext.md` title section on
+  #56's three rows and two `docs/manual/fulltext.md` sections on
   `fix/56-junk-pdf-metadata-titles`. None is promoted to a version number yet.
   Markers inside `docs/superpowers/plans/` are historical records — leave them
   alone.
