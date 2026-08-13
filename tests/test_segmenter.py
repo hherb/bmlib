@@ -386,9 +386,18 @@ class TestTitleExtraction:
     def setup_method(self):
         self.segmenter = SectionSegmenter()
 
-    def test_the_metadata_title_wins(self):
+    def test_a_corroborated_metadata_title_wins(self):
+        """Issue #56 narrowed this: the metadata title still wins, but only
+        where page 1 prints it. It used to win unconditionally, which is how
+        "Microsoft Word - manuscript.docx" beat the title on the page."""
+        doc = self.segmenter.segment_document(
+            paper_blocks(), {"title": "Aspirin and Mortality: A Trial"}
+        )
+        assert doc.title == "Aspirin and Mortality: A Trial"
+
+    def test_a_metadata_title_the_page_never_prints_is_rejected(self):
         doc = self.segmenter.segment_document(paper_blocks(), {"title": "From Metadata"})
-        assert doc.title == "From Metadata"
+        assert doc.title == "Aspirin and Mortality: A Trial"
 
     def test_the_largest_first_page_line_is_the_fallback_title(self):
         doc = self.segmenter.segment_document(paper_blocks())
@@ -409,6 +418,64 @@ class TestTitleExtraction:
     def test_an_explicit_none_file_path_does_not_become_the_string_none(self):
         doc = self.segmenter.segment_document(paper_blocks(), {"file_path": None})
         assert doc.file_path == ""
+
+
+class TestAJunkMetadataTitleDoesNotBeatTheTitleOnThePage:
+    """Issue #56. Real PDFs carry filenames, "untitled" and typesetter job
+    numbers in /Title, and any of them used to win outright."""
+
+    def _blocks(self) -> list[TextBlock]:
+        """A title typeset across two lines, on purpose.
+
+        It makes the two paths give different answers, so each test below says
+        which path produced its result. With the title on one line, a rule
+        that rejected every metadata title would pass the first test by
+        accident.
+
+        Sizes matter here as they do in ``paper_blocks``: five body lines
+        against the two title lines put the median at 10, so the 20-point
+        title clears ``_TITLE_SIZE_RATIO``. With only two body lines the
+        median is 15 and the fallback rejects its own title.
+        """
+        return [
+            block("Effects of aspirin", size=TITLE_SIZE, y=72.0),
+            block("on outcomes", size=TITLE_SIZE, y=100.0),
+            block("Jane Smith, John Doe", y=130.0),
+            block("We studied aspirin in 400 adults.", y=150.0),
+            block("Mortality was the primary outcome.", y=170.0),
+            block("Follow-up ran for two years.", y=190.0),
+            block("The trial was registered.", y=210.0),
+        ]
+
+    def test_junk_falls_through_to_the_font_candidate(self):
+        doc = SectionSegmenter().segment_document(
+            self._blocks(), {"title": "Microsoft Word - ms.docx"}
+        )
+        assert doc.title == "Effects of aspirin"
+
+    def test_a_corroborated_title_still_wins(self):
+        """The negative control. The metadata title spans both title lines, so
+        only the metadata path can return it — a rule that rejected everything
+        would fail here while still passing the test above."""
+        doc = SectionSegmenter().segment_document(
+            self._blocks(), {"title": "Effects of aspirin on outcomes"}
+        )
+        assert doc.title == "Effects of aspirin on outcomes"
+
+    def test_junk_with_no_font_candidate_yields_no_title(self):
+        """Rejection must not invent a title out of an ordinary body line."""
+        flat = [block("We studied aspirin in 400 adults.", y=72.0)]
+        doc = SectionSegmenter().segment_document(flat, {"title": "Microsoft Word - ms.docx"})
+        assert doc.title is None
+
+    def test_a_scanned_page_with_no_text_keeps_its_metadata_title(self):
+        """No page-1 blocks at all: corroboration cannot be run, so the
+        metadata title is all there is. Rejecting would leave every image-only
+        scan with no title rather than an unverified one."""
+        doc = SectionSegmenter().segment_document(
+            [block("Late text", page=2)], {"title": "Effects of aspirin on outcomes"}
+        )
+        assert doc.title == "Effects of aspirin on outcomes"
 
 
 class TestPublicExports:

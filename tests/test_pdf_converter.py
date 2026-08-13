@@ -592,3 +592,69 @@ class TestExtractBlocks:
         assert "randomised" in methods.content
         assert doc.get_section(SectionType.RESULTS) is not None
         assert doc.file_path == str(pdf)
+
+
+@pytest.mark.skipif(not _HAS_FITZ, reason="PyMuPDF not installed")
+class TestTheConvertedResultCarriesAJudgedTitle:
+    """Issue #56. Real PDFs carry filenames and "untitled" in ``/Title``, so
+    the raw value is not the article's title and must not be read as one."""
+
+    @staticmethod
+    def _write_pdf(path: Path, metadata_title: str) -> Path:
+        import fitz
+
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_text((72, 72), "Effects of aspirin on outcomes", fontname="hebo", fontsize=18)
+        page.insert_text((72, 110), "We randomised 400 adults.", fontname="helv", fontsize=10)
+        doc.set_metadata({"title": metadata_title})
+        doc.save(str(path))
+        doc.close()
+        return path
+
+    def test_a_corroborated_metadata_title_reaches_result_title(self, tmp_path):
+        pdf = self._write_pdf(tmp_path / "good.pdf", "Effects of aspirin on outcomes")
+        assert get_converter("pymupdf").convert(pdf).title == "Effects of aspirin on outcomes"
+
+    def test_a_junk_metadata_title_leaves_result_title_none(self, tmp_path):
+        pdf = self._write_pdf(tmp_path / "junk.pdf", "Microsoft Word - ms.docx")
+        assert get_converter("pymupdf").convert(pdf).title is None
+
+    def test_metadata_title_stays_verbatim_either_way(self, tmp_path):
+        """``metadata`` is what the PDF says. A caller debugging provenance
+        needs the raw string, and ``creator``/``producer`` sit beside it
+        unmodified — sanitising one key of a verbatim dict would make the dict
+        lie about its neighbours."""
+        pdf = self._write_pdf(tmp_path / "junk2.pdf", "Microsoft Word - ms.docx")
+        result = get_converter("pymupdf").convert(pdf)
+        assert result.metadata["title"] == "Microsoft Word - ms.docx"
+        assert result.title is None
+
+    def test_a_pdf_with_no_metadata_title_has_no_judged_title(self, tmp_path):
+        pdf = self._write_pdf(tmp_path / "blank.pdf", "")
+        result = get_converter("pymupdf").convert(pdf)
+        assert result.title is None
+
+    def test_the_title_is_judged_against_page_one_not_the_first_page_with_text(self, tmp_path):
+        """``page_texts`` omits a page that yielded nothing, so its first entry
+        is page 1's text only when page 1 had any.
+
+        Here page 1 is an image-only scan and page 2 carries prose that does
+        *not* contain the metadata title. Judging against page 1 finds nothing
+        to check against and accepts; judging against ``page_texts[0]`` finds
+        page 2's prose, fails to match, and rejects. The two answers differ,
+        which is what makes this test able to tell the implementations apart.
+        """
+        import fitz
+
+        doc = fitz.open()
+        doc.new_page()  # page 1: no text at all
+        doc.new_page().insert_text((72, 72), "Effects of aspirin on outcomes", fontsize=12)
+        doc.set_metadata({"title": "A study of coffee"})
+        pdf = tmp_path / "blank_first_page.pdf"
+        doc.save(str(pdf))
+        doc.close()
+
+        result = get_converter("pymupdf").convert(pdf)
+        assert result.page_texts and "aspirin" in result.page_texts[0]
+        assert result.title == "A study of coffee"

@@ -67,6 +67,7 @@ bmlib/
 │   ├── models.py            # FullTextResult, FullTextSourceEntry, JATSArticle, etc.
 │   ├── pdf_converter.py     # Pluggable PDF → text (PDFConverter ABC, PyMuPDF backend)
 │   ├── segmenter.py         # Heading-driven section segmentation of PDF text lines
+│   ├── _titles.py           # Is the PDF's metadata title the article's title? (private)
 │   └── service.py           # Tiered FullTextService (known sources → EuropePMC → Unpaywall → DOI)
 ├── llm/                     # Unified LLM client with pluggable providers
 │   ├── client.py            # LLMClient router, get_llm_client() singleton
@@ -369,8 +370,8 @@ CI runs this against a `postgres:16` service on every matrix entry and also sets
 | `templates/`         | `test_templates.py`                                        |
 | `transparency/`      | `test_transparency.py`                                     |
 | `publications/`      | `test_publications.py`, `test_sync.py`, `test_backends.py`, `test_pubmed_fetcher.py`, `test_openalex_fetcher.py`, `test_registry.py`, `test_retractions.py` |
-| `fulltext/`          | `test_fulltext_cache.py`, `test_fulltext_models.py`, `test_fulltext_service.py`, `test_jats_parser.py`, `test_pdf_converter.py`, `test_segmenter.py` |
-| `scripts/`           | `test_databank_sampler.py` (`sample_databank_names.py` only), `test_free_pdf_sampler.py` (`sample_free_pdf_urls.py` only) |
+| `fulltext/`          | `test_fulltext_cache.py`, `test_fulltext_models.py`, `test_fulltext_service.py`, `test_jats_parser.py`, `test_pdf_converter.py`, `test_segmenter.py`, `test_fulltext_titles.py`, `test_pdf_metadata_titles.py` |
+| `scripts/`           | `test_databank_sampler.py` (`sample_databank_names.py` only), `test_free_pdf_sampler.py` (`sample_free_pdf_urls.py` only), `test_pdf_title_sampler.py` (`sample_pdf_metadata_titles.py` only), `test_sampling_helpers.py` (`_sampling.py`) |
 
 `scripts/smoke_test_tool_calling.py` is an end-to-end integration runner for tool calling. It hits live providers, so it is not part of the pytest suite — run it manually when changing provider tool-call code.
 

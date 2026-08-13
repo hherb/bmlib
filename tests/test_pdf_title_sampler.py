@@ -39,6 +39,7 @@ client, and any test that exercises a retry path stubs ``_sleep_for``.
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -337,3 +338,150 @@ class TestTheExitStatusAgreesWithWhatWasPrinted:
         monkeypatch.setattr(sys, "argv", ["s", "-o", str(tmp_path / "out.json")])
         assert sampler.main() == 0
         assert (tmp_path / "out.json").exists()
+
+
+class TestARunSurvivesBeingInterrupted:
+    """A three-hour run that keeps nothing until the end is a run you cannot
+    stop, and one crash or one closed laptop costs every row. Rows are
+    appended as they land, and a later run resumes from them."""
+
+    def test_a_row_is_appended_as_soon_as_it_lands(self, tmp_path: Path) -> None:
+        partial = tmp_path / "corpus.partial.jsonl"
+        sampler.append_row(partial, {"source": "biorxiv", "id": "a", "bucket": "match"})
+        sampler.append_row(partial, {"source": "biorxiv", "id": "b", "bucket": "unrelated"})
+        assert [row["id"] for row in sampler.load_partial(partial)] == ["a", "b"]
+
+    def test_a_missing_partial_file_resumes_from_nothing(self, tmp_path: Path) -> None:
+        assert sampler.load_partial(tmp_path / "absent.jsonl") == []
+
+    def test_a_half_written_last_line_does_not_lose_the_rest(self, tmp_path: Path) -> None:
+        """What a kill mid-write actually leaves behind. Refusing to parse the
+        file at all would turn a truncated final row into the loss of every
+        row before it — the failure this whole mechanism exists to prevent."""
+        partial = tmp_path / "corpus.partial.jsonl"
+        sampler.append_row(partial, {"source": "biorxiv", "id": "a", "bucket": "match"})
+        with partial.open("a", encoding="utf-8") as handle:
+            handle.write('{"source": "biorxiv", "id": "b", "buck')
+        assert [row["id"] for row in sampler.load_partial(partial)] == ["a"]
+
+    def test_ids_already_collected_are_not_fetched_again(self) -> None:
+        assert sampler.already_seen([{"id": "a"}, {"id": "b"}]) == {"a", "b"}
+
+
+class TestAPDFIsDownloadedOnceAcrossRuns:
+    """The expensive half of a run is the transfer, so a resumed run must not
+    pay for it twice."""
+
+    def test_a_cached_pdf_is_reused_without_a_request(self, tmp_path: Path) -> None:
+        from bmlib.fulltext.cache import FullTextCache
+
+        cache = FullTextCache(cache_dir=tmp_path / "cache")
+        cache.save_pdf(b"%PDF-1.7 cached", "PMC1")
+        client = _Client({})  # any request would raise KeyError
+        body, measured = sampler.fetch_pdf(
+            client, "https://e/a.pdf", "PMC1", lambda url: None, cache
+        )
+        assert body == b"%PDF-1.7 cached"
+        assert measured is True
+        assert client.seen == []
+
+    def test_a_downloaded_pdf_is_kept_for_the_next_run(self, tmp_path: Path) -> None:
+        from bmlib.fulltext.cache import FullTextCache
+
+        cache = FullTextCache(cache_dir=tmp_path / "cache")
+        client = _Client({"https://e/a.pdf": _Resp(200, b"%PDF-1.7 fresh")})
+        body, measured = sampler.fetch_pdf(
+            client, "https://e/a.pdf", "PMC1", lambda url: None, cache
+        )
+        assert (body, measured) == (b"%PDF-1.7 fresh", True)
+        assert cache.get_pdf("PMC1") is not None
+
+    def test_no_cache_still_downloads(self, tmp_path: Path) -> None:
+        """The cache is an optimisation, not a precondition."""
+        client = _Client({"https://e/a.pdf": _Resp(200, b"%PDF-1.7 fresh")})
+        assert sampler.fetch_pdf(client, "https://e/a.pdf", "PMC1", lambda url: None, None) == (
+            b"%PDF-1.7 fresh",
+            True,
+        )
+
+    def test_a_failed_download_caches_nothing(self, tmp_path: Path) -> None:
+        from bmlib.fulltext.cache import FullTextCache
+
+        cache = FullTextCache(cache_dir=tmp_path / "cache")
+        client = _Client({"https://e/a.pdf": _Resp(404)})
+        assert sampler.fetch_pdf(client, "https://e/a.pdf", "PMC1", lambda url: None, cache) == (
+            None,
+            False,
+        )
+        assert cache.get_pdf("PMC1") is None
+
+
+class TestAResumedRunTopsUpRatherThanRestarting:
+    def test_it_asks_only_for_the_rows_it_still_needs(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "corpus.json"
+        journal = sampler._journal_path(output)
+        for i in range(4):
+            sampler.append_row(journal, {"source": "europepmc", "id": f"PMC{i}", "bucket": "match"})
+        asked: list[int] = []
+
+        def fake_europepmc(client, target, context):
+            asked.append(target)
+            return [], 0
+
+        monkeypatch.setattr(sampler, "sample_europepmc_rows", fake_europepmc)
+        monkeypatch.setattr(sampler, "sample_biorxiv_rows", lambda *a, **k: ([], 0))
+        monkeypatch.setattr(
+            sys, "argv", ["s", "-o", str(output), "--target", "10", "--no-pdf-cache"]
+        )
+        sampler.main()
+        assert asked == [6]
+
+    def test_the_rows_already_held_reach_the_final_corpus(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """The point of resuming: three hours of downloads must not evaporate
+        because the run was interrupted before it wrote its output."""
+        output = tmp_path / "corpus.json"
+        journal = sampler._journal_path(output)
+        sampler.append_row(journal, {"source": "europepmc", "id": "PMC1", "bucket": "match"})
+        monkeypatch.setattr(sampler, "sample_europepmc_rows", lambda *a, **k: ([], 0))
+        monkeypatch.setattr(sampler, "sample_biorxiv_rows", lambda *a, **k: ([], 0))
+        monkeypatch.setattr(sys, "argv", ["s", "-o", str(output), "--no-pdf-cache"])
+        sampler.main()
+        assert [row["id"] for row in json.loads(output.read_text())] == ["PMC1"]
+
+    def test_an_identifier_already_attempted_is_not_fetched_again(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "corpus.json"
+        journal = sampler._journal_path(output)
+        sampler.append_row(journal, {"source": "europepmc", "id": "PMC1", "bucket": "match"})
+        seen: list[set[str]] = []
+        monkeypatch.setattr(
+            sampler, "sample_europepmc_rows", lambda c, t, ctx: (seen.append(ctx.seen), ([], 0))[1]
+        )
+        monkeypatch.setattr(sampler, "sample_biorxiv_rows", lambda *a, **k: ([], 0))
+        monkeypatch.setattr(sys, "argv", ["s", "-o", str(output), "--no-pdf-cache"])
+        sampler.main()
+        assert seen == [{"PMC1"}]
+
+    def test_a_failed_attempt_is_remembered_so_the_share_survives_a_resume(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A resumed run that inherited only its successes would recompute the
+        unmeasured share over a denominator missing its failures — and the
+        ERROR rule would then pass by having forgotten."""
+        output = tmp_path / "corpus.json"
+        journal = sampler._journal_path(output)
+        sampler.append_row(journal, {"source": "europepmc", "id": "PMC1", "bucket": "match"})
+        for i in range(9):
+            sampler.append_row(journal, {"unmeasured": True, "source": "europepmc", "id": f"x{i}"})
+        printed: list[str] = []
+        monkeypatch.setattr(sampler, "sample_europepmc_rows", lambda *a, **k: ([], 0))
+        monkeypatch.setattr(sampler, "sample_biorxiv_rows", lambda *a, **k: ([], 0))
+        monkeypatch.setattr(sys, "argv", ["s", "-o", str(output), "--no-pdf-cache"])
+        monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(map(str, a))))
+        assert sampler.main() != 0
+        assert any("ERROR" in line for line in printed)

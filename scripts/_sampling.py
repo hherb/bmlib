@@ -40,6 +40,7 @@ insert it explicitly.
 from __future__ import annotations
 
 import math
+import threading
 import time
 from collections.abc import Callable
 from typing import Any
@@ -143,6 +144,17 @@ def _make_pacer(
     cooperative host go at its own pace while a throttling one gets slowed
     down on its own.
 
+    It is **admission control, not serialisation**: it paces the moment each
+    request *starts*, and does not wait for the previous one to finish. Under
+    a thread pool that lets transfers to one host overlap while the host still
+    sees at most one new request per *interval* — the property the 429s were
+    actually about — so concurrency buys wall-clock without buying throttling.
+
+    Thread-safe: each host has its own lock, held across the wait, so two
+    workers racing on one host take successive slots instead of reading the
+    same last-request time and firing together. Locks are per host, so a slow
+    host never blocks a fast one.
+
     Args:
         interval: Minimum seconds between two requests to the same host.
         clock: Source of the current time, injected so tests can drive it
@@ -154,20 +166,29 @@ def _make_pacer(
         through this same pacer.
     """
     last_request: dict[str, float] = {}
+    host_locks: dict[str, threading.Lock] = {}
+    registry_lock = threading.Lock()
+
+    def _lock_for(host: str) -> threading.Lock:
+        # A lock over the lock registry, so two threads meeting a new host at
+        # once cannot each create their own lock for it and then both proceed.
+        with registry_lock:
+            return host_locks.setdefault(host, threading.Lock())
 
     def pace(url: str) -> None:
         host = urlsplit(url).netloc
-        now = clock()
-        last = last_request.get(host)
-        if last is None:
-            last_request[host] = now
-            return
-        remaining = interval - (now - last)
-        if remaining > 0:
-            _sleep_for(remaining)
-            last_request[host] = now + remaining
-        else:
-            last_request[host] = now
+        with _lock_for(host):
+            now = clock()
+            last = last_request.get(host)
+            if last is None:
+                last_request[host] = now
+                return
+            remaining = interval - (now - last)
+            if remaining > 0:
+                _sleep_for(remaining)
+                last_request[host] = now + remaining
+            else:
+                last_request[host] = now
 
     return pace
 

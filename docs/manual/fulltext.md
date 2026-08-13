@@ -750,6 +750,7 @@ class ConversionResult:
     metadata: dict[str, Any] = field(default_factory=dict)
     error_message: str | None = None
     page_texts: list[str] = field(default_factory=list)
+    title: str | None = None       # unreleased
 
     @property
     def is_complete(self) -> bool: ...
@@ -772,6 +773,16 @@ this is **not indexable by page number** and its length can be less than
 `page_count`. It exists because page boundaries are what let `render_html()`
 recognise furniture that repeats across pages. A backend that cannot report
 pages separately leaves it empty.
+
+**`title`** (unreleased) is the document's title where page 1 corroborates the
+metadata's claim to it, and `None` otherwise — the same rule the segmenter
+applies, described under [How the title is chosen](#how-the-title-is-chosen-unreleased).
+**Read this rather than `metadata["title"]`**, which stays a verbatim record
+of what the PDF says, junk and all: a caller debugging provenance needs the
+raw string, and `creator`/`producer` sit beside it unmodified. A PDF whose
+metadata title is `"Microsoft Word - manuscript.docx"` therefore has
+`result.title is None` and `result.metadata["title"] == "Microsoft Word -
+manuscript.docx"`.
 
 ### `render_html(result: ConversionResult) -> str`
 
@@ -972,7 +983,7 @@ with `isinstance(converter, LayoutExtractor)`.
 
 | Field / method | Notes |
 |---|---|
-| `title` | Metadata title if present, else the largest first-page line when it clears the median font size by 1.5× |
+| `title` | The metadata title **where page 1 corroborates it**, else the largest first-page line when it clears the median font size by 1.5× — see below |
 | `authors` | **Reserved** — never populated today |
 | `sections` | Flat list, document order; `Section.subsections` is likewise reserved |
 | `metadata` | Whatever was passed to `segment_document()`, stored as-is |
@@ -982,6 +993,36 @@ with `isinstance(converter, LayoutExtractor)`.
 
 `segment_document()`'s `metadata` argument is optional; only `title` and
 `file_path` are read from it.
+
+#### How the title is chosen (unreleased)
+
+Real PDFs put junk in `/Title` — `"Microsoft Word - manuscript.docx"`,
+`"untitled"`, the typesetter's job number — and the segmenter used to return
+any non-empty value there verbatim, so junk beat a perfectly good large-font
+first-page line (issue #56).
+
+A metadata title is now believed only where **the document itself prints it**.
+Both sides are normalised — line-break hyphenation closed up, then NFKD,
+combining marks dropped, lowercased, reduced to `[a-z0-9]+` tokens joined by
+single spaces — and the title is accepted when it is contained in page 1's
+normalised text. That absorbs case, the terminal period metadata usually
+drops, en-dash versus hyphen, ligatures, diacritics and the line break a
+wrapped title carries, while rejecting a string the paper never states.
+
+Two consequences worth knowing:
+
+- **A page 1 with no extractable text accepts the metadata title.** An
+  image-only scan makes corroboration a test that *cannot be run*, not one
+  that failed, and the metadata is then the only title signal there is.
+- **A rejected title falls through to the font heuristic**, which may return
+  the largest first-page line or nothing at all. Losing a title is the
+  intended trade: a junk title is asserted as fact by a document the caller
+  trusts, while a wrongly rejected one is usually recovered off the page.
+
+The rule and its reject-list backstop are measured against
+`tests/data/pdf_metadata_titles.json`, a corpus of real Europe PMC and
+bioRxiv PDFs collected by `scripts/sample_pdf_metadata_titles.py`. **Run that
+sampler before changing either.**
 
 ---
 

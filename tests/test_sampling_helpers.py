@@ -153,3 +153,64 @@ class TestARetryAfterIsHonouredWithinItsClamp:
             helpers._throttle_delay(_Resp(429, headers=header), 1)
             == (helpers.RETRY_BACKOFF_SECONDS[0])
         )
+
+
+class TestThePacerIsAdmissionControlNotASerialiser:
+    """Parallel workers must not defeat the per-host rate, nor each other.
+
+    The pacer is what bounds requests *per host*, so it has to hold under
+    concurrency: two threads racing on the same host must not both read the
+    same "last request" time and fire together. It paces the *start* of each
+    request rather than waiting for the previous one to finish, so transfers
+    overlap while the host still sees at most one new request per interval —
+    which is the property the 429s in sample_free_pdf_urls.py's first run were
+    about.
+    """
+
+    def test_concurrent_requests_to_one_host_are_still_spaced(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import threading
+
+        sleeps: list[float] = []
+        sleep_lock = threading.Lock()
+
+        def record(seconds: float) -> None:
+            with sleep_lock:
+                sleeps.append(seconds)
+
+        monkeypatch.setattr(helpers, "_sleep_for", record)
+        # A clock frozen at one instant, so the waits are exactly readable:
+        # the first caller goes free, and each later one must wait out the
+        # interval *from the slot the previous one took*, not from the same
+        # instant. Against a frozen clock that means 3s, then 6s, then 9s.
+        pace = helpers._make_pacer(3.0, clock=lambda: 100.0)
+        threads = [threading.Thread(target=pace, args=("https://a.example/x",)) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        # This is the discriminating assertion: four threads all reading the
+        # same last-request time — the race — would each compute the same 3.0
+        # and fire together, giving [3.0, 3.0, 3.0]. Sorted, because which
+        # thread wins which slot is up to the scheduler; the set of waits is
+        # not.
+        assert sorted(sleeps) == [3.0, 6.0, 9.0]
+
+    def test_two_hosts_do_not_block_each_other(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The point of pacing per host: a slow host must not stall a fast one
+        even when both are in flight on different threads."""
+        import threading
+
+        sleeps: list[float] = []
+        monkeypatch.setattr(helpers, "_sleep_for", sleeps.append)
+        pace = helpers._make_pacer(3.0, clock=lambda: 100.0)
+        threads = [
+            threading.Thread(target=pace, args=(f"https://host{i}.example/x",)) for i in range(4)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert sleeps == []

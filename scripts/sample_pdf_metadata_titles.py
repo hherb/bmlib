@@ -81,11 +81,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import unicodedata
+import uuid
 from collections import Counter
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -148,6 +152,14 @@ MAX_PDF_BYTES = 30 * 1024 * 1024
 # How many days back to walk for the bioRxiv population before giving up on
 # reaching --target.
 BIORXIV_DAYS_TO_WALK = 20
+# Concurrent fetches. The pacer still admits one request per host per
+# interval, so this overlaps *transfers* rather than raising the request rate
+# — which is what a run is actually spending its time on.
+DEFAULT_WORKERS = 4
+# Downloaded PDFs are kept here between runs, so a resumed run never pays for
+# the same transfer twice. Outside the repo on purpose: a full sample is
+# gigabytes.
+DEFAULT_PDF_CACHE = Path.home() / ".cache" / "bmlib-title-sampler"
 
 _BUCKETS = ("match", "truncated", "unrelated", "absent")
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -233,6 +245,93 @@ def download(client: Any, url: str, pace: Callable[[str], None]) -> tuple[bytes 
     raise AssertionError("unreachable: the loop above always returns")  # pragma: no cover
 
 
+def fetch_pdf(
+    client: Any,
+    url: str,
+    identifier: str,
+    pace: Callable[[str], None],
+    cache: Any | None,
+) -> tuple[bytes | None, bool]:
+    """The PDF for *identifier*, from the cache if it is already there.
+
+    The transfer is the expensive half of a run — a full sample is gigabytes
+    over hours — so a resumed run must not pay for it twice. The cache is
+    bmlib's own :class:`~bmlib.fulltext.cache.FullTextCache`, which publishes
+    each file atomically (issue #70), so a run killed mid-write leaves no
+    half-PDF to be read back as a real one on the next pass.
+
+    Args:
+        client: An HTTP client with ``get(url, headers=...)``.
+        url: The PDF URL.
+        identifier: The cache key — the PMC id or DOI.
+        pace: Per-host pacer.
+        cache: A ``FullTextCache``, or ``None`` to fetch every time.
+
+    Returns:
+        ``(body, measured)`` exactly as :func:`download` defines them. A
+        failed download caches nothing, so a later run retries it rather than
+        inheriting the failure.
+    """
+    if cache is not None:
+        cached = cache.get_pdf(identifier)
+        if cached is not None:
+            try:
+                return Path(cached).read_bytes(), True
+            except OSError as exc:
+                # Best-effort, like every other cache read in bmlib: an
+                # unreadable entry costs a re-download, not the run.
+                print(f"  unreadable cache entry for {identifier}: {exc}", file=sys.stderr)
+
+    body, measured = download(client, url, pace)
+    if cache is not None and body is not None:
+        try:
+            cache.save_pdf(body, identifier)
+        except OSError as exc:
+            print(f"  could not cache {identifier}: {exc}", file=sys.stderr)
+    return body, measured
+
+
+def load_partial(path: Path) -> list[dict[str, Any]]:
+    """Rows written by an earlier run, from the JSONL journal beside the output.
+
+    A line that does not parse is skipped rather than fatal: what a kill
+    mid-write leaves behind is a truncated *final* line, and refusing the
+    whole file for it would turn one lost row into every row lost — the
+    failure the journal exists to prevent.
+    """
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            print(f"  skipping an incomplete journal line in {path}", file=sys.stderr)
+    return rows
+
+
+def append_row(path: Path, row: dict[str, Any]) -> None:
+    """Append one row to the journal and put it beyond a crash.
+
+    ``flush()`` returns success while the bytes are still in the page cache,
+    so the ``fsync`` is not ceremony — it is the difference between a journal
+    that survives a kill and one that mostly does. One fsync per row is free
+    at this cadence: rows arrive seconds apart at best.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def already_seen(rows: list[dict[str, Any]]) -> set[str]:
+    """The identifiers a resumed run must not collect again."""
+    return {str(row["id"]) for row in rows if row.get("id")}
+
+
 def row_from_pdf(
     pdf_bytes: bytes,
     source: str,
@@ -261,7 +360,10 @@ def row_from_pdf(
     Returns:
         The row, or ``None`` when conversion failed.
     """
-    path = tmpdir / "sample.pdf"
+    # A unique name per call: with a fixed one, two workers would write the
+    # same file and each would parse the other's bytes. (#70 learned the
+    # same lesson about a fixed temp name in the cache.)
+    path = tmpdir / f"sample-{uuid.uuid4().hex}.pdf"
     try:
         path.write_bytes(pdf_bytes)
         converter = PyMuPDFConverter()
@@ -335,13 +437,97 @@ def summarise(source: str, rows: list[dict[str, Any]], unmeasured: int) -> list[
     return lines
 
 
+@dataclass(frozen=True)
+class Candidate:
+    """One PDF worth fetching: where it is, and what the record calls it."""
+
+    source: str
+    identifier: str
+    record_title: str
+    url: str
+
+
+@dataclass
+class RunContext:
+    """What every batch of a run needs, gathered so the walks stay readable.
+
+    ``seen`` is mutated as candidates are claimed, so the same identifier is
+    never fetched twice — within a run, or across a resumed one, since it
+    starts populated from the journal.
+    """
+
+    pace: Callable[[str], None]
+    journal: Path
+    seen: set[str]
+    cache: Any | None = None
+    workers: int = DEFAULT_WORKERS
+
+
+def process_candidates(
+    client: Any,
+    candidates: list[Candidate],
+    context: RunContext,
+    tmpdir: Path,
+) -> tuple[list[dict[str, Any]], int]:
+    """Fetch and label *candidates* concurrently, journalling each as it lands.
+
+    Concurrency is safe against the hosts because the pacer is admission
+    control: it still admits at most one request per host per interval, and
+    what overlaps is the *transfer*, which is what actually dominates a run
+    (the first live run managed 1.9 rows a minute against a 3s interval, so
+    pacing was never the bottleneck).
+
+    Every outcome is journalled, including an unmeasured one — a resumed run
+    that inherited only the successes would recompute the unmeasured share
+    over a denominator missing its failures, and the ERROR rule that share
+    feeds would then pass by having forgotten.
+
+    Returns:
+        ``(rows, unmeasured)`` for this batch.
+    """
+    rows: list[dict[str, Any]] = []
+    unmeasured = 0
+
+    def work(candidate: Candidate) -> dict[str, Any] | None:
+        body, measured = fetch_pdf(
+            client, candidate.url, candidate.identifier, context.pace, context.cache
+        )
+        if not measured or body is None:
+            return None
+        return row_from_pdf(
+            body,
+            candidate.source,
+            candidate.identifier,
+            candidate.record_title,
+            _file_name(candidate.url),
+            tmpdir,
+        )
+
+    with ThreadPoolExecutor(max_workers=context.workers) as pool:
+        # Results are consumed on this thread, in submission order, so the
+        # journal stays append-ordered and needs no lock of its own.
+        for candidate, row in zip(candidates, pool.map(work, candidates), strict=True):
+            if row is None:
+                unmeasured += 1
+                append_row(
+                    context.journal,
+                    {"unmeasured": True, "source": candidate.source, "id": candidate.identifier},
+                )
+                continue
+            rows.append(row)
+            append_row(context.journal, row)
+    return rows, unmeasured
+
+
 def sample_europepmc_rows(
-    client: Any, target: int, pace: Callable[[str], None]
+    client: Any, target: int, context: RunContext
 ) -> tuple[list[dict[str, Any]], int]:
     """Collect rows from Europe PMC's free ``?pdf=render`` PDFs.
 
     The same search ``sample_free_pdf_urls.py`` uses, so the two instruments
-    look at comparable slices of the literature.
+    look at comparable slices of the literature. One search page at a time:
+    its candidates are fetched concurrently, journalled, and only then is the
+    next page requested — so progress survives a kill at any point.
 
     Returns:
         ``(rows, unmeasured)``. Stops at *target* **rows**, not target URLs —
@@ -355,7 +541,7 @@ def sample_europepmc_rows(
     with TemporaryDirectory(prefix="bmlib-titles-") as tmp:
         tmpdir = Path(tmp)
         while len(rows) < target:
-            pace(EUROPE_PMC_SEARCH)
+            context.pace(EUROPE_PMC_SEARCH)
             try:
                 resp = client.get(
                     EUROPE_PMC_SEARCH,
@@ -377,24 +563,25 @@ def sample_europepmc_rows(
             hits = payload.get("resultList", {}).get("result", [])
             if not hits:
                 break
+
+            candidates: list[Candidate] = []
             for hit in hits:
-                if len(rows) >= target:
-                    break
                 title = (hit.get("title") or "").strip()
                 url = _extract_free_pdf_url(hit)
                 if not title or not url or not is_probeable(url):
                     continue
                 identifier = hit.get("pmcid") or hit.get("id") or url
-                body, measured = download(client, url, pace)
-                if not measured or body is None:
-                    unmeasured += 1
+                if identifier in context.seen:
                     continue
-                row = row_from_pdf(body, "europepmc", identifier, title, _file_name(url), tmpdir)
-                if row is None:
-                    unmeasured += 1
-                    continue
-                rows.append(row)
-                print(f"  europepmc: {len(rows)}/{target} rows", file=sys.stderr)
+                context.seen.add(identifier)
+                candidates.append(Candidate("europepmc", identifier, title, url))
+            candidates = candidates[: max(0, target - len(rows))]
+
+            batch, batch_unmeasured = process_candidates(client, candidates, context, tmpdir)
+            rows.extend(batch)
+            unmeasured += batch_unmeasured
+            print(f"  europepmc: {len(rows)}/{target} rows", file=sys.stderr)
+
             cursor = payload.get("nextCursorMark") or ""
             if not cursor:
                 break
@@ -402,14 +589,15 @@ def sample_europepmc_rows(
 
 
 def sample_biorxiv_rows(
-    client: Any, target: int, pace: Callable[[str], None], server: str = "biorxiv"
+    client: Any, target: int, context: RunContext, server: str = "biorxiv"
 ) -> tuple[list[dict[str, Any]], int]:
     """Collect rows from bioRxiv/medRxiv preprint PDFs.
 
     Author-submitted files straight out of Word and LaTeX — the population
     whose metadata titles issue #56 is actually about. The URLs come from
     ``fetch_biorxiv`` itself rather than a re-spelled template, so what is
-    sampled cannot drift from what bmlib fetches.
+    sampled cannot drift from what bmlib fetches. One posting day at a time,
+    for the same reason the Europe PMC walk goes a page at a time.
 
     Returns:
         ``(rows, unmeasured)``.
@@ -423,16 +611,16 @@ def sample_biorxiv_rows(
             if len(rows) >= target:
                 break
             records: list[Any] = []
-            pace(BIORXIV_BASE_URL)
+            context.pace(BIORXIV_BASE_URL)
             try:
                 fetch_biorxiv(client, day, on_record=records.append, server=server)
             except Exception as exc:
                 print(f"  bioRxiv fetch failed for {day}: {exc}", file=sys.stderr)
                 day -= timedelta(days=1)
                 continue
+
+            candidates: list[Candidate] = []
             for record in records:
-                if len(rows) >= target:
-                    break
                 title = (record.title or "").strip()
                 urls = [
                     entry.url
@@ -441,17 +629,17 @@ def sample_biorxiv_rows(
                 ]
                 if not title or not urls:
                     continue
-                body, measured = download(client, urls[0], pace)
-                if not measured or body is None:
-                    unmeasured += 1
-                    continue
                 identifier = record.doi or urls[0]
-                row = row_from_pdf(body, server, identifier, title, _file_name(urls[0]), tmpdir)
-                if row is None:
-                    unmeasured += 1
+                if identifier in context.seen:
                     continue
-                rows.append(row)
-                print(f"  {server}: {len(rows)}/{target} rows", file=sys.stderr)
+                context.seen.add(identifier)
+                candidates.append(Candidate(server, identifier, title, urls[0]))
+            candidates = candidates[: max(0, target - len(rows))]
+
+            batch, batch_unmeasured = process_candidates(client, candidates, context, tmpdir)
+            rows.extend(batch)
+            unmeasured += batch_unmeasured
+            print(f"  {server}: {len(rows)}/{target} rows ({day})", file=sys.stderr)
             day -= timedelta(days=1)
     return rows, unmeasured
 
@@ -482,23 +670,103 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-o", "--output", type=Path, default=DEFAULT_OUTPUT, help="Where to write the corpus."
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=DEFAULT_WORKERS,
+        help="Concurrent fetches. The per-host request rate is unchanged.",
+    )
+    parser.add_argument(
+        "--pdf-cache",
+        type=Path,
+        default=DEFAULT_PDF_CACHE,
+        help="Where downloaded PDFs are kept between runs.",
+    )
+    parser.add_argument(
+        "--no-pdf-cache",
+        action="store_true",
+        help="Fetch every PDF again rather than reusing a cached copy.",
+    )
     return parser
 
 
+def _journal_path(output: Path) -> Path:
+    """Where a run's rows are appended as they land, beside its output."""
+    return output.with_suffix(output.suffix + ".partial.jsonl")
+
+
+def _open_cache(args: argparse.Namespace) -> Any | None:
+    """The PDF cache for this run, or ``None`` when it is switched off.
+
+    A cache that cannot be created is a warning and not a failure: it costs
+    re-downloads on a resume, which is exactly what ``--no-pdf-cache`` asks
+    for, and losing the whole run over it would be the worse outcome — the
+    same call ``FullTextService`` makes for its own cache (issue #75).
+    """
+    if args.no_pdf_cache:
+        return None
+    from bmlib.fulltext.cache import FullTextCache
+
+    try:
+        return FullTextCache(cache_dir=args.pdf_cache)
+    except (OSError, RuntimeError) as exc:
+        print(
+            f"WARNING: no PDF cache at {args.pdf_cache} ({exc}); every PDF will be "
+            "downloaded again if this run is resumed",
+            file=sys.stderr,
+        )
+        return None
+
+
 def main() -> int:
-    """Sample both populations, write the corpus, print the tables."""
+    """Sample both populations, write the corpus, print the tables.
+
+    Resumable: rows are appended to a JSONL journal beside the output as they
+    land, and a later run loads it, skips the identifiers already collected,
+    and tops each population up to ``--target``. Delete the journal to start
+    over.
+    """
     args = _build_arg_parser().parse_args()
-    pace = _make_pacer(args.per_host_interval)
+    journal = _journal_path(args.output)
+    previous = load_partial(journal)
+    cache = _open_cache(args)
+    context = RunContext(
+        pace=_make_pacer(args.per_host_interval),
+        journal=journal,
+        seen=already_seen(previous),
+        cache=cache,
+        workers=args.workers,
+    )
+    if previous:
+        print(f"Resuming from {journal}: {len(previous)} attempts already made", file=sys.stderr)
+
+    # Rows and unmeasured attempts carried over from earlier runs, per source.
+    # Both halves are needed: a resumed run that inherited only its successes
+    # would compute the unmeasured share over a denominator missing its
+    # failures, and the ERROR rule would pass by having forgotten.
     populations: dict[str, tuple[list[dict[str, Any]], int]] = {}
+    for entry in previous:
+        source = str(entry.get("source", ""))
+        rows, unmeasured = populations.get(source, ([], 0))
+        if entry.get("unmeasured"):
+            populations[source] = (rows, unmeasured + 1)
+        else:
+            populations[source] = ([*rows, entry], unmeasured)
+
+    def merge(source: str, result: tuple[list[dict[str, Any]], int]) -> None:
+        rows, unmeasured = populations.get(source, ([], 0))
+        populations[source] = ([*rows, *result[0]], unmeasured + result[1])
 
     with httpx.Client(timeout=60.0, follow_redirects=True) as client:
         if args.source in ("europepmc", "both"):
-            print("Sampling Europe PMC free PDFs…", file=sys.stderr)
-            populations["europepmc"] = sample_europepmc_rows(client, args.target, pace)
+            done = len(populations.get("europepmc", ([], 0))[0])
+            print(f"Sampling Europe PMC free PDFs ({done} already held)…", file=sys.stderr)
+            merge("europepmc", sample_europepmc_rows(client, args.target - done, context))
         if args.source in ("biorxiv", "medrxiv", "both"):
             server = "medrxiv" if args.source == "medrxiv" else "biorxiv"
-            print(f"Sampling {server} preprint PDFs…", file=sys.stderr)
-            populations[server] = sample_biorxiv_rows(client, args.target, pace, server=server)
+            done = len(populations.get(server, ([], 0))[0])
+            print(f"Sampling {server} preprint PDFs ({done} already held)…", file=sys.stderr)
+            merge(server, sample_biorxiv_rows(client, args.target - done, context, server=server))
 
     rows = [row for population, _ in populations.values() for row in population]
     rows.sort(key=lambda row: (row.get("source", ""), row.get("id", "")))
