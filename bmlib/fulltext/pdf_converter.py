@@ -43,6 +43,7 @@ from html import escape as html_escape
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from bmlib.fulltext._titles import accepted_metadata_title
 from bmlib.fulltext.models import TextBlock
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,12 @@ class ConversionResult:
     # number and its length can be less than ``page_count``. Empty when a
     # backend cannot report pages separately.
     page_texts: list[str] = field(default_factory=list)
+    # The document's title where page 1 corroborates the metadata's claim to
+    # it, else None (issue #56). ``metadata["title"]`` keeps the verbatim
+    # original beside this, junk and all — the dict is a record of what the
+    # PDF says, and a caller debugging provenance needs it unaltered.
+    # Declared last so positional construction stays stable.
+    title: str | None = None
 
     @property
     def is_complete(self) -> bool:
@@ -317,9 +324,16 @@ class PyMuPDFConverter(PDFConverter):
                     warnings.append(f"Failed to extract metadata: {e}")
                     logger.warning("Metadata extraction failed for %s: %s", pdf_path, e)
 
+                # Page 1's text, for the title check below. Read here rather
+                # than from `page_texts[0]`, which omits a page that yielded
+                # nothing and so is page 1 only when page 1 had text — exactly
+                # the case `accepted_metadata_title` treats specially.
+                first_page_text = ""
                 for page_num in range(page_count):
                     try:
                         page_text = doc[page_num].get_text()
+                        if page_num == 0:
+                            first_page_text = page_text
                         if page_text.strip():
                             text_parts.append(page_text)
                             converted_pages += 1
@@ -344,6 +358,7 @@ class PyMuPDFConverter(PDFConverter):
                 converter_version=self.version,
                 metadata=metadata,
                 page_texts=list(text_parts),
+                title=accepted_metadata_title(metadata, first_page_text),
             )
 
         except self._fitz.FileDataError as e:

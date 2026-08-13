@@ -22,6 +22,7 @@ import importlib.metadata
 import logging
 import os
 import pickle
+import pkgutil
 import subprocess
 import sys
 from pathlib import Path
@@ -29,6 +30,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import bmlib.fulltext
 from bmlib.fulltext.cache import FullTextCache
 from bmlib.fulltext.models import FullTextResult, FullTextSourceEntry
 from bmlib.fulltext.pdf_converter import ConversionResult
@@ -1608,20 +1610,32 @@ for _name in [m for m in sys.modules if m == "httpx" or m.startswith("httpx.")]:
     del sys.modules[_name]
 """
 
-#: Every module in ``bmlib.fulltext`` — seven of the ten that were unimportable
-#: in a core-only install before this fix. ``_FETCHER_MODULES`` below holds the
-#: other three. Measured one fresh interpreter per module, since a failed
-#: import leaves the half-initialised parent in ``sys.modules`` and its
-#: siblings then falsely read as fine.
-_FULLTEXT_MODULES = [
-    "bmlib.fulltext",
-    "bmlib.fulltext.cache",
-    "bmlib.fulltext.jats_parser",
-    "bmlib.fulltext.models",
-    "bmlib.fulltext.pdf_converter",
-    "bmlib.fulltext.segmenter",
-    "bmlib.fulltext.service",
-]
+
+def _fulltext_modules() -> list[str]:
+    """Every module in ``bmlib.fulltext``, enumerated rather than listed.
+
+    Seven of the ten modules that were unimportable in a core-only install
+    before #64's fix live here; ``_FETCHER_MODULES`` below holds the other
+    three. Measured one fresh interpreter per module, since a failed import
+    leaves the half-initialised parent in ``sys.modules`` and its siblings
+    then falsely read as fine.
+
+    **Enumerated, because a hand-written list is a guard that stops guarding.**
+    It was a fixed list of the seven modules that existed when #64 was fixed,
+    so a module added afterwards was covered by nothing — and a top-level
+    ``import httpx`` in it would have re-broken the whole package on a core
+    install with no test failing, which is #64 exactly. ``bmlib/fulltext``'s
+    directory is walked instead, private modules included: the convention is a
+    property of the package, and ``_titles`` gates its importers as surely as
+    a public module would.
+    """
+    package = Path(bmlib.fulltext.__file__).parent
+    names = ["bmlib.fulltext"]
+    names += sorted(f"bmlib.fulltext.{info.name}" for info in pkgutil.iter_modules([str(package)]))
+    return names
+
+
+_FULLTEXT_MODULES = _fulltext_modules()
 
 #: The collateral half: each imports ``bmlib.fulltext.models`` for one
 #: dataclass, and all three take an injected HTTP client rather than importing
@@ -1682,6 +1696,24 @@ class TestPackageImports:
         for name in _FULLTEXT_MODULES:
             completed = _run(f"import {name}\n")
             assert completed.returncode == 0, f"{name}: {completed.stderr}"
+
+    def test_the_module_list_is_derived_from_the_package(self):
+        """The control on the loop above.
+
+        ``_FULLTEXT_MODULES`` is enumerated, so an enumeration that silently
+        returned nothing — a moved package, a changed ``__file__`` — would make
+        that loop pass over an empty list and report a guarantee it never
+        checked. Pinned against the package's own contents, and against the
+        two modules whose top-level imports are the ones that would break it:
+        ``service`` (httpx) and ``pdf_converter`` (PyMuPDF).
+        """
+        package = Path(bmlib.fulltext.__file__).parent
+        on_disk = {p.stem for p in package.glob("*.py") if p.stem != "__init__"}
+
+        assert _FULLTEXT_MODULES[0] == "bmlib.fulltext"
+        assert {n.rpartition(".")[2] for n in _FULLTEXT_MODULES[1:]} == on_disk
+        assert "bmlib.fulltext.service" in _FULLTEXT_MODULES
+        assert "bmlib.fulltext.pdf_converter" in _FULLTEXT_MODULES
 
     def test_the_segmenter_is_reachable_from_the_package_without_httpx(self):
         """The reported symptom: a segmenter that makes no HTTP request.

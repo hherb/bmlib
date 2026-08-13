@@ -44,6 +44,7 @@ import re
 import statistics
 from typing import Any
 
+from bmlib.fulltext._titles import accepted_metadata_title
 from bmlib.fulltext.models import Section, SectionType, SegmentedDocument, TextBlock
 
 # Confidence for sections that contain rather than classify: front matter,
@@ -392,16 +393,23 @@ class SectionSegmenter:
     def _extract_title(
         self, blocks: list[TextBlock], metadata: dict[str, Any], median_font_size: float
     ) -> str | None:
-        """Document title from metadata, else the largest first-page line.
+        """Document title from corroborated metadata, else the largest first-page line.
+
+        The metadata title is believed only where page 1 prints it. Real PDFs
+        carry filenames, ``"untitled"`` and typesetters' job numbers in
+        ``/Title``, and such a value used to beat a perfectly good large-font
+        line (issue #56); a title the document itself never states is not the
+        document's title. See :mod:`bmlib.fulltext._titles` for the rule, and
+        for why a page with no text at all accepts rather than rejects.
 
         The fallback is believed only when it exceeds the body median by
         half again — otherwise an ordinary line would become the title of
         every PDF whose metadata is blank.
         """
-        title = metadata.get("title")
-        if title:
-            return str(title)
         first_page = [b for b in blocks if b.page_num == 0]
+        title = accepted_metadata_title(metadata, "\n".join(b.text for b in first_page))
+        if title:
+            return title
         if not first_page:
             return None
         candidate = max(first_page, key=lambda b: b.font_size)

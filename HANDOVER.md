@@ -1,16 +1,20 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-11. **0.9.0 is released and on PyPI** — five `fulltext`
+_Last updated: 2026-08-13. **0.9.0 is released and on PyPI** — five `fulltext`
 fixes (#64, #67, #70, #71, #75). Nothing stored moved, so nothing needs
 re-syncing; it is a minor rather than a patch bump because three of the fixes
 change a public API. Verified against the *published* wheel, not just the
 source tree: it installs on jinja2 alone and all 69 modules import, one fresh
-interpreter each. Since the release, `fix/68-72-79-pdf-download-reporting` has
-closed #79, #68 and #72 (unreleased) — Tier 1d now takes the free PDFs Europe
-PMC actually labels `"Open access"`, and a failed PDF download or a swallowed
-bmlib bug is reported instead of hiding behind a tier that still works. Four
-open issues: **#56**, **#73**, **#78**, **#81**. 1893 tests + 58 skipped (1949 + 2
-with a PostgreSQL DSN), ruff clean.
+interpreter each. Since the release, PR #80 closed #79, #68 and #72
+(unreleased) — Tier 1d now takes the free PDFs Europe PMC actually labels
+`"Open access"`, and a failed PDF download or a swallowed bmlib bug is
+reported instead of hiding behind a tier that still works. And
+**`fix/56-junk-pdf-metadata-titles` closes #56** (unreleased): a PDF's
+metadata title is believed only where page 1 prints it, measured over 235
+real PDFs rather than guessed — 0 of 126 good titles wrongly rejected, 34 of
+35 junk rejected, and not one of the shapes the issue proposed appears in the
+corpus at all. Three open issues: **#73**, **#78**, **#81**. On that branch:
+1994 tests + 58 skipped (2050 + 2 with a PostgreSQL DSN), ruff clean.
 **Phase 3 of the bmlibrarian port is next, and each of its rows needs a design
 conversation before any porting** — see "Next up"._
 
@@ -39,9 +43,9 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed four releases. Widening it is a downstream change, not a bmlib
   one.
-- **1893 tests passing + 58 skipped** (`uv run pytest tests/ -q`); **1949 + 2
-  with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips are the
-  PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
+- **Tests on `main`: 1893 passing + 58 skipped** (`uv run pytest tests/ -q`);
+  **1949 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips
+  are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
   runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev
   venv** (PR #55 did it so the extraction tests run locally).
@@ -61,9 +65,10 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; **four are outstanding** — the `fix/68-72-79-pdf-download-reporting`
-  branch's `ROADMAP.md` rows for #79, #68, #72 and
-  `scripts/sample_free_pdf_urls.py`, none yet promoted to a version number.
+  release time; **eight are outstanding** — `ROADMAP.md`'s rows for #79, #68,
+  #72 and `scripts/sample_free_pdf_urls.py` (all on `main` via PR #80), plus
+  #56's three rows and two `docs/manual/fulltext.md` sections on
+  `fix/56-junk-pdf-metadata-titles`. None is promoted to a version number yet.
   Markers inside `docs/superpowers/plans/` are historical records — leave them
   alone.
 
@@ -71,7 +76,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Three, all found by review rather than by a failing test.
+Three, all found by review rather than by a failing test. (**#56 is closed**
+on `fix/56-junk-pdf-metadata-titles` — see "Current state".)
 
 **#73 — `install_defaults()` copies templates non-atomically**, found while
 fixing #70 and deliberately not folded into it. A copy interrupted partway
@@ -81,17 +87,6 @@ a prompt missing its last half renders and is sent to a model. Milder than #70
 an article — and it carries a decision: `_atomic_write` is private to
 `fulltext/cache.py`, so fixing this means either promoting it to a shared
 internal module or accepting a second copy. Worth deciding once.
-
-**#56 — `_extract_title()` trusts junk PDF metadata titles** ("Microsoft
-Word - manuscript.docx" wins over the large-font first-page line), deferred
-from PR #55's review. Note what it will cost to do *properly*: this repo
-settles list-shaped questions by measuring a corpus, not by taste (the
-industry-funder stems, the Markdown escape set, the DataBankName allow-list
-are all precedents), so a reject-list for junk titles wants a sample of real
-PDF metadata behind it rather than a guessed set of prefixes and suffixes.
-The issue already asks for a regression test per rejected shape plus a
-negative control. Every closed design stays in `docs/superpowers/specs/` as
-the record of what was rejected and why.
 
 **#78 — the release merge strategy is enforced by prose only**, found
 reviewing PR #77. `HANDOVER.md` requires a release PR be merged with
