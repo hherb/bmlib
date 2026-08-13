@@ -42,6 +42,35 @@ must not be re-done.
   validation still counts as registered — registration is separate from
   followability.
 
+## Repository process
+
+- **Squash, rebase and merge commits are all enabled on purpose — do not
+  disable two of them to protect the release tag** (#78, closed 2026-08-13).
+  The old release recipe required `--merge` so the tag landed on `main`'s
+  first-parent line, and #78 proposed enforcing that with one
+  `gh api -X PATCH`. Measured before acting: **8 of the last 40 merged PRs
+  landed as single-parent commits** (#60, #62, #63, #65, #66, #69, #74, #76),
+  each collapsing a 3–7 commit branch, so squash is a deliberate habit for
+  ordinary feature PRs and not an accident waiting to bite. GitHub cannot
+  condition the merge method on the branch — `allow_squash_merge` is
+  repo-wide and no ruleset rule expresses "release PRs must be merge
+  commits" — so enforcement would have cost the habit to protect one PR a
+  month.
+
+  **The requirement was removed rather than enforced.** `main`'s tip is on
+  `main`'s first-parent line under every merge strategy, so the recipe tags
+  `main`'s tip after `git pull --ff-only`. The two guards it carries replace
+  a constraint that never checked what mattered: `HEAD == origin/main`
+  catches a stale local `main`, and grepping `__version__` at the tag target
+  catches tagging a commit that does not carry the version — which is the
+  failure `release.yml` would otherwise find *after* the release is public
+  and the version burned. Neither is something a merge method could have
+  caught. The recipe is in `HANDOVER.md` under "Cutting a release".
+
+  The `protect_main` ruleset is a separate thing and closes none of this: it
+  covers deletion, non-fast-forward pushes and code scanning, and is silent
+  on merge strategy.
+
 ## Positional stability
 
 - **`Publication.pmcid`, `BaseAgent.__init__`'s `embedding_model`, and
