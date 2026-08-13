@@ -191,6 +191,7 @@ that directory explicitly.
   "id": "PMC1234567",
   "record_title": "…",
   "metadata_title": "…",
+  "bucket": "match",
   "creator": "…",
   "producer": "…",
   "file_name": "…",
@@ -198,6 +199,11 @@ that directory explicitly.
   "page_one_lines": [{"text": "…", "size": 17.2, "bold": true, "y": 72.0}]
 }
 ```
+
+`bucket` is stored rather than re-derived, for the same reason
+`tests/data/funder_names.json` stores its labels: it is the row's ground-truth
+label, and a metric test that recomputed it from the record title would be
+measuring the rule against a label the same run could quietly change.
 
 `page_one_lines` is capped at the first 20 lines in reading order — a title,
 its authors and their affiliations, which is where the decision is made — so
