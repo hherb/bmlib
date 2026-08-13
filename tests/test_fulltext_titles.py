@@ -30,6 +30,8 @@ corpus. These are the unit cases.
 
 from __future__ import annotations
 
+import logging
+
 from bmlib.fulltext._titles import accepted_metadata_title, looks_like_junk, normalise
 
 _PAGE = "Effects of aspirin on outcomes\nJane Smith, John Doe\nAbstract\nWe studied 400 adults."
@@ -124,7 +126,7 @@ class TestAMetadataTitleIsBelievedOnlyWhereTheDocumentSaysIt:
         """
         import bmlib.fulltext._titles as titles_module
 
-        monkeypatch.setattr(titles_module, "looks_like_junk", lambda title, metadata: False)
+        monkeypatch.setattr(titles_module, "looks_like_junk", lambda title: False)
         assert accepted_metadata_title({"title": "### ###"}, "") is None
         assert accepted_metadata_title({"title": "—•—"}, "   \n  ") is None
 
@@ -231,29 +233,75 @@ class TestTheOneBackstopMember:
         assert accepted_metadata_title({"title": "Layout 1"}, page) is None
 
     def test_a_bare_job_number_is_junk(self) -> None:
-        assert looks_like_junk("52561798", {}) is True
+        assert looks_like_junk("52561798") is True
 
     def test_a_two_word_title_is_junk(self) -> None:
-        assert looks_like_junk("Layout 1", {}) is True
+        assert looks_like_junk("Layout 1") is True
 
     def test_a_three_word_title_is_not(self) -> None:
         """The threshold sits below every genuine title in the corpus, whose
         shortest is five words — not tuned up against the junk."""
-        assert looks_like_junk("Aspirin in stroke", {}) is False
+        assert looks_like_junk("Aspirin in stroke") is False
 
     def test_a_real_title_is_not_junk(self) -> None:
         """The negative control on the backstop itself."""
-        assert looks_like_junk("Effects of aspirin on outcomes", {}) is False
+        assert looks_like_junk("Effects of aspirin on outcomes") is False
 
     def test_the_backstop_is_consulted_before_the_page(self, monkeypatch) -> None:
         import bmlib.fulltext._titles as titles_module
 
-        monkeypatch.setattr(titles_module, "looks_like_junk", lambda title, metadata: True)
+        monkeypatch.setattr(titles_module, "looks_like_junk", lambda title: True)
         # Both a page that prints the title and a page with no text at all:
         # neither may rescue a title the backstop has rejected.
         metadata = {"title": "Effects of aspirin"}
         assert accepted_metadata_title(metadata, "Effects of aspirin") is None
         assert accepted_metadata_title(metadata, "") is None
+
+
+class TestARejectionSaysWhy:
+    """``str | None`` is the right return — every caller asks one binary
+    question — but it collapses four unrelated reasons into one ``None``, and
+    the party who wanted them is the human debugging why a title vanished from
+    one PDF. DEBUG is where they get them.
+
+    Each assertion matches a phrase unique to the line that emits it. A bare
+    substring like the title itself would pass against any of the six, which
+    is exactly the vacuous log assertion this repo has been bitten by.
+    """
+
+    @staticmethod
+    def _reason(caplog) -> str:
+        return " | ".join(record.getMessage() for record in caplog.records)
+
+    def test_a_junk_shape_says_so(self, caplog) -> None:
+        with caplog.at_level(logging.DEBUG, logger="bmlib.fulltext._titles"):
+            accepted_metadata_title({"title": "Layout 1"}, _PAGE)
+        assert "matched a known junk shape" in self._reason(caplog)
+
+    def test_an_uncorroborated_title_says_it_is_not_printed(self, caplog) -> None:
+        with caplog.at_level(logging.DEBUG, logger="bmlib.fulltext._titles"):
+            accepted_metadata_title({"title": "Microsoft Word - ms.docx"}, _PAGE)
+        assert "is not printed on page 1" in self._reason(caplog)
+
+    def test_an_unreadable_page_is_distinguished_from_an_empty_one(self, caplog) -> None:
+        """The two uncheckable cases answer oppositely, so a reader debugging
+        a blank title has to be able to tell which one fired."""
+        title = "Effects of aspirin on outcomes"
+        with caplog.at_level(logging.DEBUG, logger="bmlib.fulltext._titles"):
+            accepted_metadata_title({"title": title}, None)
+        assert "could not be read" in self._reason(caplog)
+
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.fulltext._titles"):
+            accepted_metadata_title({"title": title}, "")
+        assert "carries no text" in self._reason(caplog)
+
+    def test_an_accepted_title_logs_no_rejection(self, caplog) -> None:
+        """The negative control. Every phrase above must be absent when the
+        page corroborates, or the assertions are matching noise."""
+        with caplog.at_level(logging.DEBUG, logger="bmlib.fulltext._titles"):
+            assert accepted_metadata_title({"title": "Effects of aspirin on outcomes"}, _PAGE)
+        assert "rejected" not in self._reason(caplog)
 
 
 class TestALineNumberedManuscriptStillCorroborates:
@@ -298,6 +346,39 @@ class TestALineNumberedManuscriptStillCorroborates:
         assert accepted_metadata_title({"title": "Phase 3 trial of BNT162b2"}, page) == (
             "Phase 3 trial of BNT162b2"
         )
+
+    def test_a_line_starting_with_a_number_is_not_stripped(self) -> None:
+        """The ``$`` anchor. ``^[ \\t]*\\d{1,4}.*$`` — strip any line *starting*
+        with a number — survived the whole suite, because the existing guard
+        puts its number mid-line.
+
+        A wrapped title whose continuation begins with a numeral is common
+        ("30-day mortality…", "2019 novel coronavirus…", "5-year survival…"),
+        and under that mutation the line is deleted from the page side and a
+        perfectly good title is rejected. The corpus carries 238 match-bucket
+        page-1 lines of this shape as affiliation markers ("1Department of…"),
+        so it is only luck that none of them lands inside a title.
+        """
+        page = "Effects of aspirin on\n30-day mortality after stroke\nJane Smith"
+        title = "Effects of aspirin on 30-day mortality after stroke"
+        assert accepted_metadata_title({"title": title}, page) == title
+
+    def test_a_four_digit_line_number_is_stripped(self) -> None:
+        """The upper bound. ``\\d{1,3}`` survived the suite; continuous journal
+        pagination reaches four digits routinely, and the corpus holds three
+        standalone four-digit lines."""
+        page = "Randomised controlled\n1024\ntrial of aspirin"
+        title = "Randomised controlled trial of aspirin"
+        assert accepted_metadata_title({"title": title}, page) == title
+
+    def test_a_longer_run_of_digits_is_left_alone(self) -> None:
+        """The lower bound, and the reason there is one. ``\\d{1,9}`` also
+        survived — but a five-digit-plus run alone on a line is an accession
+        or a job number, not pagination, and deleting it would let a metadata
+        title match a page whose distinguishing token had been removed."""
+        page = "85603982\nEffects of aspirin on outcomes"
+        title = "85603982 Effects of aspirin"
+        assert accepted_metadata_title({"title": title}, page) == title
 
     def test_a_page_of_only_line_numbers_still_reads_as_having_no_text(self) -> None:
         """Stripping must not turn a page into an empty one that then accepts

@@ -251,11 +251,20 @@ class TestAnUnmeasuredPopulationPrintsErrorNotAZero:
 
     def test_a_reported_population_names_every_bucket(self) -> None:
         """A bucket printed only when non-empty reads as an absence of junk
-        when it is an absence of a line."""
+        when it is an absence of a line.
+
+        Asserted as whole rendered rows, not as bare substrings: every bucket
+        name also appears in this module's own prose, and a ``summarise`` that
+        printed labels with no counts passed the substring form.
+        """
         rows = [{"bucket": "match"}] * 9 + [{"bucket": "unrelated"}]
-        text = "\n".join(sampler.summarise("europepmc", rows, unmeasured=0))
-        for bucket in ("match", "truncated", "unrelated", "absent"):
-            assert bucket in text
+        lines = sampler.summarise("europepmc", rows, unmeasured=0)
+        assert lines[1:] == [
+            f"    {'match':<10} {9:>4}  {0.9:>6.1%}",
+            f"    {'truncated':<10} {0:>4}  {0.0:>6.1%}",
+            f"    {'unrelated':<10} {1:>4}  {0.1:>6.1%}",
+            f"    {'absent':<10} {0:>4}  {0.0:>6.1%}",
+        ]
 
 
 @pytest.mark.skipif(not _HAS_FITZ, reason="PyMuPDF not installed")
@@ -333,11 +342,17 @@ class TestTheFixtureRowCarriesWhatTheMetricTestNeeds:
         assert max(len(line["text"]) for line in row["page_one_lines"]) == sampler.MAX_LINE_CHARS
 
     def test_a_row_carries_only_page_one(self, tmp_path: Path) -> None:
-        """Page 2's lines would corroborate a title page 1 never printed."""
+        """Page 2's lines would corroborate a title page 1 never printed.
+
+        The ``not any`` below passes on an empty list, so the non-empty guard
+        is what makes it a test — the fixture's page 2 really does carry
+        "Methods line" for it to have excluded.
+        """
         row = sampler.row_from_pdf(
             _make_pdf(_RECORD_TITLE), "europepmc", "PMC1", _RECORD_TITLE, "a.pdf", tmp_path
         )
         assert row is not None
+        assert row["page_one_lines"], "no stored lines, so the exclusion below checks nothing"
         assert not any("Methods line" in line["text"] for line in row["page_one_lines"])
 
     def test_the_row_is_labelled_and_keeps_the_verbatim_metadata_title(
@@ -601,6 +616,78 @@ class TestAProbeThatCouldNotBeMadeIsNeverAFinding:
         assert unmeasured == 0
         assert len(rows) == 5
         assert not any("ERROR" in line for line in sampler.summarise("europepmc", rows, unmeasured))
+
+
+class TestASummaryCannotQuietlyDropARow:
+    """``Counter[missing]`` is 0, so a bucket outside ``_BUCKETS`` vanished
+    from the table while still counting in ``len(rows)`` — the percentages
+    stopped summing to 100 and a dead member printed ``0  0.0%``,
+    indistinguishable from a shape that never occurred."""
+
+    def test_an_unknown_bucket_is_printed_rather_than_dropped(self) -> None:
+        rows = [{"bucket": "match"}] * 3 + [{"bucket": "recategorised"}]
+        lines = sampler.summarise("europepmc", rows, 0)
+        assert any("unclassified" in line and "recategorised" in line for line in lines), lines
+
+    def test_the_printed_counts_account_for_every_row(self) -> None:
+        """The property the table is supposed to have, stated directly."""
+        rows = [{"bucket": "match"}] * 3 + [{"bucket": "drifted"}] * 2
+        lines = sampler.summarise("europepmc", rows, 0)
+        counted = sum(int(line.split()[1]) for line in lines[1:])
+        assert counted == len(rows)
+
+    def test_a_clean_run_prints_no_unclassified_row(self) -> None:
+        """The negative control: the row above must come from the drift, not
+        appear on every summary."""
+        lines = sampler.summarise("europepmc", [{"bucket": "match"}] * 3, 0)
+        assert not any("unclassified" in line for line in lines)
+
+
+class TestACorruptJournalLineCostsOneRow:
+    """``load_partial`` promises that a bad line costs one row rather than the
+    file. Its guard caught ``JSONDecodeError`` only, so a line that parsed to a
+    non-object reached ``row.get`` and killed the resume with an
+    ``AttributeError`` naming neither file nor line — leaving deleting the
+    journal as the only way out, which loses every good row."""
+
+    def test_a_line_that_is_valid_json_but_not_an_object_is_skipped(self, tmp_path: Path) -> None:
+        journal = tmp_path / "j.jsonl"
+        journal.write_text(
+            '{"source": "europepmc", "id": "a", "bucket": "match"}\nnull\n'
+            '{"source": "europepmc", "id": "b", "bucket": "match"}\n'
+        )
+        rows = sampler.load_partial(journal)
+        assert [row["id"] for row in rows] == ["a", "b"]
+
+    def test_the_surviving_rows_still_drive_the_resume(self, tmp_path: Path) -> None:
+        """The point of skipping rather than raising: the functions that read
+        the journal must run, not just the loader."""
+        journal = tmp_path / "j.jsonl"
+        journal.write_text('3\n{"source": "europepmc", "id": "a", "bucket": "match"}\n[]\n')
+        rows = sampler.load_partial(journal)
+        assert sampler.already_seen(rows) == {"a"}
+        populations = sampler.tally_previous(rows)
+        assert [row["id"] for row in populations["europepmc"][0]] == ["a"]
+
+    def test_a_truncated_final_line_still_costs_only_itself(self, tmp_path: Path) -> None:
+        journal = tmp_path / "j.jsonl"
+        journal.write_text('{"source": "europepmc", "id": "a", "bucket": "match"}\n{"source": "eu')
+        assert [row["id"] for row in sampler.load_partial(journal)] == ["a"]
+
+    def test_the_message_names_the_line(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A bad line in the *middle* of a journal is not a truncated write and
+        means something else is wrong, so the report has to be locatable. The
+        assertion is the file:line prefix rather than "skipping", which both
+        branches emit and which would pass against either."""
+        journal = tmp_path / "j.jsonl"
+        journal.write_text('{"source": "e", "id": "a", "bucket": "match"}\nnull\n')
+        capsys.readouterr()
+
+        sampler.load_partial(journal)
+
+        assert f"{journal}:2:" in capsys.readouterr().err
 
 
 class TestARunSurvivesBeingInterrupted:

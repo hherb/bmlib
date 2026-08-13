@@ -320,17 +320,41 @@ def load_partial(path: Path) -> list[dict[str, Any]]:
     mid-write leaves behind is a truncated *final* line, and refusing the
     whole file for it would turn one lost row into every row lost — the
     failure the journal exists to prevent.
+
+    The shape check is part of the same guard. ``json.JSONDecodeError`` alone
+    let a line that parsed to a *non-object* — a bare ``null``, a number, a
+    list — through into the rows, where ``already_seen`` and
+    ``tally_previous`` both call ``row.get`` and died with an
+    ``AttributeError`` naming neither the file nor the line. That left
+    deleting the journal as the only recourse, which loses every good row: the
+    exact outcome this function exists to avoid, reached through the guard
+    meant to avoid it.
+
+    Both messages carry the line number, because a bad line in the *middle* of
+    the file is not a truncated write and means something else is wrong.
     """
     if not path.exists():
         return []
     rows: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         if not line.strip():
             continue
         try:
-            rows.append(json.loads(line))
-        except json.JSONDecodeError:
-            print(f"  skipping an incomplete journal line in {path}", file=sys.stderr)
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            print(
+                f"  {path}:{lineno}: skipping an incomplete journal line ({exc})",
+                file=sys.stderr,
+            )
+            continue
+        if not isinstance(row, dict):
+            print(
+                f"  {path}:{lineno}: skipping a journal line that is not an object "
+                f"({type(row).__name__})",
+                file=sys.stderr,
+            )
+            continue
+        rows.append(row)
     return rows
 
 
@@ -495,6 +519,16 @@ def summarise(source: str, rows: list[dict[str, Any]], unmeasured: int) -> list[
     for bucket in _BUCKETS:
         count = counts[bucket]
         lines.append(f"    {bucket:<10} {count:>4}  {count / len(rows):>6.1%}")
+    # Anything `classify` produced that `_BUCKETS` does not name. `Counter`
+    # returns 0 for a missing key, so without this a drifted or renamed label
+    # is dropped from the table while still counting in `len(rows)` — the
+    # percentages quietly stop summing to 100, and a dead `_BUCKETS` member
+    # prints `0  0.0%`, indistinguishable from a shape that genuinely never
+    # occurred. That is the failure `sample_databank_names.py` prints an
+    # `unclassified` row to prevent, and this table had no equivalent.
+    for bucket in sorted(set(counts) - set(_BUCKETS)):
+        count = counts[bucket]
+        lines.append(f"    {'unclassified':<10} {count:>4}  {count / len(rows):>6.1%}  ({bucket})")
     return lines
 
 
@@ -515,6 +549,15 @@ class RunContext:
     ``seen`` is mutated as candidates are claimed, so the same identifier is
     never fetched twice — within a run, or across a resumed one, since it
     starts populated from the journal.
+
+    The object is handed to a ``ThreadPoolExecutor``, so which fields the
+    workers touch matters. ``pace`` and ``cache`` are read from the worker
+    threads and are internally thread-safe (the pacer holds a lock; the cache
+    writes atomically). ``seen`` and ``journal`` are **main-thread only** —
+    ``seen`` is mutated while candidates are built, before any work is
+    submitted, and journal appends happen as results are consumed in
+    submission order. Neither has a lock, so neither may move into
+    ``process_candidates``' ``work()`` without one.
     """
 
     pace: Callable[[str], None]

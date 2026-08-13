@@ -44,7 +44,13 @@ All notable changes to bmlib are documented here. The format is based on
   Measured over **235 real PDFs** (`tests/data/pdf_metadata_titles.json`;
   Europe PMC 175, bioRxiv 60), against a rule fixed before the corpus was
   collected: **0 of 126 conclusive good titles wrongly rejected** (ceiling
-  1%) and **34 of 35 junk titles rejected** (floor 80%). The one junk title
+  1%; 95% CI [0%, 3.0%]) and **34 of 35 junk titles rejected** (floor 80%;
+  95% CI [85.5%, 99.5%]). Both rules are thresholds, so both need the
+  interval and not just the point estimate — and the two answer differently.
+  The junk floor holds at confidence: its lower bound clears 80%. The
+  wrong-rejection ceiling does **not** — 126 rows bound that rate at about
+  3%, roughly triple the 1% named, so the corpus establishes ≤3% and a reader
+  should not take ≤1% as measured. The one junk title
   accepted is not junk — the PDF's title reads "Drive" where the record reads
   "Drives", so the rule sided with the document in front of it. Where a junk
   title is rejected, the font-size fallback returns *some* title in 44% of
