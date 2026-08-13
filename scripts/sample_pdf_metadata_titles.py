@@ -827,14 +827,33 @@ def main() -> int:
 
     rows = [row for population, _ in populations.values() for row in population]
     rows.sort(key=lambda row: (row.get("source", ""), row.get("id", "")))
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(rows, indent=1, ensure_ascii=False) + "\n")
-    print(f"Wrote {len(rows)} rows to {args.output}", file=sys.stderr)
+    # Summarised *before* the corpus is written, so an unreportable run cannot
+    # replace the evidence. `bmlib/fulltext/_titles.py` names this file as what
+    # its rule was measured on and tells the next maintainer to re-run this
+    # sampler before changing the reject-list — so a run too throttled to
+    # *print* a distribution must not silently become the corpus a later
+    # distribution is read from. Refusing the write costs nothing: the journal
+    # already holds every row, so a re-run resumes rather than restarts.
+    summaries = {
+        source: summarise(source, population, unmeasured)
+        for source, (population, unmeasured) in populations.items()
+    }
+    failed = any("ERROR" in line for lines in summaries.values() for line in lines)
 
-    failed = False
-    for source, (population, unmeasured) in populations.items():
-        lines = summarise(source, population, unmeasured)
-        failed = failed or any("ERROR" in line for line in lines)
+    destination = args.output.with_suffix(".unreportable.json") if failed else args.output
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(rows, indent=1, ensure_ascii=False) + "\n")
+    if failed:
+        print(
+            f"Wrote {len(rows)} rows to {destination} — NOT to {args.output}, because at "
+            "least one population is unreportable (see ERROR below). The journal keeps "
+            "every row; re-run to finish the sampling.",
+            file=sys.stderr,
+        )
+    else:
+        print(f"Wrote {len(rows)} rows to {args.output}", file=sys.stderr)
+
+    for lines in summaries.values():
         for line in lines:
             print(line)
 

@@ -122,6 +122,31 @@ class _SequencedClient:
         return answer
 
 
+def _make_pdf_with_page_one_lines(count: int, first_line: str | None = None) -> bytes:
+    """A one-page PDF with *count* distinct lines on page 1.
+
+    The other fixture emits 15, comfortably inside ``PAGE_ONE_LINES_KEPT``, so
+    nothing built on it can exercise the cap or the truncation flag.
+    """
+    import fitz
+
+    lines = [
+        first_line if (i == 0 and first_line is not None) else f"Page one line {i}."
+        for i in range(count)
+    ]
+    # Wide enough for the longest line to fit: `insert_text` clips at the page
+    # edge, which would truncate by geometry and hide the cap under test.
+    width = max(612.0, 40 + max(len(line) for line in lines) * _BODY_SIZE * 0.7)
+    doc = fitz.open()
+    page = doc.new_page(width=width, height=max(792, 40 + count * 12))
+    for i, text in enumerate(lines):
+        page.insert_text((36, 30 + i * 12), text, fontsize=_BODY_SIZE)
+    doc.set_metadata({"title": _RECORD_TITLE})
+    body = doc.tobytes()
+    doc.close()
+    return bytes(body)
+
+
 def _make_pdf(metadata_title: str) -> bytes:
     """A two-page PDF: a large-font title line, body text, and metadata."""
     import fitz
@@ -265,15 +290,47 @@ class TestTheFixtureRowCarriesWhatTheMetricTestNeeds:
         expected = [b.text for b in blocks if b.page_num == 0][: sampler.PAGE_ONE_LINES_KEPT]
         assert [line["text"] for line in row["page_one_lines"]] == expected
 
-    def test_a_truncated_page_one_says_how_much_it_held(self, tmp_path: Path) -> None:
-        """A row whose title fell outside the cap is not evidence about a rule
-        that sees whole pages, so the count has to be recoverable rather than
-        silently scoring as a rejection that never happened."""
+    def test_an_untruncated_page_one_reports_its_full_count(self, tmp_path: Path) -> None:
+        """The fixture fits inside the cap, so the two numbers agree — and
+        that is exactly why it cannot pin the truncation flag. The test below
+        does that, on a page built to overflow."""
         row = sampler.row_from_pdf(
             _make_pdf(_RECORD_TITLE), "europepmc", "PMC1", _RECORD_TITLE, "a.pdf", tmp_path
         )
         assert row is not None
-        assert row["page_one_line_count"] >= len(row["page_one_lines"])
+        assert row["page_one_line_count"] == len(row["page_one_lines"])
+
+    def test_a_truncated_page_one_says_how_much_it_held(self, tmp_path: Path) -> None:
+        """A row whose title fell outside the cap is not evidence about a rule
+        that sees whole pages, so the count has to be recoverable rather than
+        silently scoring as a rejection that never happened.
+
+        ``tests/test_pdf_metadata_titles.py::_is_truncated`` derives exactly
+        this comparison and uses it to **exclude rows from the wrong-rejection
+        denominator** — 200 of the 235 committed rows are truncated — so a
+        count that silently equalled the stored length would let real
+        rejections vanish behind a passing 0.00%. Every other fixture here
+        fits inside the cap, which left both the slice and the count able to
+        be deleted with the suite still green.
+        """
+        overflowing = _make_pdf_with_page_one_lines(sampler.PAGE_ONE_LINES_KEPT + 20)
+        row = sampler.row_from_pdf(
+            overflowing, "europepmc", "PMC1", _RECORD_TITLE, "a.pdf", tmp_path
+        )
+        assert row is not None
+        assert len(row["page_one_lines"]) == sampler.PAGE_ONE_LINES_KEPT
+        assert row["page_one_line_count"] > len(row["page_one_lines"])
+        assert row["page_one_line_count"] >= sampler.PAGE_ONE_LINES_KEPT + 20
+
+    def test_a_stored_line_is_capped_in_length(self, tmp_path: Path) -> None:
+        """``MAX_LINE_CHARS`` had the same shape of gap: every fixture line is
+        short, so the slice was a no-op and the assertion compared against the
+        converter's untruncated text."""
+        long_line = "x" * (sampler.MAX_LINE_CHARS + 50)
+        pdf = _make_pdf_with_page_one_lines(3, first_line=long_line)
+        row = sampler.row_from_pdf(pdf, "europepmc", "PMC1", _RECORD_TITLE, "a.pdf", tmp_path)
+        assert row is not None
+        assert max(len(line["text"]) for line in row["page_one_lines"]) == sampler.MAX_LINE_CHARS
 
     def test_a_row_carries_only_page_one(self, tmp_path: Path) -> None:
         """Page 2's lines would corroborate a title page 1 never printed."""
@@ -353,6 +410,197 @@ class TestTheExitStatusAgreesWithWhatWasPrinted:
         monkeypatch.setattr(sys, "argv", ["s", "-o", str(tmp_path / "out.json"), "--no-pdf-cache"])
         assert sampler.main() == 0
         assert len(json.loads((tmp_path / "out.json").read_text())) == 20
+
+    def test_an_unreportable_run_does_not_replace_the_corpus(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """The ERROR line and the exit code were the only defence, and the
+        write happened before either. ``bmlib/fulltext/_titles.py`` names this
+        file as the evidence its rule was measured on and tells the next
+        maintainer to re-run the sampler before touching the reject-list — so
+        a run too throttled to report must not become the corpus that is then
+        read as if it had been. The prior corpus survives untouched, and the
+        thin one lands beside it under a name that says what it is.
+        """
+        out = tmp_path / "out.json"
+        previous = [{"source": "europepmc", "id": "kept", "bucket": "match"}]
+        out.write_text(json.dumps(previous))
+
+        failures = [{"unmeasured": True, "source": "europepmc", "id": f"e{i}"} for i in range(40)]
+        good = [{"source": "biorxiv", "id": f"b{i}", "bucket": "match"} for i in range(10)]
+        monkeypatch.setattr(sampler, "sample_europepmc_rows", self._walk(failures))
+        monkeypatch.setattr(sampler, "sample_biorxiv_rows", self._walk(good))
+        monkeypatch.setattr(sys, "argv", ["s", "-o", str(out), "--no-pdf-cache"])
+
+        assert sampler.main() != 0
+        assert json.loads(out.read_text()) == previous
+        assert json.loads((tmp_path / "out.unreportable.json").read_text())
+
+    def test_a_reportable_run_writes_no_sidecar(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """The control on the test above: the sidecar must be the exceptional
+        path, not somewhere every run also writes."""
+        europe = [{"source": "europepmc", "id": f"e{i}", "bucket": "match"} for i in range(10)]
+        biorxiv = [{"source": "biorxiv", "id": f"b{i}", "bucket": "match"} for i in range(10)]
+        monkeypatch.setattr(sampler, "sample_europepmc_rows", self._walk(europe))
+        monkeypatch.setattr(sampler, "sample_biorxiv_rows", self._walk(biorxiv))
+        monkeypatch.setattr(sys, "argv", ["s", "-o", str(tmp_path / "out.json"), "--no-pdf-cache"])
+
+        assert sampler.main() == 0
+        assert not (tmp_path / "out.unreportable.json").exists()
+
+
+class TestOnlyURLsBMLibWouldFetchEnterAPopulation:
+    """``is_probeable``'s *use* in this sampler was unguarded: dropping the
+    call from the Europe PMC walk left the suite green.
+
+    Worse here than in the sibling sampler, which only counts a URL — this one
+    writes the bytes to disk and hands them to PyMuPDF, so a ``file://`` URL
+    out of third-party JSON would be read off the local filesystem and parsed.
+    """
+
+    def _payload(self, url: str) -> dict[str, object]:
+        return {
+            "resultList": {
+                "result": [
+                    {
+                        "id": "PMC1",
+                        "title": _RECORD_TITLE,
+                        "fullTextUrlList": {
+                            "fullTextUrl": [
+                                {"documentStyle": "pdf", "availabilityCode": "OA", "url": url}
+                            ]
+                        },
+                    }
+                ]
+            },
+            "nextCursorMark": "",
+        }
+
+    def _run(self, url: str, tmp_path: Path) -> list[str]:
+        fetched: list[str] = []
+
+        class _Recording:
+            def get(self, request_url: str, **kwargs: object) -> _Resp:
+                if request_url == sampler.EUROPE_PMC_SEARCH:
+                    return _Resp(200, payload=self_payload)
+                fetched.append(request_url)
+                return _Resp(404)
+
+        self_payload = self._payload(url)
+        context = sampler.RunContext(
+            pace=lambda host: None, journal=tmp_path / "j.jsonl", seen=set(), cache=None, workers=1
+        )
+        sampler.sample_europepmc_rows(_Recording(), 5, context)
+        return fetched
+
+    def test_a_file_url_is_never_fetched(self, tmp_path: Path) -> None:
+        assert self._run("file:///etc/passwd", tmp_path) == []
+
+    def test_an_http_url_is(self, tmp_path: Path) -> None:
+        """The negative control: the skip above is the scheme, not the
+        fixture failing to produce a candidate at all."""
+        assert self._run("https://e/a.pdf?pdf=render", tmp_path) == ["https://e/a.pdf?pdf=render"]
+
+
+@pytest.mark.skipif(not _HAS_FITZ, reason="PyMuPDF not installed")
+class TestAProbeThatCouldNotBeMadeIsNeverAFinding:
+    """``process_candidates`` is the only place a failed fetch becomes an
+    unmeasured count *and* a journal entry, and every ``main()`` test above
+    patches the walks that call it out of the run.
+
+    Deleting the whole ``unmeasured`` branch left the suite green, which means
+    a run 90% throttled would have printed a confident distribution over the
+    surviving 10% and exited 0 — the ERROR rule could never fire. These drive
+    the real function over a stubbed transport instead.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _no_real_backoff(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A 503 is retried with backoff, so these would otherwise spend a
+        real minute asleep to assert something about accounting."""
+        monkeypatch.setattr(sampler, "_sleep_for", lambda seconds: None)
+
+    @staticmethod
+    def _context(tmp_path: Path) -> Any:
+        return sampler.RunContext(
+            pace=lambda host: None,
+            journal=tmp_path / "journal.jsonl",
+            seen=set(),
+            cache=None,
+            workers=1,
+        )
+
+    def _candidates(self, n: int) -> list[Any]:
+        return [
+            sampler.Candidate(
+                source="europepmc",
+                identifier=f"PMC{i}",
+                record_title=_RECORD_TITLE,
+                url=f"https://example.org/{i}.pdf",
+            )
+            for i in range(n)
+        ]
+
+    def test_a_failed_fetch_counts_as_unmeasured_and_is_journalled(self, tmp_path: Path) -> None:
+        candidates = self._candidates(3)
+        client = _Client({c.url: _Resp(503) for c in candidates})
+        context = self._context(tmp_path)
+
+        rows, unmeasured = sampler.process_candidates(client, candidates, context, tmp_path)
+
+        assert rows == []
+        assert unmeasured == 3
+        journalled = sampler.load_partial(context.journal)
+        assert [entry.get("unmeasured") for entry in journalled] == [True, True, True]
+        assert {entry["id"] for entry in journalled} == {"PMC0", "PMC1", "PMC2"}
+
+    def test_a_mixed_batch_counts_each_side_once(self, tmp_path: Path) -> None:
+        """The denominator the ERROR rule divides by. A batch that loses some
+        rows must report both numbers, or the share is computed against a
+        total that never saw the failures."""
+        candidates = self._candidates(4)
+        answers = {c.url: _Resp(503) for c in candidates[:3]}
+        answers[candidates[3].url] = _Resp(200, content=_make_pdf(_RECORD_TITLE))
+        context = self._context(tmp_path)
+
+        rows, unmeasured = sampler.process_candidates(
+            _Client(answers), candidates, context, tmp_path
+        )
+
+        assert len(rows) == 1
+        assert unmeasured == 3
+        assert rows[0]["id"] == "PMC3"
+
+    def test_the_unmeasured_share_reaches_the_error_rule(self, tmp_path: Path) -> None:
+        """End to end through the accounting: a batch this thin must summarise
+        as ERROR. This is the assertion that fails if the branch is deleted —
+        `rows`/`unmeasured` alone could be re-derived, the ERROR line cannot."""
+        candidates = self._candidates(5)
+        answers = {c.url: _Resp(503) for c in candidates[:4]}
+        answers[candidates[4].url] = _Resp(200, content=_make_pdf(_RECORD_TITLE))
+
+        rows, unmeasured = sampler.process_candidates(
+            _Client(answers), candidates, self._context(tmp_path), tmp_path
+        )
+        lines = sampler.summarise("europepmc", rows, unmeasured)
+
+        assert any("ERROR" in line for line in lines), lines
+
+    def test_a_healthy_batch_is_not_an_error(self, tmp_path: Path) -> None:
+        """The negative control: the ERROR above must come from the failures,
+        not from the batch being small."""
+        candidates = self._candidates(5)
+        answers = {c.url: _Resp(200, content=_make_pdf(_RECORD_TITLE)) for c in candidates}
+
+        rows, unmeasured = sampler.process_candidates(
+            _Client(answers), candidates, self._context(tmp_path), tmp_path
+        )
+
+        assert unmeasured == 0
+        assert len(rows) == 5
+        assert not any("ERROR" in line for line in sampler.summarise("europepmc", rows, unmeasured))
 
 
 class TestARunSurvivesBeingInterrupted:
