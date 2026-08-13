@@ -67,6 +67,19 @@ RETRY_BACKOFF_SECONDS = (2.0, 4.0)
 MAX_RETRY_AFTER_SECONDS = 60.0
 
 
+def is_probeable(url: str) -> bool:
+    """Whether *url* is one bmlib would actually fetch.
+
+    The URLs come from third-party JSON — Europe PMC's ``fullTextUrlList`` and
+    Unpaywall's locations — so the scheme is not bmlib's to assume. A
+    ``file://`` or ``ftp://`` URL is not a *download failure*; counting it as
+    one would put a scheme bmlib never fetches into the rate that sets a log
+    level. The same reasoning as ``_normalise_base_url`` in the Ollama
+    provider, for the same class of input.
+    """
+    return urlsplit(url).scheme in ("http", "https")
+
+
 def _sleep_for(seconds: float) -> None:
     """Sleep for *seconds*. Separated so tests can stub it out."""
     time.sleep(seconds)

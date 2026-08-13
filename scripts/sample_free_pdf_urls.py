@@ -118,7 +118,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 try:
     import httpx
@@ -137,6 +137,7 @@ from _sampling import (
     _make_pacer,
     _sleep_for,
     _throttle_delay,
+    is_probeable,
     wilson,
 )
 
@@ -310,19 +311,6 @@ def summarise_availability(counts: Counter[tuple[str, str]]) -> list[str]:
             f"{'taken' if taken else 'SKIPPED'}"
         )
     return lines
-
-
-def is_probeable(url: str) -> bool:
-    """Whether *url* is one bmlib would actually fetch.
-
-    The URLs come from third-party JSON — Europe PMC's ``fullTextUrlList`` and
-    Unpaywall's locations — so the scheme is not bmlib's to assume. A
-    ``file://`` or ``ftp://`` URL is not a *download failure*; counting it as
-    one would put a scheme bmlib never fetches into the rate that sets a log
-    level. The same reasoning as ``_normalise_base_url`` in the Ollama
-    provider, for the same class of input.
-    """
-    return urlsplit(url).scheme in ("http", "https")
 
 
 def probe(client: Any, url: str) -> ProbeOutcome:
