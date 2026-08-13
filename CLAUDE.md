@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**bmlib** (v0.9.0) is a shared Python library for biomedical literature tools, licensed under AGPL-3.0-or-later. It provides LLM abstraction, quality assessment, transparency analysis, full-text retrieval, database utilities, and publication ingestion/sync.
+**bmlib** (v0.9.1) is a shared Python library for biomedical literature tools, licensed under AGPL-3.0-or-later. It provides LLM abstraction, quality assessment, transparency analysis, full-text retrieval, database utilities, and publication ingestion/sync.
 
 **Before "fixing" anything that looks wrong, check [`docs/DECISIONS.md`](docs/DECISIONS.md).** It is the register of deliberate non-fixes — choices that read as bugs, oddities or missed simplifications but were investigated and closed as correct, each with the test that pins it. Reopening one wastes a session. `HANDOVER.md` covers what is still open; `ROADMAP.md` tracks planned work.
 
@@ -356,6 +356,14 @@ BMLIB_TEST_POSTGRESQL_DSN="host=/tmp/pgrun port=5432 dbname=bmlib_test user=post
 The DSN must point at a database the tests may drop every table in. Unset, the PostgreSQL half of each test skips.
 
 CI runs this against a `postgres:16` service on every matrix entry and also sets `BMLIB_REQUIRE_POSTGRESQL=1`, which turns that skip into a failure — a DSN that is missing or points at an unreachable server must not leave the PostgreSQL half unrun behind a green build.
+
+**Lint with the CI-pinned ruff, not the one in `.venv`.** CI pins **0.15.20** (`.github/workflows/ci.yml`); a stale local ruff false-flags rules newer versions removed:
+
+```bash
+uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
+```
+
+`main` carries a `protect_main` ruleset: no deletion, no non-fast-forward push, and **CodeQL code scanning plus code quality required** at the `errors` / `high_or_higher` thresholds. CodeQL runs from GitHub's *default setup*, so there is no workflow file in `.github/workflows/` to read or edit — and its generated workflow does not listen for a pull request's `reopened` action, so a PR that predates the setup needs a fresh commit, not a close/reopen, to get its first analysis. The ruleset says nothing about which merge strategy is used; that requirement is still prose only (issue #78).
 
 ## Test file mapping
 

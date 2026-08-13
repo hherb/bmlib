@@ -750,7 +750,7 @@ class ConversionResult:
     metadata: dict[str, Any] = field(default_factory=dict)
     error_message: str | None = None
     page_texts: list[str] = field(default_factory=list)
-    title: str | None = None       # unreleased
+    title: str | None = None       # 0.9.1
 
     @property
     def is_complete(self) -> bool: ...
@@ -774,9 +774,9 @@ this is **not indexable by page number** and its length can be less than
 recognise furniture that repeats across pages. A backend that cannot report
 pages separately leaves it empty.
 
-**`title`** (unreleased) is the document's title where page 1 corroborates the
+**`title`** (0.9.1) is the document's title where page 1 corroborates the
 metadata's claim to it, and `None` otherwise — the same rule the segmenter
-applies, described under [How the title is chosen](#how-the-title-is-chosen-unreleased).
+applies, described under [How the title is chosen](#how-the-title-is-chosen-091).
 **Read this rather than `metadata["title"]`**, which stays a verbatim record
 of what the PDF says, junk and all: a caller debugging provenance needs the
 raw string, and `creator`/`producer` sit beside it unmodified. A PDF whose
@@ -994,7 +994,7 @@ with `isinstance(converter, LayoutExtractor)`.
 `segment_document()`'s `metadata` argument is optional; only `title` and
 `file_path` are read from it.
 
-#### How the title is chosen (unreleased)
+#### How the title is chosen (0.9.1)
 
 Real PDFs put junk in `/Title` — `"Microsoft Word - manuscript.docx"`,
 `"untitled"`, the typesetter's job number — and the segmenter used to return
@@ -1036,6 +1036,13 @@ test. Unanchored, a `/Title` truncated mid-word — which producers emit
 routinely — matched the page it was cut from, and was then returned verbatim
 *and* with enough confidence to beat the fallback that would have recovered
 the whole line.
+
+**Every rejection is logged at `DEBUG`, with its reason and the offending
+title** — `bmlib.fulltext._titles`. The four reasons (blank or word-less,
+a known junk shape, a page that could not be read, a title page 1 does not
+print) collapse into one `None` at the API, because every caller asks a
+binary question; the operator asking "why did bmlib drop the good title on
+this paper" gets the answer from the log instead.
 
 The rule and its reject-list backstop are measured against
 `tests/data/pdf_metadata_titles.json`, a corpus of real Europe PMC and

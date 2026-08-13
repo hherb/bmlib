@@ -6,6 +6,35 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-08-13
+
+Four issues in the full-text retrieval path — #79, #68, #72 and #56 — all of
+the same family as 0.9.0's: a failure that reported as a success, or a
+success that reported nothing at all. Five smaller fixes found while
+reviewing them are listed below with the four. Tier 1d was discarding about 95% of the free PDFs it exists to find,
+because it recognised only the rarer of Europe PMC's two labels for "free";
+a PDF that then failed to download was swallowed at `DEBUG`, so a caller who
+asked for text and got a bare link could not tell a full disk from a
+publisher 404; a bmlib defect raised by every PMC tier hid behind an
+unrelated tier that still worked, degrading a whole corpus while reporting
+success; and a PDF's metadata title beat the title printed on page 1, so a
+typesetter's job number was stored as an article's title.
+
+Two of these were closed by **measuring** rather than by reasoning, and both
+instruments ship with the release. `scripts/sample_free_pdf_urls.py` sets
+#68's log levels from observed failure rates and is the evidence behind #79's
+allow-list; `scripts/sample_pdf_metadata_titles.py` built a 235-PDF corpus
+(`tests/data/pdf_metadata_titles.json`) against which #56's acceptance rule
+was scored — under a rule fixed before the corpus was collected. Not one of
+the junk shapes issue #56 proposed appears in that corpus.
+
+**One change moves what downstream stores**, and only one: #79 makes many
+more articles come back with `pdf_url` / `file_path` / extracted text instead
+of a bare link, so a corpus's stored full text is not comparable across the
+upgrade and outbound traffic to Europe PMC rises. Nothing else here changes a
+stored value. The single API addition, `ConversionResult.title`, is purely
+additive and declared last.
+
 ### Added
 
 - **`ConversionResult.title`** — the document's title where page 1
@@ -34,6 +63,47 @@ All notable changes to bmlib are documented here. The format is based on
   work never costs the run its budget for new work. `MAX_UNMEASURED_ATTEMPTS`
   bounds the tail: a retired attempt stops being offered but keeps being
   counted, and `summarise()` names how many were retried out.
+
+- **`scripts/sample_free_pdf_urls.py` now measures the access-label
+  distribution** it was already cited as the evidence for. It read neither
+  `availability` nor `availabilityCode`, so a maintainer following the
+  instruction to run it before changing `_FREE_PDF_AVAILABILITY_CODES` got a
+  failure-rate table and no evidence either way. It counts every
+  `documentStyle=pdf` entry by `(availability, availabilityCode)` and marks
+  each row taken/SKIPPED — counted **before** the allow-list filters, since a
+  distribution counted after it could only ever confirm it, and #79 was
+  precisely a value that never appeared in what bmlib accepted.
+
+  Three further corrections to the instrument: a 429/503 in the Unpaywall
+  *resolution* phase is now unmeasured rather than invisible (that is where
+  that API's limiter bites, and a throttled resolution phase printed as a
+  confident rate over whatever got through first); `Retry-After` is clamped
+  at a maximum as well as at zero, since an honoured `86400` is a run that
+  prints nothing, gets killed, and loses every population — the same loss the
+  zero clamp was reasoned about preventing; and `ProbeOutcome.ok` becomes a
+  property of `cause`, because `ok=True` beside `cause="http-403"`
+  constructed happily and would silently lower the rate that sets a
+  production log level. bioRxiv now honours `--target`, and `main()` exits
+  non-zero when any population printed `ERROR`.
+
+### Changed
+
+- **Europe PMC's free PDFs are now taken under their common label, not just
+  their rare one** (#79). `_extract_free_pdf_url` accepted
+  `availability == "Free"` only. Measured over 600 recent MEDLINE records,
+  that is the rare label: of 326 `documentStyle=pdf` entries, 312 (95.7%) read
+  `"Open access"` and 14 (4.3%) read `"Free"` — both the identical
+  `?pdf=render` URL on the identical host. Tier 1d was silently discarding
+  about 95% of the PDFs it exists to find; there is no log line for "a PDF
+  entry was seen and not taken." It now allow-lists on `availabilityCode`
+  (`OA`, `F`), falls back to the display string only for an entry carrying no
+  code, and rejects a present-but-unknown code rather than trusting the label
+  — an unknown value must under-credit, not risk a paywalled download. **This
+  moves what downstream stores**: many more articles now come back with
+  `pdf_url` / `file_path` / extracted text instead of a bare link, so a
+  corpus's stored full text is not comparable across the change, and outbound
+  traffic to Europe PMC rises, since PDFs the old code skipped are now
+  downloaded.
 
 ### Fixed
 
@@ -93,29 +163,15 @@ All notable changes to bmlib are documented here. The format is based on
   corpus rather than disproven, and a title it rejects still falls through to
   the font heuristic.
 
+  **Every rejection is logged at `DEBUG` with its reason and the offending
+  title.** The four reasons collapse into one `None` at the API — every caller
+  asks a binary question and would discard a richer answer — so the log is
+  where the operator asking "why did bmlib drop the good title on this paper"
+  gets an answer. Without it, a code path whose whole job is rejecting things
+  said nothing at any level.
+
   **Not a behaviour change for stored data**: `SectionSegmenter` has no
   consumer inside bmlib yet, and the converter's change is a new field.
-
-### Changed
-
-- **Europe PMC's free PDFs are now taken under their common label, not just
-  their rare one** (#79). `_extract_free_pdf_url` accepted
-  `availability == "Free"` only. Measured over 600 recent MEDLINE records,
-  that is the rare label: of 326 `documentStyle=pdf` entries, 312 (95.7%) read
-  `"Open access"` and 14 (4.3%) read `"Free"` — both the identical
-  `?pdf=render` URL on the identical host. Tier 1d was silently discarding
-  about 95% of the PDFs it exists to find; there is no log line for "a PDF
-  entry was seen and not taken." It now allow-lists on `availabilityCode`
-  (`OA`, `F`), falls back to the display string only for an entry carrying no
-  code, and rejects a present-but-unknown code rather than trusting the label
-  — an unknown value must under-credit, not risk a paywalled download. **This
-  moves what downstream stores**: many more articles now come back with
-  `pdf_url` / `file_path` / extracted text instead of a bare link, so a
-  corpus's stored full text is not comparable across the change, and outbound
-  traffic to Europe PMC rises, since PDFs the old code skipped are now
-  downloaded.
-
-### Fixed
 
 - **A failed PDF download is no longer invisible** (#68).
   `_download_and_cache_pdf` swallowed a non-200 response, a failed
@@ -211,30 +267,6 @@ All notable changes to bmlib are documented here. The format is based on
   the result — and a defect-shaped exception was filed as a transport fault.
   It now reports as the defect it is and keeps the cached PDF, since the
   download did succeed.
-
-### Added
-
-- **`scripts/sample_free_pdf_urls.py` now measures the access-label
-  distribution** it was already cited as the evidence for. It read neither
-  `availability` nor `availabilityCode`, so a maintainer following the
-  instruction to run it before changing `_FREE_PDF_AVAILABILITY_CODES` got a
-  failure-rate table and no evidence either way. It counts every
-  `documentStyle=pdf` entry by `(availability, availabilityCode)` and marks
-  each row taken/SKIPPED — counted **before** the allow-list filters, since a
-  distribution counted after it could only ever confirm it, and #79 was
-  precisely a value that never appeared in what bmlib accepted.
-
-  Three further corrections to the instrument: a 429/503 in the Unpaywall
-  *resolution* phase is now unmeasured rather than invisible (that is where
-  that API's limiter bites, and a throttled resolution phase printed as a
-  confident rate over whatever got through first); `Retry-After` is clamped
-  at a maximum as well as at zero, since an honoured `86400` is a run that
-  prints nothing, gets killed, and loses every population — the same loss the
-  zero clamp was reasoned about preventing; and `ProbeOutcome.ok` becomes a
-  property of `cause`, because `ok=True` beside `cause="http-403"`
-  constructed happily and would silently lower the rate that sets a
-  production log level. bioRxiv now honours `--target`, and `main()` exits
-  non-zero when any population printed `ERROR`.
 
 ## [0.9.0] — 2026-08-10
 
