@@ -291,7 +291,10 @@ def process_with_rolling_summary(
 
     chunks = chunk_text(text, chunk_size=max_chunk_size)
     rolling_summary: str | None = None
-    result: Any = None
+    # No annotation: `result` is already bound (and typed `Any`, from
+    # `process_fn`'s return) by the short-text branch above, so repeating
+    # one here is a redeclaration rather than a declaration.
+    result = None
     for chunk in chunks:
         logger.debug(
             "Processing chunk %d/%d (%d chars)",

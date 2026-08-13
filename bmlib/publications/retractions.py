@@ -346,7 +346,12 @@ def _reject_unusable_stream(handle: IO[bytes]) -> None:
     from inside :func:`store_retraction_notices`'s transaction rather than at
     the call that got the argument wrong.
     """
-    if isinstance(handle, io.TextIOBase):
+    # `type: ignore[unreachable]`: no class can subclass both `IO[bytes]` and
+    # `TextIOBase`, so a checker reading the annotation alone calls this body
+    # dead. It is not — the annotation is a request, not an enforcement, and
+    # this guard exists for the caller who does not honour it. Deleting it to
+    # satisfy the checker would restore the confusing `codecs` failure below.
+    if isinstance(handle, io.TextIOBase):  # type: ignore[unreachable]
         # A plausible slip: the signature also accepts a bare path, so
         # open(path) (text mode) reads as a valid call. Text mode decodes on
         # read using its own encoding, before this module's own whole-file
@@ -468,7 +473,7 @@ def parse_retraction_watch_csv(
         stream: IO[bytes] = source  # type: ignore[assignment]
         _reject_unusable_stream(stream)
         return _parse_stream(stream, on_skip)
-    return _parse_path(source, on_skip)  # type: ignore[arg-type]
+    return _parse_path(source, on_skip)
 
 
 # ---------------------------------------------------------------------------

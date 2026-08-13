@@ -216,7 +216,9 @@ def fetch_openalex(
         Summary of the fetch operation.
     """
     date_str = target_date.isoformat()
-    cursor = "*"
+    # `str | None`, not `str`: "*" only seeds the first page, and the loop
+    # below exits on the `None` the last page's `next_cursor` returns.
+    cursor: str | None = "*"
     records_processed = 0
     records_total = 0
     is_first_page = True

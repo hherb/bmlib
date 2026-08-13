@@ -496,6 +496,34 @@ class TestFetchPubmed:
         assert result.record_count == 0
         on_record.assert_not_called()
 
+    def test_a_count_without_a_history_session_fails_instead_of_fetching(self):
+        """Count>0 with no WebEnv/QueryKey is a failed fetch, not an empty day.
+
+        ESearch is sent ``usehistory=y`` and every page of the fetch reads
+        the session back. A response carrying a count but no session leaves
+        both `None`, which httpx encodes as an empty parameter — so each
+        page asks NCBI for `WebEnv=` and gets an answer holding no
+        `PubmedArticle`. Unguarded, that walks the whole count in useless
+        requests and reports `completed` with 0 records: a broken fetch
+        wearing the shape of a quiet day.
+        """
+        client = MagicMock()
+        esearch_response = MagicMock()
+        esearch_response.text = "<eSearchResult><Count>5000</Count></eSearchResult>"
+        client.get.return_value = esearch_response
+
+        on_record = MagicMock()
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 1), on_record=on_record)
+
+        assert result.status == "failed"
+        assert result.record_count == 0
+        assert "WebEnv" in result.error and "QueryKey" in result.error
+        on_record.assert_not_called()
+        # esearch only — not one efetch page was attempted.
+        assert client.get.call_count == 1
+
     def test_efetch_error_returns_partial_result(self):
         """If efetch raises an exception, return error with partial count."""
         client = MagicMock()

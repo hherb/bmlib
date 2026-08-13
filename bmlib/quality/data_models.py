@@ -97,8 +97,13 @@ class QualityTier(Enum):
     TIER_4_EXPERIMENTAL = 4  # RCTs
     TIER_5_SYNTHESIS = 5  # systematic reviews, meta-analyses
 
-    def __lt__(self, other):
-        if self.__class__ is other.__class__:
+    def __lt__(self, other: object) -> bool:
+        # `isinstance`, not the `self.__class__ is other.__class__` this
+        # replaced: identical here — an Enum that has members cannot be
+        # subclassed, so the two agree on every possible argument — and it
+        # is the form that narrows `other` from `object`, which is what
+        # lets the comparison below be checked at all.
+        if isinstance(other, QualityTier):
             return self.value < other.value
         return NotImplemented
 
@@ -189,7 +194,7 @@ class BiasRisk:
     def from_dict(cls, data: dict) -> BiasRisk:
         valid = ("low", "unclear", "high")
 
-        def v(k):
+        def v(k: str) -> str:
             return data.get(k, "unclear") if data.get(k) in valid else "unclear"
 
         return cls(

@@ -251,7 +251,11 @@ class PyMuPDFConverter(PDFConverter):
     def __init__(self) -> None:
         """Load PyMuPDF, raising a helpful ImportError if it is missing."""
         try:
-            import fitz
+            # PyMuPDF ships no `py.typed`. The typed `import pymupdf`
+            # spelling exists only from 1.24.3 and bmlib supports
+            # `pymupdf>=1.23`, so `fitz` has to stay. `warn_unused_ignores`
+            # reports this line the day PyMuPDF ships the marker.
+            import fitz  # type: ignore[import-untyped]
         except ImportError as e:
             raise ImportError(
                 "PyMuPDF (fitz) is required for PDF conversion. "

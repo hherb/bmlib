@@ -22,6 +22,8 @@ can be added at runtime via :func:`register_provider`.
 
 from __future__ import annotations
 
+from typing import Any
+
 from bmlib.llm.providers.base import (
     BaseProvider,
     ModelMetadata,
@@ -60,7 +62,7 @@ def list_providers() -> list[str]:
     return list(_REGISTRY.keys())
 
 
-def get_provider(name: str, **kwargs: object) -> BaseProvider:
+def get_provider(name: str, **kwargs: Any) -> BaseProvider:
     """Instantiate and return a provider by name.
 
     Raises :class:`ValueError` if the provider is not registered and
@@ -70,6 +72,12 @@ def get_provider(name: str, **kwargs: object) -> BaseProvider:
     cls = _REGISTRY.get(name)
     if cls is None:
         raise ValueError(f"Unknown provider {name!r}. Available: {list(_REGISTRY.keys())}")
+    # `**kwargs: Any`, not `object`, because the bag is *splatted* into a
+    # typed signature below. `object` is the stricter annotation and reads
+    # like the safer one, but it makes this call uncheckable rather than
+    # checked: a constructor parameter declared `str | None` cannot accept
+    # an `object`, so every provider here would be an error. Bags that are
+    # only inspected or forwarded untyped keep `object`.
     return cls(**kwargs)
 
 
