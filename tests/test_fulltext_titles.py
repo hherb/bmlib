@@ -159,3 +159,56 @@ class TestTheOneBackstopMemberTheCorpusEarned:
         metadata = {"title": "Effects of aspirin"}
         assert accepted_metadata_title(metadata, "Effects of aspirin") is None
         assert accepted_metadata_title(metadata, "") is None
+
+
+class TestALineNumberedManuscriptStillCorroborates:
+    """Preprint servers number the lines of a submitted manuscript, and
+    PyMuPDF reports each number as its own line — *between* the lines of the
+    title it sits beside.
+
+    Measured over 130 matched rows, this was the only wrongly rejected title,
+    and it is a whole class of document rather than one file: every
+    line-numbered preprint whose title wraps.
+    """
+
+    def test_a_title_split_by_line_numbers_is_accepted(self) -> None:
+        page = (
+            "Coordinated leaf hydraulic thresholds maintain virtually null\n"
+            "1\n"
+            "stomatal safety margins in poplar despite genetic variation\n"
+            "2\n"
+            "and nutrient-induced phenotypic plasticity\n"
+            "3\n"
+            "Authors: D Chassagnaud, L Bezon\n"
+        )
+        title = (
+            "Coordinated leaf hydraulic thresholds maintain virtually null stomatal "
+            "safety margins in poplar despite genetic variation and nutrient-induced "
+            "phenotypic plasticity"
+        )
+        assert accepted_metadata_title({"title": title}, page) == title
+
+    def test_a_hyphenated_word_split_across_a_numbered_break_still_closes_up(self) -> None:
+        """The two rules have to compose: the line number is removed first,
+        and the hyphen then meets the break it was always adjacent to."""
+        page = "Randomised con-\n7\ntrolled trial\n"
+        assert accepted_metadata_title({"title": "Randomised controlled trial"}, page) == (
+            "Randomised controlled trial"
+        )
+
+    def test_a_number_inside_a_line_is_not_stripped(self) -> None:
+        """Only a line that is *nothing but* a number goes. "Phase 3 trial of
+        BNT162b2" must keep every token it has."""
+        page = "Phase 3 trial of BNT162b2\nJane Smith\n"
+        assert accepted_metadata_title({"title": "Phase 3 trial of BNT162b2"}, page) == (
+            "Phase 3 trial of BNT162b2"
+        )
+
+    def test_a_page_of_only_line_numbers_still_reads_as_having_no_text(self) -> None:
+        """Stripping must not turn a page into an empty one that then accepts
+        an uncorroborated title by the image-only-scan rule... which is
+        exactly what it does, and is correct: a page whose entire extractable
+        content is line numbers carries no title to check against either."""
+        assert accepted_metadata_title({"title": "Effects of aspirin"}, "1\n2\n3\n") == (
+            "Effects of aspirin"
+        )

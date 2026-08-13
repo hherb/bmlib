@@ -61,6 +61,28 @@ _LINE_BREAK_HYPHEN_RE = re.compile(
 )
 
 
+#: A line holding nothing but a number is a line number or a page number.
+#:
+#: Preprint servers number the lines of a submitted manuscript, and PyMuPDF
+#: reports each number as its own line — *between* the lines of the title it
+#: sits beside. Joining them into the page text splices digits into the middle
+#: of the title, so a metadata title reading "Coordinated leaf hydraulic
+#: thresholds maintain virtually null stomatal safety margins…" is not
+#: contained in a page reading "…virtually null 1 stomatal safety margins… 2
+#: and nutrient induced…", and a perfectly good title is rejected.
+#:
+#: Measured: this was the *only* wrongly rejected title in 130 matched rows,
+#: and it is a whole class of document rather than one file. Dropping these
+#: lines can only remove text from the page side of a containment test, and a
+#: line that is only a number is not part of any title.
+_LINE_NUMBER_RE = re.compile(r"^[ \t]*\d{1,4}[ \t]*$", re.MULTILINE)
+
+
+def _page_text_for_matching(page_one_text: str) -> str:
+    """Page 1's text with its line numbering removed."""
+    return _LINE_NUMBER_RE.sub("", page_one_text)
+
+
 def normalise(text: str) -> str:
     """Reduce *text* to the form both sides of the corroboration test compare in.
 
@@ -164,7 +186,7 @@ def accepted_metadata_title(metadata: Mapping[str, Any], page_one_text: str) -> 
     wanted = normalise(title)
     if not wanted:
         return None
-    page = normalise(page_one_text)
+    page = normalise(_page_text_for_matching(page_one_text))
     if not page:
         return title
     return title if wanted in page else None
