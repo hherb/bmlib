@@ -42,6 +42,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -319,25 +320,39 @@ class TestTheFixtureRowCarriesWhatTheMetricTestNeeds:
 
 
 class TestTheExitStatusAgreesWithWhatWasPrinted:
+    """The stubs here journal what they collect, as a real walk does: `main`
+    tallies from the journal, so a stub that only *returned* rows would be
+    testing a code path that cannot happen."""
+
+    @staticmethod
+    def _walk(entries: list[dict[str, Any]]):
+        def walk(client, target, context, **kwargs):
+            for entry in entries:
+                sampler.append_row(context.journal, entry)
+            return [], 0
+
+        return walk
+
     def test_an_errored_population_exits_non_zero(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        monkeypatch.setattr(sampler, "sample_europepmc_rows", lambda *a, **k: ([], 40))
-        monkeypatch.setattr(
-            sampler, "sample_biorxiv_rows", lambda *a, **k: ([{"bucket": "match"}] * 10, 0)
-        )
-        monkeypatch.setattr(sys, "argv", ["s", "-o", str(tmp_path / "out.json")])
+        failures = [{"unmeasured": True, "source": "europepmc", "id": f"e{i}"} for i in range(40)]
+        good = [{"source": "biorxiv", "id": f"b{i}", "bucket": "match"} for i in range(10)]
+        monkeypatch.setattr(sampler, "sample_europepmc_rows", self._walk(failures))
+        monkeypatch.setattr(sampler, "sample_biorxiv_rows", self._walk(good))
+        monkeypatch.setattr(sys, "argv", ["s", "-o", str(tmp_path / "out.json"), "--no-pdf-cache"])
         assert sampler.main() != 0
 
     def test_two_healthy_populations_exit_zero(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        rows = [{"bucket": "match", "source": "x", "id": "1"}] * 10
-        monkeypatch.setattr(sampler, "sample_europepmc_rows", lambda *a, **k: (rows, 0))
-        monkeypatch.setattr(sampler, "sample_biorxiv_rows", lambda *a, **k: (rows, 0))
-        monkeypatch.setattr(sys, "argv", ["s", "-o", str(tmp_path / "out.json")])
+        europe = [{"source": "europepmc", "id": f"e{i}", "bucket": "match"} for i in range(10)]
+        biorxiv = [{"source": "biorxiv", "id": f"b{i}", "bucket": "match"} for i in range(10)]
+        monkeypatch.setattr(sampler, "sample_europepmc_rows", self._walk(europe))
+        monkeypatch.setattr(sampler, "sample_biorxiv_rows", self._walk(biorxiv))
+        monkeypatch.setattr(sys, "argv", ["s", "-o", str(tmp_path / "out.json"), "--no-pdf-cache"])
         assert sampler.main() == 0
-        assert (tmp_path / "out.json").exists()
+        assert len(json.loads((tmp_path / "out.json").read_text())) == 20
 
 
 class TestARunSurvivesBeingInterrupted:
@@ -592,3 +607,44 @@ class TestATransientFailureIsNotRememberedForever:
         rows, unmeasured = sampler.tally_previous(entries)["europepmc"]
         assert len(rows) == 1
         assert unmeasured == 1
+
+
+class TestARetriedFailureIsNotCountedTwice:
+    """The bug the live numbers exposed: Europe PMC's unmeasured count *rose*
+    across a run that retried 25 of its failures successfully.
+
+    ``main`` tallied the previous journal, then added the fresh rows on top —
+    so an id that was unmeasured and had just succeeded appeared in both
+    halves, once as a failure and once as a row. The population's own health
+    metric was the thing being corrupted, which is the metric that decides
+    whether the corpus may be reported at all.
+    """
+
+    def test_a_success_replaces_the_earlier_failure_in_the_tally(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "corpus.json"
+        journal = sampler._journal_path(output)
+        sampler.append_row(journal, {"unmeasured": True, "source": "europepmc", "id": "PMC1"})
+
+        def retry_it(client, target, context):
+            # What a real walk does on a retry: the id is not in `seen`, so it
+            # is fetched again, and this time it lands.
+            assert "PMC1" not in context.seen
+            sampler.append_row(
+                context.journal, {"source": "europepmc", "id": "PMC1", "bucket": "match"}
+            )
+            return [], 0
+
+        monkeypatch.setattr(sampler, "sample_europepmc_rows", retry_it)
+        monkeypatch.setattr(sampler, "sample_biorxiv_rows", lambda *a, **k: ([], 0))
+        monkeypatch.setattr(
+            sys, "argv", ["s", "-o", str(output), "--target", "5", "--no-pdf-cache"]
+        )
+        printed: list[str] = []
+        monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(map(str, a))))
+        sampler.main()
+
+        text = "\n".join(printed)
+        assert "1 rows (0 unmeasured" in text, text
+        assert [row["id"] for row in json.loads(output.read_text())] == ["PMC1"]

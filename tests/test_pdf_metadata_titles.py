@@ -39,8 +39,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from bmlib.fulltext._titles import accepted_metadata_title
 from bmlib.fulltext.models import TextBlock
 from bmlib.fulltext.segmenter import SectionSegmenter
@@ -49,7 +47,14 @@ _FIXTURE = Path(__file__).resolve().parent / "data" / "pdf_metadata_titles.json"
 
 
 def _rows() -> list[dict[str, Any]]:
-    """Every row of the committed corpus."""
+    """Every row of the committed corpus.
+
+    No ``skipif`` guard on a missing file: the corpus is committed, and a
+    metric test that skips itself when its evidence goes missing is the
+    failure this repo keeps having to design against — a guard that cannot
+    fail reads exactly like a guard that passes. If the fixture is gone, that
+    is a broken checkout and every test here should say so loudly.
+    """
     return json.loads(_FIXTURE.read_text(encoding="utf-8"))
 
 
@@ -104,7 +109,6 @@ def _is_truncated(row: dict[str, Any]) -> bool:
     return row["page_one_line_count"] > len(row["page_one_lines"])
 
 
-@pytest.mark.skipif(not _FIXTURE.exists(), reason="the measured corpus is not present")
 class TestTheRuleMeetsTheFloorsItShippedOn:
     def test_a_good_title_is_almost_never_rejected(self) -> None:
         """Ship rule 1, the cost side: ≤1% of ``match`` rows wrongly rejected.
@@ -167,7 +171,6 @@ class TestTheRuleMeetsTheFloorsItShippedOn:
         assert len(sources) >= 2, sources
 
 
-@pytest.mark.skipif(not _FIXTURE.exists(), reason="the measured corpus is not present")
 class TestTheSegmenterDeliversWhatTheRuleDecides:
     def test_an_accepted_title_is_the_title_the_segmenter_returns(self) -> None:
         """The wiring rather than the rule: whatever ``accepted_metadata_title``

@@ -807,20 +807,23 @@ def main() -> int:
     # failures, and the ERROR rule would pass by having forgotten.
     populations = tally_previous(previous)
 
-    def merge(source: str, result: tuple[list[dict[str, Any]], int]) -> None:
-        rows, unmeasured = populations.get(source, ([], 0))
-        populations[source] = ([*rows, *result[0]], unmeasured + result[1])
-
     with httpx.Client(timeout=60.0, follow_redirects=True) as client:
         if args.source in ("europepmc", "both"):
             done = len(populations.get("europepmc", ([], 0))[0])
             print(f"Sampling Europe PMC free PDFs ({done} already held)…", file=sys.stderr)
-            merge("europepmc", sample_europepmc_rows(client, args.target - done, context))
+            sample_europepmc_rows(client, args.target - done, context)
         if args.source in ("biorxiv", "medrxiv", "both"):
             server = "medrxiv" if args.source == "medrxiv" else "biorxiv"
             done = len(populations.get(server, ([], 0))[0])
             print(f"Sampling {server} preprint PDFs ({done} already held)…", file=sys.stderr)
-            merge(server, sample_biorxiv_rows(client, args.target - done, context, server=server))
+            sample_biorxiv_rows(client, args.target - done, context, server=server)
+
+    # Re-tallied from the journal rather than merged in memory. Every attempt
+    # this run made is already in there, and the journal is the only place
+    # where an id's outcomes can be reduced to its *last* one: merging a
+    # freshly-collected row onto a tally that still counts the same id as
+    # unmeasured counts it twice, which is exactly what a retried failure is.
+    populations = tally_previous(load_partial(journal))
 
     rows = [row for population, _ in populations.values() for row in population]
     rows.sort(key=lambda row: (row.get("source", ""), row.get("id", "")))
