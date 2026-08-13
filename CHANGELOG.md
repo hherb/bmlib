@@ -22,6 +22,19 @@ All notable changes to bmlib are documented here. The format is based on
   clamped `Retry-After` and `wilson()` between both live samplers rather than
   letting a rule learned from a bad run exist in two copies.
 
+  A bioRxiv attempt records the **posting day** it came from, and an unmeasured
+  one also records a `cause` and an `attempts` count. Without the day, a
+  resumed run could not retry what it had lost: that walk covers
+  `[today-30, today-49]` recomputed from `date.today()`, so it slides a day per
+  calendar day and after 20 shares nothing with the window that produced the
+  journal — an unmeasured attempt stayed open by design but became
+  unreachable, permanently inflating the population's unmeasured share with no
+  escape but deleting the journal and losing every good row. Days owed a retry
+  are now walked before the fresh window and in addition to it, so retrying old
+  work never costs the run its budget for new work. `MAX_UNMEASURED_ATTEMPTS`
+  bounds the tail: a retired attempt stops being offered but keeps being
+  counted, and `summarise()` names how many were retried out.
+
 ### Fixed
 
 - **A junk PDF metadata title no longer beats the title on the page** (#56).

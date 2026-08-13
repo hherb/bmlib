@@ -88,9 +88,9 @@ import sys
 import unicodedata
 import uuid
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -153,6 +153,16 @@ MAX_PDF_BYTES = 30 * 1024 * 1024
 # How many days back to walk for the bioRxiv population before giving up on
 # reaching --target.
 BIORXIV_DAYS_TO_WALK = 20
+# How many times one identifier may go unmeasured before it stops being
+# re-offered. It keeps counting as unmeasured either way — see `is_retired`.
+#
+# Three, because the causes worth retrying are transient by nature (a DNS
+# blip, a read timeout, a publisher's limiter) and clear well inside three
+# runs, while the causes that are not — a dead link, a landing page served as
+# a PDF — never clear at all and would otherwise be re-downloaded on every run
+# forever. The number bounds the tail; it does not decide what is wrong, which
+# is what `cause` on the marker is for.
+MAX_UNMEASURED_ATTEMPTS = 3
 # Concurrent fetches. The pacer still admits one request per host per
 # interval, so this overlaps *transfers* rather than raising the request rate
 # — which is what a run is actually spending its time on.
@@ -225,7 +235,7 @@ def classify(metadata_title: str, record_title: str) -> str:
     return "unrelated"
 
 
-def download(client: Any, url: str, pace: Callable[[str], None]) -> tuple[bytes | None, bool]:
+def download(client: Any, url: str, pace: Callable[[str], None]) -> tuple[bytes | None, bool, str]:
     """Fetch one PDF, retrying a 429/503 before giving up on it.
 
     Args:
@@ -234,36 +244,45 @@ def download(client: Any, url: str, pace: Callable[[str], None]) -> tuple[bytes 
         pace: Per-host pacer, called before every attempt.
 
     Returns:
-        ``(body, measured)``. ``measured`` is ``False`` whenever the row
+        ``(body, measured, cause)``. ``measured`` is ``False`` whenever the row
         cannot be labelled — a throttled request, a non-200, a transport
         exception, an oversized body, or bytes that are not a PDF. This
         script measures *titles*, so anything short of a readable PDF is a
         question never asked rather than an answer of any kind.
+
+        ``cause`` is a short slug naming which of those it was, or ``""`` on
+        success. It reaches the journal, where it is the difference between a
+        resume that knows re-running will help (``throttled``,
+        ``transport-ConnectError``) and one that cannot tell that from 40 URLs
+        that are permanently ``http-404``. Merging them would report the
+        unmeasured share with a number that cannot distinguish a dead network
+        from a dead link — the same argument ``sample_free_pdf_urls.py``
+        already makes for bucketing its causes.
     """
     for attempt in range(1, MAX_PROBE_ATTEMPTS + 1):
         pace(url)
         try:
             resp = client.get(url, headers={"User-Agent": _USER_AGENT})
         except Exception as exc:
-            print(f"  download failed for {url}: {exc}", file=sys.stderr)
-            return None, False
+            print(f"  download failed for {url}: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return None, False, f"transport-{type(exc).__name__}"
         if resp.status_code in (429, 503):
             if attempt == MAX_PROBE_ATTEMPTS:
                 print(f"  throttled for {url}; unmeasured", file=sys.stderr)
-                return None, False
+                return None, False, "throttled"
             _sleep_for(_throttle_delay(resp, attempt))
             continue
         if resp.status_code != 200:
             print(f"  HTTP {resp.status_code} for {url}", file=sys.stderr)
-            return None, False
+            return None, False, f"http-{resp.status_code}"
         body = bytes(resp.content)
         if len(body) > MAX_PDF_BYTES:
             print(f"  oversized ({len(body)} bytes) for {url}; unmeasured", file=sys.stderr)
-            return None, False
+            return None, False, "oversized"
         if not body.startswith(b"%PDF"):
             print(f"  not a PDF for {url}; unmeasured", file=sys.stderr)
-            return None, False
-        return body, True
+            return None, False, "not-a-pdf"
+        return body, True, ""
     raise AssertionError("unreachable: the loop above always returns")  # pragma: no cover
 
 
@@ -273,7 +292,7 @@ def fetch_pdf(
     identifier: str,
     pace: Callable[[str], None],
     cache: Any | None,
-) -> tuple[bytes | None, bool]:
+) -> tuple[bytes | None, bool, str]:
     """The PDF for *identifier*, from the cache if it is already there.
 
     The transfer is the expensive half of a run — a full sample is gigabytes
@@ -290,27 +309,27 @@ def fetch_pdf(
         cache: A ``FullTextCache``, or ``None`` to fetch every time.
 
     Returns:
-        ``(body, measured)`` exactly as :func:`download` defines them. A
-        failed download caches nothing, so a later run retries it rather than
-        inheriting the failure.
+        ``(body, measured, cause)`` exactly as :func:`download` defines them.
+        A failed download caches nothing, so a later run retries it rather
+        than inheriting the failure.
     """
     if cache is not None:
         cached = cache.get_pdf(identifier)
         if cached is not None:
             try:
-                return Path(cached).read_bytes(), True
+                return Path(cached).read_bytes(), True, ""
             except OSError as exc:
                 # Best-effort, like every other cache read in bmlib: an
                 # unreadable entry costs a re-download, not the run.
                 print(f"  unreadable cache entry for {identifier}: {exc}", file=sys.stderr)
 
-    body, measured = download(client, url, pace)
+    body, measured, cause = download(client, url, pace)
     if cache is not None and body is not None:
         try:
             cache.save_pdf(body, identifier)
         except OSError as exc:
             print(f"  could not cache {identifier}: {exc}", file=sys.stderr)
-    return body, measured
+    return body, measured, cause
 
 
 def load_partial(path: Path) -> list[dict[str, Any]]:
@@ -373,44 +392,133 @@ def append_row(path: Path, row: dict[str, Any]) -> None:
         os.fsync(handle.fileno())
 
 
-def already_seen(rows: list[dict[str, Any]]) -> set[str]:
-    """The identifiers a resumed run must not collect again.
+def _latest_per_identifier(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each identifier's *last* journal entry, in first-seen order.
 
-    Successes only. An attempt that went *unmeasured* is deliberately left
-    open to a retry: the first live run lost 40 of 153 to local DNS failures
-    and read timeouts, and treating those as settled would have carried a
-    transient fault on this machine into the population's permanent record —
-    the unmeasured share could then never fall below the threshold that makes
-    the whole population unreportable, however many good rows followed.
-
-    Retrying is safe because :func:`tally_previous` counts each identifier's
-    *last* outcome, so an id that fails, is retried and succeeds stops being
-    counted as unmeasured rather than being counted as both.
-    """
-    return {str(row["id"]) for row in rows if row.get("id") and not row.get("unmeasured")}
-
-
-def tally_previous(entries: list[dict[str, Any]]) -> dict[str, tuple[list[dict[str, Any]], int]]:
-    """Sort a journal into ``{source: (rows, unmeasured)}``, last outcome winning.
-
-    One entry per identifier: a journal holds every *attempt*, so an id that
-    went unmeasured and later succeeded appears twice, and counting both would
-    charge the population for a failure that was retried away.
+    A journal holds every attempt, so an id that went unmeasured and later
+    succeeded appears twice; counting both would charge the population for a
+    failure that was retried away.
     """
     latest: dict[str, dict[str, Any]] = {}
     for entry in entries:
         identifier = str(entry.get("id", ""))
         if identifier:
             latest[identifier] = entry
+    return list(latest.values())
 
-    populations: dict[str, tuple[list[dict[str, Any]], int]] = {}
-    for entry in latest.values():
+
+def is_retired(entry: Mapping[str, Any]) -> bool:
+    """Whether an unmeasured entry has used up its retries.
+
+    Retirement stops an entry being *re-offered*; it does not stop it being
+    *counted*. A retired attempt stays unmeasured in :func:`tally_previous`
+    and in the ERROR rule, because it is still a probe that could not be made
+    — forgetting it is the silent-loss failure this whole accounting exists to
+    prevent. What retirement buys is the bandwidth: without it, a day holding
+    permanently dead URLs is re-fetched and re-downloaded on every run
+    thereafter, forever.
+    """
+    if not entry.get("unmeasured"):
+        return False
+    return int(entry.get("attempts", 1)) >= MAX_UNMEASURED_ATTEMPTS
+
+
+def already_seen(rows: list[dict[str, Any]]) -> set[str]:
+    """The identifiers a resumed run must not collect again.
+
+    Successes, plus unmeasured attempts that have exhausted
+    ``MAX_UNMEASURED_ATTEMPTS``. An attempt that went unmeasured and has
+    retries left is deliberately held open: the first live run lost 40 of 153
+    to local DNS failures and read timeouts, and treating those as settled
+    would have carried a transient fault on this machine into the population's
+    permanent record — the unmeasured share could then never fall below the
+    threshold that makes the whole population unreportable, however many good
+    rows followed.
+
+    Retrying is safe because :func:`tally_previous` counts each identifier's
+    *last* outcome, so an id that fails, is retried and succeeds stops being
+    counted as unmeasured rather than being counted as both.
+    """
+    seen = set()
+    for row in rows:
+        if not row.get("id"):
+            continue
+        if not row.get("unmeasured") or is_retired(row):
+            seen.add(str(row["id"]))
+    return seen
+
+
+def unmeasured_attempts(entries: list[dict[str, Any]]) -> dict[str, int]:
+    """How many times each identifier has gone unmeasured, from the journal.
+
+    Read from the *last* entry per id rather than by counting lines: an id
+    that failed twice and then succeeded is not owed a third attempt, and its
+    last entry is the success.
+    """
+    return {
+        str(entry["id"]): int(entry.get("attempts", 1))
+        for entry in _latest_per_identifier(entries)
+        if entry.get("id") and entry.get("unmeasured")
+    }
+
+
+def days_to_revisit(entries: list[dict[str, Any]], source: str) -> list[date]:
+    """Posting days holding an unmeasured attempt that still has retries left.
+
+    Walked *before* the fresh window and in addition to it, so retrying an old
+    day never costs the run its budget for new ones — the two concerns stay
+    separate, which is the whole point of recording the day rather than
+    pinning the window. Newest first, so a resume spends its earliest and
+    cheapest requests on the most recently lost work.
+    """
+    days = {
+        entry["day"]
+        for entry in _latest_per_identifier(entries)
+        if entry.get("unmeasured")
+        and entry.get("day")
+        and str(entry.get("source", "")) == source
+        and not is_retired(entry)
+    }
+    return sorted((date.fromisoformat(str(day)) for day in days), reverse=True)
+
+
+@dataclass(frozen=True)
+class Population:
+    """One source's accounting: what was labelled, and what could not be.
+
+    A dataclass rather than the tuple this used to be. ``persistent`` is the
+    third quantity to arrive, and each addition rewrote every unpacking site;
+    naming them stops the next one doing that again, and stops a caller
+    reading ``[1]`` and having to remember which of two integers it is.
+    """
+
+    rows: list[dict[str, Any]]
+    #: Every attempt that never reached a labelled row, retired ones included.
+    #: This is what the ERROR rule divides by.
+    unmeasured: int
+    #: The subset that has exhausted its retries. Reported separately because
+    #: "we stopped trying" and "we have not tried yet" call for different
+    #: actions from the operator, and only the first is a reason to look at
+    #: the URLs themselves.
+    persistent: int
+
+
+def tally_previous(entries: list[dict[str, Any]]) -> dict[str, Population]:
+    """Sort a journal into ``{source: Population}``, last outcome winning."""
+    populations: dict[str, Population] = {}
+    for entry in _latest_per_identifier(entries):
         source = str(entry.get("source", ""))
-        rows, unmeasured = populations.get(source, ([], 0))
+        current = populations.get(source, Population([], 0, 0))
         if entry.get("unmeasured"):
-            populations[source] = (rows, unmeasured + 1)
+            populations[source] = Population(
+                current.rows,
+                current.unmeasured + 1,
+                current.persistent + (1 if is_retired(entry) else 0),
+            )
         else:
-            populations[source] = ([*rows, entry], unmeasured)
+            populations[source] = Population(
+                [*current.rows, entry], current.unmeasured, current.persistent
+            )
     return populations
 
 
@@ -492,13 +600,20 @@ def row_from_pdf(
     }
 
 
-def summarise(source: str, rows: list[dict[str, Any]], unmeasured: int) -> list[str]:
+def summarise(
+    source: str, rows: list[dict[str, Any]], unmeasured: int, persistent: int = 0
+) -> list[str]:
     """Render one population's bucket distribution, or an ``ERROR`` line.
 
     Args:
         source: The population's name.
         rows: Its labelled rows.
         unmeasured: Attempts that never reached a labelled row.
+        persistent: How many of those have exhausted their retries. Reported
+            beside the total rather than deducted from it — a retired attempt
+            is still a probe that could not be made — but named, because
+            "we stopped trying" and "not tried yet" call for different actions
+            and only the first is a reason to go and look at the URLs.
 
     Returns:
         Lines to print. An ``ERROR`` line and **no percentages** when nothing
@@ -509,13 +624,15 @@ def summarise(source: str, rows: list[dict[str, Any]], unmeasured: int) -> list[
         worse than a line saying it could not be measured.
     """
     attempts = len(rows) + unmeasured
+    stuck = f", {persistent} of them retried out" if persistent else ""
     if not rows or (attempts and unmeasured / attempts > UNMEASURED_SHARE_ERROR_THRESHOLD):
         return [
             f"{source}: ERROR — {len(rows)} rows labelled, {unmeasured} of {attempts} "
-            "attempts unmeasured; too little of this population was reached to report it"
+            f"attempts unmeasured{stuck}; too little of this population was reached to "
+            "report it"
         ]
     counts = Counter(row["bucket"] for row in rows)
-    lines = [f"{source}: {len(rows)} rows ({unmeasured} unmeasured, excluded below)"]
+    lines = [f"{source}: {len(rows)} rows ({unmeasured} unmeasured{stuck}, excluded below)"]
     for bucket in _BUCKETS:
         count = counts[bucket]
         lines.append(f"    {bucket:<10} {count:>4}  {count / len(rows):>6.1%}")
@@ -540,6 +657,19 @@ class Candidate:
     identifier: str
     record_title: str
     url: str
+    #: The posting day this candidate came from, ISO ``YYYY-MM-DD``, or
+    #: ``None`` for a source that is not walked by day.
+    #:
+    #: Recorded on the row *and* on the unmeasured marker, which is what makes
+    #: a failed bioRxiv attempt retryable at all. The walk covers
+    #: ``[today-30, today-49]``, recomputed from ``date.today()`` every run, so
+    #: it slides a day per calendar day and after 20 days shares nothing with
+    #: the window that produced the journal. Without the day, a resume can
+    #: leave an attempt open forever — :func:`already_seen` deliberately does
+    #: not settle it — while the walk can no longer re-offer it, and the
+    #: population's unmeasured share never falls again. Europe PMC needs none
+    #: of this: its walk restarts from cursor ``*`` and re-offers the same hits.
+    day: str | None = None
 
 
 @dataclass
@@ -565,6 +695,11 @@ class RunContext:
     seen: set[str]
     cache: Any | None = None
     workers: int = DEFAULT_WORKERS
+    #: How many times each identifier has already gone unmeasured, from the
+    #: journal. Main-thread only, like ``seen``. Read to stamp the next
+    #: attempt's number onto the marker, so a retry that keeps failing is
+    #: visibly a retry rather than looking like a fresh fault each time.
+    attempts: dict[str, int] = field(default_factory=dict)
 
 
 def process_candidates(
@@ -592,13 +727,13 @@ def process_candidates(
     rows: list[dict[str, Any]] = []
     unmeasured = 0
 
-    def work(candidate: Candidate) -> dict[str, Any] | None:
-        body, measured = fetch_pdf(
+    def work(candidate: Candidate) -> tuple[dict[str, Any] | None, str]:
+        body, measured, cause = fetch_pdf(
             client, candidate.url, candidate.identifier, context.pace, context.cache
         )
         if not measured or body is None:
-            return None
-        return row_from_pdf(
+            return None, cause
+        row = row_from_pdf(
             body,
             candidate.source,
             candidate.identifier,
@@ -606,18 +741,32 @@ def process_candidates(
             _file_name(candidate.url),
             tmpdir,
         )
+        # A PDF that downloaded but could not be read is unmeasured too, and
+        # for a different reason than any transport failure — so it gets its
+        # own cause rather than inheriting the empty one a good fetch returns.
+        return (row, "") if row is not None else (None, "unreadable-pdf")
 
     with ThreadPoolExecutor(max_workers=context.workers) as pool:
         # Results are consumed on this thread, in submission order, so the
         # journal stays append-ordered and needs no lock of its own.
-        for candidate, row in zip(candidates, pool.map(work, candidates), strict=True):
+        for candidate, (row, cause) in zip(candidates, pool.map(work, candidates), strict=True):
             if row is None:
                 unmeasured += 1
-                append_row(
-                    context.journal,
-                    {"unmeasured": True, "source": candidate.source, "id": candidate.identifier},
-                )
+                attempt = context.attempts.get(candidate.identifier, 0) + 1
+                context.attempts[candidate.identifier] = attempt
+                marker: dict[str, Any] = {
+                    "unmeasured": True,
+                    "source": candidate.source,
+                    "id": candidate.identifier,
+                    "attempts": attempt,
+                    "cause": cause,
+                }
+                if candidate.day is not None:
+                    marker["day"] = candidate.day
+                append_row(context.journal, marker)
                 continue
+            if candidate.day is not None:
+                row["day"] = candidate.day
             rows.append(row)
             append_row(context.journal, row)
     return rows, unmeasured
@@ -693,7 +842,11 @@ def sample_europepmc_rows(
 
 
 def sample_biorxiv_rows(
-    client: Any, target: int, context: RunContext, server: str = "biorxiv"
+    client: Any,
+    target: int,
+    context: RunContext,
+    server: str = "biorxiv",
+    revisit_days: Sequence[date] = (),
 ) -> tuple[list[dict[str, Any]], int]:
     """Collect rows from bioRxiv/medRxiv preprint PDFs.
 
@@ -703,15 +856,32 @@ def sample_biorxiv_rows(
     sampled cannot drift from what bmlib fetches. One posting day at a time,
     for the same reason the Europe PMC walk goes a page at a time.
 
+    Args:
+        client: An HTTP client.
+        target: How many *new* rows this population still needs.
+        context: The run's shared state.
+        server: ``biorxiv`` or ``medrxiv``.
+        revisit_days: Posting days holding an unmeasured attempt with retries
+            left, from :func:`days_to_revisit`. Walked before the fresh window
+            and in addition to it. Empty on a first run.
+
     Returns:
         ``(rows, unmeasured)``.
     """
     rows: list[dict[str, Any]] = []
     unmeasured = 0
-    day = date.today() - timedelta(days=30)
+    # Days owed a retry first, then the fresh window — deduplicated, order
+    # preserved. Revisits are *extra*, not drawn from BIORXIV_DAYS_TO_WALK, so
+    # retrying old work never costs the run its budget for new work. That
+    # separation is the reason the day is recorded per attempt rather than the
+    # window being pinned: pinning would make one date range serve both "what
+    # am I sampling" and "what do I owe", and those diverge by a day every day.
+    start = date.today() - timedelta(days=30)
+    fresh = [start - timedelta(days=offset) for offset in range(BIORXIV_DAYS_TO_WALK)]
+    days = list(dict.fromkeys([*revisit_days, *fresh]))
     with TemporaryDirectory(prefix="bmlib-titles-") as tmp:
         tmpdir = Path(tmp)
-        for _ in range(BIORXIV_DAYS_TO_WALK):
+        for day in days:
             if len(rows) >= target:
                 break
             records: list[Any] = []
@@ -720,7 +890,6 @@ def sample_biorxiv_rows(
                 fetch_biorxiv(client, day, on_record=records.append, server=server)
             except Exception as exc:
                 print(f"  bioRxiv fetch failed for {day}: {exc}", file=sys.stderr)
-                day -= timedelta(days=1)
                 continue
 
             candidates: list[Candidate] = []
@@ -737,14 +906,15 @@ def sample_biorxiv_rows(
                 if identifier in context.seen:
                     continue
                 context.seen.add(identifier)
-                candidates.append(Candidate(server, identifier, title, urls[0]))
+                candidates.append(
+                    Candidate(server, identifier, title, urls[0], day=day.isoformat())
+                )
             candidates = candidates[: max(0, target - len(rows))]
 
             batch, batch_unmeasured = process_candidates(client, candidates, context, tmpdir)
             rows.extend(batch)
             unmeasured += batch_unmeasured
             print(f"  {server}: {len(rows)}/{target} rows ({day})", file=sys.stderr)
-            day -= timedelta(days=1)
     return rows, unmeasured
 
 
@@ -840,6 +1010,7 @@ def main() -> int:
         seen=already_seen(previous),
         cache=cache,
         workers=args.workers,
+        attempts=unmeasured_attempts(previous),
     )
     if previous:
         print(f"Resuming from {journal}: {len(previous)} attempts already made", file=sys.stderr)
@@ -852,14 +1023,23 @@ def main() -> int:
 
     with httpx.Client(timeout=60.0, follow_redirects=True) as client:
         if args.source in ("europepmc", "both"):
-            done = len(populations.get("europepmc", ([], 0))[0])
+            done = len(populations.get("europepmc", Population([], 0, 0)).rows)
             print(f"Sampling Europe PMC free PDFs ({done} already held)…", file=sys.stderr)
             sample_europepmc_rows(client, args.target - done, context)
         if args.source in ("biorxiv", "medrxiv", "both"):
             server = "medrxiv" if args.source == "medrxiv" else "biorxiv"
-            done = len(populations.get(server, ([], 0))[0])
+            done = len(populations.get(server, Population([], 0, 0)).rows)
+            revisit = days_to_revisit(previous, server)
+            if revisit:
+                print(
+                    f"  {server}: revisiting {len(revisit)} day(s) holding unmeasured "
+                    f"attempts ({revisit[-1]}…{revisit[0]})",
+                    file=sys.stderr,
+                )
             print(f"Sampling {server} preprint PDFs ({done} already held)…", file=sys.stderr)
-            sample_biorxiv_rows(client, args.target - done, context, server=server)
+            sample_biorxiv_rows(
+                client, args.target - done, context, server=server, revisit_days=revisit
+            )
 
     # Re-tallied from the journal rather than merged in memory. Every attempt
     # this run made is already in there, and the journal is the only place
@@ -868,7 +1048,7 @@ def main() -> int:
     # unmeasured counts it twice, which is exactly what a retried failure is.
     populations = tally_previous(load_partial(journal))
 
-    rows = [row for population, _ in populations.values() for row in population]
+    rows = [row for population in populations.values() for row in population.rows]
     rows.sort(key=lambda row: (row.get("source", ""), row.get("id", "")))
     # Summarised *before* the corpus is written, so an unreportable run cannot
     # replace the evidence. `bmlib/fulltext/_titles.py` names this file as what
@@ -878,8 +1058,8 @@ def main() -> int:
     # distribution is read from. Refusing the write costs nothing: the journal
     # already holds every row, so a re-run resumes rather than restarts.
     summaries = {
-        source: summarise(source, population, unmeasured)
-        for source, (population, unmeasured) in populations.items()
+        source: summarise(source, p.rows, p.unmeasured, p.persistent)
+        for source, p in populations.items()
     }
     failed = any("ERROR" in line for lines in summaries.values() for line in lines)
 

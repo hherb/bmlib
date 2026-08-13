@@ -41,6 +41,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -120,6 +121,10 @@ class _SequencedClient:
             raise answer
         assert isinstance(answer, _Resp)
         return answer
+
+
+def _noop(url: str) -> None:
+    """A pacer that does not pace, for tests measuring something else."""
 
 
 def _make_pdf_with_page_one_lines(count: int, first_line: str | None = None) -> bytes:
@@ -204,33 +209,70 @@ class TestAPDFThatCouldNotBeSampledIsNeverAFinding:
     def test_a_persistent_429_is_unmeasured(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(sampler, "_sleep_for", lambda seconds: None)
         client = _Client({"https://e/a.pdf": _Resp(429)})
-        assert sampler.download(client, "https://e/a.pdf", lambda url: None) == (None, False)
+        assert sampler.download(client, "https://e/a.pdf", lambda url: None) == (
+            None,
+            False,
+            "throttled",
+        )
 
     def test_a_429_that_clears_on_retry_is_measured(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(sampler, "_sleep_for", lambda seconds: None)
         client = _SequencedClient([_Resp(429), _Resp(200, b"%PDF-1.7 body")])
-        body, measured = sampler.download(client, "https://e/a.pdf", lambda url: None)
+        body, measured, cause = sampler.download(client, "https://e/a.pdf", lambda url: None)
         assert body == b"%PDF-1.7 body"
         assert measured is True
+        assert cause == ""
 
     def test_a_transport_exception_is_unmeasured(self) -> None:
         client = _Client({"https://e/a.pdf": OSError("boom")})
-        assert sampler.download(client, "https://e/a.pdf", lambda url: None) == (None, False)
+        assert sampler.download(client, "https://e/a.pdf", lambda url: None) == (
+            None,
+            False,
+            "transport-OSError",
+        )
 
     def test_a_non_200_is_unmeasured(self) -> None:
         client = _Client({"https://e/a.pdf": _Resp(404)})
-        assert sampler.download(client, "https://e/a.pdf", lambda url: None) == (None, False)
+        assert sampler.download(client, "https://e/a.pdf", lambda url: None) == (
+            None,
+            False,
+            "http-404",
+        )
 
     def test_a_body_that_is_not_a_pdf_is_unmeasured(self) -> None:
         """An Unpaywall-style landing page. Measured over 28 probes in #68's
         run, half of that population's bodies were HTML."""
         client = _Client({"https://e/a.pdf": _Resp(200, b"<!DOCTYPE html>")})
-        assert sampler.download(client, "https://e/a.pdf", lambda url: None) == (None, False)
+        assert sampler.download(client, "https://e/a.pdf", lambda url: None) == (
+            None,
+            False,
+            "not-a-pdf",
+        )
 
     def test_an_oversized_body_is_unmeasured_not_parsed(self) -> None:
         big = b"%PDF-1.7" + b"x" * (sampler.MAX_PDF_BYTES + 1)
         client = _Client({"https://e/a.pdf": _Resp(200, big)})
-        assert sampler.download(client, "https://e/a.pdf", lambda url: None) == (None, False)
+        assert sampler.download(client, "https://e/a.pdf", lambda url: None) == (
+            None,
+            False,
+            "oversized",
+        )
+
+    def test_every_unmeasured_cause_is_distinguishable(self) -> None:
+        """The point of recording a cause at all: a resume that cannot tell a
+        dead network from a dead link cannot tell whether re-running helps.
+        Distinct slugs are what makes that decidable, so a refactor that
+        collapsed two of them must fail here."""
+        causes = {
+            sampler.download(_Client({"https://e/a.pdf": _Resp(404)}), "https://e/a.pdf", _noop)[2],
+            sampler.download(
+                _Client({"https://e/a.pdf": _Resp(200, b"<html>")}), "https://e/a.pdf", _noop
+            )[2],
+            sampler.download(
+                _Client({"https://e/a.pdf": OSError("boom")}), "https://e/a.pdf", _noop
+            )[2],
+        }
+        assert causes == {"http-404", "not-a-pdf", "transport-OSError"}
 
 
 class TestAnUnmeasuredPopulationPrintsErrorNotAZero:
@@ -667,7 +709,7 @@ class TestACorruptJournalLineCostsOneRow:
         rows = sampler.load_partial(journal)
         assert sampler.already_seen(rows) == {"a"}
         populations = sampler.tally_previous(rows)
-        assert [row["id"] for row in populations["europepmc"][0]] == ["a"]
+        assert [row["id"] for row in populations["europepmc"].rows] == ["a"]
 
     def test_a_truncated_final_line_still_costs_only_itself(self, tmp_path: Path) -> None:
         journal = tmp_path / "j.jsonl"
@@ -728,11 +770,12 @@ class TestAPDFIsDownloadedOnceAcrossRuns:
         cache = FullTextCache(cache_dir=tmp_path / "cache")
         cache.save_pdf(b"%PDF-1.7 cached", "PMC1")
         client = _Client({})  # any request would raise KeyError
-        body, measured = sampler.fetch_pdf(
+        body, measured, cause = sampler.fetch_pdf(
             client, "https://e/a.pdf", "PMC1", lambda url: None, cache
         )
         assert body == b"%PDF-1.7 cached"
         assert measured is True
+        assert cause == ""
         assert client.seen == []
 
     def test_a_downloaded_pdf_is_kept_for_the_next_run(self, tmp_path: Path) -> None:
@@ -740,10 +783,10 @@ class TestAPDFIsDownloadedOnceAcrossRuns:
 
         cache = FullTextCache(cache_dir=tmp_path / "cache")
         client = _Client({"https://e/a.pdf": _Resp(200, b"%PDF-1.7 fresh")})
-        body, measured = sampler.fetch_pdf(
+        body, measured, cause = sampler.fetch_pdf(
             client, "https://e/a.pdf", "PMC1", lambda url: None, cache
         )
-        assert (body, measured) == (b"%PDF-1.7 fresh", True)
+        assert (body, measured, cause) == (b"%PDF-1.7 fresh", True, "")
         assert cache.get_pdf("PMC1") is not None
 
     def test_no_cache_still_downloads(self, tmp_path: Path) -> None:
@@ -752,6 +795,7 @@ class TestAPDFIsDownloadedOnceAcrossRuns:
         assert sampler.fetch_pdf(client, "https://e/a.pdf", "PMC1", lambda url: None, None) == (
             b"%PDF-1.7 fresh",
             True,
+            "",
         )
 
     def test_a_failed_download_caches_nothing(self, tmp_path: Path) -> None:
@@ -762,6 +806,7 @@ class TestAPDFIsDownloadedOnceAcrossRuns:
         assert sampler.fetch_pdf(client, "https://e/a.pdf", "PMC1", lambda url: None, cache) == (
             None,
             False,
+            "http-404",
         )
         assert cache.get_pdf("PMC1") is None
 
@@ -896,6 +941,209 @@ class TestTheRecordTitleIsCleanedBeforeItIsGroundTruth:
         assert sampler.clean_record_title("Trials &amp; Tribulations") == "Trials & Tribulations"
 
 
+class TestAnUnmeasuredAttemptStaysReachableAsTheWindowSlides:
+    """The bioRxiv walk covers ``[today-30, today-49]``, recomputed from
+    ``date.today()`` every run — so it slides a day per calendar day and after
+    20 days shares nothing with the window that produced the journal.
+
+    ``already_seen`` deliberately leaves an unmeasured attempt open to retry,
+    but the walk could no longer *offer* it, so the entry fossilised: it kept
+    counting against the population's unmeasured share forever, and the only
+    escape was deleting the journal and losing every good row with it. The
+    posting day on each attempt is what makes the retry reachable again.
+    """
+
+    def test_a_day_holding_an_unmeasured_attempt_is_revisited(self) -> None:
+        entries = [
+            {"unmeasured": True, "source": "biorxiv", "id": "a", "day": "2026-05-02"},
+            {"unmeasured": True, "source": "biorxiv", "id": "b", "day": "2026-05-04"},
+        ]
+        assert sampler.days_to_revisit(entries, "biorxiv") == [
+            date(2026, 5, 4),
+            date(2026, 5, 2),
+        ]
+
+    def test_a_day_whose_attempt_succeeded_is_not_revisited(self) -> None:
+        """Last outcome wins here as everywhere: an id that failed and was
+        then collected owes nothing."""
+        entries = [
+            {"unmeasured": True, "source": "biorxiv", "id": "a", "day": "2026-05-02"},
+            {"source": "biorxiv", "id": "a", "day": "2026-05-02", "bucket": "match"},
+        ]
+        assert sampler.days_to_revisit(entries, "biorxiv") == []
+
+    def test_only_the_named_source_is_revisited(self) -> None:
+        """medrxiv and biorxiv share the walk but not their journals' days."""
+        entries = [{"unmeasured": True, "source": "medrxiv", "id": "a", "day": "2026-05-02"}]
+        assert sampler.days_to_revisit(entries, "biorxiv") == []
+        assert sampler.days_to_revisit(entries, "medrxiv") == [date(2026, 5, 2)]
+
+    def test_europepmc_needs_no_day_and_gets_none(self) -> None:
+        """Its walk restarts from cursor ``*`` and re-offers the same hits, so
+        an entry with no day is not a gap — it is a source that never had the
+        problem."""
+        entries = [{"unmeasured": True, "source": "europepmc", "id": "PMC1"}]
+        assert sampler.days_to_revisit(entries, "europepmc") == []
+
+    def test_the_revisited_days_are_walked_in_addition_to_the_fresh_window(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Revisits must not be drawn from ``BIORXIV_DAYS_TO_WALK``: retrying
+        old work is not allowed to cost the run its budget for new work. That
+        separation is the whole reason the day is recorded per attempt instead
+        of the window being pinned."""
+        walked: list[object] = []
+
+        def fetch(client: object, day: object, on_record: object, server: str) -> None:
+            walked.append(day)
+
+        monkeypatch.setattr(sampler, "fetch_biorxiv", fetch)
+        context = sampler.RunContext(
+            pace=lambda host: None, journal=tmp_path / "j.jsonl", seen=set(), workers=1
+        )
+        old = date(2020, 1, 5)
+
+        sampler.sample_biorxiv_rows(object(), 10, context, revisit_days=[old])
+
+        assert walked[0] == old, "the owed day is walked first"
+        assert len(walked) == sampler.BIORXIV_DAYS_TO_WALK + 1
+        assert old not in walked[1:], "the fresh window is unchanged by the revisit"
+
+    def test_a_day_already_in_the_fresh_window_is_not_walked_twice(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        walked: list[object] = []
+        monkeypatch.setattr(
+            sampler,
+            "fetch_biorxiv",
+            lambda client, day, on_record, server: walked.append(day),
+        )
+        context = sampler.RunContext(
+            pace=lambda host: None, journal=tmp_path / "j.jsonl", seen=set(), workers=1
+        )
+        inside = date.today() - timedelta(days=31)
+
+        sampler.sample_biorxiv_rows(object(), 10, context, revisit_days=[inside])
+
+        assert walked.count(inside) == 1
+        assert len(walked) == sampler.BIORXIV_DAYS_TO_WALK
+
+
+class TestARetryGivesUpWithoutForgetting:
+    """The revisit set would otherwise grow monotonically: a day holding
+    permanently dead URLs is re-fetched and re-downloaded on every run
+    thereafter, forever.
+
+    Retirement bounds that tail. What it must *not* do is make the failure
+    disappear — a retired attempt is still a probe that could not be made, and
+    dropping it from the count is the silent-loss failure this accounting
+    exists to prevent.
+    """
+
+    def _entry(self, attempts: int) -> dict[str, object]:
+        return {
+            "unmeasured": True,
+            "source": "biorxiv",
+            "id": "a",
+            "day": "2026-05-02",
+            "attempts": attempts,
+            "cause": "http-404",
+        }
+
+    def test_an_entry_with_retries_left_is_offered_again(self) -> None:
+        entry = self._entry(sampler.MAX_UNMEASURED_ATTEMPTS - 1)
+        assert sampler.is_retired(entry) is False
+        assert sampler.already_seen([entry]) == set()
+        assert sampler.days_to_revisit([entry], "biorxiv") == [date(2026, 5, 2)]
+
+    def test_an_exhausted_entry_stops_being_offered(self) -> None:
+        entry = self._entry(sampler.MAX_UNMEASURED_ATTEMPTS)
+        assert sampler.is_retired(entry) is True
+        assert sampler.already_seen([entry]) == {"a"}
+        assert sampler.days_to_revisit([entry], "biorxiv") == []
+
+    def test_an_exhausted_entry_is_still_counted_as_unmeasured(self) -> None:
+        """The line between bounding the work and forgetting the failure. A
+        retired attempt leaves the retry queue and stays in the denominator."""
+        population = sampler.tally_previous([self._entry(sampler.MAX_UNMEASURED_ATTEMPTS)])
+        assert population["biorxiv"] == sampler.Population([], 1, 1)
+
+    def test_an_exhausted_entry_still_makes_a_thin_population_an_error(self) -> None:
+        """The consequence that matters: retiring attempts must not be a way
+        for an unreportable population to become reportable."""
+        spent = self._entry(sampler.MAX_UNMEASURED_ATTEMPTS)
+        entries = [{**spent, "id": f"x{i}"} for i in range(9)]
+        population = sampler.tally_previous([*entries, {"source": "biorxiv", "id": "ok"}])
+        lines = sampler.summarise(
+            "biorxiv",
+            population["biorxiv"].rows,
+            population["biorxiv"].unmeasured,
+            population["biorxiv"].persistent,
+        )
+        assert any("ERROR" in line for line in lines), lines
+
+    def test_the_summary_names_how_many_were_retried_out(self) -> None:
+        """ "We stopped trying" and "not tried yet" call for different actions,
+        and only the first is a reason to go and look at the URLs."""
+        lines = sampler.summarise("biorxiv", [{"bucket": "match"}] * 20, 3, 2)
+        assert "2 of them retried out" in lines[0]
+
+    def test_a_population_with_no_retired_attempts_says_nothing_about_them(self) -> None:
+        """The negative control on the clause above."""
+        lines = sampler.summarise("biorxiv", [{"bucket": "match"}] * 20, 3, 0)
+        assert "retried out" not in lines[0]
+
+    def test_the_attempt_counter_rises_across_runs(self, tmp_path: Path) -> None:
+        """Each failure stamps the next attempt number, so a retry that keeps
+        failing is visibly a retry rather than looking like a fresh fault."""
+        # The loop below is sized from the constant, so an absurd value would
+        # hang the suite rather than fail it. Bounded first: a retry budget
+        # this large is not a configuration, it is a mistake.
+        assert 1 < sampler.MAX_UNMEASURED_ATTEMPTS <= 10
+
+        journal = tmp_path / "j.jsonl"
+        candidate = sampler.Candidate(
+            "biorxiv", "a", _RECORD_TITLE, "https://e/a.pdf", "2026-05-02"
+        )
+        client = _Client({"https://e/a.pdf": _Resp(404)})
+
+        stamped = []
+        for _ in range(sampler.MAX_UNMEASURED_ATTEMPTS):
+            entries = sampler.load_partial(journal)
+            context = sampler.RunContext(
+                pace=lambda host: None,
+                journal=journal,
+                seen=sampler.already_seen(entries),
+                workers=1,
+                attempts=sampler.unmeasured_attempts(entries),
+            )
+            sampler.process_candidates(client, [candidate], context, tmp_path)
+            stamped.append(sampler.load_partial(journal)[-1]["attempts"])
+
+        assert stamped == [1, 2, 3]
+        assert sampler.already_seen(sampler.load_partial(journal)) == {"a"}
+
+    def test_the_marker_records_why_it_could_not_be_measured(self, tmp_path: Path) -> None:
+        """A resume that cannot tell a dead network from a dead link cannot
+        tell whether re-running will help."""
+        journal = tmp_path / "j.jsonl"
+        context = sampler.RunContext(pace=lambda host: None, journal=journal, seen=set(), workers=1)
+        candidate = sampler.Candidate(
+            "biorxiv", "a", _RECORD_TITLE, "https://e/a.pdf", "2026-05-02"
+        )
+
+        sampler.process_candidates(
+            _Client({"https://e/a.pdf": _Resp(200, b"<!DOCTYPE html>")}),
+            [candidate],
+            context,
+            tmp_path,
+        )
+
+        marker = sampler.load_partial(journal)[-1]
+        assert marker["cause"] == "not-a-pdf"
+        assert marker["day"] == "2026-05-02"
+
+
 class TestATransientFailureIsNotRememberedForever:
     """The first live run lost 40 of 153 attempts to local DNS failures and
     read timeouts — a fault on this machine, not a property of the population.
@@ -921,7 +1169,8 @@ class TestATransientFailureIsNotRememberedForever:
             {"unmeasured": True, "source": "europepmc", "id": "PMC1"},
             {"source": "europepmc", "id": "PMC1", "bucket": "match"},
         ]
-        rows, unmeasured = sampler.tally_previous(entries)["europepmc"]
+        population = sampler.tally_previous(entries)["europepmc"]
+        rows, unmeasured = population.rows, population.unmeasured
         assert [row["id"] for row in rows] == ["PMC1"]
         assert unmeasured == 0
 
@@ -930,7 +1179,7 @@ class TestATransientFailureIsNotRememberedForever:
             {"unmeasured": True, "source": "europepmc", "id": "PMC1"},
             {"unmeasured": True, "source": "europepmc", "id": "PMC1"},
         ]
-        assert sampler.tally_previous(entries)["europepmc"] == ([], 1)
+        assert sampler.tally_previous(entries)["europepmc"] == sampler.Population([], 1, 0)
 
     def test_a_failure_never_retried_still_counts(self) -> None:
         """The property the last-outcome rule must not cost: an id that only
@@ -939,7 +1188,8 @@ class TestATransientFailureIsNotRememberedForever:
             {"source": "europepmc", "id": "PMC1", "bucket": "match"},
             {"unmeasured": True, "source": "europepmc", "id": "PMC2"},
         ]
-        rows, unmeasured = sampler.tally_previous(entries)["europepmc"]
+        population = sampler.tally_previous(entries)["europepmc"]
+        rows, unmeasured = population.rows, population.unmeasured
         assert len(rows) == 1
         assert unmeasured == 1
 
