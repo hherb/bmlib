@@ -214,3 +214,55 @@ class TestThePacerIsAdmissionControlNotASerialiser:
         for thread in threads:
             thread.join()
         assert sleeps == []
+
+
+class TestAHostMeasuredToNeedRoomGetsIt:
+    """bioRxiv sits behind Cloudflare with a rolling per-minute limit and
+    answers a violation with 429 and Retry-After: 55, so exceeding it costs a
+    minute of the run rather than one slow request. A title-sampler run at
+    3s across 4 workers spent 21 of 32 bioRxiv attempts unmeasured, nearly all
+    of them self-inflicted. Europe PMC showed no such behaviour at the same
+    interval, which is why this is per host and not a new global default.
+    """
+
+    def test_a_listed_host_waits_longer_than_the_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sleeps: list[float] = []
+        monkeypatch.setattr(helpers, "_sleep_for", sleeps.append)
+        clock = iter([100.0, 100.0])
+        pace = helpers._make_pacer(3.0, clock=lambda: next(clock))
+        pace("https://www.biorxiv.org/content/1.full.pdf")
+        pace("https://www.biorxiv.org/content/2.full.pdf")
+        assert sleeps == [helpers.HOST_INTERVAL_OVERRIDES["www.biorxiv.org"]]
+
+    def test_an_unlisted_host_keeps_the_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The control: the override must not become a global slowdown."""
+        sleeps: list[float] = []
+        monkeypatch.setattr(helpers, "_sleep_for", sleeps.append)
+        clock = iter([100.0, 100.0])
+        pace = helpers._make_pacer(3.0, clock=lambda: next(clock))
+        pace("https://europepmc.org/a.pdf")
+        pace("https://europepmc.org/b.pdf")
+        assert sleeps == [3.0]
+
+    def test_a_wider_caller_default_is_not_narrowed_by_an_override(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A caller who asked for 20s did not mean to speed bioRxiv up to 8."""
+        sleeps: list[float] = []
+        monkeypatch.setattr(helpers, "_sleep_for", sleeps.append)
+        clock = iter([100.0, 100.0])
+        pace = helpers._make_pacer(20.0, clock=lambda: next(clock))
+        pace("https://www.biorxiv.org/content/1.full.pdf")
+        pace("https://www.biorxiv.org/content/2.full.pdf")
+        assert sleeps == [20.0]
+
+    def test_overrides_can_be_switched_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        sleeps: list[float] = []
+        monkeypatch.setattr(helpers, "_sleep_for", sleeps.append)
+        clock = iter([100.0, 100.0])
+        pace = helpers._make_pacer(3.0, clock=lambda: next(clock), overrides={})
+        pace("https://www.biorxiv.org/content/1.full.pdf")
+        pace("https://www.biorxiv.org/content/2.full.pdf")
+        assert sleeps == [3.0]

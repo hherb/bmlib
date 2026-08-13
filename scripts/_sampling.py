@@ -132,8 +132,23 @@ def _throttle_delay(resp: Any, attempt: int) -> float:
     return min(MAX_RETRY_AFTER_SECONDS, max(0.0, wanted))
 
 
+#: Hosts that need a wider interval than the caller's default, measured.
+#: bioRxiv sits behind Cloudflare with a rolling per-minute limit and answers
+#: a violation with ``429`` and ``Retry-After: 55`` — so exceeding it does not
+#: cost one slow request, it costs a minute of the run. Concurrency does not
+#: help against a limit like that and actively hurts: a title-sampler run at
+#: 3s/4 workers spent 21 of 32 bioRxiv attempts unmeasured, nearly all of them
+#: self-inflicted 429s. Europe PMC showed no such behaviour at 3s.
+HOST_INTERVAL_OVERRIDES = {
+    "www.biorxiv.org": 8.0,
+    "www.medrxiv.org": 8.0,
+}
+
+
 def _make_pacer(
-    interval: float, clock: Callable[[], float] = time.monotonic
+    interval: float,
+    clock: Callable[[], float] = time.monotonic,
+    overrides: dict[str, float] | None = None,
 ) -> Callable[[str], None]:
     """Build a function that paces requests to a minimum interval *per host*.
 
@@ -159,12 +174,18 @@ def _make_pacer(
         interval: Minimum seconds between two requests to the same host.
         clock: Source of the current time, injected so tests can drive it
             without a real clock or a real sleep.
+        overrides: Per-host intervals that win over *interval*, defaulting to
+            :data:`HOST_INTERVAL_OVERRIDES`. Pass ``{}`` to disable them. A
+            host is listed there because it was *measured* to need more room,
+            so a caller passing a wider default still gets the wider of the
+            two rather than silently undoing the measurement.
 
     Returns:
         A function ``pace(url)`` that sleeps only as long as *url*'s host
-        still needs to have waited *interval* seconds since its last request
+        still needs to have waited its interval since its last request
         through this same pacer.
     """
+    per_host = HOST_INTERVAL_OVERRIDES if overrides is None else overrides
     last_request: dict[str, float] = {}
     host_locks: dict[str, threading.Lock] = {}
     registry_lock = threading.Lock()
@@ -177,13 +198,17 @@ def _make_pacer(
 
     def pace(url: str) -> None:
         host = urlsplit(url).netloc
+        # The wider of the two, never the narrower: an override records a
+        # host that was measured to need room, and a caller who asked for a
+        # gentler default did not mean to speed that host up.
+        host_interval = max(interval, per_host.get(host, 0.0))
         with _lock_for(host):
             now = clock()
             last = last_request.get(host)
             if last is None:
                 last_request[host] = now
                 return
-            remaining = interval - (now - last)
+            remaining = host_interval - (now - last)
             if remaining > 0:
                 _sleep_for(remaining)
                 last_request[host] = now + remaining
