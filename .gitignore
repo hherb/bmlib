@@ -14,3 +14,8 @@ coverage.xml
 
 # Subagent-driven-development scratch workspace (ledgers, briefs, review packages)
 .superpowers/
+
+# The title sampler journals each row as it lands, so an interrupted run
+# resumes rather than restarting. It is a working file; the corpus it
+# produces (pdf_metadata_titles.json) is what gets committed.
+tests/data/*.partial.jsonl
