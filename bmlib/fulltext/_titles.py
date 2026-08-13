@@ -42,11 +42,23 @@ from collections.abc import Mapping
 from typing import Any
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
-# A hyphen — in any of its Unicode spellings, including the soft hyphen —
-# immediately before a line break is typesetting, not spelling: the word
-# continues on the next line. Anchored on the break, so an ordinary
+# A hyphen immediately before a line break is typesetting, not spelling: the
+# word continues on the next line. Anchored on the break, so an ordinary
 # mid-line hyphen is left alone and `dose-response` stays two tokens.
-_LINE_BREAK_HYPHEN_RE = re.compile("[-‐‑­]\\s*\n\\s*")
+#
+# The four spellings are written as escapes rather than as themselves. Two of
+# them — U+00AD SOFT HYPHEN especially — are invisible or near-invisible in a
+# source file, and a character class whose members cannot be seen is one a
+# later reader deletes as a duplicate of the plain `-`.
+_LINE_BREAK_HYPHEN_RE = re.compile(
+    "["
+    "\u002d"  # HYPHEN-MINUS, the ordinary one
+    "\u2010"  # HYPHEN
+    "\u2011"  # NON-BREAKING HYPHEN
+    "\u00ad"  # SOFT HYPHEN
+    "]"
+    r"\s*\n\s*"
+)
 
 
 def normalise(text: str) -> str:
