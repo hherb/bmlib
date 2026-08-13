@@ -63,7 +63,17 @@ sampler = importlib.util.module_from_spec(_spec)
 # databank sampler's loader (tests/test_databank_sampler.py) does not need
 # this line because that script defines no dataclass.
 sys.modules[_spec.name] = sampler
+# The sampler does `from _sampling import …`, and `scripts/` is not a package.
+# Running the script puts that directory on sys.path as sys.path[0]; loading it
+# by path here does not, so insert it explicitly.
+if str(_PATH.parent) not in sys.path:
+    sys.path.insert(0, str(_PATH.parent))
 _spec.loader.exec_module(sampler)
+# The shared helpers, for the one constant this file asserts against. Imported
+# by name rather than by path — sys.path now carries `scripts/` — and through
+# `import_module` rather than an `import` statement, which would have to sit
+# below the insert above and trip E402.
+helpers = importlib.import_module("_sampling")
 
 
 class _Resp:
@@ -192,29 +202,6 @@ class TestAFailedSampleNeverPrintsAsAFinding:
         """Sampling that returned zero URLs is not a population with no failures."""
         lines = sampler.summarise("europepmc", [])
         assert any("ERROR" in line for line in lines)
-
-
-class TestTheIntervalIsComputedOverAttemptsActuallyMade:
-    """A threshold rule (#68's 5%) needs an interval, not a point estimate."""
-
-    def test_known_wilson_values(self) -> None:
-        lo, hi = sampler.wilson(0, 300)
-        assert lo == pytest.approx(0.0, abs=1e-9)
-        assert hi == pytest.approx(0.012643, abs=1e-5)
-
-        lo, hi = sampler.wilson(15, 300)
-        assert lo == pytest.approx(0.030531, abs=1e-5)
-        assert hi == pytest.approx(0.080848, abs=1e-5)
-
-    def test_the_interval_straddles_the_decision_threshold_at_five_percent(self) -> None:
-        """Why the spec asks for an interval: 15/300 is exactly 5%, and the
-        sample does not actually settle which side of the rule it falls on."""
-        lo, hi = sampler.wilson(15, 300)
-        assert lo < 0.05 < hi
-
-    def test_no_attempts_is_an_error_not_an_interval(self) -> None:
-        with pytest.raises(ValueError):
-            sampler.wilson(0, 0)
 
 
 class TestAThrottledProbeIsRetriedNotImmediatelyGivenUp:
@@ -387,53 +374,6 @@ class TestThrottledProbesAreExcludedFromTheRateNotCountedAsFailures:
         assert any("ERROR" in line for line in lines)
 
 
-class TestThePacerSpacesRequestsPerHostNotGlobally:
-    """Run 1 paced every request on one global clock; one host's throttling
-    then throttled every other host's pacing too, for no reason — the fix
-    tracks the last request time per host."""
-
-    def test_a_hosts_first_request_does_not_wait(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        sleeps: list[float] = []
-        monkeypatch.setattr(sampler, "_sleep_for", sleeps.append)
-        clock = iter([100.0])
-        pace = sampler._make_pacer(3.0, clock=lambda: next(clock))
-        pace("https://a.example/x")
-        assert sleeps == []
-
-    def test_a_second_request_to_the_same_host_waits_out_the_remainder(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        sleeps: list[float] = []
-        monkeypatch.setattr(sampler, "_sleep_for", sleeps.append)
-        clock = iter([100.0, 101.0])
-        pace = sampler._make_pacer(3.0, clock=lambda: next(clock))
-        pace("https://a.example/x")
-        pace("https://a.example/y")
-        assert sleeps == [2.0]
-
-    def test_a_request_already_past_the_interval_does_not_wait(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        sleeps: list[float] = []
-        monkeypatch.setattr(sampler, "_sleep_for", sleeps.append)
-        clock = iter([100.0, 104.0])
-        pace = sampler._make_pacer(3.0, clock=lambda: next(clock))
-        pace("https://a.example/x")
-        pace("https://a.example/y")
-        assert sleeps == []
-
-    def test_a_different_host_does_not_wait_for_an_unrelated_hosts_pacing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        sleeps: list[float] = []
-        monkeypatch.setattr(sampler, "_sleep_for", sleeps.append)
-        clock = iter([100.0, 100.1])
-        pace = sampler._make_pacer(3.0, clock=lambda: next(clock))
-        pace("https://a.example/x")
-        pace("https://b.example/y")
-        assert sleeps == []
-
-
 class TestTheEuropePMCPopulationIsNoLongerSplitByInEPMC:
     """The 'out' half of the split was structurally empty (run 1's other finding).
 
@@ -527,6 +467,12 @@ class TestARetryAfterIsClampedAtBothEnds:
     population has finished, so an honoured ``Retry-After: 86400`` is a
     process producing no output that the operator kills, losing every
     population's data — exactly what the low clamp exists to prevent.
+
+    The clamp itself now lives in ``scripts/_sampling.py`` and is pinned in
+    ``tests/test_sampling_helpers.py``. What stays here is the half that file
+    cannot cover: that ``probe`` actually *applies* it. A ``probe`` that
+    stopped consulting ``_throttle_delay`` would leave every direct test of
+    the delay passing.
     """
 
     def test_an_enormous_retry_after_is_capped(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -540,11 +486,7 @@ class TestARetryAfterIsClampedAtBothEnds:
         )
         outcome = sampler.probe(client, "https://e/a.pdf")
         assert outcome.ok is True
-        assert slept == [sampler.MAX_RETRY_AFTER_SECONDS]
-
-    def test_a_retry_after_under_the_cap_is_honoured_unchanged(self) -> None:
-        """The cap must not become the wait for every throttled probe."""
-        assert sampler._throttle_delay(_Resp(429, headers={"Retry-After": "5"}), 1) == 5.0
+        assert slept == [helpers.MAX_RETRY_AFTER_SECONDS]
 
 
 class TestASamplerThatCouldNotSampleReturnsNone:
