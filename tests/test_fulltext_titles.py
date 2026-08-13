@@ -119,17 +119,32 @@ class TestAMetadataTitleIsBelievedOnlyWhereTheDocumentSaysIt:
         assert accepted_metadata_title({"title": title}, "   \n \n ") == title
 
 
-class TestTheBackstopIsIndependentOfThePage:
-    """The backstop catches junk that *is* printed on page 1 — a running
-    header, a job number repeated in the footer — which corroboration alone
-    would accept.
+class TestTheOneBackstopMemberTheCorpusEarned:
+    """A title of fewer than three words is not an article title.
 
-    Its membership is earned from ``tests/data/pdf_metadata_titles.json``, one
-    measured junk title at a time, so the cases below grow with the corpus
-    rather than with intuition. What is pinned now is the wiring: the backstop
-    is consulted before the page is, so an unrunnable corroboration can never
-    become a free pass for a shape that has earned rejection.
+    Measured over 181 real PDFs: it rejects one junk title corroboration
+    accepted — "Nepal Journ", a journal name truncated mid-word in a running
+    header, which page 1 really does print — and rejects no row whose metadata
+    title matched its record. The shortest genuine title measured is five
+    words.
     """
+
+    def test_the_measured_survivor_is_rejected(self) -> None:
+        """The row that earned the member its place: junk that page 1 prints,
+        so corroboration alone accepts it."""
+        page = "Nepal Journal of Medical Sciences\nEffects of aspirin on outcomes\nJane Smith"
+        assert accepted_metadata_title({"title": "Nepal Journ"}, page) is None
+
+    def test_a_bare_job_number_is_junk(self) -> None:
+        assert looks_like_junk("52561798", {}) is True
+
+    def test_a_two_word_title_is_junk(self) -> None:
+        assert looks_like_junk("Layout 1", {}) is True
+
+    def test_a_three_word_title_is_not(self) -> None:
+        """The threshold sits below every genuine title in the corpus, whose
+        shortest is five words — not tuned up against the junk."""
+        assert looks_like_junk("Aspirin in stroke", {}) is False
 
     def test_a_real_title_is_not_junk(self) -> None:
         """The negative control on the backstop itself."""

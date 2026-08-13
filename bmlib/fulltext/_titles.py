@@ -85,25 +85,53 @@ def normalise(text: str) -> str:
     return " ".join(_TOKEN_RE.findall(stripped.lower()))
 
 
+#: A title of fewer than this many words is not an article title.
+#:
+#: The backstop's only member, and it earned its place under the rule fixed
+#: before the corpus was collected: over 181 measured PDFs it rejects one junk
+#: title corroboration accepted — ``"Nepal Journ"``, a journal name truncated
+#: mid-word in a running header, which page 1 really does print — and rejects
+#: **no** row whose metadata title matched the record. The shortest genuine
+#: title measured is five words, so the threshold sits well clear of it.
+#:
+#: Two things this does not claim. Short article titles exist in the wild
+#: ("Malaria", "Retraction"), and the corpus happens to contain none — so the
+#: false-positive risk here is *bounded* by the corpus rather than disproven.
+#: And a title rejected here is not lost: it falls through to the font-size
+#: heuristic, which for a genuinely short title printed large returns it
+#: anyway. Both are why the threshold is low rather than "tuned".
+_MIN_TITLE_WORDS = 3
+
+
 def looks_like_junk(title: str, metadata: Mapping[str, Any]) -> bool:
     """Whether *title* is a known junk shape, regardless of what page 1 says.
 
     The backstop to corroboration, for junk the document *does* print — a
-    running header, a job number repeated in the footer. Deliberately empty
-    of guesses: every member is earned from
-    ``tests/data/pdf_metadata_titles.json`` under the rule that it must
-    reject at least one measured junk title corroboration accepted, and no
-    measured good one. See :mod:`bmlib.fulltext._titles`'s docstring.
+    running header, a job number repeated in the footer. Every member is
+    earned from ``tests/data/pdf_metadata_titles.json`` under the rule that it
+    must reject at least one measured junk title corroboration accepted, and
+    no measured good one; a shape the corpus never showed does not become a
+    member however obvious it looks, which is the reject-list this design
+    exists to avoid. **Re-run the sampler before changing this.**
+
+    Consulted *before* page 1 (see :func:`accepted_metadata_title`), so a
+    document that cannot be corroborated at all does not thereby get a free
+    pass for a shape already known to be junk.
 
     Args:
         title: The metadata title, stripped.
         metadata: The full metadata dict, so a member may consult ``creator``,
-            ``producer`` or ``file_path``.
+            ``producer`` or ``file_path``. Unused today: ``creator`` looked
+            like the obvious signal — the measured junk clusters hard by
+            producer, with Appligent AppendPDF Pro accounting for seven of
+            bioRxiv's eight junk titles — but rejecting on the *tool* would
+            reject every good title it also wrote, and it wrote plenty.
 
     Returns:
         ``True`` when the title matches a measured junk shape.
     """
-    return False
+    del metadata  # Reserved for a future member; see Args.
+    return len(normalise(title).split()) < _MIN_TITLE_WORDS
 
 
 def accepted_metadata_title(metadata: Mapping[str, Any], page_one_text: str) -> str | None:
