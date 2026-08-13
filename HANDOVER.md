@@ -1,19 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-13. **0.9.1 is cut** — four `fulltext` issues (#79,
-#68, #72, #56) plus five smaller fixes found reviewing them, merged to `main`
-as PRs #80, #82 and #83. Tier 1d now takes the free PDFs Europe PMC actually
-labels `"Open access"` (it had been discarding ~95% of them); a failed PDF
-download and a swallowed bmlib defect are reported instead of hiding behind a
-tier that still works; and a PDF's metadata title is believed only where page
-1 prints it, measured over 235 real PDFs rather than guessed. **#79 moves what
-downstream stores** — many more articles now come back with extracted text
-instead of a bare link — and it is the only entry in the release that does.
-It is a patch bump because nothing here breaks a public API: the one addition,
-`ConversionResult.title`, is additive and declared last. Three open issues:
-**#73** and **#81** (#78 closed with the release recipe below).
-On `main`: 2048 tests + 58 skipped (2104 + 2 with a
-PostgreSQL DSN), ruff 0.15.20 clean.
+_Last updated: 2026-08-14. **0.9.1 is released**; since then, **#81 is
+closed** on branch `fix/81-type-gate-in-ci` — CI now type-checks, so the
+`py.typed` bmlib ships is a guarantee something verifies rather than a claim
+nobody had ever checked. It found one real defect on the way in (a PubMed
+day whose history session was missing synced as an empty day, reporting
+`completed`). **#73 is the only open issue.** On the branch: 2049 tests + 58
+skipped (2105 + 2 with a PostgreSQL DSN, run and verified), ruff 0.15.20 and
+`uv run mypy` both clean.
 **Phase 3 of the bmlibrarian port is next, and each of its rows needs a design
 conversation before any porting** — see "Next up"._
 
@@ -49,8 +43,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed five releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests on `main`: 2048 passing + 58 skipped** (`uv run pytest tests/ -q`);
-  **2104 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips
+- **Tests: 2049 passing + 58 skipped** (`uv run pytest tests/ -q`);
+  **2105 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
   runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev
@@ -102,8 +96,9 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 ### Open GitHub issues
 
 Two, both found by review rather than by a failing test. (**#56, #68, #72 and
-#79 are closed** and shipped in 0.9.1; **#78 is closed** — see "The release
-tag does not depend on the merge button" below.)
+#79** shipped in 0.9.1; **#78** is closed — see "The release tag does not
+depend on the merge button" below; **#81** is closed on
+`fix/81-type-gate-in-ci`.)
 
 **#73 — `install_defaults()` copies templates non-atomically**, found while
 fixing #70 and deliberately not folded into it. A copy interrupted partway
@@ -114,16 +109,16 @@ an article — and it carries a decision: `_atomic_write` is private to
 `fulltext/cache.py`, so fixing this means either promoting it to a shared
 internal module or accepting a second copy. Worth deciding once.
 
-**#81 — CI runs ruff only, so `py.typed` claims a guarantee nothing checks**,
-split out of the review of PR #80. That review found three correctness
-properties in one file being carried by comments where a type could carry
-them; two became `Literal`s in that branch, but the enforcement is at the
-desk and not at the gate, and a downstream's mypy run is currently the first
-thing in the world to check bmlib's types. `uv run mypy bmlib/` reports 24
-errors in 15 files, 11 of them one recurring `**dict[str, object]` splat and
-8 of them optional-extra imports, so this is one design call plus a handful
-of one-offs rather than a long slog. Deliberately not done in #80: it touches
-`llm/`, `agents/` and `publications/`, which that branch goes nowhere near.
+**#86 — `docs/manual/llm.md` documents `LLMClient.generate` and
+`LLMClient.embed` twice each**, found while updating signatures for #81 and
+deliberately not folded into it. The same defect as #31 (`fulltext.md`'s
+doubled `## PDF Conversion`), and the same reason it is worth a session
+rather than a delete: the copies differ, so merging them is a judgement
+about which prose and which examples survive — one `generate` has the
+example, and the two `embed` sections disagree about whether the default is
+the provider's *chat* default model (the `embed_batch` section has it
+right). #81 updated **both** copies of `generate` so the duplication did not
+silently become a drift.
 
 ### Worth doing, not yet an issue
 
@@ -220,6 +215,16 @@ what still needs doing.
   **0.15.20** (`.github/workflows/ci.yml`), while `.venv` holds an older
   one that false-flags rules newer ruff removed:
   `uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .`
+- **`uv run mypy` is a gate now too** (#81), pinned to **2.3.0** in the `dev`
+  extra with its settings in `pyproject.toml`. Take no arguments and add
+  none — the bare command is what the `types` CI job runs. It must run in
+  the dev venv: every extra but PyMuPDF ships its own `py.typed`, so against
+  a bare interpreter mypy reports the optional imports *and `jinja2`, a core
+  dependency*, as missing stubs. That is not hypothetical — it is why #81
+  opened claiming 24 errors when there were 22. Anything deliberately
+  unchecked is an inline `# type: ignore[code]` with its reason at the site,
+  never a per-module `ignore_missing_imports`: `warn_unused_ignores` reports
+  the first when it goes stale and can never report the second.
 - Tests use in-memory SQLite (`connect_sqlite(":memory:")`) and mocked HTTP;
   no external services. `BMLIB_TEST_POSTGRESQL_DSN` must point at a database
   the tests may drop every table in (recipe under "Current state").

@@ -111,7 +111,7 @@ def chat(
     json_mode: bool = False,
     temperature: float | None = None,
     max_tokens: int | None = None,
-    **kwargs: object,
+    **kwargs: Any,
 ) -> LLMResponse
 ```
 
@@ -125,7 +125,7 @@ Send a chat request through the LLM client using the agent's configured model an
 | `json_mode` | `bool` | `False` | Request JSON-formatted output. |
 | `temperature` | `float \| None` | `None` | Override the agent's default temperature. |
 | `max_tokens` | `int \| None` | `None` | Override the agent's default max tokens. |
-| `**kwargs` | `object` | | Forwarded to the provider (e.g. `think=True` for Ollama). |
+| `**kwargs` | `Any` | | Forwarded to the provider (e.g. `think=True` for Ollama). |
 
 **Returns:** `LLMResponse`
 

@@ -6,6 +6,62 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **CI checks types (#81).** bmlib ships `py.typed`, which tells every
+  downstream that its annotations are meant to be relied on — a guarantee
+  CI never verified, since it ran ruff only and none of `E, F, I, N, W, UP`
+  catches a type error. A downstream's own mypy run was the first thing in
+  the world to check them. A `types` job now runs mypy over the same
+  3.11/3.12/3.13 range `requires-python` advertises (no `python_version` is
+  set, so each entry checks against its own interpreter), with mypy pinned
+  in the `dev` extra the way ruff is pinned in the workflow and the
+  settings in `pyproject.toml`, so CI and a developer run the identical
+  command. Beyond mypy's defaults: `disallow_untyped_defs` — without it an
+  unannotated function is skipped in silence, so the gate would pass a file
+  carrying no annotations at all, which is the exact hole `py.typed` denies
+  — plus `warn_unused_ignores`, `warn_redundant_casts` and
+  `warn_unreachable`. The one genuinely untyped import (`fitz`; PyMuPDF
+  ships no marker and `import pymupdf` postdates bmlib's `>=1.23` floor)
+  carries an inline `# type: ignore[import-untyped]` rather than a
+  per-module override, because `warn_unused_ignores` reports the inline
+  form the day it goes stale and would never report the override.
+
+### Fixed
+
+- **A PubMed day with no history session synced as an empty day.**
+  `_esearch()` returns `(count, web_env, query_key)` with both session
+  values `str | None`, and `fetch_pubmed()` guarded only `count == 0`. A
+  response carrying a count but no `WebEnv`/`QueryKey` left both `None`,
+  which httpx encodes as an empty parameter — so every efetch page asked
+  NCBI for `WebEnv=` and got back a document holding no `PubmedArticle`.
+  Measured on a 5,000-record day: 11 requests, 10 of them useless, and a
+  result of `status="completed"` with 0 records and `error=None` — a broken
+  fetch wearing the shape of a quiet day, which a caller cannot tell from
+  one. It now returns `failed`, naming what was missing, before any page is
+  requested. Found by the type gate above, which is what the gate is for.
+
+### Changed
+
+- **Thirteen annotation defects fixed** alongside the gate, none of which
+  changes behaviour. Nine were one decision: a `**kwargs: object` bag
+  splatted into a typed signature cannot be checked — `object` is the
+  stricter annotation and that is precisely why it fails, since a parameter
+  declared `str | None` cannot accept an `object` — so the four bags that
+  are splatted become `Any` while the eighteen that are only inspected or
+  forwarded untyped keep `object`. `_FallbackLoader.get_source()` declared
+  `tuple[str, str, callable]`, naming the builtin *function*, so that
+  element asserted nothing; it is jinja2's `Callable[[], bool]`.
+  `QualityTier.__lt__` and a helper in `BiasRisk.from_dict` carried no
+  annotations at all, and `__lt__` now narrows with `isinstance` rather
+  than `self.__class__ is other.__class__` — identical on every possible
+  argument, an `Enum` with members being unsubclassable. The OpenAlex
+  fetcher's `cursor` is declared `str | None` (inferred `str`, it made
+  `while cursor is not None` read as always-true and the return below it
+  dead), a redeclared `result` in `text_utils.py` is annotated once, and a
+  stale `# type: ignore[arg-type]` in `retractions.py` that `hasattr`
+  narrowing had made unnecessary is gone.
+
 ## [0.9.1] — 2026-08-13
 
 Four issues in the full-text retrieval path — #79, #68, #72 and #56 — all of

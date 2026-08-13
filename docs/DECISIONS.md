@@ -71,6 +71,42 @@ must not be re-done.
   covers deletion, non-fast-forward pushes and code scanning, and is silent
   on merge strategy.
 
+## Type checking (#81)
+
+- **`**kwargs: object` and `**kwargs: Any` coexist on purpose — do not make
+  the 22 sites uniform.** The four bags that are *splatted into a typed
+  signature* are `Any`; the eighteen that are only inspected, or forwarded to
+  something untyped, keep `object`. This looks backwards, because `object` is
+  the stricter annotation — and that is exactly why it cannot survive the
+  splat: a parameter declared `str | None` cannot accept an `object`, so
+  `**dict[str, object]` makes the forwarding call *uncheckable* rather than
+  checked. It produced nine of the errors #81 fixed. The rule is written out
+  at `llm/providers/get_provider()`, which the other three sites point back
+  to. Widening the remaining eighteen would weaken annotations that cost
+  nothing today; narrowing the four re-breaks the calls.
+- **`_reject_unusable_stream()`'s `isinstance(handle, io.TextIOBase)` is
+  unreachable per the annotation, and stays.** Nothing can subclass both
+  `IO[bytes]` and `TextIOBase`, so `warn_unreachable` calls the body dead. The
+  annotation is a request, not an enforcement, and the guard exists for the
+  caller who passes `open(path)` in text mode — which the signature's `str |
+  Path` branch makes a plausible slip. Deleting it to satisfy the checker
+  restores a failure inside `codecs` reading "can't concat str to bytes",
+  which names nothing the caller did. Argued inline; carries
+  `# type: ignore[unreachable]`.
+- **Deliberately-unchecked code takes an inline `# type: ignore[code]`, never
+  a per-module `ignore_missing_imports` override.** `warn_unused_ignores`
+  reports an inline ignore the day it stops suppressing anything; it can never
+  report a stale override. bmlib's one untyped import (`fitz` — PyMuPDF ships
+  no marker, and the typed `import pymupdf` spelling postdates the
+  `pymupdf>=1.23` floor) is inline for that reason. #81 removed a stale
+  `# type: ignore[arg-type]` in `retractions.py` that this setting caught.
+- **mypy must run in the dev venv, and `uv run mypy` takes no arguments.**
+  Every extra but PyMuPDF ships its own `py.typed`, so against a bare
+  interpreter mypy reports the optional imports *and `jinja2`, a core
+  dependency*, as missing stubs. #81 opened claiming 24 errors in 15 files
+  because of exactly this; the real figure was 22 in 11. Scope and settings
+  live in `pyproject.toml` so the bare command is what CI's `types` job runs.
+
 ## Positional stability
 
 - **`Publication.pmcid`, `BaseAgent.__init__`'s `embedding_model`, and

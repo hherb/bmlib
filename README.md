@@ -204,6 +204,12 @@ uv run pytest tests/ -v
 # Lint and format
 uv run ruff check .
 uv run ruff format --check .
+
+# Type-check. Scope and settings live in pyproject.toml, so this bare
+# command is the one CI runs. It needs the extras installed above: all but
+# PyMuPDF ship their own py.typed, and against a bare interpreter mypy
+# reports them — and jinja2 — as missing stubs.
+uv run mypy
 ```
 
 ## Documentation

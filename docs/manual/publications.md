@@ -1057,6 +1057,14 @@ Fetch all PubMed articles published on `target_date` using NCBI E-utilities.
 - Extracts: PMID, title, abstract, authors, journal, DOI, PMC ID, MeSH keywords, and full-text source URLs (PMC article page, DOI resolver). It also populates `publication_types` from `PublicationTypeList`, which is what the free Tier 1 quality filter classifies study design from (see [quality.md](quality.md)). Before 0.4.0 this field was left empty, so synced PubMed records skipped the free tier entirely.
 - Populates `grants` from `<GrantList>` and `author_affiliations` from `<AffiliationInfo>`; `sync()` persists both (see [`Grant` and `AuthorAffiliation`](#grant-and-authoraffiliation)). It is the only built-in fetcher that produces either.
 - Takes **no** `email` parameter.
+- A response carrying a record count but **no history session** (`WebEnv` /
+  `QueryKey`) returns `FetchResult(status="failed", ...)` naming what was
+  missing, before any EFetch page is requested. Every page reads the session
+  back, so without it each one would ask NCBI for `WebEnv=` — httpx encodes
+  `None` as an empty parameter — and receive a document holding no
+  `PubmedArticle`: on a 5,000-record day that is ten useless requests ending
+  in `completed` with 0 records, which a caller cannot tell from a genuinely
+  quiet day (fixed after 0.9.1).
 
 #### Titles and abstracts are Markdown
 

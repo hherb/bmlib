@@ -33,7 +33,7 @@ uv pip install -e ".[all,dev]"
 | publications   | httpx>=0.25           | Publication fetcher API calls           |
 | fulltext       | httpx>=0.25           | `FullTextService` retrieval; nothing else in `fulltext/` needs it |
 | pdf            | pymupdf>=1.23         | PDF → text conversion in `fulltext/`   |
-| dev            | pytest>=7.0, pytest-cov, ruff | Development and testing tools  |
+| dev            | pytest>=7.0, pytest-cov, ruff, mypy, types-psycopg2 | Development and testing tools  |
 | all            | All runtime extras    | Everything except `dev`                |
 
 ## Architecture
@@ -342,7 +342,32 @@ test naming it.
 uv run pytest tests/ -v
 uv run ruff check .
 uv run ruff format --check .
+uv run mypy
 ```
+
+**`mypy` takes no arguments here — and must not be given any.** Its scope
+(`files = ["bmlib"]`) and its four non-default settings live in
+`pyproject.toml`, so the bare command is what CI runs and what checks the
+guarantee `py.typed` makes to downstreams. It is pinned in the `dev` extra
+for the reason ruff is pinned in `ci.yml`.
+
+**Run it in the dev venv, never against a bare interpreter.** Every extra
+except PyMuPDF ships its own `py.typed`, so mypy resolves real types only
+where the packages are installed. Run without them — which `uv run mypy`
+did before mypy was a declared dependency, silently resolving an isolated
+environment — and it reports the optional imports *and `jinja2`, a core
+dependency*, as missing stubs: 7 phantom errors on top of the real ones,
+which is how issue #81's opening count came to be 24 rather than 22.
+`uv pip install -e ".[all,dev]"` is what makes the command honest.
+
+Two conventions the settings encode. `disallow_untyped_defs` is on because
+an unannotated function is otherwise skipped in silence, which would let
+the gate pass a file carrying no annotations at all — the exact hole
+`py.typed` denies. And anything deliberately unchecked is an inline
+`# type: ignore[code]` with its reason at the site, never a per-module
+`ignore_missing_imports` override: `warn_unused_ignores` reports the
+inline form the day it stops suppressing anything, and cannot report the
+override.
 
 All tests use in-memory SQLite (`connect_sqlite(":memory:")`) for database tests and mocked HTTP responses for API tests. No external services are required.
 
