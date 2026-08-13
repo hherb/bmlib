@@ -1,23 +1,18 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-13. **0.9.0 is released and on PyPI** — five `fulltext`
-fixes (#64, #67, #70, #71, #75). Nothing stored moved, so nothing needs
-re-syncing; it is a minor rather than a patch bump because three of the fixes
-change a public API. Verified against the *published* wheel, not just the
-source tree: it installs on jinja2 alone and all 69 modules import, one fresh
-interpreter each. Since the release, PR #80 closed #79, #68 and #72
-(unreleased) — Tier 1d now takes the free PDFs Europe PMC actually labels
-`"Open access"`, and a failed PDF download or a swallowed bmlib bug is
-reported instead of hiding behind a tier that still works. And
-**`fix/56-junk-pdf-metadata-titles` closes #56** (unreleased): a PDF's
-metadata title is believed only where page 1 prints it, measured over 235
-real PDFs rather than guessed — 0 of 126 good titles wrongly rejected, 34 of
-35 junk rejected, and not one of the shapes the issue proposed appears in the
-corpus at all. Containment is anchored to whole tokens, so a `/Title`
-truncated mid-word no longer corroborates the page it was cut from, and a page
-1 that could not be *read* rejects rather than accepting. Three open issues:
-**#73**, **#78**, **#81**. On that branch: 2017 tests + 58 skipped (2073 + 2
-with a PostgreSQL DSN), ruff clean.
+_Last updated: 2026-08-13. **0.9.1 is cut** — four `fulltext` issues (#79,
+#68, #72, #56) plus five smaller fixes found reviewing them, merged to `main`
+as PRs #80, #82 and #83. Tier 1d now takes the free PDFs Europe PMC actually
+labels `"Open access"` (it had been discarding ~95% of them); a failed PDF
+download and a swallowed bmlib defect are reported instead of hiding behind a
+tier that still works; and a PDF's metadata title is believed only where page
+1 prints it, measured over 235 real PDFs rather than guessed. **#79 moves what
+downstream stores** — many more articles now come back with extracted text
+instead of a bare link — and it is the only entry in the release that does.
+It is a patch bump because nothing here breaks a public API: the one addition,
+`ConversionResult.title`, is additive and declared last. Three open issues:
+**#73**, **#78**, **#81**. On `main`: 2048 tests + 58 skipped (2104 + 2 with a
+PostgreSQL DSN), ruff 0.15.20 clean.
 **Phase 3 of the bmlibrarian port is next, and each of its rows needs a design
 conversation before any porting** — see "Next up"._
 
@@ -29,25 +24,32 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ## Current state
 
-- **Version 0.9.0.** Release history: 0.4.0 (2026-07-19) → 0.5.0 → 0.5.1 →
+- **Version 0.9.1.** Release history: 0.4.0 (2026-07-19) → 0.5.0 → 0.5.1 →
   0.6.0 (2026-07-30) → 0.7.0 (2026-08-04) → 0.8.0 (2026-08-08) → 0.9.0
-  (2026-08-10). 0.3.0 was bumped in-tree but never released; its changes
-  shipped inside 0.4.0. The version lives in **four** places —
-  `pyproject.toml`, `bmlib/__init__.py`, the README version line,
+  (2026-08-10) → 0.9.1 (2026-08-13). 0.3.0 was bumped in-tree but never
+  released; its changes shipped inside 0.4.0. The version lives in **four**
+  places — `pyproject.toml`, `bmlib/__init__.py`, the README version line,
   `CLAUDE.md`'s header — and all four agree.
 - **What each release shipped is in `CHANGELOG.md`** — do not re-narrate it
   here. 0.6.0, 0.7.0 and 0.8.0 each moved stored values, none behind a flag,
   and they compound for anyone upgrading across them; 0.8.0's largest is the
   PubMed one, which changes the shape of every synced title and abstract.
-  **0.9.0 moves nothing stored** — it is five fixes and some log lines. It is
-  a minor bump because three of those fixes change a public API, not because
-  anything stored moved; the two questions are independent and the version
-  number answers the API one.
+  **0.9.0 moves nothing stored.** **0.9.1 moves one thing**: #79 makes Tier 1d
+  take the free PDFs it had been discarding, so many more articles come back
+  with `pdf_url` / `file_path` / extracted text instead of a bare link and a
+  corpus's stored full text is not comparable across the upgrade — outbound
+  traffic to Europe PMC rises with it. Nothing else in 0.9.1 changes a stored
+  value. Note the two questions are independent: 0.9.0 was a *minor* bump
+  moving nothing stored (three fixes changed a public API), and 0.9.1 is a
+  *patch* bump that does move something stored (nothing breaks an API — its
+  one addition, `ConversionResult.title`, is additive and declared last). The
+  version number answers the API question, never the data one, so a downstream
+  reading only the number must still read this list.
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
-  now missed four releases. Widening it is a downstream change, not a bmlib
+  now missed five releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests on `main`: 1893 passing + 58 skipped** (`uv run pytest tests/ -q`);
-  **1949 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips
+- **Tests on `main`: 2048 passing + 58 skipped** (`uv run pytest tests/ -q`);
+  **2104 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
   runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev
@@ -68,19 +70,24 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; **nine are outstanding** — `ROADMAP.md`'s rows for #79, #68,
-  #72 and `scripts/sample_free_pdf_urls.py` (all on `main` via PR #80), plus
-  #56's three rows and two `docs/manual/fulltext.md` sections on
-  `fix/56-junk-pdf-metadata-titles`. None is promoted to a version number yet.
-  Markers inside `docs/superpowers/plans/` are historical records — leave them
-  alone.
+  release time; **none is outstanding** — 0.9.1 promoted all eleven (seven
+  `ROADMAP.md` rows, four `docs/manual/fulltext.md` spots, the last of which
+  is a section heading whose in-page anchor had to move with it). Markers
+  inside `docs/superpowers/plans/` are historical records — leave them alone.
+- **`main` is protected by the `protect_main` ruleset** (added 2026-08-13):
+  no deletion, no non-fast-forward push, and CodeQL code scanning plus code
+  quality required to merge. CodeQL comes from GitHub's *default setup*, so
+  there is no workflow file in the repo — and its generated workflow ignores a
+  pull request's `reopened` action, so a PR that predates the setup needs a
+  fresh commit rather than a close/reopen before its first analysis exists.
+  The ruleset does **not** constrain the merge strategy; see #78.
 
 ## Next up
 
 ### Open GitHub issues
 
-Three, all found by review rather than by a failing test. (**#56 is closed**
-on `fix/56-junk-pdf-metadata-titles` — see "Current state".)
+Three, all found by review rather than by a failing test. (**#56, #68, #72 and
+#79 are closed** and shipped in 0.9.1.)
 
 **#73 — `install_defaults()` copies templates non-atomically**, found while
 fixing #70 and deliberately not folded into it. A copy interrupted partway
@@ -94,11 +101,14 @@ internal module or accepting a second copy. Worth deciding once.
 **#78 — the release merge strategy is enforced by prose only**, found
 reviewing PR #77. `HANDOVER.md` requires a release PR be merged with
 `--merge` so the tag lands on `main`'s first-parent line, but the repo still
-allows squash and rebase merges and no branch protection covers `main`, so
-the requirement is prose only and GitHub's default merge button can silently
-defeat it. Latent — 0.4.0 through 0.9.0 were all merged correctly — the fix
-is one `gh api -X PATCH` disabling the other two strategies, or a protection
-rule if squash is wanted for ordinary feature PRs.
+allows squash and rebase merges, so the requirement is prose only and
+GitHub's default merge button can silently defeat it. **The `protect_main`
+ruleset added on 2026-08-13 does not close this** — it covers deletion,
+non-fast-forward pushes and code scanning, and is silent on merge strategy,
+so do not read "main is protected now" as "#78 is handled". Latent — 0.4.0
+through 0.9.1 were all merged correctly — the fix is one `gh api -X PATCH`
+disabling the other two strategies, or extending the ruleset if squash is
+wanted for ordinary feature PRs.
 
 **#81 — CI runs ruff only, so `py.typed` claims a guarantee nothing checks**,
 split out of the review of PR #80. That review found three correctness
@@ -114,11 +124,12 @@ of one-offs rather than a long slog. Deliberately not done in #80: it touches
 ### Worth doing, not yet an issue
 
 - **Widen bmlibrarian's `<0.6.0` pin** so the mother project can consume
-  0.6.0 through 0.9.0. Read the three intervening releases' non-comparable
-  behaviour changes first — the transparency ones move stored scores, and
-  0.8.0 moves every PubMed title and abstract. 0.9.0 adds nothing to that
-  list, but it does carry three API changes, so the widened pin should clear
-  `FullTextService.cache` being nullable.
+  0.6.0 through 0.9.1. Read the intervening releases' non-comparable
+  behaviour changes first — the transparency ones move stored scores, 0.8.0
+  moves every PubMed title and abstract, and **0.9.1 moves stored full text**
+  (#79: Tier 1d now downloads the free PDFs it used to skip). 0.9.0 adds
+  nothing to that list, but it carries three API changes, so the widened pin
+  should clear `FullTextService.cache` being nullable.
 - **Wire the segmenter and the rule-based extractors in.** Two halves of the
   same roadmap item: the segmenter could give `CochraneAssessor`
   Methods/Results boundaries and `TransparencyAnalyzer` the paper's own
@@ -213,7 +224,7 @@ what still needs doing.
 - Session workflow lives in the `nextsession` skill
   (`.claude/skills/nextsession/`); the post-review fix-up workflow lives in
   the `fixall` skill (`.claude/skills/fixall/`).
-- **Cutting a release** (0.4.0 through 0.9.0 were all cut this way): bump
+- **Cutting a release** (0.4.0 through 0.9.1 were all cut this way): bump
   the version in the **four** places that carry it — `pyproject.toml`,
   `bmlib/__init__.py`, the README version line, `CLAUDE.md`'s header —
   promote the CHANGELOG's `[Unreleased]` body under a dated `## [X.Y.Z]`
@@ -224,7 +235,11 @@ what still needs doing.
   as 0.8.1 and renumbered in review, because three of its fixes changed a
   public API while nothing stored moved, and bmlib's downstream pins are
   written on the convention that a minor bump is the one that may break.
-  After CI is green: merge with **`--merge`, not squash**, so the tag lands on
+  0.9.1 is the other side of that same convention: #79 moves stored full text
+  while nothing breaks an API, so it is a patch.
+  After CI **and CodeQL** are green — the `protect_main` ruleset requires the
+  scan, and a release PR is subject to it like any other: merge with
+  **`--merge`, not squash**, so the tag lands on
   main's first-parent line — nothing enforces this, see #78; tag the **merge
   commit** `vX.Y.Z` and push it; then create the GitHub release, which is
   **what publishes** — `.github/workflows/release.yml` rebuilds, refuses to go

@@ -169,10 +169,13 @@ at the call site". What it omits:
   once per fetcher-supplied source, so it is not bounded by the chain's eight
   tiers — "9 tiers raised" was emittable from a run that attempted four.
 - **`_download_and_cache_pdf`'s *download* half is deliberately not wired to
-  the counter** — see #68 above. All three call sites return immediately
-  after it, so a recorded failure could never be reported; threading it would
-  be dead plumbing that reads as coverage. A comment at the handler says so,
-  since the other eight swallowers were wired. Its *cache-write* half was
+  the counter.** All three call sites return immediately after it, so a
+  recorded failure could never be reported; threading it would be dead
+  plumbing that reads as coverage. A comment at the handler says so, since
+  the other eight swallowers were wired. This is not the same as saying the
+  failure goes unreported — #68 gave that half its own keyed one-shot
+  warning, which is a separate channel from the exhaustion report and reaches
+  the operator on a run that otherwise succeeds. See the #68 entries below. Its *cache-write* half was
   split out into `_save_pdf_to_cache`: an unwritable directory is not a
   download failure, and folding the two left a PDF-only corpus with no cache
   warning at all.
@@ -379,6 +382,136 @@ the guarantee here is one a downstream's checker gets and a reader can verify
 locally. `_cache_html` and `_download_and_cache_pdf` are deliberately *not*
 in the set: they are the sites that do the checking, and giving them the same
 shape would push one branch out into their seven unconditional call sites.
+
+## fulltext — the free-PDF tier and what it reports (#68, #72, #79, PR #80)
+
+- **The free-PDF allow-list is answerable to the records, not to taste.**
+  `_FREE_PDF_AVAILABILITY_CODES` allow-lists `availabilityCode` (`OA`, `F`)
+  and consults the `availability` display string *only* for an entry carrying
+  no code; a present-but-unknown code is rejected without reading the label,
+  because an unknown value must under-credit rather than risk a paywalled
+  download. **Run `scripts/sample_free_pdf_urls.py` before changing either
+  list** — #79 was precisely a value (`"Open access"`, 95.7% of free-PDF
+  entries) that never appeared in what bmlib accepted, and the sampler counts
+  the distribution *before* the allow-list filters for that reason: counted
+  after it, it could only ever confirm the list. Pinned by
+  `test_fulltext_service.py::TestFreePDFAvailability`.
+- **Both access fields are type-checked before the membership test, and that
+  is not defensive padding.** `x in frozenset` *hashes* `x`, so a JSON object
+  where a string was expected raises `TypeError` — a `_BUG_TYPES` member,
+  which would report Europe PMC's malformed bytes as a bmlib defect *and*
+  spend the one-shot `bug:TypeError` slot a later real defect needs.
+  `_extract_free_pdf_url` guards the container one level up for the same
+  reason: `.get("fullTextUrl", [])` returns `None`, not `[]`, for a key
+  present with a JSON null.
+- **`_BUG_TYPES` is a deny-list, and `ValueError`/`SyntaxError` are
+  deliberately outside it.** `json.JSONDecodeError` *is* a `ValueError` and
+  `xml.etree.ElementTree.ParseError` *is* a `SyntaxError`, so admitting
+  either would file an ordinary malformed remote response as a bmlib defect.
+  A deny-list because the legitimate failures are varied while the
+  always-a-defect set is small. Argued inline at `_BUG_TYPES`.
+- **`on_bug` fires at the moment the exception is swallowed, and is a
+  mandatory field.** Every exit-based alternative is the defect itself:
+  `describe()` is read only on total exhaustion, which is the exit this case
+  never reaches, so the next early return would silently re-break it. An
+  unwired callback is not a quieter channel but total silence — hence no
+  default. `_TierFailures.unreported()` is the deliberate opt-out for direct
+  helper calls and tests. Pinned by
+  `TestASwallowedBugDoesNotStayAtDebug` and
+  `test_a_record_cannot_be_built_without_deciding_about_on_bug`.
+- **The one-shot warning keys are built from a bounded `origin` written out
+  at each call site, never from `result.source`.** Tier 0's `source` comes
+  from the fetcher's `FullTextSourceEntry`, and OpenAlex derives it from the
+  location's venue display name: one distinct, remote-data-derived string per
+  journal, which turns "reported once" into one warning per article over a
+  bulk sync. The source still appears in the message.
+- **A `_warn_once` key names the *cause*, not the site.** `"cache-write"` as
+  a bare literal let a transient `OSError` early in a run permanently silence
+  a genuine `TypeError` inside `save_pdf` — the failure #72 exists to fix —
+  and, in the other order, presented a type error to the operator as a full
+  disk. Pinned by `test_html_and_pdf_write_failures_share_one_warning` and
+  its per-cause companions.
+- **`FullTextCache.save_pdf`'s own magic-byte rejection sits at `DEBUG` on
+  purpose.** At `WARNING` it emitted a line per article for the dominant
+  measured failure — Unpaywall landing pages, 14 of 28 probes — underneath a
+  message promising the report was one-shot, defeating the one-shot for the
+  very cause the 5% rule selected it for. The article-level detail is still
+  there at `DEBUG`; `TestThePerArticleDetailThatTheWarningPromises` pins it.
+- **The `WARNING`-level split is a measured rate against a rule fixed
+  beforehand**, not a preference: under 5% of attempts, per-article
+  `WARNING`; at or above it, one line per `(tier, cause)` plus per-article
+  `DEBUG`. Re-deciding it means re-running the sampler, not re-reading the
+  code. The *exception* path is one-shot per `(tier, exception type)`
+  regardless of the rate, because it fails every article once it starts
+  failing.
+
+## fulltext — a PDF's metadata title (#56, PRs #82, #83)
+
+The argument lives in `bmlib/fulltext/_titles.py`, which is unusually heavily
+commented for that reason. The entries here are the pointers.
+
+- **`metadata["title"]` stays verbatim; the judged answer is
+  `ConversionResult.title`.** Sanitising the one key would make the dict lie
+  about `creator` and `producer` beside it, and a caller debugging provenance
+  needs the original string, junk and all.
+- **The reject-list has exactly one member, and a shape the corpus never
+  showed does not become a member however obvious it looks.** That is the
+  reject-list this design exists to avoid — not one of the shapes issue #56
+  proposed (`.docx`, `"untitled"`, the file stem) appears anywhere in the 235
+  measured PDFs. **Run `scripts/sample_pdf_metadata_titles.py` before
+  changing it.** `_MIN_TITLE_WORDS` is now kept as defence-in-depth rather
+  than as a member the corpus earns — anchored containment rejects the row
+  that admitted it — and says so at its definition;
+  `TestTheOneBackstopMember` pins both halves.
+- **`looks_like_junk` takes the title alone.** It carried the whole metadata
+  dict against the day a member wanted `creator` or `producer`, but an
+  argument added for a member the corpus never earned is the same species of
+  speculation as the reject-list entry. Re-adding it is one line, here and at
+  the single call site; what the measurement actually said about `creator` is
+  recorded above `_MIN_TITLE_WORDS`, so the next reader does not re-derive it
+  and reach the opposite conclusion.
+- **Containment is anchored to whole tokens — do not simplify it back to
+  `wanted in page`.** `normalise` exists to produce tokens, and a bare
+  substring test throws those boundaries away in the *accepting* direction:
+  a `/Title` truncated mid-word, which producers emit routinely, matched the
+  page it was cut from and then beat the fallback that would have recovered
+  the whole line. Pinned by `TestCorroborationIsAnchoredToWholeTokens`.
+- **An empty page accepts and an unreadable page rejects.** The asymmetry is
+  the distinction the samplers draw between an unmeasured probe and a failed
+  one: a page read as carrying no text makes corroboration a test that
+  *cannot be run* — rejecting would blank the title of every image-only scan
+  — while a page whose extraction *raised* is a test that failed, and a fault
+  is where there is least reason to trust what a file claims about itself.
+  The backstop applies in both, so an unrunnable check is never a free pass.
+- **The empty-normalisation guard is masked twice and still load-bearing
+  once.** The backstop rejects a zero-word title before it and anchoring
+  would reject one after — but neither covers a title normalising to nothing
+  against a page that is *also* empty, which would otherwise hand back
+  `"###"` as an image-only scan's title. Argued inline;
+  `test_the_empty_normalisation_guard_stands_on_its_own` pins it.
+- **`_LINE_NUMBER_RE` rests on its unit tests, not on the corpus.** Four
+  independent mutations of it change the answer on zero of the 235 rows, so a
+  green corpus run has *not* checked it —
+  `TestALineNumberedManuscriptStillCorroborates` has. Both digit bounds are
+  deliberate and argued at the pattern.
+- **`accepted_metadata_title` returns `str | None` and sends its four
+  rejection reasons to the log.** Every caller asks one binary question and
+  would discard a richer answer; the one party who wants the reasons is the
+  human debugging why a title vanished from one PDF, and `DEBUG` is where
+  they get them. `TestARejectionSaysWhy` pins each line, with a control that
+  an accepted title logs no rejection.
+- **The sampler deliberately does not import `_titles.normalise`, and a
+  future refactor must not "deduplicate" the two.** A corpus labelled by the
+  rule under test can only ever confirm that rule. For the same reason the
+  sampler writes to `*.unreportable.json` when a population trips the
+  unmeasured-share threshold: a throttled run must not replace evidence a
+  later reader takes as measured.
+- **A bioRxiv attempt records its posting *day* rather than the run pinning
+  its window.** Pinning would make one date range serve both "what am I
+  sampling" and "what do I owe", and those diverge by a day every day.
+  `MAX_UNMEASURED_ATTEMPTS` retires an attempt from being *offered* while it
+  keeps being *counted*, in `tally_previous` and in the ERROR rule — because
+  forgetting it is the silent loss the accounting exists to prevent.
 
 ## fulltext — the PDF converter (PR #60)
 

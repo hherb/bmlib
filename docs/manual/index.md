@@ -1,6 +1,6 @@
 # bmlib API Manual
 
-**Version 0.4.0** | **License: AGPL-3.0-or-later** | **Python >=3.11**
+**Version 0.9.1** | **License: AGPL-3.0-or-later** | **Python >=3.11**
 
 bmlib is a shared Python library for biomedical literature tools. It provides LLM abstraction, quality assessment, transparency analysis, full-text retrieval, database utilities, and publication ingestion/sync.
 
