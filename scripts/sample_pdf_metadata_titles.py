@@ -80,6 +80,7 @@ Companion to ``scripts/sample_free_pdf_urls.py``,
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import re
@@ -163,6 +164,8 @@ DEFAULT_PDF_CACHE = Path.home() / ".cache" / "bmlib-title-sampler"
 
 _BUCKETS = ("match", "truncated", "unrelated", "absent")
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
+# Markup left after unescaping a record title — `<i>`, `<sub>`, `<sup>`.
+_TAG_RE = re.compile(r"<[^>]+>")
 
 
 def _tokens(text: str) -> list[str]:
@@ -176,6 +179,25 @@ def _tokens(text: str) -> list[str]:
     decomposed = unicodedata.normalize("NFKD", text)
     stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
     return _TOKEN_RE.findall(stripped.lower())
+
+
+def clean_record_title(text: str) -> str:
+    """The record's title as prose, with its markup resolved and removed.
+
+    Europe PMC returns titles with the markup **escaped**, so a title reading
+    ``<i>MET</i> alterations`` arrives as ``&lt;i&gt;MET&lt;/i&gt;
+    alterations``; bioRxiv serves the unescaped form of the same thing.
+    Tokenised raw, either becomes ``lt i gt met …``, and a PDF whose metadata
+    title is a *perfect* match is then labelled ``unrelated`` — which is the
+    worst direction for this corpus to be wrong in, since corroboration
+    accepts such a title and the row would count as junk the rule failed to
+    reject.
+
+    Unescape first, then strip tags: doing it the other way round leaves the
+    escaped form untouched. ``&amp;`` therefore survives as ``&``, which it
+    must — ``Trials & Tribulations`` is a title, not markup.
+    """
+    return _TAG_RE.sub("", html.unescape(text)).strip()
 
 
 def classify(metadata_title: str, record_title: str) -> str:
@@ -378,6 +400,9 @@ def row_from_pdf(
     finally:
         path.unlink(missing_ok=True)
 
+    # Cleaned here rather than at each call site, so a walk that forgets
+    # cannot silently mislabel its whole population.
+    record_title = clean_record_title(record_title)
     metadata_title = str(result.metadata.get("title") or "")
     all_page_one = [b for b in blocks if b.page_num == 0]
     page_one = all_page_one[:PAGE_ONE_LINES_KEPT]

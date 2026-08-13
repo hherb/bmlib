@@ -485,3 +485,62 @@ class TestAResumedRunTopsUpRatherThanRestarting:
         monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(map(str, a))))
         assert sampler.main() != 0
         assert any("ERROR" in line for line in printed)
+
+
+@pytest.mark.skipif(not _HAS_FITZ, reason="PyMuPDF not installed")
+class TestTheRecordTitleIsCleanedBeforeItIsGroundTruth:
+    """Europe PMC returns titles with their markup **escaped**, so a title
+    reading `<i>MET</i> alterations` arrives as `&lt;i&gt;MET&lt;/i&gt;
+    alterations`. Tokenised raw it becomes `lt i gt met lt i gt`, and a PDF
+    whose metadata title is a *perfect* match gets labelled `unrelated`.
+
+    That is the worst direction for this corpus to be wrong in: corroboration
+    accepts such a title — the PDF really does print it — so the row would
+    count as junk the rule failed to reject, and depress the measured
+    junk-rejection rate with titles that were never junk. Two of the first ten
+    rows of a live run were affected.
+    """
+
+    def test_escaped_markup_in_the_record_title_is_not_junk(self, tmp_path: Path) -> None:
+        row = sampler.row_from_pdf(
+            _make_pdf("Effects of aspirin on cardiovascular outcomes"),
+            "europepmc",
+            "PMC1",
+            "Effects of &lt;i&gt;aspirin&lt;/i&gt; on cardiovascular outcomes",
+            "a.pdf",
+            tmp_path,
+        )
+        assert row is not None
+        assert row["bucket"] == "match"
+
+    def test_raw_markup_is_stripped_too(self, tmp_path: Path) -> None:
+        """bioRxiv serves the unescaped form of the same thing."""
+        row = sampler.row_from_pdf(
+            _make_pdf("Effects of aspirin on cardiovascular outcomes"),
+            "biorxiv",
+            "10.1101/1",
+            "Effects of <i>aspirin</i> on cardiovascular outcomes",
+            "a.pdf",
+            tmp_path,
+        )
+        assert row is not None
+        assert row["bucket"] == "match"
+
+    def test_the_stored_record_title_is_the_cleaned_one(self, tmp_path: Path) -> None:
+        """The fixture is read by a human deciding what the backstop needs;
+        an entity-mangled title there is a trap for that reader too."""
+        row = sampler.row_from_pdf(
+            _make_pdf("Effects of aspirin on cardiovascular outcomes"),
+            "europepmc",
+            "PMC1",
+            "Effects of &lt;i&gt;aspirin&lt;/i&gt; on cardiovascular outcomes",
+            "a.pdf",
+            tmp_path,
+        )
+        assert row is not None
+        assert row["record_title"] == "Effects of aspirin on cardiovascular outcomes"
+
+    def test_an_ampersand_survives_as_itself(self, tmp_path: Path) -> None:
+        """`&amp;` is an entity too, but `Cancer &amp; Metabolism` is a real
+        title fragment — unescaping must not be mistaken for tag-stripping."""
+        assert sampler.clean_record_title("Trials &amp; Tribulations") == "Trials & Tribulations"
