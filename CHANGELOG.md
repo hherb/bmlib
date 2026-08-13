@@ -35,7 +35,11 @@ All notable changes to bmlib are documented here. The format is based on
   up, line numbers dropped, NFKD, combining marks removed), which absorbs
   case, the terminal period, en-dash versus hyphen, ligatures, diacritics and
   a wrapped title's line break, while rejecting a string the paper never
-  states.
+  states. Containment is **anchored to whole tokens**: an unanchored substring
+  test matches inside a word, in the accepting direction, so a `/Title`
+  truncated mid-word — which producers emit routinely — was returned verbatim
+  *and* beat the font-size fallback that would have recovered the whole line.
+  Anchoring changes no verdict on any of the 235 measured rows.
 
   Measured over **235 real PDFs** (`tests/data/pdf_metadata_titles.json`;
   Europe PMC 175, bioRxiv 60), against a rule fixed before the corpus was
@@ -43,17 +47,18 @@ All notable changes to bmlib are documented here. The format is based on
   1%) and **34 of 35 junk titles rejected** (floor 80%). The one junk title
   accepted is not junk — the PDF's title reads "Drive" where the record reads
   "Drives", so the rule sided with the document in front of it. Where a junk
-  title is rejected, the font-size fallback recovers the record's title in
-  40% of cases and returns nothing in the rest; a missing title is the
-  intended trade, since a junk title is asserted as fact by a document the
-  caller trusts.
+  title is rejected, the font-size fallback returns *some* title in 44% of
+  cases (15 of 34) and nothing in the rest — but it returns one line, so what
+  it recovers is the title's **first line** (38%, 13 of 34) and **never the
+  complete record title** (0 of 34). A missing title is the intended trade,
+  since a junk title is asserted as fact by a document the caller trusts.
 
   Two findings the issue could not have guessed. **Nearly 40% of Europe PMC's
   publisher-typeset PDFs carry no metadata title at all**, so the affected
   population is smaller than it looks. And **not one of the shapes the issue
   proposed** — `.docx`, `"untitled"`, the file stem — appears anywhere in the
   235; what appears is typesetter output: bare Appligent AppendPDF job
-  numbers (11 of bioRxiv's 16 junk titles), Arbortext job numbers with page
+  numbers (14 of bioRxiv's 16 junk titles), Arbortext job numbers with page
   ranges (`"ma5c03166 1..10"`), QuarkXPress's `"Layout 1"`, InDesign template
   codes, an InDesign source filename, and a journal name truncated mid-word.
   A reject-list written from the issue's examples would have caught none of
