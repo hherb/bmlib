@@ -53,6 +53,30 @@ class _Resp:
         self.headers = headers or {}
 
 
+class TestOnlyURLsBMLibWouldFetchArueProbeable:
+    """``is_probeable`` moved here with the rest of the shared helpers, but
+    its test stayed behind in ``test_free_pdf_sampler.py``, reaching it
+    through that sampler's re-export.
+
+    That left the helper covered only for as long as one particular sampler
+    keeps importing it — so the module CLAUDE.md maps to this file had no test
+    of its own for the one function that decides what bmlib will fetch.
+    """
+
+    def test_http_and_https_are_probeable(self) -> None:
+        assert helpers.is_probeable("https://e/a.pdf") is True
+        assert helpers.is_probeable("http://e/a.pdf") is True
+
+    def test_no_other_scheme_is(self) -> None:
+        """The URLs come from third-party JSON, so the scheme is not bmlib's
+        to assume: ``file://`` would read the local disk, and neither is a
+        *download failure* that belongs in a rate setting a log level."""
+        assert helpers.is_probeable("file:///etc/passwd") is False
+        assert helpers.is_probeable("ftp://e/a.pdf") is False
+        assert helpers.is_probeable("data:application/pdf;base64,AAAA") is False
+        assert helpers.is_probeable("") is False
+
+
 class TestTheIntervalIsComputedOverAttemptsActuallyMade:
     """A threshold rule (#68's 5%) needs an interval, not a point estimate."""
 

@@ -1002,22 +1002,40 @@ any non-empty value there verbatim, so junk beat a perfectly good large-font
 first-page line (issue #56).
 
 A metadata title is now believed only where **the document itself prints it**.
-Both sides are normalised — line-break hyphenation closed up, then NFKD,
-combining marks dropped, lowercased, reduced to `[a-z0-9]+` tokens joined by
-single spaces — and the title is accepted when it is contained in page 1's
-normalised text. That absorbs case, the terminal period metadata usually
-drops, en-dash versus hyphen, ligatures, diacritics and the line break a
-wrapped title carries, while rejecting a string the paper never states.
+Both sides are normalised — line-break hyphenation closed up, **lines holding
+nothing but a number dropped**, then NFKD, combining marks dropped,
+lowercased, reduced to `[a-z0-9]+` tokens joined by single spaces — and the
+title is accepted when page 1's normalised text contains it **as whole
+tokens**. That absorbs case, the terminal period metadata usually drops,
+en-dash versus hyphen, ligatures, diacritics and the line break a wrapped
+title carries, while rejecting a string the paper never states.
 
-Two consequences worth knowing:
+The line-number step matters more than it sounds: preprint servers number the
+lines of a submitted manuscript and PyMuPDF reports each number as its own
+line, *between* the lines of the title beside it — so without it every
+line-numbered preprint whose title wraps is rejected.
+
+Three consequences worth knowing:
 
 - **A page 1 with no extractable text accepts the metadata title.** An
   image-only scan makes corroboration a test that *cannot be run*, not one
   that failed, and the metadata is then the only title signal there is.
+- **A page 1 that could not be read at all rejects it.** A page whose
+  extraction raised, or a document with no pages, is a test that *failed* —
+  the opposite case, and the one with the least reason to trust what the file
+  says about itself.
 - **A rejected title falls through to the font heuristic**, which may return
-  the largest first-page line or nothing at all. Losing a title is the
+  the largest first-page line or nothing at all. Note the fallback returns one
+  *line*: measured over the corpus it recovers the title's first line in 38%
+  of rejections and never the complete record title. Losing a title is the
   intended trade: a junk title is asserted as fact by a document the caller
   trusts, while a wrongly rejected one is usually recovered off the page.
+
+Containment is anchored to whole tokens rather than being a bare substring
+test. Unanchored, a `/Title` truncated mid-word — which producers emit
+routinely — matched the page it was cut from, and was then returned verbatim
+*and* with enough confidence to beat the fallback that would have recovered
+the whole line.
 
 The rule and its reject-list backstop are measured against
 `tests/data/pdf_metadata_titles.json`, a corpus of real Europe PMC and

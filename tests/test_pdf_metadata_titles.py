@@ -35,7 +35,9 @@ numbers answerable to the records rather than to memory.
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +46,21 @@ from bmlib.fulltext.models import TextBlock
 from bmlib.fulltext.segmenter import SectionSegmenter
 
 _FIXTURE = Path(__file__).resolve().parent / "data" / "pdf_metadata_titles.json"
+
+# `wilson` comes from the sampler's own helpers rather than being restated
+# here. Both ship rules below are *threshold* rules, and `_sampling.wilson`'s
+# docstring is the argument for why a threshold needs an interval: a point
+# estimate over 126 rows cannot settle a 1% ceiling. Computed rather than
+# written down, so a re-sampled corpus moves the reported bound with it
+# instead of leaving a stale number in a docstring.
+_HELPERS = Path(__file__).resolve().parent.parent / "scripts" / "_sampling.py"
+_spec = importlib.util.spec_from_file_location("bmlib_sampling_helpers_metrics", _HELPERS)
+if _spec is None or _spec.loader is None:  # pragma: no cover - the module is in-tree
+    raise ImportError(f"cannot load the sampling helpers from {_HELPERS}")
+_helpers = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = _helpers
+_spec.loader.exec_module(_helpers)
+wilson = _helpers.wilson
 
 
 def _rows() -> list[dict[str, Any]]:
@@ -126,9 +143,34 @@ class TestTheRuleMeetsTheFloorsItShippedOn:
         conclusive = [row for row in rows if not (_is_truncated(row) and _accepted(row) is None)]
         assert conclusive, "no conclusive match rows to measure"
         rate = len(wrong) / len(conclusive)
+        _lo, hi = wilson(len(wrong), len(conclusive))
         assert rate <= 0.01, (
-            f"{len(wrong)}/{len(conclusive)} = {rate:.1%} good titles rejected: "
-            f"{[row['id'] for row in wrong]}"
+            f"{len(wrong)}/{len(conclusive)} = {rate:.1%} good titles rejected "
+            f"(95% CI upper bound {hi:.1%}): {[row['id'] for row in wrong]}"
+        )
+
+    def test_what_the_corpus_actually_settles_about_rule_one(self) -> None:
+        """Rule 1 is a *threshold* rule, and the corpus does not settle it at
+        the threshold it names.
+
+        0 wrong rejections in 126 conclusive rows is a point estimate of 0%,
+        but its 95% upper bound is about 3% — roughly triple the "ceiling 1%"
+        printed beside it. A reader takes the corpus to have established ≤1%
+        when it has established ≤3%.
+
+        This is stated rather than enforced: the ship rule is what it is, and
+        moving a threshold is a decision, not a test edit. What the test
+        prevents is the interval quietly getting *worse* — a shrunken or
+        thinned corpus would widen it, and the assertion catches that even
+        though the point estimate would still read 0%.
+        """
+        rows = _bucket("match")
+        conclusive = [row for row in rows if not (_is_truncated(row) and _accepted(row) is None)]
+        wrong = [row for row in conclusive if _accepted(row) is None]
+        _lo, hi = wilson(len(wrong), len(conclusive))
+        assert hi <= 0.03, (
+            f"the corpus now bounds the wrong-rejection rate at {hi:.1%}, not ~3% — "
+            f"{len(wrong)}/{len(conclusive)} conclusive rows"
         )
 
     def test_the_inconclusive_rows_are_a_minority(self) -> None:
@@ -150,10 +192,21 @@ class TestTheRuleMeetsTheFloorsItShippedOn:
         rows = _bucket("unrelated")
         rejected = [row for row in rows if _accepted(row) is None]
         rate = len(rejected) / len(rows)
+        lo, _hi = wilson(len(rejected), len(rows))
         assert rate >= 0.80, (
-            f"only {len(rejected)}/{len(rows)} = {rate:.1%} junk titles rejected; "
+            f"only {len(rejected)}/{len(rows)} = {rate:.1%} junk titles rejected "
+            f"(95% CI lower bound {lo:.1%}); "
             f"accepted: {[row['metadata_title'] for row in rows if _accepted(row)]}"
         )
+
+    def test_rule_two_is_settled_at_its_threshold(self) -> None:
+        """Unlike rule 1, this one the corpus does settle: the 95% lower bound
+        on 34 of 35 junk rejected clears the 80% floor, so the floor holds at
+        confidence and not merely on the point estimate."""
+        rows = _bucket("unrelated")
+        rejected = [row for row in rows if _accepted(row) is None]
+        lo, _hi = wilson(len(rejected), len(rows))
+        assert lo >= 0.80, f"the floor no longer holds at 95%: lower bound {lo:.1%}"
 
     def test_the_corpus_still_holds_both_populations(self) -> None:
         """The control on the two rules. A fixture thinned to three rows a
@@ -172,10 +225,22 @@ class TestTheRuleMeetsTheFloorsItShippedOn:
 
 
 class TestTheSegmenterDeliversWhatTheRuleDecides:
+    """Both tests below are ``for`` + ``continue``, so each needs a control on
+    its own loop having run.
+
+    Confirmed by mutation: with the rule stubbed to reject everything the
+    first test passed over **zero** rows, and with it stubbed to accept
+    everything the second did — each reporting success for having checked
+    nothing. The sibling floor tests would catch either extreme, but these two
+    are the only place the segmenter↔rule wiring is checked across real rows,
+    and a test that cannot fail is not the guard it appears to be.
+    """
+
     def test_an_accepted_title_is_the_title_the_segmenter_returns(self) -> None:
         """The wiring rather than the rule: whatever ``accepted_metadata_title``
         returns for a row, ``_extract_title`` must return it too rather than
         some other candidate off the page."""
+        checked = 0
         for row in _rows():
             accepted = _accepted(row)
             if accepted is None:
@@ -184,10 +249,13 @@ class TestTheSegmenterDeliversWhatTheRuleDecides:
                 _blocks_of(row), _metadata(row), row["median_font_size"]
             )
             assert title == accepted, row["id"]
+            checked += 1
+        assert checked >= 50, f"only {checked} accepted rows to check the wiring against"
 
     def test_a_rejection_never_leaves_the_junk_as_the_title(self) -> None:
         """The point of the fix. Whatever the fallback produces for a rejected
         row — a large-font line, or nothing — it must not be the junk."""
+        checked = 0
         for row in _bucket("unrelated"):
             if _accepted(row) is not None:
                 continue
@@ -195,3 +263,5 @@ class TestTheSegmenterDeliversWhatTheRuleDecides:
                 _blocks_of(row), _metadata(row), row["median_font_size"]
             )
             assert title != row["metadata_title"], row["id"]
+            checked += 1
+        assert checked >= 25, f"only {checked} rejected junk rows to check"

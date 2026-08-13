@@ -658,3 +658,102 @@ class TestTheConvertedResultCarriesAJudgedTitle:
         result = get_converter("pymupdf").convert(pdf)
         assert result.page_texts and "aspirin" in result.page_texts[0]
         assert result.title == "A study of coffee"
+
+    @staticmethod
+    def _open_returning(converter, monkeypatch, *, page_zero_raises=False, no_pages=False):
+        """Drive ``convert()`` over a real document that misbehaves in one way.
+
+        A page object comes fresh from ``doc[n]`` on every access, so patching
+        the one PyMuPDF hands back does not stick — hence a proxy.
+        """
+        real_open = converter._fitz.open
+
+        class _Page:
+            def __init__(self, page, fail):
+                self._page, self._fail = page, fail
+
+            def get_text(self, *a, **k):
+                if self._fail:
+                    raise RuntimeError("damaged content stream")
+                return self._page.get_text(*a, **k)
+
+        class _Doc:
+            def __init__(self, doc):
+                self._doc = doc
+
+            def __len__(self):
+                return 0 if no_pages else len(self._doc)
+
+            def __getitem__(self, i):
+                return _Page(self._doc[i], page_zero_raises and i == 0)
+
+            def __getattr__(self, name):
+                return getattr(self._doc, name)
+
+            def __enter__(self):
+                self._doc.__enter__()
+                return self
+
+            def __exit__(self, *a):
+                return self._doc.__exit__(*a)
+
+        monkeypatch.setattr(converter._fitz, "open", lambda *a, **k: _Doc(real_open(*a, **k)))
+
+    def test_an_unreadable_page_one_rejects_rather_than_accepts(self, tmp_path, monkeypatch):
+        """A page that *raises* is not an image-only scan.
+
+        Both leave page 1 with no text to check against, but they mean
+        opposite things: an empty scan makes corroboration inapplicable (and
+        the metadata is then the only title signal there is), while a page
+        whose extraction failed is the case with the *least* reason to trust
+        what the file claims about itself.
+
+        The metadata title here is one page 1 really does print, so the *only*
+        thing that can reject it is the read failure — with ``""`` passed for
+        both cases, as before, this returns the title instead.
+        """
+        pdf = self._write_pdf(tmp_path / "raises.pdf", "Effects of aspirin on outcomes")
+        converter = get_converter("pymupdf")
+        self._open_returning(converter, monkeypatch, page_zero_raises=True)
+
+        result = converter.convert(pdf)
+
+        assert result.title is None
+        assert any("Extraction failed" in w for w in result.warnings)
+
+    def test_a_document_with_no_pages_rejects_its_metadata_title(self, tmp_path, monkeypatch):
+        """Zero pages is the same shape: the loop never runs, so there is no
+        page 1 to corroborate against — a broken file rather than a scanned
+        one. (PyMuPDF will not *save* a zero-page document, so the count is
+        driven rather than written to disk.)"""
+        pdf = self._write_pdf(tmp_path / "nopages.pdf", "Effects of aspirin on outcomes")
+        converter = get_converter("pymupdf")
+        self._open_returning(converter, monkeypatch, no_pages=True)
+
+        result = converter.convert(pdf)
+
+        assert result.page_count == 0
+        assert result.title is None
+
+    def test_a_fault_in_the_title_rule_costs_the_title_and_not_the_text(
+        self, tmp_path, monkeypatch
+    ):
+        """The title is judged inside ``convert()``'s outer ``try``. Evaluated
+        in the ``ConversionResult(...)`` call, anything it raised returned
+        ``success=False, text=""`` — throwing away a complete, correct
+        extraction and blaming *PDF conversion* for a fault in a heuristic
+        that had nothing to do with the text.
+        """
+        import bmlib.fulltext.pdf_converter as pdf_converter_module
+
+        def boom(metadata, page_one_text):
+            raise RuntimeError("a defect in the title rule")
+
+        monkeypatch.setattr(pdf_converter_module, "accepted_metadata_title", boom)
+        pdf = self._write_pdf(tmp_path / "ok.pdf", "Effects of aspirin on outcomes")
+        result = get_converter("pymupdf").convert(pdf)
+
+        assert result.success is True
+        assert "aspirin" in result.text
+        assert result.title is None
+        assert any("Title corroboration failed" in w for w in result.warnings)

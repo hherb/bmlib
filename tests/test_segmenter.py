@@ -389,11 +389,19 @@ class TestTitleExtraction:
     def test_a_corroborated_metadata_title_wins(self):
         """Issue #56 narrowed this: the metadata title still wins, but only
         where page 1 prints it. It used to win unconditionally, which is how
-        "Microsoft Word - manuscript.docx" beat the title on the page."""
-        doc = self.segmenter.segment_document(
-            paper_blocks(), {"title": "Aspirin and Mortality: A Trial"}
-        )
-        assert doc.title == "Aspirin and Mortality: A Trial"
+        "Microsoft Word - manuscript.docx" beat the title on the page.
+
+        The metadata title here is deliberately *not* the largest line, so the
+        two paths give different answers and the assertion says which one ran.
+        Naming the 20-point line — the obvious choice — made this test pass
+        under a rule that rejected every metadata title, since the fallback
+        returns that same string. ``paper_blocks``'s title is one line, so
+        there is no wrapped title to use instead; the author line is printed
+        on page 1, clears the three-word backstop, and is what the fallback
+        will never return.
+        """
+        doc = self.segmenter.segment_document(paper_blocks(), {"title": "J Smith, R Jones"})
+        assert doc.title == "J Smith, R Jones"
 
     def test_a_metadata_title_the_page_never_prints_is_rejected(self):
         doc = self.segmenter.segment_document(paper_blocks(), {"title": "From Metadata"})

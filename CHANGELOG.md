@@ -22,6 +22,19 @@ All notable changes to bmlib are documented here. The format is based on
   clamped `Retry-After` and `wilson()` between both live samplers rather than
   letting a rule learned from a bad run exist in two copies.
 
+  A bioRxiv attempt records the **posting day** it came from, and an unmeasured
+  one also records a `cause` and an `attempts` count. Without the day, a
+  resumed run could not retry what it had lost: that walk covers
+  `[today-30, today-49]` recomputed from `date.today()`, so it slides a day per
+  calendar day and after 20 shares nothing with the window that produced the
+  journal — an unmeasured attempt stayed open by design but became
+  unreachable, permanently inflating the population's unmeasured share with no
+  escape but deleting the journal and losing every good row. Days owed a retry
+  are now walked before the fresh window and in addition to it, so retrying old
+  work never costs the run its budget for new work. `MAX_UNMEASURED_ATTEMPTS`
+  bounds the tail: a retired attempt stops being offered but keeps being
+  counted, and `summarise()` names how many were retried out.
+
 ### Fixed
 
 - **A junk PDF metadata title no longer beats the title on the page** (#56).
@@ -35,25 +48,36 @@ All notable changes to bmlib are documented here. The format is based on
   up, line numbers dropped, NFKD, combining marks removed), which absorbs
   case, the terminal period, en-dash versus hyphen, ligatures, diacritics and
   a wrapped title's line break, while rejecting a string the paper never
-  states.
+  states. Containment is **anchored to whole tokens**: an unanchored substring
+  test matches inside a word, in the accepting direction, so a `/Title`
+  truncated mid-word — which producers emit routinely — was returned verbatim
+  *and* beat the font-size fallback that would have recovered the whole line.
+  Anchoring changes no verdict on any of the 235 measured rows.
 
   Measured over **235 real PDFs** (`tests/data/pdf_metadata_titles.json`;
   Europe PMC 175, bioRxiv 60), against a rule fixed before the corpus was
   collected: **0 of 126 conclusive good titles wrongly rejected** (ceiling
-  1%) and **34 of 35 junk titles rejected** (floor 80%). The one junk title
+  1%; 95% CI [0%, 3.0%]) and **34 of 35 junk titles rejected** (floor 80%;
+  95% CI [85.5%, 99.5%]). Both rules are thresholds, so both need the
+  interval and not just the point estimate — and the two answer differently.
+  The junk floor holds at confidence: its lower bound clears 80%. The
+  wrong-rejection ceiling does **not** — 126 rows bound that rate at about
+  3%, roughly triple the 1% named, so the corpus establishes ≤3% and a reader
+  should not take ≤1% as measured. The one junk title
   accepted is not junk — the PDF's title reads "Drive" where the record reads
   "Drives", so the rule sided with the document in front of it. Where a junk
-  title is rejected, the font-size fallback recovers the record's title in
-  40% of cases and returns nothing in the rest; a missing title is the
-  intended trade, since a junk title is asserted as fact by a document the
-  caller trusts.
+  title is rejected, the font-size fallback returns *some* title in 44% of
+  cases (15 of 34) and nothing in the rest — but it returns one line, so what
+  it recovers is the title's **first line** (38%, 13 of 34) and **never the
+  complete record title** (0 of 34). A missing title is the intended trade,
+  since a junk title is asserted as fact by a document the caller trusts.
 
   Two findings the issue could not have guessed. **Nearly 40% of Europe PMC's
   publisher-typeset PDFs carry no metadata title at all**, so the affected
   population is smaller than it looks. And **not one of the shapes the issue
   proposed** — `.docx`, `"untitled"`, the file stem — appears anywhere in the
   235; what appears is typesetter output: bare Appligent AppendPDF job
-  numbers (11 of bioRxiv's 16 junk titles), Arbortext job numbers with page
+  numbers (14 of bioRxiv's 16 junk titles), Arbortext job numbers with page
   ranges (`"ma5c03166 1..10"`), QuarkXPress's `"Layout 1"`, InDesign template
   codes, an InDesign source filename, and a journal name truncated mid-word.
   A reject-list written from the issue's examples would have caught none of
