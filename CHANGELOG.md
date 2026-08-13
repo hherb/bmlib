@@ -6,6 +6,72 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`ConversionResult.title`** — the document's title where page 1
+  corroborates the metadata's claim to it, and `None` otherwise (#56).
+  Purely additive, declared last so positional construction stays stable.
+  **`metadata["title"]` is unchanged** and stays a verbatim record of what the
+  PDF says, junk and all: `creator` and `producer` sit beside it unmodified,
+  so sanitising one key would make the dict lie about its neighbours, and a
+  caller debugging provenance needs the original. Read `result.title` for the
+  judged answer.
+
+- **`scripts/sample_pdf_metadata_titles.py`** — the instrument behind the rule
+  above, and `scripts/_sampling.py`, which now shares the per-host pacer, the
+  clamped `Retry-After` and `wilson()` between both live samplers rather than
+  letting a rule learned from a bad run exist in two copies.
+
+### Fixed
+
+- **A junk PDF metadata title no longer beats the title on the page** (#56).
+  `SectionSegmenter._extract_title()` returned any truthy `metadata["title"]`
+  verbatim, so a typesetter's job number won over a perfectly good large-font
+  first-page line. The issue proposed a reject-list of junk shapes; ground
+  truth turned out to be free — every free PDF comes from a record that
+  already states the article's title — so the rule was **measured** instead:
+  a metadata title is believed only where page 1 prints it. Both sides
+  normalise to lowercase alphanumeric tokens (line-break hyphenation closed
+  up, line numbers dropped, NFKD, combining marks removed), which absorbs
+  case, the terminal period, en-dash versus hyphen, ligatures, diacritics and
+  a wrapped title's line break, while rejecting a string the paper never
+  states.
+
+  Measured over **235 real PDFs** (`tests/data/pdf_metadata_titles.json`;
+  Europe PMC 175, bioRxiv 60), against a rule fixed before the corpus was
+  collected: **0 of 126 conclusive good titles wrongly rejected** (ceiling
+  1%) and **34 of 35 junk titles rejected** (floor 80%). The one junk title
+  accepted is not junk — the PDF's title reads "Drive" where the record reads
+  "Drives", so the rule sided with the document in front of it. Where a junk
+  title is rejected, the font-size fallback recovers the record's title in
+  40% of cases and returns nothing in the rest; a missing title is the
+  intended trade, since a junk title is asserted as fact by a document the
+  caller trusts.
+
+  Two findings the issue could not have guessed. **Nearly 40% of Europe PMC's
+  publisher-typeset PDFs carry no metadata title at all**, so the affected
+  population is smaller than it looks. And **not one of the shapes the issue
+  proposed** — `.docx`, `"untitled"`, the file stem — appears anywhere in the
+  235; what appears is typesetter output: bare Appligent AppendPDF job
+  numbers (11 of bioRxiv's 16 junk titles), Arbortext job numbers with page
+  ranges (`"ma5c03166 1..10"`), QuarkXPress's `"Layout 1"`, InDesign template
+  codes, an InDesign source filename, and a journal name truncated mid-word.
+  A reject-list written from the issue's examples would have caught none of
+  them.
+
+  The reject-list survives only as a **backstop** for junk the document does
+  print, and exactly one member earned its place under the same rule: a title
+  of fewer than three words. It rejects `"Nepal Journ"` — a journal name in a
+  running header, which page 1 genuinely prints, so corroboration has nothing
+  to object to — and rejects no row whose metadata title matched its record;
+  the shortest genuine title measured is five words. Short article titles do
+  exist in the wild, so that member's false-positive risk is bounded by the
+  corpus rather than disproven, and a title it rejects still falls through to
+  the font heuristic.
+
+  **Not a behaviour change for stored data**: `SectionSegmenter` has no
+  consumer inside bmlib yet, and the converter's change is a new field.
+
 ### Changed
 
 - **Europe PMC's free PDFs are now taken under their common label, not just
