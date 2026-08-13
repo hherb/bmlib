@@ -205,11 +205,21 @@ that directory explicitly.
 label, and a metric test that recomputed it from the record title would be
 measuring the rule against a label the same run could quietly change.
 
-`page_one_lines` is capped at the first 20 lines in reading order — a title,
-its authors and their affiliations, which is where the decision is made — so
-the fixture stays a few hundred KB and carries no article prose. Rows are
-sorted by `(source, id)` so a re-run produces a reviewable diff rather than a
-reshuffle.
+`page_one_lines` is capped at the first **40** lines in reading order — a
+title, its authors and their affiliations, which is where the decision is
+made. The cap was 20 until the first live run showed a line-numbered preprint
+interleaving a number block between every real line, so 20 stored blocks were
+10 lines of document and a title occupied blocks 5 and 7. `page_one_line_count`
+records what page 1 actually held, so a row whose title fell outside the cap
+reads as *inconclusive* rather than scoring as a wrong rejection that never
+happened. Rows are sorted by `(source, id)` so a re-run produces a reviewable
+diff rather than a reshuffle.
+
+That is about 1.7 MB of JSON at 300 rows, which git stores as roughly 360 KB.
+Trimming it would mean trimming evidence: every field is read by the metric
+test — `text` by corroboration, `size`/`bold`/`y` by the font fallback — and
+compact separators save only 22%, so the volume is the data rather than its
+formatting.
 
 ### 7. Ship rule, fixed before the data is seen
 
