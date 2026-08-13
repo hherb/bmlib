@@ -544,3 +544,51 @@ class TestTheRecordTitleIsCleanedBeforeItIsGroundTruth:
         """`&amp;` is an entity too, but `Cancer &amp; Metabolism` is a real
         title fragment — unescaping must not be mistaken for tag-stripping."""
         assert sampler.clean_record_title("Trials &amp; Tribulations") == "Trials & Tribulations"
+
+
+class TestATransientFailureIsNotRememberedForever:
+    """The first live run lost 40 of 153 attempts to local DNS failures and
+    read timeouts — a fault on this machine, not a property of the population.
+
+    Treating those as settled would have carried that fault into the
+    population's permanent record: at the 150-row target the unmeasured share
+    would still have read 40/190 = 21%, over the threshold that makes a
+    population unreportable, however many good rows followed it.
+    """
+
+    def test_an_unmeasured_attempt_is_open_to_a_retry(self) -> None:
+        entries = [
+            {"source": "europepmc", "id": "PMC1", "bucket": "match"},
+            {"unmeasured": True, "source": "europepmc", "id": "PMC2"},
+        ]
+        assert sampler.already_seen(entries) == {"PMC1"}
+
+    def test_a_retry_that_succeeds_stops_counting_as_unmeasured(self) -> None:
+        """Both entries are real attempts on the same article, so counting
+        both would charge the population for a failure that was retried away.
+        """
+        entries = [
+            {"unmeasured": True, "source": "europepmc", "id": "PMC1"},
+            {"source": "europepmc", "id": "PMC1", "bucket": "match"},
+        ]
+        rows, unmeasured = sampler.tally_previous(entries)["europepmc"]
+        assert [row["id"] for row in rows] == ["PMC1"]
+        assert unmeasured == 0
+
+    def test_a_retry_that_fails_again_is_still_counted_once(self) -> None:
+        entries = [
+            {"unmeasured": True, "source": "europepmc", "id": "PMC1"},
+            {"unmeasured": True, "source": "europepmc", "id": "PMC1"},
+        ]
+        assert sampler.tally_previous(entries)["europepmc"] == ([], 1)
+
+    def test_a_failure_never_retried_still_counts(self) -> None:
+        """The property the last-outcome rule must not cost: an id that only
+        ever failed is exactly what the unmeasured share exists to report."""
+        entries = [
+            {"source": "europepmc", "id": "PMC1", "bucket": "match"},
+            {"unmeasured": True, "source": "europepmc", "id": "PMC2"},
+        ]
+        rows, unmeasured = sampler.tally_previous(entries)["europepmc"]
+        assert len(rows) == 1
+        assert unmeasured == 1

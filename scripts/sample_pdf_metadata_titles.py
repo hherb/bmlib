@@ -350,8 +350,44 @@ def append_row(path: Path, row: dict[str, Any]) -> None:
 
 
 def already_seen(rows: list[dict[str, Any]]) -> set[str]:
-    """The identifiers a resumed run must not collect again."""
-    return {str(row["id"]) for row in rows if row.get("id")}
+    """The identifiers a resumed run must not collect again.
+
+    Successes only. An attempt that went *unmeasured* is deliberately left
+    open to a retry: the first live run lost 40 of 153 to local DNS failures
+    and read timeouts, and treating those as settled would have carried a
+    transient fault on this machine into the population's permanent record —
+    the unmeasured share could then never fall below the threshold that makes
+    the whole population unreportable, however many good rows followed.
+
+    Retrying is safe because :func:`tally_previous` counts each identifier's
+    *last* outcome, so an id that fails, is retried and succeeds stops being
+    counted as unmeasured rather than being counted as both.
+    """
+    return {str(row["id"]) for row in rows if row.get("id") and not row.get("unmeasured")}
+
+
+def tally_previous(entries: list[dict[str, Any]]) -> dict[str, tuple[list[dict[str, Any]], int]]:
+    """Sort a journal into ``{source: (rows, unmeasured)}``, last outcome winning.
+
+    One entry per identifier: a journal holds every *attempt*, so an id that
+    went unmeasured and later succeeded appears twice, and counting both would
+    charge the population for a failure that was retried away.
+    """
+    latest: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        identifier = str(entry.get("id", ""))
+        if identifier:
+            latest[identifier] = entry
+
+    populations: dict[str, tuple[list[dict[str, Any]], int]] = {}
+    for entry in latest.values():
+        source = str(entry.get("source", ""))
+        rows, unmeasured = populations.get(source, ([], 0))
+        if entry.get("unmeasured"):
+            populations[source] = (rows, unmeasured + 1)
+        else:
+            populations[source] = ([*rows, entry], unmeasured)
+    return populations
 
 
 def row_from_pdf(
@@ -769,14 +805,7 @@ def main() -> int:
     # Both halves are needed: a resumed run that inherited only its successes
     # would compute the unmeasured share over a denominator missing its
     # failures, and the ERROR rule would pass by having forgotten.
-    populations: dict[str, tuple[list[dict[str, Any]], int]] = {}
-    for entry in previous:
-        source = str(entry.get("source", ""))
-        rows, unmeasured = populations.get(source, ([], 0))
-        if entry.get("unmeasured"):
-            populations[source] = (rows, unmeasured + 1)
-        else:
-            populations[source] = ([*rows, entry], unmeasured)
+    populations = tally_previous(previous)
 
     def merge(source: str, result: tuple[list[dict[str, Any]], int]) -> None:
         rows, unmeasured = populations.get(source, ([], 0))
