@@ -109,19 +109,28 @@ def normalise(text: str) -> str:
 
 #: A title of fewer than this many words is not an article title.
 #:
-#: The backstop's only member, and it earned its place under the rule fixed
-#: before the corpus was collected: over 181 measured PDFs it rejects one junk
-#: title corroboration accepted — ``"Nepal Journ"``, a journal name truncated
-#: mid-word in a running header, which page 1 really does print — and rejects
-#: **no** row whose metadata title matched the record. The shortest genuine
-#: title measured is five words, so the threshold sits well clear of it.
+#: **Retained as defence-in-depth, not as a member the corpus currently
+#: earns.** It was earned by exactly one row of the 235 — ``"Nepal Journ"``, a
+#: journal name truncated mid-word in a running header, which page 1 really
+#: does print — under the membership rule in :func:`looks_like_junk`. Anchored
+#: containment now rejects that row on its own (``journ`` is not ``journal``),
+#: so re-measured over the corpus this threshold rescues **nothing**
+#: corroboration does not already reject, and it would not ship today under
+#: the rule that first admitted it.
+#:
+#: What it still covers, and anchoring does not: a short but *complete* junk
+#: string that page 1 genuinely prints — a footer reading ``"Layout 1"``.
+#: Anchoring only catches junk cut mid-token. The corpus shows no such row, so
+#: that cover is argued rather than measured; it is stated here so the next
+#: maintainer is not misled into thinking the threshold is load-bearing.
 #:
 #: Two things this does not claim. Short article titles exist in the wild
-#: ("Malaria", "Retraction"), and the corpus happens to contain none — so the
-#: false-positive risk here is *bounded* by the corpus rather than disproven.
-#: And a title rejected here is not lost: it falls through to the font-size
-#: heuristic, which for a genuinely short title printed large returns it
-#: anyway. Both are why the threshold is low rather than "tuned".
+#: ("Malaria", "Retraction"), and the corpus contains none — the shortest
+#: genuine title measured is five words — so the false-positive risk here is
+#: *bounded* by the corpus rather than disproven. And a title rejected here is
+#: not lost: it falls through to the font-size heuristic, which for a genuinely
+#: short title printed large returns it anyway. Both are why the threshold is
+#: low rather than "tuned".
 _MIN_TITLE_WORDS = 3
 
 
@@ -143,11 +152,14 @@ def looks_like_junk(title: str, metadata: Mapping[str, Any]) -> bool:
     Args:
         title: The metadata title, stripped.
         metadata: The full metadata dict, so a member may consult ``creator``,
-            ``producer`` or ``file_path``. Unused today: ``creator`` looked
-            like the obvious signal — the measured junk clusters hard by
-            producer, with Appligent AppendPDF Pro accounting for seven of
-            bioRxiv's eight junk titles — but rejecting on the *tool* would
-            reject every good title it also wrote, and it wrote plenty.
+            ``producer`` or ``file_path``. Unused today, and the measurement
+            says why: the junk clusters hard by ``creator`` — 14 of bioRxiv's
+            16 junk titles carry ``creator: "Appligent AppendPDF Pro 5.5"``,
+            and not one row with that value is a good title — but every one of
+            those 14 is *already* rejected by corroboration, so a member on it
+            would clear no row and fails the rule above on its own terms.
+            (``producer`` is not the signal: ``Appligent`` appears in it zero
+            times.)
 
     Returns:
         ``True`` when the title matches a measured junk shape.
@@ -156,26 +168,38 @@ def looks_like_junk(title: str, metadata: Mapping[str, Any]) -> bool:
     return len(normalise(title).split()) < _MIN_TITLE_WORDS
 
 
-def accepted_metadata_title(metadata: Mapping[str, Any], page_one_text: str) -> str | None:
+def accepted_metadata_title(metadata: Mapping[str, Any], page_one_text: str | None) -> str | None:
     """The PDF's own metadata title, where the document corroborates it.
 
     Args:
         metadata: The converter's metadata dict; ``title`` is read, and
             :func:`looks_like_junk` may read its neighbours.
-        page_one_text: Page 1's text, newline-separated. Empty when page 1
-            carries none.
+        page_one_text: Page 1's text, newline-separated. ``""`` when page 1
+            was read and carried no text — an image-only scan. ``None`` when
+            page 1 could not be read *at all*: its extraction raised, or the
+            document has no pages.
 
     Returns:
         The metadata title as the document gives it, stripped of surrounding
         whitespace — or ``None`` when it is blank, holds no word characters,
-        is a known junk shape, or is absent from a page that had text to
-        check it against.
+        is a known junk shape, could not be checked because of a fault, or is
+        absent from a page that had text to check it against.
 
-        A page with **no** text accepts the title: corroboration is then a
-        test that could not be run, not one that failed, and rejecting would
-        blank the title of every image-only scan — where the metadata is the
-        only title signal there is. The backstop still applies there, so an
-        unrunnable check is not a free pass.
+        The two uncheckable cases are deliberately opposite, and the
+        distinction is the one the samplers draw between an unmeasured probe
+        and a failed one:
+
+        * A page **read as empty** accepts the title. Corroboration is then a
+          test that could not be run, and rejecting would blank the title of
+          every image-only scan — where the metadata is the only title signal
+          there is.
+        * A page that **could not be read** rejects it. That is a test that
+          failed, not one that was inapplicable, and a fault is not evidence:
+          it is precisely where there is least reason to trust anything the
+          file claims about itself.
+
+        The backstop applies in both, so an unrunnable check is never a free
+        pass.
     """
     raw = metadata.get("title")
     title = str(raw).strip() if raw else ""
@@ -185,8 +209,37 @@ def accepted_metadata_title(metadata: Mapping[str, Any], page_one_text: str) -> 
         return None
     wanted = normalise(title)
     if not wanted:
+        # Masked twice over, and still load-bearing in one case. The backstop
+        # rejects a zero-word title before this is reached, and anchoring
+        # would reject it after — `f" {''} "` is two spaces, which cannot
+        # occur in a page joined by single ones.
+        #
+        # What neither covers: an empty-normalising title against a page that
+        # is *also* empty. That falls to the unrunnable-check path below,
+        # which hands the title back — so without this guard an image-only
+        # scan whose /Title is "###" gets "###" as its title. The backstop is
+        # documented as revisable and anchoring is a property of one
+        # expression, so this stays rather than resting on either.
+        return None
+    if page_one_text is None:
+        # The check failed rather than being inapplicable — see Returns.
         return None
     page = normalise(_page_text_for_matching(page_one_text))
     if not page:
         return title
-    return title if wanted in page else None
+    # Both sides padded, so containment is anchored to whole tokens.
+    #
+    # `normalise` exists to produce tokens, and a bare `wanted in page`
+    # throws those boundaries away again — matching inside a word, in the
+    # *accepting* direction. Two shapes it let through: a title whose first
+    # token is a suffix of a page token ("art in medicine" corroborated by a
+    # page printing "A heart in medicine"), and — the one that matters — a
+    # `/Title` truncated mid-word, which producers emit routinely and which
+    # was then returned verbatim *and* beat the font-size fallback that would
+    # have recovered the whole line.
+    #
+    # Measured: anchoring changes no verdict on any of the 235 corpus rows,
+    # so this costs nothing already accounted for. The corpus holds no
+    # `truncated` row, so that class is unmeasured rather than shown safe —
+    # which is why the rule is tightened here rather than left to the corpus.
+    return title if f" {wanted} " in f" {page} " else None

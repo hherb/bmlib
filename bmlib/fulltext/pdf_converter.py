@@ -155,6 +155,14 @@ class PDFConverter(ABC):
         Returns:
             A :class:`ConversionResult` with text and metadata.
 
+            ``ConversionResult.title`` is the metadata title **only where the
+            document corroborates it** (issue #56) — callers are told to read
+            it in preference to ``metadata["title"]``, which stays verbatim.
+            A backend that does not perform that check must leave it ``None``
+            rather than copying the raw value in; ``None`` means "no judged
+            title", so a caller may then fall back to the raw dict itself.
+            See :mod:`bmlib.fulltext._titles`.
+
         Raises:
             FileNotFoundError: If the PDF file does not exist.
             ValueError: If the path is not a PDF file.
@@ -328,7 +336,16 @@ class PyMuPDFConverter(PDFConverter):
                 # than from `page_texts[0]`, which omits a page that yielded
                 # nothing and so is page 1 only when page 1 had text — exactly
                 # the case `accepted_metadata_title` treats specially.
-                first_page_text = ""
+                #
+                # `None` until page 1 is actually read, so a page whose
+                # extraction raised — and a document with no pages at all —
+                # stays distinguishable from a page that was read and carried
+                # no text. The rule accepts an uncorroborated title for the
+                # second (an image-only scan, where the metadata is the only
+                # title signal) and rejects for the first: a fault is not
+                # evidence, and `""` for both would have promoted a junk title
+                # on exactly the documents least worth trusting.
+                first_page_text: str | None = None
                 for page_num in range(page_count):
                     try:
                         page_text = doc[page_num].get_text()
@@ -346,6 +363,20 @@ class PyMuPDFConverter(PDFConverter):
                         logger.warning("Page %d extraction failed: %s", page_num + 1, e)
 
             full_text = "\n\n".join(text_parts)
+
+            # Guarded on its own, so a fault in the title rule can only cost
+            # the title. Evaluated inside the `ConversionResult(...)` call it
+            # sat in the outer `try`, where anything it raised returned
+            # `success=False, text=""` — discarding a complete and correct
+            # extraction, and reporting it to the caller as a PDF conversion
+            # failure. The metadata block above is guarded for the same reason.
+            try:
+                judged_title = accepted_metadata_title(metadata, first_page_text)
+            except Exception as e:  # noqa: BLE001 — the title must not cost the text
+                judged_title = None
+                warnings.append(f"Title corroboration failed: {e}")
+                logger.warning("Title corroboration failed for %s: %s", pdf_path, e, exc_info=True)
+
             return ConversionResult(
                 success=True,
                 text=full_text,
@@ -358,7 +389,7 @@ class PyMuPDFConverter(PDFConverter):
                 converter_version=self.version,
                 metadata=metadata,
                 page_texts=list(text_parts),
-                title=accepted_metadata_title(metadata, first_page_text),
+                title=judged_title,
             )
 
         except self._fitz.FileDataError as e:

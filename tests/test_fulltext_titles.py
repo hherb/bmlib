@@ -103,10 +103,35 @@ class TestAMetadataTitleIsBelievedOnlyWhereTheDocumentSaysIt:
         assert accepted_metadata_title({}, _PAGE) is None
 
     def test_a_title_with_no_word_characters_is_rejected(self) -> None:
-        """``normalise`` reduces it to ``""``, and ``""`` is contained in
-        every page — so without this guard the emptiest possible title would
-        be corroborated by any document at all."""
+        """The outcome, whichever guard delivers it. Today that is the
+        backstop — zero words is fewer than three — not the dedicated
+        ``if not wanted``; the test below is the one that isolates it."""
         assert accepted_metadata_title({"title": "### ###"}, _PAGE) is None
+
+    def test_the_empty_normalisation_guard_stands_on_its_own(self, monkeypatch) -> None:
+        """The one case only the ``if not wanted`` guard covers.
+
+        It is masked twice: the backstop rejects a zero-word title first, and
+        anchoring would reject it afterwards anyway — two spaces cannot occur
+        in a page joined by single ones. Neither helps when the *page* is also
+        empty: that takes the unrunnable-check path, which hands the title
+        straight back, so an image-only scan whose ``/Title`` is "###" would
+        be titled "###".
+
+        The backstop is neutralised here so the guard is exercised alone;
+        without that it sits at 0% coverage, reading exactly like the dead
+        code a tidying pass deletes.
+        """
+        import bmlib.fulltext._titles as titles_module
+
+        monkeypatch.setattr(titles_module, "looks_like_junk", lambda title, metadata: False)
+        assert accepted_metadata_title({"title": "### ###"}, "") is None
+        assert accepted_metadata_title({"title": "—•—"}, "   \n  ") is None
+
+    def test_a_punctuation_only_title_is_rejected_on_an_empty_page(self) -> None:
+        """The same case with nothing neutralised — the behaviour a caller
+        actually gets, whichever guard delivers it."""
+        assert accepted_metadata_title({"title": "### ###"}, "") is None
 
     def test_a_page_with_no_text_accepts_the_metadata_title(self) -> None:
         """An image-only scan makes corroboration a test that *cannot be run*,
@@ -119,21 +144,91 @@ class TestAMetadataTitleIsBelievedOnlyWhereTheDocumentSaysIt:
         assert accepted_metadata_title({"title": title}, "   \n \n ") == title
 
 
-class TestTheOneBackstopMemberTheCorpusEarned:
-    """A title of fewer than three words is not an article title.
+class TestCorroborationIsAnchoredToWholeTokens:
+    """Containment compares token sequences, not raw substrings.
 
-    Measured over 181 real PDFs: it rejects one junk title corroboration
-    accepted — "Nepal Journ", a journal name truncated mid-word in a running
-    header, which page 1 really does print — and rejects no row whose metadata
-    title matched its record. The shortest genuine title measured is five
-    words.
+    ``normalise`` exists to reduce both sides to tokens; an unanchored
+    ``in`` test throws those boundaries away and matches inside a word. Every
+    case below is a false *accept* — the direction issue #56 exists to
+    prevent — and each one passed before the padding went in.
     """
 
-    def test_the_measured_survivor_is_rejected(self) -> None:
-        """The row that earned the member its place: junk that page 1 prints,
-        so corroboration alone accepts it."""
+    def test_a_title_starting_inside_a_page_word_is_rejected(self) -> None:
+        """No page token is "art"; the match ran inside "heart"."""
+        page = "A heart in medicine and other essays\nJane Smith"
+        assert accepted_metadata_title({"title": "art in medicine"}, page) is None
+
+    def test_a_title_ending_inside_a_page_word_is_rejected(self) -> None:
+        page = "On the study of foobar\nJane Smith"
+        assert accepted_metadata_title({"title": "the study of foo"}, page) is None
+
+    def test_a_metadata_title_truncated_mid_word_is_rejected(self) -> None:
+        """The shape that matters. Producers truncate ``/Title`` routinely —
+        Word's first-line heuristic, typesetter job tickets capped at 32 or 64
+        characters — and an unanchored test returned the fragment verbatim
+        *and* with full confidence, so it beat the font-size fallback that
+        would have recovered the complete line off the page.
+
+        The corpus holds no such row, so this class is unmeasured rather than
+        shown safe; that is why it is pinned here.
+        """
+        page = "Effects of aspirin on cardiovascular outcomes\nJane Smith"
+        cut = "Effects of aspirin on cardiovascul"
+        assert accepted_metadata_title({"title": cut}, page) is None
+
+    def test_a_whole_token_prefix_of_the_page_title_is_still_accepted(self) -> None:
+        """The negative control: anchoring must reject only *partial tokens*.
+        A title that is a whole-token prefix of what page 1 prints — a
+        subtitle dropped from the metadata — is corroborated exactly as
+        before, and this test fails if the padding is written as an equality
+        or a startswith."""
+        page = "Effects of aspirin on outcomes: a randomised trial\nJane Smith"
+        title = "Effects of aspirin on outcomes"
+        assert accepted_metadata_title({"title": title}, page) == title
+
+    def test_a_title_at_the_very_start_and_end_of_the_page_is_accepted(self) -> None:
+        """The padding must not cost the boundary cases it brackets: a page
+        whose entire text *is* the title has no space on either side of it."""
+        title = "Effects of aspirin on outcomes"
+        assert accepted_metadata_title({"title": title}, title) == title
+
+
+class TestTheOneBackstopMember:
+    """A title of fewer than three words is not an article title.
+
+    Measured over the 235 real PDFs in ``tests/data/pdf_metadata_titles.json``:
+    it rejects no row whose metadata title matched its record, and the shortest
+    genuine title measured is five words.
+
+    It is kept as **defence-in-depth, not as a member the corpus still earns**.
+    The one row that admitted it — "Nepal Journ" — is now rejected by anchored
+    containment on its own, so the threshold rescues nothing corroboration does
+    not already reject. What it still covers is a short but *complete* junk
+    string page 1 prints, which anchoring cannot catch; the corpus shows no
+    such row, so that cover is argued rather than measured. See the constant's
+    own comment in ``bmlib/fulltext/_titles.py``.
+    """
+
+    def test_the_row_that_admitted_the_member_is_rejected(self) -> None:
+        """The row the threshold was earned on. It is now over-determined —
+        anchored containment rejects "Nepal Journ" too, since "journ" is not
+        the whole token "journal" — so this pins the outcome, not the member.
+        ``test_the_backstop_alone_rejects_a_short_printed_title`` below is the
+        one that isolates the member itself.
+        """
         page = "Nepal Journal of Medical Sciences\nEffects of aspirin on outcomes\nJane Smith"
         assert accepted_metadata_title({"title": "Nepal Journ"}, page) is None
+
+    def test_the_backstop_alone_rejects_a_short_printed_title(self) -> None:
+        """The cover anchoring does *not* provide, and the only case that
+        isolates this member: a short junk string page 1 prints in full, as
+        whole tokens. Corroboration accepts it — the page really does say
+        "Layout 1" — so the threshold is the only thing rejecting it.
+
+        Delete ``_MIN_TITLE_WORDS`` and this is the test that fails.
+        """
+        page = "Layout 1\nEffects of aspirin on outcomes\nJane Smith"
+        assert accepted_metadata_title({"title": "Layout 1"}, page) is None
 
     def test_a_bare_job_number_is_junk(self) -> None:
         assert looks_like_junk("52561798", {}) is True
