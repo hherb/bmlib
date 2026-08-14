@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from typing import Any
 
 from bmlib.llm.data_types import (
     BatchEmbeddingResponse,
@@ -230,7 +231,10 @@ class LLMClient:
         model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
-        **kwargs: object,
+        # `Any` rather than `object`: this bag is splatted into `chat()`'s
+        # typed signature below, and `object` would make that call
+        # uncheckable rather than checked (see `providers.get_provider`).
+        **kwargs: Any,
     ) -> LLMResponse:
         """Convenience wrapper: generate a response from a single prompt.
 
@@ -272,7 +276,9 @@ class LLMClient:
         texts: list[str],
         model: str | None = None,
         max_batch_size: int | None = None,
-        **kwargs: object,
+        # `Any` rather than `object`: splatted into `embed_batch()`'s typed
+        # signature below (see `providers.get_provider`).
+        **kwargs: Any,
     ) -> BatchEmbeddingResponse:
         """Generate embedding vectors for *texts* in few provider requests.
 

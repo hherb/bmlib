@@ -60,7 +60,7 @@ if str(_PATH.parent) not in sys.path:
     sys.path.insert(0, str(_PATH.parent))
 _spec.loader.exec_module(sampler)
 
-_HAS_FITZ = importlib.util.find_spec("fitz") is not None
+_HAS_PYMUPDF = importlib.util.find_spec("pymupdf") is not None
 
 _RECORD_TITLE = "Effects of aspirin on cardiovascular outcomes"
 _BODY_SIZE = 10
@@ -133,7 +133,7 @@ def _make_pdf_with_page_one_lines(count: int, first_line: str | None = None) -> 
     The other fixture emits 15, comfortably inside ``PAGE_ONE_LINES_KEPT``, so
     nothing built on it can exercise the cap or the truncation flag.
     """
-    import fitz
+    import pymupdf
 
     lines = [
         first_line if (i == 0 and first_line is not None) else f"Page one line {i}."
@@ -142,7 +142,7 @@ def _make_pdf_with_page_one_lines(count: int, first_line: str | None = None) -> 
     # Wide enough for the longest line to fit: `insert_text` clips at the page
     # edge, which would truncate by geometry and hide the cap under test.
     width = max(612.0, 40 + max(len(line) for line in lines) * _BODY_SIZE * 0.7)
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=width, height=max(792, 40 + count * 12))
     for i, text in enumerate(lines):
         page.insert_text((36, 30 + i * 12), text, fontsize=_BODY_SIZE)
@@ -154,9 +154,9 @@ def _make_pdf_with_page_one_lines(count: int, first_line: str | None = None) -> 
 
 def _make_pdf(metadata_title: str) -> bytes:
     """A two-page PDF: a large-font title line, body text, and metadata."""
-    import fitz
+    import pymupdf
 
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page()
     page.insert_text((72, 72), "Effects of aspirin on cardiovascular", fontsize=_TITLE_SIZE)
     page.insert_text((72, 96), "outcomes", fontsize=_TITLE_SIZE)
@@ -309,7 +309,7 @@ class TestAnUnmeasuredPopulationPrintsErrorNotAZero:
         ]
 
 
-@pytest.mark.skipif(not _HAS_FITZ, reason="PyMuPDF not installed")
+@pytest.mark.skipif(not _HAS_PYMUPDF, reason="PyMuPDF not installed")
 class TestTheFixtureRowCarriesWhatTheMetricTestNeeds:
     def test_a_row_carries_the_document_median_not_the_title_pages(self, tmp_path: Path) -> None:
         """The metric test re-runs _extract_title, whose _TITLE_SIZE_RATIO
@@ -561,7 +561,7 @@ class TestOnlyURLsBMLibWouldFetchEnterAPopulation:
         assert self._run("https://e/a.pdf?pdf=render", tmp_path) == ["https://e/a.pdf?pdf=render"]
 
 
-@pytest.mark.skipif(not _HAS_FITZ, reason="PyMuPDF not installed")
+@pytest.mark.skipif(not _HAS_PYMUPDF, reason="PyMuPDF not installed")
 class TestAProbeThatCouldNotBeMadeIsNeverAFinding:
     """``process_candidates`` is the only place a failed fetch becomes an
     unmeasured count *and* a journal entry, and every ``main()`` test above
@@ -882,7 +882,7 @@ class TestAResumedRunTopsUpRatherThanRestarting:
         assert any("ERROR" in line for line in printed)
 
 
-@pytest.mark.skipif(not _HAS_FITZ, reason="PyMuPDF not installed")
+@pytest.mark.skipif(not _HAS_PYMUPDF, reason="PyMuPDF not installed")
 class TestTheRecordTitleIsCleanedBeforeItIsGroundTruth:
     """Europe PMC returns titles with their markup **escaped**, so a title
     reading `<i>MET</i> alterations` arrives as `&lt;i&gt;MET&lt;/i&gt;

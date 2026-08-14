@@ -62,8 +62,21 @@ publications = ["httpx>=0.25"]
 # which is separately useful and would otherwise drag a ~20 MB binary wheel
 # onto anyone who only wants JATS retrieval.
 fulltext = ["httpx>=0.25"]
-pdf = ["pymupdf>=1.23"]
-dev = ["pytest>=7.0", "pytest-cov", "ruff"]
+# Floor at 1.28.2 (current at the time of writing) so `import pymupdf` is
+# both available and typed. The type reason alone justifies only 1.27.1 —
+# the release that added `py.typed` — with the module name itself arriving
+# in 1.24.3; that is the number to dial back to if a downstream needs an
+# older PyMuPDF. Below 1.27.1 the import costs a permanent
+# `# type: ignore[import-untyped]` that switches off checking for the whole
+# of `pdf_converter.py`.
+pdf = ["pymupdf>=1.28.2"]
+# mypy is pinned for the same reason ruff is (see .github/workflows/ci.yml):
+# a release with new checks would otherwise fail CI on files a PR never
+# touched. `psycopg2` is the one extra shipping no `py.typed`, so
+# `types-psycopg2` supplies the only stubs bmlib needs from typeshed; every
+# other extra carries its own marker, which is why mypy must run in an
+# environment that actually has the extras installed.
+dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy==2.3.0", "types-psycopg2"]
 # `all` deliberately excludes `dev`: it is what a consumer installs to get
 # every runtime feature, and it should not drag pytest and ruff into their
 # environment. For a full development install use `.[all,dev]`.
@@ -93,6 +106,31 @@ select = ["E", "F", "I", "N", "W", "UP"]
 "bmlib/fulltext/jats_parser.py" = ["N802"]
 # The `StubProvider` pytest fixture returns a class, so PascalCase is intentional.
 "tests/test_openai_compat.py" = ["N802", "N803"]
+
+# bmlib ships `py.typed` (see [tool.setuptools.package-data] above), which
+# tells every downstream that these annotations are meant to be relied on.
+# This is what checks that claim. Scope is the shipped package only — the
+# promise is about what is installed, not about `tests/` or `scripts/`.
+#
+# No `python_version`: mypy then checks against whichever interpreter runs
+# it, which is what makes CI's 3.11/3.12/3.13 matrix mean something.
+[tool.mypy]
+files = ["bmlib"]
+# An unannotated function is skipped in silence at mypy's defaults, so
+# without this the gate would pass a file carrying no annotations at all —
+# exactly the hole `py.typed` denies.
+disallow_untyped_defs = true
+# Keeps every `# type: ignore` honest: one that stops suppressing anything
+# is reported rather than left behind as decoration.
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+
+# No per-module `ignore_missing_imports` overrides. The one untyped import
+# bmlib has (`fitz`) carries an inline `# type: ignore[import-untyped]`
+# instead: `warn_unused_ignores` reports that the day PyMuPDF ships a
+# `py.typed`, whereas a stale override here would go on suppressing
+# nothing, silently.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

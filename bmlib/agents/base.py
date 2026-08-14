@@ -114,7 +114,9 @@ class BaseAgent:
         json_mode: bool = False,
         temperature: float | None = None,
         max_tokens: int | None = None,
-        **kwargs: object,
+        # `Any` rather than `object`: splatted into `LLMClient.chat()`'s
+        # typed signature below (see `llm.providers.get_provider`).
+        **kwargs: Any,
     ) -> LLMResponse:
         """Send a chat request through the LLM client.
 

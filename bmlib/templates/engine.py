@@ -27,6 +27,7 @@ This lets users override any prompt without touching installed code.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -50,7 +51,7 @@ class _FallbackLoader(BaseLoader):
         self,
         environment: Environment,
         template: str,
-    ) -> tuple[str, str, callable]:
+    ) -> tuple[str, str, Callable[[], bool]]:
         for directory in (self.user_dir, self.default_dir):
             if directory is None:
                 continue

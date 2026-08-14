@@ -488,6 +488,15 @@ def _esearch(
     """Run an ESearch query and return (count, web_env, query_key).
 
     Returns (0, None, None) when the search yields no results.
+
+    Raises:
+        ValueError: If the response carries no usable ``<Count>``. NCBI
+            answers a bad request — an unknown db, an invalid term, a
+            throttled key — with HTTP 200 and an ``<ERROR>`` document that
+            has no ``<Count>`` at all, so treating an absent element as
+            zero would report a rejected search as a day with no
+            publications. Raised rather than returned so the caller's
+            existing handler turns it into a ``failed`` fetch.
     """
     date_str = target_date.strftime("%Y/%m/%d")
     params: dict[str, str | int] = {
@@ -503,7 +512,18 @@ def _esearch(
     response.raise_for_status()
 
     root = ET.fromstring(response.text)
-    count = int(_text(root.find("Count")) or "0")
+    # `_text()` returns None both for an absent element and for an empty one,
+    # so `or "0"` would collapse "NCBI rejected the search" into "the day was
+    # quiet" — the same silent failure the WebEnv/QueryKey guard below exists
+    # to prevent, reached one step earlier and past that guard, since an
+    # <ERROR> document carries no session either.
+    raw_count = _text(root.find("Count"))
+    if raw_count is None or not raw_count.strip().isdigit():
+        error = _text(root.find("ERROR")) or _text(root.find("ErrorList"))
+        raise ValueError(
+            f"esearch returned no usable <Count>{f' (NCBI said: {error})' if error else ''}"
+        )
+    count = int(raw_count)
     web_env = _text(root.find("WebEnv"))
     query_key = _text(root.find("QueryKey"))
 
@@ -591,6 +611,24 @@ def fetch_pubmed(
             date=date_str,
             record_count=0,
             status="completed",
+        )
+
+    if web_env is None or query_key is None:
+        # ESearch is sent `usehistory=y` and every efetch page reads the
+        # session back. Without it each page asks NCBI for `WebEnv=` (httpx
+        # encodes `None` as an empty parameter) and gets a document holding
+        # no `PubmedArticle`, so an unguarded fetch walks the entire count
+        # in useless requests — 10 of them for a 5,000-record day — and then
+        # reports `completed` with 0 records: a broken fetch wearing the
+        # shape of a quiet day.
+        message = f"esearch returned count={count} without a history session (WebEnv/QueryKey)"
+        logger.error("%s for %s", message, date_str)
+        return FetchResult(
+            source="pubmed",
+            date=date_str,
+            record_count=0,
+            status="failed",
+            error=message,
         )
 
     logger.info("PubMed esearch: %d records for %s", count, date_str)

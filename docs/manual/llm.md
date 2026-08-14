@@ -371,7 +371,7 @@ def generate(
     model: str | None = None,
     temperature: float = 0.7,
     max_tokens: int = 4096,
-    **kwargs: object,
+    **kwargs: Any,
 ) -> LLMResponse
 ```
 
@@ -466,7 +466,7 @@ def generate(
     model: str | None = None,
     temperature: float = 0.7,
     max_tokens: int = 4096,
-    **kwargs: object,
+    **kwargs: Any,
 ) -> LLMResponse
 ```
 
@@ -517,7 +517,7 @@ def embed_batch(
     texts: list[str],
     model: str | None = None,
     max_batch_size: int | None = None,
-    **kwargs: object,
+    **kwargs: Any,
 ) -> BatchEmbeddingResponse
 ```
 
@@ -530,7 +530,7 @@ Generate embedding vectors for many texts, sent to the provider **in batches** r
 | `texts` | `list[str]` | *(required)* | The texts to embed. An empty list returns an empty response without contacting the provider. |
 | `model` | `str \| None` | `None` | Model string (`"provider:model_name"` format). Defaults to the default provider's **chat** default model — pass an embedding-specific model explicitly. |
 | `max_batch_size` | `int \| None` | `None` | Maximum texts per provider request. `None` lets the provider choose its own bound (Ollama: `DEFAULT_EMBED_BATCH_SIZE`, 256). Pass `len(texts)` to force a single round-trip. Must be `>= 1`. |
-| `**kwargs` | `object` | | Extra provider-specific arguments. Ollama forwards these verbatim to the SDK's `embed()` (`truncate`, `options`, `keep_alive`). |
+| `**kwargs` | `Any` | | Extra provider-specific arguments. Ollama forwards these verbatim to the SDK's `embed()` (`truncate`, `options`, `keep_alive`). |
 
 **Returns:** `BatchEmbeddingResponse` with one vector per input text, in input order. `input_tokens` is summed across every request made.
 
@@ -1642,7 +1642,7 @@ Return the names of all registered providers, registering the built-ins first if
 ### `get_provider`
 
 ```python
-def get_provider(name: str, **kwargs: object) -> BaseProvider
+def get_provider(name: str, **kwargs: Any) -> BaseProvider
 ```
 
 Instantiate and return a provider by name, forwarding `**kwargs` to its constructor.
