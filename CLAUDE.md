@@ -32,7 +32,7 @@ uv pip install -e ".[all,dev]"
 | transparency   | httpx>=0.25           | Transparency analysis API calls        |
 | publications   | httpx>=0.25           | Publication fetcher API calls           |
 | fulltext       | httpx>=0.25           | `FullTextService` retrieval; nothing else in `fulltext/` needs it |
-| pdf            | pymupdf>=1.23         | PDF → text conversion in `fulltext/`   |
+| pdf            | pymupdf>=1.28.2       | PDF → text conversion in `fulltext/`   |
 | dev            | pytest>=7.0, pytest-cov, ruff, mypy, types-psycopg2 | Development and testing tools  |
 | all            | All runtime extras    | Everything except `dev`                |
 
@@ -272,7 +272,7 @@ Measure this with **one fresh interpreter per module**. A single process leaves 
 
 Two rules on the guard itself, both settled by review of #64:
 
-- **Return the module; do not store it on the instance.** `_require_httpx()` imports and returns; `FullTextService.__init__` calls it for the fail-fast check and discards the result, and `_http_get` calls it again where the client is built. A module object cannot be pickled, so `self._httpx` silently cost the ability to hand a configured service to a `ProcessPoolExecutor` — and reading the module back as instance state turns any object that reached `_http_get` without running `__init__` into an `AttributeError` that the tier chain swallows at DEBUG. After the first call the import is a `sys.modules` lookup, on a path that then makes a network request. `PyMuPDFConverter.__init__` still stores `self._fitz`: it was never picklable, so nothing there regressed.
+- **Return the module; do not store it on the instance.** `_require_httpx()` imports and returns; `FullTextService.__init__` calls it for the fail-fast check and discards the result, and `_http_get` calls it again where the client is built. A module object cannot be pickled, so `self._httpx` silently cost the ability to hand a configured service to a `ProcessPoolExecutor` — and reading the module back as instance state turns any object that reached `_http_get` without running `__init__` into an `AttributeError` that the tier chain swallows at DEBUG. After the first call the import is a `sys.modules` lookup, on a path that then makes a network request. `PyMuPDFConverter.__init__` still stores `self._pymupdf`: it was never picklable, so nothing there regressed.
 - **Report what was raised; do not assert the cause.** `except ImportError` also catches the `ModuleNotFoundError` a *present* extra raises for its own missing dependency, and an `ImportError` from a version skew inside it. "Not installed" then prescribes a `pip install` that answers "Requirement already satisfied" and changes nothing, so the reader runs it, sees success, retries and hits the identical error. Interpolate the caught exception into the message, as `_attach_pdf_text` already does for PyMuPDF.
 
 A PEP 562 `__getattr__` should also **bind what it resolves** into `globals()` — PEP 562's own recommendation, so repeat access skips the function — and its companion `__dir__` must return `sorted(set(__all__) | set(globals()))`, not `sorted(__all__)`. Returning `__all__` alone trades one omission for a larger one: the submodules and every dunder vanish from `dir()`, breaking REPL completion for `bmlib.fulltext.models` and shrinking `inspect.getmembers()`.
@@ -352,7 +352,8 @@ guarantee `py.typed` makes to downstreams. It is pinned in the `dev` extra
 for the reason ruff is pinned in `ci.yml`.
 
 **Run it in the dev venv, never against a bare interpreter.** Every extra
-except PyMuPDF ships its own `py.typed`, so mypy resolves real types only
+except psycopg2 ships its own `py.typed` — psycopg2 is covered by
+`types-psycopg2` in the `dev` extra — so mypy resolves real types only
 where the packages are installed. Run without them — which `uv run mypy`
 did before mypy was a declared dependency, silently resolving an isolated
 environment — and it reports the optional imports *and `jinja2`, a core

@@ -74,16 +74,34 @@ must not be re-done.
 ## Type checking (#81)
 
 - **`**kwargs: object` and `**kwargs: Any` coexist on purpose — do not make
-  the 22 sites uniform.** The four bags that are *splatted into a typed
-  signature* are `Any`; the eighteen that are only inspected, or forwarded to
-  something untyped, keep `object`. This looks backwards, because `object` is
-  the stricter annotation — and that is exactly why it cannot survive the
-  splat: a parameter declared `str | None` cannot accept an `object`, so
-  `**dict[str, object]` makes the forwarding call *uncheckable* rather than
-  checked. It produced nine of the errors #81 fixed. The rule is written out
-  at `llm/providers/get_provider()`, which the other three sites point back
-  to. Widening the remaining eighteen would weaken annotations that cost
-  nothing today; narrowing the four re-breaks the calls.
+  the 25 sites uniform.** Seven bags are `Any`, eighteen are `object`. The
+  trigger is narrower than "is it splatted?", and getting it wrong in either
+  direction is why this entry exists: a bag needs `Any` when it is splatted
+  into a callee that still has **a typed named parameter the call does not
+  itself fill**. `object` is the stricter annotation and cannot survive that
+  case — a parameter declared `str | None` will not accept an `object`, so
+  `**dict[str, object]` makes the forwarding call *unchecked* rather than
+  checked. It produced nine of the errors #81 fixed.
+
+  "Splatted" alone does not decide it. `LLMClient.chat` and `LLMClient.embed`
+  are both splatted into typed signatures and both correctly keep `object`,
+  because they pass every named parameter of the callee explicitly and the
+  residual can only land on the callee's own `**kwargs: object`. A reader
+  applying the looser rule would "fix" two sites that are already right.
+
+  The seven: `agents/base.py`, `llm/client.py` (×2, `generate` and
+  `embed_batch`), `llm/providers/get_provider()` — where the rule is written
+  out and which the other three point back to — plus `providers/ollama.py`
+  (×3, at the two `ProviderCapabilities`/`ModelMetadata` subclass
+  constructors and `embed`), which predate #81 and obey the same rule.
+
+  What the widening does **not** cost is the boundary: `object` already
+  accepts every keyword argument a caller can pass, so the two annotations
+  are indistinguishable from outside. The loss is confined to the body, and
+  all seven bodies only forward. That is what makes keeping the other
+  eighteen at `object` worth doing rather than merely tidy — and why
+  widening them would weaken annotations that cost nothing today, while
+  narrowing the seven re-breaks the calls.
 - **`_reject_unusable_stream()`'s `isinstance(handle, io.TextIOBase)` is
   unreachable per the annotation, and stays.** Nothing can subclass both
   `IO[bytes]` and `TextIOBase`, so `warn_unreachable` calls the body dead. The
@@ -96,16 +114,45 @@ must not be re-done.
 - **Deliberately-unchecked code takes an inline `# type: ignore[code]`, never
   a per-module `ignore_missing_imports` override.** `warn_unused_ignores`
   reports an inline ignore the day it stops suppressing anything; it can never
-  report a stale override. bmlib's one untyped import (`fitz` — PyMuPDF ships
-  no marker, and the typed `import pymupdf` spelling postdates the
-  `pymupdf>=1.23` floor) is inline for that reason. #81 removed a stale
-  `# type: ignore[arg-type]` in `retractions.py` that this setting caught.
+  report a stale override. #81 removed a stale `# type: ignore[arg-type]` in
+  `retractions.py` that this setting caught. bmlib now has **no untyped
+  imports at all** — see the next bullet.
+- **`pdf_converter.py` imports `pymupdf`, not the legacy `fitz` alias, and
+  the `pdf` extra floors at a release that ships `py.typed`.** PyMuPDF added
+  the marker in 1.27.1, but `setup.py` writes it only into the `pymupdf`
+  package; the three modules it copies into `fitz/` are never covered. So
+  `import fitz` costs a `# type: ignore[import-untyped]` that **no PyMuPDF
+  release can ever retire**, and that ignore switches off type checking for
+  the whole module — verified: under the alias, a call to a non-existent
+  PyMuPDF attribute is not reported; under `import pymupdf` it is an
+  `attr-defined` error. This is the case the previous bullet's convention
+  cannot handle, because the ignore would never go stale and so would never
+  be revisited. The floor is `>=1.28.2` (current when set); `>=1.27.1` is
+  the minimum the type reason justifies, with the module name itself
+  arriving in 1.24.3.
+- **`fetch_pubmed()`'s `count == 0` return stays *ahead* of the
+  history-session guard, and that is only safe because `_esearch()` refuses
+  an absent `<Count>`.** With `usehistory=y` NCBI returns a session even for
+  a zero-hit day, so an empty day legitimately needs no session and must
+  report `completed` — moving the guard first turns every quiet day into a
+  `failed` fetch that `sync` retries forever. But the ordering means
+  anything that reaches `count == 0` bypasses the guard entirely, which is
+  how a rejected search used to sync as a quiet day: `_text()` returns
+  `None` for an absent element and `or "0"` made an `<ERROR>` document a
+  count of zero. The two decisions hold each other up — keep the ordering,
+  keep the refusal, and do not collapse the refusal back into `or "0"`.
+  Pinned by `test_a_rejected_search_is_not_reported_as_a_quiet_day` and
+  `test_a_genuinely_empty_day_still_completes`; both verified by mutation.
 - **mypy must run in the dev venv, and `uv run mypy` takes no arguments.**
-  Every extra but PyMuPDF ships its own `py.typed`, so against a bare
-  interpreter mypy reports the optional imports *and `jinja2`, a core
-  dependency*, as missing stubs. #81 opened claiming 24 errors in 15 files
-  because of exactly this; the real figure was 22 in 11. Scope and settings
-  live in `pyproject.toml` so the bare command is what CI's `types` job runs.
+  Every extra but psycopg2 ships its own `py.typed` — that one is covered by
+  `types-psycopg2` in the `dev` extra — so against a bare interpreter mypy
+  reports the optional imports *and `jinja2`, a core dependency*, as missing
+  stubs. #81 opened claiming 24 errors in 15 files because of exactly this.
+  Installing the extras took it to 22 in 11; adding `types-psycopg2`, which
+  #81 also did, retires the two `psycopg2` errors and leaves **20 in 10** —
+  which is what re-running the gate against `main` in a `.[all,dev]` venv
+  reproduces today. Scope and settings live in `pyproject.toml` so the bare
+  command is what CI's `types` job runs.
 
 ## Positional stability
 

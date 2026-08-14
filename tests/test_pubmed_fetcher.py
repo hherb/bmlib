@@ -22,6 +22,8 @@ import xml.etree.ElementTree as ET
 from datetime import date
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from bmlib.publications.fetchers.pubmed import (
     EFETCH_URL,
     ESEARCH_URL,
@@ -519,10 +521,96 @@ class TestFetchPubmed:
 
         assert result.status == "failed"
         assert result.record_count == 0
-        assert "WebEnv" in result.error and "QueryKey" in result.error
+        # "history session" appears once in bmlib and only on this line; the
+        # field names alone would not discriminate, since a real efetch HTTP
+        # error embeds `WebEnv=` in the URL it quotes back.
+        assert "history session" in result.error
         on_record.assert_not_called()
         # esearch only — not one efetch page was attempted.
         assert client.get.call_count == 1
+
+    @pytest.mark.parametrize(
+        "session_xml,present",
+        [
+            ("<WebEnv>MCID_abc</WebEnv>", "WebEnv"),
+            ("<QueryKey>1</QueryKey>", "QueryKey"),
+        ],
+    )
+    def test_half_a_history_session_fails_like_none_at_all(self, session_xml, present):
+        """One of WebEnv/QueryKey is as unusable as neither.
+
+        ``_efetch_page`` needs both, so a response carrying only one is the
+        same broken fetch. Pins the ``or`` in the guard: with ``and`` in its
+        place both of these walk the full count in useless requests and
+        report ``completed`` with 0 records, and nothing else in the suite
+        notices.
+        """
+        client = MagicMock()
+        esearch_response = MagicMock()
+        esearch_response.text = f"<eSearchResult><Count>5000</Count>{session_xml}</eSearchResult>"
+        client.get.return_value = esearch_response
+
+        on_record = MagicMock()
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 1), on_record=on_record)
+
+        assert result.status == "failed"
+        assert result.record_count == 0
+        assert "history session" in result.error
+        on_record.assert_not_called()
+        assert client.get.call_count == 1
+        # The half that *was* present is not what made it fail.
+        assert present in esearch_response.text
+
+    def test_a_rejected_search_is_not_reported_as_a_quiet_day(self):
+        """An <ERROR> document with no <Count> is a failed fetch, not zero records.
+
+        NCBI answers a bad request — unknown db, invalid term, throttled
+        key — with HTTP 200 and an ``<ERROR>`` body carrying no ``<Count>``.
+        Reading an absent element as 0 returns ``completed`` at the
+        ``count == 0`` branch, which is *before* the history-session guard
+        and so slips past it: the same "broken fetch wearing the shape of a
+        quiet day", one step earlier. `sync` then stores the day as done and
+        never retries it.
+        """
+        client = MagicMock()
+        esearch_response = MagicMock()
+        esearch_response.text = (
+            "<eSearchResult><ERROR>Invalid db name: pubmedd</ERROR></eSearchResult>"
+        )
+        client.get.return_value = esearch_response
+
+        on_record = MagicMock()
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=on_record)
+
+        assert result.status == "failed"
+        assert result.record_count == 0
+        assert "<Count>" in result.error
+        # NCBI's own words are carried through, not swallowed.
+        assert "Invalid db name: pubmedd" in result.error
+        on_record.assert_not_called()
+        assert client.get.call_count == 1
+
+    def test_a_genuinely_empty_day_still_completes(self):
+        """`<Count>0</Count>` is a quiet day, not a failure.
+
+        The counterpart to the test above: the fix distinguishes an *absent*
+        count from a parsed zero, so a real zero must keep completing — and
+        must not be pushed into the history-session guard, which would turn
+        every empty day into a failed fetch that `sync` retries forever.
+        """
+        client = MagicMock()
+        esearch_response = MagicMock()
+        esearch_response.text = "<eSearchResult><Count>0</Count></eSearchResult>"
+        client.get.return_value = esearch_response
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=MagicMock())
+
+        assert result.status == "completed"
+        assert result.record_count == 0
+        assert result.error is None
 
     def test_efetch_error_returns_partial_result(self):
         """If efetch raises an exception, return error with partial count."""

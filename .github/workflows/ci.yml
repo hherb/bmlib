@@ -59,11 +59,12 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - name: Install package with all extras
-        # `[all,dev]`, not mypy alone: every extra but PyMuPDF ships its own
-        # `py.typed`, so mypy resolves real types only in an environment that
-        # actually has them. Run against a bare interpreter it reports the
-        # optional imports — and `jinja2`, a *core* dependency — as missing
-        # stubs, which is noise that hides the findings underneath.
+        # `[all,dev]`, not mypy alone: every extra but psycopg2 ships its own
+        # `py.typed` (and `types-psycopg2`, in `dev`, covers that one), so
+        # mypy resolves real types only in an environment that actually has
+        # them. Run against a bare interpreter it reports the optional
+        # imports — and `jinja2`, a *core* dependency — as missing stubs,
+        # which is noise that hides the findings underneath.
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[all,dev]"

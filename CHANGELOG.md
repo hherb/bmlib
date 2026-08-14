@@ -21,11 +21,11 @@ All notable changes to bmlib are documented here. The format is based on
   unannotated function is skipped in silence, so the gate would pass a file
   carrying no annotations at all, which is the exact hole `py.typed` denies
   — plus `warn_unused_ignores`, `warn_redundant_casts` and
-  `warn_unreachable`. The one genuinely untyped import (`fitz`; PyMuPDF
-  ships no marker and `import pymupdf` postdates bmlib's `>=1.23` floor)
-  carries an inline `# type: ignore[import-untyped]` rather than a
+  `warn_unreachable`. Anything deliberately unchecked carries an inline
+  `# type: ignore[code]` with its reason at the site rather than a
   per-module override, because `warn_unused_ignores` reports the inline
-  form the day it goes stale and would never report the override.
+  form the day it goes stale and would never report the override. bmlib
+  has no untyped imports left — see the `pymupdf` entry under *Changed*.
 
 ### Fixed
 
@@ -40,18 +40,36 @@ All notable changes to bmlib are documented here. The format is based on
   fetch wearing the shape of a quiet day, which a caller cannot tell from
   one. It now returns `failed`, naming what was missing, before any page is
   requested. Found by the type gate above, which is what the gate is for.
+- **A search NCBI rejected synced as a day with no publications.** The same
+  failure as above, one step earlier and past that guard. `_esearch()` read
+  the count as `int(_text(root.find("Count")) or "0")`, and `_text()`
+  returns `None` for an absent element as well as an empty one — so an
+  NCBI `<ERROR>` document (unknown db, invalid term, throttled key: all
+  answered with HTTP 200 and no `<Count>`) became a count of 0 and returned
+  `completed` at the `count == 0` branch, which sits *before* the
+  history-session guard. `sync` then wrote the day to `download_days` as
+  done and never retried it, so the records were permanently absent with
+  nothing logged above INFO. An absent or non-numeric `<Count>` now raises,
+  which the existing handler turns into `failed`, and NCBI's own error text
+  is carried into the message. A genuine `<Count>0</Count>` still completes.
 
 ### Changed
 
-- **Thirteen annotation defects fixed** alongside the gate, none of which
-  changes behaviour. Nine were one decision: a `**kwargs: object` bag
-  splatted into a typed signature cannot be checked — `object` is the
-  stricter annotation and that is precisely why it fails, since a parameter
-  declared `str | None` cannot accept an `object` — so the four bags that
-  are splatted become `Any` while the eighteen that are only inspected or
-  forwarded untyped keep `object`. `_FallbackLoader.get_source()` declared
-  `tuple[str, str, callable]`, naming the builtin *function*, so that
-  element asserted nothing; it is jinja2's `Callable[[], bool]`.
+- **Eighteen annotation errors fixed** alongside the gate, none of which
+  changes behaviour. The gate reports 20 errors in 10 files against the
+  previous release; two are the PubMed defect above, and these are the rest.
+  Nine were one decision: a `**kwargs: object` bag splatted into a callee
+  that still has a typed named parameter *the call does not itself fill*
+  cannot be checked — `object` is the stricter annotation and that is
+  precisely why it fails, since a parameter declared `str | None` will not
+  accept an `object`. Four such bags become `Any`; the eighteen that fill
+  every named parameter, or are only inspected or forwarded untyped, keep
+  `object`. (Being splatted is not on its own the trigger: `LLMClient.chat`
+  and `LLMClient.embed` are splatted and correctly stay `object`.)
+  `_FallbackLoader.get_source()` declared `tuple[str, str, callable]`,
+  naming the builtin *function*, so that element asserted nothing; it is
+  narrower than jinja2's `Optional[Callable[[], bool]]`, since this loader
+  always supplies both, and is now spelled `Callable[[], bool]`.
   `QualityTier.__lt__` and a helper in `BiasRisk.from_dict` carried no
   annotations at all, and `__lt__` now narrows with `isinstance` rather
   than `self.__class__ is other.__class__` — identical on every possible
@@ -60,7 +78,21 @@ All notable changes to bmlib are documented here. The format is based on
   `while cursor is not None` read as always-true and the return below it
   dead), a redeclared `result` in `text_utils.py` is annotated once, and a
   stale `# type: ignore[arg-type]` in `retractions.py` that `hasattr`
-  narrowing had made unnecessary is gone.
+  narrowing had made unnecessary is gone. The remaining two are the untyped
+  `fitz` import, fixed by the `pymupdf` change below rather than suppressed,
+  and `_reject_unusable_stream()`'s `TextIOBase` guard, which is
+  `# type: ignore[unreachable]` with its reason at the site — the annotation
+  is a request and the guard exists for the caller who ignores it.
+- **`bmlib[pdf]` now requires `pymupdf>=1.28.2`, and the converter imports
+  `pymupdf` rather than the legacy `fitz` alias.** PyMuPDF added `py.typed`
+  in 1.27.1, but writes it only into the `pymupdf` package — the modules
+  copied into `fitz/` are never covered — so importing the alias costs a
+  `# type: ignore[import-untyped]` that no future release can retire, and
+  that ignore switches off type checking for all of `pdf_converter.py`.
+  Measured: under the alias mypy does not report a call to a non-existent
+  PyMuPDF attribute; under `import pymupdf` it is an `attr-defined` error.
+  `>=1.27.1` is the minimum the type reason justifies (the module name
+  arrived in 1.24.3); the floor is set at the then-current release instead.
 
 ## [0.9.1] — 2026-08-13
 

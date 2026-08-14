@@ -242,7 +242,7 @@ def _line_to_block(raw_line: dict[str, Any], page_num: int) -> TextBlock | None:
 
 
 class PyMuPDFConverter(PDFConverter):
-    """PDF converter backed by PyMuPDF (``fitz``).
+    """PDF converter backed by PyMuPDF (``pymupdf``).
 
     Prioritises reliability and completeness over formatting. Requires the
     optional ``pymupdf`` dependency.
@@ -251,17 +251,21 @@ class PyMuPDFConverter(PDFConverter):
     def __init__(self) -> None:
         """Load PyMuPDF, raising a helpful ImportError if it is missing."""
         try:
-            # PyMuPDF ships no `py.typed`. The typed `import pymupdf`
-            # spelling exists only from 1.24.3 and bmlib supports
-            # `pymupdf>=1.23`, so `fitz` has to stay. `warn_unused_ignores`
-            # reports this line the day PyMuPDF ships the marker.
-            import fitz  # type: ignore[import-untyped]
+            # `pymupdf`, not the legacy `fitz` alias: the `py.typed` marker
+            # PyMuPDF added in 1.27.1 is written only into this package, and
+            # `setup.py` copies three untyped modules into `fitz/` without
+            # it. Importing the alias therefore costs an
+            # `# type: ignore[import-untyped]` that no PyMuPDF release can
+            # ever retire, and suppresses this module's type checking with
+            # it. The `pymupdf` spelling exists from 1.24.3; the extra's
+            # floor is well above both.
+            import pymupdf
         except ImportError as e:
             raise ImportError(
-                "PyMuPDF (fitz) is required for PDF conversion. "
+                f"PyMuPDF is required for PDF conversion ({e}). "
                 "Install with: pip install bmlib[pdf]"
             ) from e
-        self._fitz = fitz
+        self._pymupdf = pymupdf
 
     @property
     def name(self) -> str:
@@ -271,7 +275,7 @@ class PyMuPDFConverter(PDFConverter):
     @property
     def version(self) -> str:
         """PyMuPDF version."""
-        return self._fitz.version[0]
+        return self._pymupdf.version[0]
 
     def convert(self, pdf_path: Path) -> ConversionResult:
         """Convert a PDF to plaintext, extracting every page's text.
@@ -291,8 +295,8 @@ class PyMuPDFConverter(PDFConverter):
 
         try:
             # Context manager guarantees the document is closed even when a
-            # non-fitz error escapes mid-extraction.
-            with self._fitz.open(str(pdf_path)) as doc:
+            # non-PyMuPDF error escapes mid-extraction.
+            with self._pymupdf.open(str(pdf_path)) as doc:
                 page_count = len(doc)
 
                 if doc.needs_pass:
@@ -396,7 +400,7 @@ class PyMuPDFConverter(PDFConverter):
                 title=judged_title,
             )
 
-        except self._fitz.FileDataError as e:
+        except self._pymupdf.FileDataError as e:
             error_msg = f"Invalid or corrupted PDF: {e}"
             logger.error("PDF conversion failed for %s: %s", pdf_path, error_msg)
             return ConversionResult(
@@ -455,7 +459,7 @@ class PyMuPDFConverter(PDFConverter):
         self.validate_pdf_path(pdf_path)
         blocks: list[TextBlock] = []
         try:
-            with self._fitz.open(str(pdf_path)) as doc:
+            with self._pymupdf.open(str(pdf_path)) as doc:
                 if doc.needs_pass:
                     raise ValueError("PDF is password-protected")
                 for page_num in range(len(doc)):

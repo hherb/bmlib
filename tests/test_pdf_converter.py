@@ -36,7 +36,7 @@ from bmlib.fulltext.pdf_converter import (
 )
 from bmlib.fulltext.segmenter import SectionSegmenter
 
-_HAS_FITZ = importlib.util.find_spec("fitz") is not None
+_HAS_PYMUPDF = importlib.util.find_spec("pymupdf") is not None
 
 
 def _write_encrypted_pdf(path: Path, *, user_pw: str = "", owner_pw: str = "") -> Path:
@@ -45,13 +45,13 @@ def _write_encrypted_pdf(path: Path, *, user_pw: str = "", owner_pw: str = "") -
     A *user* password is required to open the file at all; an *owner*
     password only restricts permissions, leaving the document readable.
     """
-    import fitz
+    import pymupdf
 
-    doc = fitz.open()
+    doc = pymupdf.open()
     doc.new_page().insert_text((72, 72), "Confidential trial results")
     doc.save(
         str(path),
-        encryption=fitz.PDF_ENCRYPT_AES_256,
+        encryption=pymupdf.PDF_ENCRYPT_AES_256,
         user_pw=user_pw,
         owner_pw=owner_pw,
     )
@@ -153,7 +153,7 @@ class TestRegistry:
         with pytest.raises(ValueError, match="Unknown converter"):
             get_converter("does-not-exist")
 
-    @pytest.mark.skipif(_HAS_FITZ, reason="PyMuPDF is installed")
+    @pytest.mark.skipif(_HAS_PYMUPDF, reason="PyMuPDF is installed")
     def test_pymupdf_requires_dependency(self):
         with pytest.raises(ImportError, match="PyMuPDF"):
             get_converter("pymupdf")
@@ -181,13 +181,13 @@ class TestValidatePdfPath:
         _StubConverter().validate_pdf_path(f)
 
 
-@pytest.mark.skipif(not _HAS_FITZ, reason="PyMuPDF not installed")
+@pytest.mark.skipif(not _HAS_PYMUPDF, reason="PyMuPDF not installed")
 class TestPyMuPDFConversion:
     def test_converts_generated_pdf(self, tmp_path):
-        import fitz
+        import pymupdf
 
         pdf_path = tmp_path / "gen.pdf"
-        doc = fitz.open()
+        doc = pymupdf.open()
         page = doc.new_page()
         page.insert_text((72, 72), "Hello bmlib PDF")
         doc.save(str(pdf_path))
@@ -468,14 +468,14 @@ class TestLineToBlock:
         assert result.page_num == 3
 
 
-@pytest.mark.skipif(not _HAS_FITZ, reason="PyMuPDF not installed")
+@pytest.mark.skipif(not _HAS_PYMUPDF, reason="PyMuPDF not installed")
 class TestExtractBlocks:
     @staticmethod
     def _write_pdf(path, pages):
         """Write a PDF; *pages* is a list of (x, y, text, fontname, fontsize) lists."""
-        import fitz
+        import pymupdf
 
-        doc = fitz.open()
+        doc = pymupdf.open()
         for page_items in pages:
             page = doc.new_page()
             for x, y, text, fontname, fontsize in page_items:
@@ -502,10 +502,10 @@ class TestExtractBlocks:
         assert ("Results", 1) in texts
 
     def test_a_real_pdf_heading_in_mixed_fonts_is_one_line(self, tmp_path):
-        import fitz
+        import pymupdf
 
         pdf = tmp_path / "mixed.pdf"
-        doc = fitz.open()
+        doc = pymupdf.open()
         page = doc.new_page()
         # Same baseline, two fonts — PyMuPDF reports two spans in one line.
         page.insert_text((72, 100), "2. ", fontname="helv", fontsize=14)
@@ -594,16 +594,16 @@ class TestExtractBlocks:
         assert doc.file_path == str(pdf)
 
 
-@pytest.mark.skipif(not _HAS_FITZ, reason="PyMuPDF not installed")
+@pytest.mark.skipif(not _HAS_PYMUPDF, reason="PyMuPDF not installed")
 class TestTheConvertedResultCarriesAJudgedTitle:
     """Issue #56. Real PDFs carry filenames and "untitled" in ``/Title``, so
     the raw value is not the article's title and must not be read as one."""
 
     @staticmethod
     def _write_pdf(path: Path, metadata_title: str) -> Path:
-        import fitz
+        import pymupdf
 
-        doc = fitz.open()
+        doc = pymupdf.open()
         page = doc.new_page()
         page.insert_text((72, 72), "Effects of aspirin on outcomes", fontname="hebo", fontsize=18)
         page.insert_text((72, 110), "We randomised 400 adults.", fontname="helv", fontsize=10)
@@ -645,9 +645,9 @@ class TestTheConvertedResultCarriesAJudgedTitle:
         page 2's prose, fails to match, and rejects. The two answers differ,
         which is what makes this test able to tell the implementations apart.
         """
-        import fitz
+        import pymupdf
 
-        doc = fitz.open()
+        doc = pymupdf.open()
         doc.new_page()  # page 1: no text at all
         doc.new_page().insert_text((72, 72), "Effects of aspirin on outcomes", fontsize=12)
         doc.set_metadata({"title": "A study of coffee"})
@@ -666,7 +666,7 @@ class TestTheConvertedResultCarriesAJudgedTitle:
         A page object comes fresh from ``doc[n]`` on every access, so patching
         the one PyMuPDF hands back does not stick — hence a proxy.
         """
-        real_open = converter._fitz.open
+        real_open = converter._pymupdf.open
 
         class _Page:
             def __init__(self, page, fail):
@@ -697,7 +697,7 @@ class TestTheConvertedResultCarriesAJudgedTitle:
             def __exit__(self, *a):
                 return self._doc.__exit__(*a)
 
-        monkeypatch.setattr(converter._fitz, "open", lambda *a, **k: _Doc(real_open(*a, **k)))
+        monkeypatch.setattr(converter._pymupdf, "open", lambda *a, **k: _Doc(real_open(*a, **k)))
 
     def test_an_unreadable_page_one_rejects_rather_than_accepts(self, tmp_path, monkeypatch):
         """A page that *raises* is not an image-only scan.

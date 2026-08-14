@@ -3,10 +3,13 @@
 _Last updated: 2026-08-14. **0.9.1 is released**; since then, **#81 is
 closed** on branch `fix/81-type-gate-in-ci` — CI now type-checks, so the
 `py.typed` bmlib ships is a guarantee something verifies rather than a claim
-nobody had ever checked. It found one real defect on the way in (a PubMed
+nobody had ever checked. It found one real defect on the way in — a PubMed
 day whose history session was missing synced as an empty day, reporting
-`completed`). **#73 is the only open issue.** On the branch: 2049 tests + 58
-skipped (2105 + 2 with a PostgreSQL DSN, run and verified), ruff 0.15.20 and
+`completed` — and reviewing that fix found its twin one branch earlier, a
+search NCBI *rejected* doing the same thing. **#73, #86 and #88–#91 are
+open**; #88–#91 are that same family, found by the same review and filed
+rather than folded in. On the branch: 2053 tests + 58
+skipped (2109 + 2 with a PostgreSQL DSN, run and verified), ruff 0.15.20 and
 `uv run mypy` both clean.
 **Phase 3 of the bmlibrarian port is next, and each of its rows needs a design
 conversation before any porting** — see "Next up"._
@@ -95,10 +98,26 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Two, both found by review rather than by a failing test. (**#56, #68, #72 and
-#79** shipped in 0.9.1; **#78** is closed — see "The release tag does not
-depend on the merge button" below; **#81** is closed on
+Six, every one found by review rather than by a failing test. (**#56, #68,
+#72 and #79** shipped in 0.9.1; **#78** is closed — see "The release tag does
+not depend on the merge button" below; **#81** is closed on
 `fix/81-type-gate-in-ci`.)
+
+**#88, #89, #90 and #91 are one family and are best read together**, all
+raised by the review of PR #87 and all the same failure the type gate found:
+a broken sync reporting as a quiet day. #88 — the three fetchers drive their
+page loops from the count the source gave them and never reconcile it
+against what they stored, so an expired mid-walk session or an HTTP-200
+error document yields `completed` with 0 records. #89 — `sync()` coerces any
+status that is not the exact string `"failed"` to `completed`, so a
+third-party fetcher's failure becomes a durable success. #90 — a day whose
+records all failed to *store* is likewise recorded `completed`, with
+`SyncReport.errors` empty. #91 — `openalex`'s `response.json()` sits outside
+its `try`, so a decode error is attributed to the wrong layer. The first
+three all end the same way: `download_days` says the day is done, so
+`_days_needing_fetch()` never offers it again and the records are
+permanently absent. #88 and #90 want the same decision made once — what
+counts as a shortfall worth retrying — so take them together.
 
 **#73 — `install_defaults()` copies templates non-atomically**, found while
 fixing #70 and deliberately not folded into it. A copy interrupted partway
@@ -218,10 +237,11 @@ what still needs doing.
 - **`uv run mypy` is a gate now too** (#81), pinned to **2.3.0** in the `dev`
   extra with its settings in `pyproject.toml`. Take no arguments and add
   none — the bare command is what the `types` CI job runs. It must run in
-  the dev venv: every extra but PyMuPDF ships its own `py.typed`, so against
-  a bare interpreter mypy reports the optional imports *and `jinja2`, a core
-  dependency*, as missing stubs. That is not hypothetical — it is why #81
-  opened claiming 24 errors when there were 22. Anything deliberately
+  the dev venv: every extra but psycopg2 ships its own `py.typed` (that one
+  is covered by `types-psycopg2`), so against a bare interpreter mypy
+  reports the optional imports *and `jinja2`, a core dependency*, as missing
+  stubs. That is not hypothetical — it is why #81 opened claiming 24 errors
+  when there were 22. Anything deliberately
   unchecked is an inline `# type: ignore[code]` with its reason at the site,
   never a per-module `ignore_missing_imports`: `warn_unused_ignores` reports
   the first when it goes stale and can never report the second.

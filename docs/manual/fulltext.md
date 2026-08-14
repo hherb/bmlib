@@ -849,16 +849,16 @@ class PyMuPDFConverter(PDFConverter):
 | Member | Value |
 |--------|-------|
 | `name` | `"pymupdf"` |
-| `version` | PyMuPDF's `fitz.version[0]` |
+| `version` | PyMuPDF's `pymupdf.version[0]` |
 
 Conversion behaviour:
 
-- The document is opened with `with fitz.open(...)`, so it is closed even if extraction raises mid-way.
+- The document is opened with `with pymupdf.open(...)`, so it is closed even if extraction raises mid-way.
 - Metadata extraction is **best-effort**: it maps to the keys `title`, `author`, `subject`, `keywords`, `creator`, `producer`, `creation_date`, `modification_date`. On failure it appends a `Failed to extract metadata: {e}` warning and leaves `metadata` empty rather than aborting.
 - A page whose text is whitespace-only (an image-only scan, say) **still counts as converted** but adds the warning `Page {n}: No extractable text`. Watch for this: `is_complete` can be `True` for a scanned PDF that yielded almost no text — check `char_count` and `warnings` too.
 - A page that raises adds `Page {n}: Extraction failed - {e}` and does **not** increment `converted_pages`, so `completion_ratio` drops below 1.0.
 - Page texts are joined with `"\n\n"`.
-- `fitz.FileDataError` returns `success=False` with `error_message=f"Invalid or corrupted PDF: {e}"` and `converted_pages=0`. Any other exception also returns `success=False`, but keeps the running `converted_pages`.
+- `pymupdf.FileDataError` returns `success=False` with `error_message=f"Invalid or corrupted PDF: {e}"` and `converted_pages=0`. Any other exception also returns `success=False`, but keeps the running `converted_pages`.
 - A PDF needing a password to open returns `success=False` with `error_message="PDF is password-protected"`. PyMuPDF opens such a file without the password and only fails on use, so without this check every page failed inside the per-page handler and the file came back as a *success* carrying no text — a caller testing `success` alone read an unreadable file as a paper with no text. The test is `doc.needs_pass`, not `doc.is_encrypted`: an owner password restricts permissions without blocking reads, and such a file converts normally.
 - Exceptions from `validate_pdf_path()` **propagate** — a missing or non-PDF path raises rather than returning a failed `ConversionResult`.
 
