@@ -9,10 +9,30 @@ reporting `completed` — and reviewing that fix found its twin one branch
 earlier, a search NCBI *rejected* doing the same thing. **#88–#91 are now
 closed too**, on branch `fix/88-91-sync-reconciliation`: the whole
 "a broken sync reports as a quiet day" family, which was the rest of what
-that review turned up. **#73, #86 and the new #92 are open**; #92 is the
-measurement the #88 fix deliberately deferred. On the branch: 2102 tests + 58
-skipped (2158 + 2 with a PostgreSQL DSN, run and verified), ruff 0.15.20 and
-`uv run mypy` both clean, every new guard verified by mutation. Nothing is
+that review turned up.
+
+**That branch was then reviewed itself, and the review found the fix
+incomplete in the same way the fix was about** — three of its own rules were
+not applied to bioRxiv and one not to OpenAlex, each leaving a day stored
+`completed` that the fetch could not back. All were reproduced before being
+fixed. The lesson worth carrying: a rule extracted into a shared module is
+not thereby applied — `stalled` defaults to the value that *disables* it, and
+OpenAlex simply never passed it. **When a guard is opt-in, audit every call
+site, not the module.**
+
+**#73, #86 and the new #92, #94, #95, #96 are open.** #92 is the measurement
+the #88 fix deliberately deferred; #94 is the bioRxiv envelope sampler the
+second round deferred for the same reason (its guard is deliberately weaker
+than it looks — read `docs/DECISIONS.md` before "simplifying" it); #95 is a
+pre-existing durability defect the review surfaced (a day fetched *as* today
+is stored completed and never revisited); #96 is efetch's retstart skew.
+
+On the branch: 2127 tests + 58 skipped (2184 collected, from 2111 on `main`),
+ruff 0.15.20 and `uv run mypy` both clean, and every new guard verified by
+mutation — 18 mutations, 18 caught, one of which caught a *vacuous test of my
+own* on the first pass and was rewritten. **Re-run the PostgreSQL half before
+merge**: the dual-backend suite has not been run since the second round of
+changes, and this session had no network or database access. Nothing is
 released from `main`'s tip yet — CHANGELOG's `[Unreleased]` holds #78, #81
 and this family.
 **Phase 3 of the bmlibrarian port is next, and each of its rows needs a design
@@ -108,10 +128,39 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Three, every one found by review rather than by a failing test. (**#56, #68,
+Six, every one found by review rather than by a failing test. (**#56, #68,
 #72 and #79** shipped in 0.9.1; **#78** is closed — see "The release tag does
 not depend on the merge button" above; **#81** is closed and merged; **#88,
 #89, #90 and #91** are closed on `fix/88-91-sync-reconciliation`.)
+
+**#94 — bioRxiv's envelope shapes are unmeasured**, filed for the reason #92
+was: the second round's guard refuses a body carrying *neither* a
+`collection` key *nor* messages, rather than the obvious
+`isinstance(data.get("collection"), list)`. bioRxiv is known to report a
+quiet day by omitting `total`; whether it also omits `collection` is not
+known, and requiring a key a quiet day may not send would fail that day on
+every later run for the life of the installation. One case therefore stays
+indistinguishable from a quiet day — an error body carrying messages and no
+collection. The sampler measures both that and the `messages[0].status`
+vocabulary. **Do not tighten the guard without running it**, and note that
+the tests deliberately pin *both* possible quiet-day shapes so the guard
+cannot come to depend on the unmeasured answer.
+
+**#95 — a day fetched as "today" is stored completed and never revisited.**
+Pre-existing and not introduced by this family, but the most *likely*
+instance of it: `_days_needing_fetch()` always re-offers `today`, `sync()`
+stores it `completed`, and tomorrow it is neither today nor failed. A 09:00
+cron durably loses whatever is indexed for that day over the following 15
+hours. No reconciliation rule can catch it — the source's own count agrees at
+09:00 — which is why it needs its own fix; `downloaded_at` already carries
+what is needed.
+
+**#96 — efetch paging advances by the page size requested, not delivered.**
+Found by reading, not reproduced: a short non-empty page would leave the
+records between what arrived and the next `retstart` never requested, and
+uniform half-pages land on exactly the exclusive floor and complete. The
+first task is establishing whether efetch can do that at all; if it cannot,
+the outcome is a line in `docs/DECISIONS.md`, not code.
 
 **#92 — the shortfall floor is unmeasured**, filed as part of the #88 fix
 rather than after it, so that the one guessed constant in that change is on

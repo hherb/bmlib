@@ -1279,10 +1279,34 @@ class TestBiorxivWalkIsReconciledAgainstTheTotal:
         assert "no count" in result.error
         assert result.record_count == 1
 
-    def test_a_body_whose_messages_are_not_a_list_does_not_raise(self):
-        """``messages`` is read defensively before ``messages[0]`` is indexed."""
+    def test_a_body_whose_messages_are_not_a_list_carries_no_evidence(self):
+        """A non-list ``messages`` must not satisfy the envelope guard.
+
+        The guard asks whether the body says anything about the day. Left
+        un-normalised, a truthy non-list value like ``"unexpected"`` answers
+        "yes" — so a body with no ``collection`` either would complete as a
+        quiet day, which is the hole the guard exists to close.
+
+        Asserted with no ``collection`` key on purpose: with one present the
+        body passes the guard whatever ``messages`` holds, so that case cannot
+        tell the guard from its absence.
+        """
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {"messages": "unexpected", "collection": []}
+        mock_resp.json.return_value = {"messages": "unexpected"}
+        mock_resp.raise_for_status = MagicMock()
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "neither a collection nor messages" in result.error
+
+    def test_a_messages_member_that_is_not_an_object_does_not_raise(self):
+        """``messages[0]`` is type-checked before ``.get("total")`` is called."""
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"messages": ["not an object"], "collection": []}
         mock_resp.raise_for_status = MagicMock()
         client = MagicMock()
         client.get.return_value = mock_resp
