@@ -1199,6 +1199,98 @@ class TestBiorxivWalkIsReconciledAgainstTheTotal:
 
         assert result.status == "failed"
         assert result.error is not None
+        # The message, not just the status. Without the guard the walk raises
+        # AttributeError into the same blanket handler and returns an
+        # identical FetchResult, so a status-only assertion passes either way
+        # — a mutation that survived the suite before this line existed.
+        assert "not an object" in result.error
+
+    def test_a_body_carrying_neither_a_collection_nor_messages_fails(self):
+        """An HTTP-200 error body must not read as a day with no preprints.
+
+        This is issue #88's shape for bioRxiv: read through a ``.get(...,
+        [])`` default, ``{"error": ...}`` is indistinguishable from a quiet
+        day, and the day is then stored as completed and never re-offered.
+
+        The guard is "carries no evidence either way" rather than "carries a
+        collection" on purpose — whether a genuinely quiet day omits the
+        ``collection`` key is not measured (issue #94), and requiring a key
+        the API may not send would fail every quiet day for ever.
+        """
+        for body in ({"error": "rate limited, try later"}, {}):
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = body
+            mock_resp.raise_for_status = MagicMock()
+            client = MagicMock()
+            client.get.return_value = mock_resp
+
+            result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+            assert result.status == "failed", body
+            assert result.error is not None
+            assert "neither a collection nor messages" in result.error
+
+    def test_a_quiet_day_completes_whether_or_not_it_sends_a_collection(self):
+        """The negative control for the guard above, in both possible shapes.
+
+        Which of these bioRxiv actually sends on a quiet day is unmeasured, so
+        the guard must not depend on the answer.
+        """
+        for body in (
+            {"messages": [{"status": "no posts found"}], "collection": []},
+            {"messages": [{"status": "no posts found"}]},
+        ):
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = body
+            mock_resp.raise_for_status = MagicMock()
+            client = MagicMock()
+            client.get.return_value = mock_resp
+
+            result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+            assert result.status == "completed", body
+            assert result.record_count == 0
+            assert result.error is None
+
+    def test_records_delivered_without_a_total_cannot_complete(self):
+        """An absent ``total`` silently switched off both reconciliation rules.
+
+        Flattened to ``0`` by ``records_total or 0``, the promise is met by
+        any delivery: this walk hands over 100 records, the next page comes
+        back empty, and the day completes as though it were whole. ``stalled``
+        cannot fire either, since it is conditioned on knowing the total.
+        """
+        first = MagicMock()
+        first.json.return_value = {
+            "messages": [{"status": "ok"}],
+            "collection": [_sample_record()],
+        }
+        first.raise_for_status = MagicMock()
+        second = MagicMock()
+        second.json.return_value = {"messages": [{"status": "ok"}], "collection": []}
+        second.raise_for_status = MagicMock()
+        client = MagicMock()
+        client.get.side_effect = [first, second]
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "no count" in result.error
+        assert result.record_count == 1
+
+    def test_a_body_whose_messages_are_not_a_list_does_not_raise(self):
+        """``messages`` is read defensively before ``messages[0]`` is indexed."""
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"messages": "unexpected", "collection": []}
+        mock_resp.raise_for_status = MagicMock()
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "completed"
+        assert result.record_count == 0
 
     def test_a_collection_that_is_not_a_list_fails(self):
         mock_resp = MagicMock()

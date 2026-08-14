@@ -26,13 +26,14 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import date, timedelta
-from typing import Any, TypeVar
+from typing import Any, NamedTuple, TypeVar
 
 from bmlib import __version__
 from bmlib.db import execute, fetch_all, placeholder, transaction
 from bmlib.publications.fetchers.registry import get_fetcher, source_names
 from bmlib.publications.models import (
     AuthorAffiliation,
+    DayStatus,
     FetchedRecord,
     FetchResult,
     FullTextSource,
@@ -131,8 +132,13 @@ def _days_needing_fetch(
             needed.append(current)
         else:
             entry = completed[current.isoformat()]
-            if entry["status"] == "failed":
-                # Failed days should be retried
+            if entry["status"] != "completed":
+                # Anything that is not a recorded success is retried. Read as
+                # a denylist (`== "failed"`) this is the mirror of the write
+                # bug `_resolve_day_status` fixes: a status in any other
+                # spelling counted as done, so a day that never succeeded was
+                # never offered again. Fails closed — an unrecognised status
+                # costs a re-fetch, which `store_publication` merges.
                 needed.append(current)
             elif recheck_days > 0 and entry["last_verified_at"] is not None:
                 from datetime import datetime
@@ -215,18 +221,39 @@ def _record_to_fulltext_sources(record: FetchedRecord) -> list[FullTextSource] |
     return result if result else None
 
 
+class _DayOutcome(NamedTuple):
+    """What to store for a day, and what to tell the caller about it."""
+
+    status: DayStatus
+    errors: list[str]
+    """Lines for :class:`SyncReport`'s ``errors`` — days that will be retried."""
+    notes: list[str]
+    """Lines for :class:`SyncReport`'s ``notes`` — days that will not be."""
+
+
 def _resolve_day_status(
     source: str,
     day: date,
     fetch_result: FetchResult,
     day_failed: int,
-) -> tuple[str, list[str]]:
+) -> _DayOutcome:
     """Decide what to store for a day, and what to tell the caller about it.
 
-    Returns the ``download_days`` status and any lines to append to
-    :class:`SyncReport`'s ``errors``. Both failure modes here used to be
-    recorded as ``completed``, which is durable: ``_days_needing_fetch()``
-    never offers a completed day again, so the records are permanently absent.
+    Both failure modes here used to be recorded as ``completed``, which is
+    durable: ``_days_needing_fetch()`` does not offer a completed day again
+    once it is in the past, unless ``recheck_days`` is set — so the records
+    are, for the default configuration, permanently absent.
+
+    The return type is :data:`DayStatus` rather than ``str`` deliberately. This
+    function exists to turn an unvalidated status into a validated one, so
+    handing back the type it consumed would leave nothing downstream able to
+    tell the two apart; ``_upsert_download_day`` takes the narrowed type for
+    the same reason, which makes writing an unrecognised status into
+    ``download_days`` a type error rather than a silent permanent loss.
+    ``FetchResult.status`` stays a bare ``str`` on purpose — it is a boundary
+    value arriving from a public extension point, and narrowing it would both
+    break third-party fetchers under their own type checker and remove the
+    reason the runtime check below exists.
 
     Two rules, both failing closed:
 
@@ -241,34 +268,47 @@ def _resolve_day_status(
     is missing them by name. ``store_publication`` merges, so re-fetching is
     idempotent and the retry is cheap.
     """
+    errors: list[str] = []
     notes: list[str] = []
-    status = fetch_result.status
+    status: DayStatus
 
-    if status not in ("completed", "failed"):
+    # Spelled as an allowlist rather than `if status not in (...)`, because a
+    # membership test does not narrow `str` to the Literal and so cannot be
+    # checked; this shape makes the vocabulary the type system's business.
+    if fetch_result.status == "completed":
+        status = "completed"
+    elif fetch_result.status == "failed":
+        status = "failed"
+    else:
         logger.error(
             "Fetcher for %s/%s returned unknown status %r; recording the day as failed",
             source,
             day.isoformat(),
-            status,
+            fetch_result.status,
         )
-        notes.append(
-            f"{source}/{day.isoformat()}: fetcher returned unknown status {status!r};"
-            " recorded as failed"
+        errors.append(
+            f"{source}/{day.isoformat()}: fetcher returned unknown status"
+            f" {fetch_result.status!r}; recorded as failed"
         )
         status = "failed"
 
     if day_failed:
-        notes.append(f"{source}/{day.isoformat()}: {day_failed} record(s) failed to store")
+        errors.append(f"{source}/{day.isoformat()}: {day_failed} record(s) failed to store")
         status = "failed"
 
-    return status, notes
+    # Only meaningful on a day that completes: a note on a failed day describes
+    # a walk that is about to be retried anyway.
+    if fetch_result.note and status == "completed":
+        notes.append(f"{source}/{day.isoformat()}: {fetch_result.note}")
+
+    return _DayOutcome(status=status, errors=errors, notes=notes)
 
 
 def _upsert_download_day(
     conn: Any,
     source: str,
     day: date,
-    status: str,
+    status: DayStatus,
     record_count: int,
 ) -> None:
     """Insert or update a download_days row.
@@ -398,6 +438,7 @@ def sync(
     total_failed = 0
     total_days = 0
     errors: list[str] = []
+    notes: list[str] = []
     sources_synced: list[str] = []
 
     try:
@@ -454,13 +495,22 @@ def sync(
                     # OpenAlex's ``email`` not supplied) or a bug inside a
                     # fetcher must not abort the whole multi-source run and
                     # discard the report. Record it as a failed day and move on.
-                    logger.error("Fetcher for %s/%s raised: %s", source, day.isoformat(), exc)
+                    # The type is logged because this handler exists to catch
+                    # bugs *inside* a fetcher, and a bare message cannot tell a
+                    # misconfigured source from a defect in bmlib.
+                    logger.error(
+                        "Fetcher for %s/%s raised: %s: %s",
+                        source,
+                        day.isoformat(),
+                        type(exc).__name__,
+                        exc,
+                    )
                     fetch_result = FetchResult(
                         source=source,
                         date=day.isoformat(),
                         record_count=len(day_records),
                         status="failed",
-                        error=str(exc),
+                        error=f"{type(exc).__name__}: {exc}",
                     )
 
                 # One transaction per day: each store_publication call joins
@@ -507,19 +557,23 @@ def sync(
                                 exc,
                             )
 
-                    status, day_notes = _resolve_day_status(source, day, fetch_result, day_failed)
+                    outcome = _resolve_day_status(source, day, fetch_result, day_failed)
                     record_count = day_added + day_merged
 
-                    _upsert_download_day(conn, source, day, status, record_count)
+                    _upsert_download_day(conn, source, day, outcome.status, record_count)
 
                 total_added += day_added
                 total_merged += day_merged
                 total_failed += day_failed
                 total_days += 1
 
-                if fetch_result.error:
+                # `is not None`, not truthiness: `str(OSError())` is the empty
+                # string, and a day that keeps failing with one would be
+                # retried on every run while the report claimed no errors.
+                if fetch_result.error is not None:
                     errors.append(f"{source}/{day.isoformat()}: {fetch_result.error}")
-                errors.extend(day_notes)
+                errors.extend(outcome.errors)
+                notes.extend(outcome.notes)
 
             sources_synced.append(source)
     finally:
@@ -533,4 +587,5 @@ def sync(
         records_merged=total_merged,
         records_failed=total_failed,
         errors=errors,
+        notes=notes,
     )

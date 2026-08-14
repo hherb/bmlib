@@ -746,6 +746,14 @@ a named test and was verified by mutation. Only what it omits:
   permanent re-fetches and re-merges the whole day for the rest of an
   installation's life, growing with the date range. Pinned by
   `test_a_small_shortfall_completes` and its per-fetcher twins.
+- **"A completed day is never offered again" is shorthand, not the rule.**
+  `_days_needing_fetch()` re-offers a completed day when it is `today`, and
+  when `recheck_days > 0`. Neither weakens the argument — the default is
+  `recheck_days=0`, and a past day is what the reconciliation rules protect —
+  but the unqualified form is false and was written into six documents in
+  #88's first round. The `today` re-offer has its own defect, filed as **#95**:
+  a day fetched *as* today is stored `completed` and is then never revisited,
+  so a morning cron durably loses whatever is indexed later the same day.
 - **`SHORTFALL_FAILURE_RATIO = 0.5` is fixed before measurement**, unlike
   every other threshold in bmlib. Do not cite it as measured and do not
   tighten it by taste — **#92** is the sampler that would earn a different
@@ -760,11 +768,56 @@ a named test and was verified by mutation. Only what it omits:
   `test_a_session_dying_on_a_late_page_fails` and
   `test_an_empty_page_with_only_a_few_records_outstanding_fails`, written
   after mutation showed the earlier tests survived removing it.
-- **bioRxiv's envelope check is deliberately the weakest of the three.** It
-  requires an object with a list `collection` and nothing more, because
-  bioRxiv reports a quiet day by *omitting* `total` rather than sending zero;
-  requiring `messages[0].total` would fail every quiet day. Pinned by
-  `test_a_quiet_day_still_completes`.
+- **bioRxiv's envelope check is deliberately the weakest of the three, and
+  the obvious tightening is wrong.** It refuses a body carrying *neither* a
+  `collection` key *nor* messages — one making no claim about the day — and
+  does **not** require a list `collection`. The first round of #88 wrote
+  `data.get("collection", [])` guarded by an `isinstance`, which only fires
+  when the key is present and non-list, so `{"error": ...}` and `{}` still
+  completed as quiet days: the very bug the guard was added for.
+  `isinstance(data.get("collection"), list)` is the tempting fix and is
+  **not** safe: bioRxiv is known to report a quiet day by omitting `total`,
+  but whether it also omits `collection` is unmeasured, and a wrong
+  tightening fails every quiet day on every run for ever. The residual —
+  an error body carrying messages and no collection still reads as quiet —
+  is irreducible without knowing the `messages[0].status` vocabulary.
+  **#94** is the sampler that would measure both and let this be tightened.
+  Pinned by `test_a_body_carrying_neither_a_collection_nor_messages_fails`
+  and `test_a_quiet_day_completes_whether_or_not_it_sends_a_collection`,
+  which asserts *both* possible quiet-day shapes so the guard cannot come to
+  depend on the unmeasured answer.
+- **An absent count is `None`, never `0`.** `promised=0` is a source saying
+  the day is empty, which any delivery satisfies; `promised=None` is a source
+  saying nothing. bioRxiv's `records_total or 0` collapsed the two, which
+  silently disabled *both* the shortfall and the stalled rules — the stalled
+  flag is conditioned on knowing the total — so a first page carrying records
+  and no `total` followed by an empty page completed as a whole day. Records
+  delivered against `None` now fail; nothing delivered against `None` is the
+  quiet day and passes. Pinned by
+  `test_records_delivered_without_a_total_cannot_complete` and its negative
+  control `test_nothing_delivered_against_no_count_is_a_quiet_day`.
+- **Every fetcher must compute `stalled` itself.** It defaults to `False`,
+  which is the value that *disables* the strongest rule, and OpenAlex took
+  that default through #88's first round — so the one source whose cursor can
+  be invalidated mid-walk was judged by the floor alone, and 600 of 1,000
+  completed. An empty page also ends the walk, which additionally bounds a
+  loop that `while cursor is not None` does not. Pinned by
+  `test_a_walk_that_stops_serving_mid_count_fails` and
+  `test_an_empty_page_ends_the_walk_rather_than_repeating_it`.
+- **PubMed counts delivered records by element name, not by child count.**
+  `len(list(root))` counts every child of `<PubmedArticleSet>`, and
+  `<DeleteCitation>` is a legal one. Counting it as delivery is wrong twice:
+  it inflates the count so a real shortfall clears the floor, and it makes a
+  page carrying nothing else fail the `delivered == 0` stall test. The
+  book-chapter test cannot catch this — it separates *delivered* from
+  *parsed*, which any child-counting expression also satisfies. Pinned by
+  `test_a_page_of_delete_citations_is_not_delivery`.
+- **A shortfall that completes is returned, not only logged.** Up to half a
+  day's records can go missing on that path, and the day is never re-offered,
+  so a log line is not a surface any caller can query afterwards.
+  `FetchResult.note` carries it to `SyncReport.notes`, deliberately *not* to
+  `errors`: an error names a day that will be retried, a note names one that
+  will not. Pinned by `test_a_short_day_that_completes_is_reported`.
 - **An OpenAlex page emits its valid records before the page is refused**, so
   a first page with `"meta": null` fails with `record_count=1`, not 0. Those
   records were already handed to `on_record` and are stored; the day is

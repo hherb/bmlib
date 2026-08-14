@@ -23,6 +23,7 @@ before being handed to the *on_record* callback.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable
 from datetime import date
@@ -31,6 +32,8 @@ from typing import Any
 from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.publications.fetchers._reconcile import reconcile_delivery
 from bmlib.publications.models import FetchedRecord, FetchResult, SyncProgress
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -239,6 +242,7 @@ def fetch_openalex(
     records_processed = 0
     records_total = 0
     is_first_page = True
+    stalled = False
 
     while cursor is not None:
         params: dict[str, Any] = {
@@ -259,7 +263,12 @@ def fetch_openalex(
             # ``sync()`` as "Fetcher raised" — pointing at the wrong layer.
             data = response.json()
         except Exception as exc:
-            return _failed(date_str, records_processed, str(exc))
+            # Type included and logged: `str(OSError())` is the empty string,
+            # which reads downstream as "no error" and is dropped from the
+            # report entirely, and a day that keeps failing then does so with
+            # nothing said about why.
+            logger.error("OpenAlex fetch failed for %s: %s: %s", date_str, type(exc).__name__, exc)
+            return _failed(date_str, records_processed, f"{type(exc).__name__}: {exc}")
 
         # OpenAlex answers an invalid query with an ``{"error": ...}`` body at
         # HTTP 200. Read through ``.get()`` defaults, such a body is
@@ -282,10 +291,22 @@ def fetch_openalex(
                 f"OpenAlex returned a page carrying no results list for {date_str}",
             )
 
-        for raw in results:
-            normalised = _normalize(raw)
-            on_record(normalised)
-            records_processed += 1
+        try:
+            for raw in results:
+                normalised = _normalize(raw)
+                on_record(normalised)
+                records_processed += 1
+        except Exception as exc:
+            # Same reasoning as the ``response.json()`` move above (#91): a
+            # results list whose members are not work objects is this page
+            # failing, and letting it escape had ``sync()`` report it as
+            # "Fetcher raised" — the wrong layer for a malformed payload.
+            return _failed(
+                date_str,
+                records_processed,
+                f"OpenAlex returned a page bmlib could not normalise for {date_str}:"
+                f" {type(exc).__name__}: {exc}",
+            )
 
         meta = data.get("meta")
         if not isinstance(meta, dict):
@@ -307,6 +328,21 @@ def fetch_openalex(
             records_total = meta["count"]
             is_first_page = False
 
+        if not results:
+            # An empty page while ``meta.count`` says works remain is a walk
+            # that stopped serving them, not the end of one — the late-page
+            # death that the shortfall floor cannot catch, since 600 of 1,000
+            # clears it. OpenAlex reached ``reconcile_delivery`` without this
+            # flag and so was judged by the floor alone.
+            #
+            # Breaking unconditionally also bounds the loop: a page carrying
+            # no results and a non-null ``next_cursor`` otherwise repeats for
+            # ever. A walk that has already met its promise breaks here too
+            # and completes, because ``reconcile_delivery`` returns early once
+            # ``delivered >= promised`` and never consults *stalled*.
+            stalled = records_processed < records_total
+            break
+
         if on_progress is not None:
             on_progress(
                 SyncProgress(
@@ -324,18 +360,24 @@ def fetch_openalex(
         if cursor is not None:
             time.sleep(_RATE_LIMIT_SECONDS)
 
-    shortfall = reconcile_delivery(
+    # ``delivered`` is what the server handed over. That is ``records_processed``
+    # only because ``_normalize`` skips nothing — the moment this loop grows a
+    # "skip this kind of work" branch, this must count list members instead, or
+    # it reports PubMed's phantom shortfall (see reconcile_delivery's docstring).
+    verdict = reconcile_delivery(
         "openalex",
         date_str,
         delivered=records_processed,
         promised=records_total,
+        stalled=stalled,
     )
-    if shortfall is not None:
-        return _failed(date_str, records_processed, shortfall)
+    if verdict.failure is not None:
+        return _failed(date_str, records_processed, verdict.failure)
 
     return FetchResult(
         source="openalex",
         date=date_str,
         record_count=records_processed,
         status="completed",
+        note=verdict.note,
     )

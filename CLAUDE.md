@@ -227,19 +227,35 @@ verified by mutation.
 
 ### A completed day is a durable claim
 
-`sync()` writes `status='completed'` to `download_days` and
-`_days_needing_fetch()` never offers a completed day again. So anything that
-reports success it did not have does not lose a request — it loses the day's
-records permanently, and issues #88–#90 were three separate ways of doing
-exactly that. Three rules follow, and all three **fail closed**.
+`sync()` writes `status='completed'` to `download_days`, and
+`_days_needing_fetch()` does not offer a completed day again once it is in
+the past — unless `recheck_days` is set, which is not the default. (Today is
+always re-offered while it is still today, which is its own problem: see
+issue #95.) So anything that reports success it did not have does not lose a
+request — it loses the day's records permanently, and issues #88–#90 were
+three separate ways of doing exactly that. Three rules follow, and all three
+**fail closed**.
 
 *Reconcile the walk.* `fetchers/_reconcile.py` compares what a source
 delivered against the count it promised, in one place because three fetchers
-share the shape. Two rules of different kinds: a **stalled** walk (a page
+share the shape. Three rules of different kinds: a **stalled** walk (a page
 delivering nothing while the count says records remain) is broken outright
 and carries no threshold — it is also the only rule that catches a session
-expiring on the last page — while a walk that ended naturally but came up
-short is judged against `SHORTFALL_FAILURE_RATIO`.
+expiring on the last page, so every fetcher must compute and pass it, and
+OpenAlex silently not doing so was a live hole after #88's first round;
+**unreconcilable** delivery (records arrived against no count at all) cannot
+be shown to have finished and so cannot complete, while nothing delivered
+against no count is the ordinary quiet day; and a walk that ended naturally
+but came up short is judged against `SHORTFALL_FAILURE_RATIO`. The
+`promised=None` that drives the second rule must never be flattened to `0` —
+"this day is empty" and "I am not telling you" are different claims, and
+collapsing them switches the other two rules off silently.
+
+A shortfall too small to fail on returns a **note** as well as logging one.
+`FetchResult.note` carries it to `SyncReport.notes`, kept apart from
+`errors`: a day may be missing nearly half its records on that path and is
+never re-offered, so "which of my completed days came up short?" has to be
+answerable from a return value and not only from a log line.
 
 That floor, rather than strict inequality, is the load-bearing choice. A day
 recorded `failed` is re-offered on **every** later run, so failing on a gap
@@ -256,23 +272,45 @@ tighten it without running that.
 *Count what the server delivered, not what you parsed.* PubMed's efetch
 delivers `<PubmedBookArticle>` elements the fetcher deliberately skips.
 Reconciling parsed records would report a phantom shortfall on every day
-carrying a book chapter, and then re-fetch it forever.
+carrying a book chapter, and then re-fetch it forever. Delivery counts the
+two record elements **by name** rather than taking every child of the set:
+`<DeleteCitation>` is also a legal child, and counting it inflates delivery
+so a real shortfall clears the floor — and, because the stall rule is
+`delivered == 0`, stops a page carrying nothing else from looking like the
+stall it is.
 
 *Check the envelope; do not read it through defaults.* `data.get("results",
 [])` makes an HTTP-200 error body identical to a day with no publications.
 PubMed refuses an efetch root that is not `PubmedArticleSet` (the same
-refusal `_esearch` makes for a missing `<Count>`), OpenAlex requires a list
-`results` and a `meta` carrying a numeric `count`, and bioRxiv requires an
-object with a list `collection` — and *no more than that*, because bioRxiv
-reports a quiet day by omitting `total` rather than sending zero, so a
-stricter check there would fail every quiet day.
+refusal `_esearch` makes for a missing `<Count>`), and OpenAlex requires a
+list `results` and a `meta` carrying a numeric `count`.
 
-In `sync()` the same principle gives an **allowlist**, not a denylist: a
-fetcher status that is neither `"completed"` nor `"failed"` is recorded as
-failed, since `register_source()` is public and a third-party fetcher is
-exactly the caller who will not know the convention. And any record that
-failed to store fails its day — `store_publication()` merges, so the retry is
-idempotent. The accepted cost is that a permanently-unstorable record pins
+bioRxiv is the one where the obvious guard is wrong. It refuses a body
+carrying **neither** a `collection` key **nor** messages — a body making no
+claim about the day at all — rather than requiring a list `collection`.
+bioRxiv reports a quiet day by omitting `total`, and whether it also omits
+`collection` **is not measured**; requiring a key a quiet day may not send
+would fail that day on every run for the life of the installation, which is
+the runaway-retry cost these rules exist to avoid. The residual is real and
+worth stating: an error body that *does* carry messages and no collection
+still reads as a quiet day, and cannot be told apart from one without
+knowing bioRxiv's `messages[0].status` vocabulary. **Issue #94 is the live
+sampler that would measure both**; do not tighten this guard without running
+it, and do not "simplify" it to `isinstance(data.get("collection"), list)`.
+
+In `sync()` the same principle gives an **allowlist**, not a denylist, on
+both sides. A fetcher status that is neither `"completed"` nor `"failed"` is
+recorded as failed, since `register_source()` is public and a third-party
+fetcher is exactly the caller who will not know the convention; and
+`_days_needing_fetch()` re-offers anything that is not `"completed"`, so a
+status the table does not recognise costs a re-fetch rather than silently
+counting as done. The validated status is typed `DayStatus`
+(`Literal["completed", "failed"]`) from `_resolve_day_status` through
+`_upsert_download_day`, which makes writing a third value a type error —
+while `FetchResult.status` stays a bare `str`, because it is a boundary value
+from a public extension point and narrowing it would break third-party
+fetchers under their own type checker. And any record that failed to store
+fails its day — `store_publication()` merges, so the retry is idempotent. The accepted cost is that a permanently-unstorable record pins
 its day into a retry on every run; that is loud (an ERROR and a
 `SyncReport.errors` line each time) where the alternative was silent.
 

@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from bmlib.fulltext.models import FullTextSourceEntry
@@ -360,6 +360,20 @@ class DownloadDay:
 # ---------------------------------------------------------------------------
 
 
+DayStatus = Literal["completed", "failed"]
+"""The two values ``download_days.status`` may hold.
+
+Deliberately *not* the type of :attr:`FetchResult.status`. That field takes
+whatever a fetcher returns, including a third-party one registered through
+``register_source()``, so it stays a bare ``str`` and is validated at the
+boundary; this alias types the value only after that validation, so that
+writing an unrecognised status into the table is a type error. A status the
+table does not recognise is not a cosmetic problem: ``_days_needing_fetch()``
+treats anything that is not ``"completed"`` as needing a re-fetch, so an
+unrecognised value silently changes which days are ever fetched again.
+"""
+
+
 @dataclass
 class FetchResult:
     """Result of fetching records from a source for a given date."""
@@ -369,6 +383,14 @@ class FetchResult:
     record_count: int
     status: str
     error: str | None = None
+    note: str | None = None
+    """Something the caller should know about a day that still completed.
+
+    A shortfall too small to fail on is the case this exists for: the day is
+    recorded as done, and without a returned value the only trace was one log
+    line, so no caller could answer "which of my completed days came up
+    short?" afterwards. Declared last, for positional stability.
+    """
 
 
 @dataclass
@@ -391,6 +413,11 @@ class SyncReport:
     including sources where individual days failed (a fetcher error records a
     failed day and moves on). Check ``errors`` for per-day failures; a source
     is only absent from this list when no fetcher was found for it.
+
+    ``notes`` carries what went imperfectly on days that nevertheless
+    completed — chiefly a shortfall below the failure floor. It is kept apart
+    from ``errors`` because the two call for different responses: an error
+    names a day that will be retried, a note names a day that will not be.
     """
 
     sources_synced: list[str]
@@ -399,6 +426,7 @@ class SyncReport:
     records_merged: int
     records_failed: int
     errors: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

@@ -1371,6 +1371,34 @@ class TestTheWalkIsReconciledAgainstTheCount:
         assert result.error is None
         assert result.record_count == 1
 
+    def test_a_page_of_delete_citations_is_not_delivery(self):
+        """Delivery counts record elements by name, not every child of the set.
+
+        ``<DeleteCitation>`` is a legal child of ``<PubmedArticleSet>``.
+        Counted as delivery it is wrong in the expensive direction twice: it
+        inflates the count so a real shortfall clears the floor, and — because
+        the stall rule is ``delivered == 0`` — a page carrying nothing else
+        stops looking like the stall it is, so the walk pages on.
+
+        The book-chapter test above cannot catch this: it distinguishes
+        *delivered* from *parsed*, which any child-counting expression also
+        satisfies.
+        """
+        deletes = "<DeleteCitation><PMID>1</PMID><PMID>2</PMID></DeleteCitation>"
+        client = self._client(
+            _make_esearch_xml(3),
+            "<PubmedArticleSet>" + deletes + "</PubmedArticleSet>",
+        )
+        on_record = MagicMock()
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 15), on_record=on_record)
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "empty page" in result.error
+        on_record.assert_not_called()
+
     def test_a_full_walk_still_completes(self):
         """Negative control: reconciliation must not fail an ordinary day."""
         client = self._client(

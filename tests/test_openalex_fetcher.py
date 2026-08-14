@@ -669,6 +669,76 @@ class TestTheWalkIsReconciledAgainstMetaCount:
         assert result.error is not None
         assert result.record_count == 0
 
+    def test_a_walk_that_stops_serving_mid_count_fails(self):
+        """The late-page death the shortfall floor cannot catch.
+
+        600 of 1,000 clears the 50% floor, so only the stalled rule sees this.
+        PubMed and bioRxiv both had it; OpenAlex reached ``reconcile_delivery``
+        without ever computing the flag, so the walk was judged by the floor
+        alone and 400 works were stored as a finished day.
+        """
+        works = [_make_raw_work(title=f"Work {i}") for i in range(600)]
+        client = _mock_client(
+            [
+                _make_api_response(works, total_count=1000, next_cursor="cursor2"),
+                _make_api_response([], total_count=1000, next_cursor=None),
+            ]
+        )
+
+        result = fetch_openalex(
+            client,
+            date(2024, 6, 15),
+            on_record=MagicMock(),
+            email="test@example.com",
+        )
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "empty page" in result.error
+        assert result.record_count == 600
+
+    def test_an_empty_page_ends_the_walk_rather_than_repeating_it(self):
+        """A page with no results and a non-null cursor would loop for ever.
+
+        The walk is driven by ``while cursor is not None``, so nothing else
+        bounds it. Asserted by request count, since a fetcher that looped
+        would never return to be asserted about at all.
+        """
+        client = _mock_client([_make_api_response([], total_count=0, next_cursor="cursor2")] * 5)
+
+        result = fetch_openalex(
+            client,
+            date(2024, 6, 15),
+            on_record=MagicMock(),
+            email="test@example.com",
+        )
+
+        assert result.status == "completed"
+        assert client.get.call_count == 1
+
+    def test_a_page_bmlib_cannot_normalise_fails_inside_the_fetcher(self):
+        """Attributed to this page, not reported by ``sync()`` as "Fetcher raised".
+
+        ``isinstance(results, list)`` passes for a list of non-objects, and
+        ``_normalize`` then raised straight out of the fetcher — the same
+        wrong-layer attribution that moving ``response.json()`` inside the
+        guard fixed for a malformed body (#91).
+        """
+        client = _mock_client(
+            [{"results": ["not a work object"], "meta": {"count": 1, "next_cursor": None}}]
+        )
+
+        result = fetch_openalex(
+            client,
+            date(2024, 6, 15),
+            on_record=MagicMock(),
+            email="test@example.com",
+        )
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "could not normalise" in result.error
+
     def test_a_page_whose_results_are_not_a_list_fails(self):
         client = _mock_client([{"meta": {"count": 10, "next_cursor": None}, "results": None}])
 
