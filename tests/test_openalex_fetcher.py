@@ -576,9 +576,16 @@ class TestFetchOpenAlex:
 
 
 class TestMetaNullGuard:
-    """A "meta": null page must end pagination, not crash the fetch."""
+    """A "meta": null page must be reported, not crash and not pass as a day.
 
-    def test_null_meta_completes_fetch(self):
+    The no-crash half is unchanged: ``(data.get("meta") or {})`` was added so a
+    null envelope could not raise ``AttributeError`` mid-walk. What changed with
+    issue #88 is the verdict — OpenAlex always sends ``meta``, so a page without
+    it is a malformed response, and completing on it wrote a day to
+    ``download_days`` that ``_days_needing_fetch()`` would never offer again.
+    """
+
+    def test_null_meta_fails_the_fetch(self):
         raw = _make_raw_work()
         response = {"meta": None, "results": [raw]}
         client = _mock_client([response])
@@ -591,6 +598,153 @@ class TestMetaNullGuard:
             email="test@example.com",
         )
 
-        assert result.status == "completed"
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "meta" in result.error
+        # Whatever did arrive is still emitted and still counted.
         assert result.record_count == 1
         assert len(records) == 1
+
+    def test_null_meta_does_not_raise(self):
+        """The original guard's invariant: a null envelope is not an AttributeError."""
+        client = _mock_client([{"meta": None, "results": None}])
+
+        result = fetch_openalex(
+            client,
+            date(2024, 6, 15),
+            on_record=MagicMock(),
+            email="test@example.com",
+        )
+
+        assert result.status == "failed"
+
+
+class TestTheWalkIsReconciledAgainstMetaCount:
+    """A cursor walk that stopped short must not report as a quiet day (#88)."""
+
+    def test_a_walk_ending_far_short_of_the_count_fails(self):
+        """Reproduced in issue #88: 5,000 promised, 1 work, no next_cursor."""
+        page = _make_api_response([_make_raw_work()], total_count=5000, next_cursor=None)
+        client = _mock_client([page])
+
+        result = fetch_openalex(
+            client,
+            date(2024, 6, 15),
+            on_record=MagicMock(),
+            email="test@example.com",
+        )
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "delivered 1 of 5000" in result.error
+        assert result.record_count == 1
+
+    def test_a_small_shortfall_still_completes(self):
+        """``meta.count`` is a snapshot; an index moving under the walk is benign."""
+        page = _make_api_response([_make_raw_work()], total_count=2, next_cursor=None)
+        client = _mock_client([page])
+
+        result = fetch_openalex(
+            client,
+            date(2024, 6, 15),
+            on_record=MagicMock(),
+            email="test@example.com",
+        )
+
+        assert result.status == "completed"
+        assert result.error is None
+
+    def test_an_error_document_served_as_http_200_fails(self):
+        """OpenAlex answers an invalid query with a body carrying neither key."""
+        client = _mock_client([{"error": "Invalid query", "message": "bad filter"}])
+
+        result = fetch_openalex(
+            client,
+            date(2024, 6, 15),
+            on_record=MagicMock(),
+            email="test@example.com",
+        )
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert result.record_count == 0
+
+    def test_a_page_whose_results_are_not_a_list_fails(self):
+        client = _mock_client([{"meta": {"count": 10, "next_cursor": None}, "results": None}])
+
+        result = fetch_openalex(
+            client,
+            date(2024, 6, 15),
+            on_record=MagicMock(),
+            email="test@example.com",
+        )
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "results" in result.error
+
+    def test_a_payload_that_is_not_an_object_fails(self):
+        client = _mock_client([["not", "an", "object"]])
+
+        result = fetch_openalex(
+            client,
+            date(2024, 6, 15),
+            on_record=MagicMock(),
+            email="test@example.com",
+        )
+
+        assert result.status == "failed"
+
+    def test_a_count_that_is_not_a_number_fails(self):
+        client = _mock_client([{"meta": {"count": "many", "next_cursor": None}, "results": []}])
+
+        result = fetch_openalex(
+            client,
+            date(2024, 6, 15),
+            on_record=MagicMock(),
+            email="test@example.com",
+        )
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "count" in result.error
+
+    def test_a_full_walk_still_completes(self):
+        """Negative control: reconciliation must not fail an ordinary day."""
+        page1 = _make_api_response([_make_raw_work()], total_count=2, next_cursor="c2")
+        page2 = _make_api_response([_make_raw_work()], total_count=2, next_cursor=None)
+        client = _mock_client([page1, page2])
+
+        result = fetch_openalex(
+            client,
+            date(2024, 6, 15),
+            on_record=MagicMock(),
+            email="test@example.com",
+        )
+
+        assert result.status == "completed"
+        assert result.error is None
+        assert result.record_count == 2
+
+
+class TestAMalformedBodyIsAnHttpLayerFailure:
+    """Issue #91 — ``response.json()`` sat outside the try block."""
+
+    def test_a_decode_error_is_reported_by_the_fetcher(self):
+        """It used to escape and be logged by sync as "Fetcher raised"."""
+        client = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.side_effect = ValueError("Expecting value: line 1 column 1 (char 0)")
+        client.get.return_value = mock_resp
+
+        result = fetch_openalex(
+            client,
+            date(2024, 6, 15),
+            on_record=MagicMock(),
+            email="test@example.com",
+        )
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "Expecting value" in result.error

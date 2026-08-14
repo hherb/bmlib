@@ -1,16 +1,17 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-14. **0.9.1 is released**; since then, **#81 is
-closed** on branch `fix/81-type-gate-in-ci` — CI now type-checks, so the
-`py.typed` bmlib ships is a guarantee something verifies rather than a claim
-nobody had ever checked. It found one real defect on the way in — a PubMed
-day whose history session was missing synced as an empty day, reporting
-`completed` — and reviewing that fix found its twin one branch earlier, a
-search NCBI *rejected* doing the same thing. **#73, #86 and #88–#91 are
-open**; #88–#91 are that same family, found by the same review and filed
-rather than folded in. On the branch: 2053 tests + 58
-skipped (2109 + 2 with a PostgreSQL DSN, run and verified), ruff 0.15.20 and
-`uv run mypy` both clean.
+_Last updated: 2026-08-14. **0.9.1 is released**; since then, **#78 and #81
+are closed and merged to `main`** (PRs #85 and #87) — CI now type-checks, so
+the `py.typed` bmlib ships is a guarantee something verifies rather than a
+claim nobody had ever checked. It found one real defect on the way in — a
+PubMed day whose history session was missing synced as an empty day,
+reporting `completed` — and reviewing that fix found its twin one branch
+earlier, a search NCBI *rejected* doing the same thing. **#73, #86 and
+#88–#91 are open**; #88–#91 are that same family, found by the same review
+and filed rather than folded in. On `main`: 2053 tests + 58 skipped (2109 + 2
+with a PostgreSQL DSN, run and verified), ruff 0.15.20 and `uv run mypy` both
+clean. Nothing is released from `main`'s tip yet — CHANGELOG's `[Unreleased]`
+holds #78 and #81.
 **Phase 3 of the bmlibrarian port is next, and each of its rows needs a design
 conversation before any porting** — see "Next up"._
 
@@ -46,8 +47,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed five releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2049 passing + 58 skipped** (`uv run pytest tests/ -q`);
-  **2105 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips
+- **Tests: 2053 passing + 58 skipped** (`uv run pytest tests/ -q`);
+  **2109 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
   runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev

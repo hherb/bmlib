@@ -1229,3 +1229,143 @@ class TestRepeatedEntriesAreDeduplicated:
             ("Smith", 0),
             ("Jones", 1),
         ]
+
+
+# ---------------------------------------------------------------------------
+# Reconciling the walk against esearch's count (issue #88)
+# ---------------------------------------------------------------------------
+
+
+class TestTheWalkIsReconciledAgainstTheCount:
+    """A walk that stopped short must not report as a quiet day.
+
+    ``sync()`` writes a ``completed`` day to ``download_days`` and
+    ``_days_needing_fetch()`` never offers it again, so every row here is a
+    permanently-absent day if it reports success.
+    """
+
+    def _client(self, esearch_xml: str, *efetch_texts: str) -> MagicMock:
+        client = MagicMock()
+        responses = []
+        esearch_response = MagicMock()
+        esearch_response.text = esearch_xml
+        responses.append(esearch_response)
+        for text in efetch_texts:
+            efetch_response = MagicMock()
+            efetch_response.text = text
+            responses.append(efetch_response)
+        client.get.side_effect = responses
+        return client
+
+    def test_an_error_document_served_as_http_200_fails(self):
+        """NCBI answers an evicted history session with <ERROR> and HTTP 200.
+
+        ``raise_for_status()`` never fires and ``findall("PubmedArticle")``
+        returns [], so the day used to report ``completed`` with 0 records.
+        """
+        client = self._client(
+            _make_esearch_xml(5000),
+            "<eFetchResult><ERROR>Unable to obtain query #1</ERROR></eFetchResult>",
+        )
+        on_record = MagicMock()
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 15), on_record=on_record)
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "Unable to obtain query #1" in result.error
+        on_record.assert_not_called()
+
+    def test_an_error_document_stops_the_walk_instead_of_paging_on(self):
+        """The point of failing early: 10 useless requests were being made."""
+        client = self._client(
+            _make_esearch_xml(5000),
+            "<eFetchResult><ERROR>Unable to obtain query #1</ERROR></eFetchResult>",
+        )
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            fetch_pubmed(client, date(2024, 1, 15), on_record=MagicMock())
+
+        # One esearch plus one efetch, not one efetch per page of the count.
+        assert client.get.call_count == 2
+
+    def test_a_session_dying_mid_walk_fails(self):
+        """One article, then empty pages — reproduced verbatim in issue #88."""
+        client = self._client(
+            _make_esearch_xml(5000),
+            _make_efetch_xml(FULL_ARTICLE_XML),
+            _make_efetch_xml(),
+        )
+        on_record = MagicMock()
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 15), on_record=on_record)
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "empty page" in result.error
+        # The one article that did arrive is still emitted and still counted.
+        assert on_record.call_count == 1
+        assert result.record_count == 1
+
+    def test_an_empty_page_stops_the_walk(self):
+        client = self._client(
+            _make_esearch_xml(5000),
+            _make_efetch_xml(FULL_ARTICLE_XML),
+            _make_efetch_xml(),
+        )
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            fetch_pubmed(client, date(2024, 1, 15), on_record=MagicMock())
+
+        assert client.get.call_count == 3  # esearch + two efetch pages, not ten
+
+    def test_a_day_of_book_chapters_is_not_a_shortfall(self):
+        """<PubmedBookArticle> is delivered by the server and skipped by the parser.
+
+        Reconciling *parsed records* against the count would fail every day
+        carrying a book chapter — and a failed day is re-fetched on every later
+        run, forever. Delivery is counted from what the server handed over.
+        """
+        book = "<PubmedBookArticle><BookDocument><PMID>1</PMID></BookDocument></PubmedBookArticle>"
+        client = self._client(
+            _make_esearch_xml(3),
+            "<PubmedArticleSet>" + FULL_ARTICLE_XML + book + book + "</PubmedArticleSet>",
+        )
+        on_record = MagicMock()
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 15), on_record=on_record)
+
+        assert result.status == "completed"
+        assert result.error is None
+        assert on_record.call_count == 1  # only the journal article is parsed
+
+    def test_a_small_shortfall_still_completes(self):
+        """A record withdrawn between search and fetch is not a broken walk."""
+        client = self._client(
+            _make_esearch_xml(2),
+            _make_efetch_xml(FULL_ARTICLE_XML),
+        )
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 15), on_record=MagicMock())
+
+        assert result.status == "completed"
+        assert result.error is None
+        assert result.record_count == 1
+
+    def test_a_full_walk_still_completes(self):
+        """Negative control: reconciliation must not fail an ordinary day."""
+        client = self._client(
+            _make_esearch_xml(2),
+            _make_efetch_xml(FULL_ARTICLE_XML, MINIMAL_ARTICLE_XML),
+        )
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 15), on_record=MagicMock())
+
+        assert result.status == "completed"
+        assert result.error is None
+        assert result.record_count == 2

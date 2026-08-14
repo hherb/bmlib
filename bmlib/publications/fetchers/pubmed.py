@@ -32,6 +32,7 @@ from datetime import date
 from typing import Any
 
 from bmlib.fulltext.models import FullTextSourceEntry
+from bmlib.publications.fetchers._reconcile import reconcile_delivery
 from bmlib.publications.models import (
     AuthorAffiliation,
     FetchedRecord,
@@ -536,8 +537,24 @@ def _efetch_page(
     query_key: str,
     retstart: int,
     api_key: str | None,
-) -> list[ET.Element]:
-    """Fetch one page of PubmedArticle XML elements from EFetch."""
+) -> tuple[list[ET.Element], int]:
+    """Fetch one page from EFetch and return (PubmedArticle elements, delivered).
+
+    *delivered* counts every record element the server handed over, which is
+    not the same as the length of the returned list: a ``<PubmedBookArticle>``
+    is delivered and deliberately not parsed. The caller reconciles delivery
+    against esearch's count, and counting parsed records there would report a
+    phantom shortfall for every day carrying a book chapter.
+
+    Raises:
+        ValueError: If the response is not a ``PubmedArticleSet``. NCBI answers
+            an expired or evicted history session with
+            ``<eFetchResult><ERROR>…</ERROR></eFetchResult>`` at **HTTP 200**,
+            so ``raise_for_status()`` never fires and ``findall`` returns an
+            empty list — a rejected page wearing the shape of an exhausted one.
+            Refused here for the reason ``_esearch`` refuses a response with no
+            ``<Count>``, and raised so the caller's handler marks the day failed.
+    """
     params: dict[str, str | int] = {
         "db": "pubmed",
         "query_key": query_key,
@@ -553,7 +570,13 @@ def _efetch_page(
     response.raise_for_status()
 
     root = ET.fromstring(response.text)
-    return list(root.findall("PubmedArticle"))
+    if root.tag != "PubmedArticleSet":
+        error = _text(root.find("ERROR")) or _text(root.find(".//ERROR"))
+        raise ValueError(
+            f"efetch returned <{root.tag}> rather than <PubmedArticleSet>"
+            f"{f' (NCBI said: {error})' if error else ''}"
+        )
+    return list(root.findall("PubmedArticle")), len(list(root))
 
 
 # ---------------------------------------------------------------------------
@@ -634,9 +657,11 @@ def fetch_pubmed(
     logger.info("PubMed esearch: %d records for %s", count, date_str)
 
     records_processed = 0
+    records_delivered = 0
+    stalled = False
     for retstart in range(0, count, EFETCH_PAGE_SIZE):
         try:
-            articles = _efetch_page(client, web_env, query_key, retstart, api_key)
+            articles, delivered = _efetch_page(client, web_env, query_key, retstart, api_key)
         except Exception as exc:
             logger.error("efetch failed at retstart=%d: %s", retstart, exc)
             return FetchResult(
@@ -647,10 +672,19 @@ def fetch_pubmed(
                 error=str(exc),
             )
 
+        records_delivered += delivered
         for article_el in articles:
             record = _parse_article_xml(article_el)
             on_record(record)
             records_processed += 1
+
+        if delivered == 0:
+            # The session holds `count` UIDs, so an empty page before the walk
+            # is done means it stopped serving them. Paging on costs a request
+            # per remaining page and returns nothing — 10 of them on the
+            # 5,000-record day measured for #88.
+            stalled = True
+            break
 
         if on_progress is not None:
             on_progress(
@@ -667,6 +701,22 @@ def fetch_pubmed(
         # Rate-limit between pages (skip after the last page)
         if retstart + EFETCH_PAGE_SIZE < count:
             time.sleep(rate_limit)
+
+    shortfall = reconcile_delivery(
+        "pubmed",
+        date_str,
+        delivered=records_delivered,
+        promised=count,
+        stalled=stalled,
+    )
+    if shortfall is not None:
+        return FetchResult(
+            source="pubmed",
+            date=date_str,
+            record_count=records_processed,
+            status="failed",
+            error=shortfall,
+        )
 
     return FetchResult(
         source="pubmed",

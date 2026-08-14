@@ -215,6 +215,55 @@ def _record_to_fulltext_sources(record: FetchedRecord) -> list[FullTextSource] |
     return result if result else None
 
 
+def _resolve_day_status(
+    source: str,
+    day: date,
+    fetch_result: FetchResult,
+    day_failed: int,
+) -> tuple[str, list[str]]:
+    """Decide what to store for a day, and what to tell the caller about it.
+
+    Returns the ``download_days`` status and any lines to append to
+    :class:`SyncReport`'s ``errors``. Both failure modes here used to be
+    recorded as ``completed``, which is durable: ``_days_needing_fetch()``
+    never offers a completed day again, so the records are permanently absent.
+
+    Two rules, both failing closed:
+
+    *Unknown status* — the convention is ``"completed"`` or ``"failed"``, but
+    it was enforced by a denylist (anything not exactly ``"failed"`` became
+    ``completed``), so a fetcher reporting failure in any other spelling had
+    that failure converted into success. ``register_source()`` is a documented
+    extension point, and a third-party fetcher is exactly the caller who will
+    not know the convention.
+
+    *Records that failed to store* — a day whose records raised on the way in
+    is missing them by name. ``store_publication`` merges, so re-fetching is
+    idempotent and the retry is cheap.
+    """
+    notes: list[str] = []
+    status = fetch_result.status
+
+    if status not in ("completed", "failed"):
+        logger.error(
+            "Fetcher for %s/%s returned unknown status %r; recording the day as failed",
+            source,
+            day.isoformat(),
+            status,
+        )
+        notes.append(
+            f"{source}/{day.isoformat()}: fetcher returned unknown status {status!r};"
+            " recorded as failed"
+        )
+        status = "failed"
+
+    if day_failed:
+        notes.append(f"{source}/{day.isoformat()}: {day_failed} record(s) failed to store")
+        status = "failed"
+
+    return status, notes
+
+
 def _upsert_download_day(
     conn: Any,
     source: str,
@@ -444,11 +493,21 @@ def sync(
                             elif result == "merged":
                                 day_merged += 1
                         except Exception as exc:
+                            # Broad on purpose — one bad record must not lose
+                            # the batch — so the exception *type* is logged
+                            # too: a TypeError here is a bmlib defect
+                            # affecting every record, not bad data from the
+                            # source, and the two read identically without it.
                             day_failed += 1
-                            logger.error("Failed to store record from %s: %s", source, exc)
+                            logger.error(
+                                "Failed to store record from %s/%s: %s: %s",
+                                source,
+                                day.isoformat(),
+                                type(exc).__name__,
+                                exc,
+                            )
 
-                    # All fetchers use "completed" or "failed" as status strings
-                    status = fetch_result.status if fetch_result.status == "failed" else "completed"
+                    status, day_notes = _resolve_day_status(source, day, fetch_result, day_failed)
                     record_count = day_added + day_merged
 
                     _upsert_download_day(conn, source, day, status, record_count)
@@ -460,6 +519,7 @@ def sync(
 
                 if fetch_result.error:
                     errors.append(f"{source}/{day.isoformat()}: {fetch_result.error}")
+                errors.extend(day_notes)
 
             sources_synced.append(source)
     finally:

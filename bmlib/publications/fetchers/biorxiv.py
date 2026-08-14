@@ -29,6 +29,7 @@ from datetime import date
 from typing import Any
 
 from bmlib.fulltext.models import FullTextSourceEntry
+from bmlib.publications.fetchers._reconcile import reconcile_delivery
 from bmlib.publications.models import FetchedRecord, FetchResult, SyncProgress
 
 # ---------------------------------------------------------------------------
@@ -142,6 +143,7 @@ def fetch_biorxiv(
     cursor = 0
     total_fetched = 0
     records_total: int | None = None
+    stalled = False
 
     try:
         while True:
@@ -150,7 +152,19 @@ def fetch_biorxiv(
             response.raise_for_status()
 
             data = response.json()
+            # Checked rather than defaulted (#88): read through
+            # ``.get(..., [])``, a body carrying neither key is
+            # indistinguishable from a day with no preprints, and a day stored
+            # as completed is never offered again. The check stays minimal —
+            # bioRxiv reports a quiet day by omitting ``total`` rather than
+            # sending zero, so requiring more than this would fail every one.
+            if not isinstance(data, dict):
+                raise ValueError(
+                    f"{server} returned a {type(data).__name__} payload, not an object"
+                )
             collection = data.get("collection", [])
+            if not isinstance(collection, list):
+                raise ValueError(f"{server} returned a collection that is not a list")
 
             # Extract total from first page's messages
             if records_total is None:
@@ -159,6 +173,9 @@ def fetch_biorxiv(
                     records_total = int(messages[0].get("total", 0))
 
             if not collection:
+                # An empty page while the source's own total says records
+                # remain is a walk that stopped serving them, not the end.
+                stalled = records_total is not None and total_fetched < records_total
                 break
 
             for raw_record in collection:
@@ -192,6 +209,22 @@ def fetch_biorxiv(
             record_count=total_fetched,
             status="failed",
             error=str(exc),
+        )
+
+    shortfall = reconcile_delivery(
+        server,
+        date_str,
+        delivered=total_fetched,
+        promised=records_total or 0,
+        stalled=stalled,
+    )
+    if shortfall is not None:
+        return FetchResult(
+            source=server,
+            date=date_str,
+            record_count=total_fetched,
+            status="failed",
+            error=shortfall,
         )
 
     return FetchResult(
