@@ -1321,6 +1321,21 @@ class TestTheWalkIsReconciledAgainstTheCount:
 
         assert client.get.call_count == 3  # esearch + two efetch pages, not ten
 
+    def test_a_session_dying_on_a_late_page_fails(self):
+        """Half a day arrived, so only the empty page itself says it is broken.
+
+        A ratio floor cannot catch this: 500 of 1,000 clears it. It is the
+        shape a history session takes when it expires late in a long walk.
+        """
+        page = _make_efetch_xml(*([MINIMAL_ARTICLE_XML] * 500))
+        client = self._client(_make_esearch_xml(1000), page, _make_efetch_xml())
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.record_count == 500
+
     def test_a_day_of_book_chapters_is_not_a_shortfall(self):
         """<PubmedBookArticle> is delivered by the server and skipped by the parser.
 

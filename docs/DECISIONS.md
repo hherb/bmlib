@@ -730,6 +730,57 @@ test on both backends, several verified by mutation. Only what it omits:
   `PublicationType` are `(#PCDATA)`, genuine leaves, and keep plain `.text`.
   Do not widen or narrow this list by eye; check the DTD.
 
+## publications — a completed day is a durable claim (#88–#91, PR #93)
+
+**CLAUDE.md's "A completed day is a durable claim" argues this in full — read
+it there.** It settles the two-rules-of-different-kinds split, why the
+shortfall rule is a floor rather than strict inequality, why PubMed counts
+delivered elements, why each envelope is checked rather than defaulted, and
+why `sync()`'s status handling is an allowlist. Every guard below is pinned by
+a named test and was verified by mutation. Only what it omits:
+
+- **A small shortfall completes, and that is not an oversight.** Making
+  `reconcile_delivery` strict — any shortfall fails — is the obvious
+  "simplification" and it is a real defect: a `failed` day is re-offered by
+  `_days_needing_fetch()` on *every* later run, so a gap that is benign and
+  permanent re-fetches and re-merges the whole day for the rest of an
+  installation's life, growing with the date range. Pinned by
+  `test_a_small_shortfall_completes` and its per-fetcher twins.
+- **`SHORTFALL_FAILURE_RATIO = 0.5` is fixed before measurement**, unlike
+  every other threshold in bmlib. Do not cite it as measured and do not
+  tighten it by taste — **#92** is the sampler that would earn a different
+  number. The docstring says so; keep that paragraph honest if the number
+  moves.
+- **The floor is exclusive.** Delivering exactly half passes. Pinned by
+  `test_exactly_the_floor_completes`, which exists because `<` versus `<=`
+  here is a one-character edit no other test notices.
+- **`stalled` is not redundant with the floor**, though most reproductions
+  trip both. It is the only rule that catches a session expiring on a *late*
+  page — 500 of 1,000 clears the floor. Pinned by
+  `test_a_session_dying_on_a_late_page_fails` and
+  `test_an_empty_page_with_only_a_few_records_outstanding_fails`, written
+  after mutation showed the earlier tests survived removing it.
+- **bioRxiv's envelope check is deliberately the weakest of the three.** It
+  requires an object with a list `collection` and nothing more, because
+  bioRxiv reports a quiet day by *omitting* `total` rather than sending zero;
+  requiring `messages[0].total` would fail every quiet day. Pinned by
+  `test_a_quiet_day_still_completes`.
+- **An OpenAlex page emits its valid records before the page is refused**, so
+  a first page with `"meta": null` fails with `record_count=1`, not 0. Those
+  records were already handed to `on_record` and are stored; the day is
+  retried regardless. The ordering of the three checks in the loop is what
+  makes that true — do not "tidy" them into one block.
+- **A permanently-unstorable record pins its day into a retry on every run.**
+  Accepted knowingly (#90): loud — an ERROR and a `SyncReport.errors` line
+  each time — beats a day silently missing a record it holds by name. The
+  alternative considered and rejected was failing only on a *total* store
+  failure.
+- **The per-record `except Exception` in `sync()` stays broad.** One bad
+  record must not lose the batch. What changed is that it logs the exception
+  *type*, which is what tells a bmlib defect from bad source data; narrowing
+  the guard instead would abort the day. Pinned by
+  `test_the_store_failure_log_names_the_exception_type`.
+
 ## publications — retractions
 
 - **`bmlib.publications.retractions` has no downloader** (the Crossref

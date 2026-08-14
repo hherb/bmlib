@@ -29,6 +29,83 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A fetch that stopped short synced as a quiet day (#88).** Every built-in
+  fetcher learns a record count before walking pages — PubMed's `<Count>`,
+  OpenAlex's `meta.count`, bioRxiv's `messages[0].total` — and none of them
+  compared it against what arrived. A walk that stopped early therefore
+  returned `status="completed"`, `sync()` wrote the day to `download_days` as
+  done, and `_days_needing_fetch()` never offered it again: the records are
+  permanently absent, with nothing logged above INFO. Reproduced on PubMed
+  (`Count=5000`, efetch serving an error document: `completed`, 0 records,
+  `error=None`, 11 HTTP calls) and on OpenAlex (`meta.count` 5,000, one work,
+  no `next_cursor`). The comparison now lives once in
+  `publications/fetchers/_reconcile.py` and applies **two rules that differ in
+  kind**. A *stalled* walk — a page delivering nothing while the source's own
+  count says records remain — is broken outright and carries no threshold;
+  it is also the only rule that catches a history session expiring on the
+  last page of a long walk. A walk that ended naturally but came up short is
+  judged against a floor, `SHORTFALL_FAILURE_RATIO = 0.5`, with a smaller gap
+  logged at WARNING and completed.
+
+  The floor rather than strict inequality is the load-bearing choice: a day
+  recorded `failed` is re-offered on **every** later run, so failing on a gap
+  that is benign *and permanent* re-fetches and re-merges that whole day for
+  the rest of an installation's life, growing with the date range. Benign
+  causes are real — a record withdrawn between search and fetch, an index
+  moving under a long walk. Unlike bmlib's other thresholds, this one is
+  **fixed before measurement** and says only what can be argued without data;
+  #92 is the follow-up that measures the per-source distribution and tightens
+  it, and until it runs `0.5` must not be read as a measured value.
+
+  Two supporting changes. Each fetcher now **checks its envelope** instead of
+  reading it through `.get()` defaults, since an HTTP-200 error body is
+  otherwise indistinguishable from a day with no publications: PubMed refuses
+  an efetch response that is not a `PubmedArticleSet`, carrying NCBI's own
+  error text into the message and stopping the walk instead of paging on
+  (10 useless requests on the measured day); OpenAlex requires `results` to
+  be a list and `meta` an object with a numeric `count`; bioRxiv requires an
+  object with a list `collection`, and no more than that, because bioRxiv
+  reports a quiet day by omitting `total` rather than sending zero. And
+  PubMed reconciles **delivered elements** rather than parsed records:
+  efetch delivers `<PubmedBookArticle>` elements the fetcher deliberately
+  skips, so counting parsed records would report a phantom shortfall on every
+  day carrying a book chapter — and then re-fetch that day forever.
+
+  One previously-accepted OpenAlex response changes verdict: a first page
+  with `"meta": null` used to complete (a guard added so it could not raise
+  `AttributeError` mid-walk). It now fails. The no-crash invariant is
+  unchanged and still pinned by its own test.
+- **`sync()` converted a fetcher's failure into a durable success (#89).**
+  The status was read through a denylist — anything not exactly `"failed"`
+  became `"completed"` — so a fetcher reporting failure in any other spelling
+  had that failure written to `download_days` as success. The error still
+  reached the transient `SyncReport`, which is the worst combination: the run
+  looks noisy while the database looks clean, and the database is what the
+  next run consults. It is now an allowlist: a status that is neither
+  `"completed"` nor `"failed"` is logged and recorded as failed, and named in
+  `SyncReport.errors`. Failing closed is right because `register_source()` is
+  a documented extension point, and a third-party fetcher is exactly the
+  caller who will not know the convention.
+- **A day whose records failed to store was recorded `completed` with an
+  empty error list (#90).** `day_failed` was counted and logged per record but
+  never influenced the day's stored status, and `errors` was appended to only
+  when the *fetch* reported an error — so a day where every record raised was
+  stored as done with `record_count=0`, never retried, and `SyncReport.errors`
+  was empty. The only trace was per-record log lines plus an aggregate counter
+  naming neither the source nor the day. Any store failure now records the day
+  `failed` and appends `"{source}/{date}: N record(s) failed to store"`;
+  retrying is safe because `store_publication()` merges. The per-record
+  handler stays broad — one bad record must not lose the batch — but now logs
+  the exception **type** and the day, so a `TypeError` affecting every record
+  no longer reads as bad data from the source. Worth knowing: a record the
+  storage layer will never accept pins its day into a retry on every run,
+  loudly rather than silently.
+- **An OpenAlex decode error was attributed to the wrong layer (#91).**
+  `response.json()` sat outside the `try` guarding the HTTP call, so a
+  malformed body escaped `fetch_openalex()` entirely and was caught by
+  `sync()`'s generic handler, which logs it as "Fetcher raised". The day was
+  still retried, so this cost diagnosis rather than data. Moved inside the
+  guard; the other two fetchers were checked and already decode inside theirs.
 - **A PubMed day with no history session synced as an empty day.**
   `_esearch()` returns `(count, web_env, query_key)` with both session
   values `str | None`, and `fetch_pubmed()` guarded only `count == 0`. A

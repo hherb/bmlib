@@ -1149,6 +1149,27 @@ class TestBiorxivWalkIsReconciledAgainstTheTotal:
         assert result.status == "failed"
         assert result.record_count == PAGE_SIZE
 
+    def test_an_empty_page_with_only_a_few_records_outstanding_fails(self):
+        """Only the empty page says this is broken; the floor clears it.
+
+        100 of 101 is well above the shortfall floor, so a rule with a
+        threshold alone would store this day as complete.
+        """
+        page1 = [_sample_record(doi=f"10.1101/2024.01.01.{i:06d}") for i in range(PAGE_SIZE)]
+        client = MagicMock()
+        client.get.side_effect = [
+            _make_api_response(page1, total=PAGE_SIZE + 1),
+            _make_api_response([], total=PAGE_SIZE + 1),
+        ]
+
+        from unittest.mock import patch
+
+        with patch("bmlib.publications.fetchers.biorxiv.time.sleep"):
+            result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.record_count == PAGE_SIZE
+
     def test_a_quiet_day_still_completes(self):
         """bioRxiv reports a day with no posts by omitting the total entirely."""
         mock_resp = MagicMock()

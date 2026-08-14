@@ -93,6 +93,7 @@ bmlib/
 │   ├── sync.py              # Multi-source sync orchestrator
 │   ├── retractions.py       # Retraction Watch: parse_retraction_watch_csv, store_retraction_notices, lookup_retractions, is_retracted
 │   └── fetchers/            # Source fetcher plugins
+│       ├── _reconcile.py    # reconcile_delivery — did the walk deliver what the source promised?
 │       ├── registry.py      # register_source, get_source, get_fetcher, list_sources
 │       ├── pubmed.py        # PubMed E-utilities (esearch + efetch)
 │       ├── biorxiv.py       # bioRxiv / medRxiv
@@ -133,7 +134,7 @@ bmlib/
 - **`context_processor/`** — Hierarchical map-reduce for content that exceeds one context window: batch the items to fit, extract from each batch, feed the extractions back in as items, repeat until they fit. `IterativeContextProcessor` is the harness and has **no LLM dependency** — which is why it is a top-level package rather than living under `agents/`; only `LLMChunkProcessor` imports `BaseAgent`, and the package `__init__` resolves it through a PEP 562 `__getattr__` so that claim holds of the package and not merely of `base.py` (eager re-export pulled in `bmlib.templates` and jinja2, over half the import cost, for callers who only wanted the harness). `bmlib.llm.text_utils.process_with_map_reduce()` is the shallow case of the same idea (one map, one reduce, one string) and stays; this module uses that module's `TextChunker` when it splits an oversized item. `max_context_chars` is the guarantee the module makes — no batch handed to `extract_from_batch()` exceeds it — and the port from bmlibrarian fixed two separate ways upstream broke it (see "Measured, not assumed, in the batcher" below). `process()` holds no per-run state on the instance, so one processor can serve concurrent calls.
 - **`quality/`** — Tiered quality assessment: (1) free metadata classification, (2) cheap LLM classifier, (3) deep LLM assessment, (4) Cochrane-aligned assessment. Uses CEBM evidence hierarchy for quality tiers. `CochraneAssessor` (Tier 4, behind `QualityFilter(use_cochrane_assessment=True)`) produces `cochrane_models`' nine-domain `CochraneRiskOfBias` and study-characteristics table from a title and text; `collapse_risk_of_bias()` bridges the nine domains onto the five-domain `BiasRisk`; and `QualityManager` reaches both of these behind that same flag, enriching a classification rather than replacing it — Tier 1's when the metadata was conclusive, Tier 2's when it was not, since a Cochrane assessment supplies no `study_design` of its own and a preprint carries no PubMed publication types to classify from. **The rule-based extractors and `cochrane_formatter` are still standalone**: nothing in the tiered pipeline imports them, and there is no conversion between `DimensionScore` and `QualityAssessment`. Wiring the extractors in as a free pre-filter ahead of Tier 1 is open work — see ROADMAP.md.
 - **`transparency/`** — Queries CrossRef, Europe PMC (search + full text), PubMed, OpenAlex, and ClinicalTrials.gov to compute a transparency score (0-100) covering funding, COI, data availability, trial registration, and open access. The PubMed step is one `efetch` per analysis, skipped without a PMID (taken from the caller or from the Europe PMC record already fetched); it supplies structured `<CoiStatement>`, `<DataBankList>` and `<GrantList>` signals that Europe PMC cannot give for a closed-access paper, and `pubmed_api_key` rides on it. When no API is reachable the result is `UNKNOWN` at score 0, so an unreachable network does not masquerade as a HIGH-risk paper; `TransparencyResult.unknown_reason` says which of the three `UNKNOWN` cases it was, set if and only if `risk_level` is `UNKNOWN`.
-- **`publications/`** — Publication ingestion from multiple sources (PubMed, bioRxiv, medRxiv, OpenAlex) with deduplication by DOI/PMID, merge-on-upsert, and date-range sync tracking. Runs on both backends `db/` supports: placeholders come from `db.placeholder()`, `ensure_schema()` picks the matching DDL, and the one irreducibly dialect-specific need — reading back an inserted row's id — is `cur.lastrowid` on SQLite and `RETURNING id` on PostgreSQL. Everything else is written in the intersection of the two dialects. `tests/test_backends.py` runs each test against both. `retractions.py` is a standalone module, not a fetcher: `parse_retraction_watch_csv()` streams the Crossref-distributed Retraction Watch export into `RetractionNotice` records, `store_retraction_notices()` upserts them idempotently on Retraction Watch's own `record_id`, and `lookup_retractions()` plus the pure `is_retracted()` answer "is this paper retracted?" — with only a Retraction or a Reinstatement deciding, since a later Correction does not undo an earlier Retraction. The PubMed fetcher also extracts `<GrantList>` grants and `<AffiliationInfo>` affiliations into `Grant` / `AuthorAffiliation` child rows (tables `publication_grants` / `publication_affiliations`, read back with `get_grants()` / `get_author_affiliations()`), and reads titles and abstracts as Markdown — see "Replace-if-nonempty child rows" and "Markdown, measured against the markup" below.
+- **`publications/`** — Publication ingestion from multiple sources (PubMed, bioRxiv, medRxiv, OpenAlex) with deduplication by DOI/PMID, merge-on-upsert, and date-range sync tracking. Every fetcher reconciles what its source delivered against the count that source promised (`fetchers/_reconcile.py`) and refuses a malformed envelope rather than reading it as an empty day — see "A completed day is a durable claim" below, which is the one place to read before touching a fetcher's page loop or `sync()`'s status handling. Runs on both backends `db/` supports: placeholders come from `db.placeholder()`, `ensure_schema()` picks the matching DDL, and the one irreducibly dialect-specific need — reading back an inserted row's id — is `cur.lastrowid` on SQLite and `RETURNING id` on PostgreSQL. Everything else is written in the intersection of the two dialects. `tests/test_backends.py` runs each test against both. `retractions.py` is a standalone module, not a fetcher: `parse_retraction_watch_csv()` streams the Crossref-distributed Retraction Watch export into `RetractionNotice` records, `store_retraction_notices()` upserts them idempotently on Retraction Watch's own `record_id`, and `lookup_retractions()` plus the pure `is_retracted()` answer "is this paper retracted?" — with only a Retraction or a Reinstatement deciding, since a later Correction does not undo an earlier Retraction. The PubMed fetcher also extracts `<GrantList>` grants and `<AffiliationInfo>` affiliations into `Grant` / `AuthorAffiliation` child rows (tables `publication_grants` / `publication_affiliations`, read back with `get_grants()` / `get_author_affiliations()`), and reads titles and abstracts as Markdown — see "Replace-if-nonempty child rows" and "Markdown, measured against the markup" below.
 - **`fulltext/`** — Tiered full-text retrieval (caller-supplied sources → Europe PMC XML → Europe PMC PDF → Unpaywall → DOI/PubMed URL) with JATS XML parsing and disk-based caching. PDF→text conversion lives here too, and `FullTextService` calls it: a retrieved PDF is extracted into `FullTextResult.html` (opt out with `FullTextService(convert_pdfs=False)`, needs `bmlib[pdf]`). Extraction only runs once the PDF is cached, so it needs an `identifier`. A body-less JATS document — `<front>`+`<back>` with no article prose, which medRxiv serves for some preprints — is detected via `JATSArticle.has_body`, never cached, and held back as a last resort so the chain keeps looking for the real article. `FullTextResult.content_kind` tells the caller which of `fulltext` / `abstract` / `extracted` it actually got, so an abstract is not analysed as if it were an article. `SectionSegmenter` (in `segmenter.py`) segments the `TextBlock` lines from `PyMuPDFConverter.extract_blocks()` — an optional capability declared by the `LayoutExtractor` protocol, not by the `PDFConverter` ABC — into a `SegmentedDocument` of typed sections. One block per PDF *line* with dominant-span font attributes, because span-level extraction shattered mixed-font headings; front matter is kept as a section rather than dropped; standalone for now — nothing in `fulltext` or `quality` calls it yet. Only `FullTextService` needs an extra (`bmlib[fulltext]`, httpx); the package `__init__` resolves it through a PEP 562 `__getattr__` so the parser, the models and the segmenter import on core bmlib alone — see "Optional dependencies guarded at the call site". Tier 1d's free-PDF check (`_entry_is_free`) allow-lists Europe PMC's `fullTextUrlList` on `availabilityCode` (`OA`, `F`), falling back to the `availability` display string only for an entry carrying no code; a present-but-unknown code is rejected without consulting the label. Measured over 600 MEDLINE records, `"Open access"`/`OA` is 95.7% of free-PDF entries and `"Free"`/`F` is the other 4.3% — accepting only the `"Free"` label, as the code did before issue #79, silently discarded the large majority of the PDFs the tier exists to find. Both access fields are type-checked before being compared: `x in frozenset` *hashes* `x`, and the resulting `TypeError` on a JSON object is a `_BUG_TYPES` member, so a malformed payload would be reported as a bmlib defect rather than as an entry to skip — and would spend the one-shot `bug:TypeError` slot a later real defect needs. `_extract_free_pdf_url` checks the container one level up for the same reason: `.get("fullTextUrl", [])` returns `None`, not `[]`, for a key present with a null. A PDF's **metadata title is believed only where page 1 prints it** (`_titles.py`, issue #56): real `/Title` values are typesetter job numbers and source filenames, and one used to beat a perfectly good large-font line. `PyMuPDFConverter` puts the judged answer in `ConversionResult.title` and `SectionSegmenter._extract_title` prefers it over the font-size heuristic, while `metadata["title"]` stays verbatim. **Run `scripts/sample_pdf_metadata_titles.py` before changing the reject-list in `looks_like_junk`** — every member has to be earned from `tests/data/pdf_metadata_titles.json`, and the one member left no longer clears a row corroboration does not, so it is kept as defence-in-depth and says so. Containment is anchored to whole tokens: an unanchored substring test accepts a `/Title` truncated mid-word, which is both a false accept and worse than the fallback it beats.
 
 ## Coding Conventions
@@ -223,6 +224,57 @@ PubMed never asserted. Pinned on both backends by
 `test_a_split_identity_merge_relocates_child_rows` and
 `test_consolidation_moves_only_sources_the_keep_row_lacks`; both guards
 verified by mutation.
+
+### A completed day is a durable claim
+
+`sync()` writes `status='completed'` to `download_days` and
+`_days_needing_fetch()` never offers a completed day again. So anything that
+reports success it did not have does not lose a request — it loses the day's
+records permanently, and issues #88–#90 were three separate ways of doing
+exactly that. Three rules follow, and all three **fail closed**.
+
+*Reconcile the walk.* `fetchers/_reconcile.py` compares what a source
+delivered against the count it promised, in one place because three fetchers
+share the shape. Two rules of different kinds: a **stalled** walk (a page
+delivering nothing while the count says records remain) is broken outright
+and carries no threshold — it is also the only rule that catches a session
+expiring on the last page — while a walk that ended naturally but came up
+short is judged against `SHORTFALL_FAILURE_RATIO`.
+
+That floor, rather than strict inequality, is the load-bearing choice. A day
+recorded `failed` is re-offered on **every** later run, so failing on a gap
+that is benign and permanent re-fetches and re-merges that day for the rest
+of an installation's life, growing with the date range and with an ERROR each
+time. Benign gaps exist: a record withdrawn between search and fetch, an
+index moving under a long walk. **The 0.5 is a rule fixed before
+measurement**, unlike every other calibrated threshold here (#79's
+allow-list, #68's log levels, #56's corroboration rule, #36's funder stems);
+it asserts only that no benign cause plausibly removes half a day. Issue #92
+is the follow-up that measures it — do not cite 0.5 as measured, and do not
+tighten it without running that.
+
+*Count what the server delivered, not what you parsed.* PubMed's efetch
+delivers `<PubmedBookArticle>` elements the fetcher deliberately skips.
+Reconciling parsed records would report a phantom shortfall on every day
+carrying a book chapter, and then re-fetch it forever.
+
+*Check the envelope; do not read it through defaults.* `data.get("results",
+[])` makes an HTTP-200 error body identical to a day with no publications.
+PubMed refuses an efetch root that is not `PubmedArticleSet` (the same
+refusal `_esearch` makes for a missing `<Count>`), OpenAlex requires a list
+`results` and a `meta` carrying a numeric `count`, and bioRxiv requires an
+object with a list `collection` — and *no more than that*, because bioRxiv
+reports a quiet day by omitting `total` rather than sending zero, so a
+stricter check there would fail every quiet day.
+
+In `sync()` the same principle gives an **allowlist**, not a denylist: a
+fetcher status that is neither `"completed"` nor `"failed"` is recorded as
+failed, since `register_source()` is public and a third-party fetcher is
+exactly the caller who will not know the convention. And any record that
+failed to store fails its day — `store_publication()` merges, so the retry is
+idempotent. The accepted cost is that a permanently-unstorable record pins
+its day into a retry on every run; that is loud (an ERROR and a
+`SyncReport.errors` line each time) where the alternative was silent.
 
 ### Markdown, measured against the markup
 
@@ -403,7 +455,7 @@ uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
 | `quality/`           | `test_quality.py`, `test_cochrane.py`, `test_extractors.py` |
 | `templates/`         | `test_templates.py`                                        |
 | `transparency/`      | `test_transparency.py`                                     |
-| `publications/`      | `test_publications.py`, `test_sync.py`, `test_backends.py`, `test_pubmed_fetcher.py`, `test_openalex_fetcher.py`, `test_registry.py`, `test_retractions.py` |
+| `publications/`      | `test_publications.py`, `test_sync.py`, `test_backends.py`, `test_pubmed_fetcher.py`, `test_openalex_fetcher.py`, `test_registry.py`, `test_retractions.py`, `test_fetch_reconciliation.py` |
 | `fulltext/`          | `test_fulltext_cache.py`, `test_fulltext_models.py`, `test_fulltext_service.py`, `test_jats_parser.py`, `test_pdf_converter.py`, `test_segmenter.py`, `test_fulltext_titles.py`, `test_pdf_metadata_titles.py` |
 | `scripts/`           | `test_databank_sampler.py` (`sample_databank_names.py` only), `test_free_pdf_sampler.py` (`sample_free_pdf_urls.py` only), `test_pdf_title_sampler.py` (`sample_pdf_metadata_titles.py` only), `test_sampling_helpers.py` (`_sampling.py`) |
 
