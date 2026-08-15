@@ -251,6 +251,149 @@ def _read_verification_date(source: str, day: date, value: object) -> date | Non
     return None
 
 
+def _require_plain_date(value: object, field_name: str) -> None:
+    """Refuse anything but a ``date`` that is not also a ``datetime``.
+
+    ``datetime`` subclasses ``date``, so ``sync(date_to=datetime.now())``
+    satisfies the annotation and every type checker, and no value-based guard
+    below can see it: ``datetime.max == date.max`` is ``False``. Mistaking
+    ``datetime.now()`` for ``date.today()`` is a far likelier slip than any
+    input #99 originally named, and it fails in two shapes. Mixed with a
+    ``date`` it raises ``TypeError`` from the comparison in
+    :func:`_days_needing_fetch` and loses the whole run's report. On *both*
+    ends it raises nothing at all: the walk succeeds and writes
+    ``download_days.date`` values carrying a time component, which no
+    date-keyed lookup can ever match — so the day is re-fetched for the life
+    of the installation and the table fills with rows nothing reads. The
+    silent shape is the reason this is a type check and not a value check.
+
+    Parameters
+    ----------
+    value:
+        The caller's value. Typed ``object`` because the annotation is
+        exactly what cannot be trusted here.
+    field_name:
+        The parameter being validated, interpolated into the message.
+
+    Raises
+    ------
+    ValueError
+        Naming *field_name* and what arrived instead.
+    """
+    if isinstance(value, datetime) or not isinstance(value, date):
+        raise ValueError(
+            f"{field_name} must be a datetime.date, got {type(value).__name__}"
+            " — note that a datetime is not one for this purpose: it satisfies"
+            " the annotation and then writes a download_days.date no lookup matches"
+        )
+
+
+def _validate_window(date_from: object, date_to: object, recheck_days: object) -> None:
+    """Refuse a window or recheck depth that day selection cannot walk.
+
+    Two kinds of rejection, and they fail differently. The **type** checks
+    catch a value that is not a day or a whole number of days at all; the
+    **range** checks catch one that is, but lies outside the calendar. Both
+    reach date arithmetic inside :func:`_days_needing_fetch`, and what
+    escapes from there — ``OverflowError`` for a range, ``TypeError`` or
+    ``AttributeError`` for a type — takes the whole multi-source run with it,
+    because ``sync()``'s ``try`` carries only a ``finally``. The
+    ``SyncReport`` is lost before a single record is fetched, for every
+    source rather than for one day. That is worse in kind than the per-day
+    losses the rest of this module guards against, because it is total (#99).
+
+    Only one of these is not an exception in the first place: a **negative**
+    ``recheck_days`` walked fine and was swallowed by ``recheck_days > 0``,
+    delivering "recheck nothing" to a caller who asked for the opposite,
+    without a word. ``float('nan')`` reached the same silence through both
+    range checks, since every comparison against it is ``False``. Those are
+    rejected as caller bugs of the same family, not as arithmetic hazards.
+
+    Validated once at the public entry, deliberately **not** caught at the
+    helpers: an ``except OverflowError`` around the arithmetic would convert
+    a caller bug into a day that quietly looks like it needs no fetch, which
+    is the failure mode the whole #88-#95 family exists to remove.
+
+    What is deliberately **not** rejected is an *empty* window
+    (``date_from > date_to``). That is what the ordinary incremental-sync
+    idiom produces once it has caught up — ``date_from = last_synced + 1
+    day``, ``date_to = today`` — so raising would turn a caller that is
+    simply up to date into a crashing one. It writes no row and claims no
+    day, which is what separates it from the rejections below. A window
+    reaching into the *future* is likewise accepted, and reported instead —
+    see :func:`_note_unreachable_days`.
+
+    Parameters
+    ----------
+    date_from:
+        Start of the window, already defaulted by :func:`sync`.
+    date_to:
+        End of the window, already defaulted by :func:`sync`.
+    recheck_days:
+        The caller's recheck depth.
+
+    Raises
+    ------
+    ValueError
+        Naming the offending parameter.
+    """
+    _require_plain_date(date_from, "date_from")
+    _require_plain_date(date_to, "date_to")
+    if not isinstance(recheck_days, int):
+        raise ValueError(
+            f"recheck_days must be a whole number of days, got {type(recheck_days).__name__}"
+            " — a float slips both range checks below, since every comparison"
+            " against nan is False, and then silently disables rechecking"
+        )
+
+    if date_to == date.max:
+        raise ValueError(
+            f"date_to must be earlier than {date.max.isoformat()}: day selection asks"
+            " which day follows the last day of the window, and there is none"
+        )
+    if recheck_days < 0:
+        raise ValueError(f"recheck_days must not be negative, got {recheck_days}")
+    days_since_date_min = (date.today() - date.min).days
+    if recheck_days > days_since_date_min:
+        raise ValueError(
+            f"recheck_days must not reach back before {date.min.isoformat()}:"
+            f" got {recheck_days}, and today is only {days_since_date_min} days after it"
+        )
+
+
+def _note_unreachable_days(date_to: date) -> str | None:
+    """Report a window ending in the future, which can never complete.
+
+    :func:`_day_was_over_when_fetched` requires a fetch at or after 12:00 UTC
+    on the day *after* the day it describes, which for a day that has not
+    happened is unsatisfiable. So each future day is stored ``completed`` and
+    re-offered on every subsequent run, for the life of the installation —
+    a permanent cost that was reported at no log level and in no field of the
+    ``SyncReport``. Invisible and permanent is the pair this module's other
+    rules exist to break up.
+
+    Rejecting the window was considered and refused. The past half of a
+    window ending tomorrow is perfectly fetchable, and raising would discard
+    it along with the unreachable half; the ordinary caller passing
+    ``date_to=today`` must also stay unaffected across a midnight rollover.
+    Returning a note is what :attr:`SyncReport.notes` already exists for —
+    the same choice the shortfall rule makes for a gap too small to fail on.
+
+    Returns
+    -------
+    str | None
+        The note, or ``None`` when the window ends today or earlier.
+    """
+    today = date.today()
+    if date_to <= today:
+        return None
+    return (
+        f"date_to is {(date_to - today).days} day(s) in the future ({date_to.isoformat()});"
+        " a day that has not ended cannot be recorded durably, so those days"
+        " will be re-fetched on every run until they are past"
+    )
+
+
 def _days_needing_fetch(
     conn: Any,
     source: str,
@@ -286,6 +429,18 @@ def _days_needing_fetch(
     written while its own day was current, so none of them is durable and the
     whole window is re-fetched once.
 
+    **Preconditions.** *date_from*, *date_to* and *recheck_days* are assumed
+    already validated — they must be plain ``date`` objects (not
+    ``datetime``, which subclasses it) and a whole number of days inside the
+    calendar. :func:`sync` guarantees that at its entry via
+    :func:`_validate_window`, and this function does not re-check: an
+    ``except OverflowError`` here would convert a caller bug into a day that
+    quietly looks like it needs no fetch, which is the wrong shape of fix.
+    Called directly with unvalidated values, the loop below raises
+    ``OverflowError``, ``TypeError`` or ``AttributeError``, and a ``datetime``
+    on *both* ends does something worse than raise — see
+    :func:`_require_plain_date`.
+
     Parameters
     ----------
     conn:
@@ -297,7 +452,8 @@ def _days_needing_fetch(
     date_to:
         End of the date range (inclusive).
     recheck_days:
-        If > 0, re-fetch days whose last_verified_at is older than this many days.
+        If > 0, re-fetch days whose last_verified_at is older than this many
+        days. See **Preconditions** above.
 
     Returns
     -------
@@ -606,6 +762,16 @@ def sync(
     -------
     SyncReport
         Summary of the sync operation.
+
+    Raises
+    ------
+    ValueError
+        If *date_from*, *date_to* or *recheck_days* is not the type day
+        selection can walk, or is outside the range it can walk — see
+        :func:`_validate_window`, which also says why an *empty* window
+        (*date_from* after *date_to*) is accepted rather than rejected, and
+        :func:`_note_unreachable_days` for why a *future* window is accepted
+        and reported instead.
     """
     ensure_schema(conn)
 
@@ -616,6 +782,14 @@ def sync(
         date_to = today
     if date_from is None:
         date_from = today - timedelta(days=1)
+
+    # Before the HTTP client is built, so a caller bug cannot leak one: the
+    # client is created outside the try whose finally closes it, so a raise
+    # between the two would strand the connection pool. And before any source
+    # is touched — the alternative is an exception out of day selection that
+    # takes the whole run's SyncReport with it (#99). ensure_schema() has
+    # already run, which is idempotent DDL any valid call would perform.
+    _validate_window(date_from, date_to, recheck_days)
 
     resolved_configs = _build_source_configs(source_configs, email, api_keys)
 
@@ -637,6 +811,11 @@ def sync(
     errors: list[str] = []
     notes: list[str] = []
     sources_synced: list[str] = []
+
+    unreachable = _note_unreachable_days(date_to)
+    if unreachable is not None:
+        logger.warning("%s", unreachable)
+        notes.append(unreachable)
 
     try:
         for source in sources:
@@ -687,6 +866,19 @@ def sync(
                         on_progress=on_progress,
                         **src_config,
                     )
+                    if not isinstance(fetch_result, FetchResult):
+                        # Raised rather than handled separately, so the one
+                        # handler below covers both ways a fetcher can break
+                        # its contract. `register_source()` is public, so the
+                        # caller getting this wrong is a third party; a
+                        # fetcher that *returns* without a `.status` used to
+                        # reach `_resolve_day_status` outside this handler,
+                        # and the AttributeError escaped through the finally
+                        # and out of sync(), losing every source's report.
+                        raise TypeError(
+                            f"fetcher for {source} returned"
+                            f" {type(fetch_result).__name__}, not a FetchResult"
+                        )
                 except Exception as exc:
                     # A misconfigured source (e.g. a required kwarg like
                     # OpenAlex's ``email`` not supplied) or a bug inside a

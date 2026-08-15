@@ -334,6 +334,39 @@ fails its day — `store_publication()` merges, so the retry is idempotent. The 
 its day into a retry on every run; that is loud (an ERROR and a
 `SyncReport.errors` line each time) where the alternative was silent.
 
+Finally, *the rule refuses to guess its own inputs* (#98, #99).
+`DownloadDay.from_dict()` raises rather than defaulting an absent
+`downloaded_at` to now — the most durable-looking value the rule can be
+handed, and a fail-open where the SQL path fails closed — while the
+dataclass default that stamps now for a *freshly constructed* row is kept,
+since that row describes a fetch that has just happened. Every rejection
+there is a `ValueError` **naming the field**: delegating to `_parse_datetime`
+let a non-string escape as `TypeError`, so the documented `except ValueError`
+did not catch it, and an unreadable string reported `Invalid isoformat
+string: ''`, which names neither column nor row.
+
+And `sync()` validates `date_from`, `date_to` and `recheck_days` at its
+entry, because anything raised out of day selection escapes a `try` carrying
+only a `finally` and loses the whole multi-source run's `SyncReport`.
+Validate at the entry, never with an `except OverflowError` at the helpers:
+that turns a caller bug into the silent re-fetch this family exists to
+remove. Two kinds of check, and **not every one is guarding an exception** —
+a negative `recheck_days` walked fine and was swallowed by `recheck_days >
+0`, delivering the opposite of what was asked without a word, and `nan`
+reached the same silence through both range checks. The **type** checks are
+the ones that earn their place hardest: `datetime` subclasses `date`, so
+`date_to=datetime.now()` satisfies mypy, defeats every value check
+(`datetime.max == date.max` is `False`), and on *both* ends raises nothing at
+all — it writes `download_days.date` values carrying a time component that no
+date-keyed lookup can ever match. An **empty** window is deliberately *not*
+rejected — it is what incremental sync produces once it has caught up — and
+neither is a window reaching into the **future**, which cannot complete but
+whose past half is perfectly fetchable; it returns a `SyncReport.notes` line
+instead, since permanent *and* invisible is the pair these rules exist to
+break up. A fetcher that returns a non-`FetchResult` fails its own day rather
+than the run: `register_source()` is public, and an `AttributeError` from
+`_resolve_day_status` used to escape the one handler that wraps the call.
+
 ### Markdown, measured against the markup
 
 `fetchers/pubmed.py` reads titles and abstracts with `_text_with_formatting()`,
