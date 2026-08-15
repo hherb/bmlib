@@ -1,53 +1,38 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-15. **0.9.1 is released. The whole day-durability
-family is now closed and on `main`** — #78 and #81 (PRs #85, #87), #88–#91
-(PR #93) and #95 (PR #97) — and **#98 and #99 are closed on branch
-`fix/98-99-model-and-input-validation` (PR #100, green, awaiting review)**,
-which is the two fail-open corners #97's own review filed rather than fixed.
+_Last updated: 2026-08-15. **0.10.0 is cut on `release/0.10.0` and its PR is
+open — merging it is the next task, and then three steps that are not
+automated.** After CI *and CodeQL* are green: merge with any button, tag
+`main`'s tip (the recipe under "Cutting a release" — do not tag a particular
+commit), create the GitHub release, which is **what publishes**, and then
+**stop at the `pypi` environment gate and hand it over.** Nothing before the
+tag is irreversible; everything after it is.
 
-**PR #100 has since had its own review round, and it found the entry guard
-answered a narrower question than it claimed.** Three further ways a caller
-or a third-party fetcher could take the whole multi-source run down are now
-closed on the same branch, and the lesson is worth carrying: `sync()`
-validated *values* where the dangerous inputs were *types*. `datetime`
-subclasses `date`, so `date_to=datetime.now()` satisfied mypy, defeated every
-value check (`datetime.max == date.max` is `False`), and on **both** ends
-raised nothing at all — writing `download_days.date` values with a time
-component that no date-keyed lookup matches, so the day was re-fetched
-forever and the table filled with rows nothing reads. That is the family's
-own failure mode arrived at through the type system rather than through a
-status or a timestamp. Also closed: a fetcher that *returns* a
-non-`FetchResult` (the shape a forgotten `return` makes) escaped the one
-handler wrapping the call and lost every source's report; a future window
-stored `completed` rows re-offered forever at no log level and in no field of
-the `SyncReport`, and now returns a `notes` line; and `_require_datetime()`
-now delivers the `ValueError` contract it documented, where a non-`str` used
-to escape as `TypeError`.
+**The whole day-durability family ships in this release**, closed across five
+PRs on `main` — #78 and #81 (PRs #85, #87), #88–#91 (PR #93), #95 (PR #97) and
+#98/#99 (PR #100). `sync()` writes `status='completed'` to `download_days` and
+`_days_needing_fetch()` does not offer that day again, so anything reporting
+success it did not have loses the day's records permanently rather than losing
+a request; seven issues were seven ways of doing exactly that. #95 is the one
+worth remembering — it needed no API malfunction at all, fired on every
+ordinary run, and cost a 09:00 cron the following 15 hours of indexing.
+`docs/DECISIONS.md` has the rules and their costs; `CLAUDE.md`'s "A completed
+day is a durable claim" is the one place to read before touching a fetcher's
+page loop or `sync()`'s status handling.
 
-**The release is the next task, and its number is already decided: 0.10.0.**
-A *minor* bump, on the convention that minor is the breaking axis, because
-three of the unreleased changes reach a public API — `DownloadDay.from_dict()`
-now raises where it defaulted (#98); a third-party fetcher's unrecognised
-status is recorded `failed` rather than coerced to `completed` (#89), which is
-a behaviour change at the `register_source()` extension point; and
-`bmlib[pdf]` floors `pymupdf` at `>=1.28.2`. Same reasoning that renumbered
-0.8.1 to 0.9.0 in review. Note the data question is separate and the number
-cannot answer it: this release moves nothing stored, but the day-durability
-family costs **a whole-window re-fetch once on upgrade**, since no row the
-previous release wrote is durable under the new rule. Cut it once PR #100 is
-merged — see "Cutting a release" for the recipe.
-
-**What the family was.** `sync()` writes `status='completed'` to
-`download_days` and `_days_needing_fetch()` does not offer that day again, so
-anything reporting success it did not have loses the day's records
-permanently rather than losing a request. Seven issues were seven ways of
-doing exactly that. #95 is the one worth remembering: it needed no API
-malfunction at all, firing on every ordinary run, and a 09:00 cron durably
-lost the following 15 hours of indexing. `docs/DECISIONS.md` has the rules and
-their costs; `CLAUDE.md`'s "A completed day is a durable claim" is the one
-place to read before touching a fetcher's page loop or `sync()`'s status
-handling.
+**0.10.0 is a minor bump on the API axis alone**, on the convention that minor
+is the breaking axis: `DownloadDay.from_dict()` raises where it defaulted
+(#98); a third-party fetcher's unrecognised status is recorded `failed`
+rather than coerced to `completed` (#89), a behaviour change at the public
+`register_source()` extension point; and `bmlib[pdf]` floors `pymupdf` at
+`>=1.28.2`. Same reasoning that renumbered 0.8.1 to 0.9.0 in review. **The
+number cannot answer the data question and here that matters**: nothing
+stored moves, but no row a previous release wrote is durable under #95's
+rule, so the **whole window is re-fetched once on the first run after
+upgrading** (29 of 29 days measured for a 30-day window, per source) —
+idempotent and self-correcting, but long for a wide window across several
+sources and capable of meeting a rate limiter. Say this to downstreams; the
+version number will not.
 
 **Four review rounds in a row found the fix carrying the same shape of bug as
 the bug.** Worth carrying forward as method, not as history:
@@ -77,12 +62,15 @@ is the bioRxiv envelope sampler the second round deferred for the same reason
 (its guard is deliberately weaker than it looks — read `docs/DECISIONS.md`
 before "simplifying" it); #96 is efetch's retstart skew.
 
-On the #98/#99 branch, after the review round: **2172 tests + 59 skipped** on
-SQLite alone, and **2229 + 2 with a PostgreSQL DSN** (PostgreSQL 16, local),
-so the dual-backend half of `test_backends.py` actually ran. ruff 0.15.20 and
-`uv run mypy` both clean, and every guard verified by mutation — **10
-mutations, 10 caught**, including the deliberate non-fix (an empty window is
-still accepted), which its own test alone catches.
+On `release/0.10.0`: **2172 tests + 59 skipped** on SQLite alone, and **2229 +
+2 with a PostgreSQL DSN** (PostgreSQL 16, local), so the dual-backend half of
+`test_backends.py` actually ran. ruff 0.15.20 and `uv run mypy` both clean.
+`release.yml`'s own gates were rehearsed locally before the PR was opened —
+`uv build`, `twine check --strict` on both artefacts, `bmlib/py.typed` present
+in the wheel, and the wheel installed into a venv holding only jinja2 and
+probed **one fresh interpreter per module: 71 importable, 0 not**. Rehearsing
+is the whole point: those gates run in CI only *after* the release is public
+and the version is burned.
 
 **The mutation lesson from that review is the one to carry forward.** The
 first round reported 7 of 7 caught and the count was honest, but the set was
@@ -96,10 +84,16 @@ build passed the entire suite, though the client is built *outside* the `try`
 whose `finally` closes it. **A mutation set written by the author of a guard
 tends to test that the guard exists, not that it is correctly bounded or
 correctly placed.** Mutate the boundary by one in both directions, and move
-the call. CHANGELOG's
-`[Unreleased]` holds #78, #81, the #88–#91 family, #95, and #98/#99.
-**After the release, Phase 3 of the bmlibrarian port is next, and each of its
-rows needs a design conversation before any porting** — see "Next up"._
+the call.
+
+**One documentation drift was found cutting this release and is fixed here:
+the version lives in *five* places, not four.** `docs/manual/index.md`'s
+header line carries it too, and because no list named it, it sat at 0.4.0
+through five releases until 0.9.1 caught it by accident. `release.yml` checks
+only `bmlib.__version__` against the tag, so nothing but the list guards the
+other four. **After the release, Phase 3 of the bmlibrarian port is next, and
+each of its rows needs a design conversation before any porting** — see "Next
+up"._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -109,12 +103,16 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ## Current state
 
-- **Version 0.9.1.** Release history: 0.4.0 (2026-07-19) → 0.5.0 → 0.5.1 →
+- **Version 0.10.0** (cut on `release/0.10.0`; released once its PR merges and
+  the tag is pushed). Release history: 0.4.0 (2026-07-19) → 0.5.0 → 0.5.1 →
   0.6.0 (2026-07-30) → 0.7.0 (2026-08-04) → 0.8.0 (2026-08-08) → 0.9.0
-  (2026-08-10) → 0.9.1 (2026-08-13). 0.3.0 was bumped in-tree but never
-  released; its changes shipped inside 0.4.0. The version lives in **four**
-  places — `pyproject.toml`, `bmlib/__init__.py`, the README version line,
-  `CLAUDE.md`'s header — and all four agree.
+  (2026-08-10) → 0.9.1 (2026-08-13) → 0.10.0 (2026-08-15). 0.3.0 was bumped
+  in-tree but never released; its changes shipped inside 0.4.0. The version
+  lives in **five** places — `pyproject.toml`, `bmlib/__init__.py`, the README
+  version line, `CLAUDE.md`'s header, and `docs/manual/index.md`'s header line
+  — and all five agree. The fifth was missing from this list until 0.10.0 and
+  had gone stale at 0.4.0 for five releases; only `bmlib/__init__.py` is
+  guarded by anything but this list.
 - **What each release shipped is in `CHANGELOG.md`** — do not re-narrate it
   here. 0.6.0, 0.7.0 and 0.8.0 each moved stored values, none behind a flag,
   and they compound for anyone upgrading across them; 0.8.0's largest is the
@@ -123,18 +121,19 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   take the free PDFs it had been discarding, so many more articles come back
   with `pdf_url` / `file_path` / extracted text instead of a bare link and a
   corpus's stored full text is not comparable across the upgrade — outbound
-  traffic to Europe PMC rises with it. Nothing else in 0.9.1 changes a stored
-  value. Note the two questions are independent: 0.9.0 was a *minor* bump
-  moving nothing stored (three fixes changed a public API), and 0.9.1 is a
-  *patch* bump that does move something stored (nothing breaks an API — its
-  one addition, `ConversionResult.title`, is additive and declared last). The
-  version number answers the API question, never the data one, so a downstream
-  reading only the number must still read this list.
+  traffic to Europe PMC rises with it. **0.10.0 moves nothing stored but is
+  not free to upgrade to**: no `download_days` row a previous release wrote is
+  durable under #95's rule, so the whole window is re-fetched once on the
+  first run. Note the two questions are independent: 0.9.1 is a *patch* bump
+  that does move something stored, while 0.9.0 and 0.10.0 are *minor* bumps
+  that move nothing (each carrying three public-API changes). The version
+  number answers the API question, never the data one, so a downstream reading
+  only the number must still read this list.
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
-  now missed five releases. Widening it is a downstream change, not a bmlib
+  now missed six releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2155 passing + 59 skipped** (`uv run pytest tests/ -q`);
-  **2212 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 57 of the default skips
+- **Tests: 2172 passing + 59 skipped** (`uv run pytest tests/ -q`);
+  **2229 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 57 of the default skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
   runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev
@@ -155,16 +154,16 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time. 0.9.1 promoted all eleven it inherited (seven `ROADMAP.md`
-  rows, four `docs/manual/fulltext.md` spots, the last of which is a section
-  heading whose in-page anchor had to move with it); **thirteen are
-  outstanding now** — five `ROADMAP.md` rows (#78, #81, #88–#91, #95,
-  #98/#99) and eight spots in `docs/manual/publications.md`. Write the
-  marker bare, as `(unreleased)`, never with a guessed version number: the
-  number is decided when the release is cut, and this family is a case in
-  point — it moves no API and so reads as a patch, while changing what a sync
-  stores. Markers inside `docs/superpowers/plans/` are historical records —
-  leave them alone.
+  release time. 0.10.0 promoted all thirteen it inherited — five `ROADMAP.md`
+  rows and eight spots in `docs/manual/publications.md` — and **none are
+  outstanding now**. Grep case-insensitively for `unreleased` rather than for
+  `(unreleased)`: three of those thirteen were spelled `*(unreleased, #99)*`
+  and `(changed, unreleased — …)`, which the parenthesised pattern misses.
+  Write the marker bare, never with a guessed version number: the number is
+  decided when the release is cut, and this family is a case in point — it
+  moves no API and so reads as a patch, while costing every installation a
+  re-fetch of its whole window. Markers inside `docs/superpowers/plans/` are
+  historical records — leave them alone.
 - **`main` is protected by the `protect_main` ruleset** (added 2026-08-13):
   no deletion, no non-fast-forward push, and CodeQL code scanning plus code
   quality required to merge. CodeQL comes from GitHub's *default setup*, so
@@ -192,10 +191,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 ### Open GitHub issues
 
 Five, every one found by review rather than by a failing test. (**#56, #68,
-#72 and #79** shipped in 0.9.1; **#78** is closed — see "The release tag does
-not depend on the merge button" above; **#81** and **#88**–**#91** are closed
-and merged; **#95** is closed and merged (PR #97); **#98** and **#99** are
-closed on `fix/98-99-model-and-input-validation`.)
+#72 and #79** shipped in 0.9.1. **#78, #81, #88–#91, #95, #98 and #99** are
+all closed, merged, and shipping in 0.10.0 — PRs #85, #87, #93, #97, #100.)
 
 **#94 — bioRxiv's envelope shapes are unmeasured**, filed for the reason #92
 was: the second round's guard refuses a body carrying *neither* a
@@ -364,19 +361,23 @@ what still needs doing.
 - Session workflow lives in the `nextsession` skill
   (`.claude/skills/nextsession/`); the post-review fix-up workflow lives in
   the `fixall` skill (`.claude/skills/fixall/`).
-- **Cutting a release** (0.4.0 through 0.9.1 were all cut this way): bump
-  the version in the **four** places that carry it — `pyproject.toml`,
-  `bmlib/__init__.py`, the README version line, `CLAUDE.md`'s header —
-  promote the CHANGELOG's `[Unreleased]` body under a dated `## [X.Y.Z]`
-  heading (leaving `## [Unreleased]` above it) with a short prose summary
-  under it, promote any `(unreleased)` markers in `docs/manual/` and
-  `ROADMAP.md`, then commit on a `release/X.Y.Z` branch and open a PR.
+- **Cutting a release** (0.4.0 through 0.10.0 were all cut this way): bump
+  the version in the **five** places that carry it — `pyproject.toml`,
+  `bmlib/__init__.py`, the README version line, `CLAUDE.md`'s header,
+  `docs/manual/index.md`'s header line — promote the CHANGELOG's
+  `[Unreleased]` body under a dated `## [X.Y.Z]` heading (leaving
+  `## [Unreleased]` above it) with a short prose summary under it, promote any
+  `unreleased` markers in `docs/manual/` and `ROADMAP.md`, add the release's
+  own `ROADMAP.md` row, then commit on a `release/X.Y.Z` branch and open a PR.
   **The number is a claim about the API, not about the data**: 0.9.0 was cut
   as 0.8.1 and renumbered in review, because three of its fixes changed a
   public API while nothing stored moved, and bmlib's downstream pins are
   written on the convention that a minor bump is the one that may break.
   0.9.1 is the other side of that same convention: #79 moves stored full text
-  while nothing breaks an API, so it is a patch.
+  while nothing breaks an API, so it is a patch. 0.10.0 is a third shape and
+  the reason to state the data answer in prose every time — a minor bump on
+  the API axis whose real cost to a downstream is a one-off re-fetch of the
+  whole sync window, which no version number can express.
   After CI **and CodeQL** are green — the `protect_main` ruleset requires the
   scan, and a release PR is subject to it like any other — merge it with any
   button, then **tag `main`'s tip rather than a particular commit** (#78):

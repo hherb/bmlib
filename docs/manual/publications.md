@@ -317,7 +317,7 @@ class DownloadDay:
 
 Serialisable via `to_dict()` / `from_dict()`.
 
-> **Changed (unreleased).** `from_dict()` raises `ValueError` when
+> **Changed (0.10.0).** `from_dict()` raises `ValueError` when
 > `downloaded_at` is absent or `None`, where it used to substitute **now**
 > (#98). The column is `NOT NULL` in both DDLs, so a dict lacking it did not
 > come from the database — and *now* is the most durable-looking value the
@@ -739,7 +739,7 @@ The sole public entry point for ingestion. Ensures the schema exists, determines
 
 **Returns:** `SyncReport`
 
-**Raises:** `ValueError` *(unreleased, #99)* — before any source is touched
+**Raises:** `ValueError` *(0.10.0, #99)* — before any source is touched
 and before the HTTP client is built — when either input would take day
 selection outside the calendar:
 
@@ -780,7 +780,7 @@ claims no day. The report comes back with `days_processed == 0` and every
 source for which a fetcher was found listed in `sources_synced`.
 
 A window reaching into the **future** is not rejected either, and instead
-returns a `SyncReport.notes` line and logs a WARNING *(unreleased)*. A day
+returns a `SyncReport.notes` line and logs a WARNING *(0.10.0)*. A day
 that has not ended cannot satisfy [the durability
 rule](#when-a-day-is-over) — which requires a fetch at or after 12:00 UTC on
 the following day — so each future day is stored `completed` and re-offered
@@ -802,7 +802,7 @@ For each source, `sync()` walks `date_from`..`date_to` and selects a day when:
 
 Days with a `"completed"` row that was fetched after the day ended, and that is inside the recheck window, are skipped.
 
-> **Changed (unreleased).** The third rule replaces an unconditional *today is always re-fetched* branch (#95). That branch re-offered today and nothing else, so a day captured **as** today was stored `"completed"` and, being neither `today` nor `"failed"` tomorrow, was never offered again at the default `recheck_days=0`. A 09:00 cron durably lost whatever was indexed over the remaining 15 hours. No reconciliation rule can catch it: the source's own count agreed at 09:00, because the walk really did deliver everything that existed then.
+> **Changed (0.10.0).** The third rule replaces an unconditional *today is always re-fetched* branch (#95). That branch re-offered today and nothing else, so a day captured **as** today was stored `"completed"` and, being neither `today` nor `"failed"` tomorrow, was never offered again at the default `recheck_days=0`. A 09:00 cron durably lost whatever was indexed over the remaining 15 hours. No reconciliation rule can catch it: the source's own count agreed at 09:00, because the walk really did deliver everything that existed then.
 
 #### When a day is over
 
@@ -843,7 +843,7 @@ Why it is built this way:
 - **A failed record does not lose the batch.** Per-record exceptions roll back to that record's own savepoint, increment `records_failed`, log (with the exception *type*, so a `TypeError` affecting every record does not read as bad data from the source), and continue.
 - **The day status commits atomically with its records.** The `download_days` row lands in the same transaction, so the database can never claim a day is `"completed"` while its records are missing. If writing that status row itself fails, the whole day rolls back and the error propagates — the day is simply left unrecorded and retried on the next run.
 
-> **Changed (unreleased).** A day is recorded `"failed"` — and so retried — if **any** record failed to store, not only if the fetch itself failed (#90); and the fetcher's status is read against an allowlist, so anything that is not exactly `"completed"` or `"failed"` is logged and recorded as failed rather than coerced to success (#89). Both cases also append a line to `SyncReport.errors` naming the source and the day. Retrying is safe because `store_publication()` merges. The cost to know about: a record the storage layer will *never* accept pins its day into a retry on every run — loudly, with an ERROR and an `errors` line each time, rather than silently missing.
+> **Changed (0.10.0).** A day is recorded `"failed"` — and so retried — if **any** record failed to store, not only if the fetch itself failed (#90); and the fetcher's status is read against an allowlist, so anything that is not exactly `"completed"` or `"failed"` is logged and recorded as failed rather than coerced to success (#89). Both cases also append a line to `SyncReport.errors` naming the source and the day. Retrying is safe because `store_publication()` merges. The cost to know about: a record the storage layer will *never* accept pins its day into a retry on every run — loudly, with an ERROR and an `errors` line each time, rather than silently missing.
 
 The trade-off is memory: the whole day is held at once. In practice this is a few thousand records and tens of megabytes with abstracts. A source delivering far larger days would need chunked flushing.
 
@@ -1029,8 +1029,8 @@ fetcher(client, target_date, *, on_record, on_progress=None, **config)
 
 Contract:
 
-- Return a `FetchResult`, with `status` of **exactly** `"completed"` or `"failed"`. Any other spelling is logged and recorded as a failed day (changed, unreleased — it used to be coerced to `"completed"`, which turned a third-party fetcher's failure into a durable success).
-- Returning anything that is **not** a `FetchResult` is logged, named by type, and recorded as a failed day (changed, unreleased). A forgotten `return` used to reach `_resolve_day_status` outside the handler that wraps your fetcher, and the resulting `AttributeError` escaped `sync()` entirely — losing *every* source's `SyncReport`, not just your day's, while leaving earlier days committed.
+- Return a `FetchResult`, with `status` of **exactly** `"completed"` or `"failed"`. Any other spelling is logged and recorded as a failed day (changed, 0.10.0 — it used to be coerced to `"completed"`, which turned a third-party fetcher's failure into a durable success).
+- Returning anything that is **not** a `FetchResult` is logged, named by type, and recorded as a failed day (changed, 0.10.0). A forgotten `return` used to reach `_resolve_day_status` outside the handler that wraps your fetcher, and the resulting `AttributeError` escaped `sync()` entirely — losing *every* source's `SyncReport`, not just your day's, while leaving earlier days committed.
 - Emit `FetchedRecord` instances — always set `title` and `source`.
 - Prefer catching your own HTTP errors and returning `FetchResult(status="failed", error=...)`; a raised exception is caught by `sync()` per day, but returning lets you report a partial `record_count`.
 - **Reconcile before you report `"completed"`.** If your source tells you how many records the day holds, compare that against what it actually handed over, and return `"failed"` when the walk stopped short — see *Reconciling a walk against the source's own count* below. A `"completed"` day is durable: once it is in the past *and was fetched after the day was over* (see *When a day is over*), `_days_needing_fetch()` does not offer it again unless `recheck_days` is set, which is not the default. The one re-offer that rule guarantees is not a second chance you can rely on — it happens on *D+1* and only if the caller's window still reaches back that far.
@@ -1137,7 +1137,7 @@ All fetchers pass a `FetchedRecord` to `on_record`, matching `sync()`. (Before 0
 
 ### Reconciling a walk against the source's own count
 
-> **New (unreleased).** Issue #88.
+> **New (0.10.0).** Issue #88.
 
 Each built-in fetcher learns a record count before it walks pages — PubMed's `<Count>`, OpenAlex's `meta.count`, bioRxiv's `messages[0].total`. Before this change none of them compared that promise against what arrived, so a walk that stopped early returned `status="completed"`, `sync()` stored the day as done, and `_days_needing_fetch()` did not offer it again once it was in the past (with `recheck_days` at its default). The records were permanently absent, with nothing logged above INFO.
 

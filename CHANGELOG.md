@@ -6,6 +6,63 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-08-15
+
+**One family, seven issues: a sync day that reported success it did not
+have.** `sync()` writes `status='completed'` to `download_days`, and
+`_days_needing_fetch()` does not offer that day again once it is past — so
+every one of #88, #89, #90, #91, #95, #98 and #99 lost the day's records
+permanently rather than losing a request, with nothing logged above INFO.
+Three kinds of cause, closed in three rounds, each round raised by the review
+of the one before it. **The walk was never reconciled against the count the
+source itself gave** (#88, reproduced on PubMed at `Count=5000` serving an
+error document → `completed`, 0 records; and on OpenAlex at `meta.count`
+5,000 delivering one work), and neither was the envelope it arrived in.
+**A status the table did not recognise was read as success** (#89), a record
+that failed to store did not fail its day (#90), and OpenAlex reported a
+decode error as somebody else's problem (#91). And **a day was certified
+before it had ended** (#95) — the instance needing no API malfunction at all,
+firing on every ordinary run: a 09:00 cron durably lost the following 15
+hours of indexing, and no reconciliation rule can see it, because the
+source's own count agreed at 09:00. One rule replaces the old *today* special
+case: a completed day is durable only once it was fetched at or after **12:00
+UTC on the following day**, the instant day *D* has ended in every timezone.
+
+The last round (#98, #99) is the rule **refusing to guess its own inputs** —
+`DownloadDay.from_dict()` no longer substitutes *now* for an absent
+`downloaded_at`, which is the most durable-looking value the rule can be
+handed, and `sync()` validates its window at the entry rather than raising
+`OverflowError` from inside day selection and losing the whole multi-source
+run's `SyncReport`. Its own review round then found that guard checked
+*values* where the dangerous inputs were *types*: `datetime` subclasses
+`date`, so `date_to=datetime.now()` satisfied mypy, defeated every value
+check, and on **both** ends raised nothing at all — writing
+`download_days.date` values with a time component that no date-keyed lookup
+can ever match.
+
+Alongside the family, **CI now checks types** (#81). bmlib ships `py.typed`,
+telling every downstream its annotations may be relied on, while CI ran ruff
+alone — a downstream's own mypy run was the first thing in the world to check
+them. The gate found one real defect (an efetch history-session hole
+indistinguishable from a quiet day) and eighteen annotation errors.
+
+**This is a minor bump because three changes reach a public API**, not
+because anything stored moved: `DownloadDay.from_dict()` raises where it
+defaulted (#98); a third-party fetcher's unrecognised status is recorded
+`failed` rather than coerced to `completed` (#89), a behaviour change at the
+`register_source()` extension point; and `bmlib[pdf]` floors
+`pymupdf>=1.28.2`.
+
+**The number cannot answer the data question, and here it is a real cost.**
+Nothing stored moves — but **on the first run after upgrading, expect the
+whole window to be re-fetched once**, because every row a previous release
+wrote was written while its own day was current and none of them is durable
+under the new rule (measured at 29 of 29 days for a 30-day window, per
+source). It is one-off, self-correcting and idempotent (`store_publication()`
+merges), but a wide window across several sources will make that run much
+longer and may meet a source's rate limiter. Steady-state, the default window
+now costs two day-fetches per run rather than one, which is the fix working.
+
 ### Added
 
 - **CI checks types (#81).** bmlib ships `py.typed`, which tells every
@@ -65,8 +122,8 @@ All notable changes to bmlib are documented here. The format is based on
   checks — every comparison against it is false — then disabled rechecking in
   silence, the same failure the negative case had just closed.
 
-- **A fetcher that returned a non-`FetchResult` killed the whole run
-  (unreleased).** The `except Exception` around the fetcher call absorbed one
+- **A fetcher that returned a non-`FetchResult` killed the whole run.**
+  The `except Exception` around the fetcher call absorbed one
   that *raises*; one that *returns* — successfully — something without a
   `.status`, the shape a forgotten `return` produces, reached
   `_resolve_day_status` outside that handler. The `AttributeError` propagated
@@ -260,7 +317,7 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
-- **`sync()` reports a window reaching into the future (unreleased).** A day
+- **`sync()` reports a window reaching into the future.** A day
   that has not ended cannot satisfy the durability rule — which needs a fetch
   at or after 12:00 UTC on the following day — so every future day was stored
   `completed` and re-offered on every subsequent run, for the life of the
