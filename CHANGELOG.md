@@ -74,8 +74,7 @@ All notable changes to bmlib are documented here. The format is based on
   and self-correcting, but a wide window across several sources will make that
   run much longer and may meet a source's rate limiter.
   `store_publication()` merges, so all of it is idempotent. This does **not**
-  address late *indexing*, which is what `recheck_days` is for. 18 tests,
-  every guard verified by mutation.
+  address late *indexing*, which is what `recheck_days` is for. 19 tests; 10 mutations, 10 caught.
 
 - **A fetch that stopped short synced as a quiet day (#88).** Every built-in
   fetcher learns a record count before walking pages — PubMed's `<Count>`,

@@ -1349,6 +1349,29 @@ class TestACompletedDayIsDurableOnlyOnceTheDayIsOver:
             for m in warnings
         ), warnings
 
+    def test_a_non_string_last_verified_at_rechecks_rather_than_raising(self, monkeypatch):
+        """The non-string shape on the sibling column, which is not the same path.
+
+        ``downloaded_at`` short-circuits before rule 4, so a DDL change that
+        moved *both* columns to a real timestamp type never reaches this one.
+        Only a change to `last_verified_at` alone does — but the ``isinstance``
+        guard exists either way, and without a test removing it survives the
+        whole suite while turning a recheck into a ``TypeError`` that aborts
+        the run.
+        """
+        sync_module = sys.modules["bmlib.publications.sync"]
+        row = {
+            "date": self._DAY.isoformat(),
+            "status": "completed",
+            "downloaded_at": "2024-06-20T00:00:00+00:00",
+            "last_verified_at": datetime(2024, 6, 20, tzinfo=UTC),
+        }
+        monkeypatch.setattr(sync_module, "fetch_all", lambda *a, **kw: [row])
+
+        assert _days_needing_fetch(
+            _fresh_conn(), "test_source", date_from=self._DAY, date_to=self._DAY, recheck_days=7
+        ) == [self._DAY]
+
     def test_a_null_last_verified_at_rechecks_without_warning(self, caplog):
         """Negative control: ``NULL`` is the documented state, not a defect.
 

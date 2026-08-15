@@ -22,22 +22,46 @@ not thereby applied — `stalled` defaults to the value that *disables* it, and
 OpenAlex simply never passed it. **When a guard is opt-in, audit every call
 site, not the module.**
 
-**#73, #86, #92, #94 and #96 are open.** #92 is the measurement the #88 fix
-deliberately deferred; #94 is the bioRxiv envelope sampler the second round
-deferred for the same reason (its guard is deliberately weaker than it looks
-— read `docs/DECISIONS.md` before "simplifying" it); #96 is efetch's retstart
-skew.
+**#73, #86, #92, #94, #96 and the new #98, #99 are open.** #92 is the
+measurement the #88 fix deliberately deferred; #94 is the bioRxiv envelope
+sampler the second round deferred for the same reason (its guard is
+deliberately weaker than it looks — read `docs/DECISIONS.md` before
+"simplifying" it); #96 is efetch's retstart skew. **#98 and #99 came out of
+#97's review** and were filed rather than fixed, both being pre-existing and
+outside #95's scope: #98 is `DownloadDay.from_dict()` defaulting an absent
+`downloaded_at` to *now*, which is latent rather than live (nothing reads
+`download_days` through the model) but would fail open by construction if it
+were ever wired onto the selection path; #99 is `sync()` not validating its
+date range or `recheck_days`, so `date.max` or an absurd `recheck_days` raises
+`OverflowError` out of day selection and takes the run with it.
 
-On the #95 branch: 2139 tests + 59 skipped on SQLite alone, and **2196 + 2
-with a PostgreSQL DSN**, so the dual-backend half of `test_backends.py` (113
-passed, 1 legitimate SQLite-only skip) actually ran. ruff 0.15.20 and
-`uv run mypy` both clean, and every new guard verified by mutation — 7
-mutations, 7 caught. One of those first ran malformed (it changed the log
-call's arity rather than its wording, so it proved nothing about the message)
-and was redone; that is the second time in this family a mutation has had to
-be re-cut before it tested what it claimed to. Nothing is released from
-`main`'s tip yet — CHANGELOG's `[Unreleased]` holds #78, #81, the #88–#91
-family and #95.
+**#97 was then reviewed in turn, and the review found four defects in the fix
+itself** — the third round in a row where reviewing a fix for this family
+found the fix carrying the same shape of bug. The one that matters: judging
+every day in the window against `date_from` instead of `current` **survived
+the entire suite**, because all eleven of the rule's tests used a one-day
+window, and it silently reintroduces #95 for any cron after 12:00 UTC. Also
+fixed: a `downloaded_at` in the future read as durable with no warning (the
+guard was loud about values it could not parse and silent about one that could
+not be true); `last_verified_at` still read raw one line below the column the
+issue hardened, raising `ValueError` out of day selection and killing the
+whole multi-source run before a record was fetched; and the boundary test and
+its negative control were the same test twice, which made `DECISIONS.md`'s
+"exists for it alone" claim false. **Two lessons worth carrying.** A rule that
+selects over a *range* needs at least one test whose range has more than one
+answer in it — every test being single-day is what hid the first defect. And a
+doc claiming one test is the sole pin for something must be checked against
+its neighbours: the first replacement multi-day test landed on the boundary
+instant and quietly made that same claim false a second time, caught only by
+re-running the mutation.
+
+On the #95 branch: 2146 tests + 59 skipped on SQLite alone, and **2203 + 2
+with a PostgreSQL DSN** (PostgreSQL 18, local), so the dual-backend half of
+`test_backends.py` (113 passed, 1 legitimate SQLite-only skip) actually ran.
+ruff 0.15.20 and `uv run mypy` both clean, and every new guard verified by
+mutation — **10 mutations, 10 caught**, the three that survived the review
+among them. Nothing is released from `main`'s tip yet — CHANGELOG's
+`[Unreleased]` holds #78, #81, the #88–#91 family and #95.
 **Phase 3 of the bmlibrarian port is next, and each of its rows needs a design
 conversation before any porting** — see "Next up"._
 
@@ -73,8 +97,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed five releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2139 passing + 59 skipped** (`uv run pytest tests/ -q`);
-  **2196 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 57 of the default skips
+- **Tests: 2146 passing + 59 skipped** (`uv run pytest tests/ -q`);
+  **2203 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 57 of the default skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
   runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev
@@ -131,11 +155,28 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Five, every one found by review rather than by a failing test. (**#56, #68,
+Seven, every one found by review rather than by a failing test. (**#56, #68,
 #72 and #79** shipped in 0.9.1; **#78** is closed — see "The release tag does
 not depend on the merge button" above; **#81**, **#88**, **#89**, **#90** and
 **#91** are closed and merged; **#95** is closed on
 `fix/95-today-is-not-a-durable-day` (PR #97).)
+
+**#98 — `DownloadDay.from_dict()` defaults an absent `downloaded_at` to now**,
+which is the most durable-looking value #95's rule can be handed, with no log
+line. Latent, not live: `sync()` reads `download_days` with raw SQL and never
+goes through the model, so nothing can lose a day today. It is filed because
+the SQL path now fails *closed* on an unreadable or future `downloaded_at`
+while the model quietly fails open on an absent one, and wiring the model in
+later would inherit that without anything catching it.
+
+**#99 — `sync()` validates neither its date range nor `recheck_days`**, so
+`date.max` or `recheck_days=10**9` raises `OverflowError` from inside day
+selection, escapes `sync()` and loses the whole run's `SyncReport`. Low: no
+real caller passes either, and the `date.max` case predates every rule in this
+family. Filed so the decision is recorded rather than rediscovered. If it is
+ever fixed, validate at `sync()`'s entry — **not** with an `except
+OverflowError` at the helpers, which would turn a caller bug into the silent
+re-fetch this whole family exists to remove.
 
 **#94 — bioRxiv's envelope shapes are unmeasured**, filed for the reason #92
 was: the second round's guard refuses a body carrying *neither* a

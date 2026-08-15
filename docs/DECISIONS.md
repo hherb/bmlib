@@ -914,8 +914,14 @@ full. What is easy to get wrong later:
   A stored `NULL` is **not** unusable — it is the documented "never verified"
   state — so it rechecks without a warning; warning on it would fire for every
   row of a fresh install and tune the real warning out. Pinned by
-  `test_an_unusable_last_verified_at_rechecks_rather_than_raising` and
-  `test_a_null_last_verified_at_rechecks_without_warning`.
+  `test_an_unusable_last_verified_at_rechecks_rather_than_raising`,
+  `test_a_non_string_last_verified_at_rechecks_rather_than_raising` and
+  `test_a_null_last_verified_at_rechecks_without_warning`. The non-string case
+  needs its own test even though `downloaded_at` short-circuits before rule 4
+  is reached: a DDL change moving *both* columns never gets here, only one
+  moving this column alone does — and without the test, removing the
+  `isinstance` guard survived the whole suite while turning a recheck into a
+  `TypeError` that aborts the run.
 - **It does not fix late indexing, and must not be stretched to.** A record
   that appears for day *D* three days later is not covered by any rule about
   when *D* ended. `recheck_days` is what exists for that.
