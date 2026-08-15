@@ -9,7 +9,7 @@ reporting `completed` — and reviewing that fix found its twin one branch
 earlier, a search NCBI *rejected* doing the same thing. **#88–#91 are now
 closed and merged to `main` too** (PR #93): the whole "a broken sync reports
 as a quiet day" family, which was the rest of what that review turned up.
-**#95 is closed on branch `fix/95-today-is-not-a-durable-day`** — the last
+**#95 is closed on branch `fix/95-today-is-not-a-durable-day` (PR #97)** — the last
 member of that family, and the one that fired on every ordinary run rather
 than needing an API malfunction.
 
@@ -135,7 +135,7 @@ Five, every one found by review rather than by a failing test. (**#56, #68,
 #72 and #79** shipped in 0.9.1; **#78** is closed — see "The release tag does
 not depend on the merge button" above; **#81**, **#88**, **#89**, **#90** and
 **#91** are closed and merged; **#95** is closed on
-`fix/95-today-is-not-a-durable-day`.)
+`fix/95-today-is-not-a-durable-day` (PR #97).)
 
 **#94 — bioRxiv's envelope shapes are unmeasured**, filed for the reason #92
 was: the second round's guard refuses a body carrying *neither* a
