@@ -21,6 +21,8 @@ from __future__ import annotations
 import sys
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
+
 from bmlib.db import connect_sqlite, execute, fetch_one
 from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.publications.fetchers import ALL_SOURCES
@@ -1398,3 +1400,119 @@ class TestACompletedDayIsDurableOnlyOnceTheDayIsOver:
             ) == [self._DAY]
 
         assert [r.getMessage() for r in caplog.records if r.levelname == "WARNING"] == []
+
+
+class TestSyncRefusesAWindowItCannotWalk:
+    """Issue #99 — a caller bug must not escape as ``OverflowError``.
+
+    ``sync()``'s ``try`` carries only a ``finally``, so an exception raised
+    from inside day selection kills the whole multi-source run and loses the
+    ``SyncReport`` with it — before a single record is fetched. That is worse
+    than the per-day losses the rest of this module guards against, because it
+    is total rather than per-day.
+
+    The fix is validation at ``sync()``'s entry, **not** an
+    ``except OverflowError`` at the helpers: swallowing it there would convert
+    a caller bug into a silent re-fetch, which is the failure mode the whole
+    #88–#95 family exists to remove.
+    """
+
+    @staticmethod
+    def _fetcher():
+        return _make_fake_fetcher([])
+
+    def test_a_window_ending_on_the_last_representable_date_is_rejected(self):
+        """Day selection asks what day follows its last one, so ``date.max`` cannot be it.
+
+        Both the loop's own ``current += timedelta(days=1)`` and the
+        durability rule's ``day + timedelta(days=1)`` overflow there.
+        """
+        conn = _fresh_conn()
+
+        with pytest.raises(ValueError, match="date_to"):
+            sync(
+                conn,
+                sources=["test_source"],
+                date_from=date.max,
+                date_to=date.max,
+                _fetcher_override={"test_source": self._fetcher()},
+            )
+
+    def test_a_negative_recheck_days_is_rejected(self):
+        """Silently ignored today: ``recheck_days > 0`` is simply False.
+
+        A caller passing a negative window has misunderstood the parameter,
+        and the current answer — recheck nothing — is the opposite of what
+        they asked for, delivered without a word.
+        """
+        conn = _fresh_conn()
+
+        with pytest.raises(ValueError, match="recheck_days"):
+            sync(
+                conn,
+                sources=["test_source"],
+                date_from=self._day(),
+                date_to=self._day(),
+                recheck_days=-1,
+                _fetcher_override={"test_source": self._fetcher()},
+            )
+
+    def test_a_recheck_window_reaching_before_the_calendar_is_rejected(self):
+        """``today - timedelta(days=recheck_days)`` has to land on a real date."""
+        conn = _fresh_conn()
+        _insert_download_day(conn, "test_source", self._day())
+
+        with pytest.raises(ValueError, match="recheck_days"):
+            sync(
+                conn,
+                sources=["test_source"],
+                date_from=self._day(),
+                date_to=self._day(),
+                recheck_days=10**9,
+                _fetcher_override={"test_source": self._fetcher()},
+            )
+
+    def test_an_ordinary_window_and_recheck_window_still_run(self):
+        """Negative control: the guard must reject only what it names."""
+        conn = _fresh_conn()
+        day = self._day()
+
+        report = sync(
+            conn,
+            sources=["test_source"],
+            date_from=day,
+            date_to=day,
+            recheck_days=7,
+            _fetcher_override={"test_source": self._fetcher()},
+        )
+
+        assert report.days_processed == 1
+        assert report.errors == []
+
+    def test_an_empty_window_is_still_the_ordinary_way_to_ask_for_nothing(self):
+        """Deliberately **not** rejected, and pinned so it is not "tidied" into a raise.
+
+        ``date_from > date_to`` is what the natural incremental-sync idiom
+        produces once it has caught up — ``date_from = last_synced + 1 day``,
+        ``date_to = today`` — so rejecting it would turn a caller that is up to
+        date into a crashing one. It writes nothing and claims no day, which
+        is why it is unlike the caller bugs above.
+        """
+        conn = _fresh_conn()
+        today = date.today()
+
+        report = sync(
+            conn,
+            sources=["test_source"],
+            date_from=today,
+            date_to=today - timedelta(days=1),
+            _fetcher_override={"test_source": self._fetcher()},
+        )
+
+        assert report.days_processed == 0
+        assert report.errors == []
+        assert "test_source" in report.sources_synced
+
+    @staticmethod
+    def _day():
+        return date.today() - timedelta(days=5)

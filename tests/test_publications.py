@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -1814,3 +1814,62 @@ class TestChildRowsAreScopedBySource:
         _relocate_child_rows(conn, "publication_grants", pub_id, pub_id)
 
         assert [g.agency for g in get_grants(conn, pub_id)] == ["NHLBI"]
+
+
+class TestDownloadDayRequiresTheTimestampTheRuleReads:
+    """Issue #98 — an absent ``downloaded_at`` must not be read as *now*.
+
+    ``_days_needing_fetch()`` decides whether a completed day is durable by
+    comparing ``downloaded_at`` against 12:00 UTC the following day (#95).
+    *Now* is the most durable-looking value that rule can be handed, so
+    substituting it for an absent one fails **open** — the day is never
+    offered again — while the SQL path guards the same column in the opposite
+    direction, failing closed on a value it cannot read or cannot believe.
+
+    Nothing in bmlib reads ``download_days`` through this model today, which
+    is what makes the defect latent rather than live; the point of the guard
+    is that wiring the model onto the selection path later cannot inherit a
+    fail-open default.
+    """
+
+    _STORED = {
+        "source": "pubmed",
+        "date": "2024-06-15",
+        "status": "completed",
+        "record_count": 150,
+    }
+
+    def test_an_absent_downloaded_at_is_rejected(self):
+        """The column is ``NOT NULL`` in both DDLs, so no stored row lacks it."""
+        with pytest.raises(ValueError, match="downloaded_at"):
+            DownloadDay.from_dict(dict(self._STORED))
+
+    def test_a_null_downloaded_at_is_rejected(self):
+        """The other half: ``.get()`` cannot tell an absent key from a null one."""
+        with pytest.raises(ValueError, match="downloaded_at"):
+            DownloadDay.from_dict({**self._STORED, "downloaded_at": None})
+
+    def test_a_stored_timestamp_is_read_verbatim(self):
+        """Negative control: the guard rejects absence, not the ordinary value.
+
+        Deserialisation stays faithful — judging whether the timestamp is
+        *usable* (aware, not in the future) is the durability rule's job, and
+        duplicating it here would reject rows the database legitimately holds
+        and which that rule already answers by re-fetching.
+        """
+        day = DownloadDay.from_dict({**self._STORED, "downloaded_at": "2024-06-16T12:00:00+00:00"})
+
+        assert day.downloaded_at == datetime(2024, 6, 16, 12, tzinfo=UTC)
+
+    def test_constructing_a_row_still_stamps_now(self):
+        """The asymmetry is deliberate, and pinned so it is not "tidied" away.
+
+        A freshly constructed ``DownloadDay`` describes a fetch that has just
+        happened, so *now* is the right default there. ``from_dict()``
+        deserialises a row that was already stored, where an absent value is
+        malformed data rather than a fetch happening at this instant.
+        """
+        before = datetime.now(tz=UTC)
+        day = DownloadDay(source="pubmed", date="2024-06-15", status="completed", record_count=0)
+
+        assert before <= day.downloaded_at <= datetime.now(tz=UTC)

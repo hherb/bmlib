@@ -251,6 +251,56 @@ def _read_verification_date(source: str, day: date, value: object) -> date | Non
     return None
 
 
+def _validate_window(date_to: date, recheck_days: int) -> None:
+    """Refuse a window or recheck depth that day selection cannot walk.
+
+    Both values reach date arithmetic inside :func:`_days_needing_fetch`, and
+    an out-of-range one raises ``OverflowError`` from there. ``sync()``'s
+    ``try`` carries only a ``finally``, so that escapes the whole
+    multi-source run and loses the ``SyncReport`` with it — before a single
+    record is fetched, and for every source rather than for one day. That is
+    worse in kind than the per-day losses the rest of this module guards
+    against, because it is total (#99).
+
+    Validated once at the public entry, deliberately **not** caught at the
+    helpers: an ``except OverflowError`` around the arithmetic would convert
+    a caller bug into a day that quietly looks like it needs no fetch, which
+    is the failure mode the whole #88-#95 family exists to remove.
+
+    What is deliberately **not** rejected is an *empty* window
+    (``date_from > date_to``). That is what the ordinary incremental-sync
+    idiom produces once it has caught up — ``date_from = last_synced + 1
+    day``, ``date_to = today`` — so raising would turn a caller that is
+    simply up to date into a crashing one. It writes no row and claims no
+    day, which is what separates it from the two rejections below.
+
+    Parameters
+    ----------
+    date_to:
+        End of the window, already defaulted by :func:`sync`.
+    recheck_days:
+        The caller's recheck depth.
+
+    Raises
+    ------
+    ValueError
+        Naming the offending parameter.
+    """
+    if date_to == date.max:
+        raise ValueError(
+            f"date_to must be earlier than {date.max.isoformat()}: day selection asks"
+            " which day follows the last day of the window, and there is none"
+        )
+    if recheck_days < 0:
+        raise ValueError(f"recheck_days must not be negative, got {recheck_days}")
+    days_since_date_min = (date.today() - date.min).days
+    if recheck_days > days_since_date_min:
+        raise ValueError(
+            f"recheck_days must not reach back before {date.min.isoformat()}:"
+            f" got {recheck_days}, and today is only {days_since_date_min} days after it"
+        )
+
+
 def _days_needing_fetch(
     conn: Any,
     source: str,
@@ -298,6 +348,12 @@ def _days_needing_fetch(
         End of the date range (inclusive).
     recheck_days:
         If > 0, re-fetch days whose last_verified_at is older than this many days.
+
+        Both this and *date_to* reach date arithmetic below that overflows on
+        an extreme value. :func:`sync` validates them at its entry, which is
+        this function's precondition rather than its job — see
+        :func:`_validate_window` for why catching it here instead would be
+        the wrong shape of fix.
 
     Returns
     -------
@@ -606,6 +662,13 @@ def sync(
     -------
     SyncReport
         Summary of the sync operation.
+
+    Raises
+    ------
+    ValueError
+        If *date_to* or *recheck_days* is outside the range day selection can
+        walk — see :func:`_validate_window`, which also says why an *empty*
+        window (*date_from* after *date_to*) is accepted rather than rejected.
     """
     ensure_schema(conn)
 
@@ -616,6 +679,11 @@ def sync(
         date_to = today
     if date_from is None:
         date_from = today - timedelta(days=1)
+
+    # Before the HTTP client is built, so a caller bug cannot leak one, and
+    # before any source is touched: the alternative is an OverflowError out of
+    # day selection that takes the whole run's SyncReport with it (#99).
+    _validate_window(date_to, recheck_days)
 
     resolved_configs = _build_source_configs(source_configs, email, api_keys)
 

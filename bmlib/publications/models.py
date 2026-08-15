@@ -45,6 +45,35 @@ def _parse_datetime(value: str | datetime | None) -> datetime:
     return datetime.fromisoformat(value)
 
 
+def _require_datetime(value: str | datetime | None, field_name: str) -> datetime:
+    """Parse a timestamp a stored row must carry, rather than inventing one.
+
+    The strict counterpart to :func:`_parse_datetime`, for a column that is
+    ``NOT NULL`` in both DDLs *and* is read by a rule that decides whether
+    work may be skipped. Substituting *now* there is not a neutral default:
+    it is the single most durable-looking value
+    :func:`~bmlib.publications.sync._day_was_over_when_fetched` can be handed,
+    so the day is never fetched again (#98). The selection path guards the
+    same column in the opposite direction — a value it cannot read, or one in
+    the future, fails closed with a warning — and the model must not disagree
+    with the rule about what an absent value means.
+
+    A dict lacking the key did not come from the database, so this is
+    malformed input rather than a state to paper over.
+
+    Raises
+    ------
+    ValueError
+        If *value* is absent or ``None``.
+    """
+    if value is None:
+        raise ValueError(
+            f"{field_name} is required and must not be None;"
+            " it is NOT NULL in the schema, so a row lacking it is malformed"
+        )
+    return _parse_datetime(value)
+
+
 # ---------------------------------------------------------------------------
 # Core publication model
 # ---------------------------------------------------------------------------
@@ -341,14 +370,29 @@ class DownloadDay:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> DownloadDay:
-        """Deserialise from a dictionary produced by :meth:`to_dict`."""
+        """Deserialise from a dictionary produced by :meth:`to_dict`.
+
+        ``downloaded_at`` is required, unlike the dataclass default that
+        stamps *now* for a freshly constructed row: that default describes a
+        fetch which has just happened, whereas here the row was already
+        stored, and inventing a timestamp for it fails open against the
+        durability rule that reads the column (#98). See
+        :func:`_require_datetime`.
+
+        Raises
+        ------
+        KeyError
+            If ``source``, ``date``, ``status`` or ``record_count`` is absent.
+        ValueError
+            If ``downloaded_at`` is absent or ``None``.
+        """
         return cls(
             id=data.get("id"),
             source=data["source"],
             date=data["date"],
             status=data["status"],
             record_count=data["record_count"],
-            downloaded_at=_parse_datetime(data.get("downloaded_at")),
+            downloaded_at=_require_datetime(data.get("downloaded_at"), "downloaded_at"),
             last_verified_at=(
                 _parse_datetime(data["last_verified_at"]) if data.get("last_verified_at") else None
             ),
