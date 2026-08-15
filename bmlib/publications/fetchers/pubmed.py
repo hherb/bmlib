@@ -29,9 +29,10 @@ import time
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from datetime import date
-from typing import Any
+from typing import Any, NamedTuple
 
 from bmlib.fulltext.models import FullTextSourceEntry
+from bmlib.publications.fetchers._reconcile import reconcile_delivery
 from bmlib.publications.models import (
     AuthorAffiliation,
     FetchedRecord,
@@ -530,14 +531,52 @@ def _esearch(
     return count, web_env, query_key
 
 
+class _EFetchPage(NamedTuple):
+    """One efetch page: what will be parsed, and what was delivered.
+
+    A plain ``tuple[list[ET.Element], int]`` invites the one misreading this
+    pair exists to prevent — that the count is the list's length. It is not,
+    and the gap between them is the whole point.
+    """
+
+    articles: list[ET.Element]
+    """``<PubmedArticle>`` elements, the only kind the fetcher parses."""
+
+    delivered: int
+    """Record elements the server handed over — never ``len(articles)``."""
+
+
 def _efetch_page(
     client: Any,
     web_env: str,
     query_key: str,
     retstart: int,
     api_key: str | None,
-) -> list[ET.Element]:
-    """Fetch one page of PubmedArticle XML elements from EFetch."""
+) -> _EFetchPage:
+    """Fetch one page from EFetch and return its articles and delivery count.
+
+    *delivered* counts every record element the server handed over, which is
+    not the same as the length of the returned list: a ``<PubmedBookArticle>``
+    is delivered and deliberately not parsed. The caller reconciles delivery
+    against esearch's count, and counting parsed records there would report a
+    phantom shortfall for every day carrying a book chapter.
+
+    It counts the two record elements by name rather than taking every child
+    of the set. ``<DeleteCitation>`` is also a legal child, and counting it as
+    a delivery is wrong in the expensive direction twice over: it inflates
+    delivery so a real shortfall clears the floor, and — because the caller's
+    stall rule is ``delivered == 0`` — a page carrying nothing but one of them
+    stops looking like the stall it is.
+
+    Raises:
+        ValueError: If the response is not a ``PubmedArticleSet``. NCBI answers
+            an expired or evicted history session with
+            ``<eFetchResult><ERROR>…</ERROR></eFetchResult>`` at **HTTP 200**,
+            so ``raise_for_status()`` never fires and ``findall`` returns an
+            empty list — a rejected page wearing the shape of an exhausted one.
+            Refused here for the reason ``_esearch`` refuses a response with no
+            ``<Count>``, and raised so the caller's handler marks the day failed.
+    """
     params: dict[str, str | int] = {
         "db": "pubmed",
         "query_key": query_key,
@@ -553,7 +592,17 @@ def _efetch_page(
     response.raise_for_status()
 
     root = ET.fromstring(response.text)
-    return list(root.findall("PubmedArticle"))
+    if root.tag != "PubmedArticleSet":
+        error = _text(root.find("ERROR")) or _text(root.find(".//ERROR"))
+        raise ValueError(
+            f"efetch returned <{root.tag}> rather than <PubmedArticleSet>"
+            f"{f' (NCBI said: {error})' if error else ''}"
+        )
+    articles = list(root.findall("PubmedArticle"))
+    return _EFetchPage(
+        articles=articles,
+        delivered=len(articles) + len(root.findall("PubmedBookArticle")),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -634,23 +683,34 @@ def fetch_pubmed(
     logger.info("PubMed esearch: %d records for %s", count, date_str)
 
     records_processed = 0
+    records_delivered = 0
+    stalled = False
     for retstart in range(0, count, EFETCH_PAGE_SIZE):
         try:
-            articles = _efetch_page(client, web_env, query_key, retstart, api_key)
+            articles, delivered = _efetch_page(client, web_env, query_key, retstart, api_key)
         except Exception as exc:
-            logger.error("efetch failed at retstart=%d: %s", retstart, exc)
+            logger.error("efetch failed at retstart=%d: %s: %s", retstart, type(exc).__name__, exc)
             return FetchResult(
                 source="pubmed",
                 date=date_str,
                 record_count=records_processed,
                 status="failed",
-                error=str(exc),
+                error=f"{type(exc).__name__}: {exc}",
             )
 
+        records_delivered += delivered
         for article_el in articles:
             record = _parse_article_xml(article_el)
             on_record(record)
             records_processed += 1
+
+        if delivered == 0:
+            # The session holds `count` UIDs, so an empty page before the walk
+            # is done means it stopped serving them. Paging on costs a request
+            # per remaining page and returns nothing — up to 9 of them on the
+            # 5,000-record day measured for #88, which is 10 pages of 500.
+            stalled = True
+            break
 
         if on_progress is not None:
             on_progress(
@@ -668,9 +728,26 @@ def fetch_pubmed(
         if retstart + EFETCH_PAGE_SIZE < count:
             time.sleep(rate_limit)
 
+    verdict = reconcile_delivery(
+        "pubmed",
+        date_str,
+        delivered=records_delivered,
+        promised=count,
+        stalled=stalled,
+    )
+    if verdict.failure is not None:
+        return FetchResult(
+            source="pubmed",
+            date=date_str,
+            record_count=records_processed,
+            status="failed",
+            error=verdict.failure,
+        )
+
     return FetchResult(
         source="pubmed",
         date=date_str,
         record_count=records_processed,
         status="completed",
+        note=verdict.note,
     )

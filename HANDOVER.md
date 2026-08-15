@@ -1,16 +1,40 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-14. **0.9.1 is released**; since then, **#81 is
-closed** on branch `fix/81-type-gate-in-ci` — CI now type-checks, so the
-`py.typed` bmlib ships is a guarantee something verifies rather than a claim
-nobody had ever checked. It found one real defect on the way in — a PubMed
-day whose history session was missing synced as an empty day, reporting
-`completed` — and reviewing that fix found its twin one branch earlier, a
-search NCBI *rejected* doing the same thing. **#73, #86 and #88–#91 are
-open**; #88–#91 are that same family, found by the same review and filed
-rather than folded in. On the branch: 2053 tests + 58
-skipped (2109 + 2 with a PostgreSQL DSN, run and verified), ruff 0.15.20 and
-`uv run mypy` both clean.
+_Last updated: 2026-08-14. **0.9.1 is released**; since then, **#78 and #81
+are closed and merged to `main`** (PRs #85 and #87) — CI now type-checks, so
+the `py.typed` bmlib ships is a guarantee something verifies rather than a
+claim nobody had ever checked. It found one real defect on the way in — a
+PubMed day whose history session was missing synced as an empty day,
+reporting `completed` — and reviewing that fix found its twin one branch
+earlier, a search NCBI *rejected* doing the same thing. **#88–#91 are now
+closed too**, on branch `fix/88-91-sync-reconciliation`: the whole
+"a broken sync reports as a quiet day" family, which was the rest of what
+that review turned up.
+
+**That branch was then reviewed itself, and the review found the fix
+incomplete in the same way the fix was about** — three of its own rules were
+not applied to bioRxiv and one not to OpenAlex, each leaving a day stored
+`completed` that the fetch could not back. All were reproduced before being
+fixed. The lesson worth carrying: a rule extracted into a shared module is
+not thereby applied — `stalled` defaults to the value that *disables* it, and
+OpenAlex simply never passed it. **When a guard is opt-in, audit every call
+site, not the module.**
+
+**#73, #86 and the new #92, #94, #95, #96 are open.** #92 is the measurement
+the #88 fix deliberately deferred; #94 is the bioRxiv envelope sampler the
+second round deferred for the same reason (its guard is deliberately weaker
+than it looks — read `docs/DECISIONS.md` before "simplifying" it); #95 is a
+pre-existing durability defect the review surfaced (a day fetched *as* today
+is stored completed and never revisited); #96 is efetch's retstart skew.
+
+On the branch: 2127 tests + 58 skipped on SQLite alone, and **2183 + 2 with a
+PostgreSQL DSN — run and verified against both PostgreSQL 16 and 18**, so the
+dual-backend half of `test_backends.py` (111 passed, 1 legitimate SQLite-only
+skip) actually ran. ruff 0.15.20 and `uv run mypy` both clean, and every new
+guard verified by mutation — 18 mutations, 18 caught, one of which caught a
+*vacuous test of my own* on the first pass and was rewritten. Nothing is
+released from `main`'s tip yet — CHANGELOG's `[Unreleased]` holds #78, #81
+and this family.
 **Phase 3 of the bmlibrarian port is next, and each of its rows needs a design
 conversation before any porting** — see "Next up"._
 
@@ -46,8 +70,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed five releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2049 passing + 58 skipped** (`uv run pytest tests/ -q`);
-  **2105 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips
+- **Tests: 2102 passing + 58 skipped** (`uv run pytest tests/ -q`);
+  **2158 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
   runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev
@@ -68,10 +92,16 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; **none is outstanding** — 0.9.1 promoted all eleven (seven
-  `ROADMAP.md` rows, four `docs/manual/fulltext.md` spots, the last of which
-  is a section heading whose in-page anchor had to move with it). Markers
-  inside `docs/superpowers/plans/` are historical records — leave them alone.
+  release time. 0.9.1 promoted all eleven it inherited (seven `ROADMAP.md`
+  rows, four `docs/manual/fulltext.md` spots, the last of which is a section
+  heading whose in-page anchor had to move with it); **six are outstanding
+  now** — three `ROADMAP.md` rows (#78, #81, #88–#91) and three spots in
+  `docs/manual/publications.md`. Write the
+  marker bare, as `(unreleased)`, never with a guessed version number: the
+  number is decided when the release is cut, and this family is a case in
+  point — it moves no API and so reads as a patch, while changing what a sync
+  stores. Markers inside `docs/superpowers/plans/` are historical records —
+  leave them alone.
 - **`main` is protected by the `protect_main` ruleset** (added 2026-08-13):
   no deletion, no non-fast-forward push, and CodeQL code scanning plus code
   quality required to merge. CodeQL comes from GitHub's *default setup*, so
@@ -100,24 +130,50 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 Six, every one found by review rather than by a failing test. (**#56, #68,
 #72 and #79** shipped in 0.9.1; **#78** is closed — see "The release tag does
-not depend on the merge button" below; **#81** is closed on
-`fix/81-type-gate-in-ci`.)
+not depend on the merge button" above; **#81** is closed and merged; **#88,
+#89, #90 and #91** are closed on `fix/88-91-sync-reconciliation`.)
 
-**#88, #89, #90 and #91 are one family and are best read together**, all
-raised by the review of PR #87 and all the same failure the type gate found:
-a broken sync reporting as a quiet day. #88 — the three fetchers drive their
-page loops from the count the source gave them and never reconcile it
-against what they stored, so an expired mid-walk session or an HTTP-200
-error document yields `completed` with 0 records. #89 — `sync()` coerces any
-status that is not the exact string `"failed"` to `completed`, so a
-third-party fetcher's failure becomes a durable success. #90 — a day whose
-records all failed to *store* is likewise recorded `completed`, with
-`SyncReport.errors` empty. #91 — `openalex`'s `response.json()` sits outside
-its `try`, so a decode error is attributed to the wrong layer. The first
-three all end the same way: `download_days` says the day is done, so
-`_days_needing_fetch()` never offers it again and the records are
-permanently absent. #88 and #90 want the same decision made once — what
-counts as a shortfall worth retrying — so take them together.
+**#94 — bioRxiv's envelope shapes are unmeasured**, filed for the reason #92
+was: the second round's guard refuses a body carrying *neither* a
+`collection` key *nor* messages, rather than the obvious
+`isinstance(data.get("collection"), list)`. bioRxiv is known to report a
+quiet day by omitting `total`; whether it also omits `collection` is not
+known, and requiring a key a quiet day may not send would fail that day on
+every later run for the life of the installation. One case therefore stays
+indistinguishable from a quiet day — an error body carrying messages and no
+collection. The sampler measures both that and the `messages[0].status`
+vocabulary. **Do not tighten the guard without running it**, and note that
+the tests deliberately pin *both* possible quiet-day shapes so the guard
+cannot come to depend on the unmeasured answer.
+
+**#95 — a day fetched as "today" is stored completed and never revisited.**
+Pre-existing and not introduced by this family, but the most *likely*
+instance of it: `_days_needing_fetch()` always re-offers `today`, `sync()`
+stores it `completed`, and tomorrow it is neither today nor failed. A 09:00
+cron durably loses whatever is indexed for that day over the following 15
+hours. No reconciliation rule can catch it — the source's own count agrees at
+09:00 — which is why it needs its own fix; `downloaded_at` already carries
+what is needed.
+
+**#96 — efetch paging advances by the page size requested, not delivered.**
+Found by reading, not reproduced: a short non-empty page would leave the
+records between what arrived and the next `retstart` never requested, and
+uniform half-pages land on exactly the exclusive floor and complete. The
+first task is establishing whether efetch can do that at all; if it cannot,
+the outcome is a line in `docs/DECISIONS.md`, not code.
+
+**#92 — the shortfall floor is unmeasured**, filed as part of the #88 fix
+rather than after it, so that the one guessed constant in that change is on
+the record. `SHORTFALL_FAILURE_RATIO = 0.5` decides when a page walk that
+ended naturally but came up short is treated as truncated; it asserts only
+that no benign cause plausibly removes half a day's records, which is what
+can be argued without data. Every other threshold in bmlib was set from a
+sampled population, so this is the outlier. Two constraints for whoever takes
+it: a `failed` day is re-offered on **every** later run, so a floor tightened
+past the real benign gap re-fetches that day forever; and OpenAlex is the
+expensive source to sample, at tens of thousands of works per publication
+date. Follow the `scripts/` sampler convention — offline test file, and a
+probe that could not be made never printing as a finding.
 
 **#73 — `install_defaults()` copies templates non-atomically**, found while
 fixing #70 and deliberately not folded into it. A copy interrupted partway

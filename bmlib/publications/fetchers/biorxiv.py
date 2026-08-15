@@ -23,13 +23,17 @@ controlled by the ``server`` parameter.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable
 from datetime import date
 from typing import Any
 
 from bmlib.fulltext.models import FullTextSourceEntry
+from bmlib.publications.fetchers._reconcile import reconcile_delivery
 from bmlib.publications.models import FetchedRecord, FetchResult, SyncProgress
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -142,6 +146,7 @@ def fetch_biorxiv(
     cursor = 0
     total_fetched = 0
     records_total: int | None = None
+    stalled = False
 
     try:
         while True:
@@ -150,15 +155,62 @@ def fetch_biorxiv(
             response.raise_for_status()
 
             data = response.json()
-            collection = data.get("collection", [])
+            # Checked rather than defaulted (#88): read through
+            # ``.get(..., [])``, an HTTP-200 error body is indistinguishable
+            # from a day with no preprints, and a day stored as completed is
+            # not offered again once it is in the past.
+            if not isinstance(data, dict):
+                raise ValueError(
+                    f"{server} returned a {type(data).__name__} payload, not an object"
+                )
 
-            # Extract total from first page's messages
-            if records_total is None:
-                messages = data.get("messages", [])
-                if messages:
-                    records_total = int(messages[0].get("total", 0))
+            messages = data.get("messages")
+            if not isinstance(messages, list):
+                messages = []
+            # The guard is "carries no evidence either way", not "carries a
+            # collection", and the difference is deliberate. bioRxiv's quiet
+            # day is known to omit ``total`` (DECISIONS.md); whether it also
+            # omits ``collection`` is *not* measured, and requiring a key the
+            # API may not send on a quiet day would fail that day on every run
+            # for the life of the installation — the runaway-retry cost this
+            # package's reconciliation rules are written to avoid. A body
+            # carrying neither key makes no claim at all about the day, so
+            # refusing it needs no knowledge of which keys a quiet day sends.
+            # Issue #94 is the live sampler that would let this be tightened.
+            if "collection" not in data and not messages:
+                raise ValueError(
+                    f"{server} returned an object carrying neither a collection nor"
+                    " messages, so it makes no claim about the day"
+                )
+
+            collection = data.get("collection", [])
+            if not isinstance(collection, list):
+                raise ValueError(f"{server} returned a collection that is not a list")
+
+            # Absent ``total`` leaves this None rather than 0 (#88): flattening
+            # the two makes "the source said this day is empty" and "the source
+            # said nothing" identical, and the second silently switches off
+            # both reconciliation rules — a page walk that then stops early
+            # completes with no shortfall and no stall detected.
+            if records_total is None and messages:
+                first = messages[0]
+                if isinstance(first, dict) and first.get("total") is not None:
+                    try:
+                        records_total = int(first["total"])
+                    except (TypeError, ValueError) as exc:
+                        # Named, because the day retries on every run until the
+                        # cause is fixed and a bare int() message ("invalid
+                        # literal for int() with base 10") says neither which
+                        # source nor which field is at fault.
+                        raise ValueError(
+                            f"{server} reported a non-numeric total"
+                            f" {first['total']!r} for {date_str}"
+                        ) from exc
 
             if not collection:
+                # An empty page while the source's own total says records
+                # remain is a walk that stopped serving them, not the end.
+                stalled = records_total is not None and total_fetched < records_total
                 break
 
             for raw_record in collection:
@@ -186,12 +238,34 @@ def fetch_biorxiv(
             time.sleep(RATE_LIMIT_SECONDS)
 
     except Exception as exc:
+        # Logged here as well as returned: the type is what separates a bmlib
+        # defect from a bad response, and `FetchResult.error` alone reaches
+        # only callers that inspect it.
+        logger.error("%s fetch failed for %s: %s: %s", server, date_str, type(exc).__name__, exc)
         return FetchResult(
             source=server,
             date=date_str,
             record_count=total_fetched,
             status="failed",
-            error=str(exc),
+            error=f"{type(exc).__name__}: {exc}",
+        )
+
+    # Not `records_total or 0` — see reconcile_delivery's `promised` docstring:
+    # None and 0 are different claims and collapsing them disables the rules.
+    verdict = reconcile_delivery(
+        server,
+        date_str,
+        delivered=total_fetched,
+        promised=records_total,
+        stalled=stalled,
+    )
+    if verdict.failure is not None:
+        return FetchResult(
+            source=server,
+            date=date_str,
+            record_count=total_fetched,
+            status="failed",
+            error=verdict.failure,
         )
 
     return FetchResult(
@@ -199,4 +273,5 @@ def fetch_biorxiv(
         date=date_str,
         record_count=total_fetched,
         status="completed",
+        note=verdict.note,
     )

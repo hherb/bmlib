@@ -643,3 +643,371 @@ class TestSyncPersistsGrantsAndAffiliations:
             ("openalex", "Wellcome Trust"),
             ("pubmed", "NHLBI"),
         ]
+
+
+class TestTheDayStatusReflectsWhatActuallyHappened:
+    """Issues #89 and #90 — a failure must not be stored as a completed day.
+
+    ``download_days`` is what ``_days_needing_fetch()`` consults on the next
+    run, so a day wrongly stored as ``completed`` is never offered again and
+    its records are permanently absent. The transient ``SyncReport`` is
+    discarded; the row is not.
+    """
+
+    _DAY = date(2024, 6, 15)
+
+    def _day_row(self, conn, source="test_source"):
+        from bmlib.db import fetch_one
+
+        return fetch_one(
+            conn,
+            "SELECT * FROM download_days WHERE source = ? AND date = ?",
+            (source, self._DAY.isoformat()),
+        )
+
+    def _fetcher_returning(self, status, error=None, records=()):
+        def fetch(client, target_date, *, on_record, on_progress=None, **kwargs):
+            for rec in records:
+                on_record(rec)
+            return FetchResult(
+                source="test_source",
+                date=target_date.isoformat(),
+                record_count=len(records),
+                status=status,
+                error=error,
+            )
+
+        return fetch
+
+    def _sync(self, conn, fetcher):
+        return sync(
+            conn,
+            sources=["test_source"],
+            date_from=self._DAY,
+            date_to=self._DAY,
+            email="test@example.com",
+            _fetcher_override={"test_source": fetcher},
+        )
+
+    # -- #89: the status allowlist -----------------------------------------
+
+    def test_an_unknown_status_is_recorded_as_failed(self):
+        """ "partial" is not "failed", and was therefore stored as success."""
+        conn = _fresh_conn()
+
+        self._sync(conn, self._fetcher_returning("partial", error="half the pages timed out"))
+
+        assert self._day_row(conn)["status"] == "failed"
+
+    def test_an_unknown_status_leaves_the_day_to_be_retried(self):
+        conn = _fresh_conn()
+
+        self._sync(conn, self._fetcher_returning("error", error="boom"))
+
+        assert _days_needing_fetch(conn, "test_source", date_from=self._DAY, date_to=self._DAY) == [
+            self._DAY
+        ]
+
+    def test_an_unknown_status_is_named_in_the_report(self):
+        """register_source() is public, so a third-party spelling must be visible."""
+        conn = _fresh_conn()
+
+        report = self._sync(conn, self._fetcher_returning("partial"))
+
+        assert any("partial" in e for e in report.errors)
+
+    def test_a_completed_status_is_still_completed(self):
+        """Negative control: failing closed must not fail an ordinary day."""
+        conn = _fresh_conn()
+
+        report = self._sync(conn, self._fetcher_returning("completed"))
+
+        assert self._day_row(conn)["status"] == "completed"
+        assert report.errors == []
+
+    # -- #90: records that failed to store ---------------------------------
+
+    def test_a_day_whose_records_all_failed_to_store_is_recorded_failed(self):
+        conn = _fresh_conn()
+        bad = _sample_raw_record(doi="10.1234/store.bad")
+        bad.title = None  # violates publications.title NOT NULL
+
+        self._sync(conn, self._fetcher_returning("completed", records=[bad]))
+
+        row = self._day_row(conn)
+        assert row["status"] == "failed"
+        assert row["record_count"] == 0
+
+    def test_a_partial_store_failure_also_fails_the_day(self):
+        """A day missing one record by name is missing it durably."""
+        conn = _fresh_conn()
+        bad = _sample_raw_record(doi="10.1234/store.bad")
+        bad.title = None
+        good = _sample_raw_record(doi="10.1234/store.good")
+
+        self._sync(conn, self._fetcher_returning("completed", records=[good, bad]))
+
+        row = self._day_row(conn)
+        assert row["status"] == "failed"
+        assert row["record_count"] == 1  # the good one was still stored
+
+    def test_a_store_failure_reaches_the_report_errors(self):
+        """It used to leave only per-record logs and a source-less counter."""
+        conn = _fresh_conn()
+        bad = _sample_raw_record(doi="10.1234/store.bad")
+        bad.title = None
+
+        report = self._sync(conn, self._fetcher_returning("completed", records=[bad]))
+
+        assert len(report.errors) == 1
+        assert "test_source/2024-06-15" in report.errors[0]
+        assert report.records_failed == 1
+
+    def test_a_failed_store_leaves_the_day_to_be_retried(self):
+        """store_publication merges, so re-fetching the day is idempotent."""
+        conn = _fresh_conn()
+        bad = _sample_raw_record(doi="10.1234/store.bad")
+        bad.title = None
+
+        self._sync(conn, self._fetcher_returning("completed", records=[bad]))
+
+        assert _days_needing_fetch(conn, "test_source", date_from=self._DAY, date_to=self._DAY) == [
+            self._DAY
+        ]
+
+    def test_a_clean_day_is_not_offered_again(self):
+        """Negative control for the retry: a good day still completes."""
+        conn = _fresh_conn()
+        good = _sample_raw_record(doi="10.1234/store.good")
+
+        self._sync(conn, self._fetcher_returning("completed", records=[good]))
+
+        assert (
+            _days_needing_fetch(conn, "test_source", date_from=self._DAY, date_to=self._DAY) == []
+        )
+
+    def test_the_store_failure_log_names_the_exception_type(self, caplog):
+        """A TypeError here is a bmlib defect, not bad data from the source.
+
+        The handler stays broad — one bad record must not lose the batch — so
+        the type is what tells the two apart in a log.
+        """
+        import logging
+        from unittest.mock import patch
+
+        conn = _fresh_conn()
+        good = _sample_raw_record(doi="10.1234/store.good")
+
+        with patch(
+            "bmlib.publications.sync.store_publication",
+            side_effect=TypeError("unexpected keyword argument"),
+        ):
+            with caplog.at_level(logging.ERROR, logger="bmlib.publications.sync"):
+                self._sync(conn, self._fetcher_returning("completed", records=[good]))
+
+        assert "TypeError" in caplog.text
+        assert "test_source/2024-06-15" in caplog.text
+
+
+class TestWhatTheCallerIsToldAboutAnImperfectDay:
+    """A day that completes imperfectly, and a failure with nothing to say.
+
+    Both used to leave the caller with a clean-looking report: a shortfall
+    below the failure floor reached only a log line, and an error whose
+    message was empty was dropped from ``errors`` by a truthiness test.
+    """
+
+    _DAY = date(2024, 6, 15)
+
+    def _fetcher(self, *, status="completed", error=None, note=None):
+        def fetch(client, target_date, *, on_record, on_progress=None, **kwargs):
+            return FetchResult(
+                source="test_source",
+                date=target_date.isoformat(),
+                record_count=0,
+                status=status,
+                error=error,
+                note=note,
+            )
+
+        return fetch
+
+    def _sync(self, conn, fetcher):
+        return sync(
+            conn,
+            sources=["test_source"],
+            date_from=self._DAY,
+            date_to=self._DAY,
+            email="test@example.com",
+            _fetcher_override={"test_source": fetcher},
+        )
+
+    def test_a_short_day_that_completes_is_reported(self):
+        """Up to half a day's records can go missing on this path.
+
+        The day is stored ``completed`` and never re-offered, so unless the
+        shortfall is returned there is no surface on which an operator could
+        later ask which completed days came up short.
+        """
+        conn = _fresh_conn()
+
+        report = self._sync(conn, self._fetcher(note="delivered 600 of 1000 records"))
+
+        assert any("delivered 600 of 1000" in n for n in report.notes)
+        assert report.errors == []
+
+    def test_a_note_is_kept_apart_from_the_errors(self):
+        """The two call for different responses: a retry, versus no retry."""
+        conn = _fresh_conn()
+
+        report = self._sync(conn, self._fetcher(note="delivered 600 of 1000 records"))
+
+        assert report.notes != []
+        assert not any("600" in e for e in report.errors)
+
+    def test_an_ordinary_day_carries_no_note(self):
+        """Negative control: the notes channel must not fill up on every day."""
+        conn = _fresh_conn()
+
+        report = self._sync(conn, self._fetcher())
+
+        assert report.notes == []
+
+    def test_a_note_on_a_failed_day_is_not_reported_as_a_note(self):
+        """A failed day is retried, so a shortfall on it is not news."""
+        conn = _fresh_conn()
+
+        report = self._sync(conn, self._fetcher(status="failed", error="boom", note="short"))
+
+        assert report.notes == []
+
+    def test_an_error_with_an_empty_message_still_reaches_the_report(self):
+        """``str(OSError())`` is ``""``, which a truthiness test drops.
+
+        The day is retried either way, so nothing is lost — but if the cause
+        is deterministic the day fails on every run while the report shows no
+        errors at all, and the operator has nothing to work from.
+        """
+        conn = _fresh_conn()
+
+        report = self._sync(conn, self._fetcher(status="failed", error=""))
+
+        assert len(report.errors) == 1
+        assert "test_source/2024-06-15" in report.errors[0]
+
+
+class TestTheReadSideAgreesWithTheWriteSide:
+    """``_days_needing_fetch`` must not treat an unrecognised status as done."""
+
+    _DAY = date(2024, 6, 15)
+
+    def test_a_day_stored_with_an_unrecognised_status_is_offered_again(self):
+        """The mirror of #89, on the read side.
+
+        ``_resolve_day_status`` now refuses to *write* anything but
+        ``completed``/``failed``. Read through ``== "failed"``, any other
+        value already in the table — written by an older bmlib, a third-party
+        writer, or a future ``partial`` status — counts as done and the day is
+        never fetched again.
+        """
+        conn = _fresh_conn()
+        _insert_download_day(conn, "test_source", self._DAY, status="in_progress")
+
+        needed = _days_needing_fetch(conn, "test_source", date_from=self._DAY, date_to=self._DAY)
+
+        assert needed == [self._DAY]
+
+    def test_a_completed_day_is_still_not_offered_again(self):
+        """Negative control: the allowlist must not re-offer every day."""
+        conn = _fresh_conn()
+        _insert_download_day(conn, "test_source", self._DAY, status="completed")
+
+        needed = _days_needing_fetch(conn, "test_source", date_from=self._DAY, date_to=self._DAY)
+
+        assert needed == []
+
+
+class TestTheFetcherAndTheDurableRowMeet:
+    """The seam issue #88 is actually about, which neither half tested.
+
+    Every fetcher test stops at ``FetchResult``; every sync test injects a
+    hand-made one. Nothing ran a real reconciliation through to the row that
+    decides whether the day is ever fetched again.
+    """
+
+    _DAY = date(2024, 6, 15)
+
+    def _sync_with_biorxiv_serving(self, conn, payload):
+        from unittest.mock import MagicMock
+
+        from bmlib.publications.fetchers.biorxiv import fetch_biorxiv
+
+        response = MagicMock()
+        response.json.return_value = payload
+        response.raise_for_status = MagicMock()
+        http = MagicMock()
+        http.get.return_value = response
+
+        def fetch(client, target_date, *, on_record, on_progress=None, **kwargs):
+            return fetch_biorxiv(http, target_date, on_record=on_record)
+
+        return sync(
+            conn,
+            sources=["biorxiv"],
+            date_from=self._DAY,
+            date_to=self._DAY,
+            email="test@example.com",
+            _fetcher_override={"biorxiv": fetch},
+        )
+
+    def test_a_short_walk_fails_its_day_and_the_day_comes_back(self):
+        """One preprint against a promised 250: stored failed, offered again."""
+        payload = {
+            "messages": [{"total": "250", "count": "1"}],
+            "collection": [
+                {
+                    "doi": "10.1101/2024.06.15.000001",
+                    "title": "A preprint",
+                    "date": "2024-06-15",
+                    "version": "1",
+                    "category": "genomics",
+                }
+            ],
+        }
+        conn = _fresh_conn()
+
+        report = self._sync_with_biorxiv_serving(conn, payload)
+
+        from bmlib.db import fetch_one
+
+        row = fetch_one(
+            conn,
+            "SELECT * FROM download_days WHERE source = ? AND date = ?",
+            ("biorxiv", self._DAY.isoformat()),
+        )
+        assert row["status"] == "failed"
+        assert any("delivered 1 of 250" in e for e in report.errors)
+        assert _days_needing_fetch(conn, "biorxiv", date_from=self._DAY, date_to=self._DAY) == [
+            self._DAY
+        ]
+
+    def test_a_whole_walk_completes_and_the_day_stays_done(self):
+        """Negative control across the same seam."""
+        payload = {
+            "messages": [{"total": "1", "count": "1"}],
+            "collection": [
+                {
+                    "doi": "10.1101/2024.06.15.000002",
+                    "title": "A preprint",
+                    "date": "2024-06-15",
+                    "version": "1",
+                    "category": "genomics",
+                }
+            ],
+        }
+        conn = _fresh_conn()
+
+        report = self._sync_with_biorxiv_serving(conn, payload)
+
+        assert report.errors == []
+        assert _days_needing_fetch(conn, "biorxiv", date_from=self._DAY, date_to=self._DAY) == []

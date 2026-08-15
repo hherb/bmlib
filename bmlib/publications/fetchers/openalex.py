@@ -23,13 +23,17 @@ before being handed to the *on_record* callback.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable
 from datetime import date
 from typing import Any
 
 from bmlib.fulltext.models import FullTextSourceEntry
+from bmlib.publications.fetchers._reconcile import reconcile_delivery
 from bmlib.publications.models import FetchedRecord, FetchResult, SyncProgress
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -179,6 +183,22 @@ def _normalize(raw: dict[str, Any]) -> FetchedRecord:
     )
 
 
+def _failed(date_str: str, records_processed: int, message: str) -> FetchResult:
+    """Build a failed :class:`FetchResult`, keeping whatever the walk delivered.
+
+    ``record_count`` is what arrived before the failure, not zero: those
+    records were already handed to ``on_record`` and will be stored, and the
+    day is retried regardless.
+    """
+    return FetchResult(
+        source="openalex",
+        date=date_str,
+        record_count=records_processed,
+        status="failed",
+        error=message,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Main fetcher
 # ---------------------------------------------------------------------------
@@ -222,6 +242,7 @@ def fetch_openalex(
     records_processed = 0
     records_total = 0
     is_first_page = True
+    stalled = False
 
     while cursor is not None:
         params: dict[str, Any] = {
@@ -236,26 +257,91 @@ def fetch_openalex(
         try:
             response = client.get(_API_URL, params=params)
             response.raise_for_status()
+            # Inside the guard, not after it (#91): a malformed body is a
+            # failure of this HTTP call, and decoding it outside meant the
+            # exception escaped the fetcher entirely and was logged by
+            # ``sync()`` as "Fetcher raised" — pointing at the wrong layer.
+            data = response.json()
         except Exception as exc:
-            return FetchResult(
-                source="openalex",
-                date=date_str,
-                record_count=records_processed,
-                status="failed",
-                error=str(exc),
+            # Type included and logged: `str(OSError())` is the empty string,
+            # which reads downstream as "no error" and is dropped from the
+            # report entirely, and a day that keeps failing then does so with
+            # nothing said about why.
+            logger.error("OpenAlex fetch failed for %s: %s: %s", date_str, type(exc).__name__, exc)
+            return _failed(date_str, records_processed, f"{type(exc).__name__}: {exc}")
+
+        # OpenAlex answers an invalid query with an ``{"error": ...}`` body at
+        # HTTP 200. Read through ``.get()`` defaults, such a body is
+        # indistinguishable from a day with no works — which is how a rejected
+        # query came to be stored as a completed day (#88). The envelope is
+        # therefore checked rather than defaulted, in the order that lets a
+        # page's valid records still be emitted before the page is refused.
+        if not isinstance(data, dict):
+            return _failed(
+                date_str,
+                records_processed,
+                f"OpenAlex returned a {type(data).__name__} payload, not an object, for {date_str}",
             )
 
-        data = response.json()
+        results = data.get("results")
+        if not isinstance(results, list):
+            return _failed(
+                date_str,
+                records_processed,
+                f"OpenAlex returned a page carrying no results list for {date_str}",
+            )
+
+        try:
+            for raw in results:
+                normalised = _normalize(raw)
+                on_record(normalised)
+                records_processed += 1
+        except Exception as exc:
+            # Same reasoning as the ``response.json()`` move above (#91): a
+            # results list whose members are not work objects is this page
+            # failing, and letting it escape had ``sync()`` report it as
+            # "Fetcher raised" — the wrong layer for a malformed payload.
+            return _failed(
+                date_str,
+                records_processed,
+                f"OpenAlex returned a page bmlib could not normalise for {date_str}:"
+                f" {type(exc).__name__}: {exc}",
+            )
+
+        meta = data.get("meta")
+        if not isinstance(meta, dict):
+            return _failed(
+                date_str,
+                records_processed,
+                f"OpenAlex returned a page carrying no meta object for {date_str}",
+            )
 
         if is_first_page:
-            records_total = (data.get("meta") or {}).get("count", 0)
+            # ``bool`` is an ``int``, but a count is never sent as one; the
+            # check exists for the error bodies that send no count at all.
+            if not isinstance(meta.get("count"), int):
+                return _failed(
+                    date_str,
+                    records_processed,
+                    f"OpenAlex returned a page whose meta carries no numeric count for {date_str}",
+                )
+            records_total = meta["count"]
             is_first_page = False
 
-        results = data.get("results") or []
-        for raw in results:
-            normalised = _normalize(raw)
-            on_record(normalised)
-            records_processed += 1
+        if not results:
+            # An empty page while ``meta.count`` says works remain is a walk
+            # that stopped serving them, not the end of one — the late-page
+            # death that the shortfall floor cannot catch, since 600 of 1,000
+            # clears it. OpenAlex reached ``reconcile_delivery`` without this
+            # flag and so was judged by the floor alone.
+            #
+            # Breaking unconditionally also bounds the loop: a page carrying
+            # no results and a non-null ``next_cursor`` otherwise repeats for
+            # ever. A walk that has already met its promise breaks here too
+            # and completes, because ``reconcile_delivery`` returns early once
+            # ``delivered >= promised`` and never consults *stalled*.
+            stalled = records_processed < records_total
+            break
 
         if on_progress is not None:
             on_progress(
@@ -268,15 +354,30 @@ def fetch_openalex(
                 )
             )
 
-        cursor = (data.get("meta") or {}).get("next_cursor")
+        cursor = meta.get("next_cursor")
 
         # Respect rate limit between paginated requests
         if cursor is not None:
             time.sleep(_RATE_LIMIT_SECONDS)
+
+    # ``delivered`` is what the server handed over. That is ``records_processed``
+    # only because ``_normalize`` skips nothing — the moment this loop grows a
+    # "skip this kind of work" branch, this must count list members instead, or
+    # it reports PubMed's phantom shortfall (see reconcile_delivery's docstring).
+    verdict = reconcile_delivery(
+        "openalex",
+        date_str,
+        delivered=records_processed,
+        promised=records_total,
+        stalled=stalled,
+    )
+    if verdict.failure is not None:
+        return _failed(date_str, records_processed, verdict.failure)
 
     return FetchResult(
         source="openalex",
         date=date_str,
         record_count=records_processed,
         status="completed",
+        note=verdict.note,
     )

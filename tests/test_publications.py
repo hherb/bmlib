@@ -1091,6 +1091,257 @@ class TestFetchBiorxiv:
         assert f"/{PAGE_SIZE}" in second_url
 
 
+class TestBiorxivWalkIsReconciledAgainstTheTotal:
+    """A walk that stopped short must not report as a quiet day (issue #88).
+
+    ``sync()`` stores a ``completed`` day and ``_days_needing_fetch()`` never
+    offers it again, so a short walk that reports success loses those records
+    permanently.
+    """
+
+    def test_a_walk_delivering_almost_none_of_the_total_fails(self):
+        mock_resp = _make_api_response([_sample_record()], total=250)
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "delivered 1 of 250" in result.error
+        assert result.record_count == 1
+
+    def test_a_small_shortfall_still_completes(self):
+        """A preprint withdrawn between the count and the page is benign."""
+        mock_resp = _make_api_response([_sample_record()], total=2)
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "completed"
+        assert result.error is None
+
+    def test_an_empty_page_with_records_outstanding_fails(self):
+        mock_resp = _make_api_response([], total=250)
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "empty page" in result.error
+
+    def test_an_empty_page_mid_walk_fails(self):
+        page1 = [_sample_record(doi=f"10.1101/2024.01.01.{i:06d}") for i in range(PAGE_SIZE)]
+        client = MagicMock()
+        client.get.side_effect = [
+            _make_api_response(page1, total=250),
+            _make_api_response([], total=250),
+        ]
+
+        from unittest.mock import patch
+
+        with patch("bmlib.publications.fetchers.biorxiv.time.sleep"):
+            result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.record_count == PAGE_SIZE
+
+    def test_an_empty_page_with_only_a_few_records_outstanding_fails(self):
+        """Only the empty page says this is broken; the floor clears it.
+
+        100 of 101 is well above the shortfall floor, so a rule with a
+        threshold alone would store this day as complete.
+        """
+        page1 = [_sample_record(doi=f"10.1101/2024.01.01.{i:06d}") for i in range(PAGE_SIZE)]
+        client = MagicMock()
+        client.get.side_effect = [
+            _make_api_response(page1, total=PAGE_SIZE + 1),
+            _make_api_response([], total=PAGE_SIZE + 1),
+        ]
+
+        from unittest.mock import patch
+
+        with patch("bmlib.publications.fetchers.biorxiv.time.sleep"):
+            result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.record_count == PAGE_SIZE
+
+    def test_a_quiet_day_still_completes(self):
+        """bioRxiv reports a day with no posts by omitting the total entirely."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "messages": [{"status": "no posts found"}],
+            "collection": [],
+        }
+        mock_resp.raise_for_status = MagicMock()
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "completed"
+        assert result.record_count == 0
+        assert result.error is None
+
+    def test_a_payload_that_is_not_an_object_fails(self):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = ["not", "an", "object"]
+        mock_resp.raise_for_status = MagicMock()
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.error is not None
+        # The message, not just the status. Without the guard the walk raises
+        # AttributeError into the same blanket handler and returns an
+        # identical FetchResult, so a status-only assertion passes either way
+        # — a mutation that survived the suite before this line existed.
+        assert "not an object" in result.error
+
+    def test_a_body_carrying_neither_a_collection_nor_messages_fails(self):
+        """An HTTP-200 error body must not read as a day with no preprints.
+
+        This is issue #88's shape for bioRxiv: read through a ``.get(...,
+        [])`` default, ``{"error": ...}`` is indistinguishable from a quiet
+        day, and the day is then stored as completed and never re-offered.
+
+        The guard is "carries no evidence either way" rather than "carries a
+        collection" on purpose — whether a genuinely quiet day omits the
+        ``collection`` key is not measured (issue #94), and requiring a key
+        the API may not send would fail every quiet day for ever.
+        """
+        for body in ({"error": "rate limited, try later"}, {}):
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = body
+            mock_resp.raise_for_status = MagicMock()
+            client = MagicMock()
+            client.get.return_value = mock_resp
+
+            result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+            assert result.status == "failed", body
+            assert result.error is not None
+            assert "neither a collection nor messages" in result.error
+
+    def test_a_quiet_day_completes_whether_or_not_it_sends_a_collection(self):
+        """The negative control for the guard above, in both possible shapes.
+
+        Which of these bioRxiv actually sends on a quiet day is unmeasured, so
+        the guard must not depend on the answer.
+        """
+        for body in (
+            {"messages": [{"status": "no posts found"}], "collection": []},
+            {"messages": [{"status": "no posts found"}]},
+        ):
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = body
+            mock_resp.raise_for_status = MagicMock()
+            client = MagicMock()
+            client.get.return_value = mock_resp
+
+            result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+            assert result.status == "completed", body
+            assert result.record_count == 0
+            assert result.error is None
+
+    def test_records_delivered_without_a_total_cannot_complete(self):
+        """An absent ``total`` silently switched off both reconciliation rules.
+
+        Flattened to ``0`` by ``records_total or 0``, the promise is met by
+        any delivery: this walk hands over 100 records, the next page comes
+        back empty, and the day completes as though it were whole. ``stalled``
+        cannot fire either, since it is conditioned on knowing the total.
+        """
+        first = MagicMock()
+        first.json.return_value = {
+            "messages": [{"status": "ok"}],
+            "collection": [_sample_record()],
+        }
+        first.raise_for_status = MagicMock()
+        second = MagicMock()
+        second.json.return_value = {"messages": [{"status": "ok"}], "collection": []}
+        second.raise_for_status = MagicMock()
+        client = MagicMock()
+        client.get.side_effect = [first, second]
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "no count" in result.error
+        assert result.record_count == 1
+
+    def test_a_body_whose_messages_are_not_a_list_carries_no_evidence(self):
+        """A non-list ``messages`` must not satisfy the envelope guard.
+
+        The guard asks whether the body says anything about the day. Left
+        un-normalised, a truthy non-list value like ``"unexpected"`` answers
+        "yes" — so a body with no ``collection`` either would complete as a
+        quiet day, which is the hole the guard exists to close.
+
+        Asserted with no ``collection`` key on purpose: with one present the
+        body passes the guard whatever ``messages`` holds, so that case cannot
+        tell the guard from its absence.
+        """
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"messages": "unexpected"}
+        mock_resp.raise_for_status = MagicMock()
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "neither a collection nor messages" in result.error
+
+    def test_a_messages_member_that_is_not_an_object_does_not_raise(self):
+        """``messages[0]`` is type-checked before ``.get("total")`` is called."""
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"messages": ["not an object"], "collection": []}
+        mock_resp.raise_for_status = MagicMock()
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "completed"
+        assert result.record_count == 0
+
+    def test_a_collection_that_is_not_a_list_fails(self):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"messages": [{"total": "5"}], "collection": None}
+        mock_resp.raise_for_status = MagicMock()
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "collection" in result.error
+
+    def test_a_non_numeric_total_fails_rather_than_raising(self):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"messages": [{"total": "many"}], "collection": []}
+        mock_resp.raise_for_status = MagicMock()
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.error is not None
+
+
 # ---------------------------------------------------------------------------
 # Test _raw_to_fulltext_sources
 # ---------------------------------------------------------------------------

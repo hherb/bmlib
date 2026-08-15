@@ -746,8 +746,10 @@ Why it is built this way:
 
 - **One commit per day, not one per record.** Each `store_publication()` call joins the open transaction via a savepoint rather than committing, so a day of several thousand records costs a single commit/fsync.
 - **The write lock is never held across network I/O.** Because records are buffered during the fetch, SQLite's write lock is taken only for the store loop, not for the minutes-long, network-bound fetch. Concurrent readers and writers are not blocked while the fetcher is waiting on an API.
-- **A failed record does not lose the batch.** Per-record exceptions roll back to that record's own savepoint, increment `records_failed`, log, and continue.
+- **A failed record does not lose the batch.** Per-record exceptions roll back to that record's own savepoint, increment `records_failed`, log (with the exception *type*, so a `TypeError` affecting every record does not read as bad data from the source), and continue.
 - **The day status commits atomically with its records.** The `download_days` row lands in the same transaction, so the database can never claim a day is `"completed"` while its records are missing. If writing that status row itself fails, the whole day rolls back and the error propagates — the day is simply left unrecorded and retried on the next run.
+
+> **Changed (unreleased).** A day is recorded `"failed"` — and so retried — if **any** record failed to store, not only if the fetch itself failed (#90); and the fetcher's status is read against an allowlist, so anything that is not exactly `"completed"` or `"failed"` is logged and recorded as failed rather than coerced to success (#89). Both cases also append a line to `SyncReport.errors` naming the source and the day. Retrying is safe because `store_publication()` merges. The cost to know about: a record the storage layer will *never* accept pins its day into a retry on every run — loudly, with an ERROR and an `errors` line each time, rather than silently missing.
 
 The trade-off is memory: the whole day is held at once. In practice this is a few thousand records and tens of megabytes with abstracts. A source delivering far larger days would need chunked flushing.
 
@@ -933,9 +935,11 @@ fetcher(client, target_date, *, on_record, on_progress=None, **config)
 
 Contract:
 
-- Return a `FetchResult`, with `status` of `"completed"` or `"failed"` (`sync()` treats any status other than `"failed"` as completed).
+- Return a `FetchResult`, with `status` of **exactly** `"completed"` or `"failed"`. Any other spelling is logged and recorded as a failed day (changed, unreleased — it used to be coerced to `"completed"`, which turned a third-party fetcher's failure into a durable success).
 - Emit `FetchedRecord` instances — always set `title` and `source`.
 - Prefer catching your own HTTP errors and returning `FetchResult(status="failed", error=...)`; a raised exception is caught by `sync()` per day, but returning lets you report a partial `record_count`.
+- **Reconcile before you report `"completed"`.** If your source tells you how many records the day holds, compare that against what it actually handed over, and return `"failed"` when the walk stopped short — see *Reconciling a walk against the source's own count* below. A `"completed"` day is durable: once it is in the past, `_days_needing_fetch()` does not offer it again unless `recheck_days` is set, which is not the default.
+- **Set `note` when the day completed imperfectly.** A day that came up short but not enough to fail is the case this exists for; `sync()` collects it into `SyncReport.notes`, which is the only place such a day is visible after the fact.
 - Rate-limit yourself. `sync()` does not throttle on your behalf.
 
 **Example — registering a source backed by a local JSON dump:**
@@ -1035,6 +1039,34 @@ get_fetcher("pubmed") is my_fetcher   # True
 Fetchers are used internally by `sync()` but can be called directly for advanced use cases. Each takes an HTTP client and one date.
 
 All fetchers pass a `FetchedRecord` to `on_record`, matching `sync()`. (Before 0.4.0 the three built-ins annotated the parameter as `Callable[[dict], None]` while passing a `FetchedRecord`; the annotations were corrected, the behaviour never changed.)
+
+### Reconciling a walk against the source's own count
+
+> **New (unreleased).** Issue #88.
+
+Each built-in fetcher learns a record count before it walks pages — PubMed's `<Count>`, OpenAlex's `meta.count`, bioRxiv's `messages[0].total`. Before this change none of them compared that promise against what arrived, so a walk that stopped early returned `status="completed"`, `sync()` stored the day as done, and `_days_needing_fetch()` did not offer it again once it was in the past (with `recheck_days` at its default). The records were permanently absent, with nothing logged above INFO.
+
+The comparison now happens in one shared place and applies three rules that differ in kind:
+
+| Rule | Fires when | Threshold |
+|------|-----------|-----------|
+| **Stalled** | A page delivers no records while the source's own count says records remain. | None — broken outright, whatever the size of the gap. |
+| **Unreconcilable** | Records arrived, but the source reported no count to judge them against. | None — the walk cannot be shown to have finished. |
+| **Shortfall** | The walk ended naturally but delivered less than half the promised count. | `SHORTFALL_FAILURE_RATIO = 0.5`, exclusive. |
+
+Delivering nothing against no count is the ordinary quiet day and passes silently. A shortfall too small to fail on completes, is logged at WARNING, and is returned as `FetchResult.note` — which `sync()` collects into `SyncReport.notes`, separately from `errors`, because that day will *not* be retried and is the one case where an operator has to be able to find it afterwards.
+
+Three things worth knowing before relying on this:
+
+- **The floor is a rule fixed before measurement**, unlike bmlib's other calibrated thresholds. It asserts only that no benign cause plausibly removes half a day's records. Issue #92 is the follow-up that measures the real distribution per source and tightens it — do not read `0.5` as a measured value.
+- **The floor exists because a failed day is retried forever.** `_days_needing_fetch()` re-offers a `failed` day on every later run, so treating a benign, permanent gap as a failure would re-fetch and re-merge that whole day for the rest of an installation's life. Sources are not exact: a record can be withdrawn between search and fetch, and an index can move under a long walk.
+- **A count of `None` is not a count of `0`.** If you write a fetcher, pass `promised=None` when your source reported no count, never `0`: zero is a source saying the day is empty, which any delivery satisfies, so collapsing the two switches the stalled and shortfall rules off without saying so.
+
+Each fetcher also refuses a malformed envelope rather than reading it through defaults, since an HTTP-200 error body is otherwise indistinguishable from a day with no publications: PubMed rejects an efetch response that is not a `PubmedArticleSet` (NCBI answers an evicted history session with `<eFetchResult><ERROR>…</ERROR>` at HTTP 200), and OpenAlex requires `results` to be a list and `meta` an object carrying a numeric `count`.
+
+bioRxiv's check is deliberately weaker, and the difference matters if you touch it: it refuses a body carrying **neither** a `collection` key **nor** messages, rather than requiring a list `collection`. bioRxiv reports a quiet day by omitting `total`, and whether it also omits `collection` is not measured — requiring a key a quiet day may not send would fail that day on every later run for ever. One case therefore remains indistinguishable from a quiet day: an error body that carries messages and no collection. Issue #94 is the sampler that would measure bioRxiv's real quiet-day and error shapes and let the guard be tightened.
+
+PubMed reconciles **delivered elements**, not parsed records: efetch delivers `<PubmedBookArticle>` elements that the fetcher deliberately does not parse, so counting parsed records would report a phantom shortfall on every day carrying a book chapter — and then re-fetch that day forever. It counts those two element names specifically rather than every child of the set, because `<DeleteCitation>` is also a legal child and counting it would both mask a real shortfall and stop an otherwise-empty page from registering as a stall.
 
 ### `fetch_pubmed`
 
