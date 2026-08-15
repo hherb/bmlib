@@ -563,6 +563,12 @@ class TestSync:
         instead, ``_day_was_over_when_fetched`` would fail closed on every
         completed day, and the whole date range would be re-fetched on every
         run — loudly, but forever. Nothing else here would notice.
+
+        **This is a CI-only guard.** The failure it describes is reachable
+        only through psycopg2, so the SQLite half proves nothing the tests in
+        ``test_sync.py`` do not already prove; a green local run, where the
+        PostgreSQL half skips for want of a DSN, has not exercised it. CI sets
+        ``BMLIB_REQUIRE_POSTGRESQL=1``, which turns that skip into a failure.
         """
         day = date(2026, 1, 15)
         records = [FetchedRecord(title="One", source="testsource", doi="10.1/one")]

@@ -18,9 +18,10 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import UTC, date, datetime, timedelta
 
-from bmlib.db import connect_sqlite, execute
+from bmlib.db import connect_sqlite, execute, fetch_one
 from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.publications.fetchers import ALL_SOURCES
 from bmlib.publications.models import FetchedRecord, FetchResult
@@ -146,8 +147,16 @@ class TestDaysNeedingFetch:
         assert date(2024, 6, 10) in days
         assert date(2024, 6, 11) not in days
 
-    def test_today_always_included(self):
-        """Today should always be included, even if already completed."""
+    def test_today_is_included_even_when_already_completed(self):
+        """Today is offered again — but by the durability rule, not a special case.
+
+        This used to be named for, and assert, the ``if current == today``
+        branch #95 removed. It still passes, for a different reason: a row
+        written during today is always earlier than its own 12:00-UTC-tomorrow
+        boundary. The argument is in
+        ``TestACompletedDayIsDurableOnlyOnceTheDayIsOver``; this is the older
+        suite's coverage of the same contract.
+        """
         conn = _fresh_conn()
         today = date.today()
 
@@ -223,8 +232,6 @@ class TestSync:
         assert fts_rows[0]["format"] == "pdf"
 
         # Verify download_days was updated
-        from bmlib.db import fetch_one
-
         row = fetch_one(
             conn,
             "SELECT * FROM download_days WHERE source = ? AND date = ?",
@@ -324,8 +331,6 @@ class TestSync:
         assert get_publication_by_doi(conn, "10.1234/fail.001") is not None
         assert get_publication_by_doi(conn, "10.1234/fail.002") is not None
         assert get_publication_by_doi(conn, "10.1234/fail.bad") is None
-
-        from bmlib.db import fetch_one
 
         row = fetch_one(
             conn,
@@ -986,8 +991,6 @@ class TestTheFetcherAndTheDurableRowMeet:
 
         report = self._sync_with_biorxiv_serving(conn, payload)
 
-        from bmlib.db import fetch_one
-
         row = fetch_one(
             conn,
             "SELECT * FROM download_days WHERE source = ? AND date = ?",
@@ -1056,10 +1059,16 @@ class TestACompletedDayIsDurableOnlyOnceTheDayIsOver:
 
         Without this, "always re-offer" passes the test above and costs every
         installation a permanent re-fetch of its whole date range.
+
+        Deliberately *not* at the boundary instant — it sits days past it, so
+        that this and ``test_noon_utc_the_next_day_is_late_enough`` are two
+        data points rather than one. They were the same timestamp until
+        review, which made the boundary test's claim below false and left the
+        control unable to fail for its own reason alone.
         """
         conn = _fresh_conn()
         _insert_download_day(
-            conn, "test_source", self._DAY, downloaded_at="2024-06-16T12:00:00+00:00"
+            conn, "test_source", self._DAY, downloaded_at="2024-06-20T00:00:00+00:00"
         )
 
         assert self._needed(conn) == []
@@ -1123,12 +1132,18 @@ class TestACompletedDayIsDurableOnlyOnceTheDayIsOver:
         with caplog.at_level("WARNING", logger="bmlib.publications.sync"):
             assert self._needed(conn) == [self._DAY]
 
-        # Both halves matter: the phrase is unique to this line, and the value
-        # is what tells the operator which row to look at.
+        # All three halves matter: the phrase is unique to this line, the
+        # value is what the operator has to recognise, and `(source, date)` is
+        # the row's actual key — without it the operator is told a row is bad
+        # but not which one. Asserting only the phrase and the value let two
+        # mutations of the identifying arguments survive.
         warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
-        assert any("unusable downloaded_at" in m and "'not a timestamp'" in m for m in warnings), (
-            warnings
-        )
+        assert any(
+            "unusable downloaded_at" in m
+            and "'not a timestamp'" in m
+            and f"test_source/{self._DAY.isoformat()}" in m
+            for m in warnings
+        ), warnings
 
     def test_a_naive_timestamp_is_not_read_as_durable(self):
         """A naive value must fail closed rather than raise.
@@ -1207,8 +1222,6 @@ class TestACompletedDayIsDurableOnlyOnceTheDayIsOver:
             _fetcher_override={"test_source": _make_fake_fetcher(records)},
         )
 
-        from bmlib.db import fetch_one
-
         row = fetch_one(
             conn,
             "SELECT * FROM download_days WHERE source = ? AND date = ?",
@@ -1216,3 +1229,149 @@ class TestACompletedDayIsDurableOnlyOnceTheDayIsOver:
         )
         assert row["status"] == "completed"
         assert not _day_was_over_when_fetched("test_source", today, row["downloaded_at"])
+
+    def test_each_day_in_a_window_is_judged_against_its_own_boundary(self):
+        """Every other test in this class uses a one-day window, and that hid a bug.
+
+        Review found that passing ``date_from`` where the loop passes
+        ``current`` — judging every day in the window against the *first*
+        day's boundary — survived the entire suite, because with
+        ``date_from == date_to`` the two are the same object. Under that
+        mutant a 14:00 UTC cron on the default two-day window stores **today**
+        as durable and loses the rest of the day: #95 exactly, reintroduced
+        silently.
+
+        So the window here spans two days whose answers differ, which is also
+        the shape ``sync()`` actually runs with.
+        """
+        conn = _fresh_conn()
+        first, second = date(2024, 6, 15), date(2024, 6, 16)
+        # Both timestamps sit past `first`'s boundary (2024-06-16T12:00Z) and
+        # before `second`'s (2024-06-17T12:00Z), which is what makes the two
+        # days' answers differ. Deliberately clear of the boundary instant so
+        # this stays a test about *which day* is judged and leaves `>=` versus
+        # `>` to `test_noon_utc_the_next_day_is_late_enough` alone.
+        _insert_download_day(conn, "test_source", first, downloaded_at="2024-06-16T18:00:00+00:00")
+        _insert_download_day(conn, "test_source", second, downloaded_at="2024-06-16T20:00:00+00:00")
+
+        assert _days_needing_fetch(conn, "test_source", date_from=first, date_to=second) == [second]
+
+    def test_a_timestamp_from_the_future_is_not_read_as_durable(self, caplog):
+        """The one shape that read cleanly and still could not be true.
+
+        The guard was loud about a value it could not *parse* and silent about
+        one asserting the day was fetched tomorrow. A restored backup, a host
+        resuming with a bad RTC, or an external writer puts a past-the-boundary
+        timestamp on a day that is still running; every such day then reads
+        durable forever at ``recheck_days=0``. That is #95's own failure mode —
+        permanent, invisible loss — so it fails closed and warns like the rest.
+        """
+        conn = _fresh_conn()
+        today = date.today()
+        _insert_download_day(conn, "test_source", today, downloaded_at="9999-12-31T00:00:00+00:00")
+
+        with caplog.at_level("WARNING", logger="bmlib.publications.sync"):
+            assert _days_needing_fetch(conn, "test_source", date_from=today, date_to=today) == [
+                today
+            ]
+
+        warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+        assert any(
+            "downloaded_at in the future" in m and f"test_source/{today.isoformat()}" in m
+            for m in warnings
+        ), warnings
+
+    def test_a_clock_a_few_minutes_fast_is_still_believed(self):
+        """Negative control for the bound above: ordinary skew is not a defect.
+
+        Without a tolerance the future check fires on hosts whose clocks
+        differ by seconds, costing a re-fetch every run. The asymmetry decides
+        the size — too tight costs one merged day, too loose loses one
+        permanently — so the tolerance is small, not generous.
+        """
+        conn = _fresh_conn()
+        soon = (datetime.now(tz=UTC) + timedelta(minutes=1)).isoformat()
+        _insert_download_day(conn, "test_source", self._DAY, downloaded_at=soon)
+
+        assert self._needed(conn) == []
+
+    def test_a_non_string_timestamp_fails_closed_through_day_selection_too(self, monkeypatch):
+        """The non-string path, exercised where it would actually be hit.
+
+        ``test_a_timestamp_that_is_not_a_string_is_not_read_as_durable`` calls
+        the rule directly, so its claim about aborting *day selection* is
+        argued but never run — and the column is ``TEXT``, so no insert can
+        produce the shape. Faking the row is the only way to cover the path a
+        PostgreSQL DDL change would create.
+        """
+        # Via `sys.modules`, not `import bmlib.publications.sync as ...`: the
+        # package exports a `sync` *function*, which shadows the submodule of
+        # the same name on the parent, so the plain import binds the function.
+        sync_module = sys.modules["bmlib.publications.sync"]
+
+        row = {
+            "date": self._DAY.isoformat(),
+            "status": "completed",
+            "downloaded_at": datetime(2024, 6, 20, 12, tzinfo=UTC),
+            "last_verified_at": None,
+        }
+        monkeypatch.setattr(sync_module, "fetch_all", lambda *a, **kw: [row])
+
+        assert self._needed(_fresh_conn()) == [self._DAY]
+
+    def test_an_unusable_last_verified_at_rechecks_rather_than_raising(self, caplog):
+        """The sibling column, which was still being read raw.
+
+        ``datetime.fromisoformat`` on a corrupt ``last_verified_at`` raised
+        ``ValueError`` out of day selection, escaping ``sync()`` — whose
+        ``try`` carries only a ``finally`` — and killing the whole
+        multi-source run before a single record was fetched, ``SyncReport``
+        and all. Reachable only when ``downloaded_at`` is *good* and this one
+        is not, since a bad ``downloaded_at`` short-circuits above it.
+        """
+        conn = _fresh_conn()
+        _insert_download_day(
+            conn,
+            "test_source",
+            self._DAY,
+            downloaded_at="2024-06-20T00:00:00+00:00",
+            last_verified_at="not a timestamp",
+        )
+
+        with caplog.at_level("WARNING", logger="bmlib.publications.sync"):
+            assert _days_needing_fetch(
+                conn, "test_source", date_from=self._DAY, date_to=self._DAY, recheck_days=7
+            ) == [self._DAY]
+
+        warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+        assert any(
+            "unusable last_verified_at" in m and f"test_source/{self._DAY.isoformat()}" in m
+            for m in warnings
+        ), warnings
+
+    def test_a_null_last_verified_at_rechecks_without_warning(self, caplog):
+        """Negative control: ``NULL`` is the documented state, not a defect.
+
+        Rule 4 already answers "never verified" by rechecking. Warning on it
+        would fire for every row of a fresh install with ``recheck_days`` set,
+        which is how a real warning gets tuned out.
+        """
+        conn = _fresh_conn()
+        _insert_download_day(
+            conn, "test_source", self._DAY, downloaded_at="2024-06-20T00:00:00+00:00"
+        )
+        # The helper substitutes now for a falsy `last_verified_at`, so the
+        # NULL this test is about has to be written separately.
+        execute(
+            conn,
+            "UPDATE download_days SET last_verified_at = NULL WHERE source = ? AND date = ?",
+            ("test_source", self._DAY.isoformat()),
+        )
+        conn.commit()
+
+        with caplog.at_level("WARNING", logger="bmlib.publications.sync"):
+            assert _days_needing_fetch(
+                conn, "test_source", date_from=self._DAY, date_to=self._DAY, recheck_days=7
+            ) == [self._DAY]
+
+        assert [r.getMessage() for r in caplog.records if r.levelname == "WARNING"] == []

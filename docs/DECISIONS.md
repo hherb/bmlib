@@ -845,36 +845,100 @@ full. What is easy to get wrong later:
   comparison.** Day *D* ends last in UTC−12, whose midnight is noon UTC on
   *D+1*. All three built-in sources are US-based (UTC−5 to UTC−8), so
   comparing UTC *dates* calls a fetch at 00:30 UTC on *D+1* durable while
-  PubMed's day *D* still has five hours to run; comparing *local* dates is up
-  to 15 hours out for a machine in Sydney. Pinned by
+  PubMed's day *D* still has four and a half hours to run (US Eastern in
+  winter; three and a half on daylight time, and longer still for a
+  Pacific-time source); comparing *local* dates is up to 16 hours out for a
+  machine in Sydney. Pinned by
   `test_a_second_before_noon_utc_the_next_day_is_not` and
   `test_an_offset_timestamp_is_compared_as_an_instant_not_as_a_wall_clock`.
+  **Both figures were rounded wrong in the first round** — "five hours" and
+  "15 hours" — across five documents; they are arithmetic, so check them
+  rather than copying them.
 - **The comparison is `>=`.** A fetch at exactly the boundary saw the whole
-  day everywhere. `<` versus `<=` here is a one-character edit no other test
-  notices, so `test_noon_utc_the_next_day_is_late_enough` exists for it alone
-  — the same reason `test_exactly_the_floor_completes` does.
+  day everywhere. `<` versus `<=` here is a one-character edit only
+  `test_noon_utc_the_next_day_is_late_enough` notices, which is why it exists
+  — the same reason `test_exactly_the_floor_completes` does. That claim was
+  **false when first written**: the negative control beside it,
+  `test_a_day_fetched_after_it_ended_everywhere_is_not_offered_again`, used
+  the identical boundary timestamp, so the two tests were the same test twice
+  and died to the same mutation. The control now sits days past the boundary.
+  A test asserting it is the sole pin for something is worth checking against
+  its neighbours before it is believed.
+- **Every day in a window is judged against its own boundary.** Passing
+  `date_from` where the loop passes `current` **survived the entire suite**
+  when this landed, because all eleven of the rule's tests used a one-day
+  window — and it silently reintroduces #95 for any cron after 12:00 UTC.
+  Pinned by `test_each_day_in_a_window_is_judged_against_its_own_boundary`.
+  The general lesson: a rule that selects over a range needs at least one test
+  whose range has more than one answer in it.
 - **Removing the `today` branch was not a simplification for its own sake.**
   That instant is also exactly the point beyond which "now" cannot fall inside
   day *D* anywhere, so the timestamp rule *subsumes* the special case rather
-  than approximating it — and with it gone, day selection no longer consults
-  the wall clock to decide whether a completed day is done, which is what
-  makes the rule testable without faking the clock. Pinned by
-  `test_today_is_still_offered_although_the_special_case_is_gone`.
-- **An unusable `downloaded_at` fails closed, and "unusable" is three shapes,
-  not one.** Naive, unparseable, and not-a-string all mean the same thing to
-  the rule; the naive case is the one that would otherwise raise `TypeError`
-  from inside day selection and abort a whole sync before a record was
-  fetched. Not-a-string is the shape a change of the PostgreSQL DDL to a real
-  timestamp type would produce, which
+  than approximating it — and with it gone, the wall clock no longer *decides*
+  whether a completed day is done, which is what makes the rule testable
+  without faking the clock. It is still read, but only as the upper bound
+  below, which can move the answer towards a re-fetch and never away from one.
+  Pinned by `test_today_is_still_offered_although_the_special_case_is_gone`.
+- **A `downloaded_at` that cannot be read fails closed, and "unusable" is
+  three shapes, not one.** Naive, unparseable, and not-a-string all mean the
+  same thing to the rule; the naive case is the one that would otherwise raise
+  `TypeError` from inside day selection and abort a whole sync before a record
+  was fetched. Not-a-string is the shape a change of the PostgreSQL DDL to a
+  real timestamp type would produce, which
   `test_the_durability_rule_can_read_what_each_backend_stores` guards from the
-  other side. Each pinned by its own test; all verified by mutation.
+  other side — a **CI-only** guard, since that failure is reachable only
+  through psycopg2 and the SQLite half proves nothing `test_sync.py` does not.
+- **A `downloaded_at` that reads cleanly but cannot be true fails closed too,
+  and that gap was live for a round.** A fetch cannot have happened in the
+  future, so a restored backup, a bad RTC or an external writer could put a
+  past-the-boundary timestamp on a running day and every such day read durable
+  forever. The guard was loud about a value it could not parse and silent
+  about one asserting the day was fetched tomorrow — #95's own failure mode.
+  `_CLOCK_SKEW_TOLERANCE` is five minutes and is **a fixed choice, not a
+  measured one**; unlike `SHORTFALL_FAILURE_RATIO` it is bounded on both sides
+  by an asymmetry rather than by taste — too tight costs one merged re-fetch,
+  too loose loses a day permanently — which is the argument for keeping it
+  small rather than generous. Pinned by
+  `test_a_timestamp_from_the_future_is_not_read_as_durable` and its negative
+  control `test_a_clock_a_few_minutes_fast_is_still_believed`.
+- **`last_verified_at` gets its own reader, deliberately laxer.** Only the
+  calendar date is used, so a naive value is perfectly usable here where it is
+  not for the durability rule; routing it through `_read_aware_timestamp`
+  would fail closed on every naive row and re-fetch the whole window on every
+  run for a `recheck_days` caller. What the two share is why they exist: read
+  raw — as this column was for a round after #95 landed — a corrupt value
+  raises `ValueError` from inside day selection, which escapes `sync()` (whose
+  `try` carries only a `finally`) and kills the whole multi-source run before
+  a single record is fetched, `SyncReport` and all. That is worse than the
+  per-day losses the rest of these rules guard against, because it is total.
+  A stored `NULL` is **not** unusable — it is the documented "never verified"
+  state — so it rechecks without a warning; warning on it would fire for every
+  row of a fresh install and tune the real warning out. Pinned by
+  `test_an_unusable_last_verified_at_rechecks_rather_than_raising` and
+  `test_a_null_last_verified_at_rechecks_without_warning`.
 - **It does not fix late indexing, and must not be stretched to.** A record
   that appears for day *D* three days later is not covered by any rule about
   when *D* ended. `recheck_days` is what exists for that.
-- **The one extra re-fetch is the fix working, not a cost to optimise away.**
-  Under the default window `[yesterday, today]` it is exactly one, on *D+1*.
-  A window of three days or more, run before 12:00 UTC, pays one more; both
-  are merged by `store_publication()`.
+- **The extra re-fetch is the fix working, not a cost to optimise away** — but
+  state it correctly. Under the default window `[yesterday, today]` it is
+  exactly one extra per run, two rather than one, since day *D* is offered
+  again on *D+1*. A window of three days or more, run before 12:00 UTC, pays
+  one more (three); it does not grow with the window beyond that, and vanishes
+  for a run at or after 12:00 UTC. On the **first run after upgrading** it is
+  larger and one-off: every row the old code stored was written while its own
+  day was current, so none is durable and the whole window is re-fetched once
+  — measured at 29 of 29 days for a 30-day window, per source. All merged by
+  `store_publication()`. The first round of docs said this "costs nothing
+  under the default window", which is the one claim here that was simply
+  arithmetic and wrong.
+- **The default two-day window never certifies a day for a run before 12:00
+  UTC**, and that is a property of the window, not a defect in the rule. Day
+  *D* is fetched on *D*, re-fetched on *D+1* at the same hour — still short of
+  its own boundary — and then the window slides past it. No records are lost:
+  the *D+1* fetch happens after day *D* ended for every US-based source. But
+  the row is left permanently non-durable, so a caller who later widens the
+  window re-fetches it. Running at or after 12:00 UTC, or with a window of
+  three days or more, settles every day.
 
 ## publications — retractions
 

@@ -245,9 +245,16 @@ nor `failed` tomorrow, never revisited: a 09:00 cron durably lost the
 following 15 hours of indexing, invisibly to every rule below, since the
 source's own count agreed at 09:00. Do not "simplify" this to a date
 comparison — all three built-in sources are US-based, so a UTC-date rule
-calls a fetch at 00:30 UTC on *D+1* durable while PubMed's day *D* has five
-hours to run. `docs/DECISIONS.md` has the rest, including why an unusable
-`downloaded_at` fails closed in three shapes rather than one.
+calls a fetch at 00:30 UTC on *D+1* durable while PubMed's day *D* has four
+and a half hours to run. A `downloaded_at` that cannot be *read* fails closed
+in three shapes; one that reads cleanly but sits in the future cannot be
+*true* and fails closed too, since believing it is #95 again. Every day in a
+window is judged against its **own** boundary — passing `date_from` there
+survived the whole suite once. `last_verified_at` has its own, laxer reader
+for the same reason: read raw it raises from inside day selection and takes
+the entire multi-source run with it. `docs/DECISIONS.md` has the rest,
+including the costs — one extra day-fetch per run, and the whole window once
+on upgrade.
 
 *Reconcile the walk.* `fetchers/_reconcile.py` compares what a source
 delivered against the count it promised, in one place because three fetchers
