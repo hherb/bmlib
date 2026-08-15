@@ -27,12 +27,12 @@ than it looks — read `docs/DECISIONS.md` before "simplifying" it); #95 is a
 pre-existing durability defect the review surfaced (a day fetched *as* today
 is stored completed and never revisited); #96 is efetch's retstart skew.
 
-On the branch: 2127 tests + 58 skipped (2184 collected, from 2111 on `main`),
-ruff 0.15.20 and `uv run mypy` both clean, and every new guard verified by
-mutation — 18 mutations, 18 caught, one of which caught a *vacuous test of my
-own* on the first pass and was rewritten. **Re-run the PostgreSQL half before
-merge**: the dual-backend suite has not been run since the second round of
-changes, and this session had no network or database access. Nothing is
+On the branch: 2127 tests + 58 skipped on SQLite alone, and **2183 + 2 with a
+PostgreSQL DSN — run and verified against both PostgreSQL 16 and 18**, so the
+dual-backend half of `test_backends.py` (111 passed, 1 legitimate SQLite-only
+skip) actually ran. ruff 0.15.20 and `uv run mypy` both clean, and every new
+guard verified by mutation — 18 mutations, 18 caught, one of which caught a
+*vacuous test of my own* on the first pass and was rewritten. Nothing is
 released from `main`'s tip yet — CHANGELOG's `[Unreleased]` holds #78, #81
 and this family.
 **Phase 3 of the bmlibrarian port is next, and each of its rows needs a design
