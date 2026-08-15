@@ -726,12 +726,37 @@ The sole public entry point for ingestion. Ensures the schema exists, determines
 
 For each source, `sync()` walks `date_from`..`date_to` and selects a day when:
 
-- The day **is today** — today is *always* re-fetched, to catch late additions.
 - There is **no `download_days` row** for that source/day.
-- The row's `status` is `"failed"`.
-- `recheck_days > 0` **and** the row's `last_verified_at` is older than `today - recheck_days` — **or** is `NULL`.
+- The row's `status` is anything other than `"completed"`.
+- The row's `downloaded_at` shows the fetch happened **before the day was over everywhere on earth** — see below.
+- `recheck_days > 0` **and** the row's `last_verified_at` is older than `today - recheck_days`, is `NULL`, or cannot be read.
 
-Days with a `"completed"` row inside the recheck window are skipped.
+Days with a `"completed"` row that was fetched after the day ended, and that is inside the recheck window, are skipped.
+
+> **Changed (unreleased).** The third rule replaces an unconditional *today is always re-fetched* branch (#95). That branch re-offered today and nothing else, so a day captured **as** today was stored `"completed"` and, being neither `today` nor `"failed"` tomorrow, was never offered again at the default `recheck_days=0`. A 09:00 cron durably lost whatever was indexed over the remaining 15 hours. No reconciliation rule can catch it: the source's own count agreed at 09:00, because the walk really did deliver everything that existed then.
+
+#### When a day is over
+
+A completed day counts as durable only once it was fetched at or after **12:00 UTC on the following day**. The hour is not a safety margin:
+
+- Day *D* finishes last in UTC−12, whose midnight is noon UTC on *D+1*.
+- That same instant is exactly the point beyond which "now" can no longer fall inside day *D* anywhere on earth — which is why this one rule *subsumes* the old `today` special case rather than approximating it, and why the wall clock no longer *decides* whether a completed day is done. It is still read, but only as the upper bound described below, which can move the answer towards a re-fetch and never away from one.
+
+Both cheaper rules are unsafe, and not hypothetically. All three built-in sources are US-based (UTC−5 to UTC−8): comparing UTC *dates* would call a fetch at 00:30 UTC on *D+1* durable while PubMed's own day *D* still had four and a half hours to run (US Eastern in winter; three and a half on daylight time, and longer for a Pacific-time source), and comparing *local* dates is up to 16 hours out for a machine in Sydney.
+
+**What it costs.** One extra day-fetch per run under the default window `[yesterday, today]` — two rather than one — because day *D* is offered again on *D+1*, which is the point of the fix. A caller passing a window of three days or more, whose run happens before 12:00 UTC, pays one more again (three); the cost does not grow with the window beyond that, and disappears entirely for a run at or after 12:00 UTC. `store_publication()` merges, so every re-fetch is idempotent.
+
+**What it costs once, on upgrade.** Every `download_days` row written by the previous release was stored while its own day was still current, so none of them is durable under this rule and the whole window is re-fetched on the first run after upgrading — measured at 29 of 29 days for a 30-day window, per source. It is one-off and self-correcting, but a wide window across several sources will make that first run much longer than the ones after it, and may meet a source's rate limiter.
+
+**When a day is never certified.** Under the default two-day window, a run that happens before 12:00 UTC never certifies anything: day *D* is fetched on *D*, offered once more on *D+1* at the same hour — still short of its own boundary — and then leaves the window. No records are lost, because that *D+1* fetch does happen after day *D* ended for every US-based source; but the row stays permanently non-durable, so a caller who later widens the window will re-fetch it. **Run at or after 12:00 UTC, or pass a window of three days or more,** and every day settles.
+
+**What it does not fix.** Late *indexing*. A record that appears for day *D* three days later is not covered by any rule about when *D* ended — `recheck_days` is what exists for that.
+
+**A `downloaded_at` that cannot be read fails closed** and logs a WARNING naming the source, the day and the value. The column is `NOT NULL TEXT` and bmlib has only ever written an aware UTC ISO timestamp, so a value that is naive, unparseable, or not a string at all came from somewhere else; reading it as durable would lose the day permanently, while the re-fetch it triggers rewrites the column, so the row heals itself. The naive case matters most: `aware >= naive` raises `TypeError`, which unguarded would abort the sync from inside day selection — for the first source in the list, before any of its records were fetched, and after any earlier source's days had already been committed.
+
+**A `downloaded_at` that reads cleanly but cannot be true fails closed too.** A fetch cannot have happened in the future, so a value more than five minutes ahead of now — a restored backup, a host resuming with a bad RTC, an external writer — is rejected with a WARNING rather than believed. Without it the guard was loud about a value it could not parse and silent about one asserting the day was fetched tomorrow, which is #95's own failure mode: every such day reads durable forever. The five minutes absorbs ordinary host clock skew; it is deliberately small, because a value rejected wrongly costs one merged re-fetch while a value accepted wrongly loses the day.
+
+**An unreadable `last_verified_at` rechecks rather than raising.** Only its calendar date is used, so a naive value is fine here — but a corrupt one read raw raises `ValueError` from inside day selection and takes the whole run with it, so it is guarded the same way and warns. A `NULL` is the documented "never verified" state, not a fault, and rechecks silently.
 
 ### Buffering and commit batching
 
@@ -938,7 +963,7 @@ Contract:
 - Return a `FetchResult`, with `status` of **exactly** `"completed"` or `"failed"`. Any other spelling is logged and recorded as a failed day (changed, unreleased — it used to be coerced to `"completed"`, which turned a third-party fetcher's failure into a durable success).
 - Emit `FetchedRecord` instances — always set `title` and `source`.
 - Prefer catching your own HTTP errors and returning `FetchResult(status="failed", error=...)`; a raised exception is caught by `sync()` per day, but returning lets you report a partial `record_count`.
-- **Reconcile before you report `"completed"`.** If your source tells you how many records the day holds, compare that against what it actually handed over, and return `"failed"` when the walk stopped short — see *Reconciling a walk against the source's own count* below. A `"completed"` day is durable: once it is in the past, `_days_needing_fetch()` does not offer it again unless `recheck_days` is set, which is not the default.
+- **Reconcile before you report `"completed"`.** If your source tells you how many records the day holds, compare that against what it actually handed over, and return `"failed"` when the walk stopped short — see *Reconciling a walk against the source's own count* below. A `"completed"` day is durable: once it is in the past *and was fetched after the day was over* (see *When a day is over*), `_days_needing_fetch()` does not offer it again unless `recheck_days` is set, which is not the default. The one re-offer that rule guarantees is not a second chance you can rely on — it happens on *D+1* and only if the caller's window still reaches back that far.
 - **Set `note` when the day completed imperfectly.** A day that came up short but not enough to fail is the case this exists for; `sync()` collects it into `SyncReport.notes`, which is the only place such a day is visible after the fact.
 - Rate-limit yourself. `sync()` does not throttle on your behalf.
 

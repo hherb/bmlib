@@ -29,6 +29,53 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A day fetched *as* today synced as a complete day (#95).**
+  `_days_needing_fetch()` re-offered `today` unconditionally and checked
+  nothing about *when* a completed day had been fetched, so a day captured
+  as today was stored `completed` and — being neither `today` nor `failed`
+  tomorrow — was never offered again at the documented default
+  `recheck_days=0`. With `sync()`'s default window of `[yesterday, today]`,
+  a 09:00 cron durably lost whatever was indexed over the following 15
+  hours. Nothing in the #88 family can catch it: the source's own count
+  agreed at 09:00, because the walk really did deliver everything that
+  existed then. One rule now replaces the special case — a completed day is
+  durable only once it was fetched at or after **12:00 UTC on the following
+  day**, the instant day *D* has ended in every timezone (UTC−12 is the last
+  to finish it). The hour is not a safety margin: it is equally the point
+  beyond which "now" can no longer fall inside day *D* anywhere on earth,
+  which is why the rule *subsumes* the `today` branch rather than
+  approximating it, and why the wall clock no longer *decides* whether a
+  completed day is done — it is read only as an upper bound, which can move
+  the answer towards a re-fetch and never away from one. Both cheaper rules
+  are unsafe and not hypothetically — all three built-in sources are US-based
+  (UTC−5 to UTC−8), so comparing UTC *dates* would call a fetch at 00:30 UTC
+  on *D+1* durable while PubMed's own day *D* still had four and a half hours
+  to run, and comparing *local* dates is up to 16 hours out for a machine in
+  Sydney. Every day in a window is judged against its own boundary, not the
+  window's first. A `downloaded_at` that cannot be *read* fails closed with a
+  WARNING naming the row — the naive case in particular must not reach the
+  comparison, since `aware >= naive` raises `TypeError` from inside day
+  selection and would abort a whole sync rather than cost one merged
+  re-fetch — and one that reads cleanly but sits in the future cannot be
+  *true* and fails closed as well, since a restored backup or a bad RTC would
+  otherwise make every affected day durable forever, which is this issue over
+  again. `last_verified_at` is now read through the same kind of guard, laxer
+  because only its calendar date is used: read raw, a corrupt value raised
+  `ValueError` from inside day selection and killed the whole multi-source run
+  before a single record was fetched, `SyncReport` and all. **Behaviour change
+  to expect:** under the default window each day is now fetched once more, on
+  *D+1* — two day-fetches per run rather than one, which is the fix — and a
+  caller passing a window of three days or more whose run happens before 12:00
+  UTC pays one more again; a run at or after 12:00 UTC pays nothing.
+  **On the first run after upgrading, expect the whole window to be
+  re-fetched once**: every row the previous release stored was written while
+  its own day was current, so none of them is durable under the new rule
+  (measured at 29 of 29 days for a 30-day window, per source). It is one-off
+  and self-correcting, but a wide window across several sources will make that
+  run much longer and may meet a source's rate limiter.
+  `store_publication()` merges, so all of it is idempotent. This does **not**
+  address late *indexing*, which is what `recheck_days` is for. 19 tests; 10 mutations, 10 caught.
+
 - **A fetch that stopped short synced as a quiet day (#88).** Every built-in
   fetcher learns a record count before walking pages — PubMed's `<Count>`,
   OpenAlex's `meta.count`, bioRxiv's `messages[0].total` — and none of them
