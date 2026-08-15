@@ -6,6 +6,25 @@ family is now closed and on `main`** — #78 and #81 (PRs #85, #87), #88–#91
 `fix/98-99-model-and-input-validation` (PR #100, green, awaiting review)**,
 which is the two fail-open corners #97's own review filed rather than fixed.
 
+**PR #100 has since had its own review round, and it found the entry guard
+answered a narrower question than it claimed.** Three further ways a caller
+or a third-party fetcher could take the whole multi-source run down are now
+closed on the same branch, and the lesson is worth carrying: `sync()`
+validated *values* where the dangerous inputs were *types*. `datetime`
+subclasses `date`, so `date_to=datetime.now()` satisfied mypy, defeated every
+value check (`datetime.max == date.max` is `False`), and on **both** ends
+raised nothing at all — writing `download_days.date` values with a time
+component that no date-keyed lookup matches, so the day was re-fetched
+forever and the table filled with rows nothing reads. That is the family's
+own failure mode arrived at through the type system rather than through a
+status or a timestamp. Also closed: a fetcher that *returns* a
+non-`FetchResult` (the shape a forgotten `return` makes) escaped the one
+handler wrapping the call and lost every source's report; a future window
+stored `completed` rows re-offered forever at no log level and in no field of
+the `SyncReport`, and now returns a `notes` line; and `_require_datetime()`
+now delivers the `ValueError` contract it documented, where a non-`str` used
+to escape as `TypeError`.
+
 **The release is the next task, and its number is already decided: 0.10.0.**
 A *minor* bump, on the convention that minor is the breaking axis, because
 three of the unreleased changes reach a public API — `DownloadDay.from_dict()`
@@ -47,6 +66,10 @@ the bug.** Worth carrying forward as method, not as history:
   only by re-running the mutation.
 - **A guard that is loud about what it cannot parse can still be silent about
   what cannot be true.** A `downloaded_at` in the future read as durable.
+- **A guard that checks values is blind to a wrong type that the type checker
+  accepts.** `datetime` subclasses `date`, so the likeliest caller slip in
+  the whole family passed both mypy and every value check, and on both ends
+  of the window failed *silently*.
 
 **#73, #86, #92, #94 and #96 are open** — five, none of them in this family's
 critical path. #92 is the measurement the #88 fix deliberately deferred; #94
@@ -54,12 +77,26 @@ is the bioRxiv envelope sampler the second round deferred for the same reason
 (its guard is deliberately weaker than it looks — read `docs/DECISIONS.md`
 before "simplifying" it); #96 is efetch's retstart skew.
 
-On the #98/#99 branch: **2155 tests + 59 skipped** on SQLite alone, and
-**2212 + 2 with a PostgreSQL DSN** (PostgreSQL 16, local), so the
-dual-backend half of `test_backends.py` actually ran. ruff 0.15.20 and
-`uv run mypy` both clean, and both new guards verified by mutation — **7
-mutations, 7 caught**, including the deliberate non-fix (an empty window is
-still accepted), which its own test alone catches. CHANGELOG's
+On the #98/#99 branch, after the review round: **2172 tests + 59 skipped** on
+SQLite alone, and **2229 + 2 with a PostgreSQL DSN** (PostgreSQL 16, local),
+so the dual-backend half of `test_backends.py` actually ran. ruff 0.15.20 and
+`uv run mypy` both clean, and every guard verified by mutation — **10
+mutations, 10 caught**, including the deliberate non-fix (an empty window is
+still accepted), which its own test alone catches.
+
+**The mutation lesson from that review is the one to carry forward.** The
+first round reported 7 of 7 caught and the count was honest, but the set was
+chosen from the same mental model as the code, so it contained no
+boundary-shift and no call-relocation mutant. Consequently the `recheck_days`
+bound was pinned only as "somewhere below a billion" — every value between
+the real bound (~739,842) and `10**9` was indistinguishable, including one
+that accepts a value which really does overflow — nothing pinned `date.max -
+1 day` as *accepted*, and moving `_validate_window` below the `httpx.Client`
+build passed the entire suite, though the client is built *outside* the `try`
+whose `finally` closes it. **A mutation set written by the author of a guard
+tends to test that the guard exists, not that it is correctly bounded or
+correctly placed.** Mutate the boundary by one in both directions, and move
+the call. CHANGELOG's
 `[Unreleased]` holds #78, #81, the #88–#91 family, #95, and #98/#99.
 **After the release, Phase 3 of the bmlibrarian port is next, and each of its
 rows needs a design conversation before any porting** — see "Next up"._
@@ -120,9 +157,9 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
   release time. 0.9.1 promoted all eleven it inherited (seven `ROADMAP.md`
   rows, four `docs/manual/fulltext.md` spots, the last of which is a section
-  heading whose in-page anchor had to move with it); **eleven are outstanding
-  now** — five `ROADMAP.md` rows (#78, #81, #88–#91, #95, #98/#99) and six
-  spots in `docs/manual/publications.md`. Write the
+  heading whose in-page anchor had to move with it); **thirteen are
+  outstanding now** — five `ROADMAP.md` rows (#78, #81, #88–#91, #95,
+  #98/#99) and eight spots in `docs/manual/publications.md`. Write the
   marker bare, as `(unreleased)`, never with a guessed version number: the
   number is decided when the release is cut, and this family is a case in
   point — it moves no API and so reads as a patch, while changing what a sync
