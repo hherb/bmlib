@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-14. **0.9.1 is released**; since then, **#78 and #81
+_Last updated: 2026-08-15. **0.9.1 is released**; since then, **#78 and #81
 are closed and merged to `main`** (PRs #85 and #87) — CI now type-checks, so
 the `py.typed` bmlib ships is a guarantee something verifies rather than a
 claim nobody had ever checked. It found one real defect on the way in — a
@@ -9,6 +9,9 @@ reporting `completed` — and reviewing that fix found its twin one branch
 earlier, a search NCBI *rejected* doing the same thing. **#88–#91 are now
 closed and merged to `main` too** (PR #93): the whole "a broken sync reports
 as a quiet day" family, which was the rest of what that review turned up.
+**#95 is closed on branch `fix/95-today-is-not-a-durable-day`** — the last
+member of that family, and the one that fired on every ordinary run rather
+than needing an API malfunction.
 
 **That branch was then reviewed itself, and the review found the fix
 incomplete in the same way the fix was about** — three of its own rules were
@@ -19,21 +22,22 @@ not thereby applied — `stalled` defaults to the value that *disables* it, and
 OpenAlex simply never passed it. **When a guard is opt-in, audit every call
 site, not the module.**
 
-**#73, #86 and the new #92, #94, #95, #96 are open.** #92 is the measurement
-the #88 fix deliberately deferred; #94 is the bioRxiv envelope sampler the
-second round deferred for the same reason (its guard is deliberately weaker
-than it looks — read `docs/DECISIONS.md` before "simplifying" it); #95 is a
-pre-existing durability defect the review surfaced (a day fetched *as* today
-is stored completed and never revisited); #96 is efetch's retstart skew.
+**#73, #86, #92, #94 and #96 are open.** #92 is the measurement the #88 fix
+deliberately deferred; #94 is the bioRxiv envelope sampler the second round
+deferred for the same reason (its guard is deliberately weaker than it looks
+— read `docs/DECISIONS.md` before "simplifying" it); #96 is efetch's retstart
+skew.
 
-On the branch: 2127 tests + 58 skipped on SQLite alone, and **2183 + 2 with a
-PostgreSQL DSN — run and verified against both PostgreSQL 16 and 18**, so the
-dual-backend half of `test_backends.py` (111 passed, 1 legitimate SQLite-only
-skip) actually ran. ruff 0.15.20 and `uv run mypy` both clean, and every new
-guard verified by mutation — 18 mutations, 18 caught, one of which caught a
-*vacuous test of my own* on the first pass and was rewritten. Nothing is
-released from `main`'s tip yet — CHANGELOG's `[Unreleased]` holds #78, #81
-and this family.
+On the #95 branch: 2139 tests + 59 skipped on SQLite alone, and **2196 + 2
+with a PostgreSQL DSN**, so the dual-backend half of `test_backends.py` (113
+passed, 1 legitimate SQLite-only skip) actually ran. ruff 0.15.20 and
+`uv run mypy` both clean, and every new guard verified by mutation — 7
+mutations, 7 caught. One of those first ran malformed (it changed the log
+call's arity rather than its wording, so it proved nothing about the message)
+and was redone; that is the second time in this family a mutation has had to
+be re-cut before it tested what it claimed to. Nothing is released from
+`main`'s tip yet — CHANGELOG's `[Unreleased]` holds #78, #81, the #88–#91
+family and #95.
 **Phase 3 of the bmlibrarian port is next, and each of its rows needs a design
 conversation before any porting** — see "Next up"._
 
@@ -69,8 +73,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed five releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2127 passing + 58 skipped** (`uv run pytest tests/ -q`);
-  **2183 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips
+- **Tests: 2139 passing + 59 skipped** (`uv run pytest tests/ -q`);
+  **2196 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 57 of the default skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
   runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev
@@ -93,8 +97,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
   release time. 0.9.1 promoted all eleven it inherited (seven `ROADMAP.md`
   rows, four `docs/manual/fulltext.md` spots, the last of which is a section
-  heading whose in-page anchor had to move with it); **six are outstanding
-  now** — three `ROADMAP.md` rows (#78, #81, #88–#91) and three spots in
+  heading whose in-page anchor had to move with it); **eight are outstanding
+  now** — four `ROADMAP.md` rows (#78, #81, #88–#91, #95) and four spots in
   `docs/manual/publications.md`. Write the
   marker bare, as `(unreleased)`, never with a guessed version number: the
   number is decided when the release is cut, and this family is a case in
@@ -127,10 +131,11 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Six, every one found by review rather than by a failing test. (**#56, #68,
+Five, every one found by review rather than by a failing test. (**#56, #68,
 #72 and #79** shipped in 0.9.1; **#78** is closed — see "The release tag does
-not depend on the merge button" above; **#81** is closed and merged; **#88,
-#89, #90 and #91** are closed on `fix/88-91-sync-reconciliation`.)
+not depend on the merge button" above; **#81**, **#88**, **#89**, **#90** and
+**#91** are closed and merged; **#95** is closed on
+`fix/95-today-is-not-a-durable-day`.)
 
 **#94 — bioRxiv's envelope shapes are unmeasured**, filed for the reason #92
 was: the second round's guard refuses a body carrying *neither* a
@@ -144,15 +149,6 @@ collection. The sampler measures both that and the `messages[0].status`
 vocabulary. **Do not tighten the guard without running it**, and note that
 the tests deliberately pin *both* possible quiet-day shapes so the guard
 cannot come to depend on the unmeasured answer.
-
-**#95 — a day fetched as "today" is stored completed and never revisited.**
-Pre-existing and not introduced by this family, but the most *likely*
-instance of it: `_days_needing_fetch()` always re-offers `today`, `sync()`
-stores it `completed`, and tomorrow it is neither today nor failed. A 09:00
-cron durably loses whatever is indexed for that day over the following 15
-hours. No reconciliation rule can catch it — the source's own count agrees at
-09:00 — which is why it needs its own fix; `downloaded_at` already carries
-what is needed.
 
 **#96 — efetch paging advances by the page size requested, not delivered.**
 Found by reading, not reproduced: a short non-empty page would leave the

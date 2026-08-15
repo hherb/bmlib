@@ -726,12 +726,29 @@ The sole public entry point for ingestion. Ensures the schema exists, determines
 
 For each source, `sync()` walks `date_from`..`date_to` and selects a day when:
 
-- The day **is today** — today is *always* re-fetched, to catch late additions.
 - There is **no `download_days` row** for that source/day.
-- The row's `status` is `"failed"`.
+- The row's `status` is anything other than `"completed"`.
+- The row's `downloaded_at` shows the fetch happened **before the day was over everywhere on earth** — see below.
 - `recheck_days > 0` **and** the row's `last_verified_at` is older than `today - recheck_days` — **or** is `NULL`.
 
-Days with a `"completed"` row inside the recheck window are skipped.
+Days with a `"completed"` row that was fetched after the day ended, and that is inside the recheck window, are skipped.
+
+> **Changed (unreleased).** The third rule replaces an unconditional *today is always re-fetched* branch (#95). That branch re-offered today and nothing else, so a day captured **as** today was stored `"completed"` and, being neither `today` nor `"failed"` tomorrow, was never offered again at the default `recheck_days=0`. A 09:00 cron durably lost whatever was indexed over the remaining 15 hours. No reconciliation rule can catch it: the source's own count agreed at 09:00, because the walk really did deliver everything that existed then.
+
+#### When a day is over
+
+A completed day counts as durable only once it was fetched at or after **12:00 UTC on the following day**. The hour is not a safety margin:
+
+- Day *D* finishes last in UTC−12, whose midnight is noon UTC on *D+1*.
+- That same instant is exactly the point beyond which "now" can no longer fall inside day *D* anywhere on earth — which is why this one rule *subsumes* the old `today` special case rather than approximating it, and why day selection no longer consults the wall clock to decide whether a completed day is done.
+
+Both cheaper rules are unsafe, and not hypothetically. All three built-in sources are US-based (UTC−5 to UTC−8): comparing UTC *dates* would call a fetch at 00:30 UTC on *D+1* durable while PubMed's own day *D* still had five hours to run, and comparing *local* dates is up to 15 hours out for a machine in Sydney.
+
+**What it costs.** Nothing under the default window `[yesterday, today]` — day *D* is offered exactly once more, on *D+1*, which is the point of the fix. A caller passing a window of three days or more, whose run happens before 12:00 UTC, pays one extra day-fetch per day; `store_publication()` merges, so the re-fetch is idempotent.
+
+**What it does not fix.** Late *indexing*. A record that appears for day *D* three days later is not covered by any rule about when *D* ended — `recheck_days` is what exists for that.
+
+**An unusable `downloaded_at` fails closed** and logs a WARNING naming the source, the day and the value. The column is `NOT NULL TEXT` and bmlib has only ever written an aware UTC ISO timestamp, so a value that is naive, unparseable, or not a string at all came from somewhere else; reading it as durable would lose the day permanently, while the re-fetch it triggers rewrites the column, so the row heals itself. The naive case matters most: `aware >= naive` raises `TypeError`, which unguarded would abort the whole sync from inside day selection, before a single record was fetched.
 
 ### Buffering and commit batching
 
@@ -938,7 +955,7 @@ Contract:
 - Return a `FetchResult`, with `status` of **exactly** `"completed"` or `"failed"`. Any other spelling is logged and recorded as a failed day (changed, unreleased — it used to be coerced to `"completed"`, which turned a third-party fetcher's failure into a durable success).
 - Emit `FetchedRecord` instances — always set `title` and `source`.
 - Prefer catching your own HTTP errors and returning `FetchResult(status="failed", error=...)`; a raised exception is caught by `sync()` per day, but returning lets you report a partial `record_count`.
-- **Reconcile before you report `"completed"`.** If your source tells you how many records the day holds, compare that against what it actually handed over, and return `"failed"` when the walk stopped short — see *Reconciling a walk against the source's own count* below. A `"completed"` day is durable: once it is in the past, `_days_needing_fetch()` does not offer it again unless `recheck_days` is set, which is not the default.
+- **Reconcile before you report `"completed"`.** If your source tells you how many records the day holds, compare that against what it actually handed over, and return `"failed"` when the walk stopped short — see *Reconciling a walk against the source's own count* below. A `"completed"` day is durable: once it is in the past *and was fetched after the day was over* (see *When a day is over*), `_days_needing_fetch()` does not offer it again unless `recheck_days` is set, which is not the default. The one re-offer that rule guarantees is not a second chance you can rely on — it happens on *D+1* and only if the caller's window still reaches back that far.
 - **Set `note` when the day completed imperfectly.** A day that came up short but not enough to fail is the case this exists for; `sync()` collects it into `SyncReport.notes`, which is the only place such a day is visible after the fact.
 - Rate-limit yourself. `sync()` does not throttle on your behalf.
 

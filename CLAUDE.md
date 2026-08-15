@@ -229,12 +229,25 @@ verified by mutation.
 
 `sync()` writes `status='completed'` to `download_days`, and
 `_days_needing_fetch()` does not offer a completed day again once it is in
-the past — unless `recheck_days` is set, which is not the default. (Today is
-always re-offered while it is still today, which is its own problem: see
-issue #95.) So anything that reports success it did not have does not lose a
-request — it loses the day's records permanently, and issues #88–#90 were
-three separate ways of doing exactly that. Three rules follow, and all three
-**fail closed**.
+the past and was fetched after the day was over — unless `recheck_days` is
+set, which is not the default. So anything that reports success it did not
+have does not lose a request — it loses the day's records permanently, and
+issues #88–#90 were three separate ways of doing exactly that. Three rules
+follow, and all three **fail closed**.
+
+*A day is over at 12:00 UTC the next day* (#95). That, and not local
+midnight, is when day *D* has ended in every timezone — UTC−12 finishes it
+last — and it is equally the instant beyond which "now" can no longer fall
+inside day *D* anywhere, so the one comparison replaces the `if current ==
+today` branch it used to sit beside rather than approximating it. Without it,
+a day captured *as* today was stored `completed` and, being neither `today`
+nor `failed` tomorrow, never revisited: a 09:00 cron durably lost the
+following 15 hours of indexing, invisibly to every rule below, since the
+source's own count agreed at 09:00. Do not "simplify" this to a date
+comparison — all three built-in sources are US-based, so a UTC-date rule
+calls a fetch at 00:30 UTC on *D+1* durable while PubMed's day *D* has five
+hours to run. `docs/DECISIONS.md` has the rest, including why an unusable
+`downloaded_at` fails closed in three shapes rather than one.
 
 *Reconcile the walk.* `fetchers/_reconcile.py` compares what a source
 delivered against the count it promised, in one place because three fetchers

@@ -747,13 +747,13 @@ a named test and was verified by mutation. Only what it omits:
   installation's life, growing with the date range. Pinned by
   `test_a_small_shortfall_completes` and its per-fetcher twins.
 - **"A completed day is never offered again" is shorthand, not the rule.**
-  `_days_needing_fetch()` re-offers a completed day when it is `today`, and
-  when `recheck_days > 0`. Neither weakens the argument — the default is
-  `recheck_days=0`, and a past day is what the reconciliation rules protect —
-  but the unqualified form is false and was written into six documents in
-  #88's first round. The `today` re-offer has its own defect, filed as **#95**:
-  a day fetched *as* today is stored `completed` and is then never revisited,
-  so a morning cron durably loses whatever is indexed later the same day.
+  `_days_needing_fetch()` also re-offers a completed day that was fetched
+  before the day was over, and one whose `recheck_days` window has passed.
+  Neither weakens the argument — the default is `recheck_days=0`, and a past
+  day fetched after it ended is what the reconciliation rules protect — but
+  the unqualified form is false and was written into six documents in #88's
+  first round. The `today` half of it was its own defect, **#95**, now fixed;
+  see the next entry.
 - **`SHORTFALL_FAILURE_RATIO = 0.5` is fixed before measurement**, unlike
   every other threshold in bmlib. Do not cite it as measured and do not
   tighten it by taste — **#92** is the sampler that would earn a different
@@ -833,6 +833,48 @@ a named test and was verified by mutation. Only what it omits:
   *type*, which is what tells a bmlib defect from bad source data; narrowing
   the guard instead would abort the day. Pinned by
   `test_the_store_failure_log_names_the_exception_type`.
+
+## publications — a day fetched before it ended is not durable (#95)
+
+`_days_needing_fetch()` re-offers a completed day whose `downloaded_at`
+precedes **12:00 UTC on the following day**, which replaced an unconditional
+`if current == today` branch. The manual's *When a day is over* argues it in
+full. What is easy to get wrong later:
+
+- **The 12:00 is not a safety margin, and must not be "simplified" to a date
+  comparison.** Day *D* ends last in UTC−12, whose midnight is noon UTC on
+  *D+1*. All three built-in sources are US-based (UTC−5 to UTC−8), so
+  comparing UTC *dates* calls a fetch at 00:30 UTC on *D+1* durable while
+  PubMed's day *D* still has five hours to run; comparing *local* dates is up
+  to 15 hours out for a machine in Sydney. Pinned by
+  `test_a_second_before_noon_utc_the_next_day_is_not` and
+  `test_an_offset_timestamp_is_compared_as_an_instant_not_as_a_wall_clock`.
+- **The comparison is `>=`.** A fetch at exactly the boundary saw the whole
+  day everywhere. `<` versus `<=` here is a one-character edit no other test
+  notices, so `test_noon_utc_the_next_day_is_late_enough` exists for it alone
+  — the same reason `test_exactly_the_floor_completes` does.
+- **Removing the `today` branch was not a simplification for its own sake.**
+  That instant is also exactly the point beyond which "now" cannot fall inside
+  day *D* anywhere, so the timestamp rule *subsumes* the special case rather
+  than approximating it — and with it gone, day selection no longer consults
+  the wall clock to decide whether a completed day is done, which is what
+  makes the rule testable without faking the clock. Pinned by
+  `test_today_is_still_offered_although_the_special_case_is_gone`.
+- **An unusable `downloaded_at` fails closed, and "unusable" is three shapes,
+  not one.** Naive, unparseable, and not-a-string all mean the same thing to
+  the rule; the naive case is the one that would otherwise raise `TypeError`
+  from inside day selection and abort a whole sync before a record was
+  fetched. Not-a-string is the shape a change of the PostgreSQL DDL to a real
+  timestamp type would produce, which
+  `test_the_durability_rule_can_read_what_each_backend_stores` guards from the
+  other side. Each pinned by its own test; all verified by mutation.
+- **It does not fix late indexing, and must not be stretched to.** A record
+  that appears for day *D* three days later is not covered by any rule about
+  when *D* ended. `recheck_days` is what exists for that.
+- **The one extra re-fetch is the fix working, not a cost to optimise away.**
+  Under the default window `[yesterday, today]` it is exactly one, on *D+1*.
+  A window of three days or more, run before 12:00 UTC, pays one more; both
+  are merged by `store_publication()`.
 
 ## publications — retractions
 
