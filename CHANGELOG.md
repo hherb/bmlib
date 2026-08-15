@@ -29,6 +29,28 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **`sync()` lost the whole run's report on an out-of-range input (#99).**
+  `date_to=date.max` and an extreme `recheck_days` each raised
+  `OverflowError` from inside day selection — the first from the loop's own
+  `current += timedelta(days=1)`, the second from
+  `today - timedelta(days=recheck_days)`. `sync()`'s `try` carries only a
+  `finally`, so it escaped the whole multi-source run and took the
+  `SyncReport` with it, before a single record was fetched and for every
+  source rather than for one day. A new `_validate_window()` rejects both at
+  `sync()`'s entry — before any source is touched and before the HTTP client
+  is built — raising `ValueError` naming the offending parameter.
+  Deliberately **not** an `except OverflowError` at the helpers: that would
+  convert a caller bug into a day that quietly looks like it needs no fetch,
+  which is the failure mode the rest of this family exists to remove. A
+  negative `recheck_days`, until now swallowed in silence by
+  `recheck_days > 0` and so delivering the opposite of what was asked, is
+  rejected too. An **empty** window (`date_from` after `date_to`) is
+  deliberately still accepted and now pinned by its own test: it is what the
+  ordinary incremental-sync idiom produces once it has caught up
+  (`date_from = last_synced + 1 day`, `date_to = today`), and it writes no
+  row and claims no day. Pre-existing — the `date.max` case predates every
+  rule in this family.
+
 - **A day fetched *as* today synced as a complete day (#95).**
   `_days_needing_fetch()` re-offered `today` unconditionally and checked
   nothing about *when* a completed day had been fetched, so a day captured
@@ -212,6 +234,33 @@ All notable changes to bmlib are documented here. The format is based on
   is carried into the message. A genuine `<Count>0</Count>` still completes.
 
 ### Changed
+
+- **`DownloadDay.from_dict()` raises on an absent `downloaded_at` instead of
+  substituting now (#98).** `_parse_datetime(None)` returns *now*, which is
+  the single most durable-looking value the day-durability rule above can be
+  handed: a row deserialised that way reads as fetched at the latest possible
+  instant, so the day is never offered again. That is #95's own failure mode
+  reached from the model side, and it fails **open** while the SQL path now
+  fails closed on the same column — the model must not disagree with the rule
+  about what an absent value means. The column is `NOT NULL` in both DDLs, so
+  a dict lacking it did not come from the database. `from_dict()` now raises
+  `ValueError` for an absent *or* null value, via a new strict
+  `_require_datetime()` beside `_parse_datetime()`.
+
+  **No behaviour changes today**: `sync()` reads `download_days` with raw SQL
+  and never goes through the model, which is why this was filed separately
+  from #97 rather than folded into it. The guard exists so that wiring the
+  model onto the selection path later cannot inherit a fail-open default with
+  nothing to catch it.
+
+  Two things are deliberately *not* changed, both pinned by tests so they are
+  not later "tidied" into consistency: the dataclass **default** still stamps
+  now, because a freshly constructed `DownloadDay` describes a fetch that has
+  just happened; and `from_dict()` does not re-judge a timestamp it can read
+  — a naive or future value deserialises fine, since faithful deserialisation
+  is the model's contract and usability is the rule's. `Publication`'s
+  `created_at` / `updated_at` keep the old defaulting for the same reason:
+  nothing decides whether work may be skipped from them.
 
 - **Eighteen annotation errors fixed** alongside the gate, none of which
   changes behaviour. The gate reports 20 errors in 10 files against the

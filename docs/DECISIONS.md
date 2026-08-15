@@ -946,6 +946,58 @@ full. What is easy to get wrong later:
   window re-fetches it. Running at or after 12:00 UTC, or with a window of
   three days or more, settles every day.
 
+## publications — what the durability rule refuses to guess (#98, #99)
+
+Both were raised by the review of PR #97, both pre-existing, and both are
+about the same thing from opposite ends: a value the day-durability rule
+cannot honestly read. Argued inline in `publications/models.py`
+(`_require_datetime`) and `publications/sync.py` (`_validate_window`).
+
+- **`DownloadDay.from_dict()` raises on an absent `downloaded_at` rather than
+  defaulting it to now (#98)** — the column is `NOT NULL` in both DDLs, so a
+  dict lacking it did not come from the database, and *now* is the single most
+  durable-looking value `_day_was_over_when_fetched()` can be handed. The SQL
+  path fails **closed** on that column (unreadable, or in the future); the
+  model must not disagree with the rule about what an absent value means. The
+  other two options were weighed and rejected: returning `None` makes the
+  field `datetime | None`, a typing break on a `py.typed` package that pushes
+  the decision onto every caller for a state none of them can do anything
+  about; keeping the default and logging leaves the fail-open in place, and
+  "logged but wrong" is exactly what the #88–#95 family is a register of.
+  Pinned by `TestDownloadDayRequiresTheTimestampTheRuleReads`.
+- **The dataclass default that stamps now is deliberately kept**, and the
+  asymmetry with `from_dict()` is the point: a freshly constructed
+  `DownloadDay` describes a fetch that has just happened, while `from_dict()`
+  deserialises a row that was already stored. Pinned by
+  `test_constructing_a_row_still_stamps_now`, or nothing would notice it being
+  "tidied" into consistency.
+- **`from_dict()` does not re-judge a timestamp it *can* read** — naive, or in
+  the future, both deserialise fine. Faithful deserialisation is the model's
+  contract and usability is the rule's; duplicating the rule here would reject
+  rows the database legitimately holds and which the rule already answers by
+  re-fetching. `test_a_stored_timestamp_is_read_verbatim` is the negative
+  control.
+- **`Publication.created_at` / `updated_at` keep the same defaulting
+  `from_dict()` just lost**, on purpose. Nothing decides whether work may be
+  skipped from them, so *now* is a harmless default there and a load-bearing
+  one for `downloaded_at`. The fix is scoped to the column a rule reads.
+- **`sync()` validates `date_to` and `recheck_days` at its entry, and the
+  helpers do not catch `OverflowError` (#99)** — an `except OverflowError`
+  around the arithmetic converts a caller bug into a day that quietly looks
+  like it needs no fetch, which is the failure mode this whole family exists
+  to remove. A negative `recheck_days`, until now silently swallowed by
+  `recheck_days > 0`, is rejected for the same reason.
+- **An *empty* window (`date_from` after `date_to`) is deliberately NOT
+  rejected**, and this is the entry most likely to be re-opened, since it sits
+  one line from three validations that do raise. It is what the ordinary
+  incremental-sync idiom produces the moment it has caught up —
+  `date_from = last_synced + 1 day`, `date_to = today` — so raising would turn
+  a caller that is simply up to date into a crashing one. Unlike the three
+  above it writes no row and claims no day, so it loses nothing.
+  `test_an_empty_window_is_still_the_ordinary_way_to_ask_for_nothing` is the
+  sole pin, verified by mutation: adding the rejection fails that test and no
+  other.
+
 ## publications — retractions
 
 - **`bmlib.publications.retractions` has no downloader** (the Crossref

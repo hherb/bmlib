@@ -317,6 +317,25 @@ class DownloadDay:
 
 Serialisable via `to_dict()` / `from_dict()`.
 
+> **Changed (unreleased).** `from_dict()` raises `ValueError` when
+> `downloaded_at` is absent or `None`, where it used to substitute **now**
+> (#98). The column is `NOT NULL` in both DDLs, so a dict lacking it did not
+> come from the database — and *now* is the most durable-looking value the
+> [durability rule](#when-a-day-is-over) can be handed, so the old default
+> failed **open**: the day would never be offered again. That is #95's own
+> failure mode reached from the model side. The read path guards the same
+> column in the opposite direction, failing closed on a value it cannot read
+> or cannot believe, and the two must not disagree about what an absent value
+> means.
+>
+> The dataclass **default** is deliberately unchanged: a freshly constructed
+> `DownloadDay` describes a fetch that has just happened, so stamping now is
+> right there. Only deserialisation of an already-stored row is affected.
+>
+> Nothing in bmlib reads `download_days` through this model — `sync()` uses
+> raw SQL — so no behaviour changes today. The guard exists so that wiring
+> the model onto the selection path later cannot inherit a fail-open default.
+
 ---
 
 ### `FetchResult`
@@ -719,6 +738,32 @@ The sole public entry point for ingestion. Ensures the schema exists, determines
 | `_fetcher_override` | `dict[str, Callable] \| None` | `None` | Private. Source name → callable, for testing. When set, no HTTP client is created and `client` is passed as `None`. |
 
 **Returns:** `SyncReport`
+
+**Raises:** `ValueError` *(unreleased, #99)* — before any source is touched
+and before the HTTP client is built — when either input would take day
+selection outside the calendar:
+
+| Rejected | Why |
+|----------|-----|
+| `date_to` equal to `date.max` | Day selection asks which day *follows* the last day of the window, and there is none. |
+| `recheck_days` below `0` | Silently ignored until now (`recheck_days > 0` is simply false), so a caller who misread the parameter got the opposite of what they asked for, without a word. |
+| `recheck_days` reaching back before `date.min` | `today - timedelta(days=recheck_days)` has to land on a real date. |
+
+Each previously raised `OverflowError` from inside day selection. `sync()`'s
+`try` carries only a `finally`, so that escaped the whole multi-source run and
+lost the `SyncReport` with it — before a single record was fetched, and for
+every source rather than for one day. The validation is at the entry point on
+purpose: catching `OverflowError` around the arithmetic instead would convert
+a caller bug into a day that quietly looks like it needs no fetch, which is
+the failure mode [the whole day-durability family](#which-days-get-fetched)
+exists to remove.
+
+An **empty** window — `date_from` after `date_to` — is *not* rejected. It is
+what the ordinary incremental-sync idiom produces once it has caught up
+(`date_from = last_synced + 1 day`, `date_to = today`), so raising would turn
+a caller that is simply up to date into a crashing one. It writes no row and
+claims no day. The report comes back with `days_processed == 0` and every
+source listed in `sources_synced`.
 
 **HTTP client:** when `_fetcher_override` is `None`, `sync()` creates one `httpx.Client` for the whole run, with a 30 s timeout and a `User-Agent` of `bmlib/{version} (mailto:{email})`, where `{version}` is `bmlib.__version__` — where the email is taken from `source_configs["openalex"]["email"]`, falling back to the `email` parameter, and finally to the literal `unknown`. The client is closed in a `finally` block.
 

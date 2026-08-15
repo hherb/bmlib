@@ -334,6 +334,20 @@ fails its day — `store_publication()` merges, so the retry is idempotent. The 
 its day into a retry on every run; that is loud (an ERROR and a
 `SyncReport.errors` line each time) where the alternative was silent.
 
+Finally, *the rule refuses to guess its own inputs* (#98, #99).
+`DownloadDay.from_dict()` raises rather than defaulting an absent
+`downloaded_at` to now — the most durable-looking value the rule can be
+handed, and a fail-open where the SQL path fails closed — while the
+dataclass default that stamps now for a *freshly constructed* row is kept,
+since that row describes a fetch that has just happened. And `sync()`
+validates `date_to` and `recheck_days` at its entry, because an
+`OverflowError` out of day selection escapes a `try` carrying only a
+`finally` and loses the whole multi-source run's `SyncReport`. Validate at
+the entry, never with an `except OverflowError` at the helpers: that turns a
+caller bug into the silent re-fetch this family exists to remove. An
+**empty** window is deliberately *not* rejected — it is what incremental sync
+produces once it has caught up.
+
 ### Markdown, measured against the markup
 
 `fetchers/pubmed.py` reads titles and abstracts with `_text_with_formatting()`,
