@@ -225,7 +225,8 @@ def _days_needing_fetch(
     today = date.today()
     ph = placeholder(conn)
 
-    # Query all completed download_days rows for this source in range
+    # Every stored row for this source in range, whatever its status — which
+    # of them counts as done is decided below, not by the query.
     rows = fetch_all(
         conn,
         "SELECT date, status, downloaded_at, last_verified_at FROM download_days"
@@ -233,18 +234,18 @@ def _days_needing_fetch(
         (source, date_from.isoformat(), date_to.isoformat()),
     )
 
-    completed: dict[str, Any] = {}
+    rows_by_day: dict[str, Any] = {}
     for row in rows:
-        completed[row["date"]] = row
+        rows_by_day[row["date"]] = row
 
     needed: list[date] = []
     current = date_from
     while current <= date_to:
-        if current.isoformat() not in completed:
+        if current.isoformat() not in rows_by_day:
             # No row at all — needs fetch
             needed.append(current)
         else:
-            entry = completed[current.isoformat()]
+            entry = rows_by_day[current.isoformat()]
             if entry["status"] != "completed":
                 # Anything that is not a recorded success is retried. Read as
                 # a denylist (`== "failed"`) this is the mirror of the write
