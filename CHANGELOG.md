@@ -51,6 +51,31 @@ All notable changes to bmlib are documented here. The format is based on
   row and claims no day. Pre-existing — the `date.max` case predates every
   rule in this family.
 
+  Review of this fix found the guard answered a narrower question than it
+  claimed, and it now **validates types as well as ranges**, on `date_from`
+  as well as `date_to`. `datetime` subclasses `date`, so
+  `sync(date_to=datetime.now())` satisfied every type checker and defeated
+  every value check (`datetime.max == date.max` is `False`); mixed with a
+  `date` it raised `TypeError` and lost the run's report, and on *both* ends
+  it raised nothing at all — writing `download_days.date` values carrying a
+  time component that no date-keyed lookup can ever match, so the day was
+  re-fetched forever and the table filled with rows nothing reads. A `str`
+  date, the type `DownloadDay.date` and `FetchResult.date` both use, escaped
+  as `AttributeError`. And `recheck_days=float('nan')` slipped both range
+  checks — every comparison against it is false — then disabled rechecking in
+  silence, the same failure the negative case had just closed.
+
+- **A fetcher that returned a non-`FetchResult` killed the whole run
+  (unreleased).** The `except Exception` around the fetcher call absorbed one
+  that *raises*; one that *returns* — successfully — something without a
+  `.status`, the shape a forgotten `return` produces, reached
+  `_resolve_day_status` outside that handler. The `AttributeError` propagated
+  through the `finally` and out of `sync()`, losing every source's
+  `SyncReport` while leaving earlier days committed. `register_source()` is
+  public, so the caller getting this wrong is a third party. The return value
+  is now type-checked inside the existing handler's reach and recorded as a
+  failed day, naming the offending type.
+
 - **A day fetched *as* today synced as a complete day (#95).**
   `_days_needing_fetch()` re-offered `today` unconditionally and checked
   nothing about *when* a completed day had been fetched, so a day captured
@@ -235,6 +260,17 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **`sync()` reports a window reaching into the future (unreleased).** A day
+  that has not ended cannot satisfy the durability rule — which needs a fetch
+  at or after 12:00 UTC on the following day — so every future day was stored
+  `completed` and re-offered on every subsequent run, for the life of the
+  installation, at no log level and in no field of the `SyncReport`.
+  Permanent *and* invisible is the pair the shortfall rule and
+  `FetchResult.note` exist to break up, so this takes the same answer: a
+  `SyncReport.notes` line and a WARNING. Rejecting the window was weighed and
+  refused — the past half of a window ending tomorrow is perfectly fetchable,
+  and raising would discard it too.
+
 - **`DownloadDay.from_dict()` raises on an absent `downloaded_at` instead of
   substituting now (#98).** `_parse_datetime(None)` returns *now*, which is
   the single most durable-looking value the day-durability rule above can be
@@ -261,6 +297,17 @@ All notable changes to bmlib are documented here. The format is based on
   is the model's contract and usability is the rule's. `Publication`'s
   `created_at` / `updated_at` keep the old defaulting for the same reason:
   nothing decides whether work may be skipped from them.
+
+  Review of this fix found the advertised contract was not the delivered one.
+  `_require_datetime()` delegated to `_parse_datetime()`, so a non-`str`
+  escaped as **`TypeError`** out of `fromisoformat` — a caller writing the
+  documented `except ValueError` got an uncaught crash — and an unreadable
+  string reported `Invalid isoformat string: ''`, naming neither the column
+  nor the row. A plain `date` was the live trap: `isinstance(datetime_value,
+  date)` is true but the converse is not, so it looked accepted and was not.
+  Every rejection is now a `ValueError` naming the field. Nothing here could
+  fail open — the durability rule refuses all of these values — so this is a
+  contract fix rather than a safety one.
 
 - **Eighteen annotation errors fixed** alongside the gate, none of which
   changes behaviour. The gate reports 20 errors in 10 files against the

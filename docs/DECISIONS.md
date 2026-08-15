@@ -976,27 +976,102 @@ cannot honestly read. Argued inline in `publications/models.py`
   contract and usability is the rule's; duplicating the rule here would reject
   rows the database legitimately holds and which the rule already answers by
   re-fetching. `test_a_stored_timestamp_is_read_verbatim` is the negative
-  control.
+  control for the ordinary value, and
+  `test_a_naive_or_future_timestamp_still_deserialises` pins the two cases
+  the claim actually rests on — the review that added it found the claim
+  unpinned, since neither of the two named values was covered by anything.
+- **Every rejection is a `ValueError` naming the field.** Delegating straight
+  to `_parse_datetime` did not deliver the contract the docstring advertised:
+  a non-`str` escaped as `TypeError` out of `fromisoformat`, so a caller
+  writing the documented `except ValueError` got an uncaught crash, and an
+  unreadable string raised `Invalid isoformat string: ''` — which names
+  neither the column nor the row, leaving a bulk deserialiser nothing to
+  report. A plain `date` is the trap worth naming: `isinstance(datetime_value,
+  date)` is true but the converse is not, so it looked accepted and was not.
+  Nothing here could ever fail *open* — the durability rule refuses every one
+  of these values — so this is a contract fix, not a safety one.
 - **`Publication.created_at` / `updated_at` keep the same defaulting
   `from_dict()` just lost**, on purpose. Nothing decides whether work may be
   skipped from them, so *now* is a harmless default there and a load-bearing
   one for `downloaded_at`. The fix is scoped to the column a rule reads.
-- **`sync()` validates `date_to` and `recheck_days` at its entry, and the
-  helpers do not catch `OverflowError` (#99)** — an `except OverflowError`
-  around the arithmetic converts a caller bug into a day that quietly looks
-  like it needs no fetch, which is the failure mode this whole family exists
-  to remove. A negative `recheck_days`, until now silently swallowed by
-  `recheck_days > 0`, is rejected for the same reason.
+- **`sync()` validates `date_from`, `date_to` and `recheck_days` at its
+  entry, and the helpers do not catch `OverflowError` (#99)** — an `except
+  OverflowError` around the arithmetic converts a caller bug into a day that
+  quietly looks like it needs no fetch, which is the failure mode this whole
+  family exists to remove. A negative `recheck_days`, until now silently
+  swallowed by `recheck_days > 0`, is rejected for the same reason.
+- **The guard is a *type* check as well as a range check, and the type half
+  is the one that matters most.** `datetime` subclasses `date`, so
+  `sync(date_to=datetime.now())` satisfies the annotation and every type
+  checker, and no value check can see it — `datetime.max == date.max` is
+  `False`. Mistaking `datetime.now()` for `date.today()` is a likelier slip
+  than any input #99 originally named, and it fails in two shapes: mixed with
+  a `date` it raises `TypeError` from the comparison and loses the run's
+  report; on **both** ends it raises *nothing*, and writes
+  `download_days.date` values carrying a time component that no date-keyed
+  lookup can ever match. That row is re-fetched for the life of the
+  installation and the table accumulates rows nothing reads. The silent shape
+  is why this is a type check and not another value check, and why it is
+  worth spending a branch on an input the annotation already claims to
+  exclude. `float('nan')` is the same lesson on the other parameter: it slips
+  both range checks, because every comparison against it is `False`, and then
+  disables rechecking in silence. Pinned by
+  `test_a_datetime_window_never_reaches_the_download_days_table` and
+  `test_a_recheck_days_that_is_not_a_whole_number_is_refused`.
+- **Not every rejection is guarding an exception, and the docs must not say
+  it is.** Two of them — a negative `recheck_days`, and `nan` — walked fine
+  and were swallowed silently. An earlier draft of `docs/manual/publications.md`
+  summarised the table as "each previously raised `OverflowError`", two lines
+  below a row saying one of them was silently ignored. The distinction is the
+  entire point of the write-up: two were a total run loss, two are silent
+  no-ops, one is silent corruption.
+- **A window reaching into the *future* is NOT rejected; it returns a
+  `SyncReport.notes` line and logs a WARNING.** `_day_was_over_when_fetched()`
+  needs a fetch at or after 12:00 UTC on the following day, which a day that
+  has not happened can never satisfy — so the row is stored `completed` and
+  re-offered on every run forever, and until now at no log level and in no
+  field of the report. Permanent *and* invisible is the pair the shortfall
+  rule and `FetchResult.note` exist to break up, so this takes the same
+  answer they do. Rejecting was weighed and refused: the past half of a
+  window ending tomorrow is perfectly fetchable, and raising would discard it
+  along with the unreachable half. Pinned by
+  `TestAWindowReachingIntoTheFutureSaysSo`, whose negative control keeps the
+  ordinary `date_to=today` window quiet.
+- **A fetcher that returns a non-`FetchResult` fails its own day, not the
+  run.** The `except Exception` around the call already absorbed a fetcher
+  that *raises*; one that *returns* — successfully — something without a
+  `.status` reached `_resolve_day_status` outside that handler, and the
+  `AttributeError` propagated through the `finally` and out of `sync()`,
+  losing every source's report while leaving earlier days committed.
+  `register_source()` is public, so the caller getting this wrong is a third
+  party; this is the same allowlist reasoning that already records an
+  unrecognised `status` as failed. Pinned by
+  `TestAFetcherThatBreaksItsContractFailsOnlyItsDay`.
 - **An *empty* window (`date_from` after `date_to`) is deliberately NOT
   rejected**, and this is the entry most likely to be re-opened, since it sits
   one line from three validations that do raise. It is what the ordinary
   incremental-sync idiom produces the moment it has caught up —
   `date_from = last_synced + 1 day`, `date_to = today` — so raising would turn
-  a caller that is simply up to date into a crashing one. Unlike the three
-  above it writes no row and claims no day, so it loses nothing.
+  a caller that is simply up to date into a crashing one. Unlike every
+  rejection above it writes no row and claims no day, so it loses nothing.
   `test_an_empty_window_is_still_the_ordinary_way_to_ask_for_nothing` is the
   sole pin, verified by mutation: adding the rejection fails that test and no
   other.
+- **The boundaries are pinned from both sides, and the placement is pinned at
+  all.** The first round's mutation set was chosen from the same mental model
+  as the code, so it contained no boundary-shift and no call-relocation
+  mutant: `recheck_days=10**9` against a bound of ~739,842 left every value
+  in between indistinguishable — including one that accepts a `recheck_days`
+  which really does overflow — and moving `_validate_window` below the
+  `httpx.Client` build passed the entire suite, though the client is created
+  *outside* the `try` whose `finally` closes it, so a raise there strands the
+  pool. `test_the_deepest_recheck_the_calendar_allows_is_accepted`,
+  `test_one_day_deeper_than_the_calendar_is_rejected`,
+  `test_a_window_ending_one_day_earlier_still_runs` and
+  `test_the_window_is_refused_before_an_http_client_is_built` close those.
+  The lesson generalises: a mutation set written by the author of the guard
+  tends to test that the guard *exists*, not that it is *correctly bounded*
+  or *correctly placed*.
 
 ## publications — retractions
 

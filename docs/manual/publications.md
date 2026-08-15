@@ -745,25 +745,49 @@ selection outside the calendar:
 
 | Rejected | Why |
 |----------|-----|
+| `date_from` or `date_to` that is not a `datetime.date` | A `str` — the type `DownloadDay.date` and `FetchResult.date` both use — escaped as `AttributeError` from `date_from.isoformat()`. |
+| `date_from` or `date_to` that is a `datetime` | `datetime` subclasses `date`, so this satisfies every type checker and defeats every value check below (`datetime.max == date.max` is `False`). See the note after the table — it is the only one of these that could fail *silently*. |
 | `date_to` equal to `date.max` | Day selection asks which day *follows* the last day of the window, and there is none. |
+| `recheck_days` that is not an `int` | `float('nan')` slips both range checks below, since every comparison against it is false, and then silently disables rechecking. |
 | `recheck_days` below `0` | Silently ignored until now (`recheck_days > 0` is simply false), so a caller who misread the parameter got the opposite of what they asked for, without a word. |
 | `recheck_days` reaching back before `date.min` | `today - timedelta(days=recheck_days)` has to land on a real date. |
 
-Each previously raised `OverflowError` from inside day selection. `sync()`'s
-`try` carries only a `finally`, so that escaped the whole multi-source run and
-lost the `SyncReport` with it — before a single record was fetched, and for
-every source rather than for one day. The validation is at the entry point on
-purpose: catching `OverflowError` around the arithmetic instead would convert
-a caller bug into a day that quietly looks like it needs no fetch, which is
-the failure mode [the whole day-durability family](#which-days-get-fetched)
-exists to remove.
+These fail in three different ways, and the table above is ordered by how
+badly. **Two raised nothing at all.** A negative `recheck_days` was swallowed
+by `recheck_days > 0`, and `nan` reached the same silence through both range
+checks — neither is an arithmetic hazard, and both are rejected as caller
+bugs of the same family. **A `datetime` on both ends is the worst case:** the
+walk succeeds, the run reports success, and `download_days.date` is written
+with a time component (`'2026-08-13T21:57:49.806663'`) that no later
+date-keyed lookup can match — so the day is re-fetched for the life of the
+installation and the table fills with rows nothing reads. **The rest raised**
+`OverflowError` (the two range cases) or `TypeError` / `AttributeError` (a
+`str`, or a `datetime` mixed with a `date`) from inside day selection.
+
+`sync()`'s `try` carries only a `finally`, so anything raised there escaped
+the whole multi-source run and lost the `SyncReport` with it — before a
+single record was fetched, and for every source rather than for one day. The
+validation is at the entry point on purpose: catching `OverflowError` around
+the arithmetic instead would convert a caller bug into a day that quietly
+looks like it needs no fetch, which is the failure mode [the whole
+day-durability family](#which-days-get-fetched) exists to remove.
 
 An **empty** window — `date_from` after `date_to` — is *not* rejected. It is
 what the ordinary incremental-sync idiom produces once it has caught up
 (`date_from = last_synced + 1 day`, `date_to = today`), so raising would turn
 a caller that is simply up to date into a crashing one. It writes no row and
 claims no day. The report comes back with `days_processed == 0` and every
-source listed in `sources_synced`.
+source for which a fetcher was found listed in `sources_synced`.
+
+A window reaching into the **future** is not rejected either, and instead
+returns a `SyncReport.notes` line and logs a WARNING *(unreleased)*. A day
+that has not ended cannot satisfy [the durability
+rule](#when-a-day-is-over) — which requires a fetch at or after 12:00 UTC on
+the following day — so each future day is stored `completed` and re-offered
+on every subsequent run, forever. Rejecting the window was considered and
+refused: the past half of a window ending tomorrow is perfectly fetchable and
+raising would discard it too. Making the cost answerable from the return
+value is what `notes` already exists for.
 
 **HTTP client:** when `_fetcher_override` is `None`, `sync()` creates one `httpx.Client` for the whole run, with a 30 s timeout and a `User-Agent` of `bmlib/{version} (mailto:{email})`, where `{version}` is `bmlib.__version__` — where the email is taken from `source_configs["openalex"]["email"]`, falling back to the `email` parameter, and finally to the literal `unknown`. The client is closed in a `finally` block.
 

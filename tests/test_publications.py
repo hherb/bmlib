@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -1860,6 +1860,43 @@ class TestDownloadDayRequiresTheTimestampTheRuleReads:
         day = DownloadDay.from_dict({**self._STORED, "downloaded_at": "2024-06-16T12:00:00+00:00"})
 
         assert day.downloaded_at == datetime(2024, 6, 16, 12, tzinfo=UTC)
+
+    def test_a_naive_or_future_timestamp_still_deserialises(self):
+        """The two values the "does not re-judge" claim actually rests on.
+
+        Both are what the durability rule refuses to *believe* — a naive
+        value is unreadable to it, a future one cannot be true — and both are
+        rows the database can legitimately hold. Reading them faithfully here
+        is what keeps the two jobs separate; the rule re-fetches, and the
+        model does not get a second opinion.
+        """
+        naive = DownloadDay.from_dict({**self._STORED, "downloaded_at": "2024-06-16T12:00:00"})
+        assert naive.downloaded_at.tzinfo is None
+
+        ahead = datetime.now(tz=UTC) + timedelta(days=365)
+        future = DownloadDay.from_dict({**self._STORED, "downloaded_at": ahead.isoformat()})
+        assert future.downloaded_at == ahead
+
+    def test_a_value_that_is_not_a_timestamp_is_rejected_as_a_value_error(self):
+        """The documented contract is ``ValueError``; six input classes raised ``TypeError``.
+
+        A caller writing the ``except ValueError`` the docstring invites got
+        an uncaught crash instead. The ``date`` case is the live trap:
+        ``isinstance(datetime_obj, date)`` is True but the converse is not,
+        so a plain ``date`` fell through to ``fromisoformat``.
+        """
+        for bad in (5, 1.5, date(2024, 6, 15), ["2024-06-15"], {"at": "2024-06-15"}):
+            with pytest.raises(ValueError, match="downloaded_at"):
+                DownloadDay.from_dict({**self._STORED, "downloaded_at": bad})
+
+    def test_an_unreadable_timestamp_names_the_field(self):
+        """``Invalid isoformat string: ''`` names neither the column nor the row.
+
+        A bulk deserialiser reporting that has nothing to report it *about*.
+        """
+        for bad in ("", "not a date", "2024-13-45"):
+            with pytest.raises(ValueError, match="downloaded_at"):
+                DownloadDay.from_dict({**self._STORED, "downloaded_at": bad})
 
     def test_constructing_a_row_still_stamps_now(self):
         """The asymmetry is deliberate, and pinned so it is not "tidied" away.
