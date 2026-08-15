@@ -7,9 +7,8 @@ claim nobody had ever checked. It found one real defect on the way in — a
 PubMed day whose history session was missing synced as an empty day,
 reporting `completed` — and reviewing that fix found its twin one branch
 earlier, a search NCBI *rejected* doing the same thing. **#88–#91 are now
-closed too**, on branch `fix/88-91-sync-reconciliation`: the whole
-"a broken sync reports as a quiet day" family, which was the rest of what
-that review turned up.
+closed and merged to `main` too** (PR #93): the whole "a broken sync reports
+as a quiet day" family, which was the rest of what that review turned up.
 
 **That branch was then reviewed itself, and the review found the fix
 incomplete in the same way the fix was about** — three of its own rules were
@@ -70,8 +69,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed five releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2102 passing + 58 skipped** (`uv run pytest tests/ -q`);
-  **2158 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips
+- **Tests: 2127 passing + 58 skipped** (`uv run pytest tests/ -q`);
+  **2183 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 56 of the default skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
   runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev
