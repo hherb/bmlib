@@ -3,9 +3,21 @@
 _Last updated: 2026-08-15. **0.9.1 is released. The whole day-durability
 family is now closed and on `main`** — #78 and #81 (PRs #85, #87), #88–#91
 (PR #93) and #95 (PR #97) — and **#98 and #99 are closed on branch
-`fix/98-99-model-and-input-validation`**, which is the two fail-open corners
-#97's own review filed rather than fixed. **The release is the next task**;
-see "Cutting a release" and decide the number there.
+`fix/98-99-model-and-input-validation` (PR #100, green, awaiting review)**,
+which is the two fail-open corners #97's own review filed rather than fixed.
+
+**The release is the next task, and its number is already decided: 0.10.0.**
+A *minor* bump, on the convention that minor is the breaking axis, because
+three of the unreleased changes reach a public API — `DownloadDay.from_dict()`
+now raises where it defaulted (#98); a third-party fetcher's unrecognised
+status is recorded `failed` rather than coerced to `completed` (#89), which is
+a behaviour change at the `register_source()` extension point; and
+`bmlib[pdf]` floors `pymupdf` at `>=1.28.2`. Same reasoning that renumbered
+0.8.1 to 0.9.0 in review. Note the data question is separate and the number
+cannot answer it: this release moves nothing stored, but the day-durability
+family costs **a whole-window re-fetch once on upgrade**, since no row the
+previous release wrote is durable under the new rule. Cut it once PR #100 is
+merged — see "Cutting a release" for the recipe.
 
 **What the family was.** `sync()` writes `status='completed'` to
 `download_days` and `_days_needing_fetch()` does not offer that day again, so
