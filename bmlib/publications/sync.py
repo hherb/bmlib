@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, NamedTuple, TypeVar
 
 from bmlib import __version__
@@ -59,6 +59,14 @@ _ChildRow = TypeVar("_ChildRow", Grant, AuthorAffiliation)
 
 _HTTP_TIMEOUT_SECONDS = 30.0
 
+_DAY_ENDS_EVERYWHERE_AT_UTC_HOUR = 12
+"""The hour on *D+1* at which day *D* is over in every timezone.
+
+UTC-12 is the last zone to finish any calendar day, and its midnight is noon
+UTC the following day. See :func:`_day_was_over_when_fetched`, which is the
+only reader and carries the argument in full.
+"""
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -73,6 +81,99 @@ def _get_fetcher_for_source(source: str) -> Callable | None:
         return None
 
 
+def _read_aware_timestamp(value: object) -> datetime | None:
+    """Return *value* as a timezone-aware datetime, or ``None`` if it is not one.
+
+    Separate from its caller so that "unusable" is one answer rather than
+    three: a non-string, an unparseable string and a naive timestamp all mean
+    the same thing to the durability rule, and the naive case in particular
+    must not reach a comparison — ``aware >= naive`` raises ``TypeError``,
+    which would abort a whole sync from inside day selection.
+    """
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def _day_was_over_when_fetched(source: str, day: date, downloaded_at: object) -> bool:
+    """Had *day* already ended everywhere on earth when this row was written?
+
+    This is what makes a stored ``completed`` day durable, and issue #95 is
+    what happens without it. ``sync()``'s default window is
+    ``[yesterday, today]``, so a 09:00 cron captured today as it stood at
+    09:00 and recorded it done; tomorrow that day is neither ``today`` nor
+    ``failed``, so at the documented default ``recheck_days=0`` it was never
+    offered again and the remaining 15 hours of indexing were permanently
+    absent. Nothing in :mod:`~bmlib.publications.fetchers._reconcile` can
+    catch it: the source's own count agreed at 09:00, because the walk really
+    did deliver everything that existed then.
+
+    The boundary is **12:00 UTC on the following day**, and the hour is not a
+    safety margin. Day *D* finishes last in UTC-12, whose midnight is noon UTC
+    on *D+1*; equally, that instant is exactly the point beyond which "now"
+    can no longer fall inside day *D* anywhere on earth. The second reading is
+    why this rule *subsumes* the ``if current == today`` special case it
+    replaces rather than approximating it — a row written during today is
+    always earlier than its own boundary, in every timezone — and why
+    ``_days_needing_fetch`` no longer consults the wall clock to decide
+    whether a completed day is done.
+
+    The two obvious cheaper rules are both unsafe, and not hypothetically:
+    all three built-in sources are US-based (UTC-5 to UTC-8), so comparing
+    UTC *dates* would call a fetch at 00:30 UTC on *D+1* durable while
+    PubMed's own day *D* still had five hours to run, and comparing *local*
+    dates is worse still — up to 15 hours out for a machine in Sydney.
+
+    What this does **not** fix is late indexing: a record that appears for day
+    *D* three days later is not covered by any rule about when *D* ended, and
+    ``recheck_days`` is what exists for it.
+
+    An unusable timestamp fails closed and says so. ``downloaded_at`` is
+    ``NOT NULL TEXT`` and bmlib has only ever written an aware UTC ISO value,
+    so anything else came from elsewhere; reading it as durable would lose the
+    day permanently, while the re-fetch it costs is merged by
+    ``store_publication()`` and rewrites the column, so the row heals itself.
+
+    Parameters
+    ----------
+    source:
+        The source name, for the warning only.
+    day:
+        The day the row describes.
+    downloaded_at:
+        The row's stored ``downloaded_at``. Typed ``object`` because it
+        arrives from a DB-API row as ``Any`` and the guard below is what
+        makes it a string.
+
+    Returns
+    -------
+    bool
+        True only if the fetch is known to have happened after *day* was over
+        everywhere.
+    """
+    fetched_at = _read_aware_timestamp(downloaded_at)
+    if fetched_at is None:
+        logger.warning(
+            "download_days row for %s/%s carries an unusable downloaded_at (%r);"
+            " re-fetching the day rather than reading it as complete",
+            source,
+            day.isoformat(),
+            downloaded_at,
+        )
+        return False
+
+    day_over_everywhere = datetime.combine(
+        day + timedelta(days=1),
+        time(hour=_DAY_ENDS_EVERYWHERE_AT_UTC_HOUR),
+        tzinfo=UTC,
+    )
+    return fetched_at >= day_over_everywhere
+
+
 def _days_needing_fetch(
     conn: Any,
     source: str,
@@ -83,10 +184,25 @@ def _days_needing_fetch(
 ) -> list[date]:
     """Determine which days need fetching for a source.
 
-    Rules:
-    1. If day == today: ALWAYS include (re-fetch for latest additions).
-    2. If no completed row exists (or status="failed"): include.
-    3. If recheck_days > 0 and last_verified_at is older than recheck_days: include.
+    Rules, each failing closed — an uncertain day costs a re-fetch, which
+    ``store_publication()`` merges, while a day wrongly called done is
+    permanently missing:
+
+    1. No row at all: include.
+    2. A row whose status is anything but ``"completed"``: include.
+    3. A completed row whose fetch cannot be shown to have happened after the
+       day was over everywhere: include. See
+       :func:`_day_was_over_when_fetched`, which replaced an unconditional
+       "today is always re-fetched" branch — it re-offered today and nothing
+       else, so a day captured *as* today was stored done and never revisited
+       (#95).
+    4. If *recheck_days* > 0 and ``last_verified_at`` is older than that many
+       days, or absent: include.
+
+    Rule 3 costs nothing under the default window ``[yesterday, today]``: day
+    *D* is offered once more on *D+1*, which is the point. A caller passing a
+    window of three days or more, whose run happens before 12:00 UTC, pays one
+    extra day-fetch per day.
 
     Parameters
     ----------
@@ -112,7 +228,7 @@ def _days_needing_fetch(
     # Query all completed download_days rows for this source in range
     rows = fetch_all(
         conn,
-        "SELECT date, status, last_verified_at FROM download_days"
+        "SELECT date, status, downloaded_at, last_verified_at FROM download_days"
         f" WHERE source = {ph} AND date >= {ph} AND date <= {ph}",
         (source, date_from.isoformat(), date_to.isoformat()),
     )
@@ -124,10 +240,7 @@ def _days_needing_fetch(
     needed: list[date] = []
     current = date_from
     while current <= date_to:
-        if current == today:
-            # Today is always re-fetched
-            needed.append(current)
-        elif current.isoformat() not in completed:
+        if current.isoformat() not in completed:
             # No row at all — needs fetch
             needed.append(current)
         else:
@@ -140,9 +253,11 @@ def _days_needing_fetch(
                 # never offered again. Fails closed — an unrecognised status
                 # costs a re-fetch, which `store_publication` merges.
                 needed.append(current)
+            elif not _day_was_over_when_fetched(source, current, entry["downloaded_at"]):
+                # The day was still running somewhere when it was fetched, so
+                # what it delivered cannot be the whole day (#95).
+                needed.append(current)
             elif recheck_days > 0 and entry["last_verified_at"] is not None:
-                from datetime import datetime
-
                 last_verified = datetime.fromisoformat(entry["last_verified_at"]).date()
                 cutoff = today - timedelta(days=recheck_days)
                 if last_verified < cutoff:
@@ -318,8 +433,6 @@ def _upsert_download_day(
     only when called with no transaction open.
     """
     day_str = day.isoformat()
-    from datetime import UTC, datetime
-
     now = datetime.now(tz=UTC).isoformat()
     ph = placeholder(conn)
     with transaction(conn):

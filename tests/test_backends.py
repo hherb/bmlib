@@ -69,7 +69,7 @@ from bmlib.publications.storage import (
     get_publication_by_pmid,
     store_publication,
 )
-from bmlib.publications.sync import sync
+from bmlib.publications.sync import _day_was_over_when_fetched, sync
 
 
 def _pub(**kwargs) -> Publication:
@@ -553,6 +553,33 @@ class TestSync:
 
         assert report.days_processed == 0
         assert report.records_added == 0
+
+    def test_the_durability_rule_can_read_what_each_backend_stores(self, backend_conn):
+        """#95's rule reads ``downloaded_at`` back out of the row it wrote.
+
+        The column is ``TEXT`` in both DDLs, so both backends hand back a
+        parseable aware ISO string. Were the PostgreSQL side ever changed to a
+        real timestamp type, psycopg2 would return a ``datetime`` object
+        instead, ``_day_was_over_when_fetched`` would fail closed on every
+        completed day, and the whole date range would be re-fetched on every
+        run — loudly, but forever. Nothing else here would notice.
+        """
+        day = date(2026, 1, 15)
+        records = [FetchedRecord(title="One", source="testsource", doi="10.1/one")]
+        sync(
+            backend_conn,
+            sources=["testsource"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"testsource": _fetcher_returning(records)},
+        )
+
+        stored = fetch_scalar(backend_conn, "SELECT downloaded_at FROM download_days")
+
+        # Read at all, and read as an instant: the same stored value settles a
+        # long-past day and leaves today open.
+        assert _day_was_over_when_fetched("testsource", day, stored)
+        assert not _day_was_over_when_fetched("testsource", date.today(), stored)
 
     def test_a_failed_day_is_recorded_and_refetched(self, backend_conn):
         day = date(2026, 1, 15)

@@ -26,7 +26,7 @@ from bmlib.publications.fetchers import ALL_SOURCES
 from bmlib.publications.models import FetchedRecord, FetchResult
 from bmlib.publications.schema import ensure_schema
 from bmlib.publications.storage import get_publication_by_doi
-from bmlib.publications.sync import _days_needing_fetch, sync
+from bmlib.publications.sync import _day_was_over_when_fetched, _days_needing_fetch, sync
 
 
 def _fresh_conn():
@@ -36,15 +36,23 @@ def _fresh_conn():
     return conn
 
 
-def _insert_download_day(conn, source, day, status="completed", last_verified_at=None):
-    """Insert a download_days row for testing."""
+def _insert_download_day(
+    conn, source, day, status="completed", last_verified_at=None, downloaded_at=None
+):
+    """Insert a download_days row for testing.
+
+    *downloaded_at* defaults to now, which is what a fetch of a past day
+    records; the tests for issue #95 pass it explicitly, since the whole
+    question there is whether the fetch happened before the day was over.
+    """
     now = datetime.now(tz=UTC).isoformat()
+    dl = downloaded_at if downloaded_at is not None else now
     lv = last_verified_at if last_verified_at else now
     execute(
         conn,
         "INSERT INTO download_days (source, date, status, record_count, downloaded_at,"
         " last_verified_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (source, day.isoformat(), status, 10, now, lv),
+        (source, day.isoformat(), status, 10, dl, lv),
     )
     conn.commit()
 
@@ -1011,3 +1019,200 @@ class TestTheFetcherAndTheDurableRowMeet:
 
         assert report.errors == []
         assert _days_needing_fetch(conn, "biorxiv", date_from=self._DAY, date_to=self._DAY) == []
+
+
+class TestACompletedDayIsDurableOnlyOnceTheDayIsOver:
+    """Issue #95 — a day fetched *as* today was stored done and never revisited.
+
+    ``sync()``'s default window is ``[yesterday, today]``, so a 09:00 cron
+    captured today as it stood at 09:00 and recorded it ``completed``.
+    Tomorrow that day is neither ``today`` nor ``failed``, so with the
+    documented default ``recheck_days=0`` it was never offered again and
+    everything indexed over the remaining 15 hours was permanently absent.
+    No rule in ``_reconcile.py`` can see it: the source's own count agreed at
+    09:00, because the walk really did deliver everything that existed then.
+
+    The rule that replaces the old ``if current == today`` special case: a
+    completed day is durable only once it was fetched after that day had
+    ended **in every timezone**, which is 12:00 UTC the following day.
+    """
+
+    _DAY = date(2024, 6, 15)
+
+    def _needed(self, conn, source="test_source"):
+        return _days_needing_fetch(conn, source, date_from=self._DAY, date_to=self._DAY)
+
+    def test_a_day_fetched_while_it_was_still_running_is_offered_again(self):
+        """The issue, reproduced: a morning fetch of a day still in progress."""
+        conn = _fresh_conn()
+        _insert_download_day(
+            conn, "test_source", self._DAY, downloaded_at="2024-06-15T09:00:00+00:00"
+        )
+
+        assert self._needed(conn) == [self._DAY]
+
+    def test_a_day_fetched_after_it_ended_everywhere_is_not_offered_again(self):
+        """Negative control: the rule must not re-offer every completed day.
+
+        Without this, "always re-offer" passes the test above and costs every
+        installation a permanent re-fetch of its whole date range.
+        """
+        conn = _fresh_conn()
+        _insert_download_day(
+            conn, "test_source", self._DAY, downloaded_at="2024-06-16T12:00:00+00:00"
+        )
+
+        assert self._needed(conn) == []
+
+    def test_noon_utc_the_next_day_is_late_enough(self):
+        """The boundary is inclusive, and which side it falls on is load-bearing.
+
+        12:00 UTC on D+1 is midnight in UTC-12, the last zone on earth to
+        finish day D. A fetch at exactly that instant saw the whole day
+        everywhere, so it is durable — and ``<`` versus ``<=`` here is a
+        one-character edit no other test in this class notices.
+        """
+        conn = _fresh_conn()
+        _insert_download_day(
+            conn, "test_source", self._DAY, downloaded_at="2024-06-16T12:00:00+00:00"
+        )
+
+        assert self._needed(conn) == []
+
+    def test_a_second_before_noon_utc_the_next_day_is_not(self):
+        """The other side of the same boundary.
+
+        At 11:59:59 UTC on D+1 it is still 23:59:59 on day D in UTC-12, so a
+        source keeping that calendar has not finished the day. All three
+        built-in sources are US-based (UTC-5 to UTC-8), which is why the
+        obvious rule — "the UTC *date* is past the day" — is not safe: it
+        would call a fetch at 00:30 UTC on D+1 durable while PubMed's own
+        day D still had five hours to run.
+        """
+        conn = _fresh_conn()
+        _insert_download_day(
+            conn, "test_source", self._DAY, downloaded_at="2024-06-16T11:59:59+00:00"
+        )
+
+        assert self._needed(conn) == [self._DAY]
+
+    def test_an_offset_timestamp_is_compared_as_an_instant_not_as_a_wall_clock(self):
+        """13:00+02:00 on D+1 is 11:00 UTC — still inside day D somewhere.
+
+        Reading the date off the string, or dropping the offset, would call
+        this durable. The comparison is between instants.
+        """
+        conn = _fresh_conn()
+        _insert_download_day(
+            conn, "test_source", self._DAY, downloaded_at="2024-06-16T13:00:00+02:00"
+        )
+
+        assert self._needed(conn) == [self._DAY]
+
+    def test_a_timestamp_that_cannot_be_read_is_not_read_as_durable(self, caplog):
+        """Fail closed, and say so.
+
+        ``downloaded_at`` is ``NOT NULL TEXT`` and bmlib has always written an
+        aware UTC ISO timestamp, so an unreadable value came from somewhere
+        else. Treating it as durable would lose the day permanently; the
+        re-fetch it triggers rewrites the column, so it heals itself.
+        """
+        conn = _fresh_conn()
+        _insert_download_day(conn, "test_source", self._DAY, downloaded_at="not a timestamp")
+
+        with caplog.at_level("WARNING", logger="bmlib.publications.sync"):
+            assert self._needed(conn) == [self._DAY]
+
+        # Both halves matter: the phrase is unique to this line, and the value
+        # is what tells the operator which row to look at.
+        warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+        assert any("unusable downloaded_at" in m and "'not a timestamp'" in m for m in warnings), (
+            warnings
+        )
+
+    def test_a_naive_timestamp_is_not_read_as_durable(self):
+        """A naive value must fail closed rather than raise.
+
+        Comparing a naive datetime with an aware one raises ``TypeError``,
+        which would abort the whole sync from inside day selection — before a
+        single record is fetched — rather than cost one merge-idempotent
+        re-fetch.
+        """
+        conn = _fresh_conn()
+        _insert_download_day(conn, "test_source", self._DAY, downloaded_at="2024-06-20T12:00:00")
+
+        assert self._needed(conn) == [self._DAY]
+
+    def test_a_timestamp_that_is_not_a_string_is_not_read_as_durable(self):
+        """The shape a schema change would produce, not a hypothetical one.
+
+        ``downloaded_at`` is ``TEXT`` in both DDLs. Were the PostgreSQL side
+        ever given a real timestamp type, psycopg2 would hand back a
+        ``datetime`` — already aware, already correct, and not a string.
+        Failing closed costs a re-fetch of every completed day; reading it
+        through ``fromisoformat`` unguarded would raise ``TypeError`` from
+        inside day selection and abort the sync instead.
+        """
+        assert not _day_was_over_when_fetched(
+            "test_source", self._DAY, datetime(2024, 6, 20, 12, tzinfo=UTC)
+        )
+
+    def test_a_day_that_has_not_happened_yet_is_offered_again(self):
+        """The same defect one step further out, and the rule covers it too.
+
+        A caller whose ``date_to`` is in the future had those days stored
+        ``completed`` with no records and never revisited. Under the old
+        special case only ``today`` was re-offered.
+        """
+        conn = _fresh_conn()
+        future = date.today() + timedelta(days=3)
+        _insert_download_day(conn, "test_source", future)
+
+        assert _days_needing_fetch(conn, "test_source", date_from=future, date_to=future) == [
+            future
+        ]
+
+    def test_today_is_still_offered_although_the_special_case_is_gone(self):
+        """The claim that made removing ``if current == today`` safe.
+
+        12:00 UTC on D+1 is not merely late enough to be safe — it is exactly
+        the instant beyond which "now" can no longer fall inside day D
+        anywhere on earth. So a row written during today is always earlier
+        than its own boundary, in every timezone, and the timestamp rule
+        subsumes the special case rather than approximating it.
+        """
+        conn = _fresh_conn()
+        today = date.today()
+        _insert_download_day(conn, "test_source", today)
+
+        assert _days_needing_fetch(conn, "test_source", date_from=today, date_to=today) == [today]
+
+    def test_a_day_synced_as_today_is_not_stored_as_durable(self):
+        """The seam: what ``sync()`` actually writes, read by the actual rule.
+
+        The rule can only be exercised against a *past* day, and the clock
+        cannot be advanced, so this asserts on the stored value directly —
+        the day ``sync()`` has just recorded ``completed`` is one the
+        durability rule will offer again tomorrow.
+        """
+        conn = _fresh_conn()
+        today = date.today()
+        records = [_sample_raw_record(source="test_source")]
+
+        sync(
+            conn,
+            sources=["test_source"],
+            date_from=today,
+            date_to=today,
+            _fetcher_override={"test_source": _make_fake_fetcher(records)},
+        )
+
+        from bmlib.db import fetch_one
+
+        row = fetch_one(
+            conn,
+            "SELECT * FROM download_days WHERE source = ? AND date = ?",
+            ("test_source", today.isoformat()),
+        )
+        assert row["status"] == "completed"
+        assert not _day_was_over_when_fetched("test_source", today, row["downloaded_at"])
