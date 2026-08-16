@@ -56,9 +56,14 @@ the bug.** Worth carrying forward as method, not as history:
 critical path. #92 is the measurement the #88 fix deliberately deferred; #94
 is the bioRxiv envelope sampler the second round deferred for the same reason
 (its guard is deliberately weaker than it looks — read `docs/DECISIONS.md`
-before "simplifying" it); #96 is efetch's retstart skew. **#73 is closed on
-this branch** — `install_defaults()` now writes through the promoted
-`bmlib/_atomic.py`.
+before "simplifying" it); #96 is efetch's retstart skew. **#73 is fixed in
+PR #102** — `install_defaults()` now writes through `atomic_write()`,
+promoted out of `fulltext/cache.py` into the new top-level private
+`bmlib/_atomic.py` because the same defect had now been found twice. That
+promotion is the thing to know going forward: **a new writer of
+user-visible files uses that helper** rather than re-deriving four
+details that each cost a review round to learn (CLAUDE.md, "A file bmlib
+writes for a user is published, never written in place").
 
 On `release/0.10.0`: **2172 tests + 59 skipped** on SQLite alone, and **2229 +
 2 with a PostgreSQL DSN** (PostgreSQL 16, local), so the dual-backend half of
@@ -191,7 +196,7 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 Four, every one found by review rather than by a failing test. (**#56, #68,
 #72 and #79** shipped in 0.9.1. **#78, #81, #88–#91, #95, #98 and #99**
 shipped in 0.10.0 — PRs #85, #87, #93, #97, #100. **#73** is fixed and
-awaiting merge on `fix/73-atomic-template-install`.)
+awaiting review as **PR #102**.)
 
 **#94 — bioRxiv's envelope shapes are unmeasured**, filed for the reason #92
 was: the second round's guard refuses a body carrying *neither* a
