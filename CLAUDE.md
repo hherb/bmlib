@@ -121,8 +121,8 @@ bmlib/
 
 - **`db/`** — Thin database abstraction via pure functions over DB-API connections. Supports SQLite (built-in) and PostgreSQL (optional). No ORM; all SQL is explicit, so any module serving both backends gets its parameter placeholder from `placeholder(conn)` / `placeholders(conn, n)` rather than hard-coding `?`.
 - **`llm/`** — Unified LLM client with a pluggable provider registry. Built-in providers: Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini. Model strings use `"provider:model_name"` format (e.g. `"anthropic:claude-sonnet-4-20250514"`). Providers are lazily registered on first access, and a provider whose SDK is not installed is silently skipped — so `list_providers()` reflects what is installed, not what exists. Beyond chat, the package covers embeddings (`LLMClient.embed()` / batch `embed_batch()`, Ollama only, both via `/api/embed`), tool calling (`tools`/`tool_choice` on `chat()`), thinking/reasoning (`think=` kwarg on `chat()` → `LLMResponse.thinking`), JSON repair, and text chunking. Model listing never fans out per model: the Anthropic and OpenAI-compatible providers each issue a single source-level `models.list()` call (the SDK may paginate underneath), and Ollama defers its per-model context-window lookup (see "Lazy model metadata" below).
-- **`templates/`** — Jinja2-based prompt template engine with user directory override and default directory fallback. `install_defaults()` copies each bundled template through `_atomic.atomic_write` and byte for byte — see "A file bmlib writes for a user is published, never written in place" below, and note that the `if not dest.exists()` skip is only correct *because* the write is atomic.
-- **`_atomic.py`** — one private, stdlib-only helper, `atomic_write()`, shared by `fulltext/cache.py` and `templates/engine.py`. Not part of the public API.
+- **`templates/`** — Jinja2-based prompt template engine with user directory override and default directory fallback. **bmlib ships no templates of its own** — there is no `templates/defaults/`, and `package-data` is `py.typed` alone — so `default_dir` is always the caller's own prompt directory and its suffix tuple and line endings are a contract, not an internal detail. `install_defaults()` copies each one through `_atomic.atomic_write`, byte for byte, in sorted order — see "A file bmlib writes for a user is published, never written in place" below, and note that the `if not dest.exists()` skip is only correct *because* the write is atomic. It skips a **dangling symlink** rather than publishing over it: `exists()` follows symlinks, so one whose target is missing reads as absent, and `os.replace` replaces the link where the `write_text` it replaced wrote through it — the atomic publish is what created that hazard, not what fixed it.
+- **`_atomic.py`** — one private, stdlib-only helper, `atomic_write()`, shared by `fulltext/cache.py` and `templates/engine.py`. Not part of the public API. "Atomic" is about *visibility*, not crash durability: the data is fsync'd before the rename is issued, but the containing directory is not, so a lost rename leaves the target absent — the direction both callers repair.
 - **`agents/`** — `BaseAgent` class for LLM-driven tasks. Provides `chat()`, `chat_json()` (retry with backoff, truncation-aware, `retry_context` label folded into every log line), `render_template()`, `parse_json()`, and message helpers. `embed()` / `embed_batch()` wrap the client's embedding calls (via the `embedding_model` constructor parameter, declared last for positional stability) and are deliberately excluded from the metrics below; `test_connection()` reports provider reachability only, not whether a given model is installed. `agents/metrics.py` provides `PerformanceMetrics`, thread-safe per-agent call accounting (tokens, requests, retries, wall time) surfaced via `BaseAgent.metrics` / `reset_metrics()` / `start_metrics()` / `stop_metrics()` / `format_metrics_report()` — independent of the process-wide `llm.TokenTracker`, since it answers "what did this agent do" rather than "what has this process spent".
 - **`citations/`** — Citation-marker parsing and reference building, pure
   stdlib. Text carries `[@id:12345:Smith2023]` markers; `build_references()`
@@ -454,19 +454,41 @@ than as two fixes. A partial file written in place does not look partial:
 it decodes cleanly and is then trusted forever, because the guard that
 would re-create it (`if not dest.exists()`, a cache hit) is satisfied by
 the truncated file's mere presence. **A new writer of user-visible files
-uses this helper**; the four details its docstring calls load-bearing were
-each earned by review and every one of them has a regression test, so
-re-deriving them in a second copy is the failure mode the promotion exists
-to prevent.
+uses this helper**; the five details its docstring calls load-bearing were
+each earned by review and each has a regression test, so re-deriving them
+in a second copy is the failure mode the promotion exists to prevent. (The
+`O_BINARY` flag beside them is the exception and says so at the site: the
+CI matrix is Linux-only, where the `getattr` is `0`, so nothing exercises
+it — `test_a_template_is_copied_byte_for_byte` would catch it on Windows.)
+
+**Test a new call site for the publish, not just for the tidy-up.** Where
+there is nothing to overwrite, an ordinary in-place write that unlinks on
+failure is indistinguishable from an atomic publish *after the fact*, so an
+error injection alone proves nothing — mutation confirmed such an
+implementation passed every templates test in the first cut of #73. They
+differ only while the bytes are in flight, which is exactly what survives
+`SIGKILL`, the half of the scenario no injection reaches. Assert on that
+instant: hook `os.replace` and check the target name is still absent.
 
 Two things the module does *not* do, deliberately. It does not detect an
 entry already corrupt on disk — that is prospective-only, and would want a
-checksum sidecar (see #70's entry in `docs/DECISIONS.md`). And it does not
-swallow `OSError`: every caller propagates, because a caller who cannot
-write is better told than left believing the file is there. In
+checksum sidecar (see #70's entry in `docs/DECISIONS.md`); where the
+remedy differs per call site, say so in `docs/manual/` rather than nowhere
+(`clear()` for the cache, "check the directory once" for templates). And it
+does not swallow `OSError`: every caller propagates, because a caller who
+cannot write is better told than left believing the file is there. In
 `install_defaults()` that means one failed template aborts the loop with
 the rest uninstalled, which is correct — the next call installs whatever is
 still missing, so the loop is self-repairing.
+
+Two hazards the publish *creates*, which a bare write did not have. It
+replaces a **symlink** at the target rather than writing through it, so a
+call site where a symlink is a user's deliberate indirection has to look
+for one first (`install_defaults()` does; the cache deliberately does not —
+see `docs/DECISIONS.md`). And the failing syscall names the *temporary*
+file, which the cleanup then deletes, so `atomic_write` re-points
+`OSError.filename` at the target — `str(exc)` is built from it, and that is
+what `FullTextService` puts in front of an operator.
 
 ### Lazy model metadata (Ollama)
 `OllamaProvider.list_models()` costs one HTTP request regardless of how many
@@ -573,7 +595,7 @@ uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
 | `context_processor/` | `test_context_processor.py`, `test_llm_chunk_processor.py` |
 | `quality/`           | `test_quality.py`, `test_cochrane.py`, `test_extractors.py` |
 | `templates/`         | `test_templates.py`                                        |
-| `_atomic.py`         | no file of its own — exercised through both call sites, `test_templates.py::TestInstallingDefaultsIsAtomic` and `test_fulltext_cache.py::TestWritesAreAtomic` |
+| `_atomic.py`         | `test_atomic.py` — only what belongs to the helper itself (the 38-char temp-name overhead `fulltext.cache`'s filename cap is arithmetic over, and the exception the caller gets back). The five load-bearing details are pinned at the call sites, where the behaviour is delivered: `test_templates.py::TestInstallingDefaultsIsAtomic` and `test_fulltext_cache.py::TestWritesAreAtomic` |
 | `transparency/`      | `test_transparency.py`                                     |
 | `publications/`      | `test_publications.py`, `test_sync.py`, `test_backends.py`, `test_pubmed_fetcher.py`, `test_openalex_fetcher.py`, `test_registry.py`, `test_retractions.py`, `test_fetch_reconciliation.py` |
 | `fulltext/`          | `test_fulltext_cache.py`, `test_fulltext_models.py`, `test_fulltext_service.py`, `test_jats_parser.py`, `test_pdf_converter.py`, `test_segmenter.py`, `test_fulltext_titles.py`, `test_pdf_metadata_titles.py` |

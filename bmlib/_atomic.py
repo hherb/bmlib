@@ -51,12 +51,30 @@ def atomic_write(path: Path, data: bytes) -> None:
     the previous version or nothing — instead of a truncated file that reads
     back perfectly and is trusted forever after.
 
+    "Atomic" here is about *visibility*, not crash durability. The data is
+    fsync'd before the rename is issued, so there is no ordering in which the
+    rename survives a crash and the data does not; but the containing
+    directory is not fsync'd, so the rename itself can be lost. That is the
+    safe direction for both callers — the target is then simply absent, which
+    each treats as a miss and repairs — and closing the window would cost a
+    directory sync per write to fix something neither caller can observe. A
+    caller that must survive a crash with the file *present* has to fsync the
+    directory itself.
+
+    :func:`os.replace` replaces whatever is at *path*, **including a symlink**
+    — the link itself, not the file it points at. A caller for whom a symlink
+    there is a user's deliberate indirection has to look for one before
+    calling; :meth:`~bmlib.templates.engine.TemplateEngine.install_defaults`
+    does, and its reason is worth reading before a third caller is added.
+
     That temporary name is **38 characters longer** than the target's, so a
     caller building filenames from unbounded input has to leave room for it
     inside ``NAME_MAX``; ``fulltext.cache._MAX_PREFIX_CHARS`` is the cap that
-    does, and it states the same figure.
+    does, and it states the same figure. That cap has 41 characters of slack,
+    so growing the affix would not fail its test — ``test_atomic.py`` asserts
+    the 38 directly, which is the only guard that sees the two drift apart.
 
-    Four details are load-bearing:
+    Five details are load-bearing:
 
     * **The fsync is not durability theatre.** Under delayed allocation the
       ``write(2)`` that ``flush()`` issues *returns success* on a disk that is
@@ -92,27 +110,55 @@ def atomic_write(path: Path, data: bytes) -> None:
       the name up) would otherwise replace the original exception, and that
       exception is what ``FullTextService`` interpolates into the one warning
       an operator ever sees — reporting a full disk as a permissions problem.
+      (The ``templates`` caller simply propagates, so there the cost is a
+      wrong traceback rather than a wrong warning.)
+    * **The failure names the file the caller asked for.** The syscall that
+      fails operates on the *temporary* name, so that is what lands in
+      ``OSError.filename`` — a path the caller never chose and that the
+      cleanup above has just removed, so an operator who greps for it finds
+      nothing on disk. At ``fsync``, the failure this function is built
+      around, there is no filename at all. Both cases are re-pointed at
+      *path*, which is the honest answer to "what could not be written". The
+      two-file form :func:`os.replace` raises already names the target in
+      ``filename2`` and is left alone, which is what ``filename2 is None``
+      tests for. This is not cosmetic: ``str(exc)`` is built from
+      ``filename``, and ``str(exc)`` is what ``FullTextService``
+      interpolates into that one warning.
 
     Raises:
-        OSError: whatever the underlying write raised. Every caller
-            propagates it; a caller that cannot write is better told than
-            left believing the file is there.
+        OSError: whatever the underlying write raised, re-pointed at *path*
+            as above. Every caller propagates it; a caller that cannot write
+            is better told than left believing the file is there.
     """
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     # O_BINARY is Windows-only and absent elsewhere. Without it os.open hands
-    # the flags to the CRT, which defaults to text mode, and os.fdopen(fd,
-    # "wb") cannot undo that — only io.FileIO's path-opening branch adds the
-    # flag, which is why the bare write_bytes this replaced was binary-safe.
-    # Every LF in a cached PDF would otherwise be written as CRLF.
+    # the flags to the CRT, which defaults to text mode, and no mode string
+    # passed to os.fdopen can undo that — only msvcrt.setmode could, at the
+    # cost of a Windows-only import. io.FileIO adds the flag in its
+    # path-opening branch and not in the branch that adopts a descriptor,
+    # which is why an ordinary Path.write_bytes is binary-safe and a raw
+    # os.open is not: every LF in a PDF would be written as CRLF. The CI
+    # matrix is Linux-only, where the getattr is 0, so nothing here exercises
+    # this — test_a_template_is_copied_byte_for_byte would catch it on
+    # Windows.
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
     try:
         fd = os.open(tmp, flags, 0o666)
-        with os.fdopen(fd, "wb") as handle:
+        try:
+            handle = os.fdopen(fd, "wb")
+        except BaseException:
+            # os.fdopen adopts the descriptor only once it succeeds, so a
+            # failure here leaves it open with nothing left holding it.
+            os.close(fd)
+            raise
+        with handle:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp, path)
-    except BaseException:
+    except BaseException as exc:
+        if isinstance(exc, OSError) and exc.filename2 is None:
+            exc.filename = str(path)
         try:
             tmp.unlink(missing_ok=True)
         except OSError:

@@ -2515,7 +2515,7 @@ class TestCacheWriteFailuresAreReported:
         """The seam #70 actually changed, exercised without a mock.
 
         Every other test in this class fakes the failure by replacing
-        ``save_html`` outright, so the real ``_atomic_write`` never runs in a
+        ``save_html`` outright, so the real ``atomic_write`` never runs in a
         service-level test at all — and #70 turned ``save_html`` from a method
         that never raised into one that does. Faulting ``os.fsync`` instead
         drives the genuine path: the write raises, the retrieval still

@@ -61,9 +61,26 @@ PR #102** — `install_defaults()` now writes through `atomic_write()`,
 promoted out of `fulltext/cache.py` into the new top-level private
 `bmlib/_atomic.py` because the same defect had now been found twice. That
 promotion is the thing to know going forward: **a new writer of
-user-visible files uses that helper** rather than re-deriving four
+user-visible files uses that helper** rather than re-deriving five
 details that each cost a review round to learn (CLAUDE.md, "A file bmlib
 writes for a user is published, never written in place").
+
+Review of that PR is worth reading before the next call site, because
+every finding was a cost of the *publish* rather than of the bug it
+fixed. `os.replace` replaces a **symlink** instead of writing through it,
+so a dangling one — a prompt on an unmounted volume — was swapped for the
+default with only an `INFO` line; `install_defaults()` now skips and warns,
+and the cache deliberately does not, for reasons in `docs/DECISIONS.md`.
+The failing syscall names the *temporary* file, which the cleanup then
+deletes, so the one warning `FullTextService` shows an operator pointed at
+a path not on disk; `atomic_write` re-points `OSError.filename` at the
+target. And two documented contracts turned out to be pinned by nothing:
+the self-repairing loop (both original tests installed a single template,
+so rolling every success back passed them) and the publish itself (with
+nothing to overwrite, an in-place write that unlinks on failure is
+indistinguishable after the fact — assert on the instant `os.replace` is
+called). `tests/test_atomic.py` is new and holds only what belongs to the
+helper rather than to either call site.
 
 On `release/0.10.0`: **2172 tests + 59 skipped** on SQLite alone, and **2229 +
 2 with a PostgreSQL DSN** (PostgreSQL 16, local), so the dual-backend half of
@@ -135,8 +152,12 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed six releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2172 passing + 59 skipped** (`uv run pytest tests/ -q`);
-  **2229 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 57 of the default skips
+- **Tests: 2187 passing + 59 skipped** on `fix/73-atomic-template-install`
+  (`uv run pytest tests/ -q`); 2172 on `main`, the 15 being #73's. The
+  PostgreSQL figure below was measured on 0.10.0 and has not been re-run
+  here — #73 touches `templates/`, `fulltext/cache.py` and `_atomic.py`, none
+  of which involve a database, and CI runs that half against `postgres:16`
+  regardless: **2229 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 57 of the default skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
   runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev

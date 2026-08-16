@@ -140,18 +140,28 @@ Requires both `user_dir` and `default_dir` to be set. Creates `user_dir` if it d
 
 Each copy is **atomic** and **byte for byte** *(unreleased, #73)*. It is written to a temporary file beside the target and published with `os.replace`, so a copy interrupted partway — a full disk, a killed process — leaves nothing behind rather than a truncated template. That is what makes the skip above safe: a half-written template would satisfy "already exists" and never be repaired, and Jinja2 would render whatever survived, which is not a `TemplateNotFound` but a prompt missing its second half.
 
-**Raises `OSError`** from the first copy that fails, leaving the templates after it uninstalled. Call it again to install whatever is still missing — the loop is self-repairing by design, so the exception is worth acting on but not worth fearing.
+Templates are scanned in sorted order, so which ones are installed before a failure is reproducible.
+
+> **If you installed defaults with bmlib ≤ 0.10.0, check your user directory once** *(unreleased, #73)*. The fix is prospective: it prevents a truncated template being written, and cannot detect one already on disk. Nothing can — a file differing from the default is the *expected* state, since editing it is the whole point of the user directory, so a truncated copy and a customised one are indistinguishable to bmlib. Deleting a template you have not customised is enough; the next `install_defaults()` re-installs it.
+
+**A symlink whose target is missing is skipped, not overwritten** *(unreleased, #73)*. `Path.exists()` follows symlinks, so a prompt you have symlinked onto a volume that happens to be unmounted looks absent — and publishing over it would replace the link itself. Such a destination is left alone and reported at `WARNING`, because until that target is back, rendering falls back to the default with your own version unreachable.
+
+**Raises `OSError`** from the first copy that fails, leaving the templates after it uninstalled. Call it again to install whatever is still missing — the loop is self-repairing by design, so the exception is worth acting on but not worth fearing. The exception names the template it could not write, not the temporary file it was staged through.
+
+A killed process can leave a hidden `.<name>.<hex>.tmp` file in the user directory. It is inert — nothing scans that directory — but nothing sweeps it either, so it is yours to delete if you notice one.
 
 **Example:**
 
 ```python
 engine = TemplateEngine(
     user_dir=Path("~/.myapp/prompts"),
-    default_dir=Path("/path/to/package/defaults"),
+    default_dir=Path(myapp.__file__).parent / "prompts",  # your app's own
 )
 engine.install_defaults()
 # All default templates are now available in ~/.myapp/prompts/
-# Users can edit them without affecting the package originals.
+# Users can edit them without affecting your application's originals.
+#
+# bmlib ships no templates: `default_dir` is always your directory.
 ```
 
 ---

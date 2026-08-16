@@ -316,8 +316,12 @@ at the call site". What it omits:
 **The helper itself now lives in `bmlib/_atomic.py` as `atomic_write()`**,
 promoted out of `fulltext/cache.py` by #73 when `templates/` turned out to
 need the identical publish. Everything below still holds of it word for word
-— that is the point of having promoted it rather than copied it — and the
-tests named here still live in `test_fulltext_cache.py`.
+— that is the point of having promoted it rather than copied it — and every
+test named below still lives where it did. What the promotion added is
+`tests/test_atomic.py`, which pins the few guarantees that belong to the
+helper rather than to either call site: the 38-character temporary-name
+overhead the cap below is arithmetic over, and the exception the caller gets
+back.
 
 Each of these looks like a line worth simplifying, and each re-opens the bug.
 All are pinned by a named test in `test_fulltext_cache.py` /
@@ -433,34 +437,72 @@ whose stated reason was wrong, so the claim is meant literally.
 ## templates — install_defaults writes atomically (#73)
 
 The same defect as #70, found in a second place, which is what made
-`atomic_write` shared rather than copied. Three choices here read as
-tidy-ups and are not; all three are pinned by
-`test_templates.py::TestInstallingDefaultsIsAtomic`, and four mutations were
-run against those two tests, four caught.
+`atomic_write` shared rather than copied. Four choices here read as
+tidy-ups and are not; all four are pinned by
+`test_templates.py::TestInstallingDefaultsIsAtomic`, and six mutations were
+run against it, six caught.
+
+Read this section knowing that **bmlib ships no templates of its own** —
+there is no `bmlib/templates/defaults/`, and `package-data` is `py.typed`
+alone. `default_dir` is always the caller's own prompt directory, which is
+what makes the second and fourth bullets matter rather than being theoretical.
 
 - **`if not dest.exists()` was left exactly as it was.** It looks like the
   bug — it is the line that turns one truncated file into a permanently
   truncated file — but it is not what needed fixing, and "repair a template
   that looks wrong" is not implementable: a user edit is the whole point of
-  the user directory, so a file differing from the bundled default is the
-  *expected* state and cannot be told from a truncated one. Making the write
-  atomic is what makes the guard true: a faulted copy publishes nothing, so
-  `dest` does not exist and the next call installs it. Reverting the write
-  to `write_text` fails both tests.
+  the user directory, so a file differing from the default is the *expected*
+  state and cannot be told from a truncated one. Making the write atomic is
+  what makes the guard true: a faulted copy publishes nothing, so `dest`
+  does not exist and the next call installs it. Reverting the write to
+  `write_text` fails both of the original tests.
 - **The copy is bytes, not text.** `src.read_text()` applies universal
-  newlines and `write_text` translates back through `os.linesep`, so on
-  Windows the installed template's line endings were never the bundled
-  file's. It looks like a pointless change on a POSIX machine, where the two
-  round-trip identically — which is exactly why it needs its own test rather
-  than trusting the platform the suite happens to run on. An implementation
-  that is atomic but still re-encodes fails
-  `test_a_template_is_copied_byte_for_byte` and nothing else.
+  newlines and `write_text` translates back through `os.linesep`, so the
+  installed template's line endings need not be the source's. **This is not
+  Windows-only, and the round trip is not lossless on POSIX** — an earlier
+  draft of this entry said it was, and the CRLF fixture in
+  `test_a_template_is_copied_byte_for_byte` fails *here*, on Linux CI,
+  against a re-encoding implementation. Both platforms corrupt, in opposite
+  directions; the round trip preserves bytes only where the source's endings
+  already match the platform's, and `default_dir` belongs to the caller, so
+  they need not. What the change buys is fidelity of the installed
+  **artefact**, for whatever editor or tool the user opens it with. It is
+  deliberately *not* a claim about what reaches a model — `_FallbackLoader`
+  reads every template with `read_text` too, so Jinja2 sees `\n` either way,
+  and "a prompt is sent verbatim" was the wrong reason for a right change.
+  An implementation that is atomic but still re-encodes fails that one test
+  and nothing else.
+- **A dangling symlink at the destination is skipped, not published over.**
+  This is the one line the atomic publish *made* necessary rather than
+  fixed. `exists()` follows symlinks, so one pointing at a missing target
+  reads as absent — and `os.replace` then replaces the link itself, where
+  the `write_text` it replaced wrote *through* the link and raised
+  `FileNotFoundError`. A user who symlinks a prompt at a volume that is
+  unmounted at startup came back, before the guard, to find the link gone
+  and the default in its place, announced by an `INFO` line indistinguishable
+  from an ordinary first install. Skipping is right rather than "install
+  anyway": the link is the user's stated intent about where that prompt
+  lives, and this method's whole job is to not overwrite the user. It is
+  `WARNING` rather than silent because rendering then falls back to the
+  default with the user's own version unreachable, which is exactly the
+  substitution the guard exists to make visible. Note that the cache side
+  has the same exposure by construction and does *not* guard: `save_pdf` /
+  `save_html` overwrite unconditionally, a cache entry is bmlib's own
+  storage rather than a user's file, and `clear()` would unlink such a
+  symlink regardless.
 - **`OSError` propagates, aborting the templates after the one that
   failed.** Collecting the errors and continuing looks kinder and is worse:
   the next call installs whatever is still missing, so the loop is already
   self-repairing, and a caller who cannot write is better told once than
   handed a partial installation and a summary. This is the same call
-  `save_html` / `save_pdf` make.
+  `save_html` / `save_pdf` make. Review of the first cut found this bullet
+  *unpinned* — both original tests installed a single template, so an
+  implementation that rolled every success back on failure, the exact
+  opposite of the documented contract, passed them both.
+  `test_a_faulted_copy_leaves_the_ones_already_installed_alone` is the
+  three-template case that closes it, and it is also why the scan is now
+  `sorted()`: which templates are left uninstalled has to be reproducible
+  before it can be asserted.
 
 One thing deliberately *not* asserted: the fault is injected at `os.fsync`,
 so on the unfixed code the test fails with `DID NOT RAISE` rather than by
@@ -471,6 +513,19 @@ publishes a file whose blocks were never written. The directory is asserted
 *empty*, not merely free of `scoring.txt`, because a leftover temporary file
 is the other way this can go wrong: dropping the cleanup `unlink` fails that
 assertion and nothing else in the suite.
+
+The other thing an error injection cannot reach is the **killed process**,
+which is half of what the issue names. Injecting at `fsync` only proves the
+tidy-up: with nothing to overwrite, a plain `open(dest, "wb")` that unlinks
+on failure is indistinguishable from an atomic publish *after the fact*, and
+review confirmed by mutation that such an implementation passed every test
+in the class. They differ only while the bytes are in flight, which is
+precisely what survives `SIGKILL`, so
+`test_the_destination_never_exists_until_it_is_complete` asserts on that
+instant instead — the target name is absent, and the bytes are staged under
+another name, at the moment `os.replace` is called. Without it the house
+rule in CLAUDE.md ("a new writer of user-visible files uses this helper") is
+unenforced at the very call site it was written for.
 
 ## fulltext — the service degrades but the cache still raises (#75)
 
