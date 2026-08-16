@@ -6,6 +6,46 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **A default template is installed atomically, or not at all** (#73).
+  `TemplateEngine.install_defaults()` copied each bundled template with a
+  bare `write_text` guarded by `if not dest.exists()`. A copy interrupted
+  partway — a full disk, a killed process — left a truncated template that
+  the guard then reported as installed, so it was never repaired. Jinja2
+  renders whatever survived: a prompt missing its second half is not a
+  `TemplateNotFound`, it is a prompt that renders and is sent to a model,
+  with nothing logged and `install_defaults()` reporting success. The write
+  now goes through the temp-file + `os.replace` publish that #70 gave the
+  full-text cache, so a faulted copy publishes nothing and the next call
+  installs it — the guard itself needed no change, the write being atomic is
+  what makes it correct. Found while fixing #70 and deliberately kept
+  separate, because the fix wanted a decision rather than two lines.
+
+### Changed
+
+- **A default template is now copied byte for byte** (#73). `read_text`
+  applies universal newlines and `write_text` translates back through
+  `os.linesep`, so the installed file's line endings need not have been the
+  bundled file's — on Windows they were not. A prompt reaches a model
+  verbatim, so "install the default" has to mean the default. No stored
+  value moves and no signature changes; a Windows user who has already
+  installed the defaults keeps the copies they have, since an existing file
+  is still skipped.
+
+### Internal
+
+- `_atomic_write` is promoted out of `fulltext/cache.py` into a new
+  top-level private module, `bmlib/_atomic.py`, and is now
+  `atomic_write` — the leading underscore moves to the module, matching
+  `scripts/_sampling.py`. It was promoted rather than copied because the
+  four load-bearing details in its docstring (the `fsync`, the UUID in the
+  temporary name, the 0666 mode, the guarded cleanup) were each earned by
+  #70's review, and that is exactly the knowledge that must not exist in two
+  copies free to drift. Nothing public moves and the module depends on the
+  standard library alone; the one visible change is that the cleanup's DEBUG
+  line now logs under `bmlib._atomic` rather than `bmlib.fulltext.cache`.
+
 ## [0.10.0] — 2026-08-15
 
 **One family, seven issues: a sync day that reported success it did not

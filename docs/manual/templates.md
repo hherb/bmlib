@@ -138,6 +138,10 @@ Copy all default templates to the user directory. Skips templates that already e
 
 Requires both `user_dir` and `default_dir` to be set. Creates `user_dir` if it doesn't exist.
 
+Each copy is **atomic** and **byte for byte** *(unreleased, #73)*. It is written to a temporary file beside the target and published with `os.replace`, so a copy interrupted partway — a full disk, a killed process — leaves nothing behind rather than a truncated template. That is what makes the skip above safe: a half-written template would satisfy "already exists" and never be repaired, and Jinja2 would render whatever survived, which is not a `TemplateNotFound` but a prompt missing its second half.
+
+**Raises `OSError`** from the first copy that fails, leaving the templates after it uninstalled. Call it again to install whatever is still missing — the loop is self-repairing by design, so the exception is worth acting on but not worth fearing.
+
 **Example:**
 
 ```python

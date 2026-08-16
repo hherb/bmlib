@@ -313,6 +313,12 @@ at the call site". What it omits:
 
 ## fulltext — the cache is written atomically (#70, #71, PR #74)
 
+**The helper itself now lives in `bmlib/_atomic.py` as `atomic_write()`**,
+promoted out of `fulltext/cache.py` by #73 when `templates/` turned out to
+need the identical publish. Everything below still holds of it word for word
+— that is the point of having promoted it rather than copied it — and the
+tests named here still live in `test_fulltext_cache.py`.
+
 Each of these looks like a line worth simplifying, and each re-opens the bug.
 All are pinned by a named test in `test_fulltext_cache.py` /
 `test_fulltext_service.py`, and every one was verified by mutation — review of
@@ -423,6 +429,48 @@ whose stated reason was wrong, so the claim is meant literally.
   or checksum sidecar beside every entry — a cache format change, for a
   window that closes as entries are rewritten. Not done; `clear()` is the
   remedy for a cache written by an older version.
+
+## templates — install_defaults writes atomically (#73)
+
+The same defect as #70, found in a second place, which is what made
+`atomic_write` shared rather than copied. Three choices here read as
+tidy-ups and are not; all three are pinned by
+`test_templates.py::TestInstallingDefaultsIsAtomic`, and four mutations were
+run against those two tests, four caught.
+
+- **`if not dest.exists()` was left exactly as it was.** It looks like the
+  bug — it is the line that turns one truncated file into a permanently
+  truncated file — but it is not what needed fixing, and "repair a template
+  that looks wrong" is not implementable: a user edit is the whole point of
+  the user directory, so a file differing from the bundled default is the
+  *expected* state and cannot be told from a truncated one. Making the write
+  atomic is what makes the guard true: a faulted copy publishes nothing, so
+  `dest` does not exist and the next call installs it. Reverting the write
+  to `write_text` fails both tests.
+- **The copy is bytes, not text.** `src.read_text()` applies universal
+  newlines and `write_text` translates back through `os.linesep`, so on
+  Windows the installed template's line endings were never the bundled
+  file's. It looks like a pointless change on a POSIX machine, where the two
+  round-trip identically — which is exactly why it needs its own test rather
+  than trusting the platform the suite happens to run on. An implementation
+  that is atomic but still re-encodes fails
+  `test_a_template_is_copied_byte_for_byte` and nothing else.
+- **`OSError` propagates, aborting the templates after the one that
+  failed.** Collecting the errors and continuing looks kinder and is worse:
+  the next call installs whatever is still missing, so the loop is already
+  self-repairing, and a caller who cannot write is better told once than
+  handed a partial installation and a summary. This is the same call
+  `save_html` / `save_pdf` make.
+
+One thing deliberately *not* asserted: the fault is injected at `os.fsync`,
+so on the unfixed code the test fails with `DID NOT RAISE` rather than by
+finding a truncated file. That is honest rather than convenient — the
+unfixed code has no `fsync` to fault, and a test faulting `write` instead
+would pass against an implementation that omits the `fsync` and so
+publishes a file whose blocks were never written. The directory is asserted
+*empty*, not merely free of `scoring.txt`, because a leftover temporary file
+is the other way this can go wrong: dropping the cleanup `unlink` fails that
+assertion and nothing else in the suite.
 
 ## fulltext — the service degrades but the cache still raises (#75)
 
