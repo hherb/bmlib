@@ -72,8 +72,14 @@ def atomic_write(path: Path, data: bytes) -> None:
       handler, which would ``unlink`` the *winner's* in-flight temporary file;
       the winner's ``os.replace`` then fails with ``FileNotFoundError`` and
       both processes end up having written nothing. The name is dot-prefixed
-      so a leftover from a killed process is unobtrusive;
-      :meth:`~bmlib.fulltext.cache.FullTextCache.clear` removes them.
+      so a leftover from a killed process — this function unlinks its own on
+      any failure, but cannot on ``SIGKILL`` or a power loss — is
+      unobtrusive. Nothing sweeps them centrally:
+      :meth:`~bmlib.fulltext.cache.FullTextCache.clear` removes the ones
+      under the cache, and a caller writing elsewhere either tidies up or
+      accepts that a hidden file may be left behind. That is safe for
+      ``templates``, whose only directory scan reads the *default*
+      directory, not the one written to.
     * **The mode is 0666 filtered by the umask** — byte for byte what an
       ordinary ``write_bytes`` requests, and deliberately not
       :func:`tempfile.mkstemp`'s 0600. A directory shared between users
