@@ -41,8 +41,9 @@ import os
 import platform
 import re
 import shutil
-import uuid
 from pathlib import Path
+
+from bmlib._atomic import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +55,11 @@ _SAFE_IDENTIFIER_RE = re.compile(r"[\w.\-]+")
 
 # Ceiling on the readable part of a cache filename. The whole name has to fit
 # in NAME_MAX (255 on ext4 and APFS) *with room to spare*, because the name
-# actually created first is :func:`_atomic_write`'s temporary one, which adds
-# 38 characters. Without this cap a long identifier is not merely un-cacheable
-# — it fails a write that a bare ``write_text`` would have completed, and that
+# actually created first is :func:`~bmlib._atomic.atomic_write`'s temporary
+# one, which adds 38 characters — that helper's docstring states the same
+# figure, so a change to the temporary name's shape has to be carried here.
+# Without this cap a long identifier is not merely un-cacheable — it fails a
+# write that a bare ``write_text`` would have completed, and that
 # per-article fault then trips ``FullTextService``'s once-per-service
 # "nothing is being cached" warning, which is both untrue and permanently
 # silences the directory-wide fault the warning exists to report. 160 leaves
@@ -98,75 +101,6 @@ def _safe_filename(identifier: str) -> str:
     if _SAFE_IDENTIFIER_RE.fullmatch(identifier) and len(identifier) <= _MAX_PREFIX_CHARS:
         return identifier
     return sanitize_identifier(identifier)
-
-
-def _atomic_write(path: Path, data: bytes) -> None:
-    """Write *data* to *path* so no partial file is ever visible under it.
-
-    The bytes go to a uniquely-named temporary file beside the target — in the
-    target's own directory, so the two are always on one filesystem — and are
-    published with :func:`os.replace`, which is atomic within a filesystem.
-    A write that fails partway therefore leaves the cache untouched — either
-    the previous entry or nothing — instead of a truncated file that decodes
-    perfectly and is served as a complete article forever after.
-
-    Four details are load-bearing:
-
-    * **The fsync is not durability theatre.** Under delayed allocation the
-      ``write(2)`` that ``flush()`` issues *returns success* on a disk that is
-      about to fill; the blocks are allocated at writeback and ENOSPC is
-      reported to userspace only at ``fsync``. Without it ``os.replace``
-      publishes a file whose blocks were never written. The ``flush()`` is
-      needed too, and for a different reason: ``os.fsync`` acts on the
-      descriptor, so anything still sitting in Python's ``BufferedWriter``
-      would not be covered by it.
-    * **The temporary name carries a UUID**, and the reason is not that two
-      processes would interleave into one file — ``O_EXCL`` below already
-      prevents that. It is that the loser of that race runs the cleanup
-      handler, which would ``unlink`` the *winner's* in-flight temporary file;
-      the winner's ``os.replace`` then fails with ``FileNotFoundError`` and
-      both processes end up having cached nothing. The name is dot-prefixed so
-      a leftover from a killed process is unobtrusive;
-      :meth:`FullTextCache.clear` removes them.
-    * **The mode is 0666 filtered by the umask** — byte for byte what an
-      ordinary ``write_bytes`` requests, and deliberately not
-      :func:`tempfile.mkstemp`'s 0600. A cache directory shared between users
-      otherwise breaks silently: the second user cannot read what the first
-      cached. Requesting 0644 here would be the same bug in miniature, since
-      it drops the group-write bit that a umask of 002 grants.
-    * **The cleanup must not speak over the error it is cleaning up after.**
-      ``missing_ok=True`` covers only ``ENOENT``; an unlink that fails for any
-      other reason (a read-only mount reports ``EROFS`` before it even looks
-      the name up) would otherwise replace the original exception, and that
-      exception is what ``FullTextService`` interpolates into the one warning
-      an operator ever sees — reporting a full disk as a permissions problem.
-
-    Raises:
-        OSError: whatever the underlying write raised. :meth:`save_html` and
-            :meth:`save_pdf` propagate it; both of ``FullTextService``'s cache
-            writes already report a failed write, and a caller that cannot
-            write is better told than left believing the article was cached.
-    """
-    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    # O_BINARY is Windows-only and absent elsewhere. Without it os.open hands
-    # the flags to the CRT, which defaults to text mode, and os.fdopen(fd,
-    # "wb") cannot undo that — only io.FileIO's path-opening branch adds the
-    # flag, which is why the bare write_bytes this replaced was binary-safe.
-    # Every LF in a cached PDF would otherwise be written as CRLF.
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
-    try:
-        fd = os.open(tmp, flags, 0o666)
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            logger.debug("Could not remove the temporary cache file %s", tmp, exc_info=True)
-        raise
 
 
 def _is_readable(path: Path) -> bool:
@@ -274,7 +208,7 @@ class FullTextCache:
         """Save PDF data if it passes magic-byte validation.
 
         The file is published atomically, so a write that fails partway leaves
-        no half-written PDF behind — see :func:`_atomic_write`.
+        no half-written PDF behind — see :func:`~bmlib._atomic.atomic_write`.
 
         Returns the file path on success, or ``None`` if the data is not a
         valid PDF.
@@ -298,7 +232,7 @@ class FullTextCache:
             logger.debug("Rejected non-PDF data for %s", identifier)
             return None
         path = self._pdf_dir / f"{_safe_filename(identifier)}.pdf"
-        _atomic_write(path, data)
+        atomic_write(path, data)
         logger.info("Cached PDF for %s (%d bytes)", identifier, len(data))
         return str(path)
 
@@ -313,7 +247,7 @@ class FullTextCache:
         """Save parsed HTML full text to the cache.
 
         The file is published atomically, so a write that fails partway
-        leaves no half-written article behind — see :func:`_atomic_write`.
+        leaves no half-written article behind — see :func:`~bmlib._atomic.atomic_write`.
 
         Returns the file path.
 
@@ -325,7 +259,7 @@ class FullTextCache:
                 ``FullTextService`` catches it and reports it.
         """
         path = self._html_dir / f"{_safe_filename(identifier)}.html"
-        _atomic_write(path, html.encode("utf-8"))
+        atomic_write(path, html.encode("utf-8"))
         logger.info("Cached HTML for %s (%d chars)", identifier, len(html))
         return str(path)
 
