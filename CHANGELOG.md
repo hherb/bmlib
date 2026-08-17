@@ -6,6 +6,91 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **A default template is installed atomically, or not at all** (#73).
+  `TemplateEngine.install_defaults()` copied each default template with a
+  bare `write_text` guarded by `if not dest.exists()`. A copy interrupted
+  partway — a full disk, a killed process — left a truncated template that
+  the guard then reported as installed, so it was never repaired. Jinja2
+  renders whatever survived: a prompt missing its second half is not a
+  `TemplateNotFound`, it is a prompt that renders and is sent to a model,
+  with nothing logged and `install_defaults()` reporting success. The write
+  now goes through the temp-file + `os.replace` publish that #70 gave the
+  full-text cache, so a faulted copy publishes nothing and the next call
+  installs it — the guard itself needed no change, the write being atomic is
+  what makes it correct. Found while fixing #70 and deliberately kept
+  separate, because the fix wanted a decision rather than two lines.
+
+- **A user's symlinked template is no longer replaced by the default**
+  (#73, found in review of this change). `dest.exists()` follows symlinks,
+  so a symlink whose target is missing — a prompt kept on a volume that is
+  unmounted at startup, or in a dotfiles repo not yet cloned — reads as
+  absent, and the atomic publish replaces *the link* rather than writing
+  through it as the old `write_text` did. The user's prompt was gone, the
+  default was in its place, and the only trace was an `INFO` line
+  indistinguishable from an ordinary first install. Such a destination is
+  now skipped and reported at `WARNING`, since rendering falls back to the
+  default with the user's own version unreachable.
+
+- **A failed write names the file you asked for** (#73, found in review).
+  The failing syscall operates on the temporary file `atomic_write` stages
+  through, so `OSError.filename` named a path the caller never chose and
+  that the cleanup had already removed — and at `fsync`, the failure the
+  helper is built around, it named nothing at all. `FullTextService`
+  interpolates that exception into the one warning it emits for a failed
+  cache write, so an operator was handed a filename that was not on disk.
+  Both cases now name the target. Behaviour visible to `except OSError:` is
+  otherwise unchanged: same type, same `errno`.
+
+### Changed
+
+- **`install_defaults()` says when it installs nothing** (#73, found in
+  review). A `default_dir` that is not a directory — a typo, or a path that
+  does not exist yet — made the method a silent no-op that reported success,
+  which is the shape of the bug it exists to have fixed; it now logs a
+  `WARNING`. Having configured neither directory stays at `DEBUG`, since
+  that is a legitimate way to use the engine. Templates are also scanned in
+  sorted order now, so which of them are installed before a failure is
+  reproducible.
+
+- **A default template is now copied byte for byte** (#73). `read_text`
+  applies universal newlines and `write_text` translates back through
+  `os.linesep`, so the installed file's line endings need not have been the
+  source's — on *either* platform, wherever the default file's endings
+  differ from the platform's convention, and not on Windows alone. Since
+  bmlib ships no templates, `default_dir` is the caller's own directory and
+  may hold CRLF on a POSIX host just as easily. What this buys is fidelity
+  of the installed artefact for whatever tool opens it next; it is not a
+  claim about what reaches a model, since the loader reads every template
+  with `read_text` in any case. No stored value moves and no signature
+  changes; anyone who has already installed the defaults keeps the copies
+  they have, since an existing file is still skipped.
+
+### Internal
+
+- `_atomic_write` is promoted out of `fulltext/cache.py` into a new
+  top-level private module, `bmlib/_atomic.py`, and is now
+  `atomic_write` — the leading underscore moves to the module, matching
+  `scripts/_sampling.py`. It was promoted rather than copied because the
+  four load-bearing details in its docstring (the `fsync`, the UUID in the
+  temporary name, the 0666 mode, the guarded cleanup) were each earned by
+  #70's review, and that is exactly the knowledge that must not exist in two
+  copies free to drift. Nothing public moves and the module depends on the
+  standard library alone. Two things change for anyone reading logs: the
+  cleanup's DEBUG line now logs under `bmlib._atomic` rather than
+  `bmlib.fulltext.cache`, and its message drops the word "cache" now that
+  the helper serves two packages — so a filter keyed on either the logger
+  name or the old text needs updating.
+
+- `tests/test_atomic.py` is new. The four load-bearing details stay pinned
+  at the two call sites, where the behaviour is delivered; what the helper
+  gained a test file for is the handful of guarantees no call site can see —
+  the 38-character temporary-name overhead that `fulltext.cache`'s filename
+  cap is arithmetic over (its own test has 41 characters of slack, so it
+  cannot catch the two drifting apart), and the exception the caller gets
+  back.
+
 ## [0.10.0] — 2026-08-15
 
 **One family, seven issues: a sync day that reported success it did not

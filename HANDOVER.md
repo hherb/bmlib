@@ -1,16 +1,15 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-15. **0.10.0 is cut on `release/0.10.0` and its PR is
-open — merging it is the next task, and then three steps that are not
-automated.** After CI *and CodeQL* are green: merge with any button, tag
-`main`'s tip (the recipe under "Cutting a release" — do not tag a particular
-commit), create the GitHub release, which is **what publishes**, and then
-**stop at the `pypi` environment gate and hand it over.** Nothing before the
-tag is irreversible; everything after it is.
+_Last updated: 2026-08-16. **0.10.0 is released and on PyPI** — PR #101
+merged, `v0.10.0` tags `main`'s tip (`44e803d`), the Release workflow's
+publish job succeeded, and both artefacts are on
+`https://pypi.org/simple/bmlib/`. Nothing about the release is outstanding;
+all five version places agree and no `unreleased` markers remain outside
+`CHANGELOG.md`'s standing `## [Unreleased]` heading.
 
-**The whole day-durability family ships in this release**, closed across five
-PRs on `main` — #78 and #81 (PRs #85, #87), #88–#91 (PR #93), #95 (PR #97) and
-#98/#99 (PR #100). `sync()` writes `status='completed'` to `download_days` and
+**The whole day-durability family shipped in it**, closed across five PRs —
+#78 and #81 (PRs #85, #87), #88–#91 (PR #93), #95 (PR #97) and #98/#99 (PR
+#100). `sync()` writes `status='completed'` to `download_days` and
 `_days_needing_fetch()` does not offer that day again, so anything reporting
 success it did not have loses the day's records permanently rather than losing
 a request; seven issues were seven ways of doing exactly that. #95 is the one
@@ -20,19 +19,16 @@ ordinary run, and cost a 09:00 cron the following 15 hours of indexing.
 day is a durable claim" is the one place to read before touching a fetcher's
 page loop or `sync()`'s status handling.
 
-**0.10.0 is a minor bump on the API axis alone**, on the convention that minor
-is the breaking axis: `DownloadDay.from_dict()` raises where it defaulted
-(#98); a third-party fetcher's unrecognised status is recorded `failed`
-rather than coerced to `completed` (#89), a behaviour change at the public
-`register_source()` extension point; and `bmlib[pdf]` floors `pymupdf` at
-`>=1.28.2`. Same reasoning that renumbered 0.8.1 to 0.9.0 in review. **The
-number cannot answer the data question and here that matters**: nothing
-stored moves, but no row a previous release wrote is durable under #95's
-rule, so the **whole window is re-fetched once on the first run after
-upgrading** (29 of 29 days measured for a 30-day window, per source) —
-idempotent and self-correcting, but long for a wide window across several
-sources and capable of meeting a rate limiter. Say this to downstreams; the
-version number will not.
+**Tell downstreams what the version number cannot**: 0.10.0 is a minor bump on
+the API axis alone, and nothing stored moves — but no `download_days` row a
+previous release wrote is durable under #95's rule, so the **whole window is
+re-fetched once on the first run after upgrading** (29 of 29 days measured for
+a 30-day window, per source). Idempotent and self-correcting, but long for a
+wide window across several sources and capable of meeting a rate limiter.
+
+**Next up is either an open issue (five, all small and none blocking) or
+Phase 3 of the bmlibrarian port, whose every row needs a design conversation
+before any porting** — see "Next up".
 
 **Four review rounds in a row found the fix carrying the same shape of bug as
 the bug.** Worth carrying forward as method, not as history:
@@ -56,11 +52,35 @@ the bug.** Worth carrying forward as method, not as history:
   the whole family passed both mypy and every value check, and on both ends
   of the window failed *silently*.
 
-**#73, #86, #92, #94 and #96 are open** — five, none of them in this family's
+**#86, #92, #94 and #96 are open** — four, none of them in this family's
 critical path. #92 is the measurement the #88 fix deliberately deferred; #94
 is the bioRxiv envelope sampler the second round deferred for the same reason
 (its guard is deliberately weaker than it looks — read `docs/DECISIONS.md`
-before "simplifying" it); #96 is efetch's retstart skew.
+before "simplifying" it); #96 is efetch's retstart skew. **#73 is fixed in
+PR #102** — `install_defaults()` now writes through `atomic_write()`,
+promoted out of `fulltext/cache.py` into the new top-level private
+`bmlib/_atomic.py` because the same defect had now been found twice. That
+promotion is the thing to know going forward: **a new writer of
+user-visible files uses that helper** rather than re-deriving five
+details that each cost a review round to learn (CLAUDE.md, "A file bmlib
+writes for a user is published, never written in place").
+
+Review of that PR is worth reading before the next call site, because
+every finding was a cost of the *publish* rather than of the bug it
+fixed. `os.replace` replaces a **symlink** instead of writing through it,
+so a dangling one — a prompt on an unmounted volume — was swapped for the
+default with only an `INFO` line; `install_defaults()` now skips and warns,
+and the cache deliberately does not, for reasons in `docs/DECISIONS.md`.
+The failing syscall names the *temporary* file, which the cleanup then
+deletes, so the one warning `FullTextService` shows an operator pointed at
+a path not on disk; `atomic_write` re-points `OSError.filename` at the
+target. And two documented contracts turned out to be pinned by nothing:
+the self-repairing loop (both original tests installed a single template,
+so rolling every success back passed them) and the publish itself (with
+nothing to overwrite, an in-place write that unlinks on failure is
+indistinguishable after the fact — assert on the instant `os.replace` is
+called). `tests/test_atomic.py` is new and holds only what belongs to the
+helper rather than to either call site.
 
 On `release/0.10.0`: **2172 tests + 59 skipped** on SQLite alone, and **2229 +
 2 with a PostgreSQL DSN** (PostgreSQL 16, local), so the dual-backend half of
@@ -103,8 +123,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ## Current state
 
-- **Version 0.10.0** (cut on `release/0.10.0`; released once its PR merges and
-  the tag is pushed). Release history: 0.4.0 (2026-07-19) → 0.5.0 → 0.5.1 →
+- **Version 0.10.0, released 2026-08-15 and live on PyPI.** Release history:
+  0.4.0 (2026-07-19) → 0.5.0 → 0.5.1 →
   0.6.0 (2026-07-30) → 0.7.0 (2026-08-04) → 0.8.0 (2026-08-08) → 0.9.0
   (2026-08-10) → 0.9.1 (2026-08-13) → 0.10.0 (2026-08-15). 0.3.0 was bumped
   in-tree but never released; its changes shipped inside 0.4.0. The version
@@ -132,8 +152,12 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed six releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2172 passing + 59 skipped** (`uv run pytest tests/ -q`);
-  **2229 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 57 of the default skips
+- **Tests: 2187 passing + 59 skipped** on `fix/73-atomic-template-install`
+  (`uv run pytest tests/ -q`); 2172 on `main`, the 15 being #73's. The
+  PostgreSQL figure below was measured on 0.10.0 and has not been re-run
+  here — #73 touches `templates/`, `fulltext/cache.py` and `_atomic.py`, none
+  of which involve a database, and CI runs that half against `postgres:16`
+  regardless: **2229 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 57 of the default skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
   runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev
@@ -190,9 +214,10 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Five, every one found by review rather than by a failing test. (**#56, #68,
-#72 and #79** shipped in 0.9.1. **#78, #81, #88–#91, #95, #98 and #99** are
-all closed, merged, and shipping in 0.10.0 — PRs #85, #87, #93, #97, #100.)
+Four, every one found by review rather than by a failing test. (**#56, #68,
+#72 and #79** shipped in 0.9.1. **#78, #81, #88–#91, #95, #98 and #99**
+shipped in 0.10.0 — PRs #85, #87, #93, #97, #100. **#73** is fixed and
+awaiting review as **PR #102**.)
 
 **#94 — bioRxiv's envelope shapes are unmeasured**, filed for the reason #92
 was: the second round's guard refuses a body carrying *neither* a
@@ -226,15 +251,6 @@ past the real benign gap re-fetches that day forever; and OpenAlex is the
 expensive source to sample, at tens of thousands of works per publication
 date. Follow the `scripts/` sampler convention — offline test file, and a
 probe that could not be made never printing as a finding.
-
-**#73 — `install_defaults()` copies templates non-atomically**, found while
-fixing #70 and deliberately not folded into it. A copy interrupted partway
-leaves a truncated template that `if not dest.exists()` then skips forever, so
-a prompt missing its last half renders and is sent to a model. Milder than #70
-— one-time setup from a local file, degrading a prompt rather than fabricating
-an article — and it carries a decision: `_atomic_write` is private to
-`fulltext/cache.py`, so fixing this means either promoting it to a shared
-internal module or accepting a second copy. Worth deciding once.
 
 **#86 — `docs/manual/llm.md` documents `LLMClient.generate` and
 `LLMClient.embed` twice each**, found while updating signatures for #81 and

@@ -135,8 +135,8 @@ class TestWritesAreAtomic:
         """The PDF half needs its own content assertion, not just absence.
 
         Asserting only that no entry appears is satisfied by an ordinary
-        non-atomic write that unlinks on failure — mutation confirmed a
-        ``_atomic_write``-for-HTML-only implementation passes every other test
+        non-atomic write that unlinks on failure — mutation confirmed an
+        ``atomic_write``-for-HTML-only implementation passes every other test
         in this class. Only comparing the surviving *bytes* catches it.
         """
         cache = FullTextCache(cache_dir=tmp_path)

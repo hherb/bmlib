@@ -19,9 +19,14 @@
 Resolution order when rendering ``engine.render("scoring.txt", ...)``:
 
 1. ``<user_dir>/scoring.txt`` — user's customised version
-2. ``<default_dir>/scoring.txt`` — package-shipped default
+2. ``<default_dir>/scoring.txt`` — the caller's default
 
 This lets users override any prompt without touching installed code.
+
+Both directories are supplied by the caller. bmlib ships no templates of its
+own, so "default" here means the downstream's own prompt directory, never
+something inside this package — which is why ``install_defaults()`` treats
+line endings and file suffixes as a contract rather than as its own business.
 """
 
 from __future__ import annotations
@@ -32,6 +37,8 @@ from pathlib import Path
 from typing import Any
 
 from jinja2 import BaseLoader, Environment, TemplateNotFound
+
+from bmlib._atomic import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -102,19 +109,81 @@ class TemplateEngine:
             return False
 
     def install_defaults(self) -> None:
-        """Copy all default templates to the user directory.
+        """Copy every template in ``default_dir`` to the user directory.
 
         Skips templates that already exist in the user directory.
+
+        Each copy is published atomically, and that is what makes the skip
+        correct rather than merely well-intentioned (issue #73). A bare write
+        interrupted partway — a full disk, a killed process — leaves a
+        truncated template that ``dest.exists()`` then reports as installed,
+        so it is never repaired; Jinja2 renders whatever survived, which is
+        not a ``TemplateNotFound`` but a prompt missing its second half, sent
+        to a model with nothing logged. Writing through
+        :func:`~bmlib._atomic.atomic_write` means a faulted copy publishes
+        nothing, so the next call installs it.
+
+        **A dangling symlink is skipped, not overwritten.** ``exists()``
+        follows symlinks, so one whose target is missing reads as absent —
+        and :func:`os.replace` would then replace the link itself, where the
+        ``write_text`` this replaced wrote *through* it and raised. A user
+        who symlinks a prompt at a volume that happens to be unmounted must
+        not come back to find the link gone and the default in its place,
+        announced by nothing louder than the ``INFO`` line below. It is
+        reported at ``WARNING`` rather than skipped quietly because rendering
+        then falls back to the default with the user's own version
+        unreachable, which is the silent substitution this method exists to
+        avoid.
+
+        The copy is byte for byte. Reading text and writing it back is not a
+        copy: ``read_text`` applies universal newlines and ``write_text``
+        translates back through ``os.linesep``, so the installed file's line
+        endings need not be the default file's — on *any* platform whose
+        convention differs from the source's, not only on Windows, since
+        ``default_dir`` is the caller's directory and may hold CRLF anywhere.
+        What that buys is fidelity of the **installed artefact**, for the
+        editor or tool the user reaches for next. It is deliberately not a
+        claim about what reaches a model: :meth:`_FallbackLoader.get_source`
+        reads every template with ``read_text`` too, so Jinja2 sees ``\\n``
+        either way.
+
+        Raises:
+            OSError: from the first copy that fails, leaving the templates
+                after it uninstalled — which ones that is, is reproducible
+                only because the scan is sorted. Deliberately propagated
+                rather than collected: the next call installs whatever is
+                still missing, so the loop is self-repairing, and a caller
+                who cannot write is better told than left believing the
+                templates are there.
         """
+        # Doing nothing at all is a legitimate outcome of the first check and
+        # almost never one of the second, so they are not equally quiet. A
+        # mistyped or not-yet-created ``default_dir`` otherwise makes this
+        # method a no-op that reports success — the same shape as the bug it
+        # exists to have fixed.
         if self.user_dir is None or self.default_dir is None:
+            logger.debug("Not installing defaults: user_dir or default_dir is unset")
             return
         if not self.default_dir.is_dir():
+            logger.warning(
+                "Not installing defaults: %s is not a directory, so there are none to install",
+                self.default_dir,
+            )
             return
 
         self.user_dir.mkdir(parents=True, exist_ok=True)
-        for src in self.default_dir.iterdir():
-            if src.is_file() and src.suffix in (".txt", ".j2", ".jinja2"):
-                dest = self.user_dir / src.name
-                if not dest.exists():
-                    dest.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-                    logger.info("Installed default template: %s", dest)
+        for src in sorted(self.default_dir.iterdir()):
+            if not src.is_file() or src.suffix not in (".txt", ".j2", ".jinja2"):
+                continue
+            dest = self.user_dir / src.name
+            if dest.is_symlink() and not dest.exists():
+                logger.warning(
+                    "Not installing %s: it is a symlink and its target is missing. "
+                    "Rendering falls back to the default until that target is back.",
+                    dest,
+                )
+                continue
+            if dest.exists():
+                continue
+            atomic_write(dest, src.read_bytes())
+            logger.info("Installed default template: %s", dest)
