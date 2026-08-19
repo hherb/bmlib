@@ -1444,7 +1444,9 @@ class _FakeEUtils:
     """E-utilities as measured live on 2026-08-20 (see `docs/DECISIONS.md`).
 
     Three behaviours, none of which a `MagicMock` list of canned pages can
-    express, and all three load-bearing here:
+    express. The first two are what these tests exercise; the third is the
+    trap a regression walks into, since bmlib no longer asks a page that could
+    meet it:
 
     * ``retstart`` indexes the *session's UID list*. A page carries the
       records of the slice it names — measured by comparing a page's record
