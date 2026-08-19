@@ -112,12 +112,13 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   now missed six releases. Widening it is a downstream change, not a bmlib
   one.
 - **Tests: 2220 passing + 59 skipped** on `fix/96-efetch-paging`
-  (`uv run pytest tests/ -q`); 2187 on `main`, the 33 being this session's (10
-  in `test_pubmed_fetcher.py`, 23 in the new `test_efetch_paging_sampler.py`),
-  and 2172 at 0.10.0, the 15 before that being #73's. The PostgreSQL figure was measured on
-  0.10.0 and has not been re-run since — #73 touches `templates/`,
-  `fulltext/cache.py` and `_atomic.py`, none of which involve a database, and
-  CI runs that half against `postgres:16` regardless: **2229 + 2 with
+  (`uv run pytest tests/ -q`); 2187 on `main`, the 33 being this session's (9
+  in `test_pubmed_fetcher.py`, 24 in the new `test_efetch_paging_sampler.py`),
+  and 2172 at 0.10.0, the 15 before that being #73's. The PostgreSQL figure was
+  measured on 0.10.0 and has not been re-run since — #73 touches `templates/`,
+  `fulltext/cache.py` and `_atomic.py` and #96/#105 touch
+  `fetchers/pubmed.py` and a script, none of which reach a database, and CI
+  runs that half against `postgres:16` regardless: **2229 + 2 with
   `BMLIB_TEST_POSTGRESQL_DSN` set**. 57 of the default skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
