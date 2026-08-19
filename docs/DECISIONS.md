@@ -1176,6 +1176,72 @@ cannot honestly read. Argued inline in `publications/models.py`
   tends to test that the guard *exists*, not that it is *correctly bounded*
   or *correctly placed*.
 
+## publications — how far a PubMed history session can be walked (#96, #105)
+
+Issue #96 asked whether `fetch_pubmed`'s `range(0, count, EFETCH_PAGE_SIZE)`
+skips records: `retstart` advances by the page size *requested*, so a short
+non-empty page would seem to leave the records between what arrived and the
+next offset never asked for. It was found by reading, not reproduced, and it
+is **closed as correct** — but measuring it to answer that turned up a
+different defect at the same call site, which is #105. Both are argued inline
+in `fetchers/pubmed.py`; `scripts/sample_efetch_paging.py` is the instrument,
+and re-runs every measurement below in about 20 requests
+(`--skip-day-sizes`).
+
+- **`retstart` indexes the session's UID list, not the records delivered.**
+  Measured 2026-08-20: a page's record elements are exactly that slice of
+  esearch's own `IdList`, in document order, `<PubmedBookArticle>` entries
+  included — 50 of 50, and again 500 of 500 across a full 13-page walk of a
+  6,403-record day (6,403 delivered, 6,403 promised). So a record missing from
+  a page is a UID the server had nothing to return for, not one postponed to
+  the next page: it *was* requested. **Advancing by what arrived would be the
+  bug**, not the fix — it would re-request the tail of every short page,
+  deliver those records twice, and count the duplicates as delivery, which is
+  exactly what would hide a real shortfall from `reconcile_delivery`. Pinned
+  by `TestTheWalkIsIndexedByTheSetNotByWhatArrived`, whose two tests fail
+  against #96's proposed fix.
+- **The session serves only its first 9,999 records** (#105), and says so:
+  `retstart=9999` is HTTP 400 — *"'retstart' cannot be larger than 9998. For
+  PubMed, ESearch can only retrieve the first 9,999 records matching the
+  query. To obtain more than 9,999 PubMed records, consider using EDirect…"*.
+  The quiet half matters more: a page whose window crosses the boundary is
+  **clamped without a word** — `retstart=9500&retmax=500` returned 499 records
+  at HTTP 200. So "walk as far as the server will go" is not a safe fallback;
+  the last page it yields is indistinguishable from a day missing a record.
+- **Under `[Date - Publication]`, the field bmlib queries, that cap is not an
+  edge case — it is a second population.** A record carrying only a year and a
+  month is indexed at day 1 of that month and one carrying only a year at 1
+  January, so those days are structurally enormous. Measured 2026-08-20:
+  **0 of 58 ordinary days** were over the cap (median 4,890, max 8,150) and
+  **16 of 16 month firsts and 1 Januarys** were (median 73,266, max 315,282 —
+  month firsts 49,543–90,571, 1 January 212,439–315,282). A 60-day sync window
+  meets 2. Measuring `[EDAT]` instead gives 4 of 120 days, none above 12,096:
+  the wrong field understates the magnitude 25-fold and attributes to load
+  spikes what the indexing convention does. Worth stating because that is the
+  reading a reader reproduces if they sample the field the *name* suggests.
+- **An over-cap day is refused before a single record is fetched.** It cannot
+  be `completed` — that would durably lose the remainder, which is the whole
+  point of the family above — so it is `failed`, and a failed day is re-offered
+  on *every* later run. That makes the only real question what the doomed run
+  costs. Walking first would buy the first 9,999 records once and then
+  re-fetch them forever: a six-year backfill carries some 72 structural days,
+  ~3 GB per run, storing nothing new. Refusing costs one esearch. The
+  trade-off is deliberate and was the maintainer's call: **until #105 lands,
+  those days have no records at all rather than a fifth of one**, and "no
+  publication is missed" is what #105 restores by partitioning an over-cap day
+  into sub-queries that each fit.
+- **Before this, the day failed anyway — inscrutably.** The walk asked for
+  record 10,000, `raise_for_status()` fired on the 400 before the body was
+  read, and the day failed with `Client error '400 Bad Request'`: the right
+  verdict, reached after twenty pointless requests, naming neither the cause
+  nor the remedy. So this change moves no day from success to failure; #105 is
+  what moves them the other way.
+- **The cap is a hard-coded 9,999 and that is a cost, not an oversight.** If
+  NCBI raises it, bmlib refuses days it could now fetch — loudly, in an ERROR
+  naming the cap, which is why it is acceptable; if NCBI lowers it, the 400
+  still fires and the day still fails. Re-run the sampler before touching the
+  constant: it reports agreement or `DISAGREES` against the live backend.
+
 ## publications — retractions
 
 - **`bmlib.publications.retractions` has no downloader** (the Crossref

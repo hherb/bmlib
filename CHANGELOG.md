@@ -8,6 +8,27 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A PubMed day larger than 9,999 records is refused, not walked into a wall**
+  (#105, found measuring #96). NCBI's search backend serves only the first
+  9,999 records of a history session — `retstart=9999` is HTTP 400, and a page
+  whose window crosses the boundary is *silently* clamped to it
+  (`retstart=9500&retmax=500` → 499 records at HTTP 200). `fetch_pubmed` used
+  to page on regardless, ask for record 10,000, and fail the day with
+  `Client error '400 Bad Request'` after twenty pointless requests, naming
+  neither the cause nor the remedy. It now refuses the day as soon as ESearch
+  reports the count, with an error saying how many records are out of reach.
+  This is not an edge case in the field bmlib queries: measured 2026-08-20,
+  every first-of-month `[Date - Publication]` day holds 49,543–90,571 records
+  (a record carrying only a year and month is indexed at day 1) and every
+  1 January holds 212,439–315,282, against a median ordinary day of 4,890. The
+  day is still `failed` and still re-offered on every run — it cannot be
+  completed through this route, and recording it `completed` would durably
+  lose the remainder. **Nothing is fetched for such a day in the meantime**, on
+  purpose: storing the reachable fifth once and re-fetching it forever costs
+  ~3 GB per run across a six-year backfill and stores nothing new. Issue #105
+  is what makes those days fetchable, by partitioning them into sub-queries
+  that fit.
+
 - **A default template is installed atomically, or not at all** (#73).
   `TemplateEngine.install_defaults()` copied each default template with a
   bare `write_text` guarded by `if not dest.exists()`. A copy interrupted
@@ -43,7 +64,29 @@ All notable changes to bmlib are documented here. The format is based on
   Both cases now name the target. Behaviour visible to `except OSError:` is
   otherwise unchanged: same type, same `errno`.
 
+### Added
+
+- **`scripts/sample_efetch_paging.py`** — the instrument behind
+  `EFETCH_MAX_RETRIEVABLE` and the fixed stride. Binary-searches the live
+  backend for the largest `retstart` it serves, checks whether the straddling
+  page is still clamped silently, compares a page's record elements against
+  the session's own UID list, and sizes `[Date - Publication]` days against
+  the cap. Run it before changing the constant or the page walk. Offline
+  coverage in `tests/test_efetch_paging_sampler.py`, in the convention the
+  other samplers follow: a probe that could not be made never prints as a
+  finding — sharper here, since the measurement itself arrives as an HTTP 400.
+
 ### Changed
+
+- **The PubMed page walk's fixed stride is now documented and pinned** (#96,
+  closed as correct). `retstart` indexes the *session's UID list*, not the
+  records delivered so far: measured against esearch's own `IdList`, a page's
+  record elements are exactly the slice it named, in order. So a record
+  missing from a page was requested and not returned, not postponed — and
+  advancing by what arrived, as #96 proposed, would re-request the tail of
+  every short page, deliver those records twice and count the duplicates as
+  delivery, hiding a real shortfall from `reconcile_delivery`. No behaviour
+  change; two tests now fail against that "fix".
 
 - **`install_defaults()` says when it installs nothing** (#73, found in
   review). A `default_dir` that is not a directory — a typo, or a path that

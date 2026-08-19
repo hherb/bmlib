@@ -1,119 +1,78 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-16. **0.10.0 is released and on PyPI** — PR #101
-merged, `v0.10.0` tags `main`'s tip (`44e803d`), the Release workflow's
-publish job succeeded, and both artefacts are on
-`https://pypi.org/simple/bmlib/`. Nothing about the release is outstanding;
-all five version places agree and no `unreleased` markers remain outside
-`CHANGELOG.md`'s standing `## [Unreleased]` heading.
+_Last updated: 2026-08-20. **0.10.0 is released and on PyPI**; two changes sit
+on `main` unreleased (#73's atomic template install, PR #102) and on this
+branch (#96/#105, below). All five version places agree.
 
-**The whole day-durability family shipped in it**, closed across five PRs —
-#78 and #81 (PRs #85, #87), #88–#91 (PR #93), #95 (PR #97) and #98/#99 (PR
-#100). `sync()` writes `status='completed'` to `download_days` and
-`_days_needing_fetch()` does not offer that day again, so anything reporting
-success it did not have loses the day's records permanently rather than losing
-a request; seven issues were seven ways of doing exactly that. #95 is the one
-worth remembering — it needed no API malfunction at all, fired on every
-ordinary run, and cost a 09:00 cron the following 15 hours of indexing.
-`docs/DECISIONS.md` has the rules and their costs; `CLAUDE.md`'s "A completed
-day is a durable claim" is the one place to read before touching a fetcher's
-page loop or `sync()`'s status handling.
+**This session closed #96 and found #105 doing it.** #96 asked whether
+`fetch_pubmed`'s fixed-stride page walk skips records. Measured against the
+live API, it does not — `retstart` indexes the session's UID list, so a page's
+record elements are exactly the slice it named, and **the fix the issue
+proposed would have been the defect**: advancing by what arrived re-requests
+the tail of every short page and counts the duplicates as delivery, which is
+what would hide a real shortfall from `reconcile_delivery`.
+
+The same probes found that NCBI's backend serves only the **first 9,999
+records of a history session** — `retstart=9999` is HTTP 400, and a page
+crossing the boundary is clamped to it *silently* (499 records at HTTP 200,
+no notice). Under `[Date - Publication]`, the field bmlib queries, that is a
+second population rather than a tail: **0 of 58 ordinary days are over the
+cap, 16 of 16 month firsts and 1 Januarys are**, up to 315,282 records,
+because a record carrying only a year and a month is indexed at day 1 of it.
+Such a day is now refused on ESearch's count — it was already failing, on an
+inscrutable `400 Bad Request` twenty requests later — and **nothing is fetched
+for it**, the maintainer's call: storing the reachable fifth once would
+re-fetch it forever, ~3 GB a run across a six-year backfill. **That is
+containment, not a fix. #105 is the fix**, and until it lands "no publication
+is missed" is false — roughly one unfetchable day a month, plus a very large
+one a year.
+
+Three method lessons from it, all cheap to repeat:
+
+- **Measure the field the code queries, not the one the concept suggests.**
+  Sampling `[EDAT]` gives 4 of 120 days over the cap, none above 12,096 — a
+  reassuring number, off by 25× in magnitude, that blames load spikes for what
+  the indexing convention does. bmlib queries `[Date - Publication]`.
+- **An issue's proposed fix is a hypothesis, not a spec.** #96's was
+  plausible, would have passed review, and is now pinned against by two tests.
+- **Ask the live API where its limits are before hard-coding one.** Both
+  halves of this limit were undocumented in NCBI's parameter tables and are
+  stated only in the error body — including the silent clamp, which no
+  documentation mentions at all.
+
+`scripts/sample_efetch_paging.py` re-runs every measurement above in about 20
+requests (`--skip-day-sizes`), and reports `agrees`/`DISAGREES` against
+`EFETCH_MAX_RETRIEVABLE`. Run it before touching that constant or the page
+walk.
+
+**Before that, #73 shipped to `main` in PR #102** (merged 2026-08-16,
+unreleased): `install_defaults()` writes through `atomic_write()`, promoted
+out of `fulltext/cache.py` into the new top-level private `bmlib/_atomic.py`
+because the same defect had been found twice. **A new writer of user-visible
+files uses that helper** rather than re-deriving five details that each cost a
+review round (CLAUDE.md, "A file bmlib writes for a user is published, never
+written in place"). Its review is worth reading before the next call site:
+every finding was a cost of the *publish* rather than of the bug it fixed —
+`os.replace` swaps a dangling symlink instead of writing through it, the
+failing syscall names the temporary file the cleanup then deletes, and two
+documented contracts turned out to be pinned by nothing. That last one
+generalises: **test a new call site for the publish, not just for the
+tidy-up** — with nothing to overwrite, an in-place write that unlinks on
+failure is indistinguishable after the fact, so assert on the instant
+`os.replace` is called.
 
 **Tell downstreams what the version number cannot**: 0.10.0 is a minor bump on
-the API axis alone, and nothing stored moves — but no `download_days` row a
+the API axis alone and nothing stored moves — but no `download_days` row a
 previous release wrote is durable under #95's rule, so the **whole window is
 re-fetched once on the first run after upgrading** (29 of 29 days measured for
 a 30-day window, per source). Idempotent and self-correcting, but long for a
-wide window across several sources and capable of meeting a rate limiter.
+wide window and capable of meeting a rate limiter. When the next release is
+cut, #105's refusal joins that list: a PubMed backfill will report one failed
+day a month that earlier releases failed just as surely, but less legibly.
 
-**Next up is either an open issue (five, all small and none blocking) or
-Phase 3 of the bmlibrarian port, whose every row needs a design conversation
-before any porting** — see "Next up".
-
-**Four review rounds in a row found the fix carrying the same shape of bug as
-the bug.** Worth carrying forward as method, not as history:
-
-- **When a guard is opt-in, audit every call site, not the module.** A rule
-  extracted into a shared module is not thereby applied — `stalled` defaults
-  to the value that *disables* it, and OpenAlex simply never passed it.
-- **A rule that selects over a *range* needs a test whose range has more than
-  one answer in it.** Judging every day against `date_from` instead of
-  `current` survived the entire suite, because all eleven of that rule's tests
-  used a one-day window — and it silently reintroduced #95 for any cron after
-  12:00 UTC.
-- **A doc claiming one test is the sole pin for something must be checked
-  against its neighbours.** The first replacement multi-day test landed on the
-  boundary instant and quietly made that claim false a second time, caught
-  only by re-running the mutation.
-- **A guard that is loud about what it cannot parse can still be silent about
-  what cannot be true.** A `downloaded_at` in the future read as durable.
-- **A guard that checks values is blind to a wrong type that the type checker
-  accepts.** `datetime` subclasses `date`, so the likeliest caller slip in
-  the whole family passed both mypy and every value check, and on both ends
-  of the window failed *silently*.
-
-**#86, #92, #94 and #96 are open** — four, none of them in this family's
-critical path. #92 is the measurement the #88 fix deliberately deferred; #94
-is the bioRxiv envelope sampler the second round deferred for the same reason
-(its guard is deliberately weaker than it looks — read `docs/DECISIONS.md`
-before "simplifying" it); #96 is efetch's retstart skew. **#73 is fixed in
-PR #102** — `install_defaults()` now writes through `atomic_write()`,
-promoted out of `fulltext/cache.py` into the new top-level private
-`bmlib/_atomic.py` because the same defect had now been found twice. That
-promotion is the thing to know going forward: **a new writer of
-user-visible files uses that helper** rather than re-deriving five
-details that each cost a review round to learn (CLAUDE.md, "A file bmlib
-writes for a user is published, never written in place").
-
-Review of that PR is worth reading before the next call site, because
-every finding was a cost of the *publish* rather than of the bug it
-fixed. `os.replace` replaces a **symlink** instead of writing through it,
-so a dangling one — a prompt on an unmounted volume — was swapped for the
-default with only an `INFO` line; `install_defaults()` now skips and warns,
-and the cache deliberately does not, for reasons in `docs/DECISIONS.md`.
-The failing syscall names the *temporary* file, which the cleanup then
-deletes, so the one warning `FullTextService` shows an operator pointed at
-a path not on disk; `atomic_write` re-points `OSError.filename` at the
-target. And two documented contracts turned out to be pinned by nothing:
-the self-repairing loop (both original tests installed a single template,
-so rolling every success back passed them) and the publish itself (with
-nothing to overwrite, an in-place write that unlinks on failure is
-indistinguishable after the fact — assert on the instant `os.replace` is
-called). `tests/test_atomic.py` is new and holds only what belongs to the
-helper rather than to either call site.
-
-On `release/0.10.0`: **2172 tests + 59 skipped** on SQLite alone, and **2229 +
-2 with a PostgreSQL DSN** (PostgreSQL 16, local), so the dual-backend half of
-`test_backends.py` actually ran. ruff 0.15.20 and `uv run mypy` both clean.
-`release.yml`'s own gates were rehearsed locally before the PR was opened —
-`uv build`, `twine check --strict` on both artefacts, `bmlib/py.typed` present
-in the wheel, and the wheel installed into a venv holding only jinja2 and
-probed **one fresh interpreter per module: 71 importable, 0 not**. Rehearsing
-is the whole point: those gates run in CI only *after* the release is public
-and the version is burned.
-
-**The mutation lesson from that review is the one to carry forward.** The
-first round reported 7 of 7 caught and the count was honest, but the set was
-chosen from the same mental model as the code, so it contained no
-boundary-shift and no call-relocation mutant. Consequently the `recheck_days`
-bound was pinned only as "somewhere below a billion" — every value between
-the real bound (~739,842) and `10**9` was indistinguishable, including one
-that accepts a value which really does overflow — nothing pinned `date.max -
-1 day` as *accepted*, and moving `_validate_window` below the `httpx.Client`
-build passed the entire suite, though the client is built *outside* the `try`
-whose `finally` closes it. **A mutation set written by the author of a guard
-tends to test that the guard exists, not that it is correctly bounded or
-correctly placed.** Mutate the boundary by one in both directions, and move
-the call.
-
-**One documentation drift was found cutting this release and is fixed here:
-the version lives in *five* places, not four.** `docs/manual/index.md`'s
-header line carries it too, and because no list named it, it sat at 0.4.0
-through five releases until 0.9.1 caught it by accident. `release.yml` checks
-only `bmlib.__version__` against the tag, so nothing but the list guards the
-other four. **After the release, Phase 3 of the bmlibrarian port is next, and
-each of its rows needs a design conversation before any porting** — see "Next
-up"._
+**Next up is an open issue — #105 is the substantial one and needs a design
+conversation — or Phase 3 of the bmlibrarian port, whose every row needs one
+too.** See "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -152,12 +111,14 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed six releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2187 passing + 59 skipped** on `fix/73-atomic-template-install`
-  (`uv run pytest tests/ -q`); 2172 on `main`, the 15 being #73's. The
-  PostgreSQL figure below was measured on 0.10.0 and has not been re-run
-  here — #73 touches `templates/`, `fulltext/cache.py` and `_atomic.py`, none
-  of which involve a database, and CI runs that half against `postgres:16`
-  regardless: **2229 + 2 with `BMLIB_TEST_POSTGRESQL_DSN` set**. 57 of the default skips
+- **Tests: 2220 passing + 59 skipped** on `fix/96-efetch-paging`
+  (`uv run pytest tests/ -q`); 2187 on `main`, the 33 being this session's (10
+  in `test_pubmed_fetcher.py`, 23 in the new `test_efetch_paging_sampler.py`),
+  and 2172 at 0.10.0, the 15 before that being #73's. The PostgreSQL figure was measured on
+  0.10.0 and has not been re-run since — #73 touches `templates/`,
+  `fulltext/cache.py` and `_atomic.py`, none of which involve a database, and
+  CI runs that half against `postgres:16` regardless: **2229 + 2 with
+  `BMLIB_TEST_POSTGRESQL_DSN` set**. 57 of the default skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
   runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev
@@ -214,10 +175,39 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Four, every one found by review rather than by a failing test. (**#56, #68,
-#72 and #79** shipped in 0.9.1. **#78, #81, #88–#91, #95, #98 and #99**
-shipped in 0.10.0 — PRs #85, #87, #93, #97, #100. **#73** is fixed and
-awaiting review as **PR #102**.)
+Five, every one found by review or measurement rather than by a failing test.
+(**#56, #68, #72 and #79** shipped in 0.9.1. **#78, #81, #88–#91, #95, #98 and
+#99** shipped in 0.10.0 — PRs #85, #87, #93, #97, #100. **#73** is on `main`
+unreleased, in **PR #102**, whose own review filed **#103**. **#96** closes
+with this session's PR, as correct rather than as fixed.)
+
+**#105 — a PubMed day over 9,999 records cannot be fetched at all**, filed
+with the containment rather than after it. NCBI serves only the first 9,999
+records of a history session, and neither ESearch nor EFetch will page past
+that depth, so the day has to be **partitioned into sub-queries that each
+fit** — any predicate P splits it into `AND P` / `NOT P`, disjoint and
+covering, so the mechanism is a recursion over a facet ladder. Four things
+whoever takes it should settle by measurement, not by eye: which facets (a 1
+January day is 30× the cap, so a two-way split is nowhere near enough);
+what happens when the ladder is exhausted and a part is still over (failing
+the day keeps today's behaviour as the floor); how the parts reconcile
+against the day's own count rather than each against its own; and whether the
+daily-update FTP baseline files are simply the better route for bulk
+backfill. `scripts/sample_efetch_paging.py` sizes days and would want a mode
+that sizes a partition. **This is the one open issue that loses records**, so
+it outranks the other four.
+
+**#103 — `install_defaults()` reserves no `NAME_MAX` headroom for the
+temporary name.** `atomic_write()` stages through a name 38 characters longer
+than the target's and tells callers to leave room for it;
+`fulltext/cache.py` does (`_MAX_PREFIX_CHARS`), `templates/engine.py` passes
+the source filename through verbatim, so a default template named beyond
+~217 characters now fails with `ENAMETOOLONG` where the old `write_text`
+succeeded. Left alone deliberately: those names come from the caller's own
+source tree rather than from unbounded input, and the failure is loud and
+immediate rather than silent and permanent. The issue's own recommendation is
+to say so in the docstring, not to cap — capping would rename a caller's
+template and `render("<name>")` would then not find it.
 
 **#94 — bioRxiv's envelope shapes are unmeasured**, filed for the reason #92
 was: the second round's guard refuses a body carrying *neither* a
@@ -232,13 +222,6 @@ vocabulary. **Do not tighten the guard without running it**, and note that
 the tests deliberately pin *both* possible quiet-day shapes so the guard
 cannot come to depend on the unmeasured answer.
 
-**#96 — efetch paging advances by the page size requested, not delivered.**
-Found by reading, not reproduced: a short non-empty page would leave the
-records between what arrived and the next `retstart` never requested, and
-uniform half-pages land on exactly the exclusive floor and complete. The
-first task is establishing whether efetch can do that at all; if it cannot,
-the outcome is a line in `docs/DECISIONS.md`, not code.
-
 **#92 — the shortfall floor is unmeasured**, filed as part of the #88 fix
 rather than after it, so that the one guessed constant in that change is on
 the record. `SHORTFALL_FAILURE_RATIO = 0.5` decides when a page walk that
@@ -250,7 +233,10 @@ it: a `failed` day is re-offered on **every** later run, so a floor tightened
 past the real benign gap re-fetches that day forever; and OpenAlex is the
 expensive source to sample, at tens of thousands of works per publication
 date. Follow the `scripts/` sampler convention — offline test file, and a
-probe that could not be made never printing as a finding.
+probe that could not be made never printing as a finding. One input from
+#96's measurement: efetch cannot itself produce the uniform-half-pages case
+this floor was worried about — a page is the slice it named or it is refused —
+so whatever the sample shows, it will not be that.
 
 **#86 — `docs/manual/llm.md` documents `LLMClient.generate` and
 `LLMClient.embed` twice each**, found while updating signatures for #81 and
