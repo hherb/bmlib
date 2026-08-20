@@ -9,6 +9,10 @@
       <article-id pub-id-type="doi">10.1234/jbr.2024.001</article-id>
       <article-id pub-id-type="pmc">PMC7614751</article-id>
       <article-id pub-id-type="pmid">34567890</article-id>
+      <!-- SAGE and others stamp a filename-form copy of the DOI here, after
+           the real one.  Kept in the shared fixture so the whole retrieval
+           chain, not just the parser's own tests, carries the shape. -->
+      <article-id pub-id-type="publisher-id">10.1234_jbr.2024.001</article-id>
       <article-title>Effects of Novel Compound X on Cellular Apoptosis in Human Cancer Cell Lines</article-title>
       <contrib-group>
         <contrib contrib-type="author">
