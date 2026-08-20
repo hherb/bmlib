@@ -644,6 +644,81 @@ def _efetch_page(
     )
 
 
+class _WalkOutcome(NamedTuple):
+    """What one history session's page walk produced."""
+
+    processed: int
+    """Records parsed and handed to ``on_record``."""
+
+    delivered: int
+    """Record elements the server handed over — never ``processed``."""
+
+    stalled: bool
+    """A page delivered nothing while *promised* was still unmet."""
+
+    error: str | None
+    """Set when a page raised; the walk stops and the caller fails the day."""
+
+
+def _walk_session(
+    client: Any,
+    web_env: str,
+    query_key: str,
+    promised: int,
+    *,
+    on_record: Callable[[FetchedRecord], None],
+    api_key: str | None,
+    rate_limit: float,
+    on_page: Callable[[int], None] | None = None,
+) -> _WalkOutcome:
+    """Walk one history session's pages, parsing every article into *on_record*.
+
+    ``retstart`` indexes the *session's UID list*, not the records delivered so
+    far: page k covers the UIDs at [k·EFETCH_PAGE_SIZE, (k+1)·EFETCH_PAGE_SIZE)
+    whether or not every one of them yields a record — named for the constant
+    that actually strides, since the claim holds only while the walk's step
+    and `_efetch_page`'s `retmax` stay equal. Measured 2026-08-20 (issue #96): a
+    page's record elements are exactly that slice of esearch's own
+    `IdList`, in order, `<PubmedBookArticle>` entries included. So the
+    stride stays `EFETCH_PAGE_SIZE`. Advancing by what arrived — the fix
+    #96 proposed — would re-request the tail of every short page, deliver
+    those records twice, and count the duplicates as delivery, which is
+    precisely what would hide a real shortfall from `reconcile_delivery`.
+
+    *on_page* is called with the running processed count after each page, for
+    progress reporting; it is not called after a stalled or failed page.
+    """
+    processed = 0
+    delivered = 0
+    for retstart in range(0, promised, EFETCH_PAGE_SIZE):
+        try:
+            page = _efetch_page(client, web_env, query_key, retstart, api_key)
+        except Exception as exc:
+            logger.error("efetch failed at retstart=%d: %s: %s", retstart, type(exc).__name__, exc)
+            return _WalkOutcome(processed, delivered, False, f"{type(exc).__name__}: {exc}")
+
+        delivered += page.delivered
+        for article_el in page.articles:
+            on_record(_parse_article_xml(article_el))
+            processed += 1
+
+        if page.delivered == 0:
+            # The session holds `promised` UIDs, so an empty page before the
+            # walk is done means it stopped serving them. Paging on costs a
+            # request per remaining page and returns nothing — up to 9 of
+            # them on the 5,000-record day measured for #88, which is 10
+            # pages of 500.
+            return _WalkOutcome(processed, delivered, True, None)
+
+        if on_page is not None:
+            on_page(processed)
+
+        if retstart + EFETCH_PAGE_SIZE < promised:
+            time.sleep(rate_limit)
+
+    return _WalkOutcome(processed, delivered, False, None)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -759,70 +834,45 @@ def fetch_pubmed(
 
     logger.info("PubMed esearch: %d records for %s", count, date_str)
 
-    # `retstart` indexes the *session's UID list*, not the records delivered so
-    # far: page k covers the UIDs at [k·EFETCH_PAGE_SIZE, (k+1)·EFETCH_PAGE_SIZE)
-    # whether or not every one of them yields a record — named for the constant
-    # that actually strides, since the claim holds only while the walk's step
-    # and `_efetch_page`'s `retmax` stay equal. Measured 2026-08-20 (issue #96): a
-    # page's record elements are exactly that slice of esearch's own
-    # `IdList`, in order, `<PubmedBookArticle>` entries included. So the
-    # stride stays `EFETCH_PAGE_SIZE`. Advancing by what arrived — the fix
-    # #96 proposed — would re-request the tail of every short page, deliver
-    # those records twice, and count the duplicates as delivery, which is
-    # precisely what would hide a real shortfall from `reconcile_delivery`.
-
-    records_processed = 0
-    records_delivered = 0
-    stalled = False
-    for retstart in range(0, count, EFETCH_PAGE_SIZE):
-        try:
-            articles, delivered = _efetch_page(client, web_env, query_key, retstart, api_key)
-        except Exception as exc:
-            logger.error("efetch failed at retstart=%d: %s: %s", retstart, type(exc).__name__, exc)
-            return FetchResult(
-                source="pubmed",
-                date=date_str,
-                record_count=records_processed,
-                status="failed",
-                error=f"{type(exc).__name__}: {exc}",
-            )
-
-        records_delivered += delivered
-        for article_el in articles:
-            record = _parse_article_xml(article_el)
-            on_record(record)
-            records_processed += 1
-
-        if delivered == 0:
-            # The session holds `count` UIDs, so an empty page before the walk
-            # is done means it stopped serving them. Paging on costs a request
-            # per remaining page and returns nothing — up to 9 of them on the
-            # 5,000-record day measured for #88, which is 10 pages of 500.
-            stalled = True
-            break
-
+    def _report(processed: int) -> None:
         if on_progress is not None:
             on_progress(
                 SyncProgress(
                     source="pubmed",
                     date=date_str,
-                    records_processed=records_processed,
+                    records_processed=processed,
                     records_total=count,
                     status="in_progress",
-                    message=f"Fetched {records_processed}/{count} records",
+                    message=f"Fetched {processed}/{count} records",
                 )
             )
 
-        # Rate-limit between pages (skip after the last page)
-        if retstart + EFETCH_PAGE_SIZE < count:
-            time.sleep(rate_limit)
+    outcome = _walk_session(
+        client,
+        web_env,
+        query_key,
+        count,
+        on_record=on_record,
+        api_key=api_key,
+        rate_limit=rate_limit,
+        on_page=_report,
+    )
+    records_processed = outcome.processed
+    if outcome.error is not None:
+        return FetchResult(
+            source="pubmed",
+            date=date_str,
+            record_count=records_processed,
+            status="failed",
+            error=outcome.error,
+        )
 
     verdict = reconcile_delivery(
         "pubmed",
         date_str,
-        delivered=records_delivered,
+        delivered=outcome.delivered,
         promised=count,
-        stalled=stalled,
+        stalled=outcome.stalled,
     )
     if verdict.failure is not None:
         return FetchResult(

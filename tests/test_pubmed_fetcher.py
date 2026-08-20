@@ -1708,3 +1708,57 @@ class TestTheSearchTermIsBuiltSeparately:
         _esearch(client, "SOME TERM", None, usehistory=False)
 
         assert "usehistory" not in client.get.call_args.kwargs["params"]
+
+
+# ---------------------------------------------------------------------------
+# The page walk is shared between a whole day and a sub-query (issue #105 prep)
+# ---------------------------------------------------------------------------
+
+
+class TestTheWalkIsSharedBetweenWholeDaysAndParts:
+    """One loop, so the stride and the stall rule cannot drift apart."""
+
+    def test_walk_reports_processed_delivered_and_no_stall(self):
+        from bmlib.publications.fetchers.pubmed import _walk_session
+
+        client = MagicMock()
+        response = MagicMock()
+        response.text = _make_efetch_xml(FULL_ARTICLE_XML, MINIMAL_ARTICLE_XML)
+        client.get.return_value = response
+        records = []
+
+        outcome = _walk_session(
+            client, "WE", "1", 2, on_record=records.append, api_key=None, rate_limit=0.0
+        )
+
+        assert (outcome.processed, outcome.delivered, outcome.stalled) == (2, 2, False)
+        assert outcome.error is None
+        assert len(records) == 2
+
+    def test_an_empty_page_before_the_promise_is_met_is_a_stall(self):
+        from bmlib.publications.fetchers.pubmed import _walk_session
+
+        client = MagicMock()
+        response = MagicMock()
+        response.text = _make_efetch_xml()
+        client.get.return_value = response
+
+        outcome = _walk_session(
+            client, "WE", "1", 5000, on_record=lambda r: None, api_key=None, rate_limit=0.0
+        )
+
+        assert outcome.stalled is True
+        assert outcome.delivered == 0
+
+    def test_a_failing_page_returns_an_error_rather_than_raising(self):
+        from bmlib.publications.fetchers.pubmed import _walk_session
+
+        client = MagicMock()
+        client.get.side_effect = RuntimeError("connection reset")
+
+        outcome = _walk_session(
+            client, "WE", "1", 10, on_record=lambda r: None, api_key=None, rate_limit=0.0
+        )
+
+        assert outcome.error is not None
+        assert "connection reset" in outcome.error
