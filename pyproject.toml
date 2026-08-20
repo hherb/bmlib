@@ -76,7 +76,7 @@ pdf = ["pymupdf>=1.28.2"]
 # `types-psycopg2` supplies the only stubs bmlib needs from typeshed; every
 # other extra carries its own marker, which is why mypy must run in an
 # environment that actually has the extras installed.
-dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy==2.3.0", "types-psycopg2"]
+dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy==2.3.1", "types-psycopg2"]
 # `all` deliberately excludes `dev`: it is what a consumer installs to get
 # every runtime feature, and it should not drag pytest and ruff into their
 # environment. For a full development install use `.[all,dev]`.
