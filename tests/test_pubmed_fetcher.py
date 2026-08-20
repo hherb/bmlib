@@ -1412,3 +1412,260 @@ class TestTheWalkIsReconciledAgainstTheCount:
         assert result.status == "completed"
         assert result.error is None
         assert result.record_count == 2
+
+
+# ---------------------------------------------------------------------------
+# What indexes the walk, and where PubMed stops serving a session
+# ---------------------------------------------------------------------------
+
+
+def _tiny_article(pmid: int) -> str:
+    """The smallest record `_parse_article_xml` reads, for pages counted in thousands."""
+    return (
+        f"<PubmedArticle><MedlineCitation><PMID>{pmid}</PMID>"
+        f"<Article><ArticleTitle>Record {pmid}</ArticleTitle></Article>"
+        f"</MedlineCitation></PubmedArticle>"
+    )
+
+
+class _FakeResponse:
+    """Only what the fetcher touches: `.text` and `.raise_for_status()`."""
+
+    def __init__(self, text: str, status_code: int = 200) -> None:
+        self.text = text
+        self.status_code = status_code
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+class _FakeEUtils:
+    """E-utilities as measured live on 2026-08-20 (see `docs/DECISIONS.md`).
+
+    Three behaviours, none of which a `MagicMock` list of canned pages can
+    express. The first two are what these tests exercise; the third is the
+    trap a regression walks into, since bmlib no longer asks a page that could
+    meet it:
+
+    * ``retstart`` indexes the *session's UID list*. A page carries the
+      records of the slice it names — measured by comparing a page's record
+      elements against esearch's own ``IdList``, which matched in order,
+      ``<PubmedBookArticle>`` entries included.
+    * The search backend refuses ``retstart`` above 9,998 with **HTTP 400**,
+      not with an empty page: *"'retstart' cannot be larger than 9998. For
+      PubMed, ESearch can only retrieve the first 9,999 records matching the
+      query."*
+    * A page whose window crosses record 9,999 is **silently clamped** to it —
+      ``retstart=9500&retmax=500`` delivered 499 records, HTTP 200, no notice.
+
+    *absent* names indexes whose UID yields no record element, which is the
+    only way a page below the cap comes back short. That is the case
+    delivery-driven paging would get wrong, so it is the case the stride is
+    pinned against.
+    """
+
+    # Deliberately an independent literal, not `EFETCH_MAX_RETRIEVABLE - 1`: a
+    # fake that moves with the constant under test can only ever confirm it,
+    # and the cap±1 mutants die precisely because this does not move. Same rule
+    # `sample_pdf_metadata_titles.py` follows in declining to import
+    # `_titles.normalise`. Do not "deduplicate" these.
+    MAX_RETSTART = 9998
+
+    def __init__(self, count: int, *, absent: frozenset[int] = frozenset()) -> None:
+        self.count = count
+        self.absent = absent
+        self.calls: list[dict] = []
+
+    def get(self, url: str, params: dict | None = None) -> _FakeResponse:
+        params = dict(params or {})
+        self.calls.append(params)
+        if url == ESEARCH_URL:
+            return _FakeResponse(_make_esearch_xml(self.count))
+        retstart, retmax = int(params["retstart"]), int(params["retmax"])
+        if retstart > self.MAX_RETSTART:
+            return _FakeResponse(
+                "<eFetchResult><ERROR>Search backend cannot retrieve history data."
+                " Reason: Exception: 'retstart' cannot be larger than 9998.</ERROR>"
+                "</eFetchResult>",
+                status_code=400,
+            )
+        end = min(retstart + retmax, self.count, self.MAX_RETSTART + 1)
+        body = "".join(
+            _tiny_article(1000 + i) for i in range(retstart, end) if i not in self.absent
+        )
+        return _FakeResponse(f"<PubmedArticleSet>{body}</PubmedArticleSet>")
+
+    @property
+    def pages(self) -> list[dict]:
+        """The efetch calls, in order."""
+        return [c for c in self.calls if "retstart" in c]
+
+
+class TestTheWalkIsIndexedByTheSetNotByWhatArrived:
+    """Issue #96 — `retstart` offsets the UID list, so the stride is fixed.
+
+    The concern #96 raised was that `range(0, count, EFETCH_PAGE_SIZE)` asks
+    for records 0-499, 500-999, … whatever the previous page returned, so a
+    short non-empty page would leave records never requested. Measuring the
+    live API answered it the other way: the records between what arrived and
+    the next offset *were* requested — they are UIDs the server had nothing to
+    return for — and advancing by what arrived would re-request the tail of
+    every short page instead, delivering duplicates and counting them as
+    delivery, which is what would hide a real shortfall from
+    `reconcile_delivery`.
+    """
+
+    def test_a_short_page_does_not_shift_the_following_offset(self):
+        """Two absent records on page 1; page 2 still starts at 500."""
+        client = _FakeEUtils(1500, absent=frozenset({3, 400}))
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 15), on_record=MagicMock())
+
+        assert [page["retstart"] for page in client.pages] == [0, 500, 1000]
+        assert result.status == "completed"
+
+    def test_a_short_page_is_not_re_requested(self):
+        """Every record arrives exactly once — the duplicate-delivery guard."""
+        client = _FakeEUtils(1500, absent=frozenset({3, 400}))
+        seen = []
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            fetch_pubmed(client, date(2024, 1, 15), on_record=lambda r: seen.append(r.pmid))
+
+        assert len(seen) == len(set(seen)) == 1498
+
+
+class TestPubMedServesOnlyTheFirstRecordsOfASession:
+    """A day larger than the cap cannot complete, and must not claim to.
+
+    NCBI's search backend serves the first 9,999 records of a history session
+    and refuses the rest: *"To obtain more than 9,999 PubMed records, consider
+    using EDirect…"*. bmlib queries `[Date - Publication]`, where that is not
+    an edge case: measured 2026-08-20, every first-of-month day is over the cap
+    (49,543-90,571 records, since a record carrying only a year and month is
+    indexed at day 1) and every 1 January is 212,439-315,282.
+
+    Before this guard the walk asked for record 10,000 anyway, got an HTTP 400
+    whose body it discarded, and failed the day with
+    ``Client error '400 Bad Request'`` — accurate, since the day genuinely
+    cannot be completed, but naming neither the cause nor the remedy, and
+    re-fetching twenty pages of already-stored records on every later run to
+    reach the same wall.
+
+    One day-size did not fail, and it is the reason this guard closes a
+    *silent* loss rather than only an unhelpful message: a day of exactly
+    10,000 records never issues a ``retstart`` above 9,998, so it never met the
+    400 at all — it walked to its natural end, was clamped to 9,999 delivered
+    against 10,000 promised, cleared the shortfall floor and was recorded
+    ``completed``. Durable, never re-offered, one record gone. See
+    ``test_one_record_past_the_cap_is_already_too_many``.
+
+    Issue #105 is what makes such a day fetchable; until it lands the day is
+    refused, not partially stored.
+    """
+
+    def test_a_day_over_the_cap_is_failed_not_completed_short(self):
+        client = _FakeEUtils(12_000)
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+
+    def test_the_error_names_the_cap_and_what_was_never_offered(self):
+        """An operator cannot act on `400 Bad Request`; they can act on this."""
+        client = _FakeEUtils(12_000)
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 15), on_record=MagicMock())
+
+        assert result.error is not None
+        assert "12000" in result.error
+        assert "9999" in result.error
+        assert "2001" in result.error  # 12,000 - 9,999, out of reach
+        assert "#105" in result.error  # the remedy, not just the diagnosis
+
+    def test_the_day_is_refused_before_a_single_record_is_fetched(self):
+        """One esearch and nothing else — the walk is not begun.
+
+        The day ends `failed` either way, and a failed day is re-offered on
+        every later run, so the whole question is what the doomed run costs.
+        Walking first would buy the first 9,999 records once and re-fetch them
+        forever after: some 72 such days in a six-year backfill, ~3 GB per run,
+        storing nothing new.
+        """
+        client = _FakeEUtils(12_000)
+        on_record = MagicMock()
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 15), on_record=on_record)
+
+        assert client.pages == []
+        assert len(client.calls) == 1
+        on_record.assert_not_called()
+        assert result.record_count == 0
+
+    def test_one_record_past_the_cap_is_already_too_many(self):
+        """The boundary is a count, not an approximation: 10,000 is refused.
+
+        Without this the cap could drift up by one and nothing would notice —
+        a 10,000-record day would walk, come back 9,999 short by one, and
+        complete on the shortfall note. 10,000 is the special count because
+        ``range(0, 10000, 500)`` stops at 9,500: the walk never asks past the
+        boundary, so no 400 fires and the silent clamp is the only thing that
+        happens. 10,001 asks for ``retstart=10000`` and does get the 400.
+        """
+        client = _FakeEUtils(10_000)
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert client.pages == []
+
+    def test_a_day_exactly_at_the_cap_completes(self):
+        """Negative control: the boundary itself is reachable."""
+        client = _FakeEUtils(9999)
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 15), on_record=MagicMock())
+
+        assert result.status == "completed"
+        assert result.error is None
+        assert result.record_count == 9999
+
+    def test_the_1_january_shape_says_what_it_could_not_reach(self):
+        """A day 30x the cap reports the cap, not a shortfall it invented.
+
+        Had the walk run first, 9,999 delivered against 30,000 promised would
+        be 33% — under `SHORTFALL_FAILURE_RATIO`, so the day would fail with
+        "treated as truncated rather than short", describing a walk that
+        stopped early when nothing stopped early.
+        """
+        client = _FakeEUtils(30_000)
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.error is not None
+        # "floor" is `reconcile_delivery`'s word for the shortfall message
+        # (`fetchers/_reconcile.py`), which is what a stall must *not* be
+        # diagnosed as. Cross-module wording, so if that message is reworded
+        # this assertion stops guarding and `test_fetch_reconciliation.py` is
+        # where the rename would be noticed.
+        assert "floor" not in result.error
+        assert "cannot be reached" in result.error
+
+    def test_a_stall_below_the_cap_is_still_reported_as_a_stall(self):
+        """The cap must not become the explanation for every failure."""
+        client = _FakeEUtils(1500, absent=frozenset(range(500, 1000)))
+
+        with patch("bmlib.publications.fetchers.pubmed.time.sleep"):
+            result = fetch_pubmed(client, date(2024, 1, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "empty page" in result.error

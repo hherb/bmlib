@@ -1179,7 +1179,11 @@ def fetch_pubmed(
 Fetch all PubMed articles published on `target_date` using NCBI E-utilities.
 
 - ESearch (with `usehistory=y`) to count and stage PMIDs, then paged EFetch to retrieve XML.
-- Pages through results in batches of 500 (`EFETCH_PAGE_SIZE`).
+- Pages through results in batches of 500 (`EFETCH_PAGE_SIZE`), advancing
+  `retstart` by that fixed stride. `retstart` indexes the *session's UID list*,
+  so page *k* covers the UIDs at `[k·500, (k+1)·500)` whether or not every one
+  of them yields a record — measured, and the reason a page that comes back
+  short is not re-requested (issue #96).
 - Rate limits: `0.1 s` with an API key, `0.34 s` without — selected purely by whether `api_key` is truthy.
 - Extracts: PMID, title, abstract, authors, journal, DOI, PMC ID, MeSH keywords, and full-text source URLs (PMC article page, DOI resolver). It also populates `publication_types` from `PublicationTypeList`, which is what the free Tier 1 quality filter classifies study design from (see [quality.md](quality.md)). Before 0.4.0 this field was left empty, so synced PubMed records skipped the free tier entirely.
 - Populates `grants` from `<GrantList>` and `author_affiliations` from `<AffiliationInfo>`; `sync()` persists both (see [`Grant` and `AuthorAffiliation`](#grant-and-authoraffiliation)). It is the only built-in fetcher that produces either.
@@ -1192,6 +1196,59 @@ Fetch all PubMed articles published on `target_date` using NCBI E-utilities.
   `PubmedArticle`: on a 5,000-record day that is ten useless requests ending
   in `completed` with 0 records, which a caller cannot tell from a genuinely
   quiet day (fixed after 0.9.1).
+
+#### A day over 9,999 records is refused *(unreleased, #96, #105)*
+
+NCBI's search backend serves only the **first 9,999 records** of a history
+session: `retstart=9999` is HTTP 400 (*"For PubMed, ESearch can only retrieve
+the first 9,999 records matching the query"*), and — more quietly — a page
+whose window crosses that boundary is clamped to it without a word, so
+`retstart=9500&retmax=500` comes back with 499 records at HTTP 200.
+
+`fetch_pubmed` therefore refuses such a day as soon as ESearch reports the
+count, before requesting a single page:
+
+```python
+FetchResult(status="failed", record_count=0, error=
+    "PubMed reported 61378 records for 2026-02-01, but a history session serves only"
+    " its first 9999 records, so 51379 of them cannot be reached; ...")
+```
+
+Two things to know:
+
+- **This is not rare, because `[Date - Publication]` is not `[EDAT]`.** A
+  record carrying only a year and a month is indexed at day 1 of that month,
+  and one carrying only a year at 1 January. Measured 2026-08-20: every
+  first-of-month day other than 1 January holds 49,543–90,571 records, and
+  every 1 January 212,439–315,282, against a median ordinary day of 4,890. So a backfill meets
+  one refused day per month, plus a very large one per year.
+- **The day is failed, so `sync()` re-offers it on every later run** — an
+  ERROR and a `SyncReport.errors` line each time. A six-year backfill carries
+  some 72 such days, so that surface never returns to empty until #105 lands:
+  alert on a *change* in `SyncReport.errors` rather than on it being non-empty
+  (issue #107 tracks giving a known-permanent refusal its own field). It cannot be recorded
+  `completed`: that would durably lose the records past the cap, and
+  `_days_needing_fetch()` would never offer the day again. Nothing is fetched
+  for it in the meantime, deliberately — storing the reachable 9,999 once and
+  re-fetching them forever costs about 3 GB a run across a six-year backfill
+  and stores nothing new after the first. (An absolute rather than a fraction:
+  9,999 is a fifth of the smallest structural day but a thirty-second of 1
+  January.) Issue #105 partitions such a day into sub-queries that each fit,
+  which is what makes the day fetchable rather than merely honest about being
+  unfetchable.
+- **`download_days.record_count` is what *this* run stored, not a running
+  total.** A day that was fetched successfully years ago and has since grown
+  past the cap — 1 January accrues year-only citations — is re-offered under
+  `recheck_days`, refused, and its row rewritten to `failed` with
+  `record_count=0`. The publications already stored are untouched; it is the
+  row that stops describing them.
+
+Before this the walk asked for record 10,000 anyway and the day failed on the
+400 with `Client error '400 Bad Request'` — the same verdict, twenty requests
+later, naming neither cause nor remedy. With one exception: a day of *exactly*
+10,000 records never asked past `retstart=9500`, so it walked to its end, was
+clamped to 9,999 delivered, cleared the shortfall floor and was recorded
+`completed` — losing one record durably. The guard closes that too.
 
 #### Titles and abstracts are Markdown
 

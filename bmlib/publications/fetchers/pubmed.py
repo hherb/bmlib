@@ -51,6 +51,33 @@ ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 
 EFETCH_PAGE_SIZE = 500
+
+# NCBI's search backend serves only the first 9,999 records of a history
+# session and refuses the rest, whatever `retmax` asks for. Measured live on
+# 2026-08-20 (`docs/DECISIONS.md`, "publications — how far a PubMed session
+# can be walked"): `retstart=9999` is HTTP 400 — *"'retstart' cannot be larger
+# than 9998. For PubMed, ESearch can only retrieve the first 9,999 records
+# matching the query. To obtain more than 9,999 PubMed records, consider using
+# EDirect…"* — and, more quietly, a page whose window crosses the boundary is
+# clamped to it: `retstart=9500&retmax=500` returned 499 records at HTTP 200
+# with no notice. A day larger than this cannot be completed through this
+# route at all, so `fetch_pubmed` refuses it on ESearch's count rather than
+# walking into the wall. Raising `EFETCH_PAGE_SIZE` does not raise this.
+#
+# This is a **record count**; the largest legal `retstart` is one less, which
+# is what NCBI's own error names. The guard below is `>` rather than `>=` for
+# that reason, and a day of exactly this many records is fetchable.
+#
+# The guard protects the walk against the cap it *knows*. It does not protect
+# it against a cap NCBI silently **lowers**: the walk only meets the 400 when
+# it requests a page starting past the new limit, so for counts between the
+# lowered cap and the next page boundary the straddling page is clamped
+# instead, the walk ends naturally, and the shortfall is at most
+# `EFETCH_PAGE_SIZE - 1` — under the failure floor, so the day completes on a
+# note. `scripts/sample_efetch_paging.py` is what detects a moved cap, in
+# either direction; see `docs/DECISIONS.md`.
+EFETCH_MAX_RETRIEVABLE = 9999
+
 RATE_LIMIT_WITH_KEY = 0.1  # seconds between requests with API key
 RATE_LIMIT_WITHOUT_KEY = 0.34  # seconds between requests without API key
 
@@ -680,7 +707,56 @@ def fetch_pubmed(
             error=message,
         )
 
+    if count > EFETCH_MAX_RETRIEVABLE:
+        # The day cannot be completed through this route, so it is refused
+        # before a single record is fetched rather than after the reachable
+        # ones are. Both readings end with the day recorded `failed` and
+        # re-offered on every later run — it can never be `completed`, since
+        # that would durably lose the remainder — so the only question is what
+        # the doomed run costs. Walking first would buy the first
+        # `EFETCH_MAX_RETRIEVABLE` records once and then re-fetch them on every
+        # run for the life of the installation: measured against real days,
+        # every first-of-month is over the cap (49,543-90,571 records, since a
+        # record carrying only a year and month is indexed at day 1) and every
+        # 1 January is 212,439-315,282, so a six-year backfill carries some 72
+        # such days and would re-download ~3 GB per run to store nothing new.
+        # Refusing costs one esearch instead. The records are not written off:
+        # issue #105 partitions an over-cap day into sub-queries that each fit,
+        # which is what makes "no publication is missed" true again.
+        #
+        # "a history session serves" rather than "efetch serves": the limit is
+        # the search backend's, which is how NCBI's own 400 names it and how
+        # every doc describing this refers to it. An operator grepping the
+        # docs for the phrase in their log has to find it.
+        message = (
+            f"PubMed reported {count} records for {date_str}, but a history session serves"
+            f" only its first {EFETCH_MAX_RETRIEVABLE} records, so"
+            f" {count - EFETCH_MAX_RETRIEVABLE} of them cannot be reached; refusing the day"
+            " rather than storing part of it as though it were whole. This day is refused"
+            " on every run until issue #105 lands; no operator action is available"
+        )
+        logger.error("%s", message)
+        return FetchResult(
+            source="pubmed",
+            date=date_str,
+            record_count=0,
+            status="failed",
+            error=message,
+        )
+
     logger.info("PubMed esearch: %d records for %s", count, date_str)
+
+    # `retstart` indexes the *session's UID list*, not the records delivered so
+    # far: page k covers the UIDs at [k·EFETCH_PAGE_SIZE, (k+1)·EFETCH_PAGE_SIZE)
+    # whether or not every one of them yields a record — named for the constant
+    # that actually strides, since the claim holds only while the walk's step
+    # and `_efetch_page`'s `retmax` stay equal. Measured 2026-08-20 (issue #96): a
+    # page's record elements are exactly that slice of esearch's own
+    # `IdList`, in order, `<PubmedBookArticle>` entries included. So the
+    # stride stays `EFETCH_PAGE_SIZE`. Advancing by what arrived — the fix
+    # #96 proposed — would re-request the tail of every short page, deliver
+    # those records twice, and count the duplicates as delivery, which is
+    # precisely what would hide a real shortfall from `reconcile_delivery`.
 
     records_processed = 0
     records_delivered = 0
