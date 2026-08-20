@@ -49,7 +49,9 @@ and an operator alerting on non-emptiness is paged from day one forever.
 | Coverage | **A root probe: `count(day AND root range)` must not come up short of `count(day)`** | Assume the root covers (a record outside it is absent from every part's promise, so every part reconciles perfectly while the day is short) |
 | Reconciliation | **Root probe + per part + day total** | Per part only (blind to a bad root); day total only (loses per-part stall detection, and a 50% floor over 242k records tolerates a 121,000-record gap) |
 | Default | **On, with the cost stated in prose** | Opt-in flag (leaves the property false by default for the operators least likely to find the flag); a caller-set ceiling (a knob whose default value is itself this same decision) |
-| Resume within a day | **None; the day re-fetches** | Checkpoint parts in `download_days` (a schema change; filed as follow-up) |
+| Resume within a day | **Checkpoint each completed part; a re-run skips it** | None (a part failing at 90% of a 242k-record day costs the whole day again — and the buffer problem below forces a per-part flush regardless, so the boundary already exists) |
+| Checkpoint identity | **An opaque `part_key` plus an explicit `part_scheme`** | Typed `edat_lo`/`edat_hi` columns (bakes one fetcher's partitioning scheme into the shared schema) |
+| How a fetcher opts in | **`SourceDescriptor.resumable`, default `False`** | Pass the new kwargs to every fetcher (`register_source()` is public — an existing third-party fetcher would raise on an unexpected keyword) |
 | #107 | **Close it, dissolved** | Build its `blocked` field (the permanent refusal it describes no longer occurs) |
 
 ## Measured evidence
@@ -183,6 +185,85 @@ measured.
 `records_processed` accumulates across parts — so a caller's progress bar
 measures the day it asked for. The part being walked goes in `message`.
 
+### 6. Resuming an interrupted day
+
+**The buffer forces this boundary anyway.** `sync()` collects a whole day into
+`day_records` and stores it in one transaction after the fetch returns, and the
+comment at that buffer already names the limit it is about to meet:
+
+> The whole day is held in memory (typically a few thousand records, tens of MB
+> with abstracts); if a source ever delivers far larger days, flush in chunks
+> here.
+
+A 242,216-record day is not tens of MB. Partitioning needs a chunked flush
+whether or not it resumes — and the part is the natural chunk, so the flush
+boundary and the checkpoint boundary are the same boundary. That is what makes
+the checkpoint trustworthy: **a part's rows and its checkpoint commit in one
+transaction**, so a checkpoint can never attest to records a rollback discarded.
+
+**Storage.** A new table, on the existing parallel-DDL pattern in
+`publications/schema.py` (`TEXT` dates, `AUTOINCREMENT` against `SERIAL`):
+
+```sql
+CREATE TABLE IF NOT EXISTS download_day_parts (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    source        TEXT NOT NULL,
+    date          TEXT NOT NULL,
+    part_scheme   TEXT NOT NULL,
+    part_key      TEXT NOT NULL,
+    promised      INTEGER NOT NULL,
+    record_count  INTEGER NOT NULL,
+    completed_at  TEXT NOT NULL,
+    UNIQUE(source, date, part_key)
+);
+```
+
+`IF NOT EXISTS` means an existing database gains it on the next
+`ensure_schema()`, with no migration script.
+
+Rows are **deleted when the day completes**. They describe an unfinished day, so
+keeping them past completion would both grow without bound and make a
+`recheck_days` re-fetch skip parts it was explicitly asked to redo.
+
+**Why `part_key` is opaque, and what that costs.** The storage layer does not
+know how a fetcher partitions, so a second rung — or another fetcher splitting
+some other way — needs no schema change. The cost is real and worth naming: the
+skip rule is a **string comparison**, so a key format that drifts between
+releases matches nothing, resume silently degrades to re-fetching the whole day,
+and *nothing is raised* — cost with no error. Two things answer that: one
+canonical constructor for the key with a test pinning its exact output, and the
+`part_scheme` column, which makes a scheme change visible in the data rather
+than silently mismatching, so stale rows can be recognised and dropped
+deliberately.
+
+**Protocol, opt-in.** `SourceDescriptor` gains `resumable: bool = False`, and
+`sync()` passes the two new keywords *only* to a fetcher whose descriptor
+declares it. `register_source()` is public, so an existing third-party fetcher
+must keep being called exactly as it is today — passing an unexpected keyword to
+it would raise, and the handler around the call would turn a working source into
+a failed day.
+
+`fetch_pubmed` gains, mirroring `on_record` / `on_progress`:
+
+- `completed_parts: Mapping[str, PartCheckpoint]` — what a previous run finished.
+- `on_part_complete: Callable[[PartCheckpoint], None] | None` — called after a
+  part's walk has reconciled, never before.
+
+**The skip rule.** A planned part is skipped if and only if its key is
+checkpointed **and its current count equals the stored `promised`**. Key alone
+is not enough: a part that has gained records since it was checkpointed would be
+skipped forever, and those records would be permanently absent — the exact
+durable, silent loss the surrounding family exists to prevent. A count mismatch
+re-fetches the part, which is idempotent.
+
+**Skipped parts must be credited.** This is the easiest thing here to get wrong,
+and it breaks a guard rather than a feature. §4 reconciles the day's total
+delivery against the day's own count; a resumed run never *delivers* the skipped
+parts, so without crediting them at their stored `promised` **every resumed day
+fails its own day-total check**. The same applies to
+`download_days.record_count`, which would otherwise report only the last run's
+share of a day fetched across three. Both are credited from the checkpoint rows.
+
 ## Cost
 
 Per structural day of ~242,000 records: 40 planning ESearches + 37 session
@@ -199,10 +280,9 @@ This is the data the operator is missing rather than waste, but it arrives
 without being asked for, so it goes in the CHANGELOG's data-answer prose beside
 0.10.0's re-fetch note, and in `docs/manual/publications.md`.
 
-**No resume within a day.** A part failing at 90% costs the day's whole re-fetch
-on the next run. `store_publication()` merges, so it is idempotent — just
-expensive. Checkpointing parts would mean a `download_days` schema change and is
-filed as follow-up rather than built here.
+That is the cost of a *first* run. A run interrupted partway does not repeat
+it: parts are checkpointed as they complete, so a re-run resumes where it
+stopped. See §6.
 
 ## The FTP route, and why not
 
@@ -247,6 +327,27 @@ Each rule above gets a named test:
   records issues no partitioning ESearch at all.
 - **Progress reports the day's total**, not a part's.
 
+Resume (`test_sync.py`, plus the dual-backend file since it is a schema change):
+
+- **A checkpoint and its records commit together** — a store failure inside a
+  part leaves no checkpoint row for it.
+- **A re-run skips a checkpointed part** whose count is unchanged, and issues no
+  session ESearch for it.
+- **A re-run re-fetches a checkpointed part whose count moved** — the rule's
+  whole point, so the test asserts the records arrive rather than only that a
+  request was made.
+- **A skipped part is credited to the day total** — a negative control: without
+  crediting, this day fails; the test pins that it completes.
+- **`download_days.record_count` covers the whole day**, not the last run's share.
+- **Part rows are deleted when the day completes**, and a `recheck_days` re-fetch
+  therefore redoes every part.
+- **A non-resumable fetcher is called with exactly today's keywords** — pinned
+  by a fetcher whose signature rejects extras, so the guard cannot rot into a
+  claim about a fetcher that happens to accept `**kwargs`.
+- **The key constructor's output is pinned literally**, since the skip rule is a
+  string comparison and a silent format drift costs a full re-fetch with nothing
+  raised.
+
 Plus a `--partition` mode in `scripts/sample_efetch_paging.py`, with its own
 offline test file on the samplers' shared conventions: a probe that could not be
 made never prints as a finding, a population past
@@ -258,7 +359,5 @@ falsify.
 
 ## Follow-ups to file, not build
 
-- **Resume within a day** — checkpoint completed parts so a failure at 90% does
-  not re-fetch the day. Needs a `download_days` schema change.
 - **A whole-corpus ingestion mode** from the FTP baseline, if bulk loading ever
   becomes a requirement in its own right.
