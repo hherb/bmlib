@@ -1669,3 +1669,42 @@ class TestPubMedServesOnlyTheFirstRecordsOfASession:
         assert result.status == "failed"
         assert result.error is not None
         assert "empty page" in result.error
+
+
+# ---------------------------------------------------------------------------
+# The search term is built separately from _esearch (issue #105 prep)
+# ---------------------------------------------------------------------------
+
+
+class TestTheSearchTermIsBuiltSeparately:
+    """The ladder counts arbitrary terms, so term-building is not _esearch's job."""
+
+    def test_day_term_is_the_publication_date_field(self):
+        from bmlib.publications.fetchers.pubmed import _day_term
+
+        assert _day_term(date(2024, 1, 1)) == '("2024/01/01"[Date - Publication])'
+
+    def test_esearch_sends_the_term_it_was_given(self):
+        from bmlib.publications.fetchers.pubmed import _esearch
+
+        client = MagicMock()
+        response = MagicMock()
+        response.text = _make_esearch_xml(7)
+        client.get.return_value = response
+
+        count, web_env, query_key = _esearch(client, "SOME TERM", None)
+
+        assert count == 7
+        assert client.get.call_args.kwargs["params"]["term"] == "SOME TERM"
+
+    def test_counting_does_not_open_a_history_session(self):
+        from bmlib.publications.fetchers.pubmed import _esearch
+
+        client = MagicMock()
+        response = MagicMock()
+        response.text = _make_esearch_xml(3)
+        client.get.return_value = response
+
+        _esearch(client, "SOME TERM", None, usehistory=False)
+
+        assert "usehistory" not in client.get.call_args.kwargs["params"]

@@ -508,12 +508,28 @@ def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
 # ---------------------------------------------------------------------------
 
 
+def _day_term(target_date: date) -> str:
+    """Return the ESearch term for one publication day.
+
+    ``[Date - Publication]`` rather than ``[EDAT]`` is deliberate and load-bearing:
+    it is the field bmlib syncs by, and the two disagree by orders of magnitude on
+    exactly the days this module has to handle (see ``docs/DECISIONS.md``).
+    """
+    return f'("{target_date:%Y/%m/%d}"[Date - Publication])'
+
+
 def _esearch(
     client: Any,
-    target_date: date,
+    term: str,
     api_key: str | None,
+    *,
+    usehistory: bool = True,
 ) -> tuple[int, str | None, str | None]:
-    """Run an ESearch query and return (count, web_env, query_key).
+    """Run an ESearch query for *term* and return (count, web_env, query_key).
+
+    *usehistory* is ``False`` for the ladder's counting probes, which need a
+    number and not a session; opening one per probe would leave dozens of
+    unused sessions on NCBI's server for every over-cap day.
 
     Returns (0, None, None) when the search yields no results.
 
@@ -526,13 +542,9 @@ def _esearch(
             publications. Raised rather than returned so the caller's
             existing handler turns it into a ``failed`` fetch.
     """
-    date_str = target_date.strftime("%Y/%m/%d")
-    params: dict[str, str | int] = {
-        "db": "pubmed",
-        "term": f'("{date_str}"[Date - Publication])',
-        "retmax": 0,
-        "usehistory": "y",
-    }
+    params: dict[str, str | int] = {"db": "pubmed", "term": term, "retmax": 0}
+    if usehistory:
+        params["usehistory"] = "y"
     if api_key:
         params["api_key"] = api_key
 
@@ -668,8 +680,9 @@ def fetch_pubmed(
     date_str = target_date.isoformat()
     rate_limit = RATE_LIMIT_WITH_KEY if api_key else RATE_LIMIT_WITHOUT_KEY
 
+    day_term = _day_term(target_date)
     try:
-        count, web_env, query_key = _esearch(client, target_date, api_key)
+        count, web_env, query_key = _esearch(client, day_term, api_key)
     except Exception as exc:
         logger.error("esearch failed for %s: %s", date_str, exc)
         return FetchResult(
