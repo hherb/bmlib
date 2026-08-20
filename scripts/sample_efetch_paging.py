@@ -18,9 +18,9 @@
 """Measure how far a PubMed history session can be walked, and how many days need more.
 
 `bmlib.publications.fetchers.pubmed` fetches a day by running one esearch with
-``usehistory=y`` and then paging efetch over the session it opens. Two
-properties of that route are load-bearing and neither is bmlib's to choose, so
-both are measured here rather than assumed:
+``usehistory=y`` and then paging efetch over the session it opens. Three
+questions about that route are load-bearing and none of them is bmlib's to
+answer, so all three are measured here rather than assumed:
 
 1. **How far the session serves.** ``EFETCH_MAX_RETRIEVABLE`` says 9,999. The
    backend enforces it in two different ways — an outright HTTP 400 past the
@@ -209,15 +209,33 @@ def _get(url: str, params: dict[str, str]) -> tuple[int, str] | None:
             return None
 
 
-def _count(term: str, base: dict[str, str]) -> int | None:
-    """How many records match *term*, or None if the question could not be asked."""
-    got = _get(ESEARCH, {**base, "db": "pubmed", "term": term, "retmax": "0"})
+def _esearch_root(
+    term: str, base: dict[str, str], *, usehistory: bool = False
+) -> ET.Element | None:
+    """Run one esearch over *term* and return the document element, or None.
+
+    Both callers ask for the metadata only (``retmax=0``) and both need the
+    same reading of a reply that never arrived: a dead request, a non-200 and
+    an unparsable body are all *unmeasured*, and each gives None rather than an
+    empty element the caller would go on to read fields off.
+    """
+    params = {**base, "db": "pubmed", "term": term, "retmax": "0"}
+    if usehistory:
+        params["usehistory"] = "y"
+    got = _get(ESEARCH, params)
     if got is None or got[0] != 200:
         return None
     try:
-        root = ET.fromstring(got[1])  # noqa: S314 - NCBI payload, no entities requested
+        return ET.fromstring(got[1])  # noqa: S314 - NCBI payload, no entities requested
     except ET.ParseError as e:
         print(f"  unparsable esearch response: {e}", file=sys.stderr)
+        return None
+
+
+def _count(term: str, base: dict[str, str]) -> int | None:
+    """How many records match *term*, or None if the question could not be asked."""
+    root = _esearch_root(term, base)
+    if root is None:
         return None
     # E-utilities reports a failed search at HTTP 200 with an <ErrorList> or an
     # <ERROR>, and it still carries <Count>0</Count> — so reading the count
@@ -241,16 +259,8 @@ def _count(term: str, base: dict[str, str]) -> int | None:
 
 def _session(term: str, base: dict[str, str]) -> Session | None:
     """Open a history session over *term*."""
-    got = _get(
-        ESEARCH,
-        {**base, "db": "pubmed", "term": term, "retmax": "0", "usehistory": "y"},
-    )
-    if got is None or got[0] != 200:
-        return None
-    try:
-        root = ET.fromstring(got[1])  # noqa: S314 - NCBI payload, no entities requested
-    except ET.ParseError as e:
-        print(f"  unparsable esearch response: {e}", file=sys.stderr)
+    root = _esearch_root(term, base, usehistory=True)
+    if root is None:
         return None
     count, web_env, query_key = (
         root.findtext("Count"),
@@ -399,7 +409,7 @@ def measure_slice_semantics(session: Session, base: dict[str, str]) -> Probe:
     maintainer to make the very change #96 was closed for refusing.
     """
     uids = _uilist(session, 0, SLICE_SAMPLE, base)
-    if not uids.ok or uids.refused:
+    if not uids.measured:
         return Probe(error=uids.error or "the UID slice was refused")
 
     got = _get(
@@ -499,8 +509,115 @@ def report_day_sizes(rows: list[tuple[date, int | None]], label: str) -> bool:
     return True
 
 
+def report_straddling_page(session: Session, served: int, base: dict[str, str]) -> bool:
+    """Print how a page asking to cross the boundary at *served* was answered.
+
+    Returns whether the reading is reportable, which is not the same as whether
+    the page was clamped: a page short of the clamp this boundary predicts is
+    two probes disagreeing, and printing that as the clamp would put a number
+    behind a claim nothing made.
+    """
+    straddle = measure_straddling_page(session, served, base)
+    if not straddle.measured:
+        print(f"  the page straddling the boundary: ERROR — {straddle.error}")
+        return False
+
+    start, delivered, expected = straddle.value
+    # Only a page stopping exactly at the boundary the search just found is a
+    # reading. Both other outcomes are that search and this probe disagreeing
+    # about where the limit is, and both tell the operator to re-run — so both
+    # fail the run. Marking only the second would exit 0 on a page served past
+    # a boundary that was supposed to refuse it, which is the louder of the two.
+    reportable = delivered == expected
+    if reportable:
+        verdict = "clamped silently — HTTP 200, no notice"
+    elif delivered >= EFETCH_PAGE_SIZE:
+        verdict = (
+            "served whole, though it asked past the boundary — the limit moved"
+            " under the probe; re-run"
+        )
+    else:
+        verdict = (
+            f"short, but {expected} were expected at this boundary — not a clean"
+            " clamp, so the two probes disagree; re-run"
+        )
+    print(
+        f"  the page straddling the boundary: retstart={start}"
+        f" retmax={EFETCH_PAGE_SIZE} gave {delivered} UIDs — {verdict}"
+    )
+    return reportable
+
+
+def report_session_probes(session: Session, base: dict[str, str]) -> bool:
+    """Print what the three session probes settle; return whether all three did.
+
+    A run that measured nothing must not exit like one that measured
+    everything: these probes are the evidence for a hard-coded constant, and a
+    green exit is what a scheduled re-run is judged by.
+    """
+    reportable = True
+
+    boundary = measure_boundary(session, base)
+    if not boundary.measured:
+        print(f"  largest served retstart: ERROR — {boundary.error}")
+        reportable = False
+    else:
+        served = int(boundary.value)
+        agrees = "agrees" if served + 1 == EFETCH_MAX_RETRIEVABLE else "DISAGREES"
+        print(
+            f"  largest served retstart: {served}, so the session serves {served + 1} records"
+            f" — {agrees} with EFETCH_MAX_RETRIEVABLE={EFETCH_MAX_RETRIEVABLE}"
+        )
+        if not report_straddling_page(session, served, base):
+            reportable = False
+
+    semantics = measure_slice_semantics(session, base)
+    if not semantics.measured:
+        print(f"  what retstart indexes: ERROR — {semantics.error}")
+        reportable = False
+    else:
+        same, delivered, wanted = semantics.value
+        print(
+            f"  what retstart indexes: {delivered} record elements against {wanted} UIDs —"
+            f" {'the slice, in order' if same else 'NOT the slice; the stride assumption is void'}"
+        )
+    return reportable
+
+
+def report_day_size_populations(today: date, days: int, base: dict[str, str]) -> bool:
+    """Size three day populations against the cap; return whether all three reported.
+
+    Every day is measured once: a month first inside the window is not
+    re-fetched for the structural table, and the window is reported whole as
+    well as split, because "what share of ordinary days is fine" and "what
+    share of a sync window will fail" are different questions with different
+    answers, and only the second sizes the retry cost.
+    """
+    window = [today - timedelta(days=n) for n in range(1, days + 1)]
+    window_rows = measure_day_sizes(window, base)
+    structural = set(_structural_days(today))
+    in_window = set(window)
+    outside = [day for day in sorted(structural) if day not in in_window]
+
+    # A list and not a generator: `all()` over a generator would stop at the
+    # first unreportable population and leave the rest of them unprinted.
+    reported = [
+        report_day_sizes(
+            [(day, count) for day, count in window_rows if day not in structural],
+            f"Ordinary days (last {days}, month firsts set aside)",
+        ),
+        report_day_sizes(
+            [(day, count) for day, count in window_rows if day in structural]
+            + measure_day_sizes(outside, base),
+            "Month firsts and 1 January",
+        ),
+        report_day_sizes(window_rows, f"Every day of the last {days} — one sync window"),
+    ]
+    return all(reported)
+
+
 def main() -> int:
-    """Run the three probes and print what each one settles."""
+    """Open a session wide enough to measure, then report what each probe settles."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--email", required=True, help="Contact address NCBI asks callers for.")
     parser.add_argument("--api-key", default=None, help="Optional NCBI API key.")
@@ -528,86 +645,12 @@ def main() -> int:
         return 1
     print(f"  session holds {session.count} records")
 
-    # A run that measured nothing must not exit like one that measured
-    # everything: these probes are the evidence for a hard-coded constant, and
-    # a green exit is what a scheduled re-run is judged by.
-    unreportable = False
-
-    boundary = measure_boundary(session, base)
-    if not boundary.measured:
-        print(f"  largest served retstart: ERROR — {boundary.error}")
-        unreportable = True
-    else:
-        served = int(boundary.value)
-        agrees = "agrees" if served + 1 == EFETCH_MAX_RETRIEVABLE else "DISAGREES"
-        print(
-            f"  largest served retstart: {served}, so the session serves {served + 1} records"
-            f" — {agrees} with EFETCH_MAX_RETRIEVABLE={EFETCH_MAX_RETRIEVABLE}"
-        )
-
-        straddle = measure_straddling_page(session, served, base)
-        if not straddle.measured:
-            print(f"  the page straddling the boundary: ERROR — {straddle.error}")
-            unreportable = True
-        else:
-            start, delivered, expected = straddle.value
-            if delivered == expected:
-                verdict = "clamped silently — HTTP 200, no notice"
-            elif delivered >= EFETCH_PAGE_SIZE:
-                verdict = (
-                    "served whole, though it asked past the boundary — the limit moved"
-                    " under the probe; re-run"
-                )
-            else:
-                # Short, but not at the boundary the search just found. That is
-                # not the clamp — it is two probes disagreeing — and printing it
-                # as the clamp would put a number behind a claim nothing made.
-                verdict = (
-                    f"short, but {expected} were expected at this boundary — not a clean"
-                    " clamp, so the two probes disagree; re-run"
-                )
-                unreportable = True
-            print(
-                f"  the page straddling the boundary: retstart={start}"
-                f" retmax={EFETCH_PAGE_SIZE} gave {delivered} UIDs — {verdict}"
-            )
-
-    semantics = measure_slice_semantics(session, base)
-    if not semantics.measured:
-        print(f"  what retstart indexes: ERROR — {semantics.error}")
-        unreportable = True
-    else:
-        same, delivered, wanted = semantics.value
-        print(
-            f"  what retstart indexes: {delivered} record elements against {wanted} UIDs —"
-            f" {'the slice, in order' if same else 'NOT the slice; the stride assumption is void'}"
-        )
-
+    reportable = report_session_probes(session, base)
     if args.skip_day_sizes:
-        return 1 if unreportable else 0
+        return 0 if reportable else 1
 
-    # Three populations, measured once: a month first inside the window is not
-    # re-fetched for the structural table, and the window is reported whole as
-    # well as split, because "what share of ordinary days is fine" and "what
-    # share of a sync window will fail" are different questions with different
-    # answers, and only the second sizes the retry cost.
-    window = [today - timedelta(days=n) for n in range(1, args.days + 1)]
-    window_rows = measure_day_sizes(window, base)
-    structural = set(_structural_days(today))
-    outside = [day for day in sorted(structural) if day not in set(window)]
-
-    reported = [
-        report_day_sizes(
-            [row for row in window_rows if row[0] not in structural],
-            f"Ordinary days (last {args.days}, month firsts set aside)",
-        ),
-        report_day_sizes(
-            [row for row in window_rows if row[0] in structural] + measure_day_sizes(outside, base),
-            "Month firsts and 1 January",
-        ),
-        report_day_sizes(window_rows, f"Every day of the last {args.days} — one sync window"),
-    ]
-    return 1 if unreportable or not all(reported) else 0
+    populations_reported = report_day_size_populations(today, args.days, base)
+    return 0 if reportable and populations_reported else 1
 
 
 if __name__ == "__main__":

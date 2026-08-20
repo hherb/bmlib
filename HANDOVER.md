@@ -43,7 +43,13 @@ slice", which would have argued for exactly the stride change #96 was closed
 for refusing; an E-utilities error document carrying `<Count>0</Count>` counted
 as a small day; and there was no `UNMEASURED_SHARE_ERROR_THRESHOLD` gate and no
 429 retry, both of which the sibling samplers have and `_sampling` exists to
-hold. All fixed, each with a named regression test; 18 mutations, 18 caught.
+hold. All fixed, each with a named regression test; 19 mutations, 19 caught. A simplification pass then split
+`main()` three ways, folded the duplicated esearch preamble out of `_count`
+and `_session`, and retired a `dict` subclass in the tests — all verified
+byte-identical in stdout and exit status against the pre-change sampler across
+13 scenarios — and turned up one inconsistency of its own: the straddle
+probe's "served whole" verdict printed "re-run" and then exited 0. Both
+disagreement branches now fail the run.
 
 Three method lessons from it, all cheap to repeat:
 
@@ -132,15 +138,15 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed six releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2254 passing + 59 skipped** on `fix/96-efetch-paging`
-  (`uv run pytest tests/ -q`); 2187 on `main`, the 67 being this session's (9
-  in `test_pubmed_fetcher.py`, 58 in the new `test_efetch_paging_sampler.py`),
+- **Tests: 2257 passing + 59 skipped** on `fix/96-efetch-paging`
+  (`uv run pytest tests/ -q`); 2187 on `main`, the 70 being this session's (9
+  in `test_pubmed_fetcher.py`, 61 in the new `test_efetch_paging_sampler.py`),
   and 2172 at 0.10.0, the 15 before that being #73's. The PostgreSQL figure is
   **derived, not measured**: nothing on this branch reaches a database — #73
   touches `templates/`, `fulltext/cache.py` and `_atomic.py`, and #96/#105
   touch `fetchers/pubmed.py` and a script — and CI runs that half against
   `postgres:16` regardless, so with `BMLIB_TEST_POSTGRESQL_DSN` set the 57
-  PostgreSQL parameterisations run instead of skipping: **2311 + 2**. 57 of the default skips
+  PostgreSQL parameterisations run instead of skipping: **2314 + 2**. 57 of the default skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
   runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev

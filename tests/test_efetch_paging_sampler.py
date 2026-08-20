@@ -43,6 +43,7 @@ import importlib.util
 import io
 import sys
 import urllib.error
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
@@ -73,6 +74,11 @@ _REAL_GET = sampler._get
 
 SESSION = sampler.Session(500_000, "WEBENV1", "1")
 
+# What the script calls: `_get(url, params)`, answering with a status and a
+# body, or None for a request that never arrived. `_FakeEUtils` is one, and so
+# is every ad-hoc stub below.
+_Get = Callable[[str, dict[str, str]], tuple[int, str] | None]
+
 _REFUSAL = (
     "<eFetchResult><ERROR>Search backend cannot retrieve history data. Reason:"
     " Exception: 'retstart' cannot be larger than 9998.</ERROR></eFetchResult>"
@@ -84,7 +90,9 @@ class _FakeEUtils:
 
     *limit* is the number of records the session serves, so ``retstart`` may go
     up to ``limit - 1``. *fail_at* names the ``retstart`` values whose request
-    fails outright — the case that must not be read as a refusal.
+    fails outright — the case that must not be read as a refusal. *day_count*
+    is what a day-size esearch reports, or None for a day the request never
+    came back for.
     """
 
     def __init__(
@@ -93,13 +101,13 @@ class _FakeEUtils:
         limit: int = 9999,
         clamps: bool = True,
         fail_at: frozenset[int] = frozenset(),
-        counts: dict[str, int | None] | None = None,
+        day_count: int | None = 5000,
         records: list[str] | None = None,
     ) -> None:
         self.limit = limit
         self.clamps = clamps
         self.fail_at = fail_at
-        self.counts = {} if counts is None else counts
+        self.day_count = day_count
         self.records = records
 
     def __call__(self, url: str, params: dict[str, str]) -> tuple[int, str] | None:
@@ -110,10 +118,9 @@ class _FakeEUtils:
                 f"<QueryKey>{SESSION.query_key}</QueryKey></eSearchResult>"
             )
         if url == sampler.ESEARCH:
-            count = self.counts.get(params["term"], 5000)
-            if count is None:
+            if self.day_count is None:
                 return None
-            return 200, f"<eSearchResult><Count>{count}</Count></eSearchResult>"
+            return 200, f"<eSearchResult><Count>{self.day_count}</Count></eSearchResult>"
 
         retstart, retmax = int(params["retstart"]), int(params["retmax"])
         if retstart in self.fail_at:
@@ -145,24 +152,22 @@ class _Reply:
         return self._body
 
 
-class _AllUnmeasured(dict):
-    """A counts table where every day comes back unmeasured, whatever is asked."""
-
-    def get(self, key, default=None):  # noqa: ARG002 - the point is to ignore the default
-        return None
-
-
 @pytest.fixture(autouse=True)
 def _offline(monkeypatch):
     """No test here may reach NCBI: every one drives the script through a stub."""
     monkeypatch.setattr(sampler, "_get", _FakeEUtils())
 
 
-def _run(monkeypatch, capsys, fake: _FakeEUtils, *args: str) -> str:
-    """Run ``main()`` against *fake*, returning what it printed."""
+def _status(monkeypatch, fake: _Get, *args: str) -> int:
+    """Run ``main()`` against *fake*, returning the status it exits with."""
     monkeypatch.setattr(sampler, "_get", fake)
     monkeypatch.setattr(sys, "argv", ["sample_efetch_paging.py", "--email", "t@example.org", *args])
-    sampler.main()
+    return sampler.main()
+
+
+def _run(monkeypatch, capsys, fake: _Get, *args: str) -> str:
+    """Run ``main()`` against *fake*, returning what it printed."""
+    _status(monkeypatch, fake, *args)
     return capsys.readouterr().out
 
 
@@ -498,6 +503,16 @@ class TestTheBoundarySearchNeedsASessionBiggerThanItsCeiling:
         assert probe.value == 9998
 
 
+class _TruncatesTheStraddlingPage(_FakeEUtils):
+    """Answers the straddling page short of the clamp its boundary predicts."""
+
+    def __call__(self, url, params):
+        got = super().__call__(url, params)
+        if got and params.get("rettype") == "uilist" and int(params["retstart"]) == 9500:
+            return 200, "\n".join(got[1].splitlines()[:300])
+        return got
+
+
 class TestTheStraddleProbeReportsOnlyACleanClamp:
     """A page can come back short for reasons that are not the clamp."""
 
@@ -515,18 +530,24 @@ class TestTheStraddleProbeReportsOnlyACleanClamp:
         self, monkeypatch, capsys
     ):
         """499 was expected at this boundary; 300 is two probes disagreeing."""
-
-        class _TruncatesTheStraddlingPage(_FakeEUtils):
-            def __call__(self, url, params):
-                got = super().__call__(url, params)
-                if got and params.get("rettype") == "uilist" and int(params["retstart"]) == 9500:
-                    return 200, "\n".join(got[1].splitlines()[:300])
-                return got
-
         out = _run(monkeypatch, capsys, _TruncatesTheStraddlingPage(), "--skip-day-sizes")
 
         assert "499 were expected at this boundary" in out
         assert "clamped silently" not in out
+
+    def test_a_page_short_of_the_expected_clamp_fails_the_run(self, monkeypatch):
+        """Saying "re-run" in the output and exiting 0 are contradictory."""
+        assert _status(monkeypatch, _TruncatesTheStraddlingPage(), "--skip-day-sizes") == 1
+
+    def test_a_page_served_whole_fails_the_run(self, monkeypatch):
+        """The louder of the two disagreements: a page served past a boundary
+        the search had just found refuses it. It printed "re-run" and exited 0.
+        """
+        assert _status(monkeypatch, _FakeEUtils(clamps=False), "--skip-day-sizes") == 1
+
+    def test_a_clean_clamp_does_not_fail_the_run(self, monkeypatch):
+        """The negative control for the two above."""
+        assert _status(monkeypatch, _FakeEUtils(), "--skip-day-sizes") == 0
 
     def test_the_probe_asks_for_the_page_bmlib_actually_walks(self, monkeypatch):
         """Sized in EFETCH_PAGE_SIZE, so raising it does not leave this measuring
@@ -752,34 +773,24 @@ class TestARunThatMeasuredNothingDoesNotExitLikeOneThatDid:
     never arrived must not be indistinguishable from one whose evidence agreed.
     """
 
-    def test_a_clean_session_run_exits_zero(self, monkeypatch, capsys):
-        assert self._exit(monkeypatch, capsys, _FakeEUtils(), "--skip-day-sizes") == 0
+    def test_a_clean_session_run_exits_zero(self, monkeypatch):
+        assert _status(monkeypatch, _FakeEUtils(), "--skip-day-sizes") == 0
 
-    def test_a_run_whose_boundary_search_failed_exits_non_zero(self, monkeypatch, capsys):
+    def test_a_run_whose_boundary_search_failed_exits_non_zero(self, monkeypatch):
         fake = _FakeEUtils(fail_at=frozenset({65_536}))
 
-        assert self._exit(monkeypatch, capsys, fake, "--skip-day-sizes") == 1
+        assert _status(monkeypatch, fake, "--skip-day-sizes") == 1
 
-    def test_a_run_whose_slice_probe_failed_exits_non_zero(self, monkeypatch, capsys):
+    def test_a_run_whose_slice_probe_failed_exits_non_zero(self, monkeypatch):
         fake = _FakeEUtils(fail_at=frozenset({0}))
 
-        assert self._exit(monkeypatch, capsys, fake, "--skip-day-sizes") == 1
+        assert _status(monkeypatch, fake, "--skip-day-sizes") == 1
 
-    def test_a_day_size_population_past_the_threshold_exits_non_zero(self, monkeypatch, capsys):
+    def test_a_day_size_population_past_the_threshold_exits_non_zero(self, monkeypatch):
         """The populations are reported, and one withheld share fails the run."""
-        fake = _FakeEUtils(counts=_AllUnmeasured())
+        fake = _FakeEUtils(day_count=None)
 
-        assert self._exit(monkeypatch, capsys, fake, "--days", "2") == 1
-
-    @staticmethod
-    def _exit(monkeypatch, capsys, fake: _FakeEUtils, *args: str) -> int:
-        monkeypatch.setattr(sampler, "_get", fake)
-        monkeypatch.setattr(
-            sys, "argv", ["sample_efetch_paging.py", "--email", "t@example.org", *args]
-        )
-        status = sampler.main()
-        capsys.readouterr()
-        return status
+        assert _status(monkeypatch, fake, "--days", "2") == 1
 
 
 class TestTheThreePopulationsArePartitionedNotOverlapped:
@@ -801,28 +812,16 @@ class TestTheThreePopulationsArePartitionedNotOverlapped:
         structural = {f"{day:%Y/%m/%d}" for day in sampler._structural_days(date.today())}
 
         def fake(url, params):
-            if params.get("usehistory") == "y":
-                return 200, (
-                    f"<eSearchResult><Count>{SESSION.count}</Count>"
-                    f"<WebEnv>{SESSION.web_env}</WebEnv>"
-                    f"<QueryKey>{SESSION.query_key}</QueryKey></eSearchResult>"
-                )
-            if url == sampler.ESEARCH:
-                term = params["term"]
-                asked.append(term)
-                big = any(stamp in term for stamp in structural)
-                return (
-                    200,
-                    f"<eSearchResult><Count>{200_000 if big else 5_000}</Count></eSearchResult>",
-                )
-            return _FakeEUtils()(url, params)
+            # The day-size counts are the only thing this stub is here for;
+            # the session probes are the ordinary fake's job.
+            if url != sampler.ESEARCH or params.get("usehistory") == "y":
+                return _FakeEUtils()(url, params)
+            term = params["term"]
+            asked.append(term)
+            big = any(stamp in term for stamp in structural)
+            return 200, f"<eSearchResult><Count>{200_000 if big else 5_000}</Count></eSearchResult>"
 
-        monkeypatch.setattr(sampler, "_get", fake)
-        monkeypatch.setattr(
-            sys, "argv", ["sample_efetch_paging.py", "--email", "t@example.org", *args]
-        )
-        sampler.main()
-        return asked, capsys.readouterr().out
+        return asked, _run(monkeypatch, capsys, fake, *args)
 
     def test_no_day_is_sized_twice(self, monkeypatch, capsys):
         """A re-fetched day doubles the run's budget against a rate-limited API."""
