@@ -64,6 +64,21 @@ GAT alternative — including one commonly-cited reason (monomorphisation
 recursion) that was **measured and found not to apply**, since rusqlite's
 savepoint type is its own parent type.
 
+## One change made after the fact
+
+`transaction`'s closure was hard-wired to `DbError`, which meant a module with
+its own error type could not use it at all — every `?` in a store path failed
+with *"`?` couldn't convert the error to `DbError`"*. Found by writing
+`spikes/publications-rs` against it. `transaction_with<T, E: From<DbError>, F>`
+now sits beside it.
+
+Making `transaction` itself generic was tried first and rejected: `?` only
+constrains `E` and never pins it, so inference fails at almost every call site,
+including inside a typed function. Measured here — it needed an
+`Ok::<_, DbError>` annotation in the migration runner and at five call sites in
+the tests. Two entry points cost one name; one generic entry point cost an
+annotation nearly everywhere.
+
 ## Two hazards that cannot occur
 
 Like the `datetime`/`date` case in the wider port, these are tests that cannot

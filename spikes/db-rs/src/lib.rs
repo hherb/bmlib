@@ -51,5 +51,5 @@ pub use backend::{placeholder, placeholders, Dialect};
 pub use db::Db;
 pub use error::{DbError, Result};
 pub use sqlite::{open_memory, open_path};
-pub use transactions::{owns_commit, transaction};
+pub use transactions::{owns_commit, transaction, transaction_with};
 pub use value::{Row, Value};

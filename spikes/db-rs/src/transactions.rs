@@ -29,7 +29,7 @@
 //! thing you were handed, so there is nothing to look up and no lock to take.
 
 use crate::db::Db;
-use crate::error::Result;
+use crate::error::{DbError, Result};
 
 /// Run `f` in a transaction, committing on `Ok` and rolling back on `Err`.
 ///
@@ -92,10 +92,32 @@ pub fn transaction<T, F>(db: &mut dyn Db, f: F) -> Result<T>
 where
     F: FnOnce(&mut dyn Db) -> Result<T>,
 {
-    let mut block = db.begin()?;
+    transaction_with(db, f)
+}
+
+/// [`transaction`], for a caller whose own error type wraps [`DbError`].
+///
+/// Any module ported above `db/` will have its own error — `spikes/publications-rs`
+/// has `PublicationError` — and [`transaction`]'s fixed `DbError` closure
+/// leaves `?` inside the block with nothing to convert through.
+///
+/// **Why this is a second function rather than a generic parameter on the
+/// first.** Making [`transaction`] itself generic over `E: From<DbError>`
+/// compiles, but `?` only *constrains* `E` and never pins it, so inference
+/// fails at almost every call site — including ones inside a typed function.
+/// Measured on this crate: the generic version needed an `Ok::<_, DbError>`
+/// annotation in the migration runner and at five call sites in the tests. Two
+/// entry points cost one name; one generic entry point cost an annotation
+/// nearly everywhere.
+pub fn transaction_with<T, E, F>(db: &mut dyn Db, f: F) -> std::result::Result<T, E>
+where
+    F: FnOnce(&mut dyn Db) -> std::result::Result<T, E>,
+    E: From<DbError>,
+{
+    let mut block = db.begin().map_err(E::from)?;
     match f(&mut *block) {
         Ok(value) => {
-            block.commit()?;
+            block.commit().map_err(E::from)?;
             Ok(value)
         }
         Err(err) => {
