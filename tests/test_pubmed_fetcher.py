@@ -1465,6 +1465,11 @@ class _FakeEUtils:
     pinned against.
     """
 
+    # Deliberately an independent literal, not `EFETCH_MAX_RETRIEVABLE - 1`: a
+    # fake that moves with the constant under test can only ever confirm it,
+    # and the cap±1 mutants die precisely because this does not move. Same rule
+    # `sample_pdf_metadata_titles.py` follows in declining to import
+    # `_titles.normalise`. Do not "deduplicate" these.
     MAX_RETSTART = 9998
 
     def __init__(self, count: int, *, absent: frozenset[int] = frozenset()) -> None:
@@ -1547,8 +1552,18 @@ class TestPubMedServesOnlyTheFirstRecordsOfASession:
     ``Client error '400 Bad Request'`` — accurate, since the day genuinely
     cannot be completed, but naming neither the cause nor the remedy, and
     re-fetching twenty pages of already-stored records on every later run to
-    reach the same wall. Issue #105 is what makes such a day fetchable; until
-    it lands the day is refused, not partially stored.
+    reach the same wall.
+
+    One day-size did not fail, and it is the reason this guard closes a
+    *silent* loss rather than only an unhelpful message: a day of exactly
+    10,000 records never issues a ``retstart`` above 9,998, so it never met the
+    400 at all — it walked to its natural end, was clamped to 9,999 delivered
+    against 10,000 promised, cleared the shortfall floor and was recorded
+    ``completed``. Durable, never re-offered, one record gone. See
+    ``test_one_record_past_the_cap_is_already_too_many``.
+
+    Issue #105 is what makes such a day fetchable; until it lands the day is
+    refused, not partially stored.
     """
 
     def test_a_day_over_the_cap_is_failed_not_completed_short(self):
@@ -1597,7 +1612,10 @@ class TestPubMedServesOnlyTheFirstRecordsOfASession:
 
         Without this the cap could drift up by one and nothing would notice —
         a 10,000-record day would walk, come back 9,999 short by one, and
-        complete on the shortfall note.
+        complete on the shortfall note. 10,000 is the special count because
+        ``range(0, 10000, 500)`` stops at 9,500: the walk never asks past the
+        boundary, so no 400 fires and the silent clamp is the only thing that
+        happens. 10,001 asks for ``retstart=10000`` and does get the 400.
         """
         client = _FakeEUtils(10_000)
 
@@ -1633,6 +1651,11 @@ class TestPubMedServesOnlyTheFirstRecordsOfASession:
 
         assert result.status == "failed"
         assert result.error is not None
+        # "floor" is `reconcile_delivery`'s word for the shortfall message
+        # (`fetchers/_reconcile.py`), which is what a stall must *not* be
+        # diagnosed as. Cross-module wording, so if that message is reworded
+        # this assertion stops guarding and `test_fetch_reconciliation.py` is
+        # where the rename would be noticed.
         assert "floor" not in result.error
         assert "cannot be reached" in result.error
 

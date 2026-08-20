@@ -17,6 +17,11 @@ All notable changes to bmlib are documented here. The format is based on
   `Client error '400 Bad Request'` after twenty pointless requests, naming
   neither the cause nor the remedy. It now refuses the day as soon as ESearch
   reports the count, with an error saying how many records are out of reach.
+  One day-size did **not** fail before: a day of *exactly* 10,000 records
+  never asks for a `retstart` above 9,998, so it walked to its natural end,
+  was silently clamped to 9,999 delivered, cleared the shortfall floor, and
+  was recorded `completed` — durable, never re-offered, one record lost with
+  only a note. The guard closes that silent loss as well as the noisy one.
   This is not an edge case in the field bmlib queries: measured 2026-08-20,
   every first-of-month `[Date - Publication]` day holds 49,543–90,571 records
   (a record carrying only a year and month is indexed at day 1) and every
@@ -24,10 +29,12 @@ All notable changes to bmlib are documented here. The format is based on
   day is still `failed` and still re-offered on every run — it cannot be
   completed through this route, and recording it `completed` would durably
   lose the remainder. **Nothing is fetched for such a day in the meantime**, on
-  purpose: storing the reachable fifth once and re-fetching it forever costs
+  purpose: storing the reachable 9,999 once and re-fetching them forever costs
   ~3 GB per run across a six-year backfill and stores nothing new. Issue #105
   is what makes those days fetchable, by partitioning them into sub-queries
-  that fit.
+  that fit. Note the guard covers a cap NCBI *raises* (bmlib refuses fetchable
+  days, loudly) but not reliably one it *lowers* — see `docs/DECISIONS.md`;
+  `scripts/sample_efetch_paging.py` is what detects either.
 
 - **A default template is installed atomically, or not at all** (#73).
   `TemplateEngine.install_defaults()` copied each default template with a

@@ -343,14 +343,19 @@ whose window crosses the boundary is clamped to it *silently*, so "walk as far
 as it goes" yields a last page indistinguishable from a day missing records.
 Under `[Date - Publication]`, the field the fetcher queries, this is not an
 edge case: a record carrying only a year and a month is indexed at day 1 of
-it, so every first-of-month day holds 49,543–90,571 records and every 1
-January 212,439–315,282, against a median ordinary day of 4,890. Such a day cannot be
+it, so every first-of-month day other than 1 January holds 49,543–90,571
+records and every 1 January 212,439–315,282, against a median ordinary day of
+4,890. Such a day cannot be
 `completed` — that would durably lose the remainder — so it is `failed` and
 re-offered on every run, which makes the only live question what the doomed
 run costs: fetching the reachable 9,999 first would re-fetch them forever
 (~3 GB per run across a six-year backfill, storing nothing new after the
 first), so the day is refused on the count alone. Issue #105 is what makes
-those days fetchable. The stride is *not* the defect #96 suspected: `retstart`
+those days fetchable. The guard covers a cap NCBI *raises*, loudly; it does
+**not** reliably cover one NCBI *lowers*, because for a band up to
+`EFETCH_PAGE_SIZE` wide no page is ever requested past the new limit and the
+day completes on a shortfall note instead — the sampler is the guard there,
+and `docs/DECISIONS.md` has the measured band. The stride is *not* the defect #96 suspected: `retstart`
 indexes the session's UID list, measured against esearch's own `IdList`, so
 advancing by what arrived would re-request the tail of every short page and
 count the duplicates as delivery — which is exactly what would hide a real
@@ -631,6 +636,6 @@ uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
 
 Each bioRxiv attempt records the **posting day** it came from, and each unmeasured attempt also records a `cause` and an `attempts` count. The day is what keeps a retry reachable: that walk covers `[today-30, today-49]` recomputed from `date.today()`, so it slides a day per calendar day and after 20 shares nothing with the window that produced the journal — leaving an unmeasured attempt that `already_seen` holds open but the walk can no longer offer, permanently inflating the population's unmeasured share with no escape but deleting the journal. Days owed a retry are walked *before* the fresh window and *in addition* to it, so retrying old work never costs the run its budget for new work; pinning the window instead would make one date range serve both "what am I sampling" and "what do I owe", and those diverge by a day every day. Europe PMC needs none of this — its walk restarts from cursor `*` and re-offers the same hits. `MAX_UNMEASURED_ATTEMPTS` bounds the tail so a day of permanently dead URLs is not re-downloaded forever: a retired attempt stops being *offered* but keeps being *counted*, in `tally_previous` and in the ERROR rule, since forgetting it is the silent-loss failure the accounting exists to prevent. `summarise()` names how many were retried out, because "we stopped trying" and "not tried yet" call for different actions.
 
-`scripts/sample_efetch_paging.py` is the fourth live runner, and the evidence behind `EFETCH_MAX_RETRIEVABLE` and the fixed stride in `fetch_pubmed`'s page walk — **run it before changing either**. It binary-searches the live backend for the largest `retstart` a history session serves (reporting `agrees` or `DISAGREES` against bmlib's constant), checks whether the page straddling that boundary is still clamped silently, compares a page's record elements against the session's own UID list to re-establish what `retstart` indexes, and sizes `[Date - Publication]` days against the cap. It has a sharper version of the others' rule, because here **the measurement itself arrives as an HTTP 400**: only a 400 is the boundary, and every other non-200 is a failed probe, since one 429 read as a refusal drags the binary search down and prints a cap that no server enforces. `--skip-day-sizes` runs the session probes alone, in about 20 requests.
+`scripts/sample_efetch_paging.py` is the fourth live runner, and the evidence behind `EFETCH_MAX_RETRIEVABLE` and the fixed stride in `fetch_pubmed`'s page walk — **run it before changing either**. It binary-searches the live backend for the largest `retstart` a history session serves (reporting `agrees` or `DISAGREES` against bmlib's constant), checks whether the page straddling that boundary is still clamped silently, compares a page's record elements against the session's own UID list to re-establish what `retstart` indexes, and sizes `[Date - Publication]` days against the cap. It has a sharper version of the others' rule, because here **the measurement itself arrives as an HTTP 400**: only a 400 is the boundary, and every other non-200 is a failed probe, since one 429 read as a refusal drags the binary search down and prints a cap that no server enforces. `--skip-day-sizes` runs the session probes alone, at a fixed 23 requests; the day-size populations need a full run (~150). It shares the other samplers' rule that a population past `UNMEASURED_SHARE_ERROR_THRESHOLD` reports ERROR rather than a share, retries a throttled request through `_sampling`'s two-ended `Retry-After` clamp, and exits non-zero when any probe or population came back unreportable — a green exit is what a scheduled re-run is judged by. Two mirror-image rules on the 400: every non-200 that is *not* a 400 is a failed probe, and a 400 that does not name `retstart` is one too, since a dropped WebEnv read as a limit collapses the search onto wherever it started.
 
 `scripts/_sampling.py` holds what the samplers share — the per-host pacer, the two-ended `Retry-After` clamp, `wilson()`, and `is_probeable()` — so a rule learned from one bad live run does not exist in two copies that can drift. `tests/test_sampling_helpers.py` is its test file; a helper moved here must bring its tests with it, or it stays covered only for as long as one particular sampler keeps importing it.

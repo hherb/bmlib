@@ -52,15 +52,22 @@ walk in ``fetch_pubmed``, and when sizing #105's partitioning:
 
 Every probe that could not be made prints ``ERROR`` and is excluded from the
 population rather than counted as a pass — a refusal and an unreachable server
-look identical in a total, and only one of them is a finding. Costs about 150
-small requests plus one ~200 KB XML page; nothing here downloads a full page of
-500 records.
+look identical in a total, and only one of them is a finding. Excluding is not
+enough on its own: past ``UNMEASURED_SHARE_ERROR_THRESHOLD`` of a population a
+share is not reported at all, because the days that got through a throttled run
+are the *early* ones and the rest are exactly what is missing from the sample.
+``main()`` exits non-zero when any probe or population came back unreportable,
+so a run whose evidence is incomplete cannot pass for one whose evidence is not.
+
+Costs about 150 small requests plus one ~200 KB XML page; nothing here downloads
+a full page of 500 records. ``--skip-day-sizes`` runs the three session probes
+alone, at a fixed 23 requests, and does **not** re-measure the day-size
+populations.
 """
 
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 import time
 import urllib.error
@@ -71,13 +78,23 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
-# Pacing and the interval live in `_sampling` alongside the other samplers'
-# copies of the same rules; running the script puts this directory on sys.path
-# as sys.path[0], and the test file loads the module by path.
-from _sampling import wilson
+# The retry rules and `wilson()` come from `_sampling` so a rule learned from
+# one bad live run does not exist in two copies that can drift. The request
+# interval below is this script's own, as `sample_databank_names.py`'s is: the
+# shared pacer exists for the samplers that hit several hosts, and this one
+# talks only to NCBI. `scripts/` is not a package; running a script puts this
+# directory on sys.path as sys.path[0], and the test file loads it by path.
+from _sampling import (
+    MAX_PROBE_ATTEMPTS,
+    UNMEASURED_SHARE_ERROR_THRESHOLD,
+    _sleep_for,
+    _throttle_delay,
+    wilson,
+)
 
 from bmlib.publications.fetchers.pubmed import (
     EFETCH_MAX_RETRIEVABLE,
+    EFETCH_PAGE_SIZE,
     EFETCH_URL,
     ESEARCH_URL,
 )
@@ -92,13 +109,32 @@ REQUEST_INTERVAL_SECONDS = 0.4
 # `retstart` indexes, and a full page of 500 is ~2 MB for no extra evidence.
 SLICE_SAMPLE = 50
 
-# The boundary search needs a session larger than any plausible cap; 90 days of
-# indexing is ~500,000 records.
+# The boundary search needs a session larger than `BOUNDARY_SEARCH_CEILING`,
+# not merely larger than the cap — over a smaller one the search converges on
+# the session's own size and prints it as the backend's limit. 90 days of
+# indexing is ~500,000 records, comfortably past the ceiling below, and
+# `measure_boundary` refuses rather than assuming it.
 BOUNDARY_SESSION_DAYS = 90
 
 # Upper bound for the search. Doubling from the known-good side would work too,
-# but a fixed bound keeps the request count fixed at ~17 and printable.
+# but a fixed bound keeps the request count fixed — exactly 17 steps, since
+# `while hi - lo > 1` halves 2**17 down to 1 — and so printable in advance.
 BOUNDARY_SEARCH_CEILING = 131_072
+
+
+@dataclass(frozen=True)
+class Session:
+    """A PubMed history session: how many records it holds, and how to read it.
+
+    A dataclass rather than the ``tuple[int, str, str]`` this used to be, for
+    the reason `sample_pdf_metadata_titles.py` gives for its own: two of the
+    three fields are `str`, they are threaded positionally through four
+    signatures, and nothing about a bare tuple stops them being transposed.
+    """
+
+    count: int
+    web_env: str
+    query_key: str
 
 
 @dataclass(frozen=True)
@@ -116,9 +152,27 @@ class Probe:
     refused: bool = False
     error: str | None = None
 
+    def __post_init__(self) -> None:
+        # `Probe()` — every field defaulted — otherwise reads as a *successful
+        # measurement whose value is None*, which is the unmeasured probe
+        # reported as a finding that this class exists to prevent. Tested
+        # against `is None` rather than falsiness: `value=0` is what
+        # `measure_boundary` legitimately returns for a cap of one record, and
+        # `value=[]` is an empty UID slice.
+        if self.error is not None and (self.refused or self.value is not None):
+            raise ValueError("a failed probe carries neither a refusal nor a value")
+        if self.error is None and not self.refused and self.value is None:
+            raise ValueError("a probe that measured nothing must say why")
+
     @property
     def ok(self) -> bool:
+        """Did the server answer? A refusal is an answer."""
         return self.error is None
+
+    @property
+    def measured(self) -> bool:
+        """Is ``value`` readable? False for a refusal as well as a failure."""
+        return self.error is None and not self.refused
 
 
 def _get(url: str, params: dict[str, str]) -> tuple[int, str] | None:
@@ -130,18 +184,29 @@ def _get(url: str, params: dict[str, str]) -> tuple[int, str] | None:
     ``scripts/sample_databank_names.py`` gives: this wants nothing httpx
     offers, and the standard library keeps the script runnable without the
     optional extras installed.
+
+    A 429 or 503 is retried up to ``MAX_PROBE_ATTEMPTS`` times, honouring
+    ``Retry-After`` through the shared two-ended clamp. Without that, a single
+    transient throttle mid-binary-search abandons the run's headline
+    measurement, and one during the day-size walk silently costs that day —
+    and a throttled run is the expected shape here, not the exotic one: a full
+    run makes 150-odd requests against NCBI's 3/s unauthenticated ceiling.
     """
-    time.sleep(REQUEST_INTERVAL_SECONDS)
     query = urllib.parse.urlencode(params)
-    try:
-        # The URL is a module constant; only the query is built here.
-        with urllib.request.urlopen(f"{url}?{query}", timeout=60) as resp:  # noqa: S310
-            return resp.status, resp.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as e:
-        return e.code, e.read().decode("utf-8", errors="replace")
-    except (urllib.error.URLError, TimeoutError) as e:
-        print(f"  request failed: {e}", file=sys.stderr)
-        return None
+    for attempt in range(1, MAX_PROBE_ATTEMPTS + 1):
+        time.sleep(REQUEST_INTERVAL_SECONDS)
+        try:
+            # The URL is a module constant; only the query is built here.
+            with urllib.request.urlopen(f"{url}?{query}", timeout=60) as resp:  # noqa: S310
+                return resp.status, resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 503) and attempt < MAX_PROBE_ATTEMPTS:
+                _sleep_for(_throttle_delay(e, attempt))
+                continue
+            return e.code, e.read().decode("utf-8", errors="replace")
+        except (urllib.error.URLError, TimeoutError) as e:
+            print(f"  request failed: {e}", file=sys.stderr)
+            return None
 
 
 def _count(term: str, base: dict[str, str]) -> int | None:
@@ -149,17 +214,33 @@ def _count(term: str, base: dict[str, str]) -> int | None:
     got = _get(ESEARCH, {**base, "db": "pubmed", "term": term, "retmax": "0"})
     if got is None or got[0] != 200:
         return None
-    found = re.search(r"<Count>(\d+)</Count>", got[1])
-    if found is None:
-        # A 200 carrying no <Count> is an NCBI error document, not an empty
-        # day; read as 0 it would print as a day comfortably under the cap.
+    try:
+        root = ET.fromstring(got[1])  # noqa: S314 - NCBI payload, no entities requested
+    except ET.ParseError as e:
+        print(f"  unparsable esearch response: {e}", file=sys.stderr)
+        return None
+    # E-utilities reports a failed search at HTTP 200 with an <ErrorList> or an
+    # <ERROR>, and it still carries <Count>0</Count> — so reading the count
+    # without looking for the error prints a backend degradation as a day
+    # comfortably under the cap, which moves the share sizing #105 in the
+    # reassuring direction. `_esearch` in the fetcher makes the same check.
+    if root.find("ERROR") is not None or root.find("ErrorList") is not None:
+        print("  esearch answered with an error document", file=sys.stderr)
+        return None
+    # `findtext("Count")` and not a regex over the body: <TranslationStack>
+    # carries a <Count> per sub-term, so the first match in document order is
+    # the top-level one only until the term becomes a conjunction.
+    raw = root.findtext("Count")
+    if raw is None or not raw.isdigit():
+        # A 200 carrying no readable <Count> is an NCBI error document, not an
+        # empty day; read as 0 it would print as a day comfortably under the cap.
         print("  esearch response carried no <Count>", file=sys.stderr)
         return None
-    return int(found.group(1))
+    return int(raw)
 
 
-def _session(term: str, base: dict[str, str]) -> tuple[int, str, str] | None:
-    """Open a history session over *term*: ``(count, WebEnv, QueryKey)``."""
+def _session(term: str, base: dict[str, str]) -> Session | None:
+    """Open a history session over *term*."""
     got = _get(
         ESEARCH,
         {**base, "db": "pubmed", "term": term, "retmax": "0", "usehistory": "y"},
@@ -179,25 +260,30 @@ def _session(term: str, base: dict[str, str]) -> tuple[int, str, str] | None:
     if not (count or "").isdigit() or not web_env or not query_key:
         print("  esearch returned no usable history session", file=sys.stderr)
         return None
-    return int(count), web_env, query_key
+    return Session(int(count or 0), web_env, query_key)
 
 
-def _uilist(session: tuple[int, str, str], start: int, retmax: int, base: dict[str, str]) -> Probe:
+def _uilist(session: Session, start: int, retmax: int, base: dict[str, str]) -> Probe:
     """The UIDs the session holds at ``[start, start + retmax)``.
 
     ``rettype=uilist`` is what makes the boundary search affordable: the same
     ``retstart`` arithmetic the record walk uses, answered in bytes rather than
-    megabytes. A refusal is a measurement, so an HTTP 400 returns a Probe whose
-    value is the refusal, not an error.
+    megabytes. A refusal is a measurement, so an HTTP 400 naming ``retstart``
+    returns a Probe whose value is the refusal, not an error.
+
+    The 400 is read for *which* 400 it is, and that is the mirror of the rule
+    below it. A 400 from anything else — a WebEnv the backend has dropped, a
+    malformed parameter, a backend error rendered as 400 — is not evidence of
+    a limit, and read as one mid-search it collapses the upper bound onto
+    wherever it started and prints a cap no server enforces.
     """
-    _, web_env, query_key = session
     got = _get(
         EFETCH,
         {
             **base,
             "db": "pubmed",
-            "WebEnv": web_env,
-            "query_key": query_key,
+            "WebEnv": session.web_env,
+            "query_key": session.query_key,
             "retstart": str(start),
             "retmax": str(retmax),
             "rettype": "uilist",
@@ -208,20 +294,36 @@ def _uilist(session: tuple[int, str, str], start: int, retmax: int, base: dict[s
         return Probe(error="request failed")
     status, body = got
     if status == 400:
+        if "retstart" not in body:
+            return Probe(error=f"HTTP 400, but not the retstart refusal: {body[:200]}")
         return Probe(refused=True)
     if status != 200:
         return Probe(error=f"HTTP {status}")
     return Probe(value=[line.strip() for line in body.splitlines() if line.strip()])
 
 
-def measure_boundary(session: tuple[int, str, str], base: dict[str, str]) -> Probe:
+def measure_boundary(session: Session, base: dict[str, str]) -> Probe:
     """The largest ``retstart`` the backend will serve, by binary search.
 
     Bounded below by a value known to work and above by one known to be
     refused; if either end fails to behave, the search is abandoned rather
     than reported, since a search over a broken bound converges on a number
     that means nothing.
+
+    The ceiling is only *known* to be refused if it is past the end of the
+    session as well as past the cap. Over a session smaller than the ceiling
+    the search would converge on the session's own size and print it as the
+    backend's limit — a `DISAGREES` line telling a maintainer to change the
+    constant that gates every over-cap day.
     """
+    if session.count <= BOUNDARY_SEARCH_CEILING:
+        return Probe(
+            error=(
+                f"the session holds only {session.count} records, so a refusal past"
+                f" retstart={BOUNDARY_SEARCH_CEILING} would measure the session, not the cap"
+            )
+        )
+
     low = _uilist(session, 0, 1, base)
     if not low.ok:
         return Probe(error=f"the known-good end could not be probed ({low.error})")
@@ -247,9 +349,7 @@ def measure_boundary(session: tuple[int, str, str], base: dict[str, str]) -> Pro
     return Probe(value=lo)
 
 
-def measure_straddling_page(
-    session: tuple[int, str, str], last_retstart: int, base: dict[str, str]
-) -> Probe:
+def measure_straddling_page(session: Session, last_retstart: int, base: dict[str, str]) -> Probe:
     """How many UIDs a page asking to cross the boundary is actually given.
 
     The quiet half of the limit. A page starting inside the served range and
@@ -257,36 +357,58 @@ def measure_straddling_page(
     to say it was clamped. *start* is chosen so the page asks for exactly one
     record past the last one served — a page ending on the boundary is served
     whole and measures nothing.
+
+    Sized in ``EFETCH_PAGE_SIZE`` rather than a literal 500, because the point
+    of the probe is what happens to the page **bmlib actually asks for**: with
+    the size hard-coded, raising the fetcher's page size leaves this measuring
+    a page nothing issues. The returned triple carries the size the clamp
+    should produce, so a page that came back short for some *other* reason is
+    not printed as the clamp.
     """
-    start = max(0, last_retstart + 1 - 499)
-    probe = _uilist(session, start, 500, base)
+    if session.count <= last_retstart + 1:
+        return Probe(
+            error=(
+                f"the session holds {session.count} records and the boundary is at"
+                f" {last_retstart}, so a short page would mean the session ran out,"
+                " not that it was clamped"
+            )
+        )
+    start = max(0, last_retstart + 2 - EFETCH_PAGE_SIZE)
+    probe = _uilist(session, start, EFETCH_PAGE_SIZE, base)
     if not probe.ok:
         return Probe(error=probe.error)
     if probe.refused:
         return Probe(error=f"retstart={start} was refused, so no page straddles the boundary")
-    return Probe(value=(start, len(probe.value)))
+    return Probe(value=(start, len(probe.value), last_retstart + 1 - start))
 
 
-def measure_slice_semantics(session: tuple[int, str, str], base: dict[str, str]) -> Probe:
+def measure_slice_semantics(session: Session, base: dict[str, str]) -> Probe:
     """Are a page's record elements the UID slice it named, in order?
 
     The evidence for the fixed stride. Book chapters are included on purpose:
     ``<PubmedBookArticle>`` is a record element the fetcher counts as
     delivered and does not parse, and a comparison that dropped them would
     report a mismatch bmlib does not have.
+
+    ``<DeleteCitation>`` is included too, and for a different reason than the
+    fetcher's: this compares *slots in the UID list*, not deliveries, and a
+    withdrawn UID occupies a slot even though ``_efetch_page`` deliberately
+    excludes it from delivery. It carries **one PMID per deleted record**, so
+    every one of them is expanded — reading only the first collapses N slots
+    into one and prints "NOT the slice", which is the sampler telling a
+    maintainer to make the very change #96 was closed for refusing.
     """
     uids = _uilist(session, 0, SLICE_SAMPLE, base)
     if not uids.ok or uids.refused:
         return Probe(error=uids.error or "the UID slice was refused")
 
-    _, web_env, query_key = session
     got = _get(
         EFETCH,
         {
             **base,
             "db": "pubmed",
-            "WebEnv": web_env,
-            "query_key": query_key,
+            "WebEnv": session.web_env,
+            "query_key": session.query_key,
             "retstart": "0",
             "retmax": str(SLICE_SAMPLE),
             "retmode": "xml",
@@ -302,11 +424,20 @@ def measure_slice_semantics(session: tuple[int, str, str], base: dict[str, str])
     if root.tag != "PubmedArticleSet":
         return Probe(error=f"the record page was <{root.tag}>, not <PubmedArticleSet>")
 
-    delivered = [
-        child.findtext(".//PMID")
-        for child in root
-        if child.tag in ("PubmedArticle", "PubmedBookArticle", "DeleteCitation")
-    ]
+    delivered: list[str] = []
+    for child in root:
+        if child.tag == "DeleteCitation":
+            pmids = [el.text for el in child.findall("PMID")]
+        elif child.tag in ("PubmedArticle", "PubmedBookArticle"):
+            # The citation's own PMID is the first in document order;
+            # <CommentsCorrections> and <ReferenceList> carry *other* records'
+            # PMIDs deeper in the same subtree, so this cannot expand them all.
+            pmids = [child.findtext(".//PMID")]
+        else:
+            continue
+        if not pmids or any(text is None for text in pmids):
+            return Probe(error=f"a <{child.tag}> element carried no readable PMID")
+        delivered.extend(text for text in pmids if text is not None)
     return Probe(value=(delivered == uids.value, len(delivered), len(uids.value)))
 
 
@@ -333,14 +464,28 @@ def _structural_days(today: date) -> list[date]:
     return sorted(set(firsts + januarys))
 
 
-def report_day_sizes(rows: list[tuple[date, int | None]], label: str) -> None:
-    """Print one population's over-cap share, excluding what could not be read."""
+def report_day_sizes(rows: list[tuple[date, int | None]], label: str) -> bool:
+    """Print one population's over-cap share, excluding what could not be read.
+
+    Returns whether the population was reportable, so a run whose evidence is
+    incomplete can exit non-zero rather than printing an ERROR nobody reads.
+    """
     measured = [(day, count) for day, count in rows if count is not None]
     unmeasured = len(rows) - len(measured)
     print(f"\n{label}: {len(measured)} days measured, {unmeasured} unmeasured")
     if not measured:
         print("  ERROR — nothing measured, so there is no share to report")
-        return
+        return False
+    if unmeasured / len(rows) > UNMEASURED_SHARE_ERROR_THRESHOLD:
+        # Excluding an unread day from the denominator is necessary but not
+        # sufficient: the days that got through a throttled run are the *early*
+        # ones, so what survives is not a random sample of the population. Both
+        # sibling samplers gate on this same threshold.
+        print(
+            f"  ERROR — {unmeasured} of {len(rows)} days went unmeasured, past the"
+            f" {UNMEASURED_SHARE_ERROR_THRESHOLD:.0%} threshold; no share is reported"
+        )
+        return False
     over = [(day, count) for day, count in measured if count > EFETCH_MAX_RETRIEVABLE]
     low, high = wilson(len(over), len(measured))
     counts = sorted(count for _, count in measured)
@@ -351,6 +496,7 @@ def report_day_sizes(rows: list[tuple[date, int | None]], label: str) -> None:
     print(f"  median={counts[len(counts) // 2]}  max={counts[-1]}")
     for day, count in sorted(over, key=lambda kv: kv[1], reverse=True)[:12]:
         print(f"    {day}  {count:>8}  ({count - EFETCH_MAX_RETRIEVABLE} out of reach)")
+    return True
 
 
 def main() -> int:
@@ -380,11 +526,17 @@ def main() -> int:
     if session is None:
         print("ERROR — no history session, so the session limit was not measured")
         return 1
-    print(f"  session holds {session[0]} records")
+    print(f"  session holds {session.count} records")
+
+    # A run that measured nothing must not exit like one that measured
+    # everything: these probes are the evidence for a hard-coded constant, and
+    # a green exit is what a scheduled re-run is judged by.
+    unreportable = False
 
     boundary = measure_boundary(session, base)
-    if not boundary.ok:
+    if not boundary.measured:
         print(f"  largest served retstart: ERROR — {boundary.error}")
+        unreportable = True
     else:
         served = int(boundary.value)
         agrees = "agrees" if served + 1 == EFETCH_MAX_RETRIEVABLE else "DISAGREES"
@@ -394,24 +546,36 @@ def main() -> int:
         )
 
         straddle = measure_straddling_page(session, served, base)
-        if not straddle.ok:
+        if not straddle.measured:
             print(f"  the page straddling the boundary: ERROR — {straddle.error}")
+            unreportable = True
         else:
-            start, delivered = straddle.value
-            verdict = (
-                "clamped silently — HTTP 200, no notice"
-                if delivered < 500
-                else "served whole, though it asked past the boundary — the limit moved"
-                " under the probe; re-run"
-            )
+            start, delivered, expected = straddle.value
+            if delivered == expected:
+                verdict = "clamped silently — HTTP 200, no notice"
+            elif delivered >= EFETCH_PAGE_SIZE:
+                verdict = (
+                    "served whole, though it asked past the boundary — the limit moved"
+                    " under the probe; re-run"
+                )
+            else:
+                # Short, but not at the boundary the search just found. That is
+                # not the clamp — it is two probes disagreeing — and printing it
+                # as the clamp would put a number behind a claim nothing made.
+                verdict = (
+                    f"short, but {expected} were expected at this boundary — not a clean"
+                    " clamp, so the two probes disagree; re-run"
+                )
+                unreportable = True
             print(
-                f"  the page straddling the boundary: retstart={start} retmax=500 gave"
-                f" {delivered} UIDs — {verdict}"
+                f"  the page straddling the boundary: retstart={start}"
+                f" retmax={EFETCH_PAGE_SIZE} gave {delivered} UIDs — {verdict}"
             )
 
     semantics = measure_slice_semantics(session, base)
-    if not semantics.ok:
+    if not semantics.measured:
         print(f"  what retstart indexes: ERROR — {semantics.error}")
+        unreportable = True
     else:
         same, delivered, wanted = semantics.value
         print(
@@ -420,7 +584,7 @@ def main() -> int:
         )
 
     if args.skip_day_sizes:
-        return 0
+        return 1 if unreportable else 0
 
     # Three populations, measured once: a month first inside the window is not
     # re-fetched for the structural table, and the window is reported whole as
@@ -432,16 +596,18 @@ def main() -> int:
     structural = set(_structural_days(today))
     outside = [day for day in sorted(structural) if day not in set(window)]
 
-    report_day_sizes(
-        [row for row in window_rows if row[0] not in structural],
-        f"Ordinary days (last {args.days}, month firsts set aside)",
-    )
-    report_day_sizes(
-        [row for row in window_rows if row[0] in structural] + measure_day_sizes(outside, base),
-        "Month firsts and 1 January",
-    )
-    report_day_sizes(window_rows, f"Every day of the last {args.days} — one sync window")
-    return 0
+    reported = [
+        report_day_sizes(
+            [row for row in window_rows if row[0] not in structural],
+            f"Ordinary days (last {args.days}, month firsts set aside)",
+        ),
+        report_day_sizes(
+            [row for row in window_rows if row[0] in structural] + measure_day_sizes(outside, base),
+            "Month firsts and 1 January",
+        ),
+        report_day_sizes(window_rows, f"Every day of the last {args.days} — one sync window"),
+    ]
+    return 1 if unreportable or not all(reported) else 0
 
 
 if __name__ == "__main__":

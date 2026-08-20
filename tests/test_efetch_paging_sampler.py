@@ -37,8 +37,12 @@ No network: every test drives the script through a stubbed ``_get``.
 
 from __future__ import annotations
 
+import contextlib
+import email.message
 import importlib.util
+import io
 import sys
+import urllib.error
 from datetime import date
 from pathlib import Path
 
@@ -61,8 +65,13 @@ sampler = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = sampler
 _spec.loader.exec_module(sampler)
 
+# Captured before the autouse fixture replaces `sampler._get` with a stub: the
+# throttle-retry rules live inside the real one, so testing them needs the
+# function itself rather than the stand-in every other test drives.
+_REAL_GET = sampler._get
 
-SESSION = (500_000, "WEBENV1", "1")
+
+SESSION = sampler.Session(500_000, "WEBENV1", "1")
 
 _REFUSAL = (
     "<eFetchResult><ERROR>Search backend cannot retrieve history data. Reason:"
@@ -90,14 +99,15 @@ class _FakeEUtils:
         self.limit = limit
         self.clamps = clamps
         self.fail_at = fail_at
-        self.counts = counts or {}
+        self.counts = {} if counts is None else counts
         self.records = records
 
     def __call__(self, url: str, params: dict[str, str]) -> tuple[int, str] | None:
         if url == sampler.ESEARCH and params.get("usehistory") == "y":
             return 200, (
-                f"<eSearchResult><Count>{SESSION[0]}</Count>"
-                f"<WebEnv>{SESSION[1]}</WebEnv><QueryKey>{SESSION[2]}</QueryKey></eSearchResult>"
+                f"<eSearchResult><Count>{SESSION.count}</Count>"
+                f"<WebEnv>{SESSION.web_env}</WebEnv>"
+                f"<QueryKey>{SESSION.query_key}</QueryKey></eSearchResult>"
             )
         if url == sampler.ESEARCH:
             count = self.counts.get(params["term"], 5000)
@@ -122,6 +132,24 @@ class _FakeEUtils:
                 for i in range(retstart, retstart + served)
             )
         return 200, f"<PubmedArticleSet>{body}</PubmedArticleSet>"
+
+
+class _Reply:
+    """The bare shape ``_get`` reads off a successful ``urlopen`` result."""
+
+    def __init__(self, status: int, body: bytes) -> None:
+        self.status = status
+        self._body = body
+
+    def read(self) -> bytes:
+        return self._body
+
+
+class _AllUnmeasured(dict):
+    """A counts table where every day comes back unmeasured, whatever is asked."""
+
+    def get(self, key, default=None):  # noqa: ARG002 - the point is to ignore the default
+        return None
 
 
 @pytest.fixture(autouse=True)
@@ -255,20 +283,64 @@ class TestADayThatCouldNotBeSizedIsNotCountedAsSmall:
     """The over-cap share sizes issue #105; an unread day must not soften it."""
 
     def test_unmeasured_days_are_excluded_from_the_population(self, capsys):
+        """The denominator is what was read, not what was asked for.
+
+        Six rows so the one unmeasured day stays inside
+        ``UNMEASURED_SHARE_ERROR_THRESHOLD``; past it the share is withheld
+        entirely, which is the test below.
+        """
         rows = [
             (date(2026, 1, 1), 200_000),
             (date(2026, 1, 2), 5_000),
-            (date(2026, 1, 3), None),
+            (date(2026, 1, 3), 5_000),
+            (date(2026, 1, 4), 5_000),
+            (date(2026, 1, 5), 5_000),
+            (date(2026, 1, 6), None),
         ]
 
-        sampler.report_day_sizes(rows, "test")
+        assert sampler.report_day_sizes(rows, "test") is True
         out = capsys.readouterr().out
 
-        assert "2 days measured, 1 unmeasured" in out
-        assert "1/2 = 50.0%" in out
+        assert "5 days measured, 1 unmeasured" in out
+        assert "1/5 = 20.0%" in out
+
+    def test_a_population_mostly_unmeasured_reports_no_share(self, capsys):
+        """Excluding an unread day is necessary but not sufficient.
+
+        What survives a throttled run is the *early* attempts, so the
+        surviving days are not a random sample of the population and a
+        precise-looking share over them is not evidence. Both sibling samplers
+        gate on the same threshold; this one carried only the all-or-nothing
+        case, so 118 days of 120 throttled out still printed a share with a
+        95% interval.
+        """
+        rows = [(date(2026, 1, 1), 5_000), (date(2026, 1, 2), None), (date(2026, 1, 3), None)]
+
+        assert sampler.report_day_sizes(rows, "test") is False
+        out = capsys.readouterr().out
+
+        assert "ERROR" in out
+        assert "2 of 3 days went unmeasured" in out
+        # The share line and its interval are the thing withheld; the threshold
+        # itself is rendered as a percentage in the refusal, so a bare "%" test
+        # would pass vacuously against the message rather than against the share.
+        assert "over 9999" not in out
+        assert "CI" not in out
+
+    def test_a_day_exactly_at_the_cap_is_not_reported_as_out_of_reach(self, capsys):
+        """The cap is the largest *fetchable* day, not the smallest refused one.
+
+        `fetch_pubmed` walks a 9,999-record day to completion, so counting it
+        here as over the cap would inflate the share that sizes #105.
+        """
+        sampler.report_day_sizes([(date(2026, 1, 1), 9_999)], "test")
+        out = capsys.readouterr().out
+
+        assert "0/1 = 0.0%" in out
+        assert "out of reach" not in out
 
     def test_a_population_that_was_wholly_unmeasured_reports_no_share(self, capsys):
-        sampler.report_day_sizes([(date(2026, 1, 1), None)], "test")
+        assert sampler.report_day_sizes([(date(2026, 1, 1), None)], "test") is False
         out = capsys.readouterr().out
 
         assert "ERROR" in out
@@ -315,8 +387,10 @@ class TestTheDaySizeWalkAsksForThePublicationDateField:
     Measured 2026-08-20: under the field bmlib queries, no ordinary day was
     over the cap (0 of 58) and every structural one was (16 of 16, up to
     315,282). Under EDAT the same question gives 4 of 120 days, none above
-    12,096 — sampling the wrong field understates the magnitude by a factor of
-    25 and blames load spikes for what the indexing convention does.
+    12,096 — so the largest day the right field finds is 26x the largest the
+    wrong one does, and sampling the wrong field blames load spikes for what
+    the indexing convention does. The EDAT figure was a one-off probe: this
+    walk has no flag for it, which is what the test below pins.
     """
 
     def test_the_term_names_the_publication_date(self, monkeypatch):
@@ -350,3 +424,432 @@ def test_a_throttled_uilist_probe_is_unmeasured_rather_than_refused(monkeypatch,
 
     assert not probe.ok
     assert not probe.refused
+
+
+class TestOnlyTheRetstartRefusalIsTheBoundary:
+    """A 400 is the measurement here, which makes *which* 400 load-bearing.
+
+    The rule below — every non-200 that is not a 400 is a failed probe — has a
+    mirror the first cut left open. A 400 raised by anything other than the
+    retstart limit (a WebEnv the backend has dropped, a malformed parameter, a
+    backend error rendered as 400) is not evidence of a limit either, and read
+    as one mid-search it collapses the upper bound onto wherever it began and
+    prints a cap no server enforces.
+    """
+
+    def test_a_400_that_does_not_name_retstart_is_a_failed_probe(self, monkeypatch):
+        dropped = (
+            "<eFetchResult><ERROR>Search backend failed: WebEnv WEBENV1"
+            " is not valid</ERROR></eFetchResult>"
+        )
+        monkeypatch.setattr(sampler, "_get", lambda url, params: (400, dropped))
+
+        probe = sampler._uilist(SESSION, 0, 1, {})
+
+        assert not probe.ok
+        assert not probe.refused
+        assert "not the retstart refusal" in (probe.error or "")
+
+    def test_a_400_naming_retstart_is_still_the_refusal(self, monkeypatch):
+        monkeypatch.setattr(sampler, "_get", lambda url, params: (400, _REFUSAL))
+
+        probe = sampler._uilist(SESSION, 0, 1, {})
+
+        assert probe.refused
+        assert probe.ok
+
+    def test_a_foreign_400_mid_search_does_not_become_a_cap(self, monkeypatch, capsys):
+        """The failure the body check exists to stop, driven end to end."""
+
+        class _DropsWebEnvAboveTheCap(_FakeEUtils):
+            def __call__(self, url, params):
+                if url == sampler.EFETCH and int(params["retstart"]) >= self.limit:
+                    return 400, "<eFetchResult><ERROR>WebEnv is not valid</ERROR></eFetchResult>"
+                return super().__call__(url, params)
+
+        out = _run(monkeypatch, capsys, _DropsWebEnvAboveTheCap(), "--skip-day-sizes")
+
+        assert "largest served retstart: ERROR" in out
+        assert "agrees" not in out
+        assert "DISAGREES" not in out
+
+
+class TestTheBoundarySearchNeedsASessionBiggerThanItsCeiling:
+    """The ceiling is only *known* to be refused if it is past the session too.
+
+    Over a smaller session the search converges on the session's own size and
+    prints it as the backend's limit — a `DISAGREES` line telling a maintainer
+    to change the constant that gates every over-cap day.
+    """
+
+    def test_a_session_smaller_than_the_ceiling_is_refused(self, monkeypatch):
+        monkeypatch.setattr(sampler, "_get", _FakeEUtils(limit=40_000))
+        small = sampler.Session(50_000, "WEBENV1", "1")
+
+        probe = sampler.measure_boundary(small, {})
+
+        assert not probe.measured
+        assert "would measure the session, not the cap" in (probe.error or "")
+
+    def test_a_session_larger_than_the_ceiling_is_measured(self):
+        probe = sampler.measure_boundary(SESSION, {})
+
+        assert probe.measured
+        assert probe.value == 9998
+
+
+class TestTheStraddleProbeReportsOnlyACleanClamp:
+    """A page can come back short for reasons that are not the clamp."""
+
+    def test_a_session_ending_at_the_boundary_cannot_show_a_clamp(self, monkeypatch):
+        """A page short because the session ran out is not a clamped page."""
+        monkeypatch.setattr(sampler, "_get", _FakeEUtils())
+        exact = sampler.Session(9_999, "WEBENV1", "1")
+
+        probe = sampler.measure_straddling_page(exact, 9_998, {})
+
+        assert not probe.measured
+        assert "the session ran out" in (probe.error or "")
+
+    def test_a_page_short_of_the_expected_clamp_is_not_printed_as_the_clamp(
+        self, monkeypatch, capsys
+    ):
+        """499 was expected at this boundary; 300 is two probes disagreeing."""
+
+        class _TruncatesTheStraddlingPage(_FakeEUtils):
+            def __call__(self, url, params):
+                got = super().__call__(url, params)
+                if got and params.get("rettype") == "uilist" and int(params["retstart"]) == 9500:
+                    return 200, "\n".join(got[1].splitlines()[:300])
+                return got
+
+        out = _run(monkeypatch, capsys, _TruncatesTheStraddlingPage(), "--skip-day-sizes")
+
+        assert "499 were expected at this boundary" in out
+        assert "clamped silently" not in out
+
+    def test_the_probe_asks_for_the_page_bmlib_actually_walks(self, monkeypatch):
+        """Sized in EFETCH_PAGE_SIZE, so raising it does not leave this measuring
+        a page no fetcher issues."""
+        asked = []
+
+        def fake(url, params):
+            asked.append((int(params["retstart"]), int(params["retmax"])))
+            return 200, "\n".join(str(i) for i in range(499))
+
+        monkeypatch.setattr(sampler, "_get", fake)
+        sampler.measure_straddling_page(SESSION, 9_998, {})
+
+        assert asked == [(9_999 + 1 - sampler.EFETCH_PAGE_SIZE, sampler.EFETCH_PAGE_SIZE)]
+
+
+class TestOneDeleteCitationHoldsManyUids:
+    """`<DeleteCitation>` carries a PMID per deleted record, all of them slots.
+
+    Reading only the first collapses N UIDs into one entry, and the script then
+    prints "NOT the slice; the stride assumption is void" — telling a
+    maintainer to advance `retstart` by what arrived, which is exactly the
+    change #96 was closed for refusing.
+    """
+
+    @staticmethod
+    def _page_with_a_deleted_pair() -> list[str]:
+        articles = [
+            f"<PubmedArticle><MedlineCitation><PMID>{90_000 + i}</PMID>"
+            "</MedlineCitation></PubmedArticle>"
+            for i in range(48)
+        ]
+        return [*articles, "<DeleteCitation><PMID>90048</PMID><PMID>90049</PMID></DeleteCitation>"]
+
+    def test_a_page_carrying_a_deleted_pair_is_still_the_slice(self, monkeypatch, capsys):
+        out = _run(
+            monkeypatch,
+            capsys,
+            _FakeEUtils(records=self._page_with_a_deleted_pair()),
+            "--skip-day-sizes",
+        )
+
+        assert "50 record elements against 50 UIDs" in out
+        assert "the slice, in order" in out
+
+    def test_an_article_subtree_carrying_another_records_pmid_is_not_expanded(
+        self, monkeypatch, capsys
+    ):
+        """`<CommentsCorrections>` holds the PMID of a *different* record.
+
+        So the expansion cannot be "every PMID in the subtree" — for an article
+        element the citation's own PMID is the first, and the rest belong to
+        records that occupy no slot in this page.
+        """
+        records = [
+            "<PubmedArticle><MedlineCitation><PMID>90000</PMID>"
+            "<CommentsCorrectionsList><CommentsCorrections>"
+            "<PMID>12345678</PMID></CommentsCorrections></CommentsCorrectionsList>"
+            "</MedlineCitation></PubmedArticle>",
+            *[
+                f"<PubmedArticle><MedlineCitation><PMID>{90_000 + i}</PMID>"
+                "</MedlineCitation></PubmedArticle>"
+                for i in range(1, 50)
+            ],
+        ]
+        out = _run(monkeypatch, capsys, _FakeEUtils(records=records), "--skip-day-sizes")
+
+        assert "50 record elements against 50 UIDs" in out
+        assert "the slice, in order" in out
+
+
+class TestAnErrorDocumentIsNotASmallDay:
+    """E-utilities reports a failed search at HTTP 200, and still sends a Count."""
+
+    def test_an_error_document_carrying_a_zero_count_is_unmeasured(self, monkeypatch):
+        body = (
+            "<eSearchResult><Count>0</Count><ErrorList>"
+            "<FieldNotFound>Date - Publication</FieldNotFound></ErrorList></eSearchResult>"
+        )
+        monkeypatch.setattr(sampler, "_get", lambda url, params: (200, body))
+
+        assert sampler.measure_day_sizes([date(2026, 1, 1)], {}) == [(date(2026, 1, 1), None)]
+
+    def test_a_bare_error_element_is_unmeasured(self, monkeypatch):
+        body = "<eSearchResult><Count>0</Count><ERROR>Invalid db name</ERROR></eSearchResult>"
+        monkeypatch.setattr(sampler, "_get", lambda url, params: (200, body))
+
+        assert sampler.measure_day_sizes([date(2026, 1, 1)], {}) == [(date(2026, 1, 1), None)]
+
+    def test_a_nested_count_is_not_read_as_the_days_count(self, monkeypatch):
+        """The day's count is the document element's own child, not any <Count>.
+
+        `<TranslationStack>` carries one per sub-term. A regex over the body —
+        what this used to be — matches whichever comes first in document
+        order, so a response that carries a sub-term count but no top-level one
+        reads as a day of 7 records instead of as unmeasured. Note the
+        ordinary conjunction case does *not* discriminate between the two
+        implementations, because a real `eSearchResult` puts its own <Count>
+        first; this is the payload where they differ.
+        """
+        body = (
+            "<eSearchResult><TranslationStack>"
+            "<TermSet><Term>a</Term><Count>7</Count></TermSet>"
+            "</TranslationStack></eSearchResult>"
+        )
+        monkeypatch.setattr(sampler, "_get", lambda url, params: (200, body))
+
+        assert sampler.measure_day_sizes([date(2026, 1, 1)], {}) == [(date(2026, 1, 1), None)]
+
+    def test_an_ordinary_response_is_read_as_its_count(self, monkeypatch):
+        """The negative control for the test above: a normal body still reads."""
+        body = (
+            "<eSearchResult><Count>40000</Count><TranslationStack>"
+            "<TermSet><Term>a</Term><Count>7</Count></TermSet>"
+            "</TranslationStack></eSearchResult>"
+        )
+        monkeypatch.setattr(sampler, "_get", lambda url, params: (200, body))
+
+        assert sampler.measure_day_sizes([date(2026, 1, 1)], {}) == [(date(2026, 1, 1), 40_000)]
+
+    def test_an_unparsable_body_is_unmeasured(self, monkeypatch):
+        monkeypatch.setattr(sampler, "_get", lambda url, params: (200, "<eSearchResult>"))
+
+        assert sampler.measure_day_sizes([date(2026, 1, 1)], {}) == [(date(2026, 1, 1), None)]
+
+
+class TestAThrottledRequestIsRetriedRatherThanLost:
+    """One transient 429 must not cost the run its headline measurement.
+
+    A full run makes ~150 requests against NCBI's 3/s unauthenticated ceiling,
+    so a throttle is the expected shape here. Without a retry, one of them
+    mid-binary-search abandons the boundary search outright, and one during the
+    day-size walk silently drops that day out of its population.
+    """
+
+    @staticmethod
+    def _http_error(code: int) -> urllib.error.HTTPError:
+        return urllib.error.HTTPError(
+            "https://example.org", code, "throttled", email.message.Message(), io.BytesIO(b"slow")
+        )
+
+    @pytest.fixture(autouse=True)
+    def _no_waiting(self, monkeypatch):
+        monkeypatch.setattr(sampler.time, "sleep", lambda seconds: None)
+        monkeypatch.setattr(sampler, "_sleep_for", lambda seconds: None)
+
+    @pytest.mark.parametrize("code", [429, 503])
+    def test_a_throttled_request_is_retried_and_its_answer_returned(self, monkeypatch, code):
+        replies = [self._http_error(code), self._http_error(code)]
+
+        def fake_urlopen(url, timeout=None):
+            if replies:
+                raise replies.pop(0)
+            return contextlib.nullcontext(_Reply(200, b"<eSearchResult/>"))
+
+        monkeypatch.setattr(sampler.urllib.request, "urlopen", fake_urlopen)
+
+        assert _REAL_GET("https://example.org", {}) == (200, "<eSearchResult/>")
+        assert replies == []
+
+    def test_a_persistent_throttle_returns_the_status_rather_than_looping(self, monkeypatch):
+        attempts = []
+
+        def fake_urlopen(url, timeout=None):
+            attempts.append(url)
+            raise self._http_error(429)
+
+        monkeypatch.setattr(sampler.urllib.request, "urlopen", fake_urlopen)
+
+        assert _REAL_GET("https://example.org", {}) == (429, "slow")
+        assert len(attempts) == sampler.MAX_PROBE_ATTEMPTS
+
+    def test_a_400_is_not_retried_because_it_is_the_measurement(self, monkeypatch):
+        attempts = []
+
+        def fake_urlopen(url, timeout=None):
+            attempts.append(url)
+            raise urllib.error.HTTPError(
+                url, 400, "bad", email.message.Message(), io.BytesIO(_REFUSAL.encode())
+            )
+
+        monkeypatch.setattr(sampler.urllib.request, "urlopen", fake_urlopen)
+
+        assert _REAL_GET("https://example.org", {}) == (400, _REFUSAL)
+        assert len(attempts) == 1
+
+
+class TestAProbeCannotBeBuiltWithNothingToSay:
+    """`Probe()` would otherwise read as a measurement whose value is None.
+
+    Which is the unmeasured probe reported as a finding that the class exists
+    to prevent — the sibling `ProbeOutcome` cannot be constructed empty either.
+    """
+
+    def test_an_empty_probe_is_refused(self):
+        with pytest.raises(ValueError, match="must say why"):
+            sampler.Probe()
+
+    def test_a_failed_probe_carrying_a_value_is_refused(self):
+        with pytest.raises(ValueError, match="neither a refusal nor a value"):
+            sampler.Probe(value=5, error="boom")
+
+    def test_a_failed_probe_that_also_claims_a_refusal_is_refused(self):
+        with pytest.raises(ValueError, match="neither a refusal nor a value"):
+            sampler.Probe(refused=True, error="boom")
+
+    def test_a_measurement_of_zero_is_legal(self):
+        """`value=0` is a real cap of one record, and `[]` a real empty slice."""
+        assert sampler.Probe(value=0).measured
+        assert sampler.Probe(value=[]).measured
+
+    def test_a_refusal_is_an_answer_but_not_a_measurement(self):
+        probe = sampler.Probe(refused=True)
+
+        assert probe.ok
+        assert not probe.measured
+
+
+class TestARunThatMeasuredNothingDoesNotExitLikeOneThatDid:
+    """These probes are the evidence for a hard-coded constant.
+
+    A scheduled re-run is judged by its exit status, so a run whose evidence
+    never arrived must not be indistinguishable from one whose evidence agreed.
+    """
+
+    def test_a_clean_session_run_exits_zero(self, monkeypatch, capsys):
+        assert self._exit(monkeypatch, capsys, _FakeEUtils(), "--skip-day-sizes") == 0
+
+    def test_a_run_whose_boundary_search_failed_exits_non_zero(self, monkeypatch, capsys):
+        fake = _FakeEUtils(fail_at=frozenset({65_536}))
+
+        assert self._exit(monkeypatch, capsys, fake, "--skip-day-sizes") == 1
+
+    def test_a_run_whose_slice_probe_failed_exits_non_zero(self, monkeypatch, capsys):
+        fake = _FakeEUtils(fail_at=frozenset({0}))
+
+        assert self._exit(monkeypatch, capsys, fake, "--skip-day-sizes") == 1
+
+    def test_a_day_size_population_past_the_threshold_exits_non_zero(self, monkeypatch, capsys):
+        """The populations are reported, and one withheld share fails the run."""
+        fake = _FakeEUtils(counts=_AllUnmeasured())
+
+        assert self._exit(monkeypatch, capsys, fake, "--days", "2") == 1
+
+    @staticmethod
+    def _exit(monkeypatch, capsys, fake: _FakeEUtils, *args: str) -> int:
+        monkeypatch.setattr(sampler, "_get", fake)
+        monkeypatch.setattr(
+            sys, "argv", ["sample_efetch_paging.py", "--email", "t@example.org", *args]
+        )
+        status = sampler.main()
+        capsys.readouterr()
+        return status
+
+
+class TestTheThreePopulationsArePartitionedNotOverlapped:
+    """The day-size half of `main()`, which the session probes skip.
+
+    The numbers hard-coded into `pubmed.py`, `docs/DECISIONS.md` and
+    `CLAUDE.md` come out of this partition, and its own comment states an
+    invariant nothing else checks: a month first inside the window is reported
+    in the structural population and *not* re-fetched for it. Let month firsts
+    back into the ordinary population and "no ordinary day was over the cap" —
+    the sentence the guard's scope rests on — becomes a statement about a
+    population containing the days that are always over.
+    """
+
+    @staticmethod
+    def _sized(monkeypatch, capsys, *args: str) -> tuple[list[str], str]:
+        """Run the full day-size half, returning the terms asked and the output."""
+        asked: list[str] = []
+        structural = {f"{day:%Y/%m/%d}" for day in sampler._structural_days(date.today())}
+
+        def fake(url, params):
+            if params.get("usehistory") == "y":
+                return 200, (
+                    f"<eSearchResult><Count>{SESSION.count}</Count>"
+                    f"<WebEnv>{SESSION.web_env}</WebEnv>"
+                    f"<QueryKey>{SESSION.query_key}</QueryKey></eSearchResult>"
+                )
+            if url == sampler.ESEARCH:
+                term = params["term"]
+                asked.append(term)
+                big = any(stamp in term for stamp in structural)
+                return (
+                    200,
+                    f"<eSearchResult><Count>{200_000 if big else 5_000}</Count></eSearchResult>",
+                )
+            return _FakeEUtils()(url, params)
+
+        monkeypatch.setattr(sampler, "_get", fake)
+        monkeypatch.setattr(
+            sys, "argv", ["sample_efetch_paging.py", "--email", "t@example.org", *args]
+        )
+        sampler.main()
+        return asked, capsys.readouterr().out
+
+    def test_no_day_is_sized_twice(self, monkeypatch, capsys):
+        """A re-fetched day doubles the run's budget against a rate-limited API."""
+        asked, _ = self._sized(monkeypatch, capsys, "--days", "40")
+
+        assert len(asked) == len(set(asked))
+
+    def test_the_ordinary_population_excludes_every_structural_day(self, monkeypatch, capsys):
+        _, out = self._sized(monkeypatch, capsys, "--days", "40")
+        ordinary = out.split("Ordinary days")[1].split("Month firsts")[0]
+
+        assert "over 9999: 0/" in ordinary
+
+    def test_the_structural_population_is_every_structural_day(self, monkeypatch, capsys):
+        """Month firsts inside the window and outside it both land here."""
+        _, out = self._sized(monkeypatch, capsys, "--days", "40")
+        structural = out.split("Month firsts and 1 January")[1].split("Every day")[0]
+        expected = len(sampler._structural_days(date.today()))
+
+        assert f"{expected} days measured, 0 unmeasured" in structural
+        assert f"{expected}/{expected} = 100.0%" in structural
+
+    def test_the_window_is_reported_whole_as_well_as_split(self, monkeypatch, capsys):
+        """ "What share of ordinary days is fine" and "what share of a sync
+        window will fail" are different questions; only the second sizes the
+        retry cost."""
+        _, out = self._sized(monkeypatch, capsys, "--days", "40")
+
+        assert "Every day of the last 40 — one sync window" in out
+        assert out.count("days measured,") == 3

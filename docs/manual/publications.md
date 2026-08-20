@@ -1210,8 +1210,8 @@ count, before requesting a single page:
 
 ```python
 FetchResult(status="failed", record_count=0, error=
-    "PubMed reported 61378 records for 2026-02-01, but efetch serves only the first"
-    " 9999 records of a history session, so 51379 of them cannot be reached; ...")
+    "PubMed reported 61378 records for 2026-02-01, but a history session serves only"
+    " its first 9999 records, so 51379 of them cannot be reached; ...")
 ```
 
 Two things to know:
@@ -1219,22 +1219,36 @@ Two things to know:
 - **This is not rare, because `[Date - Publication]` is not `[EDAT]`.** A
   record carrying only a year and a month is indexed at day 1 of that month,
   and one carrying only a year at 1 January. Measured 2026-08-20: every
-  first-of-month day holds 49,543–90,571 records and every 1 January holds
-  212,439–315,282, against a median ordinary day of 4,890. So a backfill meets
+  first-of-month day other than 1 January holds 49,543–90,571 records, and
+  every 1 January 212,439–315,282, against a median ordinary day of 4,890. So a backfill meets
   one refused day per month, plus a very large one per year.
 - **The day is failed, so `sync()` re-offers it on every later run** — an
-  ERROR and a `SyncReport.errors` line each time. It cannot be recorded
+  ERROR and a `SyncReport.errors` line each time. A six-year backfill carries
+  some 72 such days, so that surface never returns to empty until #105 lands:
+  alert on a *change* in `SyncReport.errors` rather than on it being non-empty
+  (issue #107 tracks giving a known-permanent refusal its own field). It cannot be recorded
   `completed`: that would durably lose the records past the cap, and
   `_days_needing_fetch()` would never offer the day again. Nothing is fetched
-  for it in the meantime, deliberately — storing the reachable fifth once and
-  re-fetching it forever costs about 3 GB a run across a six-year backfill and
-  stores nothing new after the first. Issue #105 partitions such a day into
-  sub-queries that each fit, which is what makes the day fetchable rather than
-  merely honest about being unfetchable.
+  for it in the meantime, deliberately — storing the reachable 9,999 once and
+  re-fetching them forever costs about 3 GB a run across a six-year backfill
+  and stores nothing new after the first. (An absolute rather than a fraction:
+  9,999 is a fifth of the smallest structural day but a thirty-second of 1
+  January.) Issue #105 partitions such a day into sub-queries that each fit,
+  which is what makes the day fetchable rather than merely honest about being
+  unfetchable.
+- **`download_days.record_count` is what *this* run stored, not a running
+  total.** A day that was fetched successfully years ago and has since grown
+  past the cap — 1 January accrues year-only citations — is re-offered under
+  `recheck_days`, refused, and its row rewritten to `failed` with
+  `record_count=0`. The publications already stored are untouched; it is the
+  row that stops describing them.
 
 Before this the walk asked for record 10,000 anyway and the day failed on the
 400 with `Client error '400 Bad Request'` — the same verdict, twenty requests
-later, naming neither cause nor remedy.
+later, naming neither cause nor remedy. With one exception: a day of *exactly*
+10,000 records never asked past `retstart=9500`, so it walked to its end, was
+clamped to 9,999 delivered, cleared the shortfall floor and was recorded
+`completed` — losing one record durably. The guard closes that too.
 
 #### Titles and abstracts are Markdown
 

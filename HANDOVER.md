@@ -21,18 +21,37 @@ cap, 16 of 16 month firsts and 1 Januarys are**, up to 315,282 records,
 because a record carrying only a year and a month is indexed at day 1 of it.
 Such a day is now refused on ESearch's count — it was already failing, on an
 inscrutable `400 Bad Request` twenty requests later — and **nothing is fetched
-for it**, the maintainer's call: storing the reachable fifth once would
-re-fetch it forever, ~3 GB a run across a six-year backfill. **That is
+for it**, the maintainer's call: storing the reachable 9,999 once would
+re-fetch them forever, ~3 GB a run across a six-year backfill. **That is
 containment, not a fix. #105 is the fix**, and until it lands "no publication
 is missed" is false — roughly one unfetchable day a month, plus a very large
 one a year.
+
+A review round then found two false claims in the write-up and four ways the
+sampler could print a wrong finding. The claims mattered most: the register
+said the change "moves no day from success to failure", but a day of *exactly*
+10,000 records never asks past `retstart=9500`, so it met no 400 — it walked to
+its end, was silently clamped to 9,999 delivered, cleared the shortfall floor
+and was recorded `completed`, losing one record durably. The guard closes a
+silent loss, not just an unhelpful message. And "if NCBI lowers the cap the 400
+still fires" is false for a band up to `EFETCH_PAGE_SIZE` wide (simulated at a
+cap of 4,750: counts 4,751–5,000 all completed, losing up to 250 records each);
+the sampler, not the guard, is what detects a moved cap. On the sampler: any
+400 was read as the boundary rather than only the one naming `retstart`; one
+`<DeleteCitation>` holds many PMIDs and reading the first printed "NOT the
+slice", which would have argued for exactly the stride change #96 was closed
+for refusing; an E-utilities error document carrying `<Count>0</Count>` counted
+as a small day; and there was no `UNMEASURED_SHARE_ERROR_THRESHOLD` gate and no
+429 retry, both of which the sibling samplers have and `_sampling` exists to
+hold. All fixed, each with a named regression test; 18 mutations, 18 caught.
 
 Three method lessons from it, all cheap to repeat:
 
 - **Measure the field the code queries, not the one the concept suggests.**
   Sampling `[EDAT]` gives 4 of 120 days over the cap, none above 12,096 — a
-  reassuring number, off by 25× in magnitude, that blames load spikes for what
-  the indexing convention does. bmlib queries `[Date - Publication]`.
+  reassuring number that blames load spikes for what the indexing convention
+  does, and whose largest day is 26× smaller than the right field's 315,282.
+  bmlib queries `[Date - Publication]`.
 - **An issue's proposed fix is a hypothesis, not a spec.** #96's was
   plausible, would have passed review, and is now pinned against by two tests.
 - **Ask the live API where its limits are before hard-coding one.** Both
@@ -40,10 +59,12 @@ Three method lessons from it, all cheap to repeat:
   stated only in the error body — including the silent clamp, which no
   documentation mentions at all.
 
-`scripts/sample_efetch_paging.py` re-runs every measurement above in about 20
-requests (`--skip-day-sizes`), and reports `agrees`/`DISAGREES` against
-`EFETCH_MAX_RETRIEVABLE`. Run it before touching that constant or the page
-walk.
+`scripts/sample_efetch_paging.py` re-runs the three **session** measurements
+above in a fixed 23 requests (`--skip-day-sizes`), reporting
+`agrees`/`DISAGREES` against `EFETCH_MAX_RETRIEVABLE`; the day-size populations
+need a full run (~150 requests). Run it before touching that constant or the
+page walk — it is also the only thing that detects a cap NCBI *lowers*, which
+the guard itself does not reliably catch (see `docs/DECISIONS.md`).
 
 **Before that, #73 shipped to `main` in PR #102** (merged 2026-08-16,
 unreleased): `install_defaults()` writes through `atomic_write()`, promoted
@@ -111,15 +132,15 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed six releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2220 passing + 59 skipped** on `fix/96-efetch-paging`
-  (`uv run pytest tests/ -q`); 2187 on `main`, the 33 being this session's (9
-  in `test_pubmed_fetcher.py`, 24 in the new `test_efetch_paging_sampler.py`),
-  and 2172 at 0.10.0, the 15 before that being #73's. The PostgreSQL figure was
-  measured on 0.10.0 and has not been re-run since — #73 touches `templates/`,
-  `fulltext/cache.py` and `_atomic.py` and #96/#105 touch
-  `fetchers/pubmed.py` and a script, none of which reach a database, and CI
-  runs that half against `postgres:16` regardless: **2229 + 2 with
-  `BMLIB_TEST_POSTGRESQL_DSN` set**. 57 of the default skips
+- **Tests: 2254 passing + 59 skipped** on `fix/96-efetch-paging`
+  (`uv run pytest tests/ -q`); 2187 on `main`, the 67 being this session's (9
+  in `test_pubmed_fetcher.py`, 58 in the new `test_efetch_paging_sampler.py`),
+  and 2172 at 0.10.0, the 15 before that being #73's. The PostgreSQL figure is
+  **derived, not measured**: nothing on this branch reaches a database — #73
+  touches `templates/`, `fulltext/cache.py` and `_atomic.py`, and #96/#105
+  touch `fetchers/pubmed.py` and a script — and CI runs that half against
+  `postgres:16` regardless, so with `BMLIB_TEST_POSTGRESQL_DSN` set the 57
+  PostgreSQL parameterisations run instead of skipping: **2311 + 2**. 57 of the default skips
   are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
   PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
   runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev

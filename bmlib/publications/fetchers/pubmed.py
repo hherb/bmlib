@@ -63,6 +63,19 @@ EFETCH_PAGE_SIZE = 500
 # with no notice. A day larger than this cannot be completed through this
 # route at all, so `fetch_pubmed` refuses it on ESearch's count rather than
 # walking into the wall. Raising `EFETCH_PAGE_SIZE` does not raise this.
+#
+# This is a **record count**; the largest legal `retstart` is one less, which
+# is what NCBI's own error names. The guard below is `>` rather than `>=` for
+# that reason, and a day of exactly this many records is fetchable.
+#
+# The guard protects the walk against the cap it *knows*. It does not protect
+# it against a cap NCBI silently **lowers**: the walk only meets the 400 when
+# it requests a page starting past the new limit, so for counts between the
+# lowered cap and the next page boundary the straddling page is clamped
+# instead, the walk ends naturally, and the shortfall is at most
+# `EFETCH_PAGE_SIZE - 1` — under the failure floor, so the day completes on a
+# note. `scripts/sample_efetch_paging.py` is what detects a moved cap, in
+# either direction; see `docs/DECISIONS.md`.
 EFETCH_MAX_RETRIEVABLE = 9999
 
 RATE_LIMIT_WITH_KEY = 0.1  # seconds between requests with API key
@@ -710,11 +723,17 @@ def fetch_pubmed(
         # Refusing costs one esearch instead. The records are not written off:
         # issue #105 partitions an over-cap day into sub-queries that each fit,
         # which is what makes "no publication is missed" true again.
+        #
+        # "a history session serves" rather than "efetch serves": the limit is
+        # the search backend's, which is how NCBI's own 400 names it and how
+        # every doc describing this refers to it. An operator grepping the
+        # docs for the phrase in their log has to find it.
         message = (
-            f"PubMed reported {count} records for {date_str}, but efetch serves only the"
-            f" first {EFETCH_MAX_RETRIEVABLE} records of a history session, so"
+            f"PubMed reported {count} records for {date_str}, but a history session serves"
+            f" only its first {EFETCH_MAX_RETRIEVABLE} records, so"
             f" {count - EFETCH_MAX_RETRIEVABLE} of them cannot be reached; refusing the day"
-            " rather than storing part of it as though it were whole (issue #105)"
+            " rather than storing part of it as though it were whole. This day is refused"
+            " on every run until issue #105 lands; no operator action is available"
         )
         logger.error("%s", message)
         return FetchResult(
@@ -728,8 +747,10 @@ def fetch_pubmed(
     logger.info("PubMed esearch: %d records for %s", count, date_str)
 
     # `retstart` indexes the *session's UID list*, not the records delivered so
-    # far: page k covers the UIDs at [k·retmax, (k+1)·retmax) whether or not
-    # every one of them yields a record. Measured 2026-08-20 (issue #96): a
+    # far: page k covers the UIDs at [k·EFETCH_PAGE_SIZE, (k+1)·EFETCH_PAGE_SIZE)
+    # whether or not every one of them yields a record — named for the constant
+    # that actually strides, since the claim holds only while the walk's step
+    # and `_efetch_page`'s `retmax` stay equal. Measured 2026-08-20 (issue #96): a
     # page's record elements are exactly that slice of esearch's own
     # `IdList`, in order, `<PubmedBookArticle>` entries included. So the
     # stride stays `EFETCH_PAGE_SIZE`. Advancing by what arrived — the fix
