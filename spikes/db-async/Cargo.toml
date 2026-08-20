@@ -1,0 +1,18 @@
+[package]
+name = "bmlib-db-async"
+version = "0.0.0-spike"
+edition = "2021"
+description = "Spike: can bmlib-db's Db trait be used from a Tauri-style async runtime, and pooled?"
+license = "AGPL-3.0-or-later"
+publish = false
+
+[dependencies]
+bmlib-db = { path = "../db-rs" }
+rusqlite = { version = "0.40", features = ["bundled"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.35"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+async-trait = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
