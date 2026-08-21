@@ -1089,8 +1089,15 @@ def _fetch_partitioned(
         try:
             part_count, web_env, query_key = _esearch(client, term, api_key)
         except Exception as exc:
-            logger.error("esearch failed for %s part %s: %s", date_str, part.key, exc)
-            return failed(f"part {part.key}: {exc}")
+            # The type, like every other handler here: `str()` of a bare
+            # transport error is empty, so without it this day fails on every
+            # later run reporting `part edat:a:b: ` and no cause at all. This
+            # `except` is broad, so it equally catches a bmlib defect in
+            # `_edat_range_term` or `_esearch`, and the two must not read
+            # identically.
+            message = f"part {part.key}: {type(exc).__name__}: {exc}"
+            logger.error("esearch failed for %s %s", date_str, message)
+            return failed(message)
 
         if part_count > EFETCH_MAX_RETRIEVABLE:
             # It grew between planning and fetching. Split it again rather than
@@ -1351,13 +1358,16 @@ def fetch_pubmed(
     try:
         count, web_env, query_key = _esearch(client, day_term, api_key)
     except Exception as exc:
-        logger.error("esearch failed for %s: %s", date_str, exc)
+        # As above: a bare `ReadTimeout` or `ConnectError` stringifies to the
+        # empty string, and `sync()` records the error verbatim.
+        message = f"{type(exc).__name__}: {exc}"
+        logger.error("esearch failed for %s: %s", date_str, message)
         return FetchResult(
             source="pubmed",
             date=date_str,
             record_count=0,
             status="failed",
-            error=str(exc),
+            error=message,
         )
 
     if count == 0:

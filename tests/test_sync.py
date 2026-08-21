@@ -2302,6 +2302,53 @@ class TestSyncResumesAPartitionedDay:
         )
         assert row["record_count"] == 2, "the whole day, not this run's share"
 
+    def test_a_completed_day_clears_part_rows_for_a_non_resumable_source_too(self):
+        # The delete is deliberately not gated on `resumable`. Gating it would
+        # strand a source's rows the moment its descriptor stopped declaring
+        # it resumable — to resurface if it ever declared it again, letting a
+        # much later run skip parts against a plan that no longer matches.
+        # Every other test of the delete uses `pubmed`, which is resumable, so
+        # none of them can tell a gated delete from an ungated one.
+        conn = _fresh_conn()
+        day = date(2024, 1, 1)
+        _record_day_part(conn, "biorxiv", day, PartCheckpoint("edat-range", "edat:a:a", 1, 1))
+        assert _load_day_parts(conn, "biorxiv", day), "setup: the row must exist to be cleared"
+
+        sync(
+            conn,
+            sources=["biorxiv"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"biorxiv": _make_fake_fetcher([_record("1")])},
+        )
+
+        assert _load_day_parts(conn, "biorxiv", day) == {}
+
+    def test_a_skipped_part_is_credited_at_what_it_stored_not_what_it_promised(self):
+        # `promised` counts the record elements the source delivered;
+        # `record_count` counts those the fetcher parsed and stored. PubMed's
+        # efetch returns `<PubmedBookArticle>` elements the fetcher skips, so
+        # any part carrying a book chapter has `record_count < promised`, and
+        # crediting the wrong one overstates `download_days.record_count` on
+        # every such day. Every other fixture here sets the two equal, which
+        # is exactly what makes them unable to tell the two apart.
+        conn = _fresh_conn()
+        _record_day_part(
+            conn, "pubmed", date(2024, 1, 1), PartCheckpoint("edat-range", "edat:a:a", 2, 1)
+        )
+        # Two delivered elements, so the stored `promised` of 2 still matches
+        # and the part is skipped — but only one of them was ever a record.
+        parts = [("edat:a:a", [_record("1"), _record("2")]), ("edat:b:b", [_record("3")])]
+
+        self._sync(conn, self._fetcher(parts))
+
+        row = fetch_one(
+            conn,
+            "SELECT record_count FROM download_days WHERE source = ? AND date = ?",
+            ("pubmed", "2024-01-01"),
+        )
+        assert row["record_count"] == 2, "the skipped part stored 1, not the 2 it promised"
+
     def test_a_re_fetched_part_is_not_credited_on_top_of_its_own_records(self):
         """A part whose count moved is walked again — and must be counted once.
 

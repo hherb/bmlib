@@ -32,6 +32,7 @@ from bmlib.publications.fetchers.pubmed import (
     PART_SCHEME,
     _format_abstract_markdown,
     _parse_article_xml,
+    _part_key,
     _text_with_formatting,
     fetch_pubmed,
 )
@@ -2276,6 +2277,9 @@ def _partitioned_client(distribution: dict[date, int], *, part_overrides=None):
       count is met) or a partial-but-nonzero shortfall.
     * ``efetch_error``: if true, EFetch returns a body `_efetch_page` refuses
       to parse (an ``<eFetchResult><ERROR>`` document), in place of a page.
+    * ``esearch_raises``: if true, that part's session-opening ESearch raises
+      a bare ``ConnectionError`` — bare because `str()` of one is empty, which
+      is what makes a handler that drops the exception type report nothing.
 
     A range containing zero or more-than-one populated date always falls back
     to the real distribution count — the empty-range skips and the
@@ -2312,6 +2316,8 @@ def _partitioned_client(distribution: dict[date, int], *, part_overrides=None):
             if "usehistory" in params:
                 day = which_day(params["term"])
                 override = part_overrides.get(day, {}) if day is not None else {}
+                if override.get("esearch_raises"):
+                    raise ConnectionError()
                 count = override.get("count", real_count(params["term"]))
                 if override.get("no_session"):
                     response.text = f"<eSearchResult><Count>{count}</Count></eSearchResult>"
@@ -2456,6 +2462,27 @@ class TestALostOrSkippedPartFailsTheDay:
 
     @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 4)
     @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 4)
+    def test_a_part_whose_session_esearch_fails_fails_the_day(self):
+        # The most frequent request class on a partitioned day — one per part
+        # — and the last failure path here without a test. Dropping the part
+        # instead would cost 36 of a 37-part day's records, 2.7% short, well
+        # inside the floor, so the day would complete durably.
+        distribution = {date(2023, 6, 1) + timedelta(days=i): 4 for i in range(5)}
+        overrides = {sorted(distribution)[1]: {"esearch_raises": True}}
+        client = _partitioned_client(distribution, part_overrides=overrides)
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert result.status == "failed"
+        assert "part edat:" in result.error
+        # `str(ConnectionError())` is empty, so without the exception type
+        # this day fails on every run forever naming no cause at all — and a
+        # bmlib defect reaching this broad `except` would read identically to
+        # a network blip.
+        assert "ConnectionError" in result.error
+
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 4)
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 4)
     def test_a_part_whose_count_collapsed_below_the_floor_fails_the_day(self):
         # The generalisation of the zero case above. Planning measured this
         # range at four records; its own session ESearch now reports one. It
@@ -2494,6 +2521,28 @@ class TestALostOrSkippedPartFailsTheDay:
         assert result.status == "completed"
         assert result.note is not None
         assert "3 of 4" in result.note
+
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 10)
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 10)
+    def test_every_noted_part_reaches_the_days_note_not_just_the_last(self):
+        # `FetchResult.note` carries to `SyncReport.notes`, and it is the only
+        # channel that makes "which of my completed days came up short, and
+        # where?" answerable from a return value rather than a log line. A day
+        # may be missing nearly half its records across up to 37 noted parts
+        # and is never re-offered, so a regression collapsing them to one
+        # would be invisible.
+        distribution = {date(2023, 6, 1) + timedelta(days=i): 10 for i in range(3)}
+        short_page = _make_efetch_xml(*([MINIMAL_ARTICLE_XML] * 6))
+        noted = sorted(distribution)[:2]
+        overrides = {d: {"efetch_pages": [short_page]} for d in noted}
+        client = _partitioned_client(distribution, part_overrides=overrides)
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert result.status == "completed"
+        assert result.note is not None
+        for day in noted:
+            assert _part_key(day, day) in result.note, f"{day} is missing from the note"
 
     @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 10)
     @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 10)
@@ -2765,6 +2814,25 @@ class TestAFailedPartIsNotCheckpointed:
 
         assert result.status == "failed"
         assert done == [], "a part that errored mid-walk must not be checkpointed"
+
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 1)
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 1)
+    def test_a_failed_session_esearch_checkpoints_nothing(self):
+        # Same reasoning as the efetch case above: the override targets the
+        # first-processed date, so nothing has reconciled before it fails.
+        distribution = {date(2023, 6, 1): 1, date(2023, 6, 2): 1}
+        client = _partitioned_client(
+            distribution,
+            part_overrides={date(2023, 6, 1): {"esearch_raises": True}},
+        )
+        done: list[PartCheckpoint] = []
+
+        result = fetch_pubmed(
+            client, date(2024, 1, 1), on_record=lambda r: None, on_part_finished=done.append
+        )
+
+        assert result.status == "failed"
+        assert done == [], "a part whose session never opened must not be checkpointed"
 
     @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 5)
     @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 6)
