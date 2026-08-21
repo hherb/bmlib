@@ -50,6 +50,7 @@ from bmlib.publications.models import (
     FetchResult,
     FullTextSource,
     Grant,
+    PartCheckpoint,
     Publication,
     RetractionNature,
     RetractionNotice,
@@ -69,7 +70,12 @@ from bmlib.publications.storage import (
     get_publication_by_pmid,
     store_publication,
 )
-from bmlib.publications.sync import _day_was_over_when_fetched, sync
+from bmlib.publications.sync import (
+    _day_was_over_when_fetched,
+    _load_day_parts,
+    _record_day_part,
+    sync,
+)
 
 
 def _pub(**kwargs) -> Publication:
@@ -628,6 +634,15 @@ class TestSync:
         backend_conn.rollback()
         assert _count(backend_conn, "publications") == 5
         assert _count(backend_conn, "download_days") == 1
+
+    def test_day_part_checkpoints_round_trip(self, backend_conn):
+        ensure_schema(backend_conn)
+        cp = PartCheckpoint("edat-range", "edat:2023-04-10:2023-08-31", 9375, 9375)
+
+        _record_day_part(backend_conn, "pubmed", date(2024, 1, 1), cp)
+        _record_day_part(backend_conn, "pubmed", date(2024, 1, 1), cp)  # idempotent
+
+        assert _load_day_parts(backend_conn, "pubmed", date(2024, 1, 1)) == {cp.part_key: cp}
 
 
 # ---------------------------------------------------------------------------

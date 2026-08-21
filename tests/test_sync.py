@@ -26,10 +26,17 @@ import pytest
 from bmlib.db import connect_sqlite, execute, fetch_all, fetch_one
 from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.publications.fetchers import ALL_SOURCES
-from bmlib.publications.models import FetchedRecord, FetchResult
+from bmlib.publications.models import FetchedRecord, FetchResult, PartCheckpoint
 from bmlib.publications.schema import ensure_schema
 from bmlib.publications.storage import get_publication_by_doi
-from bmlib.publications.sync import _day_was_over_when_fetched, _days_needing_fetch, sync
+from bmlib.publications.sync import (
+    _clear_day_parts,
+    _day_was_over_when_fetched,
+    _days_needing_fetch,
+    _load_day_parts,
+    _record_day_part,
+    sync,
+)
 
 
 def _fresh_conn():
@@ -1854,3 +1861,58 @@ class TestAWindowReachingIntoTheFutureSaysSo:
         )
 
         assert report.notes == []
+
+
+class TestDayPartCheckpoints:
+    """Checkpoints are what makes a very large day resumable."""
+
+    def test_a_checkpoint_round_trips(self):
+        conn = connect_sqlite(":memory:")
+        ensure_schema(conn)
+        cp = PartCheckpoint(
+            part_scheme="edat-range",
+            part_key="edat:2023-04-10:2023-08-31",
+            promised=9375,
+            record_count=9375,
+        )
+
+        _record_day_part(conn, "pubmed", date(2024, 1, 1), cp)
+
+        assert _load_day_parts(conn, "pubmed", date(2024, 1, 1)) == {cp.part_key: cp}
+
+    def test_recording_the_same_part_twice_updates_rather_than_duplicates(self):
+        conn = connect_sqlite(":memory:")
+        ensure_schema(conn)
+        key = "edat:2023-04-10:2023-08-31"
+        _record_day_part(
+            conn, "pubmed", date(2024, 1, 1), PartCheckpoint("edat-range", key, 10, 10)
+        )
+        _record_day_part(
+            conn, "pubmed", date(2024, 1, 1), PartCheckpoint("edat-range", key, 12, 12)
+        )
+
+        stored = _load_day_parts(conn, "pubmed", date(2024, 1, 1))
+
+        assert len(stored) == 1
+        assert stored[key].promised == 12
+
+    def test_parts_are_scoped_to_their_source_and_day(self):
+        conn = connect_sqlite(":memory:")
+        ensure_schema(conn)
+        cp = PartCheckpoint("edat-range", "edat:2023-04-10:2023-08-31", 1, 1)
+        _record_day_part(conn, "pubmed", date(2024, 1, 1), cp)
+
+        assert _load_day_parts(conn, "pubmed", date(2024, 1, 2)) == {}
+        assert _load_day_parts(conn, "biorxiv", date(2024, 1, 1)) == {}
+
+    def test_clearing_removes_only_that_day(self):
+        conn = connect_sqlite(":memory:")
+        ensure_schema(conn)
+        cp = PartCheckpoint("edat-range", "edat:2023-04-10:2023-08-31", 1, 1)
+        _record_day_part(conn, "pubmed", date(2024, 1, 1), cp)
+        _record_day_part(conn, "pubmed", date(2024, 1, 2), cp)
+
+        _clear_day_parts(conn, "pubmed", date(2024, 1, 1))
+
+        assert _load_day_parts(conn, "pubmed", date(2024, 1, 1)) == {}
+        assert _load_day_parts(conn, "pubmed", date(2024, 1, 2)) == {cp.part_key: cp}

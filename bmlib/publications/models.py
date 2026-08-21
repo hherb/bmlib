@@ -22,6 +22,7 @@ and sync status reporting.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -571,6 +572,46 @@ class SourceDescriptor:
     display_name: str
     description: str
     params: list[SourceParam] = field(default_factory=list)
+
+
+@dataclass
+class PartCheckpoint:
+    """One completed partition of a day, so a re-run can skip it.
+
+    A day too large for one history session is fetched as parts (see
+    ``fetchers/pubmed.py``). Each part's records and its checkpoint are written
+    in one transaction, so a checkpoint never attests to records a rollback
+    discarded.
+
+    ``part_key`` is opaque to storage: the partitioning scheme belongs to the
+    fetcher, so a second scheme needs no schema change. ``part_scheme`` names
+    which scheme wrote the key, so a scheme that changes is visible in the data
+    rather than silently matching nothing.
+    """
+
+    part_scheme: str
+    part_key: str
+    promised: int
+    record_count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a plain-dict form of this checkpoint."""
+        return {
+            "part_scheme": self.part_scheme,
+            "part_key": self.part_key,
+            "promised": self.promised,
+            "record_count": self.record_count,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> PartCheckpoint:
+        """Build a checkpoint from its plain-dict form."""
+        return cls(
+            part_scheme=str(data["part_scheme"]),
+            part_key=str(data["part_key"]),
+            promised=int(data["promised"]),
+            record_count=int(data["record_count"]),
+        )
 
 
 # ---------------------------------------------------------------------------

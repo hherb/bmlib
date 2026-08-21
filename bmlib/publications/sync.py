@@ -38,6 +38,7 @@ from bmlib.publications.models import (
     FetchResult,
     FullTextSource,
     Grant,
+    PartCheckpoint,
     Publication,
     SyncProgress,
     SyncReport,
@@ -686,6 +687,69 @@ def _upsert_download_day(
             "   downloaded_at = excluded.downloaded_at,"
             "   last_verified_at = excluded.last_verified_at",
             (source, day_str, status, record_count, now, now),
+        )
+
+
+def _load_day_parts(conn: Any, source: str, day: date) -> dict[str, PartCheckpoint]:
+    """Return the parts of *day* a previous run finished, keyed by part key."""
+    ph = placeholder(conn)
+    rows = fetch_all(
+        conn,
+        "SELECT part_scheme, part_key, promised, record_count FROM download_day_parts"
+        f" WHERE source = {ph} AND date = {ph}",
+        (source, day.isoformat()),
+    )
+    parts = {}
+    for row in rows:
+        cp = PartCheckpoint.from_dict(row)
+        parts[cp.part_key] = cp
+    return parts
+
+
+def _record_day_part(conn: Any, source: str, day: date, checkpoint: PartCheckpoint) -> None:
+    """Record one completed part.
+
+    Runs inside the caller's transaction (see :func:`sync`), so the checkpoint
+    commits atomically with the records it attests to — a checkpoint that
+    outlived a rolled-back batch would make a re-run skip records that were
+    never stored.
+    """
+    ph = placeholder(conn)
+    with transaction(conn):
+        execute(
+            conn,
+            "INSERT INTO download_day_parts (source, date, part_scheme, part_key,"
+            f" promised, record_count, completed_at) VALUES ({', '.join([ph] * 7)})"
+            " ON CONFLICT (source, date, part_key) DO UPDATE SET"
+            "   part_scheme = excluded.part_scheme,"
+            "   promised = excluded.promised,"
+            "   record_count = excluded.record_count,"
+            "   completed_at = excluded.completed_at",
+            (
+                source,
+                day.isoformat(),
+                checkpoint.part_scheme,
+                checkpoint.part_key,
+                checkpoint.promised,
+                checkpoint.record_count,
+                datetime.now(tz=UTC).isoformat(),
+            ),
+        )
+
+
+def _clear_day_parts(conn: Any, source: str, day: date) -> None:
+    """Drop *day*'s part rows.
+
+    Called when the day completes: the rows describe an unfinished day, so
+    keeping them would grow the table without bound and would make a
+    ``recheck_days`` re-fetch skip parts it was explicitly asked to redo.
+    """
+    ph = placeholder(conn)
+    with transaction(conn):
+        execute(
+            conn,
+            f"DELETE FROM download_day_parts WHERE source = {ph} AND date = {ph}",
+            (source, day.isoformat()),
         )
 
 

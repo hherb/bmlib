@@ -83,6 +83,18 @@ CREATE TABLE IF NOT EXISTS download_days (
     UNIQUE(source, date)
 );
 
+CREATE TABLE IF NOT EXISTS download_day_parts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    source          TEXT NOT NULL,
+    date            TEXT NOT NULL,
+    part_scheme     TEXT NOT NULL,
+    part_key        TEXT NOT NULL,
+    promised        INTEGER NOT NULL,
+    record_count    INTEGER NOT NULL,
+    completed_at    TEXT NOT NULL,
+    UNIQUE(source, date, part_key)
+);
+
 CREATE TABLE IF NOT EXISTS retraction_notices (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     record_id       TEXT NOT NULL UNIQUE,
@@ -191,6 +203,18 @@ CREATE TABLE IF NOT EXISTS download_days (
     downloaded_at   TEXT NOT NULL,
     last_verified_at TEXT,
     UNIQUE(source, date)
+);
+
+CREATE TABLE IF NOT EXISTS download_day_parts (
+    id              SERIAL PRIMARY KEY,
+    source          TEXT NOT NULL,
+    date            TEXT NOT NULL,
+    part_scheme     TEXT NOT NULL,
+    part_key        TEXT NOT NULL,
+    promised        INTEGER NOT NULL,
+    record_count    INTEGER NOT NULL,
+    completed_at    TEXT NOT NULL,
+    UNIQUE(source, date, part_key)
 );
 
 CREATE TABLE IF NOT EXISTS retraction_notices (
