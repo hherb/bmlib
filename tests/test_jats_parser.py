@@ -630,3 +630,313 @@ class TestJATSParserCaptionScoping:
         article = JATSParser(data).parse()
 
         assert article.has_body is False
+
+
+class TestContributorRoleDeclaredOnTheGroup:
+    """JATS lets the contributor role be declared on ``<contrib-group>``.
+
+    ``<contrib contrib-type="author">`` is only one of the two spellings, and
+    it is the *minority* one in PMC: the dominant form declares
+    ``content-type="author"`` once on the enclosing group and leaves the
+    children bare. Reading only the per-contrib attribute drops every author
+    from roughly three open-access articles in five (issue #111) — and does
+    it as a well-formed empty list, so it reads as "this article lists no
+    authors" rather than as a parser that looked in the wrong place.
+    """
+
+    GROUP_DECLARED = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Group-declared authors</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Hwang</surname><given-names>Sun-Hee</given-names></name></contrib>
+      <contrib><name><surname>Choi</surname><given-names>Kyungsuk</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
+    AUTHOR_AND_EDITOR_GROUPS = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Two groups</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Hwang</surname><given-names>Sun-Hee</given-names></name></contrib>
+    </contrib-group>
+    <contrib-group content-type="editor">
+      <contrib><name><surname>Bloggs</surname><given-names>Joe</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
+    UNTYPED_GROUP = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Untyped group</article-title></title-group>
+    <contrib-group>
+      <contrib><name><surname>Rivera</surname><given-names>Ana</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
+    EDITOR_INSIDE_AN_AUTHOR_GROUP = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Mixed group</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Hwang</surname><given-names>Sun-Hee</given-names></name></contrib>
+      <contrib contrib-type="editor">
+        <name><surname>Bloggs</surname><given-names>Joe</given-names></name>
+      </contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
+    AUTHOR_INSIDE_AN_EDITOR_GROUP = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Mixed group</article-title></title-group>
+    <contrib-group content-type="editor">
+      <contrib><name><surname>Bloggs</surname><given-names>Joe</given-names></name></contrib>
+      <contrib contrib-type="author">
+        <name><surname>Hwang</surname><given-names>Sun-Hee</given-names></name>
+      </contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
+    EDITOR_GROUP_THEN_UNTYPED_GROUP = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Editors first</article-title></title-group>
+    <contrib-group content-type="editor">
+      <contrib><name><surname>Bloggs</surname><given-names>Joe</given-names></name></contrib>
+    </contrib-group>
+    <contrib-group>
+      <contrib><name><surname>Rivera</surname><given-names>Ana</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
+    @staticmethod
+    def _surnames(data: bytes) -> list[str]:
+        return [a.surname for a in JATSParser(data).parse().authors]
+
+    def test_a_group_declared_author_is_collected(self):
+        assert self._surnames(self.GROUP_DECLARED) == ["Hwang", "Choi"]
+
+    def test_a_group_with_no_content_type_is_authors_by_convention(self):
+        assert self._surnames(self.UNTYPED_GROUP) == ["Rivera"]
+
+    def test_an_editor_group_is_not_collected_as_authors(self):
+        assert self._surnames(self.AUTHOR_AND_EDITOR_GROUPS) == ["Hwang"]
+
+    def test_a_contribs_own_type_overrides_an_author_group(self):
+        assert self._surnames(self.EDITOR_INSIDE_AN_AUTHOR_GROUP) == ["Hwang"]
+
+    def test_a_contribs_own_type_overrides_an_editor_group(self):
+        assert self._surnames(self.AUTHOR_INSIDE_AN_EDITOR_GROUP) == ["Hwang"]
+
+    def test_a_groups_role_does_not_leak_into_the_next_group(self):
+        """The stored group type must be cleared at ``</contrib-group>``.
+
+        Carried over, the second group inherits ``editor`` and its authors
+        are dropped — which is the original defect again, in a shape the
+        author-group tests above cannot see.
+        """
+        assert self._surnames(self.EDITOR_GROUP_THEN_UNTYPED_GROUP) == ["Rivera"]
+
+    def test_a_per_contrib_type_still_works(self):
+        """The spelling that already worked must keep working."""
+        data = _load_fixture("sample_article.xml")
+        assert [a.surname for a in JATSParser(data).parse().authors] == [
+            "Smith",
+            "Doe",
+            "Chen",
+        ]
+
+
+class TestSubArticlesAreNotTheArticle:
+    """A ``<sub-article>`` is a whole article of its own, and not this one.
+
+    PLOS, eLife, BMJ Open and F1000 deposit their peer-review history as one
+    ``<sub-article>`` per round, each carrying its own ``<front>`` — DOI,
+    title, authors — and its own ``<body>``. Handlers that fire again inside
+    one simply overwrite the article's own metadata with the *last* round's
+    and append reviewer correspondence to its prose (issue #110). Every one
+    of those failures looks like success: a review round's DOI is real and
+    resolvable, so it does not 404, and reviewers write about funding,
+    conflicts and data availability — the exact vocabulary
+    ``TransparencyAnalyzer`` scans for.
+    """
+
+    WITH_REVIEW_ROUNDS = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="doi">10.1371/journal.pgen.1012008</article-id>
+    <title-group>
+      <article-title>Lack of ANKMY2 suppresses kidney cystogenesis</article-title>
+    </title-group>
+    <contrib-group content-type="author">
+      <contrib contrib-type="author">
+        <name><surname>Tanaka</surname><given-names>Yuki</given-names></name>
+      </contrib>
+    </contrib-group>
+  </article-meta></front>
+  <body>
+    <sec><title>Introduction</title><p>Prose belonging to the article itself.</p></sec>
+  </body>
+  <back>
+    <ref-list>
+      <ref id="r1"><mixed-citation>A work the article cites.</mixed-citation></ref>
+    </ref-list>
+  </back>
+  <sub-article article-type="reviewer-report">
+    <front-stub>
+      <article-id pub-id-type="doi">10.1371/journal.pgen.1012008.r001</article-id>
+      <title-group><article-title>Decision Letter 0</article-title></title-group>
+      <contrib-group content-type="author">
+        <contrib contrib-type="author">
+          <name><surname>Reviewer</surname><given-names>One</given-names></name>
+        </contrib>
+      </contrib-group>
+    </front-stub>
+    <body><p>Reviewer prose about funding and data availability.</p></body>
+  </sub-article>
+  <sub-article article-type="reviewer-report">
+    <front>
+      <article-meta>
+        <article-id pub-id-type="doi">10.1371/journal.pgen.1012008.r006</article-id>
+        <title-group><article-title>Associated Data</article-title></title-group>
+        <contrib-group content-type="author">
+          <contrib contrib-type="author">
+            <name><surname>Reviewer</surname><given-names>Two</given-names></name>
+          </contrib>
+        </contrib-group>
+        <abstract><p>A review round's abstract.</p></abstract>
+      </article-meta>
+    </front>
+    <body>
+      <sec><title>Data Availability Statement</title>
+        <p>Correspondence from the sixth round.</p></sec>
+    </body>
+    <back>
+      <ref-list>
+        <ref id="rr1"><mixed-citation>A work the reviewer cites.</mixed-citation></ref>
+      </ref-list>
+    </back>
+  </sub-article>
+</article>"""
+
+    NESTED = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="doi">10.1000/outer</article-id>
+    <title-group><article-title>The article</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>Introduction</title><p>The article's own prose.</p></sec></body>
+  <sub-article>
+    <front-stub>
+      <article-id pub-id-type="doi">10.1000/outer.r001</article-id>
+    </front-stub>
+    <sub-article>
+      <front-stub>
+        <article-id pub-id-type="doi">10.1000/outer.r001.inner</article-id>
+      </front-stub>
+      <body><p>Prose of the innermost nested article.</p></body>
+    </sub-article>
+    <body>
+      <sec><title>After the inner one closed</title><p>Prose of the outer nested article.</p></sec>
+    </body>
+  </sub-article>
+</article>"""
+
+    RESPONSE = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="doi">10.1000/article</article-id>
+    <title-group><article-title>The article</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>Introduction</title><p>The article's own prose.</p></sec></body>
+  <response>
+    <front-stub>
+      <article-id pub-id-type="doi">10.1000/article.response</article-id>
+      <title-group><article-title>Author response</article-title></title-group>
+    </front-stub>
+    <body><p>Prose of the response article.</p></body>
+  </response>
+</article>"""
+
+    BODY_ONLY_IN_THE_SUB_ARTICLE = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Abstract only</article-title></title-group>
+    <abstract><p>The article's abstract, and no body of its own.</p></abstract>
+  </article-meta></front>
+  <sub-article>
+    <front-stub><article-id pub-id-type="doi">10.1000/x.r001</article-id></front-stub>
+    <body><p>Reviewer prose, which is not this article's body.</p></body>
+  </sub-article>
+</article>"""
+
+    @staticmethod
+    def _paragraphs(data: bytes) -> list[str]:
+        article = JATSParser(data).parse()
+        return [p for s in article.body_sections for p in s.paragraphs]
+
+    def test_the_articles_own_doi_survives(self):
+        assert JATSParser(self.WITH_REVIEW_ROUNDS).parse().doi == "10.1371/journal.pgen.1012008"
+
+    def test_the_articles_own_title_survives(self):
+        article = JATSParser(self.WITH_REVIEW_ROUNDS).parse()
+        assert article.title == "Lack of ANKMY2 suppresses kidney cystogenesis"
+
+    def test_a_review_rounds_authors_are_not_the_articles(self):
+        article = JATSParser(self.WITH_REVIEW_ROUNDS).parse()
+        assert [a.surname for a in article.authors] == ["Tanaka"]
+
+    def test_reviewer_prose_is_not_article_prose(self):
+        assert self._paragraphs(self.WITH_REVIEW_ROUNDS) == [
+            "Prose belonging to the article itself."
+        ]
+
+    def test_a_review_rounds_abstract_is_not_the_articles(self):
+        article = JATSParser(self.WITH_REVIEW_ROUNDS).parse()
+        assert article.abstract_sections == []
+
+    def test_a_review_rounds_references_are_not_the_articles(self):
+        article = JATSParser(self.WITH_REVIEW_ROUNDS).parse()
+        assert [r.citation for r in article.references] == ["A work the article cites."]
+
+    def test_reviewer_prose_does_not_reach_the_rendered_html(self):
+        html = JATSParser(self.WITH_REVIEW_ROUNDS).to_html()
+        assert "Correspondence from the sixth round." not in html
+        assert "Reviewer prose about funding and data availability." not in html
+        assert "Prose belonging to the article itself." in html
+
+    def test_a_sub_articles_body_is_not_this_articles_body(self):
+        """``has_body`` decides whether ``FullTextService`` caches the result.
+
+        Counting a review round as the article's body makes an abstract-only
+        document look like a full text, which is cached and never looked for
+        again.
+        """
+        assert JATSParser(self.BODY_ONLY_IN_THE_SUB_ARTICLE).parse().has_body is False
+
+    def test_an_inner_sub_article_closing_does_not_re_admit_the_outer_one(self):
+        """A depth, not a flag: JATS permits a sub-article inside one.
+
+        A boolean cleared by the inner ``</sub-article>`` lets the remainder
+        of the outer one back in, which is the whole defect again for every
+        element after that point.
+        """
+        article = JATSParser(self.NESTED).parse()
+
+        assert article.doi == "10.1000/outer"
+        assert self._paragraphs(self.NESTED) == ["The article's own prose."]
+
+    def test_a_response_is_treated_like_a_sub_article(self):
+        article = JATSParser(self.RESPONSE).parse()
+
+        assert article.doi == "10.1000/article"
+        assert article.title == "The article"
+        assert self._paragraphs(self.RESPONSE) == ["The article's own prose."]

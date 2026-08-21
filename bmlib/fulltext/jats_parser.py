@@ -328,6 +328,13 @@ _TEXT_ACCUMULATING = frozenset(
     }
 )
 
+# A <sub-article> or <response> is a complete article of its own — its own
+# <front>, its own <body>, its own back matter — nested inside this one.
+# PLOS, eLife, BMJ Open and F1000 deposit every peer-review round that way.
+# Nothing inside one is this article's, so no handler may fire there.
+_NESTED_ARTICLE_ELEMENTS = frozenset({"sub-article", "response"})
+
+
 _INLINE_ELEMENTS = frozenset(
     {
         "bold",
@@ -346,6 +353,10 @@ _INLINE_ELEMENTS = frozenset(
         "inline-formula",
     }
 )
+
+# A nested article gets a text buffer of its own as well, so that loose
+# characters inside one cannot land in the enclosing article's buffer.
+_BUFFERED = _TEXT_ACCUMULATING | _NESTED_ARTICLE_ELEMENTS
 
 
 # ---------------------------------------------------------------------------
@@ -382,11 +393,19 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # Parsing state
         self.element_stack: list[str] = []
         self.text_stack: list[str] = [""]
+        # How many <sub-article>/<response> elements are open. A depth and
+        # not a flag: JATS permits a nested article inside a nested article,
+        # and a flag cleared by the inner close re-admits the rest of the
+        # outer one.
+        self.nested_article_depth = 0
 
         # Article metadata state
         self.in_front = False
         self.in_article_meta = False
-        self.in_contrib_group = False
+        # The role declared on the enclosing <contrib-group>, which a bare
+        # <contrib> inherits. Held rather than a plain "are we in a group"
+        # boolean — that one was tracked and never read.
+        self.contrib_group_content_type: str | None = None
         self.in_contrib = False
         self.current_article_id_type: str | None = None
         self.current_author: _AuthorBuilder | None = None
@@ -494,17 +513,26 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
     def startElement(self, name: str, attrs: xml.sax.xmlreader.AttributesImpl) -> None:
         self.element_stack.append(name)
 
-        if name in _TEXT_ACCUMULATING:
+        if name in _NESTED_ARTICLE_ELEMENTS:
+            self.nested_article_depth += 1
+
+        if name in _BUFFERED:
             self._push_text_buffer()
+
+        if self.nested_article_depth:
+            # Inside a nested article. Only the element and text stacks keep
+            # running, so that the two stay balanced across the skipped
+            # region and the enclosing article resumes where it left off.
+            return
 
         if name == "front":
             self.in_front = True
         elif name == "article-meta":
             self.in_article_meta = True
         elif name == "contrib-group":
-            self.in_contrib_group = True
+            self.contrib_group_content_type = attrs.get("content-type")
         elif name == "contrib":
-            if attrs.get("contrib-type") == "author":
+            if self._is_author_contrib(attrs.get("contrib-type")):
                 self.in_contrib = True
                 self.current_author = _AuthorBuilder()
         elif name == "abstract":
@@ -575,7 +603,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
     def endElement(self, name: str) -> None:
         # Pop text buffer
-        if name in _TEXT_ACCUMULATING:
+        if name in _BUFFERED:
             is_inline = name in _INLINE_ELEMENTS
             is_fig_table_xref = name == "xref" and self.current_xref_type in (
                 "fig",
@@ -589,17 +617,29 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         else:
             element_text = self.current_text
 
+        if name in _NESTED_ARTICLE_ELEMENTS and self.nested_article_depth:
+            self.nested_article_depth -= 1
+
         text = element_text.strip()
         normalized_text = _normalize_whitespace(element_text)
 
         # --- Handle element end ---
 
-        if name == "front":
+        if self.nested_article_depth:
+            # Still inside a nested article, so this close is not the
+            # article's either. Tested before every handler rather than at
+            # each one: they overwrite the article's own metadata and append
+            # a review round's prose to its body, and a handler added later
+            # would have to remember to opt out.
+            pass
+        elif name == "front":
             self.in_front = False
         elif name == "article-meta":
             self.in_article_meta = False
         elif name == "contrib-group":
-            self.in_contrib_group = False
+            # Cleared here, or a following editor group inherits this one's
+            # role and its bare <contrib> children are read as authors.
+            self.contrib_group_content_type = None
         elif name == "contrib":
             if self.in_contrib and self.current_author:
                 author = self.current_author.build()
@@ -833,6 +873,34 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # Pop element stack
         if self.element_stack:
             self.element_stack.pop()
+
+    def _is_author_contrib(self, contrib_type: str | None) -> bool:
+        """Is this ``<contrib>`` one of the article's authors?
+
+        JATS spells the contributor role two ways, and the per-contrib one is
+        the minority form in PMC: ``content-type="author"`` on the enclosing
+        ``<contrib-group>``, with bare children, is what most publishers
+        deposit. Reading only ``contrib-type`` drops every author from
+        roughly three open-access articles in five (issue #111).
+
+        A contributor's own declaration decides on its own — it has to be
+        able to say ``editor`` inside an author group. Only a ``<contrib>``
+        that declares nothing inherits the group, and a group that declares
+        nothing is authors, which is the JATS convention. A group naming any
+        other role is taken at its word: an ``editor`` group beside the
+        author group is common enough that reading its members as authors
+        would be a new defect rather than a wider fix.
+
+        Args:
+            contrib_type: The ``contrib-type`` attribute of this
+                ``<contrib>``, or ``None`` where it carries none.
+
+        Returns:
+            ``True`` where the contributor is an author of this article.
+        """
+        if contrib_type:
+            return contrib_type == "author"
+        return self.contrib_group_content_type in (None, "", "author")
 
     def _classify_article_id(self, text: str) -> None:
         """Classify an article-id whose `pub-id-type` was absent or unknown.
