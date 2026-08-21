@@ -2605,6 +2605,62 @@ class TestResumingAnOverCapDay:
             "the moved part must be re-fetched, not skipped"
         )
 
+    def test_a_skipped_part_is_reported_and_a_fetched_one_is_not(self):
+        # `sync()` credits a resumed day's stored parts by summing exactly the
+        # checkpoints the fetcher skipped. A part it re-walked must not be in
+        # that sum — the run stored its records itself — so "skipped" has to be
+        # reported, not inferred from what was checkpointed.
+        first_client = _eutils_client(_distribution_counter(self.DISTRIBUTION))
+        done: list[PartCheckpoint] = []
+        fetch_pubmed(
+            first_client,
+            date(2024, 1, 1),
+            on_record=lambda r: None,
+            on_part_complete=done.append,
+        )
+        assert len(done) > 1, "setup: this day must hold a skipped part and a fetched one"
+
+        second_client = _eutils_client(_distribution_counter(self.DISTRIBUTION))
+        skipped: list[str] = []
+
+        result = fetch_pubmed(
+            second_client,
+            date(2024, 1, 1),
+            on_record=lambda r: None,
+            completed_parts={done[0].part_key: done[0]},
+            on_part_skipped=skipped.append,
+        )
+
+        assert result.status == "completed"
+        assert skipped == [done[0].part_key]
+
+    def test_a_part_whose_count_moved_is_not_reported_as_skipped(self):
+        # It is re-walked, so its records are stored by this run. Reporting it
+        # as skipped would credit its stored count on top of them.
+        first_client = _eutils_client(_distribution_counter(self.DISTRIBUTION))
+        done: list[PartCheckpoint] = []
+        fetch_pubmed(
+            first_client,
+            date(2024, 1, 1),
+            on_record=lambda r: None,
+            on_part_complete=done.append,
+        )
+        assert done, "setup: an over-cap day must checkpoint at least one part"
+        moved = dataclasses.replace(done[0], promised=done[0].promised - 1)
+
+        second_client = _eutils_client(_distribution_counter(self.DISTRIBUTION))
+        skipped: list[str] = []
+
+        fetch_pubmed(
+            second_client,
+            date(2024, 1, 1),
+            on_record=lambda r: None,
+            completed_parts={moved.part_key: moved},
+            on_part_skipped=skipped.append,
+        )
+
+        assert skipped == []
+
     def test_an_under_cap_day_ignores_the_resume_arguments(self):
         client = _eutils_client(lambda term: 2)
         done: list[PartCheckpoint] = []

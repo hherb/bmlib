@@ -666,6 +666,108 @@ class TestSync:
         assert stored == {first.part_key: first, second.part_key: second}
 
 
+def _partitioned_fetcher(parts, *, fail_after=None):
+    """A fake resumable fetcher emitting *parts* as ``(key, [record, ...])``.
+
+    Mirrors ``fetch_pubmed``'s part-level rules closely enough for the storage
+    side: a part is skipped only while its stored checkpoint still promises
+    what this run reports for it, and a skipped part is named through
+    ``on_part_skipped`` so the day can credit it.
+    """
+
+    def fetcher(
+        client,
+        day,
+        *,
+        on_record,
+        on_progress=None,
+        completed_parts=None,
+        on_part_complete=None,
+        on_part_skipped=None,
+        **config,
+    ):
+        completed_parts = completed_parts or {}
+        emitted = 0
+        for index, (key, records) in enumerate(parts):
+            prior = completed_parts.get(key)
+            if prior is not None and prior.promised == len(records):
+                if on_part_skipped is not None:
+                    on_part_skipped(key)
+                continue
+            for record in records:
+                on_record(record)
+                emitted += 1
+            if fail_after is not None and index == fail_after:
+                return FetchResult(
+                    source="pubmed",
+                    date=day.isoformat(),
+                    record_count=emitted,
+                    status="failed",
+                    error="part exploded",
+                )
+            if on_part_complete is not None:
+                on_part_complete(PartCheckpoint("edat-range", key, len(records), len(records)))
+        return FetchResult(
+            source="pubmed", date=day.isoformat(), record_count=emitted, status="completed"
+        )
+
+    return fetcher
+
+
+class TestSyncFlushesAPartitionedDayPerPart:
+    """The resumable path writes ``download_day_parts`` from inside ``sync()``.
+
+    ``pubmed`` is used because the descriptor is what decides resumability —
+    the override only supplies the fetcher.
+    """
+
+    DAY = date(2026, 1, 15)
+    PARTS = [
+        ("edat:a:a", [FetchedRecord(title="One", source="pubmed", pmid="1")]),
+        ("edat:b:b", [FetchedRecord(title="Two", source="pubmed", pmid="2")]),
+    ]
+
+    def test_a_resumed_day_walks_the_rest_and_credits_what_it_skipped(self, backend_conn):
+        ensure_schema(backend_conn)
+        _record_day_part(
+            backend_conn, "pubmed", self.DAY, PartCheckpoint("edat-range", "edat:a:a", 1, 1)
+        )
+
+        sync(
+            backend_conn,
+            sources=["pubmed"],
+            date_from=self.DAY,
+            date_to=self.DAY,
+            _fetcher_override={"pubmed": _partitioned_fetcher(self.PARTS)},
+        )
+
+        # Only the unfinished part was walked; the finished one is credited
+        # from its checkpoint, so the day is recorded whole.
+        assert _count(backend_conn, "publications") == 1
+        rows = fetch_all(backend_conn, "SELECT status, record_count FROM download_days")
+        assert rows[0]["status"] == "completed"
+        assert rows[0]["record_count"] == 2
+        # A completed day drops its part rows, so `recheck_days` re-fetches it
+        # cleanly rather than skipping the parts it was asked to redo.
+        assert _load_day_parts(backend_conn, "pubmed", self.DAY) == {}
+
+    def test_a_failed_day_keeps_the_part_that_finished(self, backend_conn):
+        sync(
+            backend_conn,
+            sources=["pubmed"],
+            date_from=self.DAY,
+            date_to=self.DAY,
+            _fetcher_override={"pubmed": _partitioned_fetcher(self.PARTS, fail_after=1)},
+        )
+
+        backend_conn.rollback()
+        assert fetch_scalar(backend_conn, "SELECT status FROM download_days") == "failed"
+        assert set(_load_day_parts(backend_conn, "pubmed", self.DAY)) == {"edat:a:a"}
+        # The finished part's record committed with its checkpoint; the failed
+        # part's is stored too, by the day's own closing transaction.
+        assert _count(backend_conn, "publications") == 2
+
+
 # ---------------------------------------------------------------------------
 # Retraction notices
 # ---------------------------------------------------------------------------

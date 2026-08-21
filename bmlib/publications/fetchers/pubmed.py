@@ -901,6 +901,7 @@ def _fetch_partitioned(
     rate_limit: float,
     completed_parts: Mapping[str, PartCheckpoint] | None = None,
     on_part_complete: Callable[[PartCheckpoint], None] | None = None,
+    on_part_skipped: Callable[[str], None] | None = None,
 ) -> FetchResult:
     """Fetch a day too large for one history session, as Entrez-date parts.
 
@@ -957,6 +958,13 @@ def _fetch_partitioned(
             no note surviving into that run's result to say so. The caller is
             expected to store the part's records and this checkpoint in one
             transaction.
+        on_part_skipped: Called with the part key of every part skipped
+            because ``completed_parts`` still describes it. The caller stored
+            those records on an earlier run, so this is what lets it credit
+            them to the day without crediting a part this run re-walked — a
+            part whose count moved is re-fetched and, if it comes up short,
+            never checkpointed, so it appears in neither ``completed_parts``'
+            surviving keys nor this run's checkpoints.
 
     Returns:
         The day's :class:`FetchResult`, ``completed`` only if every part
@@ -1010,6 +1018,8 @@ def _fetch_partitioned(
             # this credit the day-total reconciliation below would fail every
             # resumed day.
             delivered += prior.promised
+            if on_part_skipped is not None:
+                on_part_skipped(part.key)
             logger.debug(
                 "PubMed %s part %s already complete (%d records); skipping",
                 date_str,
@@ -1180,6 +1190,7 @@ def fetch_pubmed(
     api_key: str | None = None,
     completed_parts: Mapping[str, PartCheckpoint] | None = None,
     on_part_complete: Callable[[PartCheckpoint], None] | None = None,
+    on_part_skipped: Callable[[str], None] | None = None,
 ) -> FetchResult:
     """Fetch all PubMed articles published on *target_date*.
 
@@ -1212,6 +1223,13 @@ def fetch_pubmed(
         checkpointed, since skipping it on a later run would credit records it
         never actually delivered. The caller is expected to store the part's
         records and this checkpoint in one transaction.
+    on_part_skipped:
+        Called with the part key of every part skipped because
+        ``completed_parts`` still describes it. Those records were stored by
+        an earlier run, so this is what lets the caller credit them to the day
+        — and only them: a part whose count moved is re-walked, and a re-walk
+        that comes up short is not checkpointed, so such a part is in neither
+        set and crediting it would double-count records this run stored.
 
     Returns
     -------
@@ -1277,6 +1295,7 @@ def fetch_pubmed(
             rate_limit=rate_limit,
             completed_parts=completed_parts,
             on_part_complete=on_part_complete,
+            on_part_skipped=on_part_skipped,
         )
 
     logger.info("PubMed esearch: %d records for %s", count, date_str)
