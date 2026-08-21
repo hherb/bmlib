@@ -704,6 +704,17 @@ class TestContributorRoleDeclaredOnTheGroup:
   </article-meta></front>
 </article>"""
 
+    CONTRIB_OUTSIDE_ANY_GROUP = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>A stray contrib</article-title></title-group>
+    <contrib-group content-type="editor">
+      <contrib><name><surname>Bloggs</surname><given-names>Joe</given-names></name></contrib>
+    </contrib-group>
+    <contrib><name><surname>Rivera</surname><given-names>Ana</given-names></name></contrib>
+  </article-meta></front>
+</article>"""
+
     EDITOR_GROUP_THEN_UNTYPED_GROUP = b"""<?xml version="1.0"?>
 <article>
   <front><article-meta>
@@ -713,6 +724,18 @@ class TestContributorRoleDeclaredOnTheGroup:
     </contrib-group>
     <contrib-group>
       <contrib><name><surname>Rivera</surname><given-names>Ana</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
+    EMPTY_ROLE_ATTRIBUTES = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Empty attributes</article-title></title-group>
+    <contrib-group content-type="">
+      <contrib contrib-type="">
+        <name><surname>Rivera</surname><given-names>Ana</given-names></name>
+      </contrib>
     </contrib-group>
   </article-meta></front>
 </article>"""
@@ -736,14 +759,38 @@ class TestContributorRoleDeclaredOnTheGroup:
     def test_a_contribs_own_type_overrides_an_editor_group(self):
         assert self._surnames(self.AUTHOR_INSIDE_AN_EDITOR_GROUP) == ["Hwang"]
 
-    def test_a_groups_role_does_not_leak_into_the_next_group(self):
-        """The stored group type must be cleared at ``</contrib-group>``.
+    def test_a_group_is_read_on_its_own_declaration_not_the_previous_ones(self):
+        """A group declaring nothing is authors even after one that did.
 
-        Carried over, the second group inherits ``editor`` and its authors
-        are dropped — which is the original defect again, in a shape the
-        author-group tests above cannot see.
+        The convention for a bare ``<contrib-group>`` has to hold wherever
+        the group sits, not only in a document whose first group is the
+        author group.
         """
         assert self._surnames(self.EDITOR_GROUP_THEN_UNTYPED_GROUP) == ["Rivera"]
+
+    def test_a_closed_groups_role_is_not_inherited_outside_it(self):
+        """``</contrib-group>`` clears the role, and this is what needs it.
+
+        Not the shape the issue named: a *following* group cannot inherit,
+        because opening one assigns the role unconditionally, absent
+        attribute included. What the clearing protects is a ``<contrib>``
+        with no enclosing group at all — out of place for JATS, and so
+        exactly the input a lenient SAX parse still has to answer for. Left
+        uncleared it inherits ``editor`` from a group that has closed and is
+        dropped, which is issue #111 again in the one shape no well-formed
+        document can show.
+        """
+        assert self._surnames(self.CONTRIB_OUTSIDE_ANY_GROUP) == ["Rivera"]
+
+    def test_an_empty_role_attribute_declares_nothing(self):
+        """``contrib-type=""`` is not a claim that this is not an author.
+
+        Read as a declaration it drops the contributor — the same silent
+        loss as #111 itself, for a document whose only fault is a stray
+        empty attribute. Absent and empty are treated alike on both the
+        ``<contrib>`` and the group.
+        """
+        assert self._surnames(self.EMPTY_ROLE_ATTRIBUTES) == ["Rivera"]
 
     def test_a_per_contrib_type_still_works(self):
         """The spelling that already worked must keep working."""
@@ -878,6 +925,22 @@ class TestSubArticlesAreNotTheArticle:
   </sub-article>
 </article>"""
 
+    BEFORE_THE_BODY = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="doi">10.1000/article</article-id>
+    <title-group><article-title>The article</article-title></title-group>
+  </article-meta></front>
+  <sub-article>
+    <front-stub><article-id pub-id-type="doi">10.1000/article.r001</article-id></front-stub>
+    <body><sec><title>Reviewer section</title><p>Reviewer prose.</p></sec></body>
+  </sub-article>
+  <body>
+    <sec><title>Introduction</title>
+      <p>Prose belonging to the article itself.</p></sec>
+  </body>
+</article>"""
+
     @staticmethod
     def _paragraphs(data: bytes) -> list[str]:
         article = JATSParser(data).parse()
@@ -933,6 +996,23 @@ class TestSubArticlesAreNotTheArticle:
 
         assert article.doi == "10.1000/outer"
         assert self._paragraphs(self.NESTED) == ["The article's own prose."]
+
+    def test_the_article_survives_a_nested_article_that_precedes_it(self):
+        """The suppression has to hold on the *opening* tag as well.
+
+        JATS puts ``<sub-article>`` last, so suppressing only the closing
+        tags looks sufficient — every output is written on a close. It is
+        not, because the opens leave state behind: a nested ``<sec>`` pushes
+        a section builder that no close pops, and the article's own section
+        is then filed as a subsection of a review round's and never flushed
+        to ``body_sections``. The article loses its entire body, silently, to
+        a document that is merely out of order rather than malformed — and
+        nothing here validates JATS.
+        """
+        article = JATSParser(self.BEFORE_THE_BODY).parse()
+
+        assert self._paragraphs(self.BEFORE_THE_BODY) == ["Prose belonging to the article itself."]
+        assert article.has_body is True
 
     def test_a_response_is_treated_like_a_sub_article(self):
         article = JATSParser(self.RESPONSE).parse()

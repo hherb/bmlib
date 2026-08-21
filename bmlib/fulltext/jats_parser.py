@@ -354,10 +354,6 @@ _INLINE_ELEMENTS = frozenset(
     }
 )
 
-# A nested article gets a text buffer of its own as well, so that loose
-# characters inside one cannot land in the enclosing article's buffer.
-_BUFFERED = _TEXT_ACCUMULATING | _NESTED_ARTICLE_ELEMENTS
-
 
 # ---------------------------------------------------------------------------
 # SAX Handler
@@ -516,13 +512,17 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         if name in _NESTED_ARTICLE_ELEMENTS:
             self.nested_article_depth += 1
 
-        if name in _BUFFERED:
+        if name in _TEXT_ACCUMULATING:
             self._push_text_buffer()
 
         if self.nested_article_depth:
-            # Inside a nested article. Only the element and text stacks keep
-            # running, so that the two stay balanced across the skipped
-            # region and the enclosing article resumes where it left off.
+            # Inside a nested article. Suppressed on the *opening* tag too,
+            # not only on the closes that write the outputs: an open leaves
+            # state behind, and a nested <sec> whose close never comes pops
+            # nothing, so the article's own section is filed as a subsection
+            # of a review round's and never reaches body_sections. Only the
+            # element and text stacks keep running, so the two stay balanced
+            # across the skipped region.
             return
 
         if name == "front":
@@ -603,7 +603,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
     def endElement(self, name: str) -> None:
         # Pop text buffer
-        if name in _BUFFERED:
+        if name in _TEXT_ACCUMULATING:
             is_inline = name in _INLINE_ELEMENTS
             is_fig_table_xref = name == "xref" and self.current_xref_type in (
                 "fig",
@@ -637,8 +637,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "article-meta":
             self.in_article_meta = False
         elif name == "contrib-group":
-            # Cleared here, or a following editor group inherits this one's
-            # role and its bare <contrib> children are read as authors.
+            # Not for the reason it looks like: a *following* group cannot
+            # inherit this one's role, because opening one assigns the role
+            # unconditionally, an absent attribute included. What this
+            # protects is a <contrib> with no enclosing group at all — out of
+            # place for JATS, and so exactly what a lenient parse must still
+            # answer for. Left uncleared it inherits a closed group's role
+            # and is dropped.
             self.contrib_group_content_type = None
         elif name == "contrib":
             if self.in_contrib and self.current_author:
