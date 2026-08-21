@@ -441,6 +441,7 @@ pass.
 | JATS element | Parsed as |
 |-------------|-----------|
 | `front/article-meta` | Title, authors, journal, identifiers |
+| `contrib-group` / `contrib` | Authors — the role may be declared on either, see below |
 | `abstract/sec/title/p` | Structured abstract sections |
 | `body/sec/title/p` | Body sections with nesting |
 | `body/p` (no enclosing `<sec>`) | A titleless body section — see below |
@@ -450,6 +451,40 @@ pass.
 | `ref-list/ref/element-citation` | Structured references |
 | `bold/italic/sub/sup/monospace` | Inline formatting |
 | `xref` | Cross-reference anchor links |
+| `sub-article`, `response` | **Ignored** — a whole article of its own, see below |
+
+> **The contributor role may be declared on the group.** JATS spells it two
+> ways: `<contrib contrib-type="author">`, and `content-type="author"` on the
+> enclosing `<contrib-group>` with bare `<contrib>` children. The second is the
+> dominant form in PMC — reading only the first dropped every author from
+> roughly three open-access articles in five *(unreleased, #111)*. A
+> contributor's own `contrib-type` decides on its own, so an `editor` inside an
+> author group stays an editor and an `author` inside an editor group is still
+> collected; only a `<contrib>` declaring nothing inherits the group. A group
+> declaring nothing is authors, which is the JATS convention, and an empty
+> attribute (`contrib-type=""`) counts as declaring nothing rather than as
+> declaring "not an author". A group naming any other role is taken at its
+> word, so the `content-type="editor"` group that commonly sits beside the
+> author group does not become authors. The comparison folds case, which is
+> defensive rather than measured — every article sampled for the issue spells
+> the role lowercase — on the precedent that `pub-id-type` is folded too, and
+> because folding cannot cost anything: a role that is not `author` in any
+> casing is excluded either way, while an unfolded `Author` drops the group.
+
+> **A `<sub-article>` is a different article, and is skipped entirely**
+> *(unreleased, #110)*. JATS lets one carry a complete `<front>` and `<body>`
+> of its own, and PLOS, eLife, BMJ Open and F1000 deposit every peer-review
+> round that way. Nothing inside a `<sub-article>` or a `<response>` reaches
+> `JATSArticle`: not its DOI (a review round's is real and resolvable, so it
+> fails silently rather than 404ing), not its title, not its authors, not its
+> abstract, not its references, and not its prose — which would otherwise put
+> reviewer correspondence about funding, conflicts and data availability in
+> front of [`bmlib.transparency`](transparency.md), whose scans hunt exactly
+> that vocabulary. Nested articles nest, so the suppression counts depth
+> rather than setting a flag, and it applies to the opening tags as well as
+> the closing ones: an open leaves parser state behind, which for a nested
+> article placed before the article's own `<body>` cost the article its whole
+> body. Sub-article prose does not count towards [`has_body`](#jatsarticle).
 
 > **`<sec>` is optional inside `<body>`.** Prose in bare `<p>` children of
 > `<body>` is collected into a `JATSBodySection` with an empty `title` — no

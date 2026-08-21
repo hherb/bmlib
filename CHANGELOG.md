@@ -8,6 +8,59 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **Every author dropped when the contributor role is declared on the group**
+  (#111). `JATSParser` collected a `<contrib>` only where it carried
+  `contrib-type="author"`. JATS lets the role be declared once on the
+  enclosing `<contrib-group>` instead, leaving the children bare — and that
+  is the dominant form in PMC: measured over 79 random open-access articles,
+  45 (57.0%) parsed with **zero** authors while their XML carried surnames in
+  `<front>`, a separate 249-article sample putting it at 60.6%. It failed as
+  a well-formed empty list, so it read as "this article lists no authors"
+  rather than as a parser looking in the wrong place. The group's
+  `content-type` is now read and a bare `<contrib>` inherits it. Four rules,
+  each pinned: a contributor's own `contrib-type` decides on its own, so an
+  `editor` inside an author group stays an editor and an `author` inside an
+  editor group is still collected; a group declaring nothing is authors, by
+  JATS convention; a group naming any other role is taken at its word, since
+  the `content-type="editor"` group beside the author group is common enough
+  that collecting it would be a new defect rather than a wider fix; and an
+  empty attribute declares nothing rather than declaring "not an author",
+  which read as a declaration is the same silent loss for a document whose
+  only fault is a stray empty attribute. The comparison folds case — the one
+  rule here that is defensive rather than measured, since all 45 sampled
+  articles spell it lowercase; it is on the module's own precedent
+  (`pub-id-type` is folded a few handlers below) and cannot cost anything, a
+  role that is not `author` in any casing being excluded either way while an
+  unfolded `Author` drops the group. The role is cleared at
+  `</contrib-group>` — not, as it first appeared, so a following group cannot
+  inherit (opening one assigns unconditionally, absent attribute included),
+  but so that a `<contrib>` with no enclosing group at all does not inherit a
+  closed group's role. Nothing here validates JATS, so that input has to be
+  answered for.
+
+- **A `<sub-article>`'s metadata and prose taken as the article's own**
+  (#110). JATS lets a `<sub-article>` carry a complete `<front>` and `<body>`,
+  and PLOS, eLife, BMJ Open and F1000 deposit every peer-review round that
+  way; every handler fired again inside one, into the same accumulators.
+  PMC12774363 parsed as title "Associated Data", DOI
+  `10.1371/journal.pgen.1012008.r006` — the sixth review round's, real and
+  resolvable, so it does not 404 — and 230 body paragraphs of which about 180
+  are reviewer correspondence, which `TransparencyAnalyzer` then scans for
+  exactly the funding, conflict and data-availability vocabulary reviewers
+  write in. Uncommon and severe rather than widespread: 4 of 249 random
+  open-access articles (1.6%), but the population is not random, since those
+  publishers deposit review histories as policy. `<sub-article>` and
+  `<response>` now open a suppressed region in which no handler fires; the
+  element and text stacks keep running so the two stay balanced. A **depth**
+  rather than a flag, since JATS permits a nested article inside one and a
+  flag cleared by the inner close re-admits the rest of the outer. Suppressed
+  on the **opening** tags as well as the closes that write the outputs: an
+  open leaves state behind, and a nested `<sec>` whose close never comes pops
+  nothing, so for a nested article placed before the article's own `<body>`
+  the article's section was filed as a subsection of a review round's and
+  never flushed — losing the entire body to a document that is merely out of
+  order rather than malformed.
+
 - **Four ways a partitioned PubMed day could still report success it did not
   have** (#105, all found by the review of PR #114, each reproduced end to end
   before being fixed). A day recorded `completed` is never re-offered, so each

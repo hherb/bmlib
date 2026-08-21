@@ -891,10 +891,20 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         A contributor's own declaration decides on its own — it has to be
         able to say ``editor`` inside an author group. Only a ``<contrib>``
         that declares nothing inherits the group, and a group that declares
-        nothing is authors, which is the JATS convention. A group naming any
-        other role is taken at its word: an ``editor`` group beside the
-        author group is common enough that reading its members as authors
-        would be a new defect rather than a wider fix.
+        nothing is authors, which is the JATS convention. An empty attribute
+        declares nothing rather than declaring "not an author": read as a
+        declaration it drops the contributor, which is the same silent loss
+        for a document whose only fault is a stray empty attribute. A group
+        naming any other role is taken at its word: an ``editor`` group
+        beside the author group is common enough that reading its members as
+        authors would be a new defect rather than a wider fix.
+
+        The comparison folds case, which is defensive rather than measured —
+        every article sampled for #111 spells the role lowercase. It is here
+        on the module's own precedent (``pub-id-type`` is folded too) and
+        because folding cannot cost anything: a role that is not ``author``
+        in any casing is excluded either way, while an unfolded ``Author``
+        drops the whole group.
 
         Args:
             contrib_type: The ``contrib-type`` attribute of this
@@ -904,8 +914,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             ``True`` where the contributor is an author of this article.
         """
         if contrib_type:
-            return contrib_type == "author"
-        return self.contrib_group_content_type in (None, "", "author")
+            return contrib_type.lower() == "author"
+        group_type = self.contrib_group_content_type
+        return not group_type or group_type.lower() == "author"
 
     def _classify_article_id(self, text: str) -> None:
         """Classify an article-id whose `pub-id-type` was absent or unknown.

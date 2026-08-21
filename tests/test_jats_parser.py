@@ -740,6 +740,19 @@ class TestContributorRoleDeclaredOnTheGroup:
   </article-meta></front>
 </article>"""
 
+    UPPERCASE_ROLES = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Shouted roles</article-title></title-group>
+    <contrib-group content-type="Author">
+      <contrib><name><surname>Rivera</surname><given-names>Ana</given-names></name></contrib>
+      <contrib contrib-type="AUTHOR">
+        <name><surname>Hwang</surname><given-names>Sun-Hee</given-names></name>
+      </contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
     @staticmethod
     def _surnames(data: bytes) -> list[str]:
         return [a.surname for a in JATSParser(data).parse().authors]
@@ -791,6 +804,19 @@ class TestContributorRoleDeclaredOnTheGroup:
         ``<contrib>`` and the group.
         """
         assert self._surnames(self.EMPTY_ROLE_ATTRIBUTES) == ["Rivera"]
+
+    def test_the_role_is_matched_without_regard_to_case(self):
+        """Defensive, and by the module's own precedent rather than by count.
+
+        Every one of the 45 articles measured for #111 spells it lowercase,
+        so this is not earned from a population the way bmlib's thresholds
+        are. It is here because `pub-id-type` is already folded a few
+        handlers below, and because folding cannot cost anything: a role
+        that is not "author" in any casing is excluded either way, while an
+        unfolded "Author" drops every author in the group — issue #111
+        again, in a document nothing would flag.
+        """
+        assert self._surnames(self.UPPERCASE_ROLES) == ["Rivera", "Hwang"]
 
     def test_a_per_contrib_type_still_works(self):
         """The spelling that already worked must keep working."""
