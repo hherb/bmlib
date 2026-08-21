@@ -883,8 +883,40 @@ def _plan_partitions(
             raise _UnsplittableDayError(lo_, n)
         mid = lo_ + (hi_ - lo_) // 2
         left = count_fn(_edat_range_term(day_term, lo_, mid))
+        right = n - left
+        if right <= 0:
+            # A derived zero is the one wrong derivation that cannot heal, so
+            # it is measured instead of trusted. Every other error in `right`
+            # still yields a part, and a part re-counts itself when its
+            # session opens; a zero yields no part at all, so the range is
+            # never visited, every part planned around it reconciles
+            # perfectly, and the shortfall reaches only the day total — where
+            # anything under `SHORTFALL_FAILURE_RATIO` completes on a note.
+            # `completed` is durable, so those records are never sought again.
+            #
+            # Subtraction is an optimisation, sound only while both counts
+            # describe one instant, and planning spends one ESearch per split.
+            # Measuring here costs one more on the two or three nodes a day
+            # whose parent's records all sit in the left half (the `n <= 0`
+            # arm above still prunes the empty centuries, because it now only
+            # ever sees counts that were measured). A genuinely empty range
+            # measures 0 and yields no part, exactly as before.
+            if right < 0:
+                # Not merely stale: a child cannot hold more than its parent,
+                # so these two counts cannot both be true.
+                logger.warning(
+                    "the Entrez-date range %s..%s reports %d records, more than the %d"
+                    " its parent %s..%s reported; the counts moved between probes",
+                    lo_.isoformat(),
+                    mid.isoformat(),
+                    left,
+                    n,
+                    lo_.isoformat(),
+                    hi_.isoformat(),
+                )
+            right = count_fn(_edat_range_term(day_term, mid + timedelta(days=1), hi_))
         descend(lo_, mid, left)
-        descend(mid + timedelta(days=1), hi_, n - left)
+        descend(mid + timedelta(days=1), hi_, right)
 
     descend(lo, hi, root_count)
     return parts

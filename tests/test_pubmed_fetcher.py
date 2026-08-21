@@ -1616,12 +1616,18 @@ class TestPubMedServesOnlyTheFirstRecordsOfASession:
             result = fetch_pubmed(client, date(2024, 1, 15), on_record=on_record)
 
         assert client.pages == []
-        # More than the single pre-#105 refusal, but bounded: `_FakeEUtils`
-        # reports 12,000 for every range regardless of width, so the ladder
-        # can never narrow and descends the full root depth once (measured:
-        # 19) rather than exploring every branch of it — `TestTheEdatLadder`
-        # asserts the same kind of bound on `_plan_partitions` directly.
-        assert 1 < len(client.calls) < 30
+        # More than the single pre-#105 refusal, but bounded. `_FakeEUtils`
+        # reports 12,000 for every range regardless of width, which no real
+        # backend can do: a range and its own half both holding the whole day
+        # means `descend` measures a right child as large as its parent and
+        # explores both halves to the floor, where a real day's right child
+        # measures 0 and prunes. So this bound is the fake's worst case
+        # (measured: 36), not the cost of a real unsplittable day — that one
+        # puts every record on one Entrez date and costs 23 probes, against
+        # 71 for a realistic 401,500-record day that does partition.
+        # `TestTheEdatLadder` asserts the same kind of bound on
+        # `_plan_partitions` directly.
+        assert 1 < len(client.calls) < 40
         on_record.assert_not_called()
         assert result.record_count == 0
 
@@ -1794,6 +1800,16 @@ class TestTheEdatLadder:
     """Parts must tile the day exactly — coverage is the whole guarantee."""
 
     @staticmethod
+    def _span(term: str) -> tuple[date, date]:
+        """Return the EDAT range *term* restricts to."""
+        m = re.search(r'"([\d/]+)"\[EDAT\] : "([\d/]+)"\[EDAT\]', term)
+        assert m is not None, f"not an EDAT-range term: {term}"
+        return (
+            datetime.strptime(m.group(1), "%Y/%m/%d").date(),
+            datetime.strptime(m.group(2), "%Y/%m/%d").date(),
+        )
+
+    @staticmethod
     def _counter(distribution: dict[date, int]):
         """Return a count_fn over a synthetic EDAT -> record-count distribution."""
 
@@ -1880,6 +1896,95 @@ class TestTheEdatLadder:
         parts = _plan_partitions(self._counter(distribution), "DAY", 17999)
 
         assert sum(p.promised for p in parts) == 18000
+
+    def test_a_left_child_larger_than_its_parent_measures_the_right_instead_of_dropping_it(
+        self,
+    ):
+        # `descend` derives every right-hand child by subtraction, which is
+        # only sound while both counts describe the same instant. Planning
+        # issues one ESearch per split, so a range whose count *grows* between
+        # its parent's probe and its own leaves `n - left` at or below zero —
+        # and the `n <= 0` arm that legitimately skips a measured-empty range
+        # would then discard a range nobody ever counted. Every part planned
+        # around it reconciles perfectly, so the loss surfaces only in the
+        # day total, where anything under the 50% floor completes on a note:
+        # `completed` is durable, so those records are gone for good.
+        #
+        # Measuring the right child costs one ESearch on a path that should
+        # never be taken, and is the same answer the root probe gives to the
+        # same disagreement.
+        from bmlib.publications.fetchers.pubmed import _plan_partitions
+
+        # `known_count` supplies the stale parent directly: 11,000 is what the
+        # day held when its count was taken, while the 2023 cluster has since
+        # grown to 12,000. The first plan reaches the identical state through
+        # `n - left` alone, since every right-hand child's count is derived.
+        populated = {
+            date(2023, 6, 1): 4000,
+            date(2023, 6, 2): 4000,
+            date(2023, 6, 3): 4000,
+            date(2088, 7, 1): 5000,
+        }
+
+        def count_fn(term: str) -> int:
+            lo, hi = self._span(term)
+            return sum(v for d, v in populated.items() if lo <= d <= hi)
+
+        parts = _plan_partitions(count_fn, "DAY", 11000, known_count=11000)
+
+        covering = [p for p in parts if p.lo <= date(2088, 7, 1) <= p.hi]
+        assert covering, "the range holding the 2088 records was dropped from the plan"
+        assert sum(p.promised for p in covering) == 5000
+
+    def test_a_right_child_derived_to_exactly_zero_is_measured_not_skipped(self):
+        # The boundary case of the one above, and the one that actually
+        # reaches production: drift that consumes the right child exactly
+        # leaves `n - left == 0`, which is indistinguishable from the
+        # measured-empty range the `n <= 0` arm exists to prune cheaply.
+        #
+        # A derived zero is the only wrong derivation that cannot heal. A
+        # derived count that is merely too low still yields a part, and that
+        # part re-counts itself when its session opens; a derived zero yields
+        # no part at all, so the range is never visited and nothing downstream
+        # can notice. Measuring it costs one ESearch on the two or three nodes
+        # per day whose parent's records all sit in the left half.
+        from bmlib.publications.fetchers.pubmed import _plan_partitions
+
+        populated = {
+            date(2023, 6, 1): 4000,
+            date(2023, 6, 2): 4000,
+            date(2023, 6, 3): 4000,
+            date(2088, 7, 1): 5000,
+        }
+
+        def count_fn(term: str) -> int:
+            lo, hi = self._span(term)
+            return sum(v for d, v in populated.items() if lo <= d <= hi)
+
+        # 12,000 is what the day held when its count was taken — exactly the
+        # 2023 cluster, with the 2088 records indexed into it since.
+        parts = _plan_partitions(count_fn, "DAY", 12000, known_count=12000)
+
+        covering = [p for p in parts if p.lo <= date(2088, 7, 1) <= p.hi]
+        assert covering, "the range holding the 2088 records was dropped from the plan"
+        assert sum(p.promised for p in covering) == 5000
+
+    def test_a_genuinely_empty_right_child_still_yields_no_part(self):
+        # The negative control for the two above: measuring a derived zero
+        # must not turn an empty range into a part, or every plan would carry
+        # the structurally empty centuries at either end of the root.
+        from bmlib.publications.fetchers.pubmed import _plan_partitions
+
+        populated = {date(2023, 6, 1) + timedelta(days=i): 4000 for i in range(3)}
+
+        def count_fn(term: str) -> int:
+            lo, hi = self._span(term)
+            return sum(v for d, v in populated.items() if lo <= d <= hi)
+
+        parts = _plan_partitions(count_fn, "DAY", 12000, probe_root=False)
+
+        assert all(p.promised > 0 for p in parts)
+        assert sum(p.promised for p in parts) == 12000
 
     def test_the_part_key_format_is_pinned(self):
         from bmlib.publications.fetchers.pubmed import _part_key
