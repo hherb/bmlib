@@ -52,9 +52,12 @@ ever accepted.
 `MERGEABLE` and waiting on review.** It had conflicted only in `CHANGELOG.md`
 and `CLAUDE.md`, both resolved by keeping `main`'s #105 text and the branch's
 own additions. It is a third defect in the same file — a publisher's internal
-id taken as the DOI on 46% of SAGE articles — and its code does not overlap
-this session's, so the two branches merge cleanly in either order (verified by
-test-merge). **Review and merge #113 and this session's PR independently.**
+id taken as the DOI on 46% of SAGE articles. **Review and merge #113 and this
+session's PR independently, in either order.** Test-merged: `jats_parser.py`,
+`tests/test_jats_parser.py` and `CHANGELOG.md` all auto-merge — the code
+changes do not overlap — and the one conflict is `CLAUDE.md`, where both
+branches append a sentence to the same `fulltext/` bullet. Keep both
+sentences; that is the whole resolution.
 
 **Next up is one of the four remaining non-JATS issues, or Phase 3 of the
 bmlibrarian port, whose every row needs a design conversation.** #112, filed
