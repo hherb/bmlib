@@ -2456,18 +2456,63 @@ class TestALostOrSkippedPartFailsTheDay:
 
     @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 4)
     @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 4)
-    def test_the_day_level_reconcile_catches_a_cumulative_loss_no_part_reported(self):
-        # Five four-record days; four of them report a count of 1 when their
-        # own session opens and deliver exactly that. Every part therefore
-        # reconciles *perfectly against its own count* — no part-level rule
-        # fires — while the day has delivered 8 of the 20 records its own
-        # count promised, below the 50% floor. Only the final, day-level
-        # `reconcile_delivery` call can catch that: it is the guard against a
-        # regression that loses parts of a day without any part reporting a
-        # problem, and it must not be reachable only through some part-level
-        # rule that happened to fire first.
+    def test_a_part_whose_count_collapsed_below_the_floor_fails_the_day(self):
+        # The generalisation of the zero case above. Planning measured this
+        # range at four records; its own session ESearch now reports one. It
+        # then walks that one, reconciles 1 against 1 — its *own* count — and
+        # is checkpointed as clean, so the loss reaches only the day total,
+        # where three records missing from twenty clears the 50% floor and
+        # completes the day durably.
+        #
+        # The asymmetry the zero case was settled on does not depend on the
+        # collapsed count being zero: a part that *delivers* 1 of 4 fails the
+        # day, so a part that *claims* 1 having been measured at 4 moments
+        # earlier cannot pass either.
         distribution = {date(2023, 6, 1) + timedelta(days=i): 4 for i in range(5)}
-        overrides = {d: {"count": 1} for d in sorted(distribution)[:4]}
+        overrides = {sorted(distribution)[1]: {"count": 1}}
+        client = _partitioned_client(distribution, part_overrides=overrides)
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert result.status == "failed"
+        assert "part edat:" in result.error
+        assert "1 of 4" in result.error
+
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 4)
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 4)
+    def test_a_part_whose_count_drifted_within_the_floor_completes_with_a_note(self):
+        # The other side of the same rule, and why it reuses the existing
+        # floor rather than demanding equality: two counts taken at two
+        # instants routinely differ by a record, and failing on that would
+        # re-fetch a 242,216-record day for the life of the installation.
+        distribution = {date(2023, 6, 1) + timedelta(days=i): 4 for i in range(5)}
+        overrides = {sorted(distribution)[1]: {"count": 3}}
+        client = _partitioned_client(distribution, part_overrides=overrides)
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert result.status == "completed"
+        assert result.note is not None
+        assert "3 of 4" in result.note
+
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 10)
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 10)
+    def test_the_day_level_reconcile_catches_a_cumulative_loss_no_part_reported(self):
+        # Five ten-record days. Each reports 6 when its own session opens and
+        # then delivers 4 of those 6. Both part-level comparisons therefore
+        # come up short and *neither* fails: 6 of 10 and 4 of 6 are each above
+        # the 50% floor, so each yields a note. Composed, they leave the day
+        # holding 20 of the 50 records its own count promised — below the same
+        # floor.
+        #
+        # That composition is the point. Every part-level rule can pass while
+        # the day is gone, so the final day-level `reconcile_delivery` is the
+        # only thing standing between a 60%-lost day and a durable
+        # `completed`, and it must not be reachable only through some
+        # part-level rule that happened to fire first.
+        distribution = {date(2023, 6, 1) + timedelta(days=i): 10 for i in range(5)}
+        short_page = _make_efetch_xml(*([MINIMAL_ARTICLE_XML] * 4))
+        overrides = {d: {"count": 6, "efetch_pages": [short_page]} for d in sorted(distribution)}
         client = _partitioned_client(distribution, part_overrides=overrides)
 
         result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
@@ -2476,7 +2521,7 @@ class TestALostOrSkippedPartFailsTheDay:
         assert "50% floor" in result.error
         # Day-level, not part-level: no single part's own reconcile fired.
         assert "part" not in result.error
-        assert result.record_count == 8
+        assert result.record_count == 20
 
 
 # ---------------------------------------------------------------------------

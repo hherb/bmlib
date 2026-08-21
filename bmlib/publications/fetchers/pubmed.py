@@ -1134,44 +1134,41 @@ def _fetch_partitioned(
                 return failed(message)
             continue
 
-        if part_count == 0:
-            # Planning measured this range at `part.promised` records and the
-            # part's own ESearch now reports none, so two of bmlib's own
-            # measurements disagree — and the weaker one must not be the one
-            # that decides (#105 review, F2). Dropping the part here was
-            # silent: a soft zero under load, or an Entrez date reassigned
-            # between the two requests, cost the whole part at INFO, and 14
-            # such parts of a 37-part day still deliver 62% of the day, which
-            # clears the day-level floor. The day would be `completed`, never
-            # re-offered, and ~92,000 records permanently absent behind a
-            # single shortfall note. The asymmetry was the tell: a part that
-            # *delivers* 1 of 5,000 fails the day, so a part that *claims* 0
-            # having been measured at 5,000 thirty seconds ago cannot pass.
-            #
-            # It is reconciled like any other part instead, which always
-            # fails, so the day fails and is re-offered. The retry is cheap:
-            # every part before this one is already checkpointed, and a range
-            # that genuinely emptied yields no partition at all at *plan* time
-            # on the next run (`descend` returns early for `n <= 0`), so the
-            # day self-heals in one extra day-fetch.
-            verdict = reconcile_delivery(
-                "pubmed",
-                f"{date_str} part {part.key}",
-                delivered=0,
-                promised=part.promised,
-                stalled=False,
-            )
-            # `or`, not an assertion: a planned part always promises at least
-            # one record, so the reconcile above always fails — and if that
-            # ever stops holding, failing the day is still the fail-closed
-            # answer to two disagreeing counts.
-            return failed(
-                verdict.failure
-                or (
-                    f"part {part.key} promised {part.promised} records at planning"
-                    " but reports 0 now"
-                )
-            )
+        # Planning measured this range at `part.promised` records; the part's
+        # own ESearch has just reported `part_count`. Two of bmlib's own
+        # measurements, and the weaker one does not get to decide (#105
+        # review, F2). Left unchecked this is silent: the part then walks its
+        # own count, reconciles that count against itself — which always
+        # passes — and is checkpointed as clean, so the loss reaches only the
+        # day total, where 14 collapsed parts of a 37-part day still deliver
+        # 62% and clear the day-level floor. The day would be `completed`,
+        # never re-offered, and ~92,000 records permanently absent behind a
+        # single shortfall note.
+        #
+        # The asymmetry is the tell, and it never depended on the collapsed
+        # count being *zero*: a part that *delivers* 1 of 5,000 fails the day,
+        # so a part that *claims* 1 having been measured at 5,000 thirty
+        # seconds ago cannot pass either. Reconciled with the same floor as
+        # every other comparison here rather than a new constant — equality
+        # would fail a day for the one-record drift two requests at two
+        # instants routinely show, and a day recorded `failed` is re-fetched
+        # on every later run for the life of the installation.
+        #
+        # A part that collapses to 0 still always fails, since no planned part
+        # promises fewer than one record. The retry is cheap: every part
+        # before this one is already checkpointed, and a range that genuinely
+        # emptied yields no partition at all when the next run plans the day.
+        plan_verdict = reconcile_delivery(
+            "pubmed",
+            f"{date_str} part {part.key} (its count when its session opened)",
+            delivered=part_count,
+            promised=part.promised,
+            stalled=False,
+        )
+        if plan_verdict.failure is not None:
+            return failed(plan_verdict.failure)
+        if plan_verdict.note is not None:
+            notes.append(plan_verdict.note)
 
         if web_env is None or query_key is None:
             message = f"part {part.key} returned count={part_count} without a history session"
@@ -1242,15 +1239,22 @@ def _fetch_partitioned(
         # checkpoint means whichever run finally completes the day re-walks
         # the part and carries its note honestly.
         if on_part_finished is not None:
+            # Both reconciles have to be clean, for one reason: a note dies
+            # with the run that produced it. Checkpointing a part that came up
+            # short on either count lets a later run skip it, and that run's
+            # result carries no note at all — the shortfall stops being
+            # answerable from a return value, which is the whole reason
+            # `FetchResult.note` exists.
+            noted = plan_verdict.note is not None or verdict.note is not None
             on_part_finished(
-                PartCheckpoint(
+                None
+                if noted
+                else PartCheckpoint(
                     part_scheme=PART_SCHEME,
                     part_key=part.key,
                     promised=part_count,
                     record_count=outcome.processed,
                 )
-                if verdict.note is None
-                else None
             )
 
         time.sleep(rate_limit)
