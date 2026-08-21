@@ -44,7 +44,7 @@ import io
 import sys
 import urllib.error
 from collections.abc import Callable
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -78,6 +78,12 @@ SESSION = sampler.Session(500_000, "WEBENV1", "1")
 # body, or None for a request that never arrived. `_FakeEUtils` is one, and so
 # is every ad-hoc stub below.
 _Get = Callable[[str, dict[str, str]], tuple[int, str] | None]
+
+# What `_count(term, base)` answers: a bare record count, or None for a
+# question that could not be asked. A different shape from `_Get` above —
+# `_count` sits above `_get`, already stripped of status and body — so a
+# `--partition` stub is built against this alias, not that one.
+_Count = Callable[[str, dict[str, str]], int | None]
 
 _REFUSAL = (
     "<eFetchResult><ERROR>Search backend cannot retrieve history data. Reason:"
@@ -852,3 +858,158 @@ class TestTheThreePopulationsArePartitionedNotOverlapped:
 
         assert "Every day of the last 40 — one sync window" in out
         assert out.count("days measured,") == 3
+
+
+def _stub_count(distribution: dict[date, int]) -> _Count:
+    """A synthetic Entrez-date distribution, as a ``_count``-shaped stand-in.
+
+    The same shape ``tests/test_pubmed_fetcher.py``'s ``_counter`` uses for
+    ``_plan_partitions``, written out again here rather than imported — the
+    two test modules must be able to disagree, since one exists to confirm a
+    rule and the other exists to check it independently. It answers the bare
+    day term the same way it answers the full-root EDAT range (the whole
+    distribution), and any narrower range with the slice of *distribution*
+    that range covers — mirroring what a real ``[Date - Publication] AND
+    ("lo"[EDAT] : "hi"[EDAT])`` query would report.
+    """
+
+    def count(term: str, base: dict[str, str]) -> int | None:
+        if "[EDAT]" not in term:  # the bare day term, before any range narrows it
+            return sum(distribution.values())
+        lo_text, hi_text = term.split('"[EDAT] : "')
+        lo = _parse_stamp(lo_text.rsplit('"', 1)[-1])
+        hi = _parse_stamp(hi_text.split('"', 1)[0])
+        return sum(n for d, n in distribution.items() if lo <= d <= hi)
+
+    return count
+
+
+def _parse_stamp(stamp: str) -> date:
+    """Parse a bare ``YYYY/MM/DD`` stamp, as ``_range_term`` writes it."""
+    year, month, day = (int(part) for part in stamp.split("/"))
+    return date(year, month, day)
+
+
+class TestThePartitionMode:
+    """A probe that could not be made must never print as a finding.
+
+    `measure_partition` is a second, independent descent from
+    `fetchers/pubmed.py`'s `_plan_partitions` — this test class is what
+    guards that independence as well as the behaviour, since a corpus
+    labelled by the rule under test could only ever confirm that rule.
+    """
+
+    def test_a_failed_count_is_unmeasured_not_a_finding(self, monkeypatch):
+        monkeypatch.setattr(sampler, "_count", lambda term, base: None)
+
+        report = sampler.measure_partition(date(2024, 1, 1), {})
+
+        assert report.day_count is None
+        assert report.parts == 0
+        assert report.exact is None
+
+    def test_the_ladder_tiles_and_reports_exact(self, monkeypatch):
+        distribution = {date(2023, 6, 1) + timedelta(days=i): 4000 for i in range(10)}
+        monkeypatch.setattr(sampler, "_count", _stub_count(distribution))
+
+        report = sampler.measure_partition(date(2024, 1, 1), {})
+
+        assert report.exact is True
+        assert report.stuck == []
+        assert sum(1 for _ in range(report.parts)) == report.parts
+        assert report.parts > 1
+
+    def test_a_single_entrez_day_over_the_cap_is_reported_stuck(self, monkeypatch):
+        monkeypatch.setattr(sampler, "_count", _stub_count({date(2023, 6, 1): 25000}))
+
+        report = sampler.measure_partition(date(2024, 1, 1), {})
+
+        assert report.stuck == [(date(2023, 6, 1), 25000)]
+
+    def test_a_run_with_an_unreportable_population_exits_non_zero(self, monkeypatch):
+        monkeypatch.setattr(sampler, "_count", lambda term, base: None)
+
+        assert sampler.report_partitions([date(2024, 1, 1)], {}) is False
+
+    def test_the_sampler_does_not_import_the_rule_it_measures(self):
+        # A corpus labelled by the rule under test can only confirm that rule.
+        source = Path(sampler.__file__).read_text()
+        assert "_plan_partitions" not in source
+        assert "_edat_range_term" not in source
+
+
+class TestReportPartitionsPrintsAndCounts:
+    """The reporting half: what gets printed, and what fails the run."""
+
+    def test_an_exact_untiled_day_is_reported_exact(self, monkeypatch, capsys):
+        monkeypatch.setattr(sampler, "_count", _stub_count({date(2023, 6, 1): 5_000}))
+
+        assert sampler.report_partitions([date(2024, 1, 1)], {}) is True
+        out = capsys.readouterr().out
+
+        assert "1 measured, 0 unmeasured" in out
+        assert "EXACT" in out
+        assert "STUCK" not in out
+
+    def test_a_stuck_day_fails_the_run_even_though_it_was_measured(self, monkeypatch, capsys):
+        monkeypatch.setattr(sampler, "_count", _stub_count({date(2023, 6, 1): 25_000}))
+
+        assert sampler.report_partitions([date(2024, 1, 1)], {}) is False
+        out = capsys.readouterr().out
+
+        assert "STUCK" in out
+
+    def test_a_population_mostly_unmeasured_reports_no_ladder(self, monkeypatch, capsys):
+        """One day's ladder walks clean; the other four never answer at all.
+
+        4 of 5 unmeasured is past `UNMEASURED_SHARE_ERROR_THRESHOLD` (0.20),
+        so no ladder is reported even though one day's own walk was fine.
+        """
+        working = _stub_count({date(2023, 6, 1): 5_000})
+
+        def flaky(term: str, base: dict[str, str]) -> int | None:
+            # `_range_term` embeds `day` in every term it builds for that day,
+            # bare or ranged, so this routes every count for 2024-01-01 to the
+            # working stub and leaves every other day's first count unanswered.
+            return working(term, base) if "2024/01/01" in term else None
+
+        monkeypatch.setattr(sampler, "_count", flaky)
+        days = [
+            date(2024, 1, 1),
+            date(2023, 1, 1),
+            date(2022, 1, 1),
+            date(2021, 1, 1),
+            date(2020, 1, 1),
+        ]
+
+        assert sampler.report_partitions(days, {}) is False
+        out = capsys.readouterr().out
+
+        assert "ERROR" in out
+        assert "went unmeasured" in out
+
+    def test_a_wholly_unreportable_population_prints_an_error(self, monkeypatch, capsys):
+        monkeypatch.setattr(sampler, "_count", lambda term, base: None)
+
+        assert sampler.report_partitions([date(2024, 1, 1)], {}) is False
+        out = capsys.readouterr().out
+
+        assert "ERROR — nothing measured" in out
+
+
+class TestThePartitionFlagInMain:
+    """`--partition` is wired into `main()` and folds into its exit status."""
+
+    def test_the_flag_runs_the_ladder_instead_of_the_ordinary_probes(self, monkeypatch, capsys):
+        out = _run(monkeypatch, capsys, _FakeEUtils(), "--partition", "--partition-days", "2")
+
+        assert "Entrez-date ladder (2 days)" in out
+        assert "session holds" not in out  # the session-opening bootstrap is skipped
+
+    def test_a_clean_partition_run_exits_zero(self, monkeypatch):
+        assert _status(monkeypatch, _FakeEUtils(), "--partition", "--partition-days", "1") == 0
+
+    def test_an_unmeasured_partition_run_exits_non_zero(self, monkeypatch):
+        fake = _FakeEUtils(day_count=None)
+
+        assert _status(monkeypatch, fake, "--partition", "--partition-days", "1") == 1
