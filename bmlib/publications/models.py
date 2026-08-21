@@ -572,6 +572,14 @@ class SourceDescriptor:
     display_name: str
     description: str
     params: list[SourceParam] = field(default_factory=list)
+    resumable: bool = False
+    """Whether ``sync()`` may pass this fetcher the per-part resume keywords.
+
+    Defaults to ``False`` because :func:`register_source` is public: a fetcher
+    written against an earlier bmlib does not accept them, and passing an
+    unexpected keyword would raise inside the per-day handler and record a
+    working source's day as failed.
+    """
 
 
 @dataclass

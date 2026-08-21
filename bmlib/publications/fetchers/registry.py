@@ -131,6 +131,7 @@ def _register_builtins() -> None:
             params=[
                 SourceParam("api_key", "NCBI API key for higher rate limits", secret=True),
             ],
+            resumable=True,
         ),
         fetch_pubmed,
     )

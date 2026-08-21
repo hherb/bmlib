@@ -57,6 +57,27 @@ class TestBuiltinRegistration:
         assert email_param.required is True
 
 
+class TestAFetcherDeclaresResumability:
+    """New keywords reach only fetchers that asked for them."""
+
+    def test_a_descriptor_is_not_resumable_by_default(self):
+        descriptor = SourceDescriptor(
+            name="custom", display_name="Custom", description="A third-party source"
+        )
+
+        assert descriptor.resumable is False
+
+    def test_pubmed_declares_itself_resumable(self):
+        descriptor, _ = get_source("pubmed")
+
+        assert descriptor.resumable is True
+
+    def test_the_other_builtins_do_not(self):
+        for name in ("biorxiv", "medrxiv", "openalex"):
+            descriptor, _ = get_source(name)
+            assert descriptor.resumable is False, name
+
+
 class TestGetSourceErrors:
     def test_unknown_source_raises(self):
         import pytest
