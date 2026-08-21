@@ -1461,8 +1461,36 @@ crossed the cap since planning.
   root probe's own removal is: the next run re-plans from fresh probes, the
   phantom does not recur, the parts already checkpointed are skipped, and the
   day completes. But "recoverable" is not "cheap": a day that partitions at all
-  is already over 9,999 records, so the re-fetch this costs is up to ~562
+  is already over 9,999 records, so the re-fetch this costs is up to ~580
   requests and ~1 GB, not the one day-fetch the phrase implies.
+
+  **Narrowed by the review of PR #114, in the two directions where the
+  derivation is unrecoverable rather than merely wrong.** A phantom that
+  reaches a *single date* is now measured before the day is refused on it, so
+  the `edat:2050-10-02:2100-12-31` shape above measures 0 and disappears
+  instead of failing the day — the surplus walks down the empty tail to a leaf
+  and dies there. And a derived count of **zero** is measured rather than
+  trusted anywhere in the descent, because it is the one derivation nothing
+  downstream can repair: any other error still yields a part, and a part
+  re-counts itself when its session opens, but a zero yields no part at all, so
+  the range is never visited, every part planned around it reconciles
+  perfectly, and the shortfall reaches only the day total — where anything
+  under the floor completes on a note, durably. Reproduced end to end before
+  the fix: a six-record day fetched five, returned `completed`, and carried
+  neither note nor error.
+
+  What is *not* narrowed, and stays exactly as recorded above: a phantom whose
+  derived count is positive and lands on a range wide enough to become a part
+  without reaching a leaf. That part's own ESearch reports 0 when its session
+  opens, and the day fails there. Measuring every derived count at plan time
+  would close it, at one ESearch per part — some 37 more on a 37-part day —
+  and the verdict above already prefers the loud failure to that standing cost.
+
+  Measured cost of what *was* changed: +3 planning probes on a synthetic
+  401,500-record, 64-part day (68 → 71), and 24 on a day whose records all
+  share one Entrez date. Not re-measured against the live backend, so the
+  "40 planning ESearches" in the table above is the ladder **as it was
+  measured** and the current one spends a little more.
 - **A planning ESearch failure is a returned `FetchResult`, not a raise.** The
   ladder's counting probes are ordinary ESearch requests and fail like any
   other — a 500, a dropped connection, an `<ERROR>` document `_esearch`
@@ -1490,6 +1518,80 @@ crossed the cap since planning.
   the ordinary incremental case, which is what `sync()` is. A whole-corpus
   ingestion mode remains open as its own question; nothing in #105 forecloses
   it.
+- **A part's own count is reconciled against planning's with the existing
+  floor, not with `== 0`.** The rule shipped in #105 refused a part whose
+  session ESearch reported zero where planning had measured records, on the
+  ground that two of bmlib's own measurements disagree and the weaker one does
+  not decide. The review of PR #114 found the argument never depended on the
+  collapsed count being *zero*: a part reporting 1 where planning measured
+  5,000 was walked, delivered its 1, reconciled that 1 against **itself** —
+  which always passes — and was checkpointed as clean. Reproduced: 8 of 20
+  parts collapsing 10 → 1 completed the day holding 128 of 200 records, with
+  eight parts recorded as having reconciled cleanly. The asymmetry settles it
+  unchanged: a part that *delivers* 1 of 5,000 fails the day, so a part that
+  *claims* 1 cannot pass. It reuses `SHORTFALL_FAILURE_RATIO` rather than
+  demanding equality, because two requests at two instants routinely differ by
+  a record and a day recorded `failed` is re-fetched for the life of the
+  installation; and a part collapsing to 0 still always fails, since no planned
+  part promises fewer than one record. A checkpoint now requires **both**
+  reconciles clean, for the reason the delivery one already did: a note dies
+  with the run that produced it, so checkpointing a short part lets a later run
+  skip it and report no note at all.
+- **A day-level count of zero does not overrule that day's own checkpoints.**
+  The same rule one level up, where partitioning had newly made it reachable: a
+  run can leave a day `failed` with most of its parts stored and checkpointed,
+  and if the day-level ESearch then answers a soft zero — the mechanism the
+  part-level rule exists for — `fetch_pubmed` completed the day at zero records
+  without consulting `completed_parts`, while `sync()` deleted the day's part
+  rows in the same transaction. The write that lost the records destroyed the
+  checkpoints that would have made re-fetching them cheap. Reproduced: 20
+  checkpointed parts and 130,000 records became `completed` at `record_count=0`
+  with no part rows, empty `errors`, empty `notes`, and the day was never
+  offered again. It fails instead, and the message carries the part count and
+  record total because the remedy — deleting the rows if the day really was
+  withdrawn — is a judgement an operator makes from it. A quiet day with no
+  stored parts is untouched, which is what keeps this from being a blanket
+  refusal of every empty day. The accepted cost is that a day PubMed genuinely
+  empties stays `failed` until an operator drops its rows; PubMed emptying a
+  120,000-record day is not a thing it does, and the alternative is the silent
+  permanent loss above.
+- **An over-cap day is partitioned before the history session is checked.** The
+  session opened by the day-level ESearch is unused on the partitioned path —
+  `_fetch_partitioned` opens one per part — so a count without a `WebEnv` was
+  costing a day that was perfectly fetchable, and a failed day is re-offered on
+  every later run. The guard still stands for the under-cap path, and if the
+  anomaly is not transient each part's own session guard fails the day anyway.
+- **`resumable=True` is checked against the fetcher's signature at
+  registration.** `sync()` reads the *descriptor* to decide whether to pass the
+  three resume keywords, so a descriptor declaring more than its fetcher
+  accepts raised `TypeError` inside the per-day handler — recording every day
+  of the range `failed`, on every run, forever. Loud, but once per day rather
+  than once per mistake, and at a place naming the day instead of the
+  registration. A `**kwargs` parameter satisfies the check, since that is how
+  the built-in fetchers absorb per-source configuration, and a callable with no
+  introspectable signature falls through to the old behaviour rather than being
+  refused on an absence of evidence.
+- **`PartCheckpoint` is read as strictly as `DownloadDay`, and guarded at the
+  same place.** It is the other model on the day-selection path, and #98/#99's
+  rules had not been carried across. `from_dict` used `str()` and `int()`,
+  which accept everything: a missing column raised `KeyError` and a null raised
+  `TypeError` — neither caught by the documented `except ValueError` — a bad
+  value reported `invalid literal for int()`, naming neither column nor row,
+  and `str(None)` became the literal `"None"`, so a null `part_key`
+  deserialised into a key matching no plan and resume degraded to re-fetching
+  every unfinished day with nothing raised. `__post_init__` refuses what cannot
+  describe a finished part, but imposes **no** `record_count <= promised` rule:
+  `promised` counts record elements the server delivered and `record_count`
+  those the fetcher parsed, so the two are not commensurable — the conflation
+  `_EFetchPage` exists to prevent. And `_load_day_parts` ran *before* the
+  per-day handler, inside a source loop carrying only a `finally`, so one
+  malformed row escaped `sync()` and left the whole multi-source run with no
+  `SyncReport` at all — reproduced with a text value in `promised`, which
+  SQLite stores into `INTEGER NOT NULL` without complaint. It fails the day
+  instead. Failing *safe* — proceeding with no checkpoints — was rejected:
+  fetching a day from scratch would be correct, but recording it `completed` on
+  a run that could not read what an earlier run stored is recording success
+  over an unknown, and `completed` is never re-offered.
 
 ## publications — retractions
 

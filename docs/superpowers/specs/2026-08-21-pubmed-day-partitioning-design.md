@@ -267,8 +267,10 @@ share of a day fetched across three. Both are credited from the checkpoint rows.
 ## Cost
 
 Per structural day of ~242,000 records: 40 planning ESearches + 37 session
-ESearches + 485 EFetch pages ≈ **562 requests**, and at roughly 4 KB a record
-about **1 GB**. With an API key the rate limiting alone is about a minute.
+ESearches + ~503 EFetch pages ≈ **580 requests**, and at roughly 4 KB a record
+about **1 GB**. The pages are counted *per part*, since `_walk_session` walks
+one part at a time: the day costs the sum of `ceil(nᵢ/500)` over its 37 parts,
+bounded 485–521, where 485 is the floor a single session would have cost. With an API key the rate limiting alone is about a minute.
 
 A six-year backfill window holds ~72 such days — 66 month firsts at 49,543–90,571
 and 6 January firsts at 212,439–315,282 — so roughly **6.2M records and ~25 GB,

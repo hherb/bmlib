@@ -831,8 +831,9 @@ def main() -> int:
             " 1 Januarys — the largest known over-cap days — instead of the"
             " session probes and day-size populations. It is the live evidence"
             " for issue #105's 'no stuck Entrez date' claim. A full ladder is"
-            " ~40 ESearches per day, so --partition --partition-days 3 costs"
-            " about 120 requests; no history session is opened for it."
+            " 40-51 ESearches per day, so --partition --partition-days 3 costs"
+            " about 135 requests (measured: 51 + 40 + 44 over 2025/2024/2023);"
+            " no history session is opened for it."
         ),
     )
     parser.add_argument(

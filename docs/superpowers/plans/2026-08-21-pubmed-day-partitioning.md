@@ -1929,7 +1929,7 @@ def measure_partition(day: date, base: dict[str, str]) -> LadderReport:
 
 `report_partitions(days, base)` prints one row per day — count, root agreement, parts, depth, calls, `EXACT`/`MISMATCH`, and any stuck Entrez date — computes the unmeasured share across the population, prints `ERROR` instead of a share when it exceeds `UNMEASURED_SHARE_ERROR_THRESHOLD`, and returns `False` if any population was unreportable or any day was inexact or stuck. Wire `--partition` and `--partition-days N` into `main()` alongside `--skip-day-sizes`, and fold its return into `main()`'s exit status the way the existing probes are.
 
-Note the request cost in `--help`: a full ladder is ~40 ESearches per day, so `--partition --partition-days 3` is ~120 requests.
+Note the request cost in `--help`: a full ladder is 40-51 ESearches per day, so `--partition --partition-days 3` is ~135 requests (measured: 51 + 40 + 44 over its three default targets).
 
 - [ ] **Step 4: Run test to verify it passes**
 

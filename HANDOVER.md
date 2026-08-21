@@ -11,7 +11,25 @@ records — every first-of-month and every 1 January under `[Date - Publication]
 because a record carrying only a year and a month is indexed at day 1 of it —
 used to be **refused outright**, so its records were simply absent. Last
 session shipped that refusal as deliberate containment and said so; this one
-replaces it. **"No publication is missed" is true again.**
+replaces it. **"No publication is missed" now holds for every day-size the cap
+used to refuse** — which is a statement about the cap, not a promise that a day
+arrives whole. Two things still qualify it, both stated where they are decided:
+a single Entrez date over the cap cannot be split and is still refused, and a
+walk that comes up short while clearing `SHORTFALL_FAILURE_RATIO` completes the
+day on a note here exactly as it does for every other source.
+
+**PR #114 was then reviewed and the findings fixed in the same branch.** Six
+of them were durable silent losses of the kind this whole family of rules
+exists to prevent, each reproduced end to end before being fixed and each now
+pinned: a derived count of zero dropping a range nobody had counted; a part
+whose own count collapsed to a small non-zero number being checkpointed as
+clean (the guard was written as exactly `== 0`); a day-level zero sealing a
+partially-fetched day *and deleting its checkpoints*; a part's session ESearch
+failing with no test and no cause reported; a malformed part row escaping
+`sync()` and taking the whole run's `SyncReport`; and a day refused on a
+count no ESearch had returned. Four mutations that had survived the entire
+suite now fail it. Details in `docs/DECISIONS.md` under the #96/#105 section
+and in `CHANGELOG.md`.
 
 The mechanism is a recursion over **Entrez-date ranges**: `[lo, mid]` and
 `[mid+1, hi]` tile `[lo, hi]` as arithmetic and every record carries exactly
@@ -110,11 +128,14 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed six releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2333 passing + 63 skipped** on
-  `fix/105-partition-over-cap-pubmed-days` (`uv run pytest tests/ -q`); 2187 on
-  `main`, the 146 being this session's. With `BMLIB_TEST_POSTGRESQL_DSN` set the
-  whole suite is **2394 passing + 2 skipped** — measured this time, not derived,
-  because this branch adds SQL and the PostgreSQL half had to run. Of the 63
+- **Tests: 2372 passing + 63 skipped** on
+  `fix/105-partition-over-cap-pubmed-days` (`uv run pytest tests/ -q`); **2257
+  + 59** on `main`, so 115 are this branch's. (The 2187 previously recorded
+  here was `main` *before* PR #106 merged #96's 70 tests, which made the stated
+  delta double-count them; both numbers were re-measured in a worktree at the
+  merge-base.) With `BMLIB_TEST_POSTGRESQL_DSN` set the whole suite is **2433
+  passing + 2 skipped** — measured, not derived, because this branch adds SQL
+  and the PostgreSQL half had to run. Of the 63
   default skips, 61 are the PostgreSQL parameterisations, 1 is a
   PostgreSQL-only schema test, and 1 is `test_pymupdf_requires_dependency`,
   which runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev

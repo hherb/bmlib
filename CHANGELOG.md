@@ -8,6 +8,75 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **Four ways a partitioned PubMed day could still report success it did not
+  have** (#105, all found by the review of PR #114, each reproduced end to end
+  before being fixed). A day recorded `completed` is never re-offered, so each
+  of these lost records permanently and silently.
+
+  A **derived count of zero dropped a range nobody had counted.** The ladder
+  derives every right-hand child by subtraction, which holds only while both
+  counts describe one instant, and planning spends one ESearch per split — so
+  a range whose count grew between its parent's probe and its own left
+  `n - left` at or below zero, and the arm that cheaply prunes a range
+  *measured* empty discarded it. It is the one wrong derivation nothing
+  downstream repairs: any other error still yields a part, and a part
+  re-counts itself when its session opens, but a zero yields no part at all,
+  so the range is never visited and every part planned around it reconciles
+  perfectly. A six-record day fetched five and returned `completed` with
+  neither note nor error. Non-positive derived counts are now measured; a
+  strictly negative one, which cannot be stale but only impossible, also logs
+  a warning.
+
+  A **part whose count collapsed to a small non-zero number was checkpointed
+  as clean.** The guard was written as exactly `== 0`, and its own argument
+  never depended on that: a part reporting 1 where planning measured 5,000 was
+  walked, delivered its 1, and reconciled that 1 against itself. Eight of
+  twenty parts collapsing 10 → 1 completed a day holding 128 of 200 records.
+  The fetch-time count is now reconciled against the planned one with the
+  existing floor.
+
+  A **day-level count of zero sealed a partially-fetched day and deleted the
+  evidence.** Partitioning made that day reachable, and `sync()` drops a day's
+  part rows the moment it completes — so a soft zero turned 20 checkpointed
+  parts and 130,000 records into `completed` at `record_count=0` with no part
+  rows, empty `errors` and empty `notes`. A zero contradicted by this day's own
+  checkpoints now fails, naming what contradicts it.
+
+  A **part's session ESearch failing had no test**, and mutating its
+  `return failed(...)` to `continue` passed the whole suite — the same silent
+  shape, in the most frequent request class on a partitioned day. It also
+  reported no cause: a bare `ConnectionError` stringifies to nothing, so the
+  day failed forever saying `part edat:a:b: `. Both handlers here now report
+  the exception type.
+
+- **A stored part checkpoint is read as strictly as a stored day** (#105).
+  `PartCheckpoint.from_dict` used `str()` and `int()`, so a missing column
+  raised `KeyError` and a null raised `TypeError` — neither caught by the
+  documented `except ValueError` — and `str(None)` became the literal
+  `"None"`, deserialising a null `part_key` into a key that matches no plan,
+  which degrades resume to re-fetching every unfinished day with nothing
+  raised. `PartCheckpoint` now validates on construction, and `_load_day_parts`
+  — which runs *before* the per-day handler, inside a loop carrying only a
+  `finally` — no longer lets one malformed row escape `sync()` and leave the
+  whole multi-source run with no `SyncReport` at all.
+
+- **A day is no longer refused on a number no ESearch returned** (#105). A
+  parent counted higher than its children really hold parks the surplus on the
+  right, and the root reaches 2100, so it walked down a structurally empty tail
+  to a single future date claiming tens of thousands of records —
+  `_UnsplittableDayError` named that derived figure and the day was re-fetched
+  on every later run over a range PubMed has never indexed anything into. A
+  single date is now measured before the day is refused on it: a phantom
+  measures 0 and disappears, a date merely overstated becomes an ordinary
+  part, and what remains is genuinely unsplittable with a measured count. A
+  planning range that *is* one date is exempt, which is the re-partition path
+  — measuring there is what `known_count` exists to prevent.
+
+- **An over-cap day is no longer refused for want of a session it does not
+  use** (#105). The history-session guard ran ahead of the branch that
+  partitions the day, and `_fetch_partitioned` opens a session per part.
+
+
 - **A PubMed day larger than 9,999 records is now fetched in parts, not
   walked into a wall** (#105, found measuring #96). NCBI's search backend
   serves only the first 9,999 records of a history session — `retstart=9999`
@@ -35,10 +104,10 @@ All notable changes to bmlib are documented here. The format is based on
   cover the day (`count(day AND root) >= count(day)`); short fails the day,
   because records outside the ladder are in no part's promise and every part
   would otherwise reconcile perfectly while the day is silently incomplete. A
-  part that reports 0 records having been measured non-empty at planning
-  fails the day too, rather than being dropped: two of bmlib's own
-  measurements disagree, the weaker one does not decide, and dropping such
-  parts was silent at a scale the day-level reconcile does not catch.
+  part whose own count comes back below half what planning measured fails the
+  day too, rather than being walked at the lower number: two of bmlib's own
+  measurements disagree, the weaker one does not decide, and letting such
+  parts through was silent at a scale the day-level reconcile does not catch.
   The 10,000-record day is routed down that same path — its ten-thousandth
   record is requested with the rest — so the cap no longer refuses a day, and
   no longer silently truncates one. That is a statement about the cap and not
@@ -62,9 +131,11 @@ All notable changes to bmlib are documented here. The format is based on
   For a 242,216-record day (2024/01/01, its count and 37-part ladder measured
   live 2026-08-21): 40 planning ESearches, measured; one session ESearch per
   part, so 37, arithmetic over the measured part count, since **no session
-  ESearch was ever issued**; and ~485 EFetch pages derived from the record
-  count and the 500-record page size — ≈**562 requests**, and at roughly 4 KB
-  a record about **1 GB**. Everything after the planning ESearches is
+  ESearch was ever issued**; and ~503 EFetch pages derived from the record
+  count and the 500-record page size, **rounded up per part** rather than over
+  the day, since `_walk_session` pages one part at a time — bounded 485–521,
+  where 485 is what a single session would have cost — ≈**580 requests**, and
+  at roughly 4 KB a record about **1 GB**. Everything after the planning ESearches is
   arithmetic and has not been confirmed by a full fetch. A six-year
   backfill window holds some 72 such days (66 month firsts at 49,543–90,571
   and 6 January firsts at 212,439–315,282), so roughly **6.2M records and
@@ -183,6 +254,14 @@ All notable changes to bmlib are documented here. The format is based on
   an HTTP 400.
 
 ### Changed
+
+- **`register_source()` refuses `resumable=True` over a fetcher that cannot
+  accept the resume keywords** (#105, review of PR #114). `sync()` reads the
+  descriptor, so the mismatch used to raise `TypeError` inside the per-day
+  handler — failing every day of that source, on every run, forever, at a
+  place naming the day rather than the registration. A `**kwargs` parameter
+  satisfies the check, since that is how the built-in fetchers absorb
+  per-source configuration.
 
 - **The PubMed page walk's fixed stride is now documented and pinned** (#96,
   closed as correct). `retstart` indexes the *session's UID list*, not the

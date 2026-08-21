@@ -358,14 +358,19 @@ double-fetches and inflates delivery past the day's own count, hiding the
 shortfall the reconcile exists to catch. Measured: 242,216 records → 37 parts,
 depth 13, 40 planning ESearches, parts summing exactly, no stuck Entrez date
 in six walks over five real days. The cost is stated rather than flagged off:
-~562 requests and ~1 GB for such a day, ~6.2M records and ~25 GB **once**
+~580 requests and ~1 GB for such a day, ~6.2M records and ~25 GB **once**
 across a six-year backfill — against the refusal it replaces, which re-offered
 those days forever and stored nothing. Only the 40 planning ESearches above are
-measured — no session ESearch was ever issued, so the one-per-part session call
-(~37, arithmetic over the measured part count) joins the ~485 EFetch pages
-(arithmetic over the record count and the 500-record page size) and the byte
-figures (arithmetic over *those* at ~4 KB a record) as unmeasured; no full fetch
-of such a day has ever been run — do not quote any of them as measured.
+measured, and only for the ladder *as it was measured*: it now spends one more
+probe per derived-zero right child and per single-date leaf it reaches (+3 on a
+synthetic 64-part day; not re-measured live). No session ESearch was ever
+issued, so the one-per-part session call (~37, arithmetic over the measured
+part count) joins the EFetch pages and the byte figures (arithmetic over *those*
+at ~4 KB a record) as unmeasured; no full fetch of such a day has ever been run
+— do not quote any of them as measured. The pages are **~503, bounded 485–521**,
+not 485: `_walk_session` pages *per part*, so the day costs the sum of
+`ceil(nᵢ/500)` over 37 parts, and 485 is the floor one single session would
+have cost.
 Parts are checkpointed in `download_day_parts` (same transaction as their
 records, so a checkpoint never attests to records a rollback discarded), which
 is what makes an interrupted day resumable and what forced the per-part flush
@@ -377,14 +382,28 @@ part that finished walking has its records stored, since that flush is the
 memory bound and a bound conditional on the source behaving is not one, while
 only a part that reconciled clean earns a checkpoint — checkpointing a noted
 part would let a later run skip it and manufacture the records the note was
-reporting missing. A part reporting **0** where planning measured it non-empty
-fails the day rather than being dropped (two of bmlib's own measurements
-disagree; the weaker one does not decide), and a planning ESearch that fails
-returns a failed `FetchResult` like the under-cap path rather than raising.
+reporting missing. **Two of bmlib's own counts never settle in favour of the
+weaker one**, and that rule is applied at all three scales: a part whose own
+session count falls below `SHORTFALL_FAILURE_RATIO` of what planning measured
+fails the day rather than being walked at the lower number and checkpointed as
+clean (it was once written as exactly `== 0`, which let a part collapsing
+5,000 → 1 pass); a **day**-level count of 0 contradicted by this day's own
+checkpoints fails rather than completing at zero and deleting them; and a
+single Entrez date is *measured* before the day is refused on it, since a
+right-hand child's count is derived by subtraction and the surplus of a stale
+parent walks down the empty tail to a future date claiming tens of thousands of
+records. A derived right-hand count of zero is measured for the same reason and
+is the one derivation that cannot heal: any other error still yields a part,
+and a part re-counts itself when its session opens, but a zero yields no part
+at all, so the range is never visited. A planning ESearch that fails returns a
+failed `FetchResult` like the under-cap path rather than raising.
 `SourceDescriptor.resumable` gates the new keywords,
-defaulting `False` because `register_source()` is public. The one case left is
+defaulting `False` because `register_source()` is public — and a descriptor
+declaring `True` over a fetcher that cannot accept them is refused at
+registration, since `sync()` reads the descriptor and the mismatch otherwise
+failed every day of that source on every run, forever. The one case left is
 a **single Entrez date** over the cap, which cannot be split further: that day
-is still refused, naming the date and count — and it is not the structural
+is still refused, naming the date and a count that was measured — and it is not the structural
 population the month firsts were. A cap NCBI *raises* now costs unnecessary
 partitioning rather than a refusal — requests, not records, and quietly, where
 it used to be an ERROR; one NCBI *lowers* is still **not** reliably covered,
@@ -406,7 +425,20 @@ since that row describes a fetch that has just happened. Every rejection
 there is a `ValueError` **naming the field**: delegating to `_parse_datetime`
 let a non-string escape as `TypeError`, so the documented `except ValueError`
 did not catch it, and an unreadable string reported `Invalid isoformat
-string: ''`, which names neither column nor row.
+string: ''`, which names neither column nor row. `PartCheckpoint` is held to
+the same bar for the same reason — it is read back on the same path, before
+the per-day handler is entered — so `from_dict()` goes through
+`_require_text` / `_require_count` rather than `str()` and `int()`, which
+accepted everything: `str(None)` is the literal `"None"`, and a `part_key`
+reading `"None"` matches no plan, so resume degrades to re-fetching every
+unfinished day with nothing raised. `__post_init__` refuses what cannot
+describe a finished part, but deliberately imposes no `record_count <=
+promised` rule: `promised` counts record elements the server delivered and
+`record_count` those the fetcher parsed, so the two are not commensurable —
+the conflation `_EFetchPage` exists to prevent. And the read itself is
+guarded, since `_load_day_parts` runs *before* the per-day handler: an
+unreadable row fails its day rather than escaping `sync()` and leaving the
+whole multi-source run with no `SyncReport` at all.
 
 And `sync()` validates `date_from`, `date_to` and `recheck_days` at its
 entry, because anything raised out of day selection escapes a `try` carrying

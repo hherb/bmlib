@@ -99,9 +99,12 @@ def _get_fetcher_for_source(source: str) -> Callable | None:
 def _source_is_resumable(source: str) -> bool:
     """Whether *source*'s descriptor declares it accepts the resume keywords.
 
-    An unknown source answers ``False`` rather than raising: :func:`sync` asks
-    this before it knows whether ``_fetcher_override`` supplies a fetcher, and
-    anything raised there escapes the per-day handler and loses the whole
+    An unknown source answers ``False`` rather than raising. Not because of
+    call order — by the time :func:`sync` asks, it has already resolved the
+    fetcher — but because a source supplied through ``_fetcher_override`` need
+    not be registered at all, so :func:`get_source` raises for a source that
+    nonetheless has a working fetcher. That raise would escape the per-day
+    handler into a ``try`` carrying only a ``finally``, and lose the whole
     multi-source run's report.
 
     The *descriptor* decides, not the fetcher actually called — so overriding a
@@ -1027,7 +1030,9 @@ def sync(
                 def flush_part(checkpoint: PartCheckpoint | None) -> None:
                     """Store a finished part's records, and checkpoint it if it earned one.
 
-                    Called for **every** part the fetcher walked to its end.
+                    Called for every part the fetcher walked to its end
+                    without failing a reconcile (one that fails ends the day,
+                    and its records are drained by the closing block below).
                     The records are always stored: this is the only thing that
                     empties ``day_records``, so a version that stored nothing
                     for a part the fetcher could not vouch for would hold a

@@ -85,12 +85,21 @@ EFETCH_MAX_RETRIEVABLE = 9999
 # outside it — verified per day by the root probe rather than assumed, since a
 # record indexed outside it would be in no part's promise and every part would
 # then reconcile perfectly while the day was silently short.
+#
+# Both are part of the *key* scheme, not only of the search: every `part_key`
+# derives from this root through `descend`'s midpoints, so changing either
+# re-spells every key while leaving `_part_key`'s body — and the test pinning
+# its literal output — untouched. Bump `PART_SCHEME` in the same commit if you
+# ever move them, or stored checkpoints match nothing and every unfinished day
+# is silently re-fetched in full.
 EDAT_ROOT_LO = date(1900, 1, 1)
 EDAT_ROOT_HI = date(2100, 12, 31)
 
 # Names the partitioning scheme in `download_day_parts.part_scheme`. A stored
 # key is compared as a string, so a scheme that changes without this changing
-# would match nothing and silently re-fetch every unfinished day.
+# would match nothing and silently re-fetch every unfinished day. Nothing
+# branches on it — that is the point of it: it is what lets stale rows be
+# recognised and dropped deliberately rather than mismatching in silence.
 PART_SCHEME = "edat-range"
 
 RATE_LIMIT_WITH_KEY = 0.1  # seconds between requests with API key
@@ -781,7 +790,12 @@ def _part_key(lo: date, hi: date) -> str:
         hi: The range's last (inclusive) Entrez date.
 
     Returns:
-        The ``download_day_parts.part_scheme``-scoped key for this range.
+        This range's ``download_day_parts.part_key``. Not scoped by
+        ``part_scheme``: the unique key is ``(source, date, part_key)`` and
+        the skip rule compares this string alone, so a second scheme reusing
+        this spelling would match rather than be isolated. What the scheme
+        column buys is that stale rows can be *recognised* and dropped
+        deliberately — see ``docs/DECISIONS.md``.
     """
     return f"edat:{lo.isoformat()}:{hi.isoformat()}"
 
@@ -1019,13 +1033,16 @@ def _fetch_partitioned(
         completed_parts: Parts of this day a previous run finished, keyed by
             part key. A part is skipped only if its stored ``promised`` still
             matches what this run's plan reports for it.
-        on_part_finished: Called once for **every** part this run walked to
-            its end — with a :class:`PartCheckpoint` when that part also
-            reconciled clean (delivered its own ``promised`` in full), and
-            with ``None`` when it reconciled short of its promise (a note,
-            not a failure). The caller is expected to store the part's
-            records either way, in one transaction with the checkpoint where
-            one is given.
+        on_part_finished: Called once for every part this run walked to its
+            end **and did not fail** — with a :class:`PartCheckpoint` when
+            that part reconciled clean on both counts (its session's own
+            count against what planning measured, and its delivery against
+            that session count), and with ``None`` when either came up short
+            (a note, not a failure). A part that *fails* either reconcile
+            ends the day and is not reported here; its buffered records are
+            stored by the caller's own closing transaction. The caller is
+            expected to store the part's records either way, in one
+            transaction with the checkpoint where one is given.
 
             Flushing and checkpointing are deliberately different questions.
             The records must always be flushed, because this callback is the
@@ -1184,10 +1201,11 @@ def _fetch_partitioned(
         # review, F2). Left unchecked this is silent: the part then walks its
         # own count, reconciles that count against itself — which always
         # passes — and is checkpointed as clean, so the loss reaches only the
-        # day total, where 14 collapsed parts of a 37-part day still deliver
-        # 62% and clear the day-level floor. The day would be `completed`,
-        # never re-offered, and ~92,000 records permanently absent behind a
-        # single shortfall note.
+        # day total, where enough collapsed parts still clear the day-level
+        # floor: the day would be `completed`, never re-offered, and most of
+        # a structural day permanently absent behind a single shortfall note.
+        # (`docs/DECISIONS.md` carries the measured part counts this is scaled
+        # from; they are not restated here, where they would rot unseen.)
         #
         # The asymmetry is the tell, and it never depended on the collapsed
         # count being *zero*: a part that *delivers* 1 of 5,000 fails the day,
@@ -1263,10 +1281,13 @@ def _fetch_partitioned(
         if verdict.note is not None:
             notes.append(verdict.note)
 
-        # Every part that finished walking is reported, so its records leave
-        # the caller's buffer; only a part that reconciled with no note
-        # carries a checkpoint. Two rules, and they must not be collapsed
-        # back into one (#105 review, F1).
+        # Every part that reached here — walked to its end without failing
+        # either reconcile — is reported, so its records leave the caller's
+        # buffer; only a part that reconciled with no note carries a
+        # checkpoint. A part that *failed* a reconcile returned above, and
+        # its records are drained by the caller's closing transaction. Two
+        # rules, and they must not be collapsed back into one (#105 review,
+        # F1).
         #
         # Always report: this callback is the only thing that drains the
         # caller's buffer, so reporting only clean parts made the per-part
@@ -1359,21 +1380,27 @@ def fetch_pubmed(
     completed_parts:
         Parts of this day a previous run finished, keyed by part key. Only
         consulted for a day large enough to be partitioned. A part is skipped
-        only if its stored ``promised`` still matches what the source reports
-        now. A skipped part is credited to the day's own delivery reconcile,
-        but not to ``on_progress`` or to the returned record count — both
-        count only what this run itself walked, so on a resumed day they read
-        lower than the day's real size.
+        only if its stored ``promised`` still matches what *this run's plan*
+        reports for that same part key — a planning count, which for a
+        right-hand child is derived by subtraction rather than reported by
+        the source at all. A skipped part is credited to the day's own
+        delivery reconcile, but not to ``on_progress`` or to the returned
+        record count — both count only what this run itself walked, so on a
+        resumed day they read lower than the day's real size.
     on_part_finished:
-        Called once for every part this run walked to its end: with a
-        :class:`PartCheckpoint` when that part also reconciled clean —
-        delivered its own promise in full, with no note — and with ``None``
-        when it reconciled short (a note, not a failure). Store the part's
-        records either way, in one transaction with the checkpoint where one
-        is given. Storing them is what empties the caller's buffer, so it may
-        not be conditional on the part being clean; the checkpoint is,
-        because skipping a noted part on a later run would credit records it
-        never actually delivered.
+        Called once for every part this run walked to its end **and did not
+        fail**: with a :class:`PartCheckpoint` when that part reconciled
+        clean on both counts — its session's own count against what planning
+        measured, and its delivery against that session count — and with
+        ``None`` when either came up short of the other (a note, not a
+        failure). A part that *fails* either reconcile ends the day and is
+        not reported here at all; its buffered records are stored by the
+        day's own closing transaction. Store the part's records either way,
+        in one transaction with the checkpoint where one is given. Storing
+        them is what empties the caller's buffer, so it may not be
+        conditional on the part being clean; the checkpoint is, because
+        skipping a noted part on a later run would credit records it never
+        actually delivered.
     on_part_skipped:
         Called with the part key of every part skipped because
         ``completed_parts`` still describes it. Those records were stored by

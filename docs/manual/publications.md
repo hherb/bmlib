@@ -476,7 +476,7 @@ class PartCheckpoint:
 | `part_scheme` | `str` | Which partitioning scheme wrote `part_key`. `fetch_pubmed` writes `"edat-range"`. |
 | `part_key` | `str` | The part's identity, opaque to storage. `fetch_pubmed` writes `"edat:<lo>:<hi>"`. |
 | `promised` | `int` | What the source said this part held when it was walked. |
-| `record_count` | `int` | What the walk actually delivered. |
+| `record_count` | `int` | What the walk parsed and stored — *not* what the server delivered, which also counts the `<PubmedBookArticle>` elements the fetcher skips. `promised` is on the delivered scale, so the two are deliberately not commensurable. |
 
 `to_dict()` / `from_dict()` as elsewhere. You only construct one of these if
 you are writing a resumable fetcher; `sync()` stores and reloads them for you.
@@ -1109,7 +1109,7 @@ Set `resumable=True` on your `SourceDescriptor` only if your fetcher splits an o
 | Argument | Type | Description |
 |----------|------|-------------|
 | `completed_parts` | `Mapping[str, PartCheckpoint]` | Parts of this day a previous run finished, keyed by `part_key`. Empty on a first run. |
-| `on_part_finished` | `Callable[[PartCheckpoint \| None], None]` | Call **after** every part you walked to its end: with a `PartCheckpoint` when it also reconciled cleanly, and with `None` when it reconciled short of its own promise. `sync()` stores that part's records either way, in one transaction with the checkpoint where one is given. |
+| `on_part_finished` | `Callable[[PartCheckpoint \| None], None]` | Call **after** every part you walked to its end without failing it: with a `PartCheckpoint` when it reconciled cleanly, and with `None` when it came up short but not far enough to fail. A part you *fail* ends the day and is not reported here — `sync()` stores its buffered records in the day's own closing transaction. `sync()` stores that part's records either way, in one transaction with the checkpoint where one is given. |
 | `on_part_skipped` | `Callable[[str], None]` | Call with the `part_key` of every part you skipped because `completed_parts` still describes it. |
 
 Three rules, each of which protects a guard rather than a feature:
@@ -1327,8 +1327,11 @@ Four things to know:
   2026-08-21. Everything after planning is arithmetic and has never been
   confirmed by a full fetch: the 37 session ESearches are one per measured
   part and **no session ESearch was ever issued** (the sampler's `--partition`
-  mode opens none), the ~485 EFetch pages come from the record count over the
-  500-record page size, and ~**1 GB** from those at roughly 4 KB a record. A
+  mode opens none), the ~**503** EFetch pages come from the record count over
+  the 500-record page size **rounded up per part** — `_walk_session` pages one
+  part at a time, so the day costs the sum of `ceil(nᵢ/500)` over its 37 parts,
+  bounded 485–521, where 485 is what one single session would have cost — and
+  ~**1 GB** from those at roughly 4 KB a record. A
   six-year backfill window holds some 72 such days, so roughly **6.2M
   records and ~25 GB**, and the run that meets them is long. It is a one-off:
   the day is then `completed` and never offered again, where the behaviour
@@ -1402,15 +1405,29 @@ day is re-offered on the next run, so a transient stays recoverable.
   short of the day's own count. The second catches a whole part going missing
   even when every part passed on its own.
 
-- **A part reports 0 records having been measured non-empty at planning.**
-  Two of bmlib's own measurements disagree, and the weaker one does not get to
-  decide: the part is reconciled like any other, which fails, rather than
-  being dropped. Dropping it was silent, and silent at scale — fourteen such
-  parts of a 37-part day still deliver 62% of it, which clears the day-level
-  floor, so the day would be `completed`, never re-offered, and ~92,000
-  records absent behind one note. The retry is cheap: the parts already
-  walked are checkpointed, and a range that genuinely emptied yields no part
-  at all when the next run plans the day.
+- **A part's own count comes back below half what planning measured.** Two of
+  bmlib's own measurements disagree, and the weaker one does not get to
+  decide: the part is reconciled against the planned count with the same floor
+  as every other comparison here, rather than being walked at the lower number.
+  Walking it was silent, and silent at scale — such a part delivers its reduced
+  count in full, reconciles that count against *itself*, and is checkpointed as
+  clean, so eight of twenty parts collapsing 10 → 1 completed a day holding 128
+  of 200 records. A part reporting **0** always fails, since no planned part
+  promises fewer than one record. The floor rather than equality, because two
+  requests at two instants routinely differ by a record and a day recorded
+  `failed` is re-fetched for the life of the installation. The retry is cheap:
+  the parts already walked are checkpointed, and a range that genuinely emptied
+  yields no part at all when the next run plans the day.
+
+- **The day's own count comes back 0 while this day has stored checkpoints.**
+  The same rule one level up. An earlier run can leave a day `failed` with most
+  of its parts stored, and `sync()` deletes a day's part rows the moment it
+  completes — so a soft zero would complete the day at `record_count=0` and
+  destroy, in the same transaction, the checkpoints that would have made
+  re-fetching it cheap. The day is refused instead, and the error names how
+  many parts and records contradict the zero. If the day really has been
+  withdrawn wholesale, delete its `download_day_parts` rows and it will
+  complete. A quiet day with no stored parts is unaffected.
 
 - **A planning ESearch fails.** The ladder's counting probes are ordinary
   ESearch requests, so a 500, a dropped connection or an NCBI `<ERROR>`
@@ -1854,7 +1871,7 @@ Rows are upserted by `sync()` inside the day's transaction, with `ON CONFLICT (s
 | `part_scheme` | `TEXT` | `TEXT` | `NOT NULL` — which scheme wrote `part_key`; `fetch_pubmed` writes `"edat-range"` |
 | `part_key` | `TEXT` | `TEXT` | `NOT NULL` — opaque to storage; `fetch_pubmed` writes `"edat:<lo>:<hi>"` |
 | `promised` | `INTEGER` | `INTEGER` | `NOT NULL` — what the source said this part held |
-| `record_count` | `INTEGER` | `INTEGER` | `NOT NULL` — what the walk delivered |
+| `record_count` | `INTEGER` | `INTEGER` | `NOT NULL` — what the walk parsed and stored, not what the server delivered |
 | `completed_at` | `TEXT` | `TEXT` | `NOT NULL` |
 | | | | `UNIQUE(source, date, part_key)` |
 
