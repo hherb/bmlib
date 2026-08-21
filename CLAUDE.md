@@ -360,11 +360,12 @@ depth 13, 40 planning ESearches, parts summing exactly, no stuck Entrez date
 in six walks over five real days. The cost is stated rather than flagged off:
 ~562 requests and ~1 GB for such a day, ~6.2M records and ~25 GB **once**
 across a six-year backfill — against the refusal it replaces, which re-offered
-those days forever and stored nothing. Only the ESearch half of that is
-measured: the 40 planning calls above, plus one session call per part. The
-~485 EFetch pages are arithmetic over the record count and the 500-record page
-size, the byte figures are arithmetic over *those* at ~4 KB a record, and no
-full fetch of such a day has ever been run — do not quote either as measured.
+those days forever and stored nothing. Only the 40 planning ESearches above are
+measured — no session ESearch was ever issued, so the one-per-part session call
+(~37, arithmetic over the measured part count) joins the ~485 EFetch pages
+(arithmetic over the record count and the 500-record page size) and the byte
+figures (arithmetic over *those* at ~4 KB a record) as unmeasured; no full fetch
+of such a day has ever been run — do not quote any of them as measured.
 Parts are checkpointed in `download_day_parts` (same transaction as their
 records, so a checkpoint never attests to records a rollback discarded), which
 is what makes an interrupted day resumable and what forced the per-part flush
@@ -379,7 +380,8 @@ part would let a later run skip it and manufacture the records the note was
 reporting missing. A part reporting **0** where planning measured it non-empty
 fails the day rather than being dropped (two of bmlib's own measurements
 disagree; the weaker one does not decide), and a planning ESearch that fails
-returns a failed `FetchResult` like the under-cap path rather than raising. `SourceDescriptor.resumable` gates the new keywords,
+returns a failed `FetchResult` like the under-cap path rather than raising.
+`SourceDescriptor.resumable` gates the new keywords,
 defaulting `False` because `register_source()` is public. The one case left is
 a **single Entrez date** over the cap, which cannot be split further: that day
 is still refused, naming the date and count — and it is not the structural

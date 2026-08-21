@@ -1444,15 +1444,25 @@ crossed the cap since planning.
   (`delivered=0` against the *planned* promise), which always fails. **The
   cost is a re-fetch of one day**, and it is bounded: the parts already walked
   are checkpointed, and a range that genuinely emptied returns no partition at
-  all when the next run plans the day, so it self-heals in one extra
-  day-fetch. One residual, named so it is not re-discovered as a bug: a
-  re-plan is driven by `known_count` from the part's session ESearch while its
-  child counts come from fresh planning probes, so a count that *shrank*
-  between the two hands the surplus to a right-hand child by subtraction, and
-  if that child's range truly holds nothing it becomes a phantom part that
-  reports 0 and fails the day. That is the same recoverable, one-run cost the
-  root probe already accepts for a removal between its two counts, and it
-  re-plans clean on the next run.
+  all when the next run plans the day, so it self-heals in one extra day-fetch.
+  One residual, named so it is not re-discovered as a bug — and not confined to
+  a re-plan. A re-plan carries `known_count` forward from the part's own session
+  ESearch while its child counts come from fresh planning probes, so a count
+  that *shrank* between the two hands the surplus to a right-hand child by
+  subtraction — but `_plan_partitions`'s `descend` derives every right-hand
+  child's count the same way (`right = n - left`), so the **first** plan carries
+  the identical exposure, not only a re-plan. A reviewer reproduced it on a
+  first plan: one record withdrawn immediately after the root probe — a benign
+  cause `fetchers/_reconcile.py` itself names — parks the surplus on a
+  structurally empty tail leaf such as `edat:2050-10-02:2100-12-31 promised=1,
+  actual=0`, because the ladder's root spans 1900–2100. That day previously
+  completed on a one-record note; it now fails. The verdict stands — failing
+  closed beats the silent loss — and the case is recoverable the same way the
+  root probe's own removal is: the next run re-plans from fresh probes, the
+  phantom does not recur, the parts already checkpointed are skipped, and the
+  day completes. But "recoverable" is not "cheap": a day that partitions at all
+  is already over 9,999 records, so the re-fetch this costs is up to ~562
+  requests and ~1 GB, not the one day-fetch the phrase implies.
 - **A planning ESearch failure is a returned `FetchResult`, not a raise.** The
   ladder's counting probes are ordinary ESearch requests and fail like any
   other — a 500, a dropped connection, an `<ERROR>` document `_esearch`

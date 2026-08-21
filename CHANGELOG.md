@@ -82,7 +82,8 @@ All notable changes to bmlib are documented here. The format is based on
   never attest to records a rollback discarded, and an interrupted run does
   not repeat the parts that finished. Flushing and checkpointing are separate
   questions: a part that came up short of its own promise without failing is
-  still flushed, and is deliberately not checkpointed. A part is skipped on a later run only if its key is checkpointed
+  still flushed, and is deliberately not checkpointed.
+  A part is skipped on a later run only if its key is checkpointed
   **and** its count still matches what this run's plan reports — a part that
   has gained records since is re-walked, since skipping it would lose them
   permanently and silently. Skipped parts are credited to the day's
