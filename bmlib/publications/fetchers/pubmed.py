@@ -39,6 +39,7 @@ from bmlib.publications.models import (
     FetchedRecord,
     FetchResult,
     Grant,
+    PartCheckpoint,
     SyncProgress,
 )
 
@@ -898,8 +899,8 @@ def _fetch_partitioned(
     on_progress: Callable[[SyncProgress], None] | None,
     api_key: str | None,
     rate_limit: float,
-    completed_parts: Mapping[str, Any] | None = None,
-    on_part_complete: Callable[[Any], None] | None = None,
+    completed_parts: Mapping[str, PartCheckpoint] | None = None,
+    on_part_complete: Callable[[PartCheckpoint], None] | None = None,
 ) -> FetchResult:
     """Fetch a day too large for one history session, as Entrez-date parts.
 
@@ -912,10 +913,15 @@ def _fetch_partitioned(
     never re-offered, so a part that could not be verified must not be allowed
     to leave the day looking whole.
 
-    *completed_parts* and *on_part_complete* are accepted but not yet acted on
-    — resume support (checkpointing a part as it finishes, and skipping a part
-    already recorded complete) arrives in a later task. Accepting the keywords
-    here means `fetch_pubmed`'s signature does not have to change twice.
+    A part already recorded complete by an earlier run is skipped rather than
+    re-fetched — but only when its stored ``promised`` still matches what this
+    run's plan reports for that same part key. Skipping on the key alone would
+    permanently lose every record a part gained since it was checkpointed, so
+    a count that has moved forces a re-fetch. A skipped part still counts
+    toward *delivered* at its stored ``promised``: the day-total reconcile
+    below judges every part's delivery against the day's own count, and a
+    resumed run never issues the skipped part's own EFetch, so without this
+    credit the reconcile would fail every resumed day.
 
     Args:
         client: An httpx-compatible HTTP client.
@@ -930,8 +936,13 @@ def _fetch_partitioned(
             progress against the whole day rather than against one part.
         api_key: Optional NCBI API key.
         rate_limit: Seconds to sleep between requests.
-        completed_parts: Unused in this task; see above.
-        on_part_complete: Unused in this task; see above.
+        completed_parts: Parts of this day a previous run finished, keyed by
+            part key. A part is skipped only if its stored ``promised`` still
+            matches what this run's plan reports for it.
+        on_part_complete: Called with a :class:`PartCheckpoint` after each
+            part's walk has reconciled (whether or not it noted a shortfall).
+            The caller is expected to store the part's records and this
+            checkpoint in one transaction.
 
     Returns:
         The day's :class:`FetchResult`, ``completed`` only if every part
@@ -939,10 +950,6 @@ def _fetch_partitioned(
     """
     date_str = target_date.isoformat()
     checkpoints = dict(completed_parts or {})
-    # Not read yet: Task 5 wires up resume (skip a part already checkpointed
-    # complete). `del` rather than a debug log dressed up as instrumentation
-    # keeps this honestly unused instead of pretending to be observability.
-    del checkpoints
 
     def count_fn(term: str) -> int:
         n, _, _ = _esearch(client, term, api_key, usehistory=False)
@@ -980,6 +987,22 @@ def _fetch_partitioned(
 
     while pending:
         part = pending.popleft()
+
+        prior = checkpoints.get(part.key)
+        if prior is not None and prior.promised == part.promised:
+            # Counted as delivered because a previous run delivered it: the
+            # checkpoint is written only after that part reconciled. Without
+            # this credit the day-total reconciliation below would fail every
+            # resumed day.
+            delivered += prior.promised
+            logger.debug(
+                "PubMed %s part %s already complete (%d records); skipping",
+                date_str,
+                part.key,
+                prior.record_count,
+            )
+            continue
+
         term = _edat_range_term(day_term, part.lo, part.hi)
 
         try:
@@ -1086,6 +1109,16 @@ def _fetch_partitioned(
         if verdict.note is not None:
             notes.append(verdict.note)
 
+        if on_part_complete is not None:
+            on_part_complete(
+                PartCheckpoint(
+                    part_scheme=PART_SCHEME,
+                    part_key=part.key,
+                    promised=part_count,
+                    record_count=outcome.processed,
+                )
+            )
+
         time.sleep(rate_limit)
 
     day_verdict = reconcile_delivery(
@@ -1121,6 +1154,8 @@ def fetch_pubmed(
     on_record: Callable[[FetchedRecord], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
     api_key: str | None = None,
+    completed_parts: Mapping[str, PartCheckpoint] | None = None,
+    on_part_complete: Callable[[PartCheckpoint], None] | None = None,
 ) -> FetchResult:
     """Fetch all PubMed articles published on *target_date*.
 
@@ -1136,6 +1171,15 @@ def fetch_pubmed(
         Optional callback invoked after each page with a :class:`SyncProgress`.
     api_key:
         Optional NCBI API key for higher rate limits.
+    completed_parts:
+        Parts of this day a previous run finished, keyed by part key. Only
+        consulted for a day large enough to be partitioned. A part is skipped
+        only if its stored ``promised`` still matches what the source reports
+        now.
+    on_part_complete:
+        Called with a :class:`PartCheckpoint` after each part's walk has
+        reconciled. The caller is expected to store the part's records and this
+        checkpoint in one transaction.
 
     Returns
     -------
@@ -1198,6 +1242,8 @@ def fetch_pubmed(
             on_progress=on_progress,
             api_key=api_key,
             rate_limit=rate_limit,
+            completed_parts=completed_parts,
+            on_part_complete=on_part_complete,
         )
 
     logger.info("PubMed esearch: %d records for %s", count, date_str)

@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import re
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta
@@ -28,12 +29,13 @@ import pytest
 from bmlib.publications.fetchers.pubmed import (
     EFETCH_URL,
     ESEARCH_URL,
+    PART_SCHEME,
     _format_abstract_markdown,
     _parse_article_xml,
     _text_with_formatting,
     fetch_pubmed,
 )
-from bmlib.publications.models import FetchedRecord, SyncProgress
+from bmlib.publications.models import FetchedRecord, PartCheckpoint, SyncProgress
 
 # ---------------------------------------------------------------------------
 # Sample XML fragments
@@ -2328,3 +2330,158 @@ class TestALostOrSkippedPartFailsTheDay:
         # Day-level, not part-level: no single part's own reconcile fired.
         assert "part" not in result.error
         assert result.record_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Task 7: resuming an over-cap day (skip a checkpointed part, credit it)
+# ---------------------------------------------------------------------------
+
+
+@patch("bmlib.publications.fetchers.pubmed.time.sleep", lambda *_: None)
+@patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 2)
+@patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 2)
+class TestResumingAnOverCapDay:
+    """A part finished by an earlier run is not fetched twice.
+
+    The ladder halves a range and stops as soon as a part fits, so a leaf's
+    key is never a literal like ``"edat:2023-06-01:2023-06-01"`` in general —
+    real leaves against a live distribution can span months or years. These
+    tests never hard-code a key or a range: every case discovers the real
+    parts from a first ("prior") run of :func:`fetch_pubmed` against this
+    class's own fake client, and drives the resume case from what that run
+    actually reported through ``on_part_complete``.
+    """
+
+    # Deliberately asymmetric (2 vs 1, not 2 vs 2): `reconcile_delivery`'s
+    # shortfall floor is exclusive at 50% (delivering exactly half a day
+    # passes with a note, not a failure — see `_reconcile.py`), so checkpointing
+    # a part worth exactly half the day would let a broken credit line pass
+    # `test_a_skipped_part_is_credited_to_the_day_total` by accident. Here the
+    # ladder's leaves land on single Entrez days matching these counts (pinned
+    # by the same ordering `test_a_checkpointed_part_is_not_fetched_again`
+    # relies on: parts are produced, and so checkpointed, in ascending-date
+    # order), so the part skipped first is the 2-of-3 part — losing it
+    # uncredited drops delivery to 1 of 3, under the floor.
+    DISTRIBUTION = {date(2023, 6, 1): 2, date(2023, 6, 2): 1}
+
+    def test_a_completed_part_is_reported_and_can_be_skipped(self):
+        client = _eutils_client(_distribution_counter(self.DISTRIBUTION))
+        done: list[PartCheckpoint] = []
+
+        result = fetch_pubmed(
+            client,
+            date(2024, 1, 1),
+            on_record=lambda r: None,
+            on_part_complete=done.append,
+        )
+
+        assert result.status == "completed"
+        assert done, "an over-cap day must checkpoint at least one part"
+        assert all(c.part_scheme == PART_SCHEME for c in done)
+        assert all(c.record_count == c.promised for c in done)
+        assert sum(c.record_count for c in done) == sum(self.DISTRIBUTION.values())
+
+    def test_a_checkpointed_part_is_not_fetched_again(self):
+        first_client = _eutils_client(_distribution_counter(self.DISTRIBUTION))
+        done: list[PartCheckpoint] = []
+        first_records: list[FetchedRecord] = []
+        fetch_pubmed(
+            first_client,
+            date(2024, 1, 1),
+            on_record=first_records.append,
+            on_part_complete=done.append,
+        )
+        assert done, "setup: an over-cap day must checkpoint at least one part"
+        first_efetch_calls = [c for c in first_client.get.call_args_list if c.args[0] == EFETCH_URL]
+
+        second_client = _eutils_client(_distribution_counter(self.DISTRIBUTION))
+        second_records: list[FetchedRecord] = []
+        prior = {done[0].part_key: done[0]}
+
+        result = fetch_pubmed(
+            second_client,
+            date(2024, 1, 1),
+            on_record=second_records.append,
+            completed_parts=prior,
+        )
+
+        assert result.status == "completed"
+        second_efetch_calls = [
+            c for c in second_client.get.call_args_list if c.args[0] == EFETCH_URL
+        ]
+        assert len(second_records) < len(first_records), (
+            "the checkpointed part must not be re-fetched"
+        )
+        assert len(second_efetch_calls) < len(first_efetch_calls), (
+            "skipping a part must skip its EFetch"
+        )
+
+    def test_a_skipped_part_is_credited_to_the_day_total(self):
+        # Without crediting, the second run delivers only the unskipped
+        # part's records against the day's full count and fails the floor.
+        # This test is the negative control for that: it must complete.
+        first_client = _eutils_client(_distribution_counter(self.DISTRIBUTION))
+        done: list[PartCheckpoint] = []
+        fetch_pubmed(
+            first_client,
+            date(2024, 1, 1),
+            on_record=lambda r: None,
+            on_part_complete=done.append,
+        )
+        assert done, "setup: an over-cap day must checkpoint at least one part"
+
+        second_client = _eutils_client(_distribution_counter(self.DISTRIBUTION))
+        prior = {done[0].part_key: done[0]}
+
+        result = fetch_pubmed(
+            second_client,
+            date(2024, 1, 1),
+            on_record=lambda r: None,
+            completed_parts=prior,
+        )
+
+        assert result.status == "completed"
+        assert result.error is None
+
+    def test_a_part_whose_count_moved_is_fetched_again(self):
+        # The stored promise no longer matches what this run's plan reports
+        # for the same part key. Skipping on key alone would lose whatever
+        # the part gained since it was checkpointed, which is the whole
+        # reason the rule compares counts and not just keys.
+        first_client = _eutils_client(_distribution_counter(self.DISTRIBUTION))
+        done: list[PartCheckpoint] = []
+        fetch_pubmed(
+            first_client,
+            date(2024, 1, 1),
+            on_record=lambda r: None,
+            on_part_complete=done.append,
+        )
+        assert done, "setup: an over-cap day must checkpoint at least one part"
+        moved = dataclasses.replace(done[0], promised=done[0].promised - 1)
+
+        second_client = _eutils_client(_distribution_counter(self.DISTRIBUTION))
+        records: list[FetchedRecord] = []
+        prior = {moved.part_key: moved}
+
+        result = fetch_pubmed(
+            second_client,
+            date(2024, 1, 1),
+            on_record=records.append,
+            completed_parts=prior,
+        )
+
+        assert result.status == "completed"
+        assert len(records) == sum(self.DISTRIBUTION.values()), (
+            "the moved part must be re-fetched, not skipped"
+        )
+
+    def test_an_under_cap_day_ignores_the_resume_arguments(self):
+        client = _eutils_client(lambda term: 2)
+        done: list[PartCheckpoint] = []
+
+        result = fetch_pubmed(
+            client, date(2024, 3, 15), on_record=lambda r: None, on_part_complete=done.append
+        )
+
+        assert result.status == "completed"
+        assert done == [], "a day that needs no partitioning has no parts to checkpoint"
