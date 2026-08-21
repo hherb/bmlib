@@ -27,8 +27,9 @@ import logging
 import re
 import time
 import xml.etree.ElementTree as ET
-from collections.abc import Callable
-from datetime import date
+from collections import deque
+from collections.abc import Callable, Mapping
+from datetime import date, timedelta
 from typing import Any, NamedTuple
 
 from bmlib.fulltext.models import FullTextSourceEntry
@@ -38,6 +39,7 @@ from bmlib.publications.models import (
     FetchedRecord,
     FetchResult,
     Grant,
+    PartCheckpoint,
     SyncProgress,
 )
 
@@ -60,9 +62,10 @@ EFETCH_PAGE_SIZE = 500
 # matching the query. To obtain more than 9,999 PubMed records, consider using
 # EDirect…"* — and, more quietly, a page whose window crosses the boundary is
 # clamped to it: `retstart=9500&retmax=500` returned 499 records at HTTP 200
-# with no notice. A day larger than this cannot be completed through this
-# route at all, so `fetch_pubmed` refuses it on ESearch's count rather than
-# walking into the wall. Raising `EFETCH_PAGE_SIZE` does not raise this.
+# with no notice. A day larger than this cannot be completed through one
+# session at all, so `fetch_pubmed` never walks into the wall: it partitions
+# the day into Entrez-date ranges that each fit and walks those instead (see
+# `_plan_partitions`). Raising `EFETCH_PAGE_SIZE` does not raise this.
 #
 # This is a **record count**; the largest legal `retstart` is one less, which
 # is what NCBI's own error names. The guard below is `>` rather than `>=` for
@@ -77,6 +80,27 @@ EFETCH_PAGE_SIZE = 500
 # note. `scripts/sample_efetch_paging.py` is what detects a moved cap, in
 # either direction; see `docs/DECISIONS.md`.
 EFETCH_MAX_RETRIEVABLE = 9999
+
+# The ladder's root. Wide enough that no record of any publication day falls
+# outside it — verified per day by the root probe rather than assumed, since a
+# record indexed outside it would be in no part's promise and every part would
+# then reconcile perfectly while the day was silently short.
+#
+# Both are part of the *key* scheme, not only of the search: every `part_key`
+# derives from this root through `descend`'s midpoints, so changing either
+# re-spells every key while leaving `_part_key`'s body — and the test pinning
+# its literal output — untouched. Bump `PART_SCHEME` in the same commit if you
+# ever move them, or stored checkpoints match nothing and every unfinished day
+# is silently re-fetched in full.
+EDAT_ROOT_LO = date(1900, 1, 1)
+EDAT_ROOT_HI = date(2100, 12, 31)
+
+# Names the partitioning scheme in `download_day_parts.part_scheme`. A stored
+# key is compared as a string, so a scheme that changes without this changing
+# would match nothing and silently re-fetch every unfinished day. Nothing
+# branches on it — that is the point of it: it is what lets stale rows be
+# recognised and dropped deliberately rather than mismatching in silence.
+PART_SCHEME = "edat-range"
 
 RATE_LIMIT_WITH_KEY = 0.1  # seconds between requests with API key
 RATE_LIMIT_WITHOUT_KEY = 0.34  # seconds between requests without API key
@@ -508,12 +532,28 @@ def _parse_article_xml(article_el: ET.Element) -> FetchedRecord:
 # ---------------------------------------------------------------------------
 
 
+def _day_term(target_date: date) -> str:
+    """Return the ESearch term for one publication day.
+
+    ``[Date - Publication]`` rather than ``[EDAT]`` is deliberate and load-bearing:
+    it is the field bmlib syncs by, and the two disagree by orders of magnitude on
+    exactly the days this module has to handle (see ``docs/DECISIONS.md``).
+    """
+    return f'("{target_date:%Y/%m/%d}"[Date - Publication])'
+
+
 def _esearch(
     client: Any,
-    target_date: date,
+    term: str,
     api_key: str | None,
+    *,
+    usehistory: bool = True,
 ) -> tuple[int, str | None, str | None]:
-    """Run an ESearch query and return (count, web_env, query_key).
+    """Run an ESearch query for *term* and return (count, web_env, query_key).
+
+    *usehistory* is ``False`` for the ladder's counting probes, which need a
+    number and not a session; opening one per probe would leave dozens of
+    unused sessions on NCBI's server for every over-cap day.
 
     Returns (0, None, None) when the search yields no results.
 
@@ -526,13 +566,9 @@ def _esearch(
             publications. Raised rather than returned so the caller's
             existing handler turns it into a ``failed`` fetch.
     """
-    date_str = target_date.strftime("%Y/%m/%d")
-    params: dict[str, str | int] = {
-        "db": "pubmed",
-        "term": f'("{date_str}"[Date - Publication])',
-        "retmax": 0,
-        "usehistory": "y",
-    }
+    params: dict[str, str | int] = {"db": "pubmed", "term": term, "retmax": 0}
+    if usehistory:
+        params["usehistory"] = "y"
     if api_key:
         params["api_key"] = api_key
 
@@ -632,6 +668,683 @@ def _efetch_page(
     )
 
 
+class _WalkOutcome(NamedTuple):
+    """What one history session's page walk produced."""
+
+    processed: int
+    """Records parsed and handed to ``on_record``."""
+
+    delivered: int
+    """Record elements the server handed over — never ``processed``."""
+
+    stalled: bool
+    """A page delivered nothing while *promised* was still unmet."""
+
+    error: str | None
+    """Set when a page raised; the walk stops and the caller fails the day."""
+
+
+def _walk_session(
+    client: Any,
+    web_env: str,
+    query_key: str,
+    promised: int,
+    *,
+    on_record: Callable[[FetchedRecord], None],
+    api_key: str | None,
+    rate_limit: float,
+    on_page: Callable[[int], None] | None = None,
+) -> _WalkOutcome:
+    """Walk one history session's pages, parsing every article into *on_record*.
+
+    ``retstart`` indexes the *session's UID list*, not the records delivered so
+    far: page k covers the UIDs at [k·EFETCH_PAGE_SIZE, (k+1)·EFETCH_PAGE_SIZE)
+    whether or not every one of them yields a record — named for the constant
+    that actually strides, since the claim holds only while the walk's step
+    and `_efetch_page`'s `retmax` stay equal. Measured 2026-08-20 (issue #96): a
+    page's record elements are exactly that slice of esearch's own
+    `IdList`, in order, `<PubmedBookArticle>` entries included. So the
+    stride stays `EFETCH_PAGE_SIZE`. Advancing by what arrived — the fix
+    #96 proposed — would re-request the tail of every short page, deliver
+    those records twice, and count the duplicates as delivery, which is
+    precisely what would hide a real shortfall from `reconcile_delivery`.
+
+    *on_page* is called with the running processed count after each page, for
+    progress reporting; it is not called after a stalled or failed page.
+    """
+    processed = 0
+    delivered = 0
+    for retstart in range(0, promised, EFETCH_PAGE_SIZE):
+        try:
+            page = _efetch_page(client, web_env, query_key, retstart, api_key)
+        except Exception as exc:
+            logger.error("efetch failed at retstart=%d: %s: %s", retstart, type(exc).__name__, exc)
+            return _WalkOutcome(processed, delivered, False, f"{type(exc).__name__}: {exc}")
+
+        delivered += page.delivered
+        for article_el in page.articles:
+            on_record(_parse_article_xml(article_el))
+            processed += 1
+
+        if page.delivered == 0:
+            # The session holds `promised` UIDs, so an empty page before the
+            # walk is done means it stopped serving them. Paging on costs a
+            # request per remaining page and returns nothing — up to 9 of
+            # them on the 5,000-record day measured for #88, which is 10
+            # pages of 500.
+            return _WalkOutcome(processed, delivered, True, None)
+
+        if on_page is not None:
+            on_page(processed)
+
+        if retstart + EFETCH_PAGE_SIZE < promised:
+            time.sleep(rate_limit)
+
+    return _WalkOutcome(processed, delivered, False, None)
+
+
+# ---------------------------------------------------------------------------
+# The EDAT ladder: planning an over-cap day as Entrez-date ranges (#105)
+# ---------------------------------------------------------------------------
+
+
+class _Partition(NamedTuple):
+    """One Entrez-date range of a day, small enough to fetch in one session."""
+
+    lo: date
+    hi: date
+    promised: int
+
+    @property
+    def key(self) -> str:
+        """This part's identity in ``download_day_parts``."""
+        return _part_key(self.lo, self.hi)
+
+
+class _UnsplittableDayError(Exception):
+    """A single Entrez day holds more records than one session can serve."""
+
+    def __init__(self, edat_day: date, count: int) -> None:
+        self.edat_day = edat_day
+        self.count = count
+        super().__init__(
+            f"{count} records share the Entrez date {edat_day.isoformat()}, above the"
+            f" {EFETCH_MAX_RETRIEVABLE} a history session serves, and an Entrez date"
+            " cannot be split further; refusing the day"
+        )
+
+
+class _RootNotCoveringError(Exception):
+    """Records of this day lie outside the ladder's root range."""
+
+
+def _part_key(lo: date, hi: date) -> str:
+    """Return the stored identity of the partition spanning *lo* to *hi*.
+
+    The one constructor, because the resume skip rule compares this string:
+    a second spelling of the same range matches no checkpoint, so resume
+    degrades to a full re-fetch with nothing raised. Pinned by a test.
+
+    Args:
+        lo: The range's first (inclusive) Entrez date.
+        hi: The range's last (inclusive) Entrez date.
+
+    Returns:
+        This range's ``download_day_parts.part_key``. Not scoped by
+        ``part_scheme``: the unique key is ``(source, date, part_key)`` and
+        the skip rule compares this string alone, so a second scheme reusing
+        this spelling would match rather than be isolated. What the scheme
+        column buys is that stale rows can be *recognised* and dropped
+        deliberately — see ``docs/DECISIONS.md``.
+    """
+    return f"edat:{lo.isoformat()}:{hi.isoformat()}"
+
+
+def _edat_range_term(day_term: str, lo: date, hi: date) -> str:
+    """Restrict *day_term* to records indexed between *lo* and *hi* inclusive.
+
+    Args:
+        day_term: The day's own ``[Date - Publication]`` search term, as built
+            by :func:`_day_term`.
+        lo: The range's first (inclusive) Entrez date.
+        hi: The range's last (inclusive) Entrez date.
+
+    Returns:
+        The combined ESearch term.
+    """
+    return f'{day_term} AND ("{lo:%Y/%m/%d}"[EDAT] : "{hi:%Y/%m/%d}"[EDAT])'
+
+
+def _plan_partitions(
+    count_fn: Callable[[str], int],
+    day_term: str,
+    day_count: int,
+    *,
+    lo: date = EDAT_ROOT_LO,
+    hi: date = EDAT_ROOT_HI,
+    probe_root: bool = True,
+    known_count: int | None = None,
+) -> list[_Partition]:
+    """Split a day into Entrez-date ranges that each fit in one session.
+
+    ``[lo, mid]`` and ``[mid+1, hi]`` tile ``[lo, hi]`` as arithmetic and every
+    record carries exactly one Entrez date, so the parts are disjoint and
+    covering by construction — below the root. At the root that is an empirical
+    claim, so *probe_root* verifies it.
+
+    Only the left child is counted; the right is the parent's count minus it,
+    which the tiling makes exact and which halves the ladder's cost.
+
+    Args:
+        count_fn: Returns the record count for an arbitrary ESearch term —
+            injected so this is unit-testable without HTTP.
+        day_term: The day's own ``[Date - Publication]`` search term.
+        day_count: The day's own record count, from the caller's day-level
+            ESearch. Used only to validate the root probe.
+        lo: The ladder's root range start. Defaults to :data:`EDAT_ROOT_LO`.
+        hi: The ladder's root range end. Defaults to :data:`EDAT_ROOT_HI`.
+        probe_root: Whether to verify the root range covers *day_count*
+            before descending. Tests that construct an already-narrow root
+            pass ``False`` to skip the probe. Has no effect when *known_count*
+            is given — see below.
+        known_count: When given, used as the root count directly instead of
+            issuing a count request, and no root probe is performed at all
+            (so *probe_root* is moot). This is for `_fetch_partitioned`'s
+            re-partition path: a part's own session ESearch has already
+            reported its count above the cap, and re-counting the same range
+            fresh risks a *lower* answer (the two counts are two requests at
+            two instants) that collapses back to a single partition spanning
+            the identical range — which would be pushed onto the queue,
+            fetched again, report over-cap again, and loop against NCBI
+            forever. Passing the count that triggered the re-plan guarantees
+            the descent always narrows (or raises
+            :class:`_UnsplittableDayError` at ``lo == hi``), so it always
+            terminates, and it saves one request per re-partition.
+
+    Returns:
+        The day's partitions, each with ``promised <= EFETCH_MAX_RETRIEVABLE``
+        and holding at least one record, sorted by construction into disjoint,
+        covering ranges.
+
+    Raises:
+        _RootNotCoveringError: The root range holds fewer records than the day
+            does, so some record of the day is indexed outside it. Coming up
+            *long* is benign — the two counts are two requests at two
+            instants, and a record indexed between them lands at EDAT=today,
+            inside the range. Never raised when *known_count* is given.
+        _UnsplittableDayError: A single Entrez date exceeds the cap.
+    """
+    if lo > hi:
+        raise ValueError(
+            f"the ladder's root range is inverted: {lo.isoformat()} is after {hi.isoformat()}"
+        )
+
+    if known_count is not None:
+        root_count = known_count
+    else:
+        root_count = count_fn(_edat_range_term(day_term, lo, hi))
+        if probe_root and root_count < day_count:
+            raise _RootNotCoveringError(
+                f"the Entrez-date range {lo.isoformat()}..{hi.isoformat()} holds {root_count}"
+                f" of this day's {day_count} records, so {day_count - root_count} of them lie"
+                " outside the ladder and would be silently absent; refusing the day"
+            )
+
+    parts: list[_Partition] = []
+
+    def descend(lo_: date, hi_: date, n: int) -> None:
+        if n <= 0:
+            return
+        if n <= EFETCH_MAX_RETRIEVABLE:
+            parts.append(_Partition(lo_, hi_, n))
+            return
+        if lo_ == hi_:
+            if (lo_, hi_) == (lo, hi):
+                # This planning call was handed a single date to begin with,
+                # which is the re-partition path: `n` is `known_count`, the
+                # part's own session ESearch, so it is measured already.
+                # Measuring again is what `known_count` exists to prevent — a
+                # lower answer yields a partition spanning the identical
+                # range, which goes back on the queue, is fetched, reports
+                # over-cap, and re-plans against NCBI forever.
+                raise _UnsplittableDayError(lo_, n)
+            # `n` may have arrived by subtraction, so measure before refusing
+            # a whole day on it. Two things follow from the true count, and
+            # both matter more than the one ESearch they cost on a path that
+            # is otherwise about to abandon hundreds.
+            #
+            # A parent counted higher than its children really hold parks the
+            # surplus on the right, and the root reaches 2100 — so the surplus
+            # walks down a structurally empty tail to a single future date
+            # claiming tens of thousands of records. Refused on that, the day
+            # fails and is re-fetched on every later run (~562 requests and
+            # ~1 GB each time) over a range PubMed has never indexed anything
+            # into. Measured, the phantom is 0 and simply disappears.
+            #
+            # And a date the subtraction merely overstated is an ordinary
+            # part. What is left — a single Entrez date measured above the cap
+            # — is the one case that genuinely cannot be split, and the count
+            # the error names is now one an ESearch actually returned.
+            measured = count_fn(_edat_range_term(day_term, lo_, hi_))
+            if measured <= 0:
+                return
+            if measured <= EFETCH_MAX_RETRIEVABLE:
+                parts.append(_Partition(lo_, hi_, measured))
+                return
+            raise _UnsplittableDayError(lo_, measured)
+        mid = lo_ + (hi_ - lo_) // 2
+        left = count_fn(_edat_range_term(day_term, lo_, mid))
+        right = n - left
+        if right <= 0:
+            # A derived zero is the one wrong derivation that cannot heal, so
+            # it is measured instead of trusted. Every other error in `right`
+            # still yields a part, and a part re-counts itself when its
+            # session opens; a zero yields no part at all, so the range is
+            # never visited, every part planned around it reconciles
+            # perfectly, and the shortfall reaches only the day total — where
+            # anything under `SHORTFALL_FAILURE_RATIO` completes on a note.
+            # `completed` is durable, so those records are never sought again.
+            #
+            # Subtraction is an optimisation, sound only while both counts
+            # describe one instant, and planning spends one ESearch per split.
+            # Measuring here costs one more on the two or three nodes a day
+            # whose parent's records all sit in the left half (the `n <= 0`
+            # arm above still prunes the empty centuries, because it now only
+            # ever sees counts that were measured). A genuinely empty range
+            # measures 0 and yields no part, exactly as before.
+            if right < 0:
+                # Not merely stale: a child cannot hold more than its parent,
+                # so these two counts cannot both be true.
+                logger.warning(
+                    "the Entrez-date range %s..%s reports %d records, more than the %d"
+                    " its parent %s..%s reported; the counts moved between probes",
+                    lo_.isoformat(),
+                    mid.isoformat(),
+                    left,
+                    n,
+                    lo_.isoformat(),
+                    hi_.isoformat(),
+                )
+            right = count_fn(_edat_range_term(day_term, mid + timedelta(days=1), hi_))
+        descend(lo_, mid, left)
+        descend(mid + timedelta(days=1), hi_, right)
+
+    descend(lo, hi, root_count)
+    return parts
+
+
+def _fetch_partitioned(
+    client: Any,
+    target_date: date,
+    day_term: str,
+    day_count: int,
+    *,
+    on_record: Callable[[FetchedRecord], None],
+    on_progress: Callable[[SyncProgress], None] | None,
+    api_key: str | None,
+    rate_limit: float,
+    completed_parts: Mapping[str, PartCheckpoint] | None = None,
+    on_part_finished: Callable[[PartCheckpoint | None], None] | None = None,
+    on_part_skipped: Callable[[str], None] | None = None,
+) -> FetchResult:
+    """Fetch a day too large for one history session, as Entrez-date parts.
+
+    A history session serves only its first ``EFETCH_MAX_RETRIEVABLE`` records,
+    so a day above that cannot be completed through one. It is split into
+    Entrez-date ranges that each fit — disjoint and covering, so every record is
+    fetched exactly once — and each part is walked as an ordinary session.
+
+    Every failure path fails the whole day. A day recorded ``completed`` is
+    never re-offered, so a part that could not be verified must not be allowed
+    to leave the day looking whole.
+
+    A part already recorded complete by an earlier run is skipped rather than
+    re-fetched — but only when its stored ``promised`` still matches what this
+    run's plan reports for that same part key. Skipping on the key alone would
+    permanently lose every record a part gained since it was checkpointed, so
+    a count that has moved forces a re-fetch. A skipped part still counts
+    toward *delivered* at its stored ``promised``: the day-total reconcile
+    below judges every part's delivery against the day's own count, and a
+    resumed run never issues the skipped part's own EFetch, so without this
+    credit the reconcile would fail every resumed day.
+
+    A skipped part is credited to *delivered* (what the reconcile judges) but
+    never to *processed* (what ``on_progress`` and the returned
+    ``FetchResult.record_count`` report): those two count only records this
+    run itself walked. On a resumed day, the returned record count and the
+    progress total are therefore both less than the day's real size by
+    however many records the skipped parts hold — correct for "what did this
+    run do", not for "how big is this day".
+
+    Args:
+        client: An httpx-compatible HTTP client.
+        target_date: The publication day being fetched.
+        day_term: The day's own ``[Date - Publication]`` search term, from
+            :func:`_day_term`.
+        day_count: The day's own record count, from the caller's day-level
+            ESearch — above ``EFETCH_MAX_RETRIEVABLE``, or this would not have
+            been called.
+        on_record: Callback invoked with each parsed record.
+        on_progress: Optional callback invoked after each page, reporting
+            progress against the whole day rather than against one part. Does
+            not count a skipped part's credited records — see above.
+        api_key: Optional NCBI API key.
+        rate_limit: Seconds to sleep between requests.
+        completed_parts: Parts of this day a previous run finished, keyed by
+            part key. A part is skipped only if its stored ``promised`` still
+            matches what this run's plan reports for it.
+        on_part_finished: Called once for every part this run walked to its
+            end **and did not fail** — with a :class:`PartCheckpoint` when
+            that part reconciled clean on both counts (its session's own
+            count against what planning measured, and its delivery against
+            that session count), and with ``None`` when either came up short
+            (a note, not a failure). A part that *fails* either reconcile
+            ends the day and is not reported here; its buffered records are
+            stored by the caller's own closing transaction. The caller is
+            expected to store the part's records either way, in one
+            transaction with the checkpoint where one is given.
+
+            Flushing and checkpointing are deliberately different questions.
+            The records must always be flushed, because this callback is the
+            only thing that empties the caller's buffer: calling it only for
+            a clean part made the per-part memory bound conditional on the
+            source behaving, and a degraded NCBI returning 37 noted parts of
+            a 242,216-record day would then hold every one of those records
+            in memory at once — the state the per-part flush exists to
+            prevent, reached exactly when the source is misbehaving (#105
+            review, F1). But a noted part must *not* be checkpointed:
+            skipping it on a later resumed run would credit it at its full
+            ``promised`` and manufacture the very records the note is
+            reporting missing, with no note surviving into that run's result
+            to say so.
+        on_part_skipped: Called with the part key of every part skipped
+            because ``completed_parts`` still describes it. The caller stored
+            those records on an earlier run, so this is what lets it credit
+            them to the day without crediting a part this run re-walked — a
+            part whose count moved is re-fetched and, if it comes up short,
+            never checkpointed, so it appears in neither ``completed_parts``'
+            surviving keys nor this run's checkpoints.
+
+    Returns:
+        The day's :class:`FetchResult`, ``completed`` only if every part
+        reconciled. ``record_count`` counts only what this run itself walked
+        — see the note on skipped parts above.
+    """
+    date_str = target_date.isoformat()
+    checkpoints = dict(completed_parts or {})
+
+    def count_fn(term: str) -> int:
+        n, _, _ = _esearch(client, term, api_key, usehistory=False)
+        time.sleep(rate_limit)
+        return n
+
+    def failed(error: str) -> FetchResult:
+        return FetchResult(
+            source="pubmed",
+            date=date_str,
+            record_count=processed,
+            status="failed",
+            error=error,
+        )
+
+    processed = 0
+    try:
+        parts = _plan_partitions(count_fn, day_term, day_count)
+    except (_RootNotCoveringError, _UnsplittableDayError) as exc:
+        logger.error("%s (%s)", exc, date_str)
+        return failed(str(exc))
+    except Exception as exc:
+        # Planning is ESearch, so it fails the way every other request here
+        # does: a 500, a dropped connection, or an `<ERROR>` document that
+        # `_esearch` reports as a `ValueError`. `sync()` absorbs a raise and
+        # fails the day either way, so no records are at stake — but the
+        # under-cap path returns a failed `FetchResult` for exactly this, and
+        # one public function must not answer the same transient with a return
+        # value or an exception depending on how large the day happened to be.
+        message = f"planning the Entrez-date parts failed: {type(exc).__name__}: {exc}"
+        logger.error("%s for %s", message, date_str)
+        return failed(message)
+
+    logger.info(
+        "PubMed %s holds %d records, above the %d one history session serves:"
+        " fetching it as %d Entrez-date parts",
+        date_str,
+        day_count,
+        EFETCH_MAX_RETRIEVABLE,
+        len(parts),
+    )
+
+    pending = deque(parts)
+    delivered = 0
+    notes: list[str] = []
+
+    while pending:
+        part = pending.popleft()
+
+        prior = checkpoints.get(part.key)
+        if prior is not None and prior.promised == part.promised:
+            # Counted as delivered because a previous run delivered it: the
+            # checkpoint is written only after that part reconciled. Without
+            # this credit the day-total reconciliation below would fail every
+            # resumed day.
+            delivered += prior.promised
+            if on_part_skipped is not None:
+                on_part_skipped(part.key)
+            logger.debug(
+                "PubMed %s part %s already complete (%d records); skipping",
+                date_str,
+                part.key,
+                prior.record_count,
+            )
+            continue
+
+        term = _edat_range_term(day_term, part.lo, part.hi)
+
+        try:
+            part_count, web_env, query_key = _esearch(client, term, api_key)
+        except Exception as exc:
+            # The type, like every other handler here: `str()` of a bare
+            # transport error is empty, so without it this day fails on every
+            # later run reporting `part edat:a:b: ` and no cause at all. This
+            # `except` is broad, so it equally catches a bmlib defect in
+            # `_edat_range_term` or `_esearch`, and the two must not read
+            # identically.
+            message = f"part {part.key}: {type(exc).__name__}: {exc}"
+            logger.error("esearch failed for %s %s", date_str, message)
+            return failed(message)
+
+        if part_count > EFETCH_MAX_RETRIEVABLE:
+            # It grew between planning and fetching. Split it again rather than
+            # walk it: the last page of an over-cap session is silently clamped,
+            # so walking would look like an ordinary short day. `known_count`
+            # drives the re-plan off the count that triggered it rather than a
+            # fresh recount, which is what guarantees the descent narrows
+            # instead of handing back the same range forever (see
+            # `_plan_partitions`'s docstring).
+            #
+            # `_UnsplittableDayError` is the one planning failure with a
+            # message of its own worth reporting verbatim; everything else
+            # falls through to the blanket handler below, which fails the day
+            # the way the under-cap path fails on a transient ESearch error.
+            # `_RootNotCoveringError` cannot arise here, because `known_count`
+            # is always passed above and that is what makes `_plan_partitions`
+            # skip the root probe. If a later change drops `known_count` from
+            # this call it would be caught blind by the blanket handler — the
+            # day still fails closed, but the error names an internal
+            # exception type instead of what the reader needs, so keep
+            # passing it.
+            try:
+                pending.extendleft(
+                    reversed(
+                        _plan_partitions(
+                            count_fn,
+                            day_term,
+                            part_count,
+                            lo=part.lo,
+                            hi=part.hi,
+                            known_count=part_count,
+                        )
+                    )
+                )
+            except _UnsplittableDayError as exc:
+                logger.error("%s (%s)", exc, date_str)
+                return failed(str(exc))
+            except Exception as exc:
+                message = f"re-partitioning part {part.key} failed: {type(exc).__name__}: {exc}"
+                logger.error("%s for %s", message, date_str)
+                return failed(message)
+            continue
+
+        # Planning measured this range at `part.promised` records; the part's
+        # own ESearch has just reported `part_count`. Two of bmlib's own
+        # measurements, and the weaker one does not get to decide (#105
+        # review, F2). Left unchecked this is silent: the part then walks its
+        # own count, reconciles that count against itself — which always
+        # passes — and is checkpointed as clean, so the loss reaches only the
+        # day total, where enough collapsed parts still clear the day-level
+        # floor: the day would be `completed`, never re-offered, and most of
+        # a structural day permanently absent behind a single shortfall note.
+        # (`docs/DECISIONS.md` carries the measured part counts this is scaled
+        # from; they are not restated here, where they would rot unseen.)
+        #
+        # The asymmetry is the tell, and it never depended on the collapsed
+        # count being *zero*: a part that *delivers* 1 of 5,000 fails the day,
+        # so a part that *claims* 1 having been measured at 5,000 thirty
+        # seconds ago cannot pass either. Reconciled with the same floor as
+        # every other comparison here rather than a new constant — equality
+        # would fail a day for the one-record drift two requests at two
+        # instants routinely show, and a day recorded `failed` is re-fetched
+        # on every later run for the life of the installation.
+        #
+        # A part that collapses to 0 still always fails, since no planned part
+        # promises fewer than one record. The retry is cheap: every part
+        # before this one is already checkpointed, and a range that genuinely
+        # emptied yields no partition at all when the next run plans the day.
+        plan_verdict = reconcile_delivery(
+            "pubmed",
+            f"{date_str} part {part.key} (its count when its session opened)",
+            delivered=part_count,
+            promised=part.promised,
+            stalled=False,
+        )
+        if plan_verdict.failure is not None:
+            return failed(plan_verdict.failure)
+        if plan_verdict.note is not None:
+            notes.append(plan_verdict.note)
+
+        if web_env is None or query_key is None:
+            message = f"part {part.key} returned count={part_count} without a history session"
+            logger.error("%s for %s", message, date_str)
+            return failed(message)
+
+        before = processed
+
+        def _report(part_processed: int, _before: int = before) -> None:
+            if on_progress is not None:
+                total = _before + part_processed
+                on_progress(
+                    SyncProgress(
+                        source="pubmed",
+                        date=date_str,
+                        records_processed=total,
+                        records_total=day_count,
+                        status="in_progress",
+                        message=f"Fetched {total}/{day_count} records (part {part.key})",
+                    )
+                )
+
+        outcome = _walk_session(
+            client,
+            web_env,
+            query_key,
+            part_count,
+            on_record=on_record,
+            api_key=api_key,
+            rate_limit=rate_limit,
+            on_page=_report,
+        )
+        processed += outcome.processed
+        delivered += outcome.delivered
+
+        if outcome.error is not None:
+            return failed(f"part {part.key}: {outcome.error}")
+
+        verdict = reconcile_delivery(
+            "pubmed",
+            f"{date_str} part {part.key}",
+            delivered=outcome.delivered,
+            promised=part_count,
+            stalled=outcome.stalled,
+        )
+        if verdict.failure is not None:
+            return failed(verdict.failure)
+        if verdict.note is not None:
+            notes.append(verdict.note)
+
+        # Every part that reached here — walked to its end without failing
+        # either reconcile — is reported, so its records leave the caller's
+        # buffer; only a part that reconciled with no note carries a
+        # checkpoint. A part that *failed* a reconcile returned above, and
+        # its records are drained by the caller's closing transaction. Two
+        # rules, and they must not be collapsed back into one (#105 review,
+        # F1).
+        #
+        # Always report: this callback is the only thing that drains the
+        # caller's buffer, so reporting only clean parts made the per-part
+        # memory bound conditional on the source behaving — 37 noted parts of
+        # a 242,216-record day would be held in memory in their entirety,
+        # precisely when NCBI is degraded.
+        #
+        # Checkpoint only when clean: a noted part delivered short of its own
+        # promise, so checkpointing it would let a later resumed run skip it
+        # and credit the full `part_count` it never actually delivered,
+        # silently manufacturing the records the note is reporting missing —
+        # and that run's result would carry no note at all, since this run's
+        # note dies with it if a later part fails. Leaving it off the
+        # checkpoint means whichever run finally completes the day re-walks
+        # the part and carries its note honestly.
+        if on_part_finished is not None:
+            # Both reconciles have to be clean, for one reason: a note dies
+            # with the run that produced it. Checkpointing a part that came up
+            # short on either count lets a later run skip it, and that run's
+            # result carries no note at all — the shortfall stops being
+            # answerable from a return value, which is the whole reason
+            # `FetchResult.note` exists.
+            noted = plan_verdict.note is not None or verdict.note is not None
+            on_part_finished(
+                None
+                if noted
+                else PartCheckpoint(
+                    part_scheme=PART_SCHEME,
+                    part_key=part.key,
+                    promised=part_count,
+                    record_count=outcome.processed,
+                )
+            )
+
+        time.sleep(rate_limit)
+
+    day_verdict = reconcile_delivery(
+        "pubmed",
+        date_str,
+        delivered=delivered,
+        promised=day_count,
+        stalled=False,
+    )
+    if day_verdict.failure is not None:
+        return failed(day_verdict.failure)
+    if day_verdict.note is not None:
+        notes.append(day_verdict.note)
+
+    return FetchResult(
+        source="pubmed",
+        date=date_str,
+        record_count=processed,
+        status="completed",
+        note="; ".join(notes) or None,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -644,6 +1357,9 @@ def fetch_pubmed(
     on_record: Callable[[FetchedRecord], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
     api_key: str | None = None,
+    completed_parts: Mapping[str, PartCheckpoint] | None = None,
+    on_part_finished: Callable[[PartCheckpoint | None], None] | None = None,
+    on_part_skipped: Callable[[str], None] | None = None,
 ) -> FetchResult:
     """Fetch all PubMed articles published on *target_date*.
 
@@ -657,36 +1373,127 @@ def fetch_pubmed(
         Callback invoked with each parsed :class:`FetchedRecord`.
     on_progress:
         Optional callback invoked after each page with a :class:`SyncProgress`.
+        For a day large enough to be partitioned, does not count a skipped
+        part's credited records — see ``completed_parts`` below.
     api_key:
         Optional NCBI API key for higher rate limits.
+    completed_parts:
+        Parts of this day a previous run finished, keyed by part key. Only
+        consulted for a day large enough to be partitioned. A part is skipped
+        only if its stored ``promised`` still matches what *this run's plan*
+        reports for that same part key — a planning count, which for a
+        right-hand child is derived by subtraction rather than reported by
+        the source at all. A skipped part is credited to the day's own
+        delivery reconcile, but not to ``on_progress`` or to the returned
+        record count — both count only what this run itself walked, so on a
+        resumed day they read lower than the day's real size.
+    on_part_finished:
+        Called once for every part this run walked to its end **and did not
+        fail**: with a :class:`PartCheckpoint` when that part reconciled
+        clean on both counts — its session's own count against what planning
+        measured, and its delivery against that session count — and with
+        ``None`` when either came up short of the other (a note, not a
+        failure). A part that *fails* either reconcile ends the day and is
+        not reported here at all; its buffered records are stored by the
+        day's own closing transaction. Store the part's records either way,
+        in one transaction with the checkpoint where one is given. Storing
+        them is what empties the caller's buffer, so it may not be
+        conditional on the part being clean; the checkpoint is, because
+        skipping a noted part on a later run would credit records it never
+        actually delivered.
+    on_part_skipped:
+        Called with the part key of every part skipped because
+        ``completed_parts`` still describes it. Those records were stored by
+        an earlier run, so this is what lets the caller credit them to the day
+        — and only them: a part whose count moved is re-walked, and a re-walk
+        that comes up short is not checkpointed, so such a part is in neither
+        set and crediting it would double-count records this run stored.
 
     Returns
     -------
     FetchResult
-        Summary of the fetch operation.
+        Summary of the fetch operation. ``record_count`` counts only what this
+        run itself walked — see ``completed_parts`` above.
     """
     date_str = target_date.isoformat()
     rate_limit = RATE_LIMIT_WITH_KEY if api_key else RATE_LIMIT_WITHOUT_KEY
 
+    day_term = _day_term(target_date)
     try:
-        count, web_env, query_key = _esearch(client, target_date, api_key)
+        count, web_env, query_key = _esearch(client, day_term, api_key)
     except Exception as exc:
-        logger.error("esearch failed for %s: %s", date_str, exc)
+        # As above: a bare `ReadTimeout` or `ConnectError` stringifies to the
+        # empty string, and `sync()` records the error verbatim.
+        message = f"{type(exc).__name__}: {exc}"
+        logger.error("esearch failed for %s: %s", date_str, message)
         return FetchResult(
             source="pubmed",
             date=date_str,
             record_count=0,
             status="failed",
-            error=str(exc),
+            error=message,
         )
 
     if count == 0:
+        if completed_parts:
+            # Two of bmlib's own counts again, and this pair is the widest of
+            # them: an earlier run walked, stored and checkpointed these parts,
+            # and the day now claims to hold nothing at all. Completing on the
+            # weaker one is worse here than at part level, because `sync()`
+            # drops this day's part rows the moment it completes — so the same
+            # transaction that loses the records destroys the checkpoints that
+            # would have made re-fetching them cheap.
+            #
+            # A day genuinely emptying between two runs is not a thing PubMed
+            # does; a soft zero under load is, which is exactly why the part
+            # level refuses one. Failing leaves the day `failed`, so it is
+            # re-offered and its checkpoints survive to make the retry skip
+            # everything already stored. If a day really has been withdrawn
+            # wholesale, the message says what to delete to let it complete.
+            stored = sum(cp.promised for cp in completed_parts.values())
+            message = (
+                f"PubMed reports 0 records for {date_str}, but {len(completed_parts)} part(s)"
+                f" of this day were checkpointed by an earlier run ({stored} records);"
+                " refusing to record it complete on the weaker of two of our own counts."
+                " Delete this day's download_day_parts rows if the day really is empty"
+            )
+            logger.error("%s", message)
+            return FetchResult(
+                source="pubmed",
+                date=date_str,
+                record_count=0,
+                status="failed",
+                error=message,
+            )
         logger.info("No PubMed records for %s", date_str)
         return FetchResult(
             source="pubmed",
             date=date_str,
             record_count=0,
             status="completed",
+        )
+
+    if count > EFETCH_MAX_RETRIEVABLE:
+        # Ahead of the session guard below, and deliberately: the session
+        # opened above is unused on this path — `_fetch_partitioned` opens one
+        # per part — so a day-level ESearch that reports a count without a
+        # WebEnv is no obstacle to fetching this day, and refusing it would
+        # lose a fetchable day to a re-offer on every later run. If the
+        # anomaly is not transient, each part's own session guard fails and
+        # the day fails there. The one wasted session per over-cap day is not
+        # worth a second code path to avoid.
+        return _fetch_partitioned(
+            client,
+            target_date,
+            day_term,
+            count,
+            on_record=on_record,
+            on_progress=on_progress,
+            api_key=api_key,
+            rate_limit=rate_limit,
+            completed_parts=completed_parts,
+            on_part_finished=on_part_finished,
+            on_part_skipped=on_part_skipped,
         )
 
     if web_env is None or query_key is None:
@@ -707,109 +1514,47 @@ def fetch_pubmed(
             error=message,
         )
 
-    if count > EFETCH_MAX_RETRIEVABLE:
-        # The day cannot be completed through this route, so it is refused
-        # before a single record is fetched rather than after the reachable
-        # ones are. Both readings end with the day recorded `failed` and
-        # re-offered on every later run — it can never be `completed`, since
-        # that would durably lose the remainder — so the only question is what
-        # the doomed run costs. Walking first would buy the first
-        # `EFETCH_MAX_RETRIEVABLE` records once and then re-fetch them on every
-        # run for the life of the installation: measured against real days,
-        # every first-of-month is over the cap (49,543-90,571 records, since a
-        # record carrying only a year and month is indexed at day 1) and every
-        # 1 January is 212,439-315,282, so a six-year backfill carries some 72
-        # such days and would re-download ~3 GB per run to store nothing new.
-        # Refusing costs one esearch instead. The records are not written off:
-        # issue #105 partitions an over-cap day into sub-queries that each fit,
-        # which is what makes "no publication is missed" true again.
-        #
-        # "a history session serves" rather than "efetch serves": the limit is
-        # the search backend's, which is how NCBI's own 400 names it and how
-        # every doc describing this refers to it. An operator grepping the
-        # docs for the phrase in their log has to find it.
-        message = (
-            f"PubMed reported {count} records for {date_str}, but a history session serves"
-            f" only its first {EFETCH_MAX_RETRIEVABLE} records, so"
-            f" {count - EFETCH_MAX_RETRIEVABLE} of them cannot be reached; refusing the day"
-            " rather than storing part of it as though it were whole. This day is refused"
-            " on every run until issue #105 lands; no operator action is available"
-        )
-        logger.error("%s", message)
-        return FetchResult(
-            source="pubmed",
-            date=date_str,
-            record_count=0,
-            status="failed",
-            error=message,
-        )
-
     logger.info("PubMed esearch: %d records for %s", count, date_str)
 
-    # `retstart` indexes the *session's UID list*, not the records delivered so
-    # far: page k covers the UIDs at [k·EFETCH_PAGE_SIZE, (k+1)·EFETCH_PAGE_SIZE)
-    # whether or not every one of them yields a record — named for the constant
-    # that actually strides, since the claim holds only while the walk's step
-    # and `_efetch_page`'s `retmax` stay equal. Measured 2026-08-20 (issue #96): a
-    # page's record elements are exactly that slice of esearch's own
-    # `IdList`, in order, `<PubmedBookArticle>` entries included. So the
-    # stride stays `EFETCH_PAGE_SIZE`. Advancing by what arrived — the fix
-    # #96 proposed — would re-request the tail of every short page, deliver
-    # those records twice, and count the duplicates as delivery, which is
-    # precisely what would hide a real shortfall from `reconcile_delivery`.
-
-    records_processed = 0
-    records_delivered = 0
-    stalled = False
-    for retstart in range(0, count, EFETCH_PAGE_SIZE):
-        try:
-            articles, delivered = _efetch_page(client, web_env, query_key, retstart, api_key)
-        except Exception as exc:
-            logger.error("efetch failed at retstart=%d: %s: %s", retstart, type(exc).__name__, exc)
-            return FetchResult(
-                source="pubmed",
-                date=date_str,
-                record_count=records_processed,
-                status="failed",
-                error=f"{type(exc).__name__}: {exc}",
-            )
-
-        records_delivered += delivered
-        for article_el in articles:
-            record = _parse_article_xml(article_el)
-            on_record(record)
-            records_processed += 1
-
-        if delivered == 0:
-            # The session holds `count` UIDs, so an empty page before the walk
-            # is done means it stopped serving them. Paging on costs a request
-            # per remaining page and returns nothing — up to 9 of them on the
-            # 5,000-record day measured for #88, which is 10 pages of 500.
-            stalled = True
-            break
-
+    def _report(processed: int) -> None:
         if on_progress is not None:
             on_progress(
                 SyncProgress(
                     source="pubmed",
                     date=date_str,
-                    records_processed=records_processed,
+                    records_processed=processed,
                     records_total=count,
                     status="in_progress",
-                    message=f"Fetched {records_processed}/{count} records",
+                    message=f"Fetched {processed}/{count} records",
                 )
             )
 
-        # Rate-limit between pages (skip after the last page)
-        if retstart + EFETCH_PAGE_SIZE < count:
-            time.sleep(rate_limit)
+    outcome = _walk_session(
+        client,
+        web_env,
+        query_key,
+        count,
+        on_record=on_record,
+        api_key=api_key,
+        rate_limit=rate_limit,
+        on_page=_report,
+    )
+    records_processed = outcome.processed
+    if outcome.error is not None:
+        return FetchResult(
+            source="pubmed",
+            date=date_str,
+            record_count=records_processed,
+            status="failed",
+            error=outcome.error,
+        )
 
     verdict = reconcile_delivery(
         "pubmed",
         date_str,
-        delivered=records_delivered,
+        delivered=outcome.delivered,
         promised=count,
-        stalled=stalled,
+        stalled=outcome.stalled,
     )
     if verdict.failure is not None:
         return FetchResult(

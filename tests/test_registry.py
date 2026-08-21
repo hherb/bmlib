@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from bmlib.publications.fetchers.registry import (
     _REGISTRY,
     _ensure_builtins,
@@ -55,6 +57,27 @@ class TestBuiltinRegistration:
         assert "email" in param_names
         email_param = next(p for p in desc.params if p.name == "email")
         assert email_param.required is True
+
+
+class TestAFetcherDeclaresResumability:
+    """New keywords reach only fetchers that asked for them."""
+
+    def test_a_descriptor_is_not_resumable_by_default(self):
+        descriptor = SourceDescriptor(
+            name="custom", display_name="Custom", description="A third-party source"
+        )
+
+        assert descriptor.resumable is False
+
+    def test_pubmed_declares_itself_resumable(self):
+        descriptor, _ = get_source("pubmed")
+
+        assert descriptor.resumable is True
+
+    def test_the_other_builtins_do_not(self):
+        for name in ("biorxiv", "medrxiv", "openalex"):
+            descriptor, _ = get_source(name)
+            assert descriptor.resumable is False, name
 
 
 class TestGetSourceErrors:
@@ -187,3 +210,89 @@ class TestCustomRegistration:
             reg._REGISTRY.clear()
             reg._REGISTRY.update(saved_registry)
             reg._builtins_registered = saved_flag
+
+
+class TestARegistrationDeclaringResumableIsChecked:
+    """`resumable=True` is a promise about the fetcher's signature.
+
+    `sync()` reads the *descriptor* to decide whether to pass the three resume
+    keywords, so a descriptor that declares more than its fetcher accepts
+    raises `TypeError` inside the per-day handler — which records the day
+    `failed`, on every day, on every run, forever. Loud, but at the wrong
+    place and once per day rather than once per mistake.
+    """
+
+    def test_a_resumable_fetcher_missing_the_keywords_is_refused(self):
+        def fetcher(client, target_date, *, on_record, on_progress=None):
+            raise AssertionError("never called")
+
+        with pytest.raises(ValueError, match="completed_parts"):
+            register_source(
+                SourceDescriptor(
+                    name="unsound_resumable",
+                    display_name="Unsound",
+                    description="declares more than it accepts",
+                    resumable=True,
+                ),
+                fetcher,
+            )
+
+    def test_a_resumable_fetcher_accepting_them_by_name_is_registered(self):
+        def fetcher(
+            client,
+            target_date,
+            *,
+            on_record,
+            on_progress=None,
+            completed_parts=None,
+            on_part_finished=None,
+            on_part_skipped=None,
+        ):
+            raise AssertionError("never called")
+
+        register_source(
+            SourceDescriptor(
+                name="sound_resumable",
+                display_name="Sound",
+                description="accepts what it declares",
+                resumable=True,
+            ),
+            fetcher,
+        )
+
+        assert get_source("sound_resumable")[0].resumable is True
+
+    def test_a_resumable_fetcher_accepting_them_through_kwargs_is_registered(self):
+        # `**config` is how the built-in fetchers absorb per-source settings,
+        # so it has to satisfy the check.
+        def fetcher(client, target_date, *, on_record, on_progress=None, **config):
+            raise AssertionError("never called")
+
+        register_source(
+            SourceDescriptor(
+                name="kwargs_resumable",
+                display_name="Kwargs",
+                description="absorbs them through **config",
+                resumable=True,
+            ),
+            fetcher,
+        )
+
+        assert get_source("kwargs_resumable")[0].resumable is True
+
+    def test_a_non_resumable_fetcher_is_not_asked_for_them(self):
+        # The negative control: the default is what every third-party fetcher
+        # written against an earlier bmlib has, and it must stay registrable.
+        def fetcher(client, target_date, *, on_record, on_progress=None):
+            raise AssertionError("never called")
+
+        register_source(
+            SourceDescriptor(
+                name="ordinary_source",
+                display_name="Ordinary",
+                description="does not resume",
+            ),
+            fetcher,
+        )
+
+        assert get_source("ordinary_source")[0].resumable is False

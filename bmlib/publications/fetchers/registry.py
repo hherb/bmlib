@@ -29,6 +29,7 @@ instances and ``**config`` carries source-specific parameters (api_key, email, e
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -53,6 +54,49 @@ def _put(descriptor: SourceDescriptor, fetcher: Callable[..., Any]) -> None:
     _REGISTRY[descriptor.name] = (descriptor, fetcher)
 
 
+_RESUME_KEYWORDS = ("completed_parts", "on_part_finished", "on_part_skipped")
+
+
+def _check_accepts_resume_keywords(name: str, fetcher: Callable[..., Any]) -> None:
+    """Refuse a ``resumable=True`` registration its fetcher cannot honour.
+
+    ``sync()`` reads the *descriptor* to decide whether to pass the per-part
+    resume keywords, so a descriptor that declares more than its fetcher
+    accepts raises ``TypeError`` inside the per-day handler — which records
+    that day ``failed``, on every day of the range, on every later run. Loud,
+    but once per day rather than once per mistake, and at a place that names
+    the day instead of the registration.
+
+    A ``**kwargs`` parameter satisfies the check, since that is how the
+    built-in fetchers absorb per-source configuration.
+
+    Args:
+        name: The source name, for the message.
+        fetcher: The callable being registered.
+
+    Raises:
+        ValueError: The fetcher accepts none of the resume keywords by name
+            and has no ``**kwargs`` to absorb them.
+    """
+    try:
+        parameters = inspect.signature(fetcher).parameters
+    except (TypeError, ValueError):
+        # A builtin or a C callable has no introspectable signature. Nothing
+        # can be checked, and refusing on that alone would reject a valid
+        # fetcher, so this falls through to the per-day TypeError as before.
+        return
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()):
+        return
+    missing = [kw for kw in _RESUME_KEYWORDS if kw not in parameters]
+    if missing:
+        raise ValueError(
+            f"source {name!r} declares resumable=True but its fetcher accepts neither"
+            f" **kwargs nor {', '.join(missing)}; sync() passes"
+            f" {', '.join(_RESUME_KEYWORDS)} to a resumable source, so every day of"
+            " this source would fail"
+        )
+
+
 def register_source(
     descriptor: SourceDescriptor,
     fetcher: Callable[..., Any],
@@ -64,6 +108,8 @@ def register_source(
     first time a lookup triggered lazy built-in registration.
     """
     _ensure_builtins()
+    if descriptor.resumable:
+        _check_accepts_resume_keywords(descriptor.name, fetcher)
     _put(descriptor, fetcher)
 
 
@@ -131,6 +177,7 @@ def _register_builtins() -> None:
             params=[
                 SourceParam("api_key", "NCBI API key for higher rate limits", secret=True),
             ],
+            resumable=True,
         ),
         fetch_pubmed,
     )

@@ -30,7 +30,7 @@ from typing import Any, NamedTuple, TypeVar
 
 from bmlib import __version__
 from bmlib.db import execute, fetch_all, placeholder, transaction
-from bmlib.publications.fetchers.registry import get_fetcher, source_names
+from bmlib.publications.fetchers.registry import get_fetcher, get_source, source_names
 from bmlib.publications.models import (
     AuthorAffiliation,
     DayStatus,
@@ -38,6 +38,7 @@ from bmlib.publications.models import (
     FetchResult,
     FullTextSource,
     Grant,
+    PartCheckpoint,
     Publication,
     SyncProgress,
     SyncReport,
@@ -93,6 +94,28 @@ def _get_fetcher_for_source(source: str) -> Callable | None:
         return get_fetcher(source)
     except ValueError:
         return None
+
+
+def _source_is_resumable(source: str) -> bool:
+    """Whether *source*'s descriptor declares it accepts the resume keywords.
+
+    An unknown source answers ``False`` rather than raising. Not because of
+    call order — by the time :func:`sync` asks, it has already resolved the
+    fetcher — but because a source supplied through ``_fetcher_override`` need
+    not be registered at all, so :func:`get_source` raises for a source that
+    nonetheless has a working fetcher. That raise would escape the per-day
+    handler into a ``try`` carrying only a ``finally``, and lose the whole
+    multi-source run's report.
+
+    The *descriptor* decides, not the fetcher actually called — so overriding a
+    resumable source's fetcher for a test supplies one that accepts the resume
+    keywords, or its day fails.
+    """
+    try:
+        descriptor, _ = get_source(source)
+    except ValueError:
+        return False
+    return bool(descriptor.resumable)
 
 
 def _read_aware_timestamp(value: object) -> datetime | None:
@@ -575,6 +598,57 @@ def _record_to_fulltext_sources(record: FetchedRecord) -> list[FullTextSource] |
     return result if result else None
 
 
+def _store_records(
+    conn: Any, source: str, day: date, records: Sequence[FetchedRecord]
+) -> tuple[int, int, int]:
+    """Store *records*, returning ``(added, merged, failed)``.
+
+    Runs inside the caller's transaction, so a record that fails rolls back to
+    its own savepoint without losing the batch. Shared by the two places a
+    day's buffer is drained: once per finished part for a resumable source,
+    and once at the end of the day for whatever is left (see :func:`sync`).
+    """
+    added = merged = failed = 0
+    for record in records:
+        try:
+            pub = _record_to_publication(record)
+            fts = _record_to_fulltext_sources(record)
+            result = store_publication(
+                conn,
+                pub,
+                fulltext_sources=fts,
+                grants=_stamp_source(record.grants, record.source),
+                affiliations=_stamp_source(record.author_affiliations, record.source),
+            )
+            if result == "added":
+                added += 1
+            elif result == "merged":
+                merged += 1
+        except Exception as exc:
+            # Broad on purpose — one bad record must not lose the batch — so
+            # the exception *type* is logged too: a TypeError here is a bmlib
+            # defect affecting every record, not bad data from the source, and
+            # the two read identically without it.
+            failed += 1
+            logger.error(
+                "Failed to store record from %s/%s: %s: %s",
+                source,
+                day.isoformat(),
+                type(exc).__name__,
+                exc,
+            )
+    return added, merged, failed
+
+
+class _DayPartsUnreadableError(Exception):
+    """This day's stored part rows could not be read.
+
+    Raised inside the per-day handler purely so one ``except`` records the
+    day, rather than a second copy of that block existing for this case. The
+    message is built at the read, where the cause is still in hand.
+    """
+
+
 class _DayOutcome(NamedTuple):
     """What to store for a day, and what to tell the caller about it."""
 
@@ -686,6 +760,74 @@ def _upsert_download_day(
             "   downloaded_at = excluded.downloaded_at,"
             "   last_verified_at = excluded.last_verified_at",
             (source, day_str, status, record_count, now, now),
+        )
+
+
+def _load_day_parts(conn: Any, source: str, day: date) -> dict[str, PartCheckpoint]:
+    """Return the parts of *day* a previous run finished, keyed by part key."""
+    ph = placeholder(conn)
+    rows = fetch_all(
+        conn,
+        "SELECT part_scheme, part_key, promised, record_count FROM download_day_parts"
+        f" WHERE source = {ph} AND date = {ph}",
+        (source, day.isoformat()),
+    )
+    parts = {}
+    for row in rows:
+        # `fetch_all` hands back a driver row — `sqlite3.Row` here, psycopg2's
+        # `RealDictRow` there — and only the second is a `Mapping`.
+        # `PartCheckpoint.from_dict` takes one, so the conversion happens here
+        # rather than the model widening its contract to the union of two
+        # drivers' row types. Both support `keys()` and string indexing.
+        cp = PartCheckpoint.from_dict({key: row[key] for key in row.keys()})
+        parts[cp.part_key] = cp
+    return parts
+
+
+def _record_day_part(conn: Any, source: str, day: date, checkpoint: PartCheckpoint) -> None:
+    """Record one completed part.
+
+    Runs inside the caller's transaction (see :func:`sync`), so the checkpoint
+    commits atomically with the records it attests to — a checkpoint that
+    outlived a rolled-back batch would make a re-run skip records that were
+    never stored.
+    """
+    ph = placeholder(conn)
+    with transaction(conn):
+        execute(
+            conn,
+            "INSERT INTO download_day_parts (source, date, part_scheme, part_key,"
+            f" promised, record_count, completed_at) VALUES ({', '.join([ph] * 7)})"
+            " ON CONFLICT (source, date, part_key) DO UPDATE SET"
+            "   part_scheme = excluded.part_scheme,"
+            "   promised = excluded.promised,"
+            "   record_count = excluded.record_count,"
+            "   completed_at = excluded.completed_at",
+            (
+                source,
+                day.isoformat(),
+                checkpoint.part_scheme,
+                checkpoint.part_key,
+                checkpoint.promised,
+                checkpoint.record_count,
+                datetime.now(tz=UTC).isoformat(),
+            ),
+        )
+
+
+def _clear_day_parts(conn: Any, source: str, day: date) -> None:
+    """Drop *day*'s part rows.
+
+    Called when the day completes: the rows describe an unfinished day, so
+    keeping them would grow the table without bound and would make a
+    ``recheck_days`` re-fetch skip parts it was explicitly asked to redo.
+    """
+    ph = placeholder(conn)
+    with transaction(conn):
+        execute(
+            conn,
+            f"DELETE FROM download_day_parts WHERE source = {ph} AND date = {ph}",
+            (source, day.isoformat()),
         )
 
 
@@ -842,29 +984,118 @@ def sync(
 
             src_config = resolved_configs.get(source, {})
 
+            resumable = _source_is_resumable(source)
+
             for day in days:
                 day_added = 0
                 day_merged = 0
                 day_failed = 0
                 day_records: list[FetchedRecord] = []
+                prior_parts: dict[str, PartCheckpoint] = {}
+                parts_error: str | None = None
+                if resumable:
+                    try:
+                        prior_parts = _load_day_parts(conn, source, day)
+                    except Exception as exc:
+                        # Guarded for the reason `_source_is_resumable` is,
+                        # one call earlier: this runs *before* the per-day
+                        # handler below, and the source loop carries only a
+                        # `finally`, so anything raised here leaves `sync()`
+                        # without returning a `SyncReport` at all — every
+                        # source's work in the run becomes unreportable (#99).
+                        #
+                        # It fails the day rather than proceeding with no
+                        # checkpoints. Fetching a day from scratch would be
+                        # correct, but recording it `completed` on a run that
+                        # could not read what an earlier run had already
+                        # stored is recording success over an unknown, and
+                        # `completed` is never re-offered. A failed day is,
+                        # and `store_publication` merges, so the retry is
+                        # idempotent.
+                        parts_error = (
+                            "could not read download_day_parts for"
+                            f" {source}/{day.isoformat()}: {type(exc).__name__}: {exc}"
+                        )
+                        logger.error("%s", parts_error)
+                skipped_keys: set[str] = set()
 
                 def handle_record(record: FetchedRecord) -> None:
-                    # Buffer only — the store happens after the fetch so the
-                    # day's write transaction never spans network I/O. The
-                    # whole day is held in memory (typically a few thousand
-                    # records, tens of MB with abstracts); if a source ever
-                    # delivers far larger days, flush in chunks here.
+                    # Buffer only — the store happens after the fetch (or,
+                    # for a resumable source, after each part) so a write
+                    # transaction never spans network I/O.
                     day_records.append(record)
                     if on_record is not None:
                         on_record(record)
 
+                def flush_part(checkpoint: PartCheckpoint | None) -> None:
+                    """Store a finished part's records, and checkpoint it if it earned one.
+
+                    Called for every part the fetcher walked to its end
+                    without failing a reconcile (one that fails ends the day,
+                    and its records are drained by the closing block below).
+                    The records are always stored: this is the only thing that
+                    empties ``day_records``, so a version that stored nothing
+                    for a part the fetcher could not vouch for would hold a
+                    whole 242,216-record day in memory exactly when the source
+                    is degraded — the peak the per-part flush exists to remove
+                    (#105 review, F1). One transaction, so a checkpoint can
+                    never attest to records a rollback discarded.
+
+                    The *checkpoint* is what a part has to earn, and there are
+                    two independent ways not to earn one. The fetcher passes
+                    ``None`` for a part that reconciled short of its own
+                    promise; and a part holding a record that would not store
+                    is not checkpointed here. Both are the same rule: the
+                    failure records the day ``failed``, so it is re-offered,
+                    and a checkpoint written beside the gap would make that
+                    retry skip the one part holding it — the record would then
+                    be lost silently and permanently. ``_store_records``
+                    swallows the record's own exception so one bad record
+                    cannot lose the batch, which is exactly why the count has
+                    to be read back and acted on here.
+                    """
+                    nonlocal day_added, day_merged, day_failed
+                    with transaction(conn):
+                        added, merged, failed_ = _store_records(conn, source, day, day_records)
+                        if checkpoint is not None and failed_ == 0:
+                            _record_day_part(conn, source, day, checkpoint)
+                    day_added += added
+                    day_merged += merged
+                    day_failed += failed_
+                    day_records.clear()
+
+                def note_skipped_part(part_key: str) -> None:
+                    """Remember a part the fetcher skipped on this run.
+
+                    Only these are credited from ``prior_parts`` below. A part
+                    the fetcher re-walked stored its records through
+                    :func:`flush_part` (or through the day's final store), so
+                    crediting its stored count as well would double it.
+                    """
+                    skipped_keys.add(part_key)
+
+                # A separate name, not a rebinding of ``src_config``: that one
+                # is built once per source and reused for every day, so
+                # folding this day's callbacks into it would leak them into
+                # the next day's call.
+                day_config = src_config
+                if resumable:
+                    day_config = {
+                        **src_config,
+                        "completed_parts": prior_parts,
+                        "on_part_finished": flush_part,
+                        "on_part_skipped": note_skipped_part,
+                    }
+
                 try:
+                    if parts_error is not None:
+                        raise _DayPartsUnreadableError(parts_error)
                     fetch_result = fetcher(
                         client,
                         day,
                         on_record=handle_record,
                         on_progress=on_progress,
-                        **src_config,
+                        **day_config,
                     )
                     if not isinstance(fetch_result, FetchResult):
                         # Raised rather than handled separately, so the one
@@ -897,59 +1128,67 @@ def sync(
                     fetch_result = FetchResult(
                         source=source,
                         date=day.isoformat(),
-                        record_count=len(day_records),
+                        # Records already flushed by a finished part plus the
+                        # ones still buffered: the buffer alone stopped being
+                        # the day's whole delivery when the flush moved to a
+                        # per-part boundary.
+                        record_count=day_added + day_merged + day_failed + len(day_records),
                         status="failed",
                         error=f"{type(exc).__name__}: {exc}",
                     )
 
-                # One transaction per day: each store_publication call joins
-                # it (savepoint) instead of committing, so a day of thousands
-                # of records costs a single commit/fsync rather than one per
-                # statement — and because records were buffered during the
-                # fetch, SQLite's write lock is held only for the store loop,
-                # not for the network-bound fetch. A record that fails to
-                # store rolls back to its own savepoint without losing the
-                # batch, and the day-status row commits atomically with the
-                # records. Should writing the day-status row itself fail, the
-                # whole day rolls back and the error propagates — the day is
-                # left unrecorded and simply retried on the next run.
+                # One transaction for whatever the parts did not already
+                # flush: each store_publication call joins it (savepoint)
+                # instead of committing, so a batch of thousands of records
+                # costs a single commit/fsync rather than one per statement —
+                # and because records were buffered during the fetch, SQLite's
+                # write lock is held only for the store loop, not for the
+                # network-bound fetch. A record that fails to store rolls back
+                # to its own savepoint without losing the batch, and the
+                # day-status row commits atomically with the records. Should
+                # writing the day-status row itself fail, the whole block
+                # rolls back and the error propagates — the day is left
+                # unrecorded and simply retried on the next run.
                 with transaction(conn):
-                    for record in day_records:
-                        try:
-                            pub = _record_to_publication(record)
-                            fts = _record_to_fulltext_sources(record)
-                            result = store_publication(
-                                conn,
-                                pub,
-                                fulltext_sources=fts,
-                                grants=_stamp_source(record.grants, record.source),
-                                affiliations=_stamp_source(
-                                    record.author_affiliations, record.source
-                                ),
-                            )
-                            if result == "added":
-                                day_added += 1
-                            elif result == "merged":
-                                day_merged += 1
-                        except Exception as exc:
-                            # Broad on purpose — one bad record must not lose
-                            # the batch — so the exception *type* is logged
-                            # too: a TypeError here is a bmlib defect
-                            # affecting every record, not bad data from the
-                            # source, and the two read identically without it.
-                            day_failed += 1
-                            logger.error(
-                                "Failed to store record from %s/%s: %s: %s",
-                                source,
-                                day.isoformat(),
-                                type(exc).__name__,
-                                exc,
-                            )
+                    added, merged, failed_ = _store_records(conn, source, day, day_records)
+                    day_added += added
+                    day_merged += merged
+                    day_failed += failed_
 
                     outcome = _resolve_day_status(source, day, fetch_result, day_failed)
-                    record_count = day_added + day_merged
+                    # Credit the parts an earlier run stored and this run
+                    # therefore skipped, so a day fetched across three runs is
+                    # not recorded as holding only the last run's share. Only
+                    # the skipped ones: a prior part whose count moved is
+                    # re-walked, and its records are in the totals above
+                    # already — crediting it as well would double it, and a
+                    # re-walk that came up short is not checkpointed, so
+                    # "everything this run did not checkpoint" would catch it.
+                    #
+                    # One cosmetic residue, named here so it is not later
+                    # re-discovered as a bug: the skip rule compares a part's
+                    # *current* count against the stored `promised`, so a part
+                    # whose count moved away and back again is skipped and
+                    # credited at the `record_count` the earlier run stored —
+                    # a number describing that range's old contents rather
+                    # than what is in `publications` now. It moves this row's
+                    # `record_count` only, which no day-selection rule reads.
+                    carried = sum(
+                        cp.record_count for key, cp in prior_parts.items() if key in skipped_keys
+                    )
+                    record_count = day_added + day_merged + carried
 
                     _upsert_download_day(conn, source, day, outcome.status, record_count)
+                    if outcome.status == "completed":
+                        # The rows describe an unfinished day. Keeping them
+                        # would grow the table without bound and would make a
+                        # `recheck_days` re-fetch skip the parts it was asked
+                        # to redo. Not conditioned on `resumable`: the delete
+                        # is a no-op for a source that writes no parts, and
+                        # conditioning it would strand a source's rows forever
+                        # the moment its descriptor stopped declaring it
+                        # resumable — to resurface if it ever declared it again.
+                        _clear_day_parts(conn, source, day)
 
                 total_added += day_added
                 total_merged += day_merged

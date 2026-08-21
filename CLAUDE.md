@@ -89,7 +89,7 @@ bmlib/
 │       └── gemini.py        # Google Gemini
 ├── publications/            # Publication ingestion, deduplication, and sync
 │   ├── models.py            # Publication, FullTextSource, FetchedRecord, SyncReport, SourceDescriptor, RetractionNature, RetractionNotice, Grant, AuthorAffiliation
-│   ├── schema.py            # SQL schema (publications, fulltext_sources, download_days, retraction_notices, publication_grants, publication_affiliations)
+│   ├── schema.py            # SQL schema (publications, fulltext_sources, download_days, download_day_parts, retraction_notices, publication_grants, publication_affiliations)
 │   ├── storage.py           # Upsert with dedup by DOI/PMID, merge logic
 │   ├── sync.py              # Multi-source sync orchestrator
 │   ├── retractions.py       # Retraction Watch: parse_retraction_watch_csv, store_retraction_notices, lookup_retractions, is_retracted
@@ -136,7 +136,7 @@ bmlib/
 - **`context_processor/`** — Hierarchical map-reduce for content that exceeds one context window: batch the items to fit, extract from each batch, feed the extractions back in as items, repeat until they fit. `IterativeContextProcessor` is the harness and has **no LLM dependency** — which is why it is a top-level package rather than living under `agents/`; only `LLMChunkProcessor` imports `BaseAgent`, and the package `__init__` resolves it through a PEP 562 `__getattr__` so that claim holds of the package and not merely of `base.py` (eager re-export pulled in `bmlib.templates` and jinja2, over half the import cost, for callers who only wanted the harness). `bmlib.llm.text_utils.process_with_map_reduce()` is the shallow case of the same idea (one map, one reduce, one string) and stays; this module uses that module's `TextChunker` when it splits an oversized item. `max_context_chars` is the guarantee the module makes — no batch handed to `extract_from_batch()` exceeds it — and the port from bmlibrarian fixed two separate ways upstream broke it (see "Measured, not assumed, in the batcher" below). `process()` holds no per-run state on the instance, so one processor can serve concurrent calls.
 - **`quality/`** — Tiered quality assessment: (1) free metadata classification, (2) cheap LLM classifier, (3) deep LLM assessment, (4) Cochrane-aligned assessment. Uses CEBM evidence hierarchy for quality tiers. `CochraneAssessor` (Tier 4, behind `QualityFilter(use_cochrane_assessment=True)`) produces `cochrane_models`' nine-domain `CochraneRiskOfBias` and study-characteristics table from a title and text; `collapse_risk_of_bias()` bridges the nine domains onto the five-domain `BiasRisk`; and `QualityManager` reaches both of these behind that same flag, enriching a classification rather than replacing it — Tier 1's when the metadata was conclusive, Tier 2's when it was not, since a Cochrane assessment supplies no `study_design` of its own and a preprint carries no PubMed publication types to classify from. **The rule-based extractors and `cochrane_formatter` are still standalone**: nothing in the tiered pipeline imports them, and there is no conversion between `DimensionScore` and `QualityAssessment`. Wiring the extractors in as a free pre-filter ahead of Tier 1 is open work — see ROADMAP.md.
 - **`transparency/`** — Queries CrossRef, Europe PMC (search + full text), PubMed, OpenAlex, and ClinicalTrials.gov to compute a transparency score (0-100) covering funding, COI, data availability, trial registration, and open access. The PubMed step is one `efetch` per analysis, skipped without a PMID (taken from the caller or from the Europe PMC record already fetched); it supplies structured `<CoiStatement>`, `<DataBankList>` and `<GrantList>` signals that Europe PMC cannot give for a closed-access paper, and `pubmed_api_key` rides on it. When no API is reachable the result is `UNKNOWN` at score 0, so an unreachable network does not masquerade as a HIGH-risk paper; `TransparencyResult.unknown_reason` says which of the three `UNKNOWN` cases it was, set if and only if `risk_level` is `UNKNOWN`.
-- **`publications/`** — Publication ingestion from multiple sources (PubMed, bioRxiv, medRxiv, OpenAlex) with deduplication by DOI/PMID, merge-on-upsert, and date-range sync tracking. Every fetcher reconciles what its source delivered against the count that source promised (`fetchers/_reconcile.py`) and refuses a malformed envelope rather than reading it as an empty day — see "A completed day is a durable claim" below, which is the one place to read before touching a fetcher's page loop or `sync()`'s status handling. Runs on both backends `db/` supports: placeholders come from `db.placeholder()`, `ensure_schema()` picks the matching DDL, and the one irreducibly dialect-specific need — reading back an inserted row's id — is `cur.lastrowid` on SQLite and `RETURNING id` on PostgreSQL. Everything else is written in the intersection of the two dialects. `tests/test_backends.py` runs each test against both. `retractions.py` is a standalone module, not a fetcher: `parse_retraction_watch_csv()` streams the Crossref-distributed Retraction Watch export into `RetractionNotice` records, `store_retraction_notices()` upserts them idempotently on Retraction Watch's own `record_id`, and `lookup_retractions()` plus the pure `is_retracted()` answer "is this paper retracted?" — with only a Retraction or a Reinstatement deciding, since a later Correction does not undo an earlier Retraction. The PubMed fetcher also extracts `<GrantList>` grants and `<AffiliationInfo>` affiliations into `Grant` / `AuthorAffiliation` child rows (tables `publication_grants` / `publication_affiliations`, read back with `get_grants()` / `get_author_affiliations()`), and reads titles and abstracts as Markdown — see "Replace-if-nonempty child rows" and "Markdown, measured against the markup" below.
+- **`publications/`** — Publication ingestion from multiple sources (PubMed, bioRxiv, medRxiv, OpenAlex) with deduplication by DOI/PMID, merge-on-upsert, and date-range sync tracking. Every fetcher reconciles what its source delivered against the count that source promised (`fetchers/_reconcile.py`) and refuses a malformed envelope rather than reading it as an empty day — see "A completed day is a durable claim" below, which is the one place to read before touching a fetcher's page loop or `sync()`'s status handling. A PubMed day too large for one history session is not refused but **partitioned into Entrez-date ranges that each fit**, walked part by part and checkpointed into `download_day_parts` so an interrupted run resumes; `SourceDescriptor.resumable` (default `False`) is what lets `sync()` hand a fetcher the per-part keywords without breaking a third-party one. Runs on both backends `db/` supports: placeholders come from `db.placeholder()`, `ensure_schema()` picks the matching DDL, and the one irreducibly dialect-specific need — reading back an inserted row's id — is `cur.lastrowid` on SQLite and `RETURNING id` on PostgreSQL. Everything else is written in the intersection of the two dialects. `tests/test_backends.py` runs each test against both. `retractions.py` is a standalone module, not a fetcher: `parse_retraction_watch_csv()` streams the Crossref-distributed Retraction Watch export into `RetractionNotice` records, `store_retraction_notices()` upserts them idempotently on Retraction Watch's own `record_id`, and `lookup_retractions()` plus the pure `is_retracted()` answer "is this paper retracted?" — with only a Retraction or a Reinstatement deciding, since a later Correction does not undo an earlier Retraction. The PubMed fetcher also extracts `<GrantList>` grants and `<AffiliationInfo>` affiliations into `Grant` / `AuthorAffiliation` child rows (tables `publication_grants` / `publication_affiliations`, read back with `get_grants()` / `get_author_affiliations()`), and reads titles and abstracts as Markdown — see "Replace-if-nonempty child rows" and "Markdown, measured against the markup" below.
 - **`fulltext/`** — Tiered full-text retrieval (caller-supplied sources → Europe PMC XML → Europe PMC PDF → Unpaywall → DOI/PubMed URL) with JATS XML parsing and disk-based caching. PDF→text conversion lives here too, and `FullTextService` calls it: a retrieved PDF is extracted into `FullTextResult.html` (opt out with `FullTextService(convert_pdfs=False)`, needs `bmlib[pdf]`). Extraction only runs once the PDF is cached, so it needs an `identifier`. A body-less JATS document — `<front>`+`<back>` with no article prose, which medRxiv serves for some preprints — is detected via `JATSArticle.has_body`, never cached, and held back as a last resort so the chain keeps looking for the real article. `FullTextResult.content_kind` tells the caller which of `fulltext` / `abstract` / `extracted` it actually got, so an abstract is not analysed as if it were an article. `SectionSegmenter` (in `segmenter.py`) segments the `TextBlock` lines from `PyMuPDFConverter.extract_blocks()` — an optional capability declared by the `LayoutExtractor` protocol, not by the `PDFConverter` ABC — into a `SegmentedDocument` of typed sections. One block per PDF *line* with dominant-span font attributes, because span-level extraction shattered mixed-font headings; front matter is kept as a section rather than dropped; standalone for now — nothing in `fulltext` or `quality` calls it yet. Only `FullTextService` needs an extra (`bmlib[fulltext]`, httpx); the package `__init__` resolves it through a PEP 562 `__getattr__` so the parser, the models and the segmenter import on core bmlib alone — see "Optional dependencies guarded at the call site". Tier 1d's free-PDF check (`_entry_is_free`) allow-lists Europe PMC's `fullTextUrlList` on `availabilityCode` (`OA`, `F`), falling back to the `availability` display string only for an entry carrying no code; a present-but-unknown code is rejected without consulting the label. Measured over 600 MEDLINE records, `"Open access"`/`OA` is 95.7% of free-PDF entries and `"Free"`/`F` is the other 4.3% — accepting only the `"Free"` label, as the code did before issue #79, silently discarded the large majority of the PDFs the tier exists to find. Both access fields are type-checked before being compared: `x in frozenset` *hashes* `x`, and the resulting `TypeError` on a JSON object is a `_BUG_TYPES` member, so a malformed payload would be reported as a bmlib defect rather than as an entry to skip — and would spend the one-shot `bug:TypeError` slot a later real defect needs. `_extract_free_pdf_url` checks the container one level up for the same reason: `.get("fullTextUrl", [])` returns `None`, not `[]`, for a key present with a null. A PDF's **metadata title is believed only where page 1 prints it** (`_titles.py`, issue #56): real `/Title` values are typesetter job numbers and source filenames, and one used to beat a perfectly good large-font line. `PyMuPDFConverter` puts the judged answer in `ConversionResult.title` and `SectionSegmenter._extract_title` prefers it over the font-size heuristic, while `metadata["title"]` stays verbatim. **Run `scripts/sample_pdf_metadata_titles.py` before changing the reject-list in `looks_like_junk`** — every member has to be earned from `tests/data/pdf_metadata_titles.json`, and the one member left no longer clears a row corroboration does not, so it is kept as defence-in-depth and says so. Containment is anchored to whole tokens: an unanchored substring test accepts a `/Title` truncated mid-word, which is both a false accept and worse than the fallback it beats.
 
 ## Coding Conventions
@@ -336,7 +336,8 @@ fails its day — `store_publication()` merges, so the retry is idempotent. The 
 its day into a retry on every run; that is loud (an ERROR and a
 `SyncReport.errors` line each time) where the alternative was silent.
 
-*A day the source will not serve is refused, not walked* (#96, #105).
+*A day the source will not serve in one session is partitioned, not walked*
+(#96, #105).
 PubMed's search backend serves only the first 9,999 records of a history
 session: `retstart=9999` is HTTP 400, and — the half that matters — a page
 whose window crosses the boundary is clamped to it *silently*, so "walk as far
@@ -346,20 +347,74 @@ edge case: a record carrying only a year and a month is indexed at day 1 of
 it, so every first-of-month day other than 1 January holds 49,543–90,571
 records and every 1 January 212,439–315,282, against a median ordinary day of
 4,890. Such a day cannot be
-`completed` — that would durably lose the remainder — so it is `failed` and
-re-offered on every run, which makes the only live question what the doomed
-run costs: fetching the reachable 9,999 first would re-fetch them forever
-(~3 GB per run across a six-year backfill, storing nothing new after the
-first), so the day is refused on the count alone. Issue #105 is what makes
-those days fetchable. The guard covers a cap NCBI *raises*, loudly; it does
-**not** reliably cover one NCBI *lowers*, because for a band up to
-`EFETCH_PAGE_SIZE` wide no page is ever requested past the new limit and the
-day completes on a shortfall note instead — the sampler is the guard there,
-and `docs/DECISIONS.md` has the measured band. The stride is *not* the defect #96 suspected: `retstart`
-indexes the session's UID list, measured against esearch's own `IdList`, so
-advancing by what arrived would re-request the tail of every short page and
-count the duplicates as delivery — which is exactly what would hide a real
-shortfall from `reconcile_delivery`.
+`completed` from one session — that would durably lose the remainder — so it
+is split into **Entrez-date (`[EDAT]`) ranges** that each fit: the fixed root
+`1900/01/01–2100/12/31`, recursively halved, planned in full before a record
+is fetched, then each part walked as an ordinary day with its own session and
+its own reconcile, and the day's total reconciled against the day's own count
+afterwards. A range and not a facet because disjointness and coverage must be
+*structural* — a record carries several publication types, so `AND pt`
+double-fetches and inflates delivery past the day's own count, hiding the
+shortfall the reconcile exists to catch. Measured: 242,216 records → 37 parts,
+depth 13, 40 planning ESearches, parts summing exactly, no stuck Entrez date
+in six walks over five real days. The cost is stated rather than flagged off:
+~580 requests and ~1 GB for such a day, ~6.2M records and ~25 GB **once**
+across a six-year backfill — against the refusal it replaces, which re-offered
+those days forever and stored nothing. Only the 40 planning ESearches above are
+measured, and only for the ladder *as it was measured*: it now spends one more
+probe per derived-zero right child and per single-date leaf it reaches (+3 on a
+synthetic 64-part day; not re-measured live). No session ESearch was ever
+issued, so the one-per-part session call (~37, arithmetic over the measured
+part count) joins the EFetch pages and the byte figures (arithmetic over *those*
+at ~4 KB a record) as unmeasured; no full fetch of such a day has ever been run
+— do not quote any of them as measured. The pages are **~503, bounded 485–521**,
+not 485: `_walk_session` pages *per part*, so the day costs the sum of
+`ceil(nᵢ/500)` over 37 parts, and 485 is the floor one single session would
+have cost.
+Parts are checkpointed in `download_day_parts` (same transaction as their
+records, so a checkpoint never attests to records a rollback discarded), which
+is what makes an interrupted day resumable and what forced the per-part flush
+a 242k-record day needs anyway; a part is skipped only if its stored count
+still matches, and a skipped part must be credited or every resumed day fails
+its own day-total check. **Flushing and checkpointing are different
+questions** and one callback carries both (`PartCheckpoint | None`): every
+part that finished walking has its records stored, since that flush is the
+memory bound and a bound conditional on the source behaving is not one, while
+only a part that reconciled clean earns a checkpoint — checkpointing a noted
+part would let a later run skip it and manufacture the records the note was
+reporting missing. **Two of bmlib's own counts never settle in favour of the
+weaker one**, and that rule is applied at all three scales: a part whose own
+session count falls below `SHORTFALL_FAILURE_RATIO` of what planning measured
+fails the day rather than being walked at the lower number and checkpointed as
+clean (it was once written as exactly `== 0`, which let a part collapsing
+5,000 → 1 pass); a **day**-level count of 0 contradicted by this day's own
+checkpoints fails rather than completing at zero and deleting them; and a
+single Entrez date is *measured* before the day is refused on it, since a
+right-hand child's count is derived by subtraction and the surplus of a stale
+parent walks down the empty tail to a future date claiming tens of thousands of
+records. A derived right-hand count of zero is measured for the same reason and
+is the one derivation that cannot heal: any other error still yields a part,
+and a part re-counts itself when its session opens, but a zero yields no part
+at all, so the range is never visited. A planning ESearch that fails returns a
+failed `FetchResult` like the under-cap path rather than raising.
+`SourceDescriptor.resumable` gates the new keywords,
+defaulting `False` because `register_source()` is public — and a descriptor
+declaring `True` over a fetcher that cannot accept them is refused at
+registration, since `sync()` reads the descriptor and the mismatch otherwise
+failed every day of that source on every run, forever. The one case left is
+a **single Entrez date** over the cap, which cannot be split further: that day
+is still refused, naming the date and a count that was measured — and it is not the structural
+population the month firsts were. A cap NCBI *raises* now costs unnecessary
+partitioning rather than a refusal — requests, not records, and quietly, where
+it used to be an ERROR; one NCBI *lowers* is still **not** reliably covered,
+because for a band up to `EFETCH_PAGE_SIZE` wide no page is ever requested
+past the new limit and the part completes on a shortfall note instead — the
+sampler is the guard there (`--partition` is what re-measures the ladder), and
+`docs/DECISIONS.md` has the measured band. The stride is *not* the defect #96
+suspected: `retstart` indexes the session's UID list, measured against
+esearch's own `IdList`, so advancing by what arrived would re-request the tail
+of every short page and count the duplicates as delivery — which is exactly
+what would hide a real shortfall from `reconcile_delivery`.
 
 Finally, *the rule refuses to guess its own inputs* (#98, #99).
 `DownloadDay.from_dict()` raises rather than defaulting an absent
@@ -370,7 +425,20 @@ since that row describes a fetch that has just happened. Every rejection
 there is a `ValueError` **naming the field**: delegating to `_parse_datetime`
 let a non-string escape as `TypeError`, so the documented `except ValueError`
 did not catch it, and an unreadable string reported `Invalid isoformat
-string: ''`, which names neither column nor row.
+string: ''`, which names neither column nor row. `PartCheckpoint` is held to
+the same bar for the same reason — it is read back on the same path, before
+the per-day handler is entered — so `from_dict()` goes through
+`_require_text` / `_require_count` rather than `str()` and `int()`, which
+accepted everything: `str(None)` is the literal `"None"`, and a `part_key`
+reading `"None"` matches no plan, so resume degrades to re-fetching every
+unfinished day with nothing raised. `__post_init__` refuses what cannot
+describe a finished part, but deliberately imposes no `record_count <=
+promised` rule: `promised` counts record elements the server delivered and
+`record_count` those the fetcher parsed, so the two are not commensurable —
+the conflation `_EFetchPage` exists to prevent. And the read itself is
+guarded, since `_load_day_parts` runs *before* the per-day handler: an
+unreadable row fails its day rather than escaping `sync()` and leaving the
+whole multi-source run with no `SyncReport` at all.
 
 And `sync()` validates `date_from`, `date_to` and `recheck_days` at its
 entry, because anything raised out of day selection escapes a `try` carrying

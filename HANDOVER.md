@@ -1,105 +1,95 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-20. **0.10.0 is released and on PyPI**; two changes sit
-on `main` unreleased (#73's atomic template install, PR #102) and on this
-branch (#96/#105, below). All five version places agree.
+_Last updated: 2026-08-21. **0.10.0 is released and on PyPI**; three changes
+sit unreleased — #73's atomic template install (PR #102, on `main`), #96/#105's
+containment (PR #106, on `main`), and **#105's actual fix, on
+`fix/105-partition-over-cap-pubmed-days`**. All five version places agree at
+0.10.0.
 
-**This session closed #96 and found #105 doing it.** #96 asked whether
-`fetch_pubmed`'s fixed-stride page walk skips records. Measured against the
-live API, it does not — `retstart` indexes the session's UID list, so a page's
-record elements are exactly the slice it named, and **the fix the issue
-proposed would have been the defect**: advancing by what arrived re-requests
-the tail of every short page and counts the duplicates as delivery, which is
-what would hide a real shortfall from `reconcile_delivery`.
+**This session closed #105, and with it #107.** A PubMed day larger than 9,999
+records — every first-of-month and every 1 January under `[Date - Publication]`,
+because a record carrying only a year and a month is indexed at day 1 of it —
+used to be **refused outright**, so its records were simply absent. Last
+session shipped that refusal as deliberate containment and said so; this one
+replaces it. **"No publication is missed" now holds for every day-size the cap
+used to refuse** — which is a statement about the cap, not a promise that a day
+arrives whole. Two things still qualify it, both stated where they are decided:
+a single Entrez date over the cap cannot be split and is still refused, and a
+walk that comes up short while clearing `SHORTFALL_FAILURE_RATIO` completes the
+day on a note here exactly as it does for every other source.
 
-The same probes found that NCBI's backend serves only the **first 9,999
-records of a history session** — `retstart=9999` is HTTP 400, and a page
-crossing the boundary is clamped to it *silently* (499 records at HTTP 200,
-no notice). Under `[Date - Publication]`, the field bmlib queries, that is a
-second population rather than a tail: **0 of 58 ordinary days are over the
-cap, 16 of 16 month firsts and 1 Januarys are**, up to 315,282 records,
-because a record carrying only a year and a month is indexed at day 1 of it.
-Such a day is now refused on ESearch's count — it was already failing, on an
-inscrutable `400 Bad Request` twenty requests later — and **nothing is fetched
-for it**, the maintainer's call: storing the reachable 9,999 once would
-re-fetch them forever, ~3 GB a run across a six-year backfill. **That is
-containment, not a fix. #105 is the fix**, and until it lands "no publication
-is missed" is false — roughly one unfetchable day a month, plus a very large
-one a year.
+**PR #114 was then reviewed and the findings fixed in the same branch.** Six
+of them were durable silent losses of the kind this whole family of rules
+exists to prevent, each reproduced end to end before being fixed and each now
+pinned: a derived count of zero dropping a range nobody had counted; a part
+whose own count collapsed to a small non-zero number being checkpointed as
+clean (the guard was written as exactly `== 0`); a day-level zero sealing a
+partially-fetched day *and deleting its checkpoints*; a part's session ESearch
+failing with no test and no cause reported; a malformed part row escaping
+`sync()` and taking the whole run's `SyncReport`; and a day refused on a
+count no ESearch had returned. Four mutations that had survived the entire
+suite now fail it. Details in `docs/DECISIONS.md` under the #96/#105 section
+and in `CHANGELOG.md`.
 
-A review round then found two false claims in the write-up and four ways the
-sampler could print a wrong finding. The claims mattered most: the register
-said the change "moves no day from success to failure", but a day of *exactly*
-10,000 records never asks past `retstart=9500`, so it met no 400 — it walked to
-its end, was silently clamped to 9,999 delivered, cleared the shortfall floor
-and was recorded `completed`, losing one record durably. The guard closes a
-silent loss, not just an unhelpful message. And "if NCBI lowers the cap the 400
-still fires" is false for a band up to `EFETCH_PAGE_SIZE` wide (simulated at a
-cap of 4,750: counts 4,751–5,000 all completed, losing up to 250 records each);
-the sampler, not the guard, is what detects a moved cap. On the sampler: any
-400 was read as the boundary rather than only the one naming `retstart`; one
-`<DeleteCitation>` holds many PMIDs and reading the first printed "NOT the
-slice", which would have argued for exactly the stride change #96 was closed
-for refusing; an E-utilities error document carrying `<Count>0</Count>` counted
-as a small day; and there was no `UNMEASURED_SHARE_ERROR_THRESHOLD` gate and no
-429 retry, both of which the sibling samplers have and `_sampling` exists to
-hold. All fixed, each with a named regression test; 19 mutations, 19 caught. A simplification pass then split
-`main()` three ways, folded the duplicated esearch preamble out of `_count`
-and `_session`, and retired a `dict` subclass in the tests — all verified
-byte-identical in stdout and exit status against the pre-change sampler across
-13 scenarios — and turned up one inconsistency of its own: the straddle
-probe's "served whole" verdict printed "re-run" and then exited 0. Both
-disagreement branches now fail the run.
+The mechanism is a recursion over **Entrez-date ranges**: `[lo, mid]` and
+`[mid+1, hi]` tile `[lo, hi]` as arithmetic and every record carries exactly
+one Entrez date, so the parts are disjoint and covering *by construction* —
+the property no facet has. A publication type or MeSH term can co-occur on one
+record, so those parts would overlap, double-fetch, and inflate delivery past
+the day's own count, which is precisely what would hide a real shortfall from
+`reconcile_delivery`. The design was **probed live before it was written**, and
+the probe is the reason to trust it: on three real over-cap days the root range
+covered the day exactly, the halves tiled with no residue, and 36–37 parts at
+depth 13 cost 40 ESearches to plan. The whole design doc is
+[`docs/superpowers/specs/2026-08-21-pubmed-day-partitioning-design.md`](docs/superpowers/specs/2026-08-21-pubmed-day-partitioning-design.md).
 
-Three method lessons from it, all cheap to repeat:
+**A partitioned day is resumable, and that fell out of a latent bug rather than
+a wish.** `sync()` buffered a *whole day* in memory before storing it, and the
+comment at that buffer already named the limit partitioning was about to meet —
+"if a source ever delivers far larger days, flush in chunks here". A
+242,216-record day is not tens of MB. So the chunked flush was required
+regardless, the part is the natural chunk, and that is what makes the
+checkpoint trustworthy rather than merely convenient: **a part's rows and its
+checkpoint commit in one transaction**, so a checkpoint can never attest to
+records a rollback discarded. New table `download_day_parts`, created by
+`ensure_schema()` with no migration; opt-in per fetcher via
+`SourceDescriptor.resumable`, default `False`, because `register_source()` is
+public and an unexpected keyword would turn a working third-party source into a
+failed day.
 
-- **Measure the field the code queries, not the one the concept suggests.**
-  Sampling `[EDAT]` gives 4 of 120 days over the cap, none above 12,096 — a
-  reassuring number that blames load spikes for what the indexing convention
-  does, and whose largest day is 26× smaller than the right field's 315,282.
-  bmlib queries `[Date - Publication]`.
-- **An issue's proposed fix is a hypothesis, not a spec.** #96's was
-  plausible, would have passed review, and is now pinned against by two tests.
-- **Ask the live API where its limits are before hard-coding one.** Both
-  halves of this limit were undocumented in NCBI's parameter tables and are
-  stated only in the error body — including the silent clamp, which no
-  documentation mentions at all.
+**Three fail-closed rules were added by review, not by design**, and each closes
+a durable silent loss the first cut had:
 
-`scripts/sample_efetch_paging.py` re-runs the three **session** measurements
-above in a fixed 23 requests (`--skip-day-sizes`), reporting
-`agrees`/`DISAGREES` against `EFETCH_MAX_RETRIEVABLE`; the day-size populations
-need a full run (~150 requests). Run it before touching that constant or the
-page walk — it is also the only thing that detects a cap NCBI *lowers*, which
-the guard itself does not reliably catch (see `docs/DECISIONS.md`).
+- A part is **not checkpointed if its reconciliation returned a note.** Storing
+  a short part at its full promise, then crediting that promise on resume, made
+  the day reconcile clean and complete — records gone for good, with no note on
+  any returned `FetchResult`.
+- A part is **not checkpointed if any of its records failed to store.**
+  `_store_records` swallows a record's exception, so the checkpoint would
+  otherwise commit beside the gap and the retry would skip the part holding the
+  missing record.
+- `_plan_partitions` takes a **`known_count`**, so a part whose session count
+  disagrees with a fresh planning count is split rather than re-queued
+  unchanged. Without it that is an unbounded ESearch loop against NCBI.
 
-**Before that, #73 shipped to `main` in PR #102** (merged 2026-08-16,
-unreleased): `install_defaults()` writes through `atomic_write()`, promoted
-out of `fulltext/cache.py` into the new top-level private `bmlib/_atomic.py`
-because the same defect had been found twice. **A new writer of user-visible
-files uses that helper** rather than re-deriving five details that each cost a
-review round (CLAUDE.md, "A file bmlib writes for a user is published, never
-written in place"). Its review is worth reading before the next call site:
-every finding was a cost of the *publish* rather than of the bug it fixed —
-`os.replace` swaps a dangling symlink instead of writing through it, the
-failing syscall names the temporary file the cleanup then deletes, and two
-documented contracts turned out to be pinned by nothing. That last one
-generalises: **test a new call site for the publish, not just for the
-tidy-up** — with nothing to overwrite, an in-place write that unlinks on
-failure is indistinguishable after the fact, so assert on the instant
-`os.replace` is called.
+**`scripts/sample_efetch_paging.py --partition` is the standing evidence**, and
+it deliberately does not import the ladder it measures — a corpus labelled by
+the rule under test can only confirm that rule. Its first live run agreed
+exactly: 3 of 3 days EXACT, zero stuck Entrez dates, exit 0, with 2024/01/01
+reproducing the design's own 242,216 records / 37 parts / depth 13 / 40 calls.
 
-**Tell downstreams what the version number cannot**: 0.10.0 is a minor bump on
-the API axis alone and nothing stored moves — but no `download_days` row a
-previous release wrote is durable under #95's rule, so the **whole window is
-re-fetched once on the first run after upgrading** (29 of 29 days measured for
-a 30-day window, per source). Idempotent and self-correcting, but long for a
-wide window and capable of meeting a rate limiter. When the next release is
-cut, #105's refusal joins that list: a PubMed backfill will report one failed
-day a month that earlier releases failed just as surely, but less legibly.
+**Tell downstreams what the version number cannot.** This change moves nothing
+stored, but the first run after it lands **fetches days that previously
+returned nothing**: about 562 requests and ~1 GB for a 242,000-record day, and
+a six-year backfill window holds some 72 such days — roughly 6.2M records and
+~25 GB, **once**, where the previous behaviour re-offered them forever and
+stored nothing. Both figures are part measured, part arithmetic, and
+`CHANGELOG.md` says which is which. 0.10.0's own one-off re-fetch of the whole
+sync window (#95) still applies on top.
 
-**Next up is an open issue — #105 is the substantial one and needs a design
-conversation — or Phase 3 of the bmlibrarian port, whose every row needs one
-too.** See "Next up"._
+**Next up is one of the four remaining open issues, or Phase 3 of the
+bmlibrarian port, whose every row needs a design conversation.** None of the
+four loses records. See "Next up"._
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -138,18 +128,17 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed six releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2257 passing + 59 skipped** on `fix/96-efetch-paging`
-  (`uv run pytest tests/ -q`); 2187 on `main`, the 70 being this session's (9
-  in `test_pubmed_fetcher.py`, 61 in the new `test_efetch_paging_sampler.py`),
-  and 2172 at 0.10.0, the 15 before that being #73's. The PostgreSQL figure is
-  **derived, not measured**: nothing on this branch reaches a database — #73
-  touches `templates/`, `fulltext/cache.py` and `_atomic.py`, and #96/#105
-  touch `fetchers/pubmed.py` and a script — and CI runs that half against
-  `postgres:16` regardless, so with `BMLIB_TEST_POSTGRESQL_DSN` set the 57
-  PostgreSQL parameterisations run instead of skipping: **2314 + 2**. 57 of the default skips
-  are the PostgreSQL parameterisations of `tests/test_backends.py`; 1 is a
-  PostgreSQL-only schema test; 1 is `test_pymupdf_requires_dependency`, which
-  runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev
+- **Tests: 2374 passing + 63 skipped** on
+  `fix/105-partition-over-cap-pubmed-days` (`uv run pytest tests/ -q`); **2257
+  + 59** on `main`, so 117 are this branch's. (The 2187 previously recorded
+  here was `main` *before* PR #106 merged #96's 70 tests, which made the stated
+  delta double-count them; both numbers were re-measured in a worktree at the
+  merge-base.) With `BMLIB_TEST_POSTGRESQL_DSN` set the whole suite is **2435
+  passing + 2 skipped** — measured, not derived, because this branch adds SQL
+  and the PostgreSQL half had to run. Of the 63
+  default skips, 61 are the PostgreSQL parameterisations, 1 is a
+  PostgreSQL-only schema test, and 1 is `test_pymupdf_requires_dependency`,
+  which runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev
   venv** (PR #55 did it so the extraction tests run locally).
 - **Run the PostgreSQL half locally — it is two minutes and it finds real
   bugs.** Postgres.app ships the binaries. The socket directory must be a
@@ -203,27 +192,21 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Five, every one found by review or measurement rather than by a failing test.
-(**#56, #68, #72 and #79** shipped in 0.9.1. **#78, #81, #88–#91, #95, #98 and
-#99** shipped in 0.10.0 — PRs #85, #87, #93, #97, #100. **#73** is on `main`
-unreleased, in **PR #102**, whose own review filed **#103**. **#96** closes
-with this session's PR, as correct rather than as fixed.)
-
-**#105 — a PubMed day over 9,999 records cannot be fetched at all**, filed
-with the containment rather than after it. NCBI serves only the first 9,999
-records of a history session, and neither ESearch nor EFetch will page past
-that depth, so the day has to be **partitioned into sub-queries that each
-fit** — any predicate P splits it into `AND P` / `NOT P`, disjoint and
-covering, so the mechanism is a recursion over a facet ladder. Four things
-whoever takes it should settle by measurement, not by eye: which facets (a 1
-January day is 30× the cap, so a two-way split is nowhere near enough);
-what happens when the ladder is exhausted and a part is still over (failing
-the day keeps today's behaviour as the floor); how the parts reconcile
-against the day's own count rather than each against its own; and whether the
-daily-update FTP baseline files are simply the better route for bulk
-backfill. `scripts/sample_efetch_paging.py` sizes days and would want a mode
-that sizes a partition. **This is the one open issue that loses records**, so
-it outranks the other four.
+Four, every one found by review or measurement rather than by a failing test,
+and **none of them loses records**. (**#56, #68, #72 and #79** shipped in 0.9.1.
+**#78, #81, #88–#91, #95, #98 and #99** shipped in 0.10.0 — PRs #85, #87, #93,
+#97, #100. **#73** is on `main` unreleased in PR #102, whose own review filed
+**#103**. **#96** closed with PR #106, as correct rather than as fixed.
+**#105 and #107** close with this session's PR — #107 dissolved rather than
+being built: its saturation of `SyncReport.errors` came from a permanent,
+structural refusal that no longer happens. What remains of it is much smaller
+and is recorded in `docs/DECISIONS.md`: an Entrez date that alone exceeds the
+cap still fails its day permanently, but that is not a structural population —
+none of the six ladder walks, over five distinct real over-cap days, found
+one — so `errors`
+returns to empty in the ordinary case. If a later sampler run finds stuck dates
+are common, #107's `blocked` field is the right answer and the issue should be
+reopened.)
 
 **#103 — `install_defaults()` reserves no `NAME_MAX` headroom for the
 temporary name.** `atomic_write()` stages through a name 38 characters longer

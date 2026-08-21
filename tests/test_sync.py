@@ -20,16 +20,38 @@ from __future__ import annotations
 
 import sys
 from datetime import UTC, date, datetime, timedelta
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bmlib.db import connect_sqlite, execute, fetch_all, fetch_one
+from bmlib.db import connect_sqlite, execute, fetch_all, fetch_one, fetch_scalar
 from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.publications.fetchers import ALL_SOURCES
-from bmlib.publications.models import FetchedRecord, FetchResult
+from bmlib.publications.fetchers.pubmed import EFETCH_URL, ESEARCH_URL, fetch_pubmed
+from bmlib.publications.models import (
+    FetchedRecord,
+    FetchResult,
+    PartCheckpoint,
+    SyncReport,
+)
 from bmlib.publications.schema import ensure_schema
 from bmlib.publications.storage import get_publication_by_doi
-from bmlib.publications.sync import _day_was_over_when_fetched, _days_needing_fetch, sync
+from bmlib.publications.sync import (
+    _clear_day_parts,
+    _day_was_over_when_fetched,
+    _days_needing_fetch,
+    _load_day_parts,
+    _record_day_part,
+    _source_is_resumable,
+    _store_records,
+    sync,
+)
+
+# ``bmlib.publications`` re-exports the sync *function* under its submodule's
+# own name, so ``from bmlib.publications import sync`` — and pytest's dotted
+# ``monkeypatch.setattr`` target, which resolves the same way — both land on
+# the function. ``sys.modules`` reaches the module the spies below patch.
+_SYNC_MODULE = sys.modules["bmlib.publications.sync"]
 
 
 def _fresh_conn():
@@ -85,6 +107,11 @@ def _make_fake_fetcher(records):
         )
 
     return fake_fetcher
+
+
+def _record(pmid):
+    """Return a minimal :class:`FetchedRecord` identified only by *pmid*."""
+    return FetchedRecord(title=f"Paper {pmid}", pmid=pmid, source="pubmed")
 
 
 def _sample_raw_record(doi="10.1234/test.001", title="Test Paper", source="pubmed"):
@@ -1854,3 +1881,718 @@ class TestAWindowReachingIntoTheFutureSaysSo:
         )
 
         assert report.notes == []
+
+
+class TestDayPartCheckpoints:
+    """Checkpoints are what makes a very large day resumable."""
+
+    def test_a_checkpoint_round_trips(self):
+        conn = connect_sqlite(":memory:")
+        ensure_schema(conn)
+        cp = PartCheckpoint(
+            part_scheme="edat-range",
+            part_key="edat:2023-04-10:2023-08-31",
+            promised=9375,
+            record_count=9375,
+        )
+
+        _record_day_part(conn, "pubmed", date(2024, 1, 1), cp)
+
+        assert _load_day_parts(conn, "pubmed", date(2024, 1, 1)) == {cp.part_key: cp}
+
+    def test_recording_the_same_part_twice_updates_rather_than_duplicates(self):
+        conn = connect_sqlite(":memory:")
+        ensure_schema(conn)
+        key = "edat:2023-04-10:2023-08-31"
+        _record_day_part(
+            conn, "pubmed", date(2024, 1, 1), PartCheckpoint("edat-range", key, 10, 10)
+        )
+        _record_day_part(
+            conn, "pubmed", date(2024, 1, 1), PartCheckpoint("edat-range", key, 12, 12)
+        )
+
+        stored = _load_day_parts(conn, "pubmed", date(2024, 1, 1))
+
+        assert len(stored) == 1
+        assert stored[key].promised == 12
+
+    def test_parts_are_scoped_to_their_source_and_day(self):
+        conn = connect_sqlite(":memory:")
+        ensure_schema(conn)
+        cp = PartCheckpoint("edat-range", "edat:2023-04-10:2023-08-31", 1, 1)
+        _record_day_part(conn, "pubmed", date(2024, 1, 1), cp)
+
+        assert _load_day_parts(conn, "pubmed", date(2024, 1, 2)) == {}
+        assert _load_day_parts(conn, "biorxiv", date(2024, 1, 1)) == {}
+
+    def test_clearing_removes_only_that_day(self):
+        conn = connect_sqlite(":memory:")
+        ensure_schema(conn)
+        cp = PartCheckpoint("edat-range", "edat:2023-04-10:2023-08-31", 1, 1)
+        _record_day_part(conn, "pubmed", date(2024, 1, 1), cp)
+        _record_day_part(conn, "pubmed", date(2024, 1, 2), cp)
+
+        _clear_day_parts(conn, "pubmed", date(2024, 1, 1))
+
+        assert _load_day_parts(conn, "pubmed", date(2024, 1, 1)) == {}
+        assert _load_day_parts(conn, "pubmed", date(2024, 1, 2)) == {cp.part_key: cp}
+
+    def test_a_day_split_into_several_parts_returns_every_one(self):
+        """The whole point of this table: a day is more than one part.
+
+        A test that only checked ``len(stored) == 3`` would still pass if
+        ``_load_day_parts`` collapsed every row onto one key — so this
+        checks each part is present under its own key, with its own
+        ``promised``/``record_count``, not merely that the count is right.
+        """
+        conn = connect_sqlite(":memory:")
+        ensure_schema(conn)
+        day = date(2024, 1, 1)
+        first = PartCheckpoint("edat-range", "edat:2023-01-01:2023-04-30", 8000, 8000)
+        second = PartCheckpoint("edat-range", "edat:2023-05-01:2023-08-31", 9375, 9200)
+        third = PartCheckpoint("edat-range", "edat:2023-09-01:2023-12-31", 7500, 7500)
+        _record_day_part(conn, "pubmed", day, first)
+        _record_day_part(conn, "pubmed", day, second)
+        _record_day_part(conn, "pubmed", day, third)
+
+        stored = _load_day_parts(conn, "pubmed", day)
+
+        assert stored == {
+            first.part_key: first,
+            second.part_key: second,
+            third.part_key: third,
+        }
+
+
+class TestWhichSourcesMayBeResumed:
+    """`sync()` may only pass the resume keywords to a source that declares them."""
+
+    def test_a_source_that_declares_itself_resumable(self):
+        assert _source_is_resumable("pubmed") is True
+
+    def test_a_source_that_does_not_declare_itself_resumable(self):
+        assert _source_is_resumable("biorxiv") is False
+
+    def test_an_unregistered_source_is_not_resumable(self):
+        """It must answer, not raise.
+
+        `sync()` asks before it looks at ``_fetcher_override``, so a name the
+        registry has never heard of reaches this — and an exception here would
+        escape the per-day handler and take the whole run's report with it.
+        """
+        assert _source_is_resumable("no_such_source_exists") is False
+
+
+class TestAnUnreadableCheckpointCostsADayNotTheRun:
+    """The part read runs before the per-day handler is entered.
+
+    `sync()`'s source loop carries only a `finally` that closes the client, so
+    anything raised outside the per-day `try` leaves `sync()` without
+    returning a `SyncReport` at all — every source's work in that run becomes
+    unreportable. The rule this module already applies to `_source_is_resumable`
+    one line above, applied to the database read beside it.
+
+    Failing *safe* rather than closed, uniquely here: unreadable checkpoints
+    mean "nothing may be skipped", which costs a re-fetch of that day, and
+    `store_publication` merges. Failing closed would let one corrupt row stop
+    a source's days from ever being fetched.
+    """
+
+    def test_a_read_failure_fails_the_day_and_still_returns_a_report(self):
+        conn = _fresh_conn()
+        day = date.today() - timedelta(days=3)
+
+        def exploding_load(*_args, **_kwargs):
+            raise RuntimeError("connection reset while reading download_day_parts")
+
+        with patch("bmlib.publications.sync._load_day_parts", exploding_load):
+            report = sync(
+                conn,
+                sources=["pubmed"],
+                date_from=day,
+                date_to=day,
+                _fetcher_override={"pubmed": _make_fake_fetcher([_record("1")])},
+            )
+
+        assert isinstance(report, SyncReport)
+        assert report.errors
+        assert "download_day_parts" in report.errors[0]
+        assert (
+            fetch_scalar(
+                conn,
+                "SELECT status FROM download_days WHERE source = ? AND date = ?",
+                ("pubmed", day.isoformat()),
+            )
+            == "failed"
+        )
+
+    def test_an_unreadable_row_does_not_let_a_later_run_skip_its_part(self):
+        # The reason it fails the day rather than proceeding with no
+        # checkpoints: a day fetched as if from scratch is correct, but
+        # recording it `completed` on a run that could not read what an
+        # earlier run had already stored would be recording success over an
+        # unknown. The day is re-offered instead.
+        conn = _fresh_conn()
+        day = date.today() - timedelta(days=3)
+        execute(
+            conn,
+            "INSERT INTO download_day_parts (source, date, part_scheme, part_key,"
+            " promised, record_count, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("pubmed", day.isoformat(), "edat-range", "edat:a:b", "?", 5, "2026-08-20T00:00:00"),
+        )
+        conn.commit()
+
+        report = sync(
+            conn,
+            sources=["pubmed"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"pubmed": _make_fake_fetcher([_record("1")])},
+        )
+
+        assert isinstance(report, SyncReport)
+        assert report.errors
+        assert (
+            fetch_scalar(
+                conn,
+                "SELECT status FROM download_days WHERE source = ? AND date = ?",
+                ("pubmed", day.isoformat()),
+            )
+            == "failed"
+        )
+
+
+class TestSyncResumesAPartitionedDay:
+    """The flush boundary and the checkpoint boundary are the same boundary."""
+
+    @staticmethod
+    def _fetcher(parts, *, fail_after=None, short=()):
+        """A fake resumable fetcher emitting *parts* as (key, [record, ...]).
+
+        Mirrors the two part-level rules `fetch_pubmed` really applies: a part
+        is skipped only while its stored checkpoint still promises what this
+        run's plan reports for it, and a part named in *short* is reported
+        with ``None`` rather than a checkpoint — which is what the real
+        fetcher does for a part that reconciled short of its own promise:
+        flush the records, checkpoint nothing.
+        """
+        short = set(short)
+
+        def fetch(
+            client,
+            day,
+            *,
+            on_record,
+            on_progress=None,
+            completed_parts=None,
+            on_part_finished=None,
+            on_part_skipped=None,
+            **config,
+        ):
+            completed_parts = completed_parts or {}
+            emitted = 0
+            for index, (key, records) in enumerate(parts):
+                prior = completed_parts.get(key)
+                if prior is not None and prior.promised == len(records):
+                    if on_part_skipped is not None:
+                        on_part_skipped(key)
+                    continue
+                for record in records:
+                    on_record(record)
+                    emitted += 1
+                if fail_after is not None and index == fail_after:
+                    return FetchResult(
+                        source="pubmed",
+                        date=day.isoformat(),
+                        record_count=emitted,
+                        status="failed",
+                        error="part exploded",
+                    )
+                if on_part_finished is not None:
+                    on_part_finished(
+                        None
+                        if key in short
+                        else PartCheckpoint("edat-range", key, len(records), len(records))
+                    )
+            return FetchResult(
+                source="pubmed", date=day.isoformat(), record_count=emitted, status="completed"
+            )
+
+        return fetch
+
+    @staticmethod
+    def _sync(conn, fetcher):
+        """Run one day of ``pubmed`` through *fetcher*."""
+        return sync(
+            conn,
+            date_from=date(2024, 1, 1),
+            date_to=date(2024, 1, 1),
+            sources=["pubmed"],
+            email="t@example.com",
+            _fetcher_override={"pubmed": fetcher},
+        )
+
+    def test_a_failed_day_keeps_the_parts_that_finished(self):
+        conn = _fresh_conn()
+        parts = [("edat:a:a", [_record("1")]), ("edat:b:b", [_record("2")])]
+
+        self._sync(conn, self._fetcher(parts, fail_after=1))
+
+        stored = _load_day_parts(conn, "pubmed", date(2024, 1, 1))
+        assert set(stored) == {"edat:a:a"}, "the finished part survives the failed day"
+        # The un-checkpointed tail is still stored — the day is retried, and
+        # `store_publication` merges, so nothing is lost either way.
+        assert fetch_scalar(conn, "SELECT COUNT(*) FROM publications") == 2
+        row = fetch_one(
+            conn,
+            "SELECT status FROM download_days WHERE source = ? AND date = ?",
+            ("pubmed", "2024-01-01"),
+        )
+        assert row["status"] == "failed"
+
+    def test_a_completed_day_drops_its_part_rows(self):
+        conn = _fresh_conn()
+        parts = [("edat:a:a", [_record("1")]), ("edat:b:b", [_record("2")])]
+
+        self._sync(conn, self._fetcher(parts))
+
+        assert _load_day_parts(conn, "pubmed", date(2024, 1, 1)) == {}
+        assert fetch_scalar(conn, "SELECT COUNT(*) FROM publications") == 2
+
+    def test_the_buffer_is_emptied_per_part_not_per_day(self, monkeypatch):
+        """Peak memory is one part, not one day — the point of the whole change.
+
+        A 240,000-record day is what forces this; the assertion is on the
+        *batch sizes* handed to the store, since that is the buffer's high
+        water mark. The trailing empty batch is the per-day store, which still
+        runs and finds nothing left.
+        """
+        conn = _fresh_conn()
+        batches: list[int] = []
+
+        def spy(conn_, source, day, records):
+            batches.append(len(records))
+            return _store_records(conn_, source, day, records)
+
+        monkeypatch.setattr(_SYNC_MODULE, "_store_records", spy)
+        parts = [
+            ("edat:a:a", [_record("1"), _record("2")]),
+            ("edat:b:b", [_record("3")]),
+        ]
+
+        self._sync(conn, self._fetcher(parts))
+
+        assert batches == [2, 1, 0]
+
+    def test_a_noted_parts_records_are_stored_even_though_it_is_not_checkpointed(self, monkeypatch):
+        """Flushing is unconditional; checkpointing is what a part has to earn.
+
+        The fetcher reports a part that reconciled short with ``None`` rather
+        than a checkpoint. Storing only the checkpointed parts would leave
+        every such part's records in the buffer until some later part
+        reconciled clean, or until the day's closing store — so a degraded
+        source returning 37 noted parts of a 242,216-record day would hold the
+        whole day in memory, the peak this per-part flush exists to remove
+        (#105 review, F1). The batch sizes are asserted as well as the stored
+        rows, because after the day's final store the two implementations are
+        indistinguishable: both leave every record present.
+        """
+        conn = _fresh_conn()
+        batches: list[int] = []
+        checkpointed: list[str] = []
+
+        def store_spy(conn_, source, day, records):
+            batches.append(len(records))
+            return _store_records(conn_, source, day, records)
+
+        def checkpoint_spy(conn_, source, day, checkpoint):
+            checkpointed.append(checkpoint.part_key)
+            _record_day_part(conn_, source, day, checkpoint)
+
+        monkeypatch.setattr(_SYNC_MODULE, "_store_records", store_spy)
+        monkeypatch.setattr(_SYNC_MODULE, "_record_day_part", checkpoint_spy)
+        parts = [
+            ("edat:a:a", [_record("1"), _record("2")]),
+            ("edat:b:b", [_record("3")]),
+        ]
+
+        self._sync(conn, self._fetcher(parts, short={"edat:a:a"}))
+
+        assert batches == [2, 1, 0], "the noted part's records are flushed at its own boundary"
+        assert fetch_scalar(conn, "SELECT COUNT(*) FROM publications") == 3
+        # The day completes, so its part rows are dropped — the checkpoint has
+        # to be observed as it is written rather than read back afterwards.
+        assert checkpointed == ["edat:b:b"], (
+            "the noted part is flushed but must not be checkpointed"
+        )
+
+    def test_a_parts_records_and_its_checkpoint_commit_in_one_transaction(
+        self, tmp_path, monkeypatch
+    ):
+        """Observed from a second connection, at the instant of the checkpoint.
+
+        Afterwards an atomic flush and a store-then-checkpoint pair are
+        indistinguishable — both leave the records and the row present — so
+        the only moment they differ is while the write is in flight. If this
+        part's records are already visible elsewhere when its checkpoint goes
+        in, the two committed separately, and a crash between them would leave
+        a checkpoint attesting to records a rollback discarded.
+        """
+        db = tmp_path / "sync.db"
+        conn = connect_sqlite(db)
+        ensure_schema(conn)
+        observer = connect_sqlite(db)
+        visible_at_checkpoint: list[int] = []
+
+        def spy(conn_, source, day, checkpoint):
+            visible_at_checkpoint.append(
+                fetch_scalar(observer, "SELECT COUNT(*) FROM publications")
+            )
+            _record_day_part(conn_, source, day, checkpoint)
+
+        monkeypatch.setattr(_SYNC_MODULE, "_record_day_part", spy)
+        parts = [("edat:a:a", [_record("1")]), ("edat:b:b", [_record("2")])]
+
+        self._sync(conn, self._fetcher(parts))
+
+        # One record per part: at each checkpoint only the *earlier* parts have
+        # committed, so this part's own record is still uncommitted.
+        assert visible_at_checkpoint == [0, 1]
+        assert fetch_scalar(observer, "SELECT COUNT(*) FROM publications") == 2
+
+    def test_a_part_holding_a_record_that_would_not_store_is_not_checkpointed(self, monkeypatch):
+        """Fully walked is not the same as fully stored.
+
+        ``_store_records`` swallows a per-record failure so one bad record
+        cannot lose the batch, and the day is then recorded ``failed`` and
+        re-offered. Checkpointing the part beside the gap would make that
+        retry *skip* the very part holding it — the record would be lost
+        silently and permanently, which is the whole failure mode the
+        checkpoints are supposed to be safe against.
+        """
+        conn = _fresh_conn()
+        real_store_publication = _SYNC_MODULE.store_publication
+
+        def flaky(conn_, pub, **kwargs):
+            if pub.pmid == "1":
+                raise RuntimeError("this record cannot be stored")
+            return real_store_publication(conn_, pub, **kwargs)
+
+        monkeypatch.setattr(_SYNC_MODULE, "store_publication", flaky)
+        parts = [("edat:a:a", [_record("1")]), ("edat:b:b", [_record("2")])]
+
+        report = self._sync(conn, self._fetcher(parts))
+
+        assert set(_load_day_parts(conn, "pubmed", date(2024, 1, 1))) == {"edat:b:b"}
+        assert any("failed to store" in e for e in report.errors)
+
+    def test_the_day_record_count_covers_parts_an_earlier_run_stored(self):
+        conn = _fresh_conn()
+        _record_day_part(
+            conn, "pubmed", date(2024, 1, 1), PartCheckpoint("edat-range", "edat:a:a", 1, 1)
+        )
+        parts = [("edat:a:a", [_record("1")]), ("edat:b:b", [_record("2")])]
+
+        self._sync(conn, self._fetcher(parts))
+
+        row = fetch_one(
+            conn,
+            "SELECT record_count FROM download_days WHERE source = ? AND date = ?",
+            ("pubmed", "2024-01-01"),
+        )
+        assert row["record_count"] == 2, "the whole day, not this run's share"
+
+    def test_a_day_whose_every_part_was_already_stored_completes_on_the_credit_alone(self):
+        # The state a crash between the last part's checkpoint and the
+        # `download_days` write leaves behind, and a realistic restart
+        # position. Every part is skipped, so this run walks nothing: the
+        # fetcher's own `record_count` is 0 and the day's stored count comes
+        # entirely from the credit. Without that credit the day would record 0
+        # records — or, if the day-total reconcile were reached with nothing
+        # delivered, fail outright.
+        conn = _fresh_conn()
+        parts = [("edat:a:a", [_record("1")]), ("edat:b:b", [_record("2")])]
+        for key, records in parts:
+            _record_day_part(
+                conn,
+                "pubmed",
+                date(2024, 1, 1),
+                PartCheckpoint("edat-range", key, len(records), len(records)),
+            )
+
+        report = self._sync(conn, self._fetcher(parts))
+
+        assert report.errors == []
+        row = fetch_one(
+            conn,
+            "SELECT status, record_count FROM download_days WHERE source = ? AND date = ?",
+            ("pubmed", "2024-01-01"),
+        )
+        assert row["status"] == "completed"
+        assert row["record_count"] == 2, "the whole day, none of which this run walked"
+        assert _load_day_parts(conn, "pubmed", date(2024, 1, 1)) == {}
+
+    def test_a_completed_day_clears_part_rows_for_a_non_resumable_source_too(self):
+        # The delete is deliberately not gated on `resumable`. Gating it would
+        # strand a source's rows the moment its descriptor stopped declaring
+        # it resumable — to resurface if it ever declared it again, letting a
+        # much later run skip parts against a plan that no longer matches.
+        # Every other test of the delete uses `pubmed`, which is resumable, so
+        # none of them can tell a gated delete from an ungated one.
+        conn = _fresh_conn()
+        day = date(2024, 1, 1)
+        _record_day_part(conn, "biorxiv", day, PartCheckpoint("edat-range", "edat:a:a", 1, 1))
+        assert _load_day_parts(conn, "biorxiv", day), "setup: the row must exist to be cleared"
+
+        sync(
+            conn,
+            sources=["biorxiv"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"biorxiv": _make_fake_fetcher([_record("1")])},
+        )
+
+        assert _load_day_parts(conn, "biorxiv", day) == {}
+
+    def test_a_skipped_part_is_credited_at_what_it_stored_not_what_it_promised(self):
+        # `promised` counts the record elements the source delivered;
+        # `record_count` counts those the fetcher parsed and stored. PubMed's
+        # efetch returns `<PubmedBookArticle>` elements the fetcher skips, so
+        # any part carrying a book chapter has `record_count < promised`, and
+        # crediting the wrong one overstates `download_days.record_count` on
+        # every such day. Every other fixture here sets the two equal, which
+        # is exactly what makes them unable to tell the two apart.
+        conn = _fresh_conn()
+        _record_day_part(
+            conn, "pubmed", date(2024, 1, 1), PartCheckpoint("edat-range", "edat:a:a", 2, 1)
+        )
+        # Two delivered elements, so the stored `promised` of 2 still matches
+        # and the part is skipped — but only one of them was ever a record.
+        parts = [("edat:a:a", [_record("1"), _record("2")]), ("edat:b:b", [_record("3")])]
+
+        self._sync(conn, self._fetcher(parts))
+
+        row = fetch_one(
+            conn,
+            "SELECT record_count FROM download_days WHERE source = ? AND date = ?",
+            ("pubmed", "2024-01-01"),
+        )
+        assert row["record_count"] == 2, "the skipped part stored 1, not the 2 it promised"
+
+    def test_a_re_fetched_part_is_not_credited_on_top_of_its_own_records(self):
+        """A part whose count moved is walked again — and must be counted once.
+
+        Such a part is in neither set: it is not skipped (its records were
+        stored by this run) and, having come up short, it is not checkpointed
+        either. Crediting every prior part this run did not checkpoint would
+        add its stored ``record_count`` on top of the records just stored.
+        """
+        conn = _fresh_conn()
+        _record_day_part(
+            conn, "pubmed", date(2024, 1, 1), PartCheckpoint("edat-range", "edat:a:a", 1, 1)
+        )
+        # The part now holds two records where the checkpoint promised one, so
+        # the fetcher re-walks it; `short` makes that re-walk come up short, so
+        # it is not checkpointed.
+        parts = [
+            ("edat:a:a", [_record("1"), _record("2")]),
+            ("edat:b:b", [_record("3")]),
+        ]
+
+        self._sync(conn, self._fetcher(parts, short={"edat:a:a"}))
+
+        row = fetch_one(
+            conn,
+            "SELECT record_count FROM download_days WHERE source = ? AND date = ?",
+            ("pubmed", "2024-01-01"),
+        )
+        assert fetch_scalar(conn, "SELECT COUNT(*) FROM publications") == 3
+        assert row["record_count"] == 3, "the re-fetched part is counted once, not twice"
+
+    def test_a_non_resumable_fetcher_is_called_with_todays_keywords_only(self):
+        """`register_source()` is public, so a fetcher may predate these names.
+
+        The stub deliberately declares **no** ``**kwargs``, so any keyword
+        `sync()` adds for a resumable source — ``completed_parts``,
+        ``on_part_finished``, ``on_part_skipped`` — raises `TypeError` at the
+        call. That is caught by the per-day handler, which turns a working
+        source into a failed day, so an empty ``report.errors`` is what pins
+        the guard. A stub with ``**kwargs`` would absorb the extras and make
+        this a claim about a fetcher that happens to tolerate them.
+        """
+        conn = _fresh_conn()
+        calls: list[date] = []
+
+        def strict(client, day, *, on_record, on_progress=None):
+            calls.append(day)
+            return FetchResult(
+                source="biorxiv", date=day.isoformat(), record_count=0, status="completed"
+            )
+
+        report = sync(
+            conn,
+            date_from=date(2024, 1, 1),
+            date_to=date(2024, 1, 1),
+            sources=["biorxiv"],
+            email="t@example.com",
+            _fetcher_override={"biorxiv": strict},
+        )
+
+        # Without this the assertion below passes vacuously: a fetcher that
+        # was never called also records no errors.
+        assert calls == [date(2024, 1, 1)]
+        assert report.errors == []
+
+
+class TestSyncResumesThroughTheRealPubMedFetcher:
+    """The one seam the per-module fakes cannot cover.
+
+    ``tests/test_sync.py`` drives `sync()` with a fake that re-implements the
+    fetcher's skip rule, and ``tests/test_pubmed_fetcher.py`` drives the real
+    fetcher with hand-built ``completed_parts`` dicts that never reach a
+    database. So no test made a real ``_part_key()`` survive a round trip
+    through ``download_day_parts`` and come back matching a key the planner
+    produces on a later run — which `docs/DECISIONS.md` names as the
+    worst-kind cost of an opaque key, because a mismatch re-fetches every
+    unfinished day in full and **nothing is raised**.
+
+    It also pins the three keyword names, which are spelled independently on
+    the two sides of the call.
+    """
+
+    _DAY = date(2024, 1, 1)
+
+    @staticmethod
+    def _client(distribution, *, break_part=None):
+        """A fake E-utilities backend over an EDAT -> record-count mapping.
+
+        *break_part* is the populated date whose EFetch returns a document
+        `_efetch_page` refuses, which fails that part and so the day.
+        """
+        import itertools
+        import re as _re
+
+        from tests.test_pubmed_fetcher import (
+            MINIMAL_ARTICLE_XML,
+            _make_efetch_xml,
+            _make_esearch_xml,
+        )
+
+        sessions: dict[str, dict] = {}
+        counter = itertools.count(1)
+        calls = {"efetch": 0}
+
+        def span(term):
+            m = _re.search(r'"([\d/]+)"\[EDAT\] : "([\d/]+)"\[EDAT\]', term)
+            if m is None:
+                return None
+            return (
+                datetime.strptime(m.group(1), "%Y/%m/%d").date(),
+                datetime.strptime(m.group(2), "%Y/%m/%d").date(),
+            )
+
+        def count_for(term):
+            s = span(term)
+            if s is None:
+                return sum(distribution.values())
+            lo, hi = s
+            return sum(n for d, n in distribution.items() if lo <= d <= hi)
+
+        def get(url, params=None):
+            params = params or {}
+            response = MagicMock()
+            if url == ESEARCH_URL:
+                key = str(next(counter))
+                count = count_for(params["term"])
+                response.text = _make_esearch_xml(count, query_key=key)
+                s = span(params["term"])
+                days = [d for d in distribution if s[0] <= d <= s[1]] if s is not None else []
+                sessions[key] = {"total": count, "day": days[0] if len(days) == 1 else None}
+                return response
+            if url == EFETCH_URL:
+                calls["efetch"] += 1
+                state = sessions[params["query_key"]]
+                if break_part is not None and state["day"] == break_part:
+                    response.text = "<eFetchResult><ERROR>boom</ERROR></eFetchResult>"
+                    return response
+                n = max(
+                    0,
+                    min(int(params["retmax"]), state["total"] - int(params["retstart"])),
+                )
+                response.text = _make_efetch_xml(*([MINIMAL_ARTICLE_XML] * n))
+                return response
+            raise AssertionError(f"unexpected URL {url}")
+
+        client = MagicMock()
+        client.get.side_effect = get
+        return client, calls
+
+    def _sync(self, conn, client):
+        def fetcher(_client, target_date, **kwargs):
+            return fetch_pubmed(client, target_date, **kwargs)
+
+        return sync(
+            conn,
+            sources=["pubmed"],
+            date_from=self._DAY,
+            date_to=self._DAY,
+            _fetcher_override={"pubmed": fetcher},
+        )
+
+    @patch("bmlib.publications.fetchers.pubmed.time.sleep", lambda *_: None)
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 2)
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 2)
+    def test_a_day_broken_mid_walk_resumes_without_refetching_its_stored_parts(self):
+        distribution = {date(2023, 6, 1) + timedelta(days=i): 2 for i in range(4)}
+        conn = _fresh_conn()
+
+        # Run 1: the last part's EFetch is refused, so the day fails with the
+        # earlier parts stored and checkpointed.
+        broken, first_calls = self._client(distribution, break_part=max(distribution))
+        report = self._sync(conn, broken)
+
+        assert report.errors, "setup: the first run must fail the day"
+        stored = _load_day_parts(conn, "pubmed", self._DAY)
+        assert stored, "setup: the parts that finished must be checkpointed"
+        assert (
+            fetch_scalar(
+                conn,
+                "SELECT status FROM download_days WHERE source = ? AND date = ?",
+                ("pubmed", self._DAY.isoformat()),
+            )
+            == "failed"
+        )
+
+        # Run 2: the same day, nothing broken. The keys the planner builds must
+        # match the keys the first run wrote, or every part is walked again.
+        whole, second_calls = self._client(distribution)
+        report = self._sync(conn, whole)
+
+        assert report.errors == []
+        assert (
+            fetch_scalar(
+                conn,
+                "SELECT status FROM download_days WHERE source = ? AND date = ?",
+                ("pubmed", self._DAY.isoformat()),
+            )
+            == "completed"
+        )
+        assert second_calls["efetch"] < first_calls["efetch"], (
+            "the second run re-fetched everything: the planner's part keys did not"
+            " match the ones stored, so resume degraded to a full re-fetch"
+        )
+        # The day completed, so its part rows are gone.
+        assert _load_day_parts(conn, "pubmed", self._DAY) == {}
+        # The fixture article carries one PMID, so the eight delivered records
+        # dedupe to a single row. What matters here is the day's own count,
+        # which covers the parts the *first* run stored as well as this one's
+        # — the credit that stops a day fetched across two runs from being
+        # recorded as holding only the second run's share.
+        assert (
+            fetch_scalar(
+                conn,
+                "SELECT record_count FROM download_days WHERE source = ? AND date = ?",
+                ("pubmed", self._DAY.isoformat()),
+            )
+            == 8
+        )
