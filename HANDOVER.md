@@ -128,12 +128,12 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed six releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2372 passing + 63 skipped** on
+- **Tests: 2374 passing + 63 skipped** on
   `fix/105-partition-over-cap-pubmed-days` (`uv run pytest tests/ -q`); **2257
-  + 59** on `main`, so 115 are this branch's. (The 2187 previously recorded
+  + 59** on `main`, so 117 are this branch's. (The 2187 previously recorded
   here was `main` *before* PR #106 merged #96's 70 tests, which made the stated
   delta double-count them; both numbers were re-measured in a worktree at the
-  merge-base.) With `BMLIB_TEST_POSTGRESQL_DSN` set the whole suite is **2433
+  merge-base.) With `BMLIB_TEST_POSTGRESQL_DSN` set the whole suite is **2435
   passing + 2 skipped** — measured, not derived, because this branch adds SQL
   and the PostgreSQL half had to run. Of the 63
   default skips, 61 are the PostgreSQL parameterisations, 1 is a

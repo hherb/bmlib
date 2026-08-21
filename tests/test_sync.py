@@ -20,12 +20,14 @@ from __future__ import annotations
 
 import sys
 from datetime import UTC, date, datetime, timedelta
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from bmlib.db import connect_sqlite, execute, fetch_all, fetch_one, fetch_scalar
 from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.publications.fetchers import ALL_SOURCES
+from bmlib.publications.fetchers.pubmed import EFETCH_URL, ESEARCH_URL, fetch_pubmed
 from bmlib.publications.models import (
     FetchedRecord,
     FetchResult,
@@ -2000,8 +2002,6 @@ class TestAnUnreadableCheckpointCostsADayNotTheRun:
         conn = _fresh_conn()
         day = date.today() - timedelta(days=3)
 
-        from unittest.mock import patch
-
         def exploding_load(*_args, **_kwargs):
             raise RuntimeError("connection reset while reading download_day_parts")
 
@@ -2302,6 +2302,36 @@ class TestSyncResumesAPartitionedDay:
         )
         assert row["record_count"] == 2, "the whole day, not this run's share"
 
+    def test_a_day_whose_every_part_was_already_stored_completes_on_the_credit_alone(self):
+        # The state a crash between the last part's checkpoint and the
+        # `download_days` write leaves behind, and a realistic restart
+        # position. Every part is skipped, so this run walks nothing: the
+        # fetcher's own `record_count` is 0 and the day's stored count comes
+        # entirely from the credit. Without that credit the day would record 0
+        # records — or, if the day-total reconcile were reached with nothing
+        # delivered, fail outright.
+        conn = _fresh_conn()
+        parts = [("edat:a:a", [_record("1")]), ("edat:b:b", [_record("2")])]
+        for key, records in parts:
+            _record_day_part(
+                conn,
+                "pubmed",
+                date(2024, 1, 1),
+                PartCheckpoint("edat-range", key, len(records), len(records)),
+            )
+
+        report = self._sync(conn, self._fetcher(parts))
+
+        assert report.errors == []
+        row = fetch_one(
+            conn,
+            "SELECT status, record_count FROM download_days WHERE source = ? AND date = ?",
+            ("pubmed", "2024-01-01"),
+        )
+        assert row["status"] == "completed"
+        assert row["record_count"] == 2, "the whole day, none of which this run walked"
+        assert _load_day_parts(conn, "pubmed", date(2024, 1, 1)) == {}
+
     def test_a_completed_day_clears_part_rows_for_a_non_resumable_source_too(self):
         # The delete is deliberately not gated on `resumable`. Gating it would
         # strand a source's rows the moment its descriptor stopped declaring
@@ -2412,3 +2442,157 @@ class TestSyncResumesAPartitionedDay:
         # was never called also records no errors.
         assert calls == [date(2024, 1, 1)]
         assert report.errors == []
+
+
+class TestSyncResumesThroughTheRealPubMedFetcher:
+    """The one seam the per-module fakes cannot cover.
+
+    ``tests/test_sync.py`` drives `sync()` with a fake that re-implements the
+    fetcher's skip rule, and ``tests/test_pubmed_fetcher.py`` drives the real
+    fetcher with hand-built ``completed_parts`` dicts that never reach a
+    database. So no test made a real ``_part_key()`` survive a round trip
+    through ``download_day_parts`` and come back matching a key the planner
+    produces on a later run — which `docs/DECISIONS.md` names as the
+    worst-kind cost of an opaque key, because a mismatch re-fetches every
+    unfinished day in full and **nothing is raised**.
+
+    It also pins the three keyword names, which are spelled independently on
+    the two sides of the call.
+    """
+
+    _DAY = date(2024, 1, 1)
+
+    @staticmethod
+    def _client(distribution, *, break_part=None):
+        """A fake E-utilities backend over an EDAT -> record-count mapping.
+
+        *break_part* is the populated date whose EFetch returns a document
+        `_efetch_page` refuses, which fails that part and so the day.
+        """
+        import itertools
+        import re as _re
+
+        from tests.test_pubmed_fetcher import (
+            MINIMAL_ARTICLE_XML,
+            _make_efetch_xml,
+            _make_esearch_xml,
+        )
+
+        sessions: dict[str, dict] = {}
+        counter = itertools.count(1)
+        calls = {"efetch": 0}
+
+        def span(term):
+            m = _re.search(r'"([\d/]+)"\[EDAT\] : "([\d/]+)"\[EDAT\]', term)
+            if m is None:
+                return None
+            return (
+                datetime.strptime(m.group(1), "%Y/%m/%d").date(),
+                datetime.strptime(m.group(2), "%Y/%m/%d").date(),
+            )
+
+        def count_for(term):
+            s = span(term)
+            if s is None:
+                return sum(distribution.values())
+            lo, hi = s
+            return sum(n for d, n in distribution.items() if lo <= d <= hi)
+
+        def get(url, params=None):
+            params = params or {}
+            response = MagicMock()
+            if url == ESEARCH_URL:
+                key = str(next(counter))
+                count = count_for(params["term"])
+                response.text = _make_esearch_xml(count, query_key=key)
+                s = span(params["term"])
+                days = [d for d in distribution if s[0] <= d <= s[1]] if s is not None else []
+                sessions[key] = {"total": count, "day": days[0] if len(days) == 1 else None}
+                return response
+            if url == EFETCH_URL:
+                calls["efetch"] += 1
+                state = sessions[params["query_key"]]
+                if break_part is not None and state["day"] == break_part:
+                    response.text = "<eFetchResult><ERROR>boom</ERROR></eFetchResult>"
+                    return response
+                n = max(
+                    0,
+                    min(int(params["retmax"]), state["total"] - int(params["retstart"])),
+                )
+                response.text = _make_efetch_xml(*([MINIMAL_ARTICLE_XML] * n))
+                return response
+            raise AssertionError(f"unexpected URL {url}")
+
+        client = MagicMock()
+        client.get.side_effect = get
+        return client, calls
+
+    def _sync(self, conn, client):
+        def fetcher(_client, target_date, **kwargs):
+            return fetch_pubmed(client, target_date, **kwargs)
+
+        return sync(
+            conn,
+            sources=["pubmed"],
+            date_from=self._DAY,
+            date_to=self._DAY,
+            _fetcher_override={"pubmed": fetcher},
+        )
+
+    @patch("bmlib.publications.fetchers.pubmed.time.sleep", lambda *_: None)
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 2)
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 2)
+    def test_a_day_broken_mid_walk_resumes_without_refetching_its_stored_parts(self):
+        distribution = {date(2023, 6, 1) + timedelta(days=i): 2 for i in range(4)}
+        conn = _fresh_conn()
+
+        # Run 1: the last part's EFetch is refused, so the day fails with the
+        # earlier parts stored and checkpointed.
+        broken, first_calls = self._client(distribution, break_part=max(distribution))
+        report = self._sync(conn, broken)
+
+        assert report.errors, "setup: the first run must fail the day"
+        stored = _load_day_parts(conn, "pubmed", self._DAY)
+        assert stored, "setup: the parts that finished must be checkpointed"
+        assert (
+            fetch_scalar(
+                conn,
+                "SELECT status FROM download_days WHERE source = ? AND date = ?",
+                ("pubmed", self._DAY.isoformat()),
+            )
+            == "failed"
+        )
+
+        # Run 2: the same day, nothing broken. The keys the planner builds must
+        # match the keys the first run wrote, or every part is walked again.
+        whole, second_calls = self._client(distribution)
+        report = self._sync(conn, whole)
+
+        assert report.errors == []
+        assert (
+            fetch_scalar(
+                conn,
+                "SELECT status FROM download_days WHERE source = ? AND date = ?",
+                ("pubmed", self._DAY.isoformat()),
+            )
+            == "completed"
+        )
+        assert second_calls["efetch"] < first_calls["efetch"], (
+            "the second run re-fetched everything: the planner's part keys did not"
+            " match the ones stored, so resume degraded to a full re-fetch"
+        )
+        # The day completed, so its part rows are gone.
+        assert _load_day_parts(conn, "pubmed", self._DAY) == {}
+        # The fixture article carries one PMID, so the eight delivered records
+        # dedupe to a single row. What matters here is the day's own count,
+        # which covers the parts the *first* run stored as well as this one's
+        # — the credit that stops a day fetched across two runs from being
+        # recorded as holding only the second run's share.
+        assert (
+            fetch_scalar(
+                conn,
+                "SELECT record_count FROM download_days WHERE source = ? AND date = ?",
+                ("pubmed", self._DAY.isoformat()),
+            )
+            == 8
+        )
