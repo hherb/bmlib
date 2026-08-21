@@ -1361,6 +1361,36 @@ def fetch_pubmed(
         )
 
     if count == 0:
+        if completed_parts:
+            # Two of bmlib's own counts again, and this pair is the widest of
+            # them: an earlier run walked, stored and checkpointed these parts,
+            # and the day now claims to hold nothing at all. Completing on the
+            # weaker one is worse here than at part level, because `sync()`
+            # drops this day's part rows the moment it completes — so the same
+            # transaction that loses the records destroys the checkpoints that
+            # would have made re-fetching them cheap.
+            #
+            # A day genuinely emptying between two runs is not a thing PubMed
+            # does; a soft zero under load is, which is exactly why the part
+            # level refuses one. Failing leaves the day `failed`, so it is
+            # re-offered and its checkpoints survive to make the retry skip
+            # everything already stored. If a day really has been withdrawn
+            # wholesale, the message says what to delete to let it complete.
+            stored = sum(cp.promised for cp in completed_parts.values())
+            message = (
+                f"PubMed reports 0 records for {date_str}, but {len(completed_parts)} part(s)"
+                f" of this day were checkpointed by an earlier run ({stored} records);"
+                " refusing to record it complete on the weaker of two of our own counts."
+                " Delete this day's download_day_parts rows if the day really is empty"
+            )
+            logger.error("%s", message)
+            return FetchResult(
+                source="pubmed",
+                date=date_str,
+                record_count=0,
+                status="failed",
+                error=message,
+            )
         logger.info("No PubMed records for %s", date_str)
         return FetchResult(
             source="pubmed",

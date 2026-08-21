@@ -3014,3 +3014,79 @@ class TestResumingAnOverCapDay:
 
         assert result.status == "completed"
         assert done == [], "a day that needs no partitioning has no parts to checkpoint"
+
+
+# ---------------------------------------------------------------------------
+# #105 review: a day-level count of 0 must not overrule this day's own
+# checkpoints
+# ---------------------------------------------------------------------------
+
+
+@patch("bmlib.publications.fetchers.pubmed.time.sleep", lambda *_: None)
+class TestADayLevelZeroDoesNotOverruleItsOwnCheckpoints:
+    """The `part_count == 0` rule, one level up, where it was missing.
+
+    Partitioning made a partially-fetched day a reachable state: an earlier
+    run can leave a day `failed` with most of its parts stored and
+    checkpointed. If the day-level ESearch then answers a soft zero — the same
+    mechanism the part-level rule exists for — the day completes at 0 records,
+    is never re-offered, and `sync()` deletes the checkpoint rows in the same
+    transaction. The one artifact that would have made recovery cheap is
+    destroyed by the same write that makes recovery necessary.
+    """
+
+    @staticmethod
+    def _client_reporting_zero():
+        client = MagicMock()
+
+        def get(url, params=None):
+            assert url == ESEARCH_URL, f"nothing should be requested past the count: {url}"
+            response = MagicMock()
+            response.text = "<eSearchResult><Count>0</Count></eSearchResult>"
+            return response
+
+        client.get.side_effect = get
+        return client
+
+    def test_a_zero_count_contradicted_by_stored_parts_fails_the_day(self):
+        prior = {
+            "edat:2023-01-01:2023-06-30": PartCheckpoint(
+                part_scheme="edat-range",
+                part_key="edat:2023-01-01:2023-06-30",
+                promised=6500,
+                record_count=6500,
+            ),
+            "edat:2023-07-01:2023-12-31": PartCheckpoint(
+                part_scheme="edat-range",
+                part_key="edat:2023-07-01:2023-12-31",
+                promised=4000,
+                record_count=4000,
+            ),
+        }
+
+        result = fetch_pubmed(
+            self._client_reporting_zero(),
+            date(2024, 1, 1),
+            on_record=lambda r: None,
+            completed_parts=prior,
+        )
+
+        assert result.status == "failed"
+        # The message has to carry what contradicts the zero, because the
+        # remedy is a judgement call an operator makes from it.
+        assert "2 part" in result.error
+        assert "10500" in result.error
+
+    def test_a_genuinely_empty_day_with_no_stored_parts_still_completes(self):
+        # The negative control: the ordinary quiet day is untouched, and this
+        # is what stops the guard being a blanket refusal of every empty day.
+        result = fetch_pubmed(
+            self._client_reporting_zero(),
+            date(2024, 1, 1),
+            on_record=lambda r: None,
+            completed_parts={},
+        )
+
+        assert result.status == "completed"
+        assert result.record_count == 0
+        assert result.error is None
