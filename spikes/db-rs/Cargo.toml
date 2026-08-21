@@ -1,0 +1,13 @@
+[package]
+name = "bmlib-db"
+version = "0.0.0-spike"
+edition = "2021"
+description = "Spike: Rust port of bmlib.db — answers whether the savepoint-nesting design survives the borrow checker"
+license = "AGPL-3.0-or-later"
+publish = false
+
+[dependencies]
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+[lints.rust]
+missing_docs = "warn"

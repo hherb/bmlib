@@ -1,0 +1,16 @@
+[package]
+name = "bmlib-publications"
+version = "0.0.0-spike"
+edition = "2021"
+description = "Spike: a slice of bmlib/publications/storage.py, to exercise Value/Row and the DECISIONS.md invariants"
+license = "AGPL-3.0-or-later"
+publish = false
+
+[dependencies]
+bmlib-db = { path = "../db-rs" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"
+
+[dev-dependencies]
+rusqlite = { version = "0.40", features = ["bundled"] }
