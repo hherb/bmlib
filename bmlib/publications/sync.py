@@ -987,29 +987,35 @@ def sync(
                     if on_record is not None:
                         on_record(record)
 
-                def flush_part(checkpoint: PartCheckpoint) -> None:
-                    """Store this part's records and its checkpoint atomically.
+                def flush_part(checkpoint: PartCheckpoint | None) -> None:
+                    """Store a finished part's records, and checkpoint it if it earned one.
 
-                    One transaction, so a checkpoint can never attest to
-                    records a rollback discarded — and the buffer is emptied
-                    per part rather than per day, which is what keeps a
-                    240,000-record day out of memory.
+                    Called for **every** part the fetcher walked to its end.
+                    The records are always stored: this is the only thing that
+                    empties ``day_records``, so a version that stored nothing
+                    for a part the fetcher could not vouch for would hold a
+                    whole 242,216-record day in memory exactly when the source
+                    is degraded — the peak the per-part flush exists to remove
+                    (#105 review, F1). One transaction, so a checkpoint can
+                    never attest to records a rollback discarded.
 
-                    A part holding a record that would not store is *not*
-                    checkpointed, for the same reason the fetcher does not
-                    checkpoint a part that reconciled short: the failure
-                    records the day ``failed``, so it is re-offered, and a
-                    checkpoint written beside the gap would make that retry
-                    skip the one part holding it. The record would then be
-                    lost silently and permanently. ``_store_records`` swallows
-                    the record's own exception so one bad record cannot lose
-                    the batch, which is exactly why the count has to be read
-                    back and acted on here.
+                    The *checkpoint* is what a part has to earn, and there are
+                    two independent ways not to earn one. The fetcher passes
+                    ``None`` for a part that reconciled short of its own
+                    promise; and a part holding a record that would not store
+                    is not checkpointed here. Both are the same rule: the
+                    failure records the day ``failed``, so it is re-offered,
+                    and a checkpoint written beside the gap would make that
+                    retry skip the one part holding it — the record would then
+                    be lost silently and permanently. ``_store_records``
+                    swallows the record's own exception so one bad record
+                    cannot lose the batch, which is exactly why the count has
+                    to be read back and acted on here.
                     """
                     nonlocal day_added, day_merged, day_failed
                     with transaction(conn):
                         added, merged, failed_ = _store_records(conn, source, day, day_records)
-                        if failed_ == 0:
+                        if checkpoint is not None and failed_ == 0:
                             _record_day_part(conn, source, day, checkpoint)
                     day_added += added
                     day_merged += merged
@@ -1035,7 +1041,7 @@ def sync(
                     day_config = {
                         **src_config,
                         "completed_parts": prior_parts,
-                        "on_part_complete": flush_part,
+                        "on_part_finished": flush_part,
                         "on_part_skipped": note_skipped_part,
                     }
 

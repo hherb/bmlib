@@ -861,7 +861,15 @@ a named test and was verified by mutation. Only what it omits:
   every other threshold in bmlib. Do not cite it as measured and do not
   tighten it by taste — **#92** is the sampler that would earn a different
   number. The docstring says so; keep that paragraph honest if the number
-  moves.
+  moves. **#105 raised what that unmeasured floor exposes by roughly 24×,
+  and did not touch the constant.** Before it, no PubMed day above 9,999
+  records was walked at all, so a `completed` PubMed day could lack at most
+  4,999 records; now every part of a partitioned day may be up to half short
+  without failing, and the day's total is judged against the same floor, so a
+  242,216-record day can be `completed` missing some 121,000. The rule is
+  unchanged and the population it applies to is not — which is the argument
+  for #92 being more urgent than when it was filed, and equally the reason
+  #105 did not quietly move the number instead.
 - **The floor is exclusive.** Delivering exactly half passes. Pinned by
   `test_exactly_the_floor_completes`, which exists because `<` versus `<=`
   here is a one-character edit no other test notices.
@@ -1398,8 +1406,19 @@ crossed the cap since planning.
   branches on it** — that is the point of it, not an oversight, and a future
   scheme change is what it is waiting for.
 - **A part is not checkpointed unless it reconciled clean, and not unless
-  every one of its records stored.** Two rules, both fail-closed, both learned
-  in review of this change. A part that reconciled with a *note* delivered
+  every one of its records stored — but it is always *flushed*.** Three rules,
+  all fail-closed, all learned in review of this change. Flushing is the one
+  that is unconditional, and separating it from checkpointing was the third
+  round's fix: the callback that hands a finished part to `sync()` is the only
+  thing that empties the record buffer, so calling it only for a part that
+  reconciled clean made the per-part memory bound conditional on the source
+  behaving. A degraded NCBI returning 37 short-but-not-failing parts of a
+  242,216-record day would then hold every one of those 242,216 records in
+  memory at once — the exact peak the per-part flush exists to remove, reached
+  precisely when the source is misbehaving. The callback therefore carries
+  `PartCheckpoint | None`: the records are stored either way, and the
+  checkpoint is what the part has to earn. The two remaining rules are what it
+  earns them against. A part that reconciled with a *note* delivered
   short of its own promise without clearing the failure floor; checkpointing
   it would let a later run skip it and credit the full `promised` it never
   delivered, manufacturing the records the note was reporting missing — and
@@ -1411,6 +1430,40 @@ crossed the cap since planning.
   record's own exception so one bad record cannot lose the batch, which is
   precisely why the failure count has to be read back and acted on at the
   checkpoint boundary.
+- **A part that reports 0 records having been measured non-empty at planning
+  fails the day; it is not dropped.** Two of bmlib's own measurements
+  disagree — planning counted this Entrez-date range at *n* > 0, the part's
+  own session ESearch now says 0 — and the weaker one does not get to decide.
+  Dropping it at INFO was silent at a scale nothing downstream catches:
+  fourteen such parts of a 37-part day still deliver 62% of the day, which
+  clears the day-level floor, so the day would be `completed`, never
+  re-offered, and ~92,000 records permanently absent behind one shortfall
+  note. The asymmetry is what settles it — a part that *delivers* 1 of 5,000
+  fails the day, so a part that *claims* 0 having been measured at 5,000
+  thirty seconds earlier cannot pass. It is reconciled like any other part
+  (`delivered=0` against the *planned* promise), which always fails. **The
+  cost is a re-fetch of one day**, and it is bounded: the parts already walked
+  are checkpointed, and a range that genuinely emptied returns no partition at
+  all when the next run plans the day, so it self-heals in one extra
+  day-fetch. One residual, named so it is not re-discovered as a bug: a
+  re-plan is driven by `known_count` from the part's session ESearch while its
+  child counts come from fresh planning probes, so a count that *shrank*
+  between the two hands the surplus to a right-hand child by subtraction, and
+  if that child's range truly holds nothing it becomes a phantom part that
+  reports 0 and fails the day. That is the same recoverable, one-run cost the
+  root probe already accepts for a removal between its two counts, and it
+  re-plans clean on the next run.
+- **A planning ESearch failure is a returned `FetchResult`, not a raise.** The
+  ladder's counting probes are ordinary ESearch requests and fail like any
+  other — a 500, a dropped connection, an `<ERROR>` document `_esearch`
+  reports as a `ValueError`. `sync()` absorbs a raise and fails the day either
+  way, so this costs no records; what it costs is coherence. The under-cap
+  path returns `failed` for exactly this, and one public function answering
+  the same transient with a return value or an exception depending on how
+  large the day happened to be is a contract with a hole in it — the manual's
+  own table of what a partitioned day returns lists return values only. Both
+  planning call sites (first plan, and the re-plan a part triggers) now return
+  it.
 - **The PubMed FTP baseline is not the route, and this is recorded so it is
   not re-derived.** NCBI's own 400 suggests EDirect, and the annual baseline
   plus daily update files at `ftp.ncbi.nlm.nih.gov/pubmed/` are the documented

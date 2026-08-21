@@ -682,7 +682,7 @@ def _partitioned_fetcher(parts, *, fail_after=None):
         on_record,
         on_progress=None,
         completed_parts=None,
-        on_part_complete=None,
+        on_part_finished=None,
         on_part_skipped=None,
         **config,
     ):
@@ -705,8 +705,8 @@ def _partitioned_fetcher(parts, *, fail_after=None):
                     status="failed",
                     error="part exploded",
                 )
-            if on_part_complete is not None:
-                on_part_complete(PartCheckpoint("edat-range", key, len(records), len(records)))
+            if on_part_finished is not None:
+                on_part_finished(PartCheckpoint("edat-range", key, len(records), len(records)))
         return FetchResult(
             source="pubmed", date=day.isoformat(), record_count=emitted, status="completed"
         )

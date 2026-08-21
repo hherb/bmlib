@@ -1985,8 +1985,10 @@ class TestSyncResumesAPartitionedDay:
 
         Mirrors the two part-level rules `fetch_pubmed` really applies: a part
         is skipped only while its stored checkpoint still promises what this
-        run's plan reports for it, and a part named in *short* is walked but
-        never checkpointed — which is what a re-walk that came up short does.
+        run's plan reports for it, and a part named in *short* is reported
+        with ``None`` rather than a checkpoint — which is what the real
+        fetcher does for a part that reconciled short of its own promise:
+        flush the records, checkpoint nothing.
         """
         short = set(short)
 
@@ -1997,7 +1999,7 @@ class TestSyncResumesAPartitionedDay:
             on_record,
             on_progress=None,
             completed_parts=None,
-            on_part_complete=None,
+            on_part_finished=None,
             on_part_skipped=None,
             **config,
         ):
@@ -2020,8 +2022,12 @@ class TestSyncResumesAPartitionedDay:
                         status="failed",
                         error="part exploded",
                     )
-                if on_part_complete is not None and key not in short:
-                    on_part_complete(PartCheckpoint("edat-range", key, len(records), len(records)))
+                if on_part_finished is not None:
+                    on_part_finished(
+                        None
+                        if key in short
+                        else PartCheckpoint("edat-range", key, len(records), len(records))
+                    )
             return FetchResult(
                 source="pubmed", date=day.isoformat(), record_count=emitted, status="completed"
             )
@@ -2091,6 +2097,48 @@ class TestSyncResumesAPartitionedDay:
         self._sync(conn, self._fetcher(parts))
 
         assert batches == [2, 1, 0]
+
+    def test_a_noted_parts_records_are_stored_even_though_it_is_not_checkpointed(self, monkeypatch):
+        """Flushing is unconditional; checkpointing is what a part has to earn.
+
+        The fetcher reports a part that reconciled short with ``None`` rather
+        than a checkpoint. Storing only the checkpointed parts would leave
+        every such part's records in the buffer until some later part
+        reconciled clean, or until the day's closing store — so a degraded
+        source returning 37 noted parts of a 242,216-record day would hold the
+        whole day in memory, the peak this per-part flush exists to remove
+        (#105 review, F1). The batch sizes are asserted as well as the stored
+        rows, because after the day's final store the two implementations are
+        indistinguishable: both leave every record present.
+        """
+        conn = _fresh_conn()
+        batches: list[int] = []
+        checkpointed: list[str] = []
+
+        def store_spy(conn_, source, day, records):
+            batches.append(len(records))
+            return _store_records(conn_, source, day, records)
+
+        def checkpoint_spy(conn_, source, day, checkpoint):
+            checkpointed.append(checkpoint.part_key)
+            _record_day_part(conn_, source, day, checkpoint)
+
+        monkeypatch.setattr(_SYNC_MODULE, "_store_records", store_spy)
+        monkeypatch.setattr(_SYNC_MODULE, "_record_day_part", checkpoint_spy)
+        parts = [
+            ("edat:a:a", [_record("1"), _record("2")]),
+            ("edat:b:b", [_record("3")]),
+        ]
+
+        self._sync(conn, self._fetcher(parts, short={"edat:a:a"}))
+
+        assert batches == [2, 1, 0], "the noted part's records are flushed at its own boundary"
+        assert fetch_scalar(conn, "SELECT COUNT(*) FROM publications") == 3
+        # The day completes, so its part rows are dropped — the checkpoint has
+        # to be observed as it is written rather than read back afterwards.
+        assert checkpointed == ["edat:b:b"], (
+            "the noted part is flushed but must not be checkpointed"
+        )
 
     def test_a_parts_records_and_its_checkpoint_commit_in_one_transaction(
         self, tmp_path, monkeypatch
@@ -2203,7 +2251,7 @@ class TestSyncResumesAPartitionedDay:
 
         The stub deliberately declares **no** ``**kwargs``, so any keyword
         `sync()` adds for a resumable source — ``completed_parts``,
-        ``on_part_complete``, ``on_part_skipped`` — raises `TypeError` at the
+        ``on_part_finished``, ``on_part_skipped`` — raises `TypeError` at the
         call. That is caught by the per-day handler, which turns a working
         source into a failed day, so an empty ``report.errors`` is what pins
         the guard. A stub with ``**kwargs`` would absorb the extras and make

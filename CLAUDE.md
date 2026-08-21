@@ -370,7 +370,16 @@ records, so a checkpoint never attests to records a rollback discarded), which
 is what makes an interrupted day resumable and what forced the per-part flush
 a 242k-record day needs anyway; a part is skipped only if its stored count
 still matches, and a skipped part must be credited or every resumed day fails
-its own day-total check. `SourceDescriptor.resumable` gates the new keywords,
+its own day-total check. **Flushing and checkpointing are different
+questions** and one callback carries both (`PartCheckpoint | None`): every
+part that finished walking has its records stored, since that flush is the
+memory bound and a bound conditional on the source behaving is not one, while
+only a part that reconciled clean earns a checkpoint — checkpointing a noted
+part would let a later run skip it and manufacture the records the note was
+reporting missing. A part reporting **0** where planning measured it non-empty
+fails the day rather than being dropped (two of bmlib's own measurements
+disagree; the weaker one does not decide), and a planning ESearch that fails
+returns a failed `FetchResult` like the under-cap path rather than raising. `SourceDescriptor.resumable` gates the new keywords,
 defaulting `False` because `register_source()` is public. The one case left is
 a **single Entrez date** over the cap, which cannot be split further: that day
 is still refused, naming the date and count — and it is not the structural

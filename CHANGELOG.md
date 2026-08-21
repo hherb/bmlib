@@ -34,14 +34,23 @@ All notable changes to bmlib are documented here. The format is based on
   hide a real shortfall. Before any record is fetched the root is verified to
   cover the day (`count(day AND root) >= count(day)`); short fails the day,
   because records outside the ladder are in no part's promise and every part
-  would otherwise reconcile perfectly while the day is silently incomplete.
+  would otherwise reconcile perfectly while the day is silently incomplete. A
+  part that reports 0 records having been measured non-empty at planning
+  fails the day too, rather than being dropped: two of bmlib's own
+  measurements disagree, the weaker one does not decide, and dropping such
+  parts was silent at a scale the day-level reconcile does not catch.
   The 10,000-record day is routed down that same path — its ten-thousandth
   record is requested with the rest — so the cap no longer refuses a day, and
   no longer silently truncates one. That is a statement about the cap and not
   a promise that a day arrives whole: a walk that comes up short but still
   clears the `SHORTFALL_FAILURE_RATIO` floor completes the day on a note here
   exactly as it does for every other source, and the cap has simply stopped
-  being one of the things that can cause it.
+  being one of the things that can cause it. That floor is the one threshold
+  in bmlib fixed before measurement, and partitioning raises what it exposes
+  by roughly 24×: a `completed` PubMed day used to be able to lack at most
+  4,999 records, where a 242,216-record day can now be `completed` missing
+  some 121,000. The rule did not change, the population it applies to did —
+  which is what makes issue #92 more urgent than when it was filed.
 
   **This is not an edge case in the field bmlib queries.** Measured
   2026-08-20: every first-of-month `[Date - Publication]` day holds
@@ -51,10 +60,12 @@ All notable changes to bmlib are documented here. The format is based on
 
   **What it costs, which is the question a version number does not answer.**
   For a 242,216-record day (2024/01/01, its count and 37-part ladder measured
-  live 2026-08-21): 40 planning ESearches and 37 session ESearches, measured,
-  plus ~485 EFetch pages derived from the record count and the 500-record
-  page size — ≈**562 requests**, and at roughly 4 KB a record about **1 GB**.
-  The two derived figures have not been confirmed by a full fetch. A six-year
+  live 2026-08-21): 40 planning ESearches, measured; one session ESearch per
+  part, so 37, arithmetic over the measured part count, since **no session
+  ESearch was ever issued**; and ~485 EFetch pages derived from the record
+  count and the 500-record page size — ≈**562 requests**, and at roughly 4 KB
+  a record about **1 GB**. Everything after the planning ESearches is
+  arithmetic and has not been confirmed by a full fetch. A six-year
   backfill window holds some 72 such days (66 month firsts at 49,543–90,571
   and 6 January firsts at 212,439–315,282), so roughly **6.2M records and
   ~25 GB — once**. Once, because the day is then `completed` and never
@@ -65,10 +76,13 @@ All notable changes to bmlib are documented here. The format is based on
   leaves "no publication is missed" false by default for exactly the
   operators least likely to find the flag.
 
-  **A partitioned day resumes.** Each part's records and its checkpoint
-  commit in one transaction, so a checkpoint can never attest to records a
-  rollback discarded, and an interrupted run does not repeat the parts that
-  finished. A part is skipped on a later run only if its key is checkpointed
+  **A partitioned day resumes.** Each part's records are stored at its own
+  boundary — which is also what keeps such a day out of memory — in one
+  transaction with its checkpoint where it earned one, so a checkpoint can
+  never attest to records a rollback discarded, and an interrupted run does
+  not repeat the parts that finished. Flushing and checkpointing are separate
+  questions: a part that came up short of its own promise without failing is
+  still flushed, and is deliberately not checkpointed. A part is skipped on a later run only if its key is checkpointed
   **and** its count still matches what this run's plan reports — a part that
   has gained records since is re-walked, since skipping it would lose them
   permanently and silently. Skipped parts are credited to the day's

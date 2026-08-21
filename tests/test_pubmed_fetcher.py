@@ -2041,11 +2041,17 @@ class TestAnOverCapDayIsFetchedRatherThanRefused:
         # each initial part spans two populated days, not one, and re-split
         # actually has more than a single day to divide.
         #
-        # `session_count_fn` reports over-cap only for a term whose range
-        # still holds two or more populated days, so the *day-level* search
-        # (which reports the true total of 4) and each *re-split leaf*
-        # (each of which narrows to exactly one populated day) both read
-        # normally, and only the two initial two-day parts trigger a re-plan.
+        # The growth is applied to the *distribution*, once, when the first
+        # part's own session opens: that part then counts 3 against a cap of
+        # 2 and is re-planned, and the re-plan's probes see the same grown
+        # state its `known_count` came from. Inflating only the session's
+        # answer — the shape this fake used before — models no real backend:
+        # the extra record exists in no Entrez date, so the ladder's
+        # `right = parent - left` subtraction hands the surplus to a range
+        # that truly holds nothing, and that phantom part then reports 0 at
+        # its own session and fails the day (which is the #105 F2 rule
+        # working, not this path breaking — see
+        # `test_a_part_reporting_zero_after_planning_measured_it_fails_the_day`).
         distribution = {
             date(2023, 6, 1): 1,
             date(2023, 6, 2): 1,
@@ -2053,6 +2059,7 @@ class TestAnOverCapDayIsFetchedRatherThanRefused:
             date(2023, 6, 4): 1,
         }
         base = _distribution_counter(distribution)
+        grown: list[bool] = []
 
         def session_count_fn(term: str) -> int:
             m = re.search(r'"([\d/]+)"\[EDAT\] : "([\d/]+)"\[EDAT\]', term)
@@ -2061,7 +2068,13 @@ class TestAnOverCapDayIsFetchedRatherThanRefused:
             lo = datetime.strptime(m.group(1), "%Y/%m/%d").date()
             hi = datetime.strptime(m.group(2), "%Y/%m/%d").date()
             populated = [d for d in distribution if lo <= d <= hi]
-            return 3 if len(populated) >= 2 else base(term)
+            if len(populated) >= 2 and not grown:
+                # The first part's session: 2023-06-01 gained a record
+                # between planning and now, so this part holds 3 where
+                # planning measured 2 — over the patched cap.
+                grown.append(True)
+                distribution[date(2023, 6, 1)] += 1
+            return base(term)
 
         client = _eutils_client(base, session_count_fn=session_count_fn)
         records = []
@@ -2069,10 +2082,13 @@ class TestAnOverCapDayIsFetchedRatherThanRefused:
         result = fetch_pubmed(client, date(2024, 1, 1), on_record=records.append, api_key=None)
 
         # Every record still arrives — re-splitting is invisible to the
-        # caller — and the day completes rather than failing.
+        # caller — and the day completes rather than failing. Five, not four:
+        # the record the part gained is fetched too, which is the whole point
+        # of re-splitting rather than walking the part as planned.
+        assert grown, "setup: the first part must have grown past the cap"
         assert result.status == "completed"
-        assert result.record_count == 4
-        assert len(records) == 4
+        assert result.record_count == 5
+        assert len(records) == 5
 
     def test_a_disagreeing_recount_terminates_instead_of_looping(self):
         # The session count says over-cap; a fresh planning count of the same
@@ -2309,15 +2325,15 @@ class TestALostOrSkippedPartFailsTheDay:
 
     @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 1)
     @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 1)
-    def test_the_day_level_reconcile_catches_a_cumulative_loss_no_part_reported(self):
-        # Five single-record days; three of them report 0 at fetch time (the
-        # `part_count == 0` skip — a legitimate, silent, per-part no-op, not
-        # a failure). No individual part ever fails its own reconcile, yet
-        # the day is missing 3 of 5 records overall — below the 50% floor —
-        # so only the final, day-level `reconcile_delivery` call can catch
-        # it. This is the "regression that loses one part of a day silently
-        # records the day completed" scenario, without any part-level error
-        # to have already caught it first.
+    def test_a_part_reporting_zero_after_planning_measured_it_fails_the_day(self):
+        # Planning measured this range at one record; the part's own ESearch
+        # now reports none. Dropping it there was silent (#105 review, F2):
+        # three such parts of a five-part day still deliver 2 of 5, and a
+        # bigger day's proportion clears the day-level floor outright, so the
+        # day would be recorded `completed`, never re-offered, and those
+        # records permanently absent behind at most one shortfall note. The
+        # asymmetry is the tell: a part *delivering* 0 of 1 fails the day, so
+        # a part *claiming* 0 having just been measured at 1 cannot pass.
         distribution = {date(2023, 6, 1) + timedelta(days=i): 1 for i in range(5)}
         populated = sorted(distribution)
         overrides = {d: {"count": 0} for d in populated[1:4]}
@@ -2326,24 +2342,156 @@ class TestALostOrSkippedPartFailsTheDay:
         result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
 
         assert result.status == "failed"
+        # Part-level, and it names the part: the day fails on the first such
+        # part rather than waiting for the day total, so only the part before
+        # it was walked.
+        assert "part edat:" in result.error
+        assert "delivered 0 of 1" in result.error
+        assert result.record_count == 1
+
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 4)
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 4)
+    def test_the_day_level_reconcile_catches_a_cumulative_loss_no_part_reported(self):
+        # Five four-record days; four of them report a count of 1 when their
+        # own session opens and deliver exactly that. Every part therefore
+        # reconciles *perfectly against its own count* — no part-level rule
+        # fires — while the day has delivered 8 of the 20 records its own
+        # count promised, below the 50% floor. Only the final, day-level
+        # `reconcile_delivery` call can catch that: it is the guard against a
+        # regression that loses parts of a day without any part reporting a
+        # problem, and it must not be reachable only through some part-level
+        # rule that happened to fire first.
+        distribution = {date(2023, 6, 1) + timedelta(days=i): 4 for i in range(5)}
+        overrides = {d: {"count": 1} for d in sorted(distribution)[:4]}
+        client = _partitioned_client(distribution, part_overrides=overrides)
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert result.status == "failed"
         assert "50% floor" in result.error
         # Day-level, not part-level: no single part's own reconcile fired.
         assert "part" not in result.error
-        assert result.record_count == 2
+        assert result.record_count == 8
 
 
 # ---------------------------------------------------------------------------
-# Task 7 review, F1: a noted (short-but-above-floor) part is not checkpointed
+# #105 review, F3: a planning ESearch failure is a failed FetchResult, not a
+# raise — the under-cap path's answer to the same transient
+# ---------------------------------------------------------------------------
+
+
+@patch("bmlib.publications.fetchers.pubmed.time.sleep", lambda *_: None)
+@patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 2)
+@patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 2)
+class TestAPlanningFailureIsReturnedNotRaised:
+    """Planning is ESearch, so it fails the way every other request does.
+
+    `sync()` absorbs a raise and fails the day either way, so no records are
+    at stake — but the under-cap path returns `FetchResult(status="failed")`
+    for exactly these transients, and one public function must not answer the
+    same connection reset with a return value or an exception depending on
+    how large the day happened to be. Each test would *error* rather than
+    fail if the exception escaped, which is the whole assertion.
+    """
+
+    def test_an_error_document_during_planning_fails_the_day(self):
+        # NCBI answers a rejected search with HTTP 200 and an <ERROR>
+        # document, which `_esearch` reports as a `ValueError`.
+        def get(url, params=None):
+            params = params or {}
+            response = MagicMock()
+            if url != ESEARCH_URL:
+                raise AssertionError("nothing may be fetched when planning failed")
+            if "usehistory" in params:
+                response.text = _make_esearch_xml(5000, query_key="1")
+            else:
+                response.text = (
+                    "<eSearchResult><ERROR>Search Backend failed</ERROR></eSearchResult>"
+                )
+            return response
+
+        client = MagicMock()
+        client.get.side_effect = get
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert result.status == "failed"
+        assert "planning the Entrez-date parts failed" in result.error
+        assert "Search Backend failed" in result.error
+        assert result.record_count == 0
+
+    def test_a_transport_error_during_planning_fails_the_day(self):
+        def get(url, params=None):
+            params = params or {}
+            if url == ESEARCH_URL and "usehistory" in params:
+                response = MagicMock()
+                response.text = _make_esearch_xml(5000, query_key="1")
+                return response
+            raise ConnectionError("connection reset")
+
+        client = MagicMock()
+        client.get.side_effect = get
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert result.status == "failed"
+        assert "ConnectionError: connection reset" in result.error
+
+    def test_a_transport_error_while_re_partitioning_fails_the_day(self):
+        # The second planning phase: a part whose own session reports it over
+        # the cap is re-planned, and that descent issues counting probes of
+        # its own. Same rule, a different call site.
+        distribution = {
+            date(2023, 6, 1): 1,
+            date(2023, 6, 2): 1,
+            date(2023, 6, 3): 1,
+            date(2023, 6, 4): 1,
+        }
+        base = _distribution_counter(distribution)
+        re_planning: list[bool] = []
+
+        def count_fn(term: str) -> int:
+            if re_planning:
+                raise ConnectionError("connection reset")
+            return base(term)
+
+        def session_count_fn(term: str) -> int:
+            m = re.search(r'"([\d/]+)"\[EDAT\] : "([\d/]+)"\[EDAT\]', term)
+            if m is None:
+                return base(term)
+            lo = datetime.strptime(m.group(1), "%Y/%m/%d").date()
+            hi = datetime.strptime(m.group(2), "%Y/%m/%d").date()
+            populated = [d for d in distribution if lo <= d <= hi]
+            if len(populated) >= 2:
+                # Over the patched cap, so this part is re-planned.
+                re_planning.append(True)
+                return 3
+            return base(term)
+
+        client = _eutils_client(count_fn, session_count_fn=session_count_fn)
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert re_planning, "setup: a part must have reported itself over the cap"
+        assert result.status == "failed"
+        assert "re-partitioning part edat:" in result.error
+        assert "ConnectionError: connection reset" in result.error
+
+
+# ---------------------------------------------------------------------------
+# Task 7 review, F1: a noted (short-but-above-floor) part is flushed but not
+# checkpointed
 # ---------------------------------------------------------------------------
 
 
 @patch("bmlib.publications.fetchers.pubmed.time.sleep", lambda *_: None)
 @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 4)
 @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 4)
-class TestANotedPartIsNotCheckpointed:
-    """A part that reconciled with a note is re-walked, not skipped.
+class TestANotedPartIsFlushedButNotCheckpointed:
+    """A part that reconciled with a note is flushed, then re-walked, not skipped.
 
-    Checkpointing a part that delivered short of its own promise — but not
+    Two rules that must not be collapsed into one. **Not checkpointed:**
+    checkpointing a part that delivered short of its own promise — but not
     short enough to fail — would let a later resumed run skip it and credit
     the full ``promised`` it never actually delivered: silently manufacturing
     the very records the note reported missing, with no note surviving into
@@ -2351,44 +2499,89 @@ class TestANotedPartIsNotCheckpointed:
     dies with whatever aborted the run that raised it). Leaving a noted part
     off the checkpoint means whichever run finally completes the day re-walks
     it and carries its note honestly.
+
+    **Still flushed:** ``on_part_finished`` is the only thing that empties the
+    caller's record buffer, so reporting a noted part not at all would make
+    the per-part memory bound conditional on the source behaving — a degraded
+    NCBI delivering 37 noted parts of a 242,216-record day would hold every
+    one of those records in memory at once (#105 review, F1).
     """
 
-    def test_a_noted_part_is_not_checkpointed_but_a_clean_part_is(self):
-        # date(2023, 6, 1) promises 4; EFETCH_PAGE_SIZE == EFETCH_MAX_RETRIEVABLE
-        # == 4 here, so its one page's retmax covers the whole promise and the
-        # walk ends naturally rather than stalling when that page is scripted
-        # to deliver only 3. 3/4 = 75%, above the 50% floor, so this is a
-        # *note*, not a failure — the branch F1 is about. date(2023, 6, 2)
-        # promises 1 and is left to fetch normally, delivering it in full, so
-        # this day has exactly one clean part and one noted part.
-        distribution = {date(2023, 6, 1): 4, date(2023, 6, 2): 1}
-        client = _partitioned_client(
-            distribution,
+    # date(2023, 6, 1) promises 4; EFETCH_PAGE_SIZE == EFETCH_MAX_RETRIEVABLE
+    # == 4 here, so its one page's retmax covers the whole promise and the
+    # walk ends naturally rather than stalling when that page is scripted to
+    # deliver only 3. 3/4 = 75%, above the 50% floor, so this is a *note*,
+    # not a failure — the branch both tests below are about. date(2023, 6, 2)
+    # promises 1 and is left to fetch normally, delivering it in full, so this
+    # day has exactly one noted part and one clean part, in that order.
+    DISTRIBUTION = {date(2023, 6, 1): 4, date(2023, 6, 2): 1}
+
+    @classmethod
+    def _client(cls):
+        return _partitioned_client(
+            cls.DISTRIBUTION,
             part_overrides={
                 date(2023, 6, 1): {"efetch_pages": [_make_efetch_xml(*([MINIMAL_ARTICLE_XML] * 3))]}
             },
         )
-        done: list[PartCheckpoint] = []
+
+    def test_a_noted_part_is_not_checkpointed_but_a_clean_part_is(self):
+        reported: list[PartCheckpoint | None] = []
 
         result = fetch_pubmed(
-            client, date(2024, 1, 1), on_record=lambda r: None, on_part_complete=done.append
+            self._client(),
+            date(2024, 1, 1),
+            on_record=lambda r: None,
+            on_part_finished=reported.append,
         )
 
         assert result.status == "completed"
         assert result.note is not None, "the day must still surface the part's shortfall"
-        assert len(done) == 1, "only the clean part may be checkpointed"
-        assert done[0].promised == 1, "the noted part (promised 4) must not be checkpointed"
+        checkpoints = [c for c in reported if c is not None]
+        assert len(checkpoints) == 1, "only the clean part may be checkpointed"
+        assert checkpoints[0].promised == 1, "the noted part (promised 4) must not be checkpointed"
+
+    def test_a_noted_parts_records_are_still_flushed(self):
+        """The buffer is drained at the noted part's own boundary, not later.
+
+        Modelled on what `sync()` does with the callback: records accumulate
+        until it fires, and it empties them. Asserting on the buffer's size
+        at each call is the only way to see the difference — afterwards, a
+        run that flushed per part and one that held everything to the end
+        both leave every record delivered.
+        """
+        buffered: list[FetchedRecord] = []
+        flushed: list[tuple[int, PartCheckpoint | None]] = []
+
+        def on_part_finished(checkpoint: PartCheckpoint | None) -> None:
+            flushed.append((len(buffered), checkpoint))
+            buffered.clear()
+
+        result = fetch_pubmed(
+            self._client(),
+            date(2024, 1, 1),
+            on_record=buffered.append,
+            on_part_finished=on_part_finished,
+        )
+
+        assert result.status == "completed"
+        assert [n for n, _ in flushed] == [3, 1], (
+            "each part's records must be flushed at its own boundary, the noted one included"
+        )
+        assert flushed[0][1] is None, "the noted part is flushed with no checkpoint"
+        assert flushed[1][1] is not None, "the clean part is flushed with one"
+        assert buffered == [], "nothing may be left holding records after the last part"
 
 
 # ---------------------------------------------------------------------------
-# Task 7 review, F2: on_part_complete must fire only after a part fully
+# Task 7 review, F2: on_part_finished must fire only after a part fully
 # reconciles — never for a part that errored or that failed reconciliation
 # ---------------------------------------------------------------------------
 
 
 @patch("bmlib.publications.fetchers.pubmed.time.sleep", lambda *_: None)
 class TestAFailedPartIsNotCheckpointed:
-    """`on_part_complete` must never fire for a part that did not reconcile.
+    """`on_part_finished` must never fire for a part that did not reconcile.
 
     A checkpoint written for a part that errored, or whose delivery fell
     below the reconciliation floor, would let a later resumed run skip that
@@ -2417,7 +2610,7 @@ class TestAFailedPartIsNotCheckpointed:
         done: list[PartCheckpoint] = []
 
         result = fetch_pubmed(
-            client, date(2024, 1, 1), on_record=lambda r: None, on_part_complete=done.append
+            client, date(2024, 1, 1), on_record=lambda r: None, on_part_finished=done.append
         )
 
         assert result.status == "failed"
@@ -2450,7 +2643,7 @@ class TestAFailedPartIsNotCheckpointed:
         done: list[PartCheckpoint] = []
 
         result = fetch_pubmed(
-            client, date(2024, 1, 1), on_record=lambda r: None, on_part_complete=done.append
+            client, date(2024, 1, 1), on_record=lambda r: None, on_part_finished=done.append
         )
 
         assert result.status == "failed"
@@ -2474,7 +2667,7 @@ class TestResumingAnOverCapDay:
     tests never hard-code a key or a range: every case discovers the real
     parts from a first ("prior") run of :func:`fetch_pubmed` against this
     class's own fake client, and drives the resume case from what that run
-    actually reported through ``on_part_complete``.
+    actually reported through ``on_part_finished``.
     """
 
     # Deliberately asymmetric (2 vs 1, not 2 vs 2): `reconcile_delivery`'s
@@ -2497,7 +2690,7 @@ class TestResumingAnOverCapDay:
             client,
             date(2024, 1, 1),
             on_record=lambda r: None,
-            on_part_complete=done.append,
+            on_part_finished=done.append,
         )
 
         assert result.status == "completed"
@@ -2514,7 +2707,7 @@ class TestResumingAnOverCapDay:
             first_client,
             date(2024, 1, 1),
             on_record=first_records.append,
-            on_part_complete=done.append,
+            on_part_finished=done.append,
         )
         assert done, "setup: an over-cap day must checkpoint at least one part"
         first_efetch_calls = [c for c in first_client.get.call_args_list if c.args[0] == EFETCH_URL]
@@ -2556,7 +2749,7 @@ class TestResumingAnOverCapDay:
             first_client,
             date(2024, 1, 1),
             on_record=lambda r: None,
-            on_part_complete=done.append,
+            on_part_finished=done.append,
         )
         assert done, "setup: an over-cap day must checkpoint at least one part"
 
@@ -2584,7 +2777,7 @@ class TestResumingAnOverCapDay:
             first_client,
             date(2024, 1, 1),
             on_record=lambda r: None,
-            on_part_complete=done.append,
+            on_part_finished=done.append,
         )
         assert done, "setup: an over-cap day must checkpoint at least one part"
         moved = dataclasses.replace(done[0], promised=done[0].promised - 1)
@@ -2616,7 +2809,7 @@ class TestResumingAnOverCapDay:
             first_client,
             date(2024, 1, 1),
             on_record=lambda r: None,
-            on_part_complete=done.append,
+            on_part_finished=done.append,
         )
         assert len(done) > 1, "setup: this day must hold a skipped part and a fetched one"
 
@@ -2643,7 +2836,7 @@ class TestResumingAnOverCapDay:
             first_client,
             date(2024, 1, 1),
             on_record=lambda r: None,
-            on_part_complete=done.append,
+            on_part_finished=done.append,
         )
         assert done, "setup: an over-cap day must checkpoint at least one part"
         moved = dataclasses.replace(done[0], promised=done[0].promised - 1)
@@ -2666,7 +2859,7 @@ class TestResumingAnOverCapDay:
         done: list[PartCheckpoint] = []
 
         result = fetch_pubmed(
-            client, date(2024, 3, 15), on_record=lambda r: None, on_part_complete=done.append
+            client, date(2024, 3, 15), on_record=lambda r: None, on_part_finished=done.append
         )
 
         assert result.status == "completed"

@@ -447,7 +447,7 @@ class SourceDescriptor:
 > **`resumable` — new, and `False` on purpose *(unreleased, #105)*.** A day too
 > large for one history session is fetched in parts, and a fetcher that can
 > report a finished part lets `sync()` checkpoint it so an interrupted run
-> resumes. `sync()` passes `completed_parts`, `on_part_complete` and
+> resumes. `sync()` passes `completed_parts`, `on_part_finished` and
 > `on_part_skipped` **only** to a fetcher whose descriptor sets this. It
 > defaults to `False` because [`register_source()`](#registry-functions) is
 > public: a fetcher written against an earlier bmlib does not accept those
@@ -903,7 +903,7 @@ Why it is built this way:
 
 The trade-off is memory: the whole day is held at once. In practice this is a few thousand records and tens of megabytes with abstracts.
 
-> **Changed (unreleased, #105).** A source that declares [`SourceDescriptor.resumable`](#sourcedescriptor-and-sourceparam) drains that buffer **once per finished part** rather than once per day, which is what keeps a 242,000-record day out of memory. The part's records and its `download_day_parts` checkpoint commit in the same transaction, so a checkpoint can never attest to records a rollback discarded, and a part holding a record that would not store is not checkpointed at all. Whatever the parts did not already flush is stored by the day's own transaction as before, so the two paths converge on the same `download_days` upsert.
+> **Changed (unreleased, #105).** A source that declares [`SourceDescriptor.resumable`](#sourcedescriptor-and-sourceparam) drains that buffer **once per finished part** rather than once per day, which is what keeps a 242,000-record day out of memory. Every part the fetcher walked to its end drains it, including one that reconciled short — otherwise the bound would hold only while the source behaves. The part's records and its `download_day_parts` checkpoint commit in the same transaction, so a checkpoint can never attest to records a rollback discarded; a part that reconciled short, or one holding a record that would not store, is flushed without a checkpoint. Whatever the parts did not already flush is stored by the day's own transaction as before, so the two paths converge on the same `download_days` upsert.
 
 **Failure isolation.** A fetcher exception — a misconfigured source (e.g. OpenAlex's required `email` missing), a network failure, or a bug inside the fetcher — is caught **per day**. It is logged, synthesised into a `FetchResult(status="failed", ...)`, appended to `SyncReport.errors`, and the run continues with the next day and the next source. One broken source never aborts a multi-source run or discards the report.
 
@@ -1109,7 +1109,7 @@ Set `resumable=True` on your `SourceDescriptor` only if your fetcher splits an o
 | Argument | Type | Description |
 |----------|------|-------------|
 | `completed_parts` | `Mapping[str, PartCheckpoint]` | Parts of this day a previous run finished, keyed by `part_key`. Empty on a first run. |
-| `on_part_complete` | `Callable[[PartCheckpoint], None]` | Call **after** a part's walk has reconciled cleanly, never before. `sync()` stores that part's records and the checkpoint in one transaction. |
+| `on_part_finished` | `Callable[[PartCheckpoint \| None], None]` | Call **after** every part you walked to its end: with a `PartCheckpoint` when it also reconciled cleanly, and with `None` when it reconciled short of its own promise. `sync()` stores that part's records either way, in one transaction with the checkpoint where one is given. |
 | `on_part_skipped` | `Callable[[str], None]` | Call with the `part_key` of every part you skipped because `completed_parts` still describes it. |
 
 Three rules, each of which protects a guard rather than a feature:
@@ -1118,7 +1118,9 @@ Three rules, each of which protects a guard rather than a feature:
 - **Count a skipped part as delivered when you reconcile the day**, or every resumed day fails its own day-total check — a resumed run never delivers those records, and the day's own count still includes them.
 - **Report a skipped part through `on_part_skipped`, and only a skipped one.** That is what lets `sync()` credit its stored records to `download_days.record_count` without double-counting a part you actually re-walked.
 
-Do not checkpoint a part that reconciled with a *note*, or one whose records you could not fully deliver. A later run would skip it and credit records that never arrived, and the note reporting them missing would not survive to that run.
+- **Report every part you finished, and pass `None` for one that did not reconcile cleanly.** The callback is what empties `sync()`'s record buffer, so reporting only your clean parts makes the per-part memory bound conditional on the source behaving: a source that returns 37 short-but-not-failing parts of a 242,216-record day would have every one of those records held in memory at once.
+
+Do not *checkpoint* a part that reconciled with a *note*, or one whose records you could not fully deliver — flush it with `None` instead. A later run would skip a checkpointed part and credit records that never arrived, and the note reporting them missing would not survive to that run.
 
 **Example — registering a source backed by a local JSON dump:**
 
@@ -1237,6 +1239,7 @@ Delivering nothing against no count is the ordinary quiet day and passes silentl
 Three things worth knowing before relying on this:
 
 - **The floor is a rule fixed before measurement**, unlike bmlib's other calibrated thresholds. It asserts only that no benign cause plausibly removes half a day's records. Issue #92 is the follow-up that measures the real distribution per source and tightens it — do not read `0.5` as a measured value.
+- **Partitioning a PubMed day raised what that unmeasured floor exposes, by about 24×** *(unreleased, #105)*. Before it, no PubMed day above 9,999 records was walked at all, so a `completed` day could be missing at most 4,999 records. Now every part of a partitioned day may come up to half short without failing, and the day's own total is judged against the same floor — so a 242,216-record day can be recorded `completed` while missing some 121,000 records, behind notes. Nothing about the rule changed; the population it applies to did. That is what makes #92 more urgent than when it was filed.
 - **The floor exists because a failed day is retried forever.** `_days_needing_fetch()` re-offers a `failed` day on every later run, so treating a benign, permanent gap as a failure would re-fetch and re-merge that whole day for the rest of an installation's life. Sources are not exact: a record can be withdrawn between search and fetch, and an index can move under a long walk.
 - **A count of `None` is not a count of `0`.** If you write a fetcher, pass `promised=None` when your source reported no count, never `0`: zero is a source saying the day is empty, which any delivery satisfies, so collapsing the two switches the stalled and shortfall rules off without saying so.
 
@@ -1258,7 +1261,7 @@ def fetch_pubmed(
     api_key: str | None = None,
     # unreleased, #105 — supplied by sync(); only used for a partitioned day
     completed_parts: Mapping[str, PartCheckpoint] | None = None,
-    on_part_complete: Callable[[PartCheckpoint], None] | None = None,
+    on_part_finished: Callable[[PartCheckpoint | None], None] | None = None,
     on_part_skipped: Callable[[str], None] | None = None,
 ) -> FetchResult
 ```
@@ -1320,19 +1323,22 @@ Four things to know:
 - **The cost is real and it arrives without being asked for.** A
   242,216-record day is about **562 requests**, and it is worth knowing which
   half of that is measured. The measured half is the ladder — that day's
-  count, its 37 parts, the 40 planning ESearches and the 37 session ESearches
-  were all probed live on 2026-08-21. The rest is arithmetic and has never
-  been confirmed by a full fetch — ~485 EFetch pages, from the record count
-  over the 500-record page size, and ~**1 GB** at roughly 4 KB a record. A
+  count, its 37 parts and the 40 planning ESearches were all probed live on
+  2026-08-21. Everything after planning is arithmetic and has never been
+  confirmed by a full fetch: the 37 session ESearches are one per measured
+  part and **no session ESearch was ever issued** (the sampler's `--partition`
+  mode opens none), the ~485 EFetch pages come from the record count over the
+  500-record page size, and ~**1 GB** from those at roughly 4 KB a record. A
   six-year backfill window holds some 72 such days, so roughly **6.2M
   records and ~25 GB**, and the run that meets them is long. It is a one-off:
   the day is then `completed` and never offered again, where the behaviour
   this replaces failed the day on every run for ever and stored nothing.
   There is no flag to turn it off — narrow the sync window if you do not want
   that trade for a given range.
-- **A partitioned day resumes.** Each part's records and its checkpoint are
-  written in one transaction, so an interrupted run does not repeat the parts
-  that finished — see [`download_day_parts`](#download_day_parts). A part is
+- **A partitioned day resumes.** Each part's records are stored at its own
+  boundary, in one transaction with its checkpoint where it earned one, so an
+  interrupted run does not repeat the parts that finished — see
+  [`download_day_parts`](#download_day_parts). A part is
   skipped on a later run only if its stored count still matches what this
   run's plan reports for it; a part that has gained records is re-walked,
   since skipping it would lose them permanently and silently.
@@ -1395,6 +1401,24 @@ day is re-offered on the next run, so a transient stays recoverable.
   walk against the source's own count*, or the day's total delivery comes up
   short of the day's own count. The second catches a whole part going missing
   even when every part passed on its own.
+
+- **A part reports 0 records having been measured non-empty at planning.**
+  Two of bmlib's own measurements disagree, and the weaker one does not get to
+  decide: the part is reconciled like any other, which fails, rather than
+  being dropped. Dropping it was silent, and silent at scale — fourteen such
+  parts of a 37-part day still deliver 62% of it, which clears the day-level
+  floor, so the day would be `completed`, never re-offered, and ~92,000
+  records absent behind one note. The retry is cheap: the parts already
+  walked are checkpointed, and a range that genuinely emptied yields no part
+  at all when the next run plans the day.
+
+- **A planning ESearch fails.** The ladder's counting probes are ordinary
+  ESearch requests, so a 500, a dropped connection or an NCBI `<ERROR>`
+  document can end one — at first planning or at the re-plan a part triggers
+  when its own count has crossed the cap. Either way `fetch_pubmed` returns
+  `FetchResult(status="failed")` naming the exception, exactly as the
+  under-cap path does for the same transient, rather than letting it escape
+  for `sync()` to catch.
 
 Before all this, the walk asked for record 10,000 anyway and the day failed on
 the 400 with `Client error '400 Bad Request'` — the right verdict, twenty
@@ -1834,7 +1858,7 @@ Rows are upserted by `sync()` inside the day's transaction, with `ON CONFLICT (s
 | `completed_at` | `TEXT` | `TEXT` | `NOT NULL` |
 | | | | `UNIQUE(source, date, part_key)` |
 
-A row is written only after its part's walk reconciled cleanly, in the **same transaction as that part's records** — so a checkpoint can never attest to records a rollback discarded. A part that reconciled short, or that held a record which failed to store, is deliberately left un-checkpointed: the day is `failed` and re-offered, and a checkpoint beside the gap would make that retry skip the one part holding the missing records.
+A row is written only after its part's walk reconciled cleanly, in the **same transaction as that part's records** — so a checkpoint can never attest to records a rollback discarded. A part that reconciled short, or that held a record which failed to store, is deliberately left un-checkpointed: the day is `failed` and re-offered, and a checkpoint beside the gap would make that retry skip the one part holding the missing records. Un-checkpointed is not un-stored, though: **every** part that finished walking has its records committed at its own boundary, checkpoint or no checkpoint, because that flush is also what keeps a 242,000-record day out of memory and a bound that only holds while the source behaves is not a bound.
 
 **What an operator sees here is an unfinished day.** `sync()` deletes a day's rows in the same transaction that records the day `completed`, so a completed day leaves nothing behind and the rows that are here name the days a re-run will resume. A `(source, date)` whose rows never go away is worth looking at: it is a day that keeps failing partway, and it is being re-offered on every run. Keeping the rows past completion would both grow the table without bound and make a `recheck_days` re-fetch skip the parts it was explicitly asked to redo.
 

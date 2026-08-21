@@ -181,7 +181,8 @@ being built: its saturation of `SyncReport.errors` came from a permanent,
 structural refusal that no longer happens. What remains of it is much smaller
 and is recorded in `docs/DECISIONS.md`: an Entrez date that alone exceeds the
 cap still fails its day permanently, but that is not a structural population —
-zero of the six real over-cap days walked so far contained one — so `errors`
+none of the six ladder walks, over five distinct real over-cap days, found
+one — so `errors`
 returns to empty in the ordinary case. If a later sampler run finds stuck dates
 are common, #107's `blocked` field is the right answer and the issue should be
 reopened.)

@@ -901,7 +901,7 @@ def _fetch_partitioned(
     api_key: str | None,
     rate_limit: float,
     completed_parts: Mapping[str, PartCheckpoint] | None = None,
-    on_part_complete: Callable[[PartCheckpoint], None] | None = None,
+    on_part_finished: Callable[[PartCheckpoint | None], None] | None = None,
     on_part_skipped: Callable[[str], None] | None = None,
 ) -> FetchResult:
     """Fetch a day too large for one history session, as Entrez-date parts.
@@ -950,15 +950,27 @@ def _fetch_partitioned(
         completed_parts: Parts of this day a previous run finished, keyed by
             part key. A part is skipped only if its stored ``promised`` still
             matches what this run's plan reports for it.
-        on_part_complete: Called with a :class:`PartCheckpoint` after a part's
-            walk reconciles clean — delivered its own ``promised`` in full,
-            with no note. A part that reconciled short of its promise (a note,
-            not a failure) is deliberately *not* checkpointed: skipping it on
-            a later resumed run would credit it at its full ``promised`` and
-            manufacture the very records the note is reporting missing, with
-            no note surviving into that run's result to say so. The caller is
-            expected to store the part's records and this checkpoint in one
-            transaction.
+        on_part_finished: Called once for **every** part this run walked to
+            its end — with a :class:`PartCheckpoint` when that part also
+            reconciled clean (delivered its own ``promised`` in full), and
+            with ``None`` when it reconciled short of its promise (a note,
+            not a failure). The caller is expected to store the part's
+            records either way, in one transaction with the checkpoint where
+            one is given.
+
+            Flushing and checkpointing are deliberately different questions.
+            The records must always be flushed, because this callback is the
+            only thing that empties the caller's buffer: calling it only for
+            a clean part made the per-part memory bound conditional on the
+            source behaving, and a degraded NCBI returning 37 noted parts of
+            a 242,216-record day would then hold every one of those records
+            in memory at once — the state the per-part flush exists to
+            prevent, reached exactly when the source is misbehaving (#105
+            review, F1). But a noted part must *not* be checkpointed:
+            skipping it on a later resumed run would credit it at its full
+            ``promised`` and manufacture the very records the note is
+            reporting missing, with no note surviving into that run's result
+            to say so.
         on_part_skipped: Called with the part key of every part skipped
             because ``completed_parts`` still describes it. The caller stored
             those records on an earlier run, so this is what lets it credit
@@ -995,6 +1007,17 @@ def _fetch_partitioned(
     except (_RootNotCoveringError, _UnsplittableDayError) as exc:
         logger.error("%s (%s)", exc, date_str)
         return failed(str(exc))
+    except Exception as exc:
+        # Planning is ESearch, so it fails the way every other request here
+        # does: a 500, a dropped connection, or an `<ERROR>` document that
+        # `_esearch` reports as a `ValueError`. `sync()` absorbs a raise and
+        # fails the day either way, so no records are at stake — but the
+        # under-cap path returns a failed `FetchResult` for exactly this, and
+        # one public function must not answer the same transient with a return
+        # value or an exception depending on how large the day happened to be.
+        message = f"planning the Entrez-date parts failed: {type(exc).__name__}: {exc}"
+        logger.error("%s for %s", message, date_str)
+        return failed(message)
 
     logger.info(
         "PubMed %s holds %d records, above the %d one history session serves:"
@@ -1046,12 +1069,17 @@ def _fetch_partitioned(
             # instead of handing back the same range forever (see
             # `_plan_partitions`'s docstring).
             #
-            # Only `_UnsplittableDayError` is caught here, which is safe only
-            # because `known_count` is always passed above: that is what
-            # makes `_plan_partitions` skip the root probe and so guarantees
-            # it never raises `_RootNotCoveringError`. If a later change drops
-            # `known_count` from this call, that exception starts escaping
-            # `_fetch_partitioned` — and `fetch_pubmed` — uncaught.
+            # `_UnsplittableDayError` is the one planning failure with a
+            # message of its own worth reporting verbatim; everything else
+            # falls through to the blanket handler below, which fails the day
+            # the way the under-cap path fails on a transient ESearch error.
+            # `_RootNotCoveringError` cannot arise here, because `known_count`
+            # is always passed above and that is what makes `_plan_partitions`
+            # skip the root probe. If a later change drops `known_count` from
+            # this call it would be caught blind by the blanket handler — the
+            # day still fails closed, but the error names an internal
+            # exception type instead of what the reader needs, so keep
+            # passing it.
             try:
                 pending.extendleft(
                     reversed(
@@ -1068,23 +1096,50 @@ def _fetch_partitioned(
             except _UnsplittableDayError as exc:
                 logger.error("%s (%s)", exc, date_str)
                 return failed(str(exc))
+            except Exception as exc:
+                message = f"re-partitioning part {part.key} failed: {type(exc).__name__}: {exc}"
+                logger.error("%s for %s", message, date_str)
+                return failed(message)
             continue
 
         if part_count == 0:
-            # Planning promised a nonzero count for this range; the part's own
-            # ESearch now says otherwise — a record withdrawn between the two,
-            # or an index that moved. Not an error on its own (the day-level
-            # reconcile below is what would catch it accumulating into a real
-            # shortfall), but silent otherwise: this is the one branch that
-            # issues no EFetch, so without the sleep here the next part's
-            # ESearch would follow this one with no pacing at all.
-            logger.info(
-                "PubMed part %s of %s promised records at planning but reports 0 now; skipping it",
-                part.key,
-                date_str,
+            # Planning measured this range at `part.promised` records and the
+            # part's own ESearch now reports none, so two of bmlib's own
+            # measurements disagree — and the weaker one must not be the one
+            # that decides (#105 review, F2). Dropping the part here was
+            # silent: a soft zero under load, or an Entrez date reassigned
+            # between the two requests, cost the whole part at INFO, and 14
+            # such parts of a 37-part day still deliver 62% of the day, which
+            # clears the day-level floor. The day would be `completed`, never
+            # re-offered, and ~92,000 records permanently absent behind a
+            # single shortfall note. The asymmetry was the tell: a part that
+            # *delivers* 1 of 5,000 fails the day, so a part that *claims* 0
+            # having been measured at 5,000 thirty seconds ago cannot pass.
+            #
+            # It is reconciled like any other part instead, which always
+            # fails, so the day fails and is re-offered. The retry is cheap:
+            # every part before this one is already checkpointed, and a range
+            # that genuinely emptied yields no partition at all at *plan* time
+            # on the next run (`descend` returns early for `n <= 0`), so the
+            # day self-heals in one extra day-fetch.
+            verdict = reconcile_delivery(
+                "pubmed",
+                f"{date_str} part {part.key}",
+                delivered=0,
+                promised=part.promised,
+                stalled=False,
             )
-            time.sleep(rate_limit)
-            continue
+            # `or`, not an assertion: a planned part always promises at least
+            # one record, so the reconcile above always fails — and if that
+            # ever stops holding, failing the day is still the fail-closed
+            # answer to two disagreeing counts.
+            return failed(
+                verdict.failure
+                or (
+                    f"part {part.key} promised {part.promised} records at planning"
+                    " but reports 0 now"
+                )
+            )
 
         if web_env is None or query_key is None:
             message = f"part {part.key} returned count={part_count} without a history session"
@@ -1135,23 +1190,35 @@ def _fetch_partitioned(
         if verdict.note is not None:
             notes.append(verdict.note)
 
-        # Checkpoint only a part that reconciled with no note. A noted part
-        # delivered short of its own promise (F1, #105 review): checkpointing
-        # it would let a later resumed run skip it and credit the full
-        # `part_count` it never actually delivered, silently manufacturing
-        # the records the note is reporting missing — and that run's result
-        # would carry no note at all, since this run's note dies with it if
-        # a later part fails. Leaving it off the checkpoint means whichever
-        # run finally completes the day re-walks the part and carries its
-        # note honestly.
-        if on_part_complete is not None and verdict.note is None:
-            on_part_complete(
+        # Every part that finished walking is reported, so its records leave
+        # the caller's buffer; only a part that reconciled with no note
+        # carries a checkpoint. Two rules, and they must not be collapsed
+        # back into one (#105 review, F1).
+        #
+        # Always report: this callback is the only thing that drains the
+        # caller's buffer, so reporting only clean parts made the per-part
+        # memory bound conditional on the source behaving — 37 noted parts of
+        # a 242,216-record day would be held in memory in their entirety,
+        # precisely when NCBI is degraded.
+        #
+        # Checkpoint only when clean: a noted part delivered short of its own
+        # promise, so checkpointing it would let a later resumed run skip it
+        # and credit the full `part_count` it never actually delivered,
+        # silently manufacturing the records the note is reporting missing —
+        # and that run's result would carry no note at all, since this run's
+        # note dies with it if a later part fails. Leaving it off the
+        # checkpoint means whichever run finally completes the day re-walks
+        # the part and carries its note honestly.
+        if on_part_finished is not None:
+            on_part_finished(
                 PartCheckpoint(
                     part_scheme=PART_SCHEME,
                     part_key=part.key,
                     promised=part_count,
                     record_count=outcome.processed,
                 )
+                if verdict.note is None
+                else None
             )
 
         time.sleep(rate_limit)
@@ -1190,7 +1257,7 @@ def fetch_pubmed(
     on_progress: Callable[[SyncProgress], None] | None = None,
     api_key: str | None = None,
     completed_parts: Mapping[str, PartCheckpoint] | None = None,
-    on_part_complete: Callable[[PartCheckpoint], None] | None = None,
+    on_part_finished: Callable[[PartCheckpoint | None], None] | None = None,
     on_part_skipped: Callable[[str], None] | None = None,
 ) -> FetchResult:
     """Fetch all PubMed articles published on *target_date*.
@@ -1217,13 +1284,16 @@ def fetch_pubmed(
         but not to ``on_progress`` or to the returned record count — both
         count only what this run itself walked, so on a resumed day they read
         lower than the day's real size.
-    on_part_complete:
-        Called with a :class:`PartCheckpoint` after a part's walk reconciles
-        clean — delivered its own promise in full, with no note. A part that
-        reconciled short (a note, not a failure) is deliberately not
-        checkpointed, since skipping it on a later run would credit records it
-        never actually delivered. The caller is expected to store the part's
-        records and this checkpoint in one transaction.
+    on_part_finished:
+        Called once for every part this run walked to its end: with a
+        :class:`PartCheckpoint` when that part also reconciled clean —
+        delivered its own promise in full, with no note — and with ``None``
+        when it reconciled short (a note, not a failure). Store the part's
+        records either way, in one transaction with the checkpoint where one
+        is given. Storing them is what empties the caller's buffer, so it may
+        not be conditional on the part being clean; the checkpoint is,
+        because skipping a noted part on a later run would credit records it
+        never actually delivered.
     on_part_skipped:
         Called with the part key of every part skipped because
         ``completed_parts`` still describes it. Those records were stored by
@@ -1295,7 +1365,7 @@ def fetch_pubmed(
             api_key=api_key,
             rate_limit=rate_limit,
             completed_parts=completed_parts,
-            on_part_complete=on_part_complete,
+            on_part_finished=on_part_finished,
             on_part_skipped=on_part_skipped,
         )
 
