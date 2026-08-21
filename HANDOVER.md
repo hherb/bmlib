@@ -2,9 +2,14 @@
 
 _Last updated: 2026-08-21. **0.10.0 is released and on PyPI**; four changes
 sit unreleased on `main` — #73's atomic template install (PR #102), #96/#105's
-partitioning of an over-cap PubMed day (PRs #106 and #114), and **this
-session's two JATS fixes, on `fix/110-111-jats-subarticle-and-contrib-group`**.
-All five version places agree at 0.10.0.
+partitioning of an over-cap PubMed day (PRs #106 and #114), and #109's typed
+article-id (PR #113) — plus **this session's two JATS fixes, on
+`fix/110-111-jats-subarticle-and-contrib-group`**. All five version places
+agree at 0.10.0. Three of the four unreleased changes are `fulltext` JATS
+fixes filed the same day; whoever cuts the next release should describe them
+together, and note that **#111 moves what downstream stores** — a corpus
+synced before it holds empty author lists for the majority of its
+open-access articles.
 
 **This session fixed #110 and #111**, two silent defects in
 `fulltext/jats_parser.py`. Both were found on the way *out* of bmlib rather
@@ -48,16 +53,14 @@ lowercase, but `pub-id-type` is already folded a few handlers below and an
 unfolded `Author` would drop a whole group while no casing of another role is
 ever accepted.
 
-**PR #113 (#109) was rebased onto `main` and force-pushed; it is
-`MERGEABLE` and waiting on review.** It had conflicted only in `CHANGELOG.md`
-and `CLAUDE.md`, both resolved by keeping `main`'s #105 text and the branch's
-own additions. It is a third defect in the same file — a publisher's internal
-id taken as the DOI on 46% of SAGE articles. **Review and merge #113 and this
-session's PR independently, in either order.** Test-merged: `jats_parser.py`,
-`tests/test_jats_parser.py` and `CHANGELOG.md` all auto-merge — the code
-changes do not overlap — and the one conflict is `CLAUDE.md`, where both
-branches append a sentence to the same `fulltext/` bullet. Keep both
-sentences; that is the whole resolution.
+**PR #113 (#109) was rebased onto `main` this session and has since been
+merged.** It had conflicted in `CHANGELOG.md` and `CLAUDE.md` after #114
+landed, both resolved by keeping `main`'s #105 text and the branch's own
+additions. It is a third defect in the same file — a publisher's internal id
+taken as the DOI on 46% of SAGE articles — and this session's branch was
+rebased onto it afterwards. The one conflict between them was the predicted
+`CLAUDE.md` one, where both append a sentence to the same `fulltext/` bullet;
+both sentences were kept. The code merged with no conflict at all.
 
 **Next up is one of the four remaining non-JATS issues, or Phase 3 of the
 bmlibrarian port, whose every row needs a design conversation.** #112, filed
@@ -102,9 +105,10 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed six releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2374 passing + 63 skipped on `main`** (`uv run pytest tests/ -q`);
-  **2394 + 63** on `fix/110-111-jats-subarticle-and-contrib-group`, so 20 are
-  this session's, and **2386 + 63** on PR #113's rebased branch. The
+- **Tests: 2386 passing + 63 skipped on `main`** (`uv run pytest tests/ -q`),
+  which is 2374 before PR #113 merged plus its 12; **2407 + 63** on
+  `fix/110-111-jats-subarticle-and-contrib-group` after rebasing onto that, so
+  21 are this session's. All three measured, not derived. The
   PostgreSQL half was **not** re-run for this session's branch and does not
   need to be: it touches no SQL, and the last measured figure with
   `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the #105 branch. Of the 63
@@ -172,8 +176,8 @@ review filed **#103**. **#96** closed with PR #106, as correct rather than as
 fixed. **#105 and #107** closed with PR #114 — #107 dissolved rather than
 being built: its saturation of `SyncReport.errors` came from a permanent,
 structural refusal that no longer happens, and what remains of it is in
-`docs/DECISIONS.md`. **#110 and #111** close with this session's PR. **#109**
-has an open PR, #113, rebased onto `main` this session and waiting on review.)
+`docs/DECISIONS.md`. **#109** closed with PR #113, rebased onto `main` this
+session and merged. **#110 and #111** close with this session's PR.)
 
 **#112 — three of the transparency funder-matching counts do not reproduce
 against the committed corpus.** Filed with #109–#111, from the same Swift
