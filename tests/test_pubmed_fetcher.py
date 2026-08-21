@@ -1624,7 +1624,7 @@ class TestPubMedServesOnlyTheFirstRecordsOfASession:
         # explores both halves to the floor, where a real day's right child
         # measures 0 and prunes. So this bound is the fake's worst case
         # (measured: 36), not the cost of a real unsplittable day — that one
-        # puts every record on one Entrez date and costs 23 probes, against
+        # puts every record on one Entrez date and costs 24 probes, against
         # 71 for a realistic 401,500-record day that does partition.
         # `TestTheEdatLadder` asserts the same kind of bound on
         # `_plan_partitions` directly.
@@ -1872,6 +1872,73 @@ class TestTheEdatLadder:
 
         assert exc_info.value.edat_day == date(2023, 6, 1)
         assert exc_info.value.count == 25000
+
+    def test_a_phantom_tail_leaf_is_measured_away_rather_than_refusing_the_day(self):
+        # When a parent's count is higher than its children really hold, the
+        # subtraction parks the surplus on the right — and the root reaches
+        # 2100, so the surplus walks down a structurally empty tail to a
+        # single future date it claims holds tens of thousands of records.
+        # Refused on a derived number, that day fails and is re-fetched on
+        # every later run: up to ~562 requests and ~1 GB each time, for a
+        # range PubMed has never indexed anything into.
+        #
+        # Measuring the date before refusing the day on it costs one ESearch
+        # on a path that is about to abandon hundreds, and the phantom
+        # measures 0 and disappears.
+        from bmlib.publications.fetchers.pubmed import _plan_partitions
+
+        populated = {date(2023, 6, 1): 400, date(2023, 6, 2): 9000}
+
+        def count_fn(term: str) -> int:
+            lo, hi = self._span(term)
+            return sum(v for d, v in populated.items() if lo <= d <= hi)
+
+        # 30,000 where the day really holds 9,400: the other 20,600 land on
+        # the tail leaf 2100-12-31.
+        parts = _plan_partitions(count_fn, "DAY", 30000, known_count=30000)
+
+        assert sum(p.promised for p in parts) == 9400
+        # The property, stated directly: no part promises records its range
+        # does not hold. A wide range is fine — the ladder stops splitting the
+        # moment one fits — but a phantom is a part whose promise nothing
+        # would confirm.
+        for part in parts:
+            assert part.promised == count_fn(
+                f'DAY AND ("{part.lo:%Y/%m/%d}"[EDAT] : "{part.hi:%Y/%m/%d}"[EDAT])'
+            ), f"{part.lo}..{part.hi} promises {part.promised} records it does not hold"
+
+    def test_a_single_date_whose_derived_count_was_too_high_becomes_a_part(self):
+        # The same measurement, where the date is real rather than phantom: a
+        # date the subtraction pushed over the cap is an ordinary part once
+        # its true count is known.
+        from bmlib.publications.fetchers.pubmed import _plan_partitions
+
+        populated = {date(2023, 6, 1): 400, date(2099, 6, 2): 9000}
+
+        def count_fn(term: str) -> int:
+            lo, hi = self._span(term)
+            return sum(v for d, v in populated.items() if lo <= d <= hi)
+
+        parts = _plan_partitions(count_fn, "DAY", 30000, known_count=30000)
+
+        assert sum(p.promised for p in parts) == 9400
+
+    def test_an_inverted_root_range_is_refused(self):
+        # Not reachable today — the root is a constant and the re-partition
+        # path passes a validated part's own bounds — but an inverted range
+        # sends `descend` into a recursion that never narrows, and a public
+        # `ValueError` is cheaper than discovering that as a RecursionError.
+        from bmlib.publications.fetchers.pubmed import _plan_partitions
+
+        with pytest.raises(ValueError, match="inverted"):
+            _plan_partitions(
+                lambda term: 1,
+                "DAY",
+                1,
+                lo=date(2030, 1, 1),
+                hi=date(2020, 1, 1),
+                probe_root=False,
+            )
 
     def test_a_root_that_does_not_cover_the_day_raises(self):
         from bmlib.publications.fetchers.pubmed import _plan_partitions, _RootNotCoveringError
@@ -3144,6 +3211,35 @@ class TestADayLevelZeroDoesNotOverruleItsOwnCheckpoints:
         # remedy is a judgement call an operator makes from it.
         assert "2 part" in result.error
         assert "10500" in result.error
+
+    def test_an_over_cap_day_is_partitioned_even_without_a_day_level_session(self):
+        # The day-level session is unused on the partitioned path — each part
+        # opens its own — so refusing the day for want of it costs a day that
+        # was perfectly fetchable, and a failed day is re-offered on every
+        # later run. If the anomaly is real rather than transient, each part's
+        # own session check fails and the day fails anyway.
+        distribution = {date(2023, 6, 1) + timedelta(days=i): 2 for i in range(3)}
+        inner = _partitioned_client(distribution)
+
+        def get(url, params=None):
+            response = inner.get(url, params=params)
+            if url == ESEARCH_URL and "EDAT" not in params.get("term", ""):
+                # The day-level search: a count, but no WebEnv or QueryKey.
+                response.text = "<eSearchResult><Count>6</Count></eSearchResult>"
+            return response
+
+        client = MagicMock()
+        client.get.side_effect = get
+        records = []
+
+        with (
+            patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 2),
+            patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 2),
+        ):
+            result = fetch_pubmed(client, date(2024, 1, 1), on_record=records.append)
+
+        assert result.status == "completed"
+        assert len(records) == 6
 
     def test_a_genuinely_empty_day_with_no_stored_parts_still_completes(self):
         # The negative control: the ordinary quiet day is untouched, and this

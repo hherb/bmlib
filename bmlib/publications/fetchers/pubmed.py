@@ -860,6 +860,11 @@ def _plan_partitions(
             inside the range. Never raised when *known_count* is given.
         _UnsplittableDayError: A single Entrez date exceeds the cap.
     """
+    if lo > hi:
+        raise ValueError(
+            f"the ladder's root range is inverted: {lo.isoformat()} is after {hi.isoformat()}"
+        )
+
     if known_count is not None:
         root_count = known_count
     else:
@@ -880,7 +885,39 @@ def _plan_partitions(
             parts.append(_Partition(lo_, hi_, n))
             return
         if lo_ == hi_:
-            raise _UnsplittableDayError(lo_, n)
+            if (lo_, hi_) == (lo, hi):
+                # This planning call was handed a single date to begin with,
+                # which is the re-partition path: `n` is `known_count`, the
+                # part's own session ESearch, so it is measured already.
+                # Measuring again is what `known_count` exists to prevent — a
+                # lower answer yields a partition spanning the identical
+                # range, which goes back on the queue, is fetched, reports
+                # over-cap, and re-plans against NCBI forever.
+                raise _UnsplittableDayError(lo_, n)
+            # `n` may have arrived by subtraction, so measure before refusing
+            # a whole day on it. Two things follow from the true count, and
+            # both matter more than the one ESearch they cost on a path that
+            # is otherwise about to abandon hundreds.
+            #
+            # A parent counted higher than its children really hold parks the
+            # surplus on the right, and the root reaches 2100 — so the surplus
+            # walks down a structurally empty tail to a single future date
+            # claiming tens of thousands of records. Refused on that, the day
+            # fails and is re-fetched on every later run (~562 requests and
+            # ~1 GB each time) over a range PubMed has never indexed anything
+            # into. Measured, the phantom is 0 and simply disappears.
+            #
+            # And a date the subtraction merely overstated is an ordinary
+            # part. What is left — a single Entrez date measured above the cap
+            # — is the one case that genuinely cannot be split, and the count
+            # the error names is now one an ESearch actually returned.
+            measured = count_fn(_edat_range_term(day_term, lo_, hi_))
+            if measured <= 0:
+                return
+            if measured <= EFETCH_MAX_RETRIEVABLE:
+                parts.append(_Partition(lo_, hi_, measured))
+                return
+            raise _UnsplittableDayError(lo_, measured)
         mid = lo_ + (hi_ - lo_) // 2
         left = count_fn(_edat_range_term(day_term, lo_, mid))
         right = n - left
@@ -1409,6 +1446,29 @@ def fetch_pubmed(
             status="completed",
         )
 
+    if count > EFETCH_MAX_RETRIEVABLE:
+        # Ahead of the session guard below, and deliberately: the session
+        # opened above is unused on this path — `_fetch_partitioned` opens one
+        # per part — so a day-level ESearch that reports a count without a
+        # WebEnv is no obstacle to fetching this day, and refusing it would
+        # lose a fetchable day to a re-offer on every later run. If the
+        # anomaly is not transient, each part's own session guard fails and
+        # the day fails there. The one wasted session per over-cap day is not
+        # worth a second code path to avoid.
+        return _fetch_partitioned(
+            client,
+            target_date,
+            day_term,
+            count,
+            on_record=on_record,
+            on_progress=on_progress,
+            api_key=api_key,
+            rate_limit=rate_limit,
+            completed_parts=completed_parts,
+            on_part_finished=on_part_finished,
+            on_part_skipped=on_part_skipped,
+        )
+
     if web_env is None or query_key is None:
         # ESearch is sent `usehistory=y` and every efetch page reads the
         # session back. Without it each page asks NCBI for `WebEnv=` (httpx
@@ -1425,24 +1485,6 @@ def fetch_pubmed(
             record_count=0,
             status="failed",
             error=message,
-        )
-
-    if count > EFETCH_MAX_RETRIEVABLE:
-        # The session opened above is unused on this path — one wasted session
-        # per over-cap day, against a partitioned fetch of tens of thousands of
-        # records. Not worth a second code path to avoid.
-        return _fetch_partitioned(
-            client,
-            target_date,
-            day_term,
-            count,
-            on_record=on_record,
-            on_progress=on_progress,
-            api_key=api_key,
-            rate_limit=rate_limit,
-            completed_parts=completed_parts,
-            on_part_finished=on_part_finished,
-            on_part_skipped=on_part_skipped,
         )
 
     logger.info("PubMed esearch: %d records for %s", count, date_str)
