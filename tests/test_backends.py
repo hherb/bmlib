@@ -104,6 +104,7 @@ class TestSchema:
             "publications",
             "fulltext_sources",
             "download_days",
+            "download_day_parts",
             "retraction_notices",
             "publication_grants",
             "publication_affiliations",
@@ -643,6 +644,26 @@ class TestSync:
         _record_day_part(backend_conn, "pubmed", date(2024, 1, 1), cp)  # idempotent
 
         assert _load_day_parts(backend_conn, "pubmed", date(2024, 1, 1)) == {cp.part_key: cp}
+
+    def test_a_day_split_into_several_parts_returns_every_one(self, backend_conn):
+        """Multi-part days are the point of this table — cover both backends.
+
+        Asserts each part comes back under its own key with its own
+        ``promised``/``record_count``, not merely that the count of rows is
+        right: a reader that collapsed every row onto one key would still
+        pass a ``len()``-only check.
+        """
+        ensure_schema(backend_conn)
+        day = date(2024, 1, 1)
+        first = PartCheckpoint("edat-range", "edat:2023-01-01:2023-04-30", 8000, 8000)
+        second = PartCheckpoint("edat-range", "edat:2023-05-01:2023-08-31", 9375, 9200)
+
+        _record_day_part(backend_conn, "pubmed", day, first)
+        _record_day_part(backend_conn, "pubmed", day, second)
+
+        stored = _load_day_parts(backend_conn, "pubmed", day)
+
+        assert stored == {first.part_key: first, second.part_key: second}
 
 
 # ---------------------------------------------------------------------------

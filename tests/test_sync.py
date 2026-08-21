@@ -1916,3 +1916,29 @@ class TestDayPartCheckpoints:
 
         assert _load_day_parts(conn, "pubmed", date(2024, 1, 1)) == {}
         assert _load_day_parts(conn, "pubmed", date(2024, 1, 2)) == {cp.part_key: cp}
+
+    def test_a_day_split_into_several_parts_returns_every_one(self):
+        """The whole point of this table: a day is more than one part.
+
+        A test that only checked ``len(stored) == 3`` would still pass if
+        ``_load_day_parts`` collapsed every row onto one key — so this
+        checks each part is present under its own key, with its own
+        ``promised``/``record_count``, not merely that the count is right.
+        """
+        conn = connect_sqlite(":memory:")
+        ensure_schema(conn)
+        day = date(2024, 1, 1)
+        first = PartCheckpoint("edat-range", "edat:2023-01-01:2023-04-30", 8000, 8000)
+        second = PartCheckpoint("edat-range", "edat:2023-05-01:2023-08-31", 9375, 9200)
+        third = PartCheckpoint("edat-range", "edat:2023-09-01:2023-12-31", 7500, 7500)
+        _record_day_part(conn, "pubmed", day, first)
+        _record_day_part(conn, "pubmed", day, second)
+        _record_day_part(conn, "pubmed", day, third)
+
+        stored = _load_day_parts(conn, "pubmed", day)
+
+        assert stored == {
+            first.part_key: first,
+            second.part_key: second,
+            third.part_key: third,
+        }
