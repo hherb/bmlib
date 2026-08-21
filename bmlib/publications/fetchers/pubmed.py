@@ -28,7 +28,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, NamedTuple
 
 from bmlib.fulltext.models import FullTextSourceEntry
@@ -77,6 +77,18 @@ EFETCH_PAGE_SIZE = 500
 # note. `scripts/sample_efetch_paging.py` is what detects a moved cap, in
 # either direction; see `docs/DECISIONS.md`.
 EFETCH_MAX_RETRIEVABLE = 9999
+
+# The ladder's root. Wide enough that no record of any publication day falls
+# outside it — verified per day by the root probe rather than assumed, since a
+# record indexed outside it would be in no part's promise and every part would
+# then reconcile perfectly while the day was silently short.
+EDAT_ROOT_LO = date(1900, 1, 1)
+EDAT_ROOT_HI = date(2100, 12, 31)
+
+# Names the partitioning scheme in `download_day_parts.part_scheme`. A stored
+# key is compared as a string, so a scheme that changes without this changing
+# would match nothing and silently re-fetch every unfinished day.
+PART_SCHEME = "edat-range"
 
 RATE_LIMIT_WITH_KEY = 0.1  # seconds between requests with API key
 RATE_LIMIT_WITHOUT_KEY = 0.34  # seconds between requests without API key
@@ -717,6 +729,143 @@ def _walk_session(
             time.sleep(rate_limit)
 
     return _WalkOutcome(processed, delivered, False, None)
+
+
+# ---------------------------------------------------------------------------
+# The EDAT ladder: planning an over-cap day as Entrez-date ranges (#105)
+# ---------------------------------------------------------------------------
+
+
+class _Partition(NamedTuple):
+    """One Entrez-date range of a day, small enough to fetch in one session."""
+
+    lo: date
+    hi: date
+    promised: int
+
+    @property
+    def key(self) -> str:
+        """This part's identity in ``download_day_parts``."""
+        return _part_key(self.lo, self.hi)
+
+
+class _UnsplittableDay(Exception):  # noqa: N818 — name is a fixed cross-task interface, not public
+    """A single Entrez day holds more records than one session can serve."""
+
+    def __init__(self, edat_day: date, count: int) -> None:
+        self.edat_day = edat_day
+        self.count = count
+        super().__init__(
+            f"{count} records share the Entrez date {edat_day.isoformat()}, above the"
+            f" {EFETCH_MAX_RETRIEVABLE} a history session serves, and an Entrez date"
+            " cannot be split further; refusing the day"
+        )
+
+
+class _RootNotCovering(Exception):  # noqa: N818 — name is a fixed cross-task interface, not public
+    """Records of this day lie outside the ladder's root range."""
+
+
+def _part_key(lo: date, hi: date) -> str:
+    """Return the stored identity of the partition spanning *lo* to *hi*.
+
+    The one constructor, because the resume skip rule compares this string:
+    a second spelling of the same range matches no checkpoint, so resume
+    degrades to a full re-fetch with nothing raised. Pinned by a test.
+
+    Args:
+        lo: The range's first (inclusive) Entrez date.
+        hi: The range's last (inclusive) Entrez date.
+
+    Returns:
+        The ``download_day_parts.part_scheme``-scoped key for this range.
+    """
+    return f"edat:{lo.isoformat()}:{hi.isoformat()}"
+
+
+def _edat_range_term(day_term: str, lo: date, hi: date) -> str:
+    """Restrict *day_term* to records indexed between *lo* and *hi* inclusive.
+
+    Args:
+        day_term: The day's own ``[Date - Publication]`` search term, as built
+            by :func:`_day_term`.
+        lo: The range's first (inclusive) Entrez date.
+        hi: The range's last (inclusive) Entrez date.
+
+    Returns:
+        The combined ESearch term.
+    """
+    return f'{day_term} AND ("{lo:%Y/%m/%d}"[EDAT] : "{hi:%Y/%m/%d}"[EDAT])'
+
+
+def _plan_partitions(
+    count_fn: Callable[[str], int],
+    day_term: str,
+    day_count: int,
+    *,
+    lo: date = EDAT_ROOT_LO,
+    hi: date = EDAT_ROOT_HI,
+    probe_root: bool = True,
+) -> list[_Partition]:
+    """Split a day into Entrez-date ranges that each fit in one session.
+
+    ``[lo, mid]`` and ``[mid+1, hi]`` tile ``[lo, hi]`` as arithmetic and every
+    record carries exactly one Entrez date, so the parts are disjoint and
+    covering by construction — below the root. At the root that is an empirical
+    claim, so *probe_root* verifies it.
+
+    Only the left child is counted; the right is the parent's count minus it,
+    which the tiling makes exact and which halves the ladder's cost.
+
+    Args:
+        count_fn: Returns the record count for an arbitrary ESearch term —
+            injected so this is unit-testable without HTTP.
+        day_term: The day's own ``[Date - Publication]`` search term.
+        day_count: The day's own record count, from the caller's day-level
+            ESearch. Used only to validate the root probe.
+        lo: The ladder's root range start. Defaults to :data:`EDAT_ROOT_LO`.
+        hi: The ladder's root range end. Defaults to :data:`EDAT_ROOT_HI`.
+        probe_root: Whether to verify the root range covers *day_count*
+            before descending. Tests that construct an already-narrow root
+            pass ``False`` to skip the probe.
+
+    Returns:
+        The day's partitions, each with ``promised <= EFETCH_MAX_RETRIEVABLE``
+        and holding at least one record, sorted by construction into disjoint,
+        covering ranges.
+
+    Raises:
+        _RootNotCovering: The root range holds fewer records than the day does,
+            so some record of the day is indexed outside it. Coming up *long*
+            is benign — the two counts are two requests at two instants, and a
+            record indexed between them lands at EDAT=today, inside the range.
+        _UnsplittableDay: A single Entrez date exceeds the cap.
+    """
+    root_count = count_fn(_edat_range_term(day_term, lo, hi))
+    if probe_root and root_count < day_count:
+        raise _RootNotCovering(
+            f"the Entrez-date range {lo.isoformat()}..{hi.isoformat()} holds {root_count}"
+            f" of this day's {day_count} records, so {day_count - root_count} of them lie"
+            " outside the ladder and would be silently absent; refusing the day"
+        )
+
+    parts: list[_Partition] = []
+
+    def descend(lo_: date, hi_: date, n: int) -> None:
+        if n <= 0:
+            return
+        if n <= EFETCH_MAX_RETRIEVABLE:
+            parts.append(_Partition(lo_, hi_, n))
+            return
+        if lo_ == hi_:
+            raise _UnsplittableDay(lo_, n)
+        mid = lo_ + (hi_ - lo_) // 2
+        left = count_fn(_edat_range_term(day_term, lo_, mid))
+        descend(lo_, mid, left)
+        descend(mid + timedelta(days=1), hi_, n - left)
+
+    descend(lo, hi, root_count)
+    return parts
 
 
 # ---------------------------------------------------------------------------

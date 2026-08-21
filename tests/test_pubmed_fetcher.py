@@ -18,8 +18,9 @@
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
-from datetime import date
+from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1762,3 +1763,107 @@ class TestTheWalkIsSharedBetweenWholeDaysAndParts:
 
         assert outcome.error is not None
         assert "connection reset" in outcome.error
+
+
+# ---------------------------------------------------------------------------
+# The EDAT ladder plans an over-cap day into ranges that each fit (#105)
+# ---------------------------------------------------------------------------
+
+
+class TestTheEdatLadder:
+    """Parts must tile the day exactly — coverage is the whole guarantee."""
+
+    @staticmethod
+    def _counter(distribution: dict[date, int]):
+        """Return a count_fn over a synthetic EDAT -> record-count distribution."""
+
+        def count_fn(term: str) -> int:
+            m = re.search(r'"([\d/]+)"\[EDAT\] : "([\d/]+)"\[EDAT\]', term)
+            if m is None:  # the bare day term
+                return sum(distribution.values())
+            lo = datetime.strptime(m.group(1), "%Y/%m/%d").date()
+            hi = datetime.strptime(m.group(2), "%Y/%m/%d").date()
+            return sum(n for d, n in distribution.items() if lo <= d <= hi)
+
+        return count_fn
+
+    def test_parts_tile_the_day_exactly(self):
+        from bmlib.publications.fetchers.pubmed import _plan_partitions
+
+        distribution = {date(2023, 1, 1) + timedelta(days=i): 400 for i in range(100)}
+        total = sum(distribution.values())  # 40,000 — four times the cap
+
+        parts = _plan_partitions(self._counter(distribution), "DAY", total)
+
+        assert sum(p.promised for p in parts) == total
+        assert all(p.promised <= 9999 for p in parts)
+        # Disjoint: no two parts share a date.
+        spans = sorted((p.lo, p.hi) for p in parts)
+        for (_, prev_hi), (next_lo, _) in zip(spans, spans[1:]):
+            assert prev_hi < next_lo
+
+    def test_an_empty_range_is_skipped_not_recursed(self):
+        from bmlib.publications.fetchers.pubmed import _plan_partitions
+
+        # Corrected from the brief (SDD ruling R3): a single Entrez day of
+        # 20,000 exceeds the unpatched 9,999 cap and cannot be split further,
+        # so descend() would reach lo == hi and raise _UnsplittableDay before
+        # the empty-range skip this test targets is ever exercised. Five days
+        # of 4,000 keep the same 20,000 total while staying splittable.
+        distribution = {date(2023, 6, 1) + timedelta(days=i): 4000 for i in range(5)}
+        calls: list[str] = []
+        inner = self._counter(distribution)
+
+        def counting(term: str) -> int:
+            calls.append(term)
+            return inner(term)
+
+        parts = _plan_partitions(counting, "DAY", 20000)
+
+        # Every part returned holds records; the empty centuries cost nothing
+        # below themselves.
+        assert all(p.promised > 0 for p in parts)
+        assert len(calls) < 60
+
+    def test_a_single_entrez_day_over_the_cap_raises(self):
+        from bmlib.publications.fetchers.pubmed import _plan_partitions, _UnsplittableDay
+
+        distribution = {date(2023, 6, 1): 25000}
+
+        with pytest.raises(_UnsplittableDay) as exc_info:
+            _plan_partitions(self._counter(distribution), "DAY", 25000)
+
+        assert exc_info.value.edat_day == date(2023, 6, 1)
+        assert exc_info.value.count == 25000
+
+    def test_a_root_that_does_not_cover_the_day_raises(self):
+        from bmlib.publications.fetchers.pubmed import _plan_partitions, _RootNotCovering
+
+        # Corrected from the brief (SDD ruling R4): 9,000 per day, not
+        # 10,000 — 10,000 exceeds the cap on its own, which would make each
+        # single day unsplittable and mask what the root probe is being
+        # tested for. Two days of 9,000 (18,000 in the root) against a day
+        # claiming 30,000: the root probe must raise before any descent.
+        distribution = {date(2023, 6, 1) + timedelta(days=i): 9000 for i in range(2)}
+
+        with pytest.raises(_RootNotCovering):
+            _plan_partitions(self._counter(distribution), "DAY", 30000)
+
+    def test_a_root_that_is_long_proceeds(self):
+        from bmlib.publications.fetchers.pubmed import _plan_partitions
+
+        # A record indexed between the two counts lands inside the range.
+        # Corrected from the brief per the same ruling as above: 9,000 per
+        # day (18,000 total) against a day claiming 17,999.
+        distribution = {date(2023, 6, 1) + timedelta(days=i): 9000 for i in range(2)}
+
+        parts = _plan_partitions(self._counter(distribution), "DAY", 17999)
+
+        assert sum(p.promised for p in parts) == 18000
+
+    def test_the_part_key_format_is_pinned(self):
+        from bmlib.publications.fetchers.pubmed import _part_key
+
+        # The skip rule is a string comparison: a silent format change costs a
+        # full re-fetch of every unfinished day, with nothing raised.
+        assert _part_key(date(2023, 4, 10), date(2023, 8, 31)) == "edat:2023-04-10:2023-08-31"
