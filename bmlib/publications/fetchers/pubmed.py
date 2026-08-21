@@ -27,7 +27,8 @@ import logging
 import re
 import time
 import xml.etree.ElementTree as ET
-from collections.abc import Callable
+from collections import deque
+from collections.abc import Callable, Mapping
 from datetime import date, timedelta
 from typing import Any, NamedTuple
 
@@ -749,7 +750,7 @@ class _Partition(NamedTuple):
         return _part_key(self.lo, self.hi)
 
 
-class _UnsplittableDay(Exception):  # noqa: N818 — name is a fixed cross-task interface, not public
+class _UnsplittableDayError(Exception):
     """A single Entrez day holds more records than one session can serve."""
 
     def __init__(self, edat_day: date, count: int) -> None:
@@ -762,7 +763,7 @@ class _UnsplittableDay(Exception):  # noqa: N818 — name is a fixed cross-task 
         )
 
 
-class _RootNotCovering(Exception):  # noqa: N818 — name is a fixed cross-task interface, not public
+class _RootNotCoveringError(Exception):
     """Records of this day lie outside the ladder's root range."""
 
 
@@ -806,6 +807,7 @@ def _plan_partitions(
     lo: date = EDAT_ROOT_LO,
     hi: date = EDAT_ROOT_HI,
     probe_root: bool = True,
+    known_count: int | None = None,
 ) -> list[_Partition]:
     """Split a day into Entrez-date ranges that each fit in one session.
 
@@ -827,7 +829,21 @@ def _plan_partitions(
         hi: The ladder's root range end. Defaults to :data:`EDAT_ROOT_HI`.
         probe_root: Whether to verify the root range covers *day_count*
             before descending. Tests that construct an already-narrow root
-            pass ``False`` to skip the probe.
+            pass ``False`` to skip the probe. Has no effect when *known_count*
+            is given — see below.
+        known_count: When given, used as the root count directly instead of
+            issuing a count request, and no root probe is performed at all
+            (so *probe_root* is moot). This is for `_fetch_partitioned`'s
+            re-partition path: a part's own session ESearch has already
+            reported its count above the cap, and re-counting the same range
+            fresh risks a *lower* answer (the two counts are two requests at
+            two instants) that collapses back to a single partition spanning
+            the identical range — which would be pushed onto the queue,
+            fetched again, report over-cap again, and loop against NCBI
+            forever. Passing the count that triggered the re-plan guarantees
+            the descent always narrows (or raises
+            :class:`_UnsplittableDayError` at ``lo == hi``), so it always
+            terminates, and it saves one request per re-partition.
 
     Returns:
         The day's partitions, each with ``promised <= EFETCH_MAX_RETRIEVABLE``
@@ -835,19 +851,23 @@ def _plan_partitions(
         covering ranges.
 
     Raises:
-        _RootNotCovering: The root range holds fewer records than the day does,
-            so some record of the day is indexed outside it. Coming up *long*
-            is benign — the two counts are two requests at two instants, and a
-            record indexed between them lands at EDAT=today, inside the range.
-        _UnsplittableDay: A single Entrez date exceeds the cap.
+        _RootNotCoveringError: The root range holds fewer records than the day
+            does, so some record of the day is indexed outside it. Coming up
+            *long* is benign — the two counts are two requests at two
+            instants, and a record indexed between them lands at EDAT=today,
+            inside the range. Never raised when *known_count* is given.
+        _UnsplittableDayError: A single Entrez date exceeds the cap.
     """
-    root_count = count_fn(_edat_range_term(day_term, lo, hi))
-    if probe_root and root_count < day_count:
-        raise _RootNotCovering(
-            f"the Entrez-date range {lo.isoformat()}..{hi.isoformat()} holds {root_count}"
-            f" of this day's {day_count} records, so {day_count - root_count} of them lie"
-            " outside the ladder and would be silently absent; refusing the day"
-        )
+    if known_count is not None:
+        root_count = known_count
+    else:
+        root_count = count_fn(_edat_range_term(day_term, lo, hi))
+        if probe_root and root_count < day_count:
+            raise _RootNotCoveringError(
+                f"the Entrez-date range {lo.isoformat()}..{hi.isoformat()} holds {root_count}"
+                f" of this day's {day_count} records, so {day_count - root_count} of them lie"
+                " outside the ladder and would be silently absent; refusing the day"
+            )
 
     parts: list[_Partition] = []
 
@@ -858,7 +878,7 @@ def _plan_partitions(
             parts.append(_Partition(lo_, hi_, n))
             return
         if lo_ == hi_:
-            raise _UnsplittableDay(lo_, n)
+            raise _UnsplittableDayError(lo_, n)
         mid = lo_ + (hi_ - lo_) // 2
         left = count_fn(_edat_range_term(day_term, lo_, mid))
         descend(lo_, mid, left)
@@ -871,6 +891,205 @@ def _plan_partitions(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+
+def _fetch_partitioned(
+    client: Any,
+    target_date: date,
+    day_term: str,
+    day_count: int,
+    *,
+    on_record: Callable[[FetchedRecord], None],
+    on_progress: Callable[[SyncProgress], None] | None,
+    api_key: str | None,
+    rate_limit: float,
+    completed_parts: Mapping[str, Any] | None = None,
+    on_part_complete: Callable[[Any], None] | None = None,
+) -> FetchResult:
+    """Fetch a day too large for one history session, as Entrez-date parts.
+
+    A history session serves only its first ``EFETCH_MAX_RETRIEVABLE`` records,
+    so a day above that cannot be completed through one. It is split into
+    Entrez-date ranges that each fit — disjoint and covering, so every record is
+    fetched exactly once — and each part is walked as an ordinary session.
+
+    Every failure path fails the whole day. A day recorded ``completed`` is
+    never re-offered, so a part that could not be verified must not be allowed
+    to leave the day looking whole.
+
+    *completed_parts* and *on_part_complete* are accepted but not yet acted on
+    — resume support (checkpointing a part as it finishes, and skipping a part
+    already recorded complete) arrives in a later task. Accepting the keywords
+    here means `fetch_pubmed`'s signature does not have to change twice.
+
+    Args:
+        client: An httpx-compatible HTTP client.
+        target_date: The publication day being fetched.
+        day_term: The day's own ``[Date - Publication]`` search term, from
+            :func:`_day_term`.
+        day_count: The day's own record count, from the caller's day-level
+            ESearch — above ``EFETCH_MAX_RETRIEVABLE``, or this would not have
+            been called.
+        on_record: Callback invoked with each parsed record.
+        on_progress: Optional callback invoked after each page, reporting
+            progress against the whole day rather than against one part.
+        api_key: Optional NCBI API key.
+        rate_limit: Seconds to sleep between requests.
+        completed_parts: Unused in this task; see above.
+        on_part_complete: Unused in this task; see above.
+
+    Returns:
+        The day's :class:`FetchResult`, ``completed`` only if every part
+        reconciled.
+    """
+    date_str = target_date.isoformat()
+    checkpoints = dict(completed_parts or {})
+
+    def count_fn(term: str) -> int:
+        n, _, _ = _esearch(client, term, api_key, usehistory=False)
+        time.sleep(rate_limit)
+        return n
+
+    def failed(error: str) -> FetchResult:
+        return FetchResult(
+            source="pubmed",
+            date=date_str,
+            record_count=processed,
+            status="failed",
+            error=error,
+        )
+
+    processed = 0
+    try:
+        parts = _plan_partitions(count_fn, day_term, day_count)
+    except (_RootNotCoveringError, _UnsplittableDayError) as exc:
+        logger.error("%s (%s)", exc, date_str)
+        return failed(str(exc))
+
+    logger.info(
+        "PubMed %s holds %d records, above the %d one history session serves:"
+        " fetching it as %d Entrez-date parts",
+        date_str,
+        day_count,
+        EFETCH_MAX_RETRIEVABLE,
+        len(parts),
+    )
+
+    pending = deque(parts)
+    delivered = 0
+    notes: list[str] = []
+
+    while pending:
+        part = pending.popleft()
+        term = _edat_range_term(day_term, part.lo, part.hi)
+
+        try:
+            part_count, web_env, query_key = _esearch(client, term, api_key)
+        except Exception as exc:
+            logger.error("esearch failed for %s part %s: %s", date_str, part.key, exc)
+            return failed(f"part {part.key}: {exc}")
+
+        if part_count > EFETCH_MAX_RETRIEVABLE:
+            # It grew between planning and fetching. Split it again rather than
+            # walk it: the last page of an over-cap session is silently clamped,
+            # so walking would look like an ordinary short day. `known_count`
+            # drives the re-plan off the count that triggered it rather than a
+            # fresh recount, which is what guarantees the descent narrows
+            # instead of handing back the same range forever (see
+            # `_plan_partitions`'s docstring).
+            try:
+                pending.extendleft(
+                    reversed(
+                        _plan_partitions(
+                            count_fn,
+                            day_term,
+                            part_count,
+                            lo=part.lo,
+                            hi=part.hi,
+                            known_count=part_count,
+                        )
+                    )
+                )
+            except _UnsplittableDayError as exc:
+                logger.error("%s (%s)", exc, date_str)
+                return failed(str(exc))
+            continue
+
+        if part_count == 0:
+            continue
+
+        if web_env is None or query_key is None:
+            message = f"part {part.key} returned count={part_count} without a history session"
+            logger.error("%s for %s", message, date_str)
+            return failed(message)
+
+        before = processed
+
+        def _report(part_processed: int, _before: int = before) -> None:
+            if on_progress is not None:
+                total = _before + part_processed
+                on_progress(
+                    SyncProgress(
+                        source="pubmed",
+                        date=date_str,
+                        records_processed=total,
+                        records_total=day_count,
+                        status="in_progress",
+                        message=f"Fetched {total}/{day_count} records (part {part.key})",
+                    )
+                )
+
+        outcome = _walk_session(
+            client,
+            web_env,
+            query_key,
+            part_count,
+            on_record=on_record,
+            api_key=api_key,
+            rate_limit=rate_limit,
+            on_page=_report,
+        )
+        processed += outcome.processed
+        delivered += outcome.delivered
+
+        if outcome.error is not None:
+            return failed(f"part {part.key}: {outcome.error}")
+
+        verdict = reconcile_delivery(
+            "pubmed",
+            f"{date_str} part {part.key}",
+            delivered=outcome.delivered,
+            promised=part_count,
+            stalled=outcome.stalled,
+        )
+        if verdict.failure is not None:
+            return failed(verdict.failure)
+        if verdict.note is not None:
+            notes.append(verdict.note)
+
+        time.sleep(rate_limit)
+
+    day_verdict = reconcile_delivery(
+        "pubmed",
+        date_str,
+        delivered=delivered,
+        promised=day_count,
+        stalled=False,
+    )
+    if day_verdict.failure is not None:
+        return failed(day_verdict.failure)
+    if day_verdict.note is not None:
+        notes.append(day_verdict.note)
+
+    logger.debug("checkpoints available for %s: %d", date_str, len(checkpoints))
+
+    return FetchResult(
+        source="pubmed",
+        date=date_str,
+        record_count=processed,
+        status="completed",
+        note="; ".join(notes) or None,
+    )
 
 
 def fetch_pubmed(
@@ -945,40 +1164,18 @@ def fetch_pubmed(
         )
 
     if count > EFETCH_MAX_RETRIEVABLE:
-        # The day cannot be completed through this route, so it is refused
-        # before a single record is fetched rather than after the reachable
-        # ones are. Both readings end with the day recorded `failed` and
-        # re-offered on every later run — it can never be `completed`, since
-        # that would durably lose the remainder — so the only question is what
-        # the doomed run costs. Walking first would buy the first
-        # `EFETCH_MAX_RETRIEVABLE` records once and then re-fetch them on every
-        # run for the life of the installation: measured against real days,
-        # every first-of-month is over the cap (49,543-90,571 records, since a
-        # record carrying only a year and month is indexed at day 1) and every
-        # 1 January is 212,439-315,282, so a six-year backfill carries some 72
-        # such days and would re-download ~3 GB per run to store nothing new.
-        # Refusing costs one esearch instead. The records are not written off:
-        # issue #105 partitions an over-cap day into sub-queries that each fit,
-        # which is what makes "no publication is missed" true again.
-        #
-        # "a history session serves" rather than "efetch serves": the limit is
-        # the search backend's, which is how NCBI's own 400 names it and how
-        # every doc describing this refers to it. An operator grepping the
-        # docs for the phrase in their log has to find it.
-        message = (
-            f"PubMed reported {count} records for {date_str}, but a history session serves"
-            f" only its first {EFETCH_MAX_RETRIEVABLE} records, so"
-            f" {count - EFETCH_MAX_RETRIEVABLE} of them cannot be reached; refusing the day"
-            " rather than storing part of it as though it were whole. This day is refused"
-            " on every run until issue #105 lands; no operator action is available"
-        )
-        logger.error("%s", message)
-        return FetchResult(
-            source="pubmed",
-            date=date_str,
-            record_count=0,
-            status="failed",
-            error=message,
+        # The session opened above is unused on this path — one wasted session
+        # per over-cap day, against a partitioned fetch of tens of thousands of
+        # records. Not worth a second code path to avoid.
+        return _fetch_partitioned(
+            client,
+            target_date,
+            day_term,
+            count,
+            on_record=on_record,
+            on_progress=on_progress,
+            api_key=api_key,
+            rate_limit=rate_limit,
         )
 
     logger.info("PubMed esearch: %d records for %s", count, date_str)

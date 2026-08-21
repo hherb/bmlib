@@ -1539,7 +1539,7 @@ class TestTheWalkIsIndexedByTheSetNotByWhatArrived:
 
 
 class TestPubMedServesOnlyTheFirstRecordsOfASession:
-    """A day larger than the cap cannot complete, and must not claim to.
+    """A day larger than the cap cannot complete through *one session*.
 
     NCBI's search backend serves the first 9,999 records of a history session
     and refuses the rest: *"To obtain more than 9,999 PubMed records, consider
@@ -1551,9 +1551,9 @@ class TestPubMedServesOnlyTheFirstRecordsOfASession:
     Before this guard the walk asked for record 10,000 anyway, got an HTTP 400
     whose body it discarded, and failed the day with
     ``Client error '400 Bad Request'`` — accurate, since the day genuinely
-    cannot be completed, but naming neither the cause nor the remedy, and
-    re-fetching twenty pages of already-stored records on every later run to
-    reach the same wall.
+    cannot be completed through one session, but naming neither the cause nor
+    the remedy, and re-fetching twenty pages of already-stored records on
+    every later run to reach the same wall.
 
     One day-size did not fail, and it is the reason this guard closes a
     *silent* loss rather than only an unhelpful message: a day of exactly
@@ -1563,8 +1563,16 @@ class TestPubMedServesOnlyTheFirstRecordsOfASession:
     ``completed``. Durable, never re-offered, one record gone. See
     ``test_one_record_past_the_cap_is_already_too_many``.
 
-    Issue #105 is what makes such a day fetchable; until it lands the day is
-    refused, not partially stored.
+    Issue #105 is what makes such a day fetchable: `_fetch_partitioned` now
+    splits it into Entrez-date ranges that each fit and walks each as an
+    ordinary session (see `TestAnOverCapDayIsFetchedRatherThanRefused`, which
+    uses a fake whose ESearch count actually varies with the term). `_FakeEUtils`
+    below reports the same count for *every* term regardless of range, which is
+    not a realistic distribution — no query ever narrows it — so every day here
+    lands in `_plan_partitions`'s other failure mode: it looks unsplittable,
+    since halving the Entrez-date range never reduces the count either. The day
+    still ends up `failed`, and still without a record stored or a session
+    opened, which is what these tests continue to pin.
     """
 
     def test_a_day_over_the_cap_is_failed_not_completed_short(self):
@@ -1575,7 +1583,7 @@ class TestPubMedServesOnlyTheFirstRecordsOfASession:
 
         assert result.status == "failed"
 
-    def test_the_error_names_the_cap_and_what_was_never_offered(self):
+    def test_the_error_names_the_cap_and_why_it_could_not_be_split(self):
         """An operator cannot act on `400 Bad Request`; they can act on this."""
         client = _FakeEUtils(12_000)
 
@@ -1585,17 +1593,19 @@ class TestPubMedServesOnlyTheFirstRecordsOfASession:
         assert result.error is not None
         assert "12000" in result.error
         assert "9999" in result.error
-        assert "2001" in result.error  # 12,000 - 9,999, out of reach
-        assert "#105" in result.error  # the remedy, not just the diagnosis
+        assert "cannot be split further" in result.error
 
-    def test_the_day_is_refused_before_a_single_record_is_fetched(self):
-        """One esearch and nothing else — the walk is not begun.
+    def test_no_records_are_stored_when_the_day_cannot_be_split(self):
+        """The ladder's own planning probes never open a session or fetch a page.
 
         The day ends `failed` either way, and a failed day is re-offered on
         every later run, so the whole question is what the doomed run costs.
         Walking first would buy the first 9,999 records once and re-fetch them
         forever after: some 72 such days in a six-year backfill, ~3 GB per run,
-        storing nothing new.
+        storing nothing new. The ladder itself costs several ESearches (it
+        narrows the Entrez-date range looking for one that fits) — more than
+        the single pre-#105 refusal did — but every one of them is a `retmax=0`
+        count probe, never an `efetch` page.
         """
         client = _FakeEUtils(12_000)
         on_record = MagicMock()
@@ -1604,7 +1614,7 @@ class TestPubMedServesOnlyTheFirstRecordsOfASession:
             result = fetch_pubmed(client, date(2024, 1, 15), on_record=on_record)
 
         assert client.pages == []
-        assert len(client.calls) == 1
+        assert len(client.calls) > 1  # the ladder's own planning ESearches
         on_record.assert_not_called()
         assert result.record_count == 0
 
@@ -1637,13 +1647,16 @@ class TestPubMedServesOnlyTheFirstRecordsOfASession:
         assert result.error is None
         assert result.record_count == 9999
 
-    def test_the_1_january_shape_says_what_it_could_not_reach(self):
-        """A day 30x the cap reports the cap, not a shortfall it invented.
+    def test_a_day_that_is_a_multiple_of_the_cap_fails_by_being_unsplittable(self):
+        """A day 30x the cap still fails loudly, not with a shortfall it invented.
 
         Had the walk run first, 9,999 delivered against 30,000 promised would
         be 33% — under `SHORTFALL_FAILURE_RATIO`, so the day would fail with
         "treated as truncated rather than short", describing a walk that
-        stopped early when nothing stopped early.
+        stopped early when nothing stopped early. Under #105 the day is never
+        walked at all: `_FakeEUtils` reports 30,000 for every Entrez-date
+        range regardless of width, so the ladder can never find one that
+        fits and the day fails as unsplittable instead.
         """
         client = _FakeEUtils(30_000)
 
@@ -1653,12 +1666,12 @@ class TestPubMedServesOnlyTheFirstRecordsOfASession:
         assert result.status == "failed"
         assert result.error is not None
         # "floor" is `reconcile_delivery`'s word for the shortfall message
-        # (`fetchers/_reconcile.py`), which is what a stall must *not* be
+        # (`fetchers/_reconcile.py`), which is what this must *not* be
         # diagnosed as. Cross-module wording, so if that message is reworded
         # this assertion stops guarding and `test_fetch_reconciliation.py` is
         # where the rename would be noticed.
         assert "floor" not in result.error
-        assert "cannot be reached" in result.error
+        assert "cannot be split further" in result.error
 
     def test_a_stall_below_the_cap_is_still_reported_as_a_stall(self):
         """The cap must not become the explanation for every failure."""
@@ -1807,7 +1820,7 @@ class TestTheEdatLadder:
 
         # Corrected from the brief (SDD ruling R3): a single Entrez day of
         # 20,000 exceeds the unpatched 9,999 cap and cannot be split further,
-        # so descend() would reach lo == hi and raise _UnsplittableDay before
+        # so descend() would reach lo == hi and raise _UnsplittableDayError before
         # the empty-range skip this test targets is ever exercised. Five days
         # of 4,000 keep the same 20,000 total while staying splittable.
         distribution = {date(2023, 6, 1) + timedelta(days=i): 4000 for i in range(5)}
@@ -1826,18 +1839,18 @@ class TestTheEdatLadder:
         assert len(calls) < 60
 
     def test_a_single_entrez_day_over_the_cap_raises(self):
-        from bmlib.publications.fetchers.pubmed import _plan_partitions, _UnsplittableDay
+        from bmlib.publications.fetchers.pubmed import _plan_partitions, _UnsplittableDayError
 
         distribution = {date(2023, 6, 1): 25000}
 
-        with pytest.raises(_UnsplittableDay) as exc_info:
+        with pytest.raises(_UnsplittableDayError) as exc_info:
             _plan_partitions(self._counter(distribution), "DAY", 25000)
 
         assert exc_info.value.edat_day == date(2023, 6, 1)
         assert exc_info.value.count == 25000
 
     def test_a_root_that_does_not_cover_the_day_raises(self):
-        from bmlib.publications.fetchers.pubmed import _plan_partitions, _RootNotCovering
+        from bmlib.publications.fetchers.pubmed import _plan_partitions, _RootNotCoveringError
 
         # Corrected from the brief (SDD ruling R4): 9,000 per day, not
         # 10,000 — 10,000 exceeds the cap on its own, which would make each
@@ -1846,7 +1859,7 @@ class TestTheEdatLadder:
         # claiming 30,000: the root probe must raise before any descent.
         distribution = {date(2023, 6, 1) + timedelta(days=i): 9000 for i in range(2)}
 
-        with pytest.raises(_RootNotCovering):
+        with pytest.raises(_RootNotCoveringError):
             _plan_partitions(self._counter(distribution), "DAY", 30000)
 
     def test_a_root_that_is_long_proceeds(self):
@@ -1867,3 +1880,175 @@ class TestTheEdatLadder:
         # The skip rule is a string comparison: a silent format change costs a
         # full re-fetch of every unfinished day, with nothing raised.
         assert _part_key(date(2023, 4, 10), date(2023, 8, 31)) == "edat:2023-04-10:2023-08-31"
+
+
+# ---------------------------------------------------------------------------
+# #105: fetching an over-cap day as parts (`_fetch_partitioned`)
+# ---------------------------------------------------------------------------
+
+
+def _eutils_client(count_fn, *, article_xml=MINIMAL_ARTICLE_XML, session_count_fn=None):
+    """A fake E-utilities client: ESearch answers from *count_fn*, EFetch slices.
+
+    EFetch synthesises the page its parameters name, exactly as the live
+    backend does — the slice of the session's UID list at ``retstart``, capped
+    at ``retmax``. Modelling that rather than a fixed list of bodies is what
+    lets a test exercise a ladder whose terms it never has to spell out.
+
+    *session_count_fn*, when given, answers every ESearch that carries the
+    ``usehistory`` parameter — the day-level search and each part's own
+    fetch-time search, both of which open a session — while *count_fn*
+    answers the planning probes `_plan_partitions` issues with
+    ``usehistory=False``. `_esearch` omits the ``usehistory`` parameter
+    entirely rather than sending it false, which is what makes the two
+    distinguishable here, and what makes a part's fetch-time re-check (the
+    count NCBI reports once the session actually opens, as opposed to the
+    count planning saw) testable independently. Without *session_count_fn*,
+    both kinds share *count_fn*.
+    """
+    import itertools
+
+    sessions: dict[str, int] = {}
+    counter = itertools.count(1)
+
+    def get(url, params=None):
+        params = params or {}
+        response = MagicMock()
+        if url == ESEARCH_URL:
+            key = str(next(counter))
+            fn = count_fn
+            if session_count_fn is not None and "usehistory" in params:
+                fn = session_count_fn
+            sessions[key] = fn(params["term"])
+            response.text = _make_esearch_xml(sessions[key], query_key=key)
+            return response
+        if url == EFETCH_URL:
+            total = sessions[params["query_key"]]
+            n = max(0, min(int(params["retmax"]), total - int(params["retstart"])))
+            response.text = _make_efetch_xml(*([article_xml] * n))
+            return response
+        raise AssertionError(f"unexpected URL {url}")
+
+    client = MagicMock()
+    client.get.side_effect = get
+    return client
+
+
+def _distribution_counter(distribution: dict[date, int]):
+    """Return a count_fn over a synthetic EDAT -> record-count distribution."""
+
+    def count_fn(term: str) -> int:
+        m = re.search(r'"([\d/]+)"\[EDAT\] : "([\d/]+)"\[EDAT\]', term)
+        if m is None:
+            return sum(distribution.values())
+        lo = datetime.strptime(m.group(1), "%Y/%m/%d").date()
+        hi = datetime.strptime(m.group(2), "%Y/%m/%d").date()
+        return sum(n for d, n in distribution.items() if lo <= d <= hi)
+
+    return count_fn
+
+
+@patch("bmlib.publications.fetchers.pubmed.time.sleep", lambda *_: None)
+@patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 2)
+@patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 2)
+class TestAnOverCapDayIsFetchedRatherThanRefused:
+    """#105: the day that used to be refused outright is now fetched in parts."""
+
+    def test_every_record_of_an_over_cap_day_arrives(self):
+        distribution = {date(2023, 6, 1): 2, date(2023, 6, 2): 2, date(2023, 6, 3): 2}
+        client = _eutils_client(_distribution_counter(distribution))
+        records = []
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=records.append, api_key=None)
+
+        assert result.status == "completed"
+        assert result.record_count == 6
+        assert len(records) == 6
+
+    def test_an_unsplittable_entrez_day_fails_the_day_and_names_it(self):
+        distribution = {date(2023, 6, 1): 5}
+        client = _eutils_client(_distribution_counter(distribution))
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert result.status == "failed"
+        assert "2023-06-01" in result.error
+        assert "cannot be split further" in result.error
+
+    def test_a_root_that_does_not_cover_fails_the_day(self):
+        # The bare day term reports 8; the root EDAT range holds only 4.
+        def count_fn(term: str) -> int:
+            if "[EDAT]" not in term:
+                return 8
+            return _distribution_counter({date(2023, 6, 1): 2, date(2023, 6, 2): 2})(term)
+
+        client = _eutils_client(count_fn)
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert result.status == "failed"
+        assert "lie outside the ladder" in result.error
+
+    def test_a_part_that_grew_past_the_cap_is_split_again(self):
+        # Planning sees each part fitting; the part's own ESearch then reports
+        # more than a session can serve. It must be split again rather than
+        # walked — an over-cap session's last page is silently clamped, so
+        # walking it would look like an ordinary short day.
+        client = _eutils_client(
+            _distribution_counter({date(2023, 6, 1): 2, date(2023, 6, 2): 2}),
+            session_count_fn=lambda term: 4,
+        )
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        # Re-splitting narrows to a single Entrez date, which cannot be split
+        # further, so the day fails loudly instead of looping.
+        assert result.status == "failed"
+        assert "cannot be split further" in result.error
+
+    def test_a_disagreeing_recount_terminates_instead_of_looping(self):
+        # The session count says over-cap; a fresh planning count says it fits.
+        # Without the session count driving the re-plan, the same part would be
+        # re-queued and re-fetched forever.
+        client = _eutils_client(
+            _distribution_counter({date(2023, 6, 1): 2, date(2023, 6, 2): 2}),
+            session_count_fn=lambda term: 4,
+        )
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert result.status == "failed"
+        assert client.get.call_count < 100, "the re-plan must narrow, not repeat"
+
+    def test_progress_reports_the_days_total_not_a_parts(self):
+        distribution = {date(2023, 6, 1): 2, date(2023, 6, 2): 2}
+        client = _eutils_client(_distribution_counter(distribution))
+        seen: list[SyncProgress] = []
+
+        fetch_pubmed(
+            client,
+            date(2024, 1, 1),
+            on_record=lambda r: None,
+            on_progress=seen.append,
+            api_key=None,
+        )
+
+        assert seen, "expected at least one progress report"
+        assert {p.records_total for p in seen} == {4}
+        assert [p.records_processed for p in seen] == sorted(p.records_processed for p in seen)
+
+
+class TestTheUnderCapPathIsUnchanged:
+    """A negative control: an ordinary day must not pay for the ladder."""
+
+    def test_an_ordinary_day_issues_no_partitioning_search(self):
+        client = _eutils_client(lambda term: 2)
+
+        fetch_pubmed(client, date(2024, 3, 15), on_record=lambda r: None)
+
+        terms = [
+            c.kwargs["params"]["term"]
+            for c in client.get.call_args_list
+            if "term" in c.kwargs.get("params", {})
+        ]
+        assert terms == ['("2024/03/15"[Date - Publication])']
