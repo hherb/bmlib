@@ -888,11 +888,6 @@ def _plan_partitions(
     return parts
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def _fetch_partitioned(
     client: Any,
     target_date: date,
@@ -944,6 +939,10 @@ def _fetch_partitioned(
     """
     date_str = target_date.isoformat()
     checkpoints = dict(completed_parts or {})
+    # Not read yet: Task 5 wires up resume (skip a part already checkpointed
+    # complete). `del` rather than a debug log dressed up as instrumentation
+    # keeps this honestly unused instead of pretending to be observability.
+    del checkpoints
 
     def count_fn(term: str) -> int:
         n, _, _ = _esearch(client, term, api_key, usehistory=False)
@@ -997,6 +996,13 @@ def _fetch_partitioned(
             # fresh recount, which is what guarantees the descent narrows
             # instead of handing back the same range forever (see
             # `_plan_partitions`'s docstring).
+            #
+            # Only `_UnsplittableDayError` is caught here, which is safe only
+            # because `known_count` is always passed above: that is what
+            # makes `_plan_partitions` skip the root probe and so guarantees
+            # it never raises `_RootNotCoveringError`. If a later change drops
+            # `known_count` from this call, that exception starts escaping
+            # `_fetch_partitioned` — and `fetch_pubmed` — uncaught.
             try:
                 pending.extendleft(
                     reversed(
@@ -1016,6 +1022,19 @@ def _fetch_partitioned(
             continue
 
         if part_count == 0:
+            # Planning promised a nonzero count for this range; the part's own
+            # ESearch now says otherwise — a record withdrawn between the two,
+            # or an index that moved. Not an error on its own (the day-level
+            # reconcile below is what would catch it accumulating into a real
+            # shortfall), but silent otherwise: this is the one branch that
+            # issues no EFetch, so without the sleep here the next part's
+            # ESearch would follow this one with no pacing at all.
+            logger.info(
+                "PubMed part %s of %s promised records at planning but reports 0 now; skipping it",
+                part.key,
+                date_str,
+            )
+            time.sleep(rate_limit)
             continue
 
         if web_env is None or query_key is None:
@@ -1081,8 +1100,6 @@ def _fetch_partitioned(
     if day_verdict.note is not None:
         notes.append(day_verdict.note)
 
-    logger.debug("checkpoints available for %s: %d", date_str, len(checkpoints))
-
     return FetchResult(
         source="pubmed",
         date=date_str,
@@ -1090,6 +1107,11 @@ def _fetch_partitioned(
         status="completed",
         note="; ".join(notes) or None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 
 def fetch_pubmed(

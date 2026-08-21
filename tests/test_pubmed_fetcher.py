@@ -1614,7 +1614,12 @@ class TestPubMedServesOnlyTheFirstRecordsOfASession:
             result = fetch_pubmed(client, date(2024, 1, 15), on_record=on_record)
 
         assert client.pages == []
-        assert len(client.calls) > 1  # the ladder's own planning ESearches
+        # More than the single pre-#105 refusal, but bounded: `_FakeEUtils`
+        # reports 12,000 for every range regardless of width, so the ladder
+        # can never narrow and descends the full root depth once (measured:
+        # 19) rather than exploring every branch of it — `TestTheEdatLadder`
+        # asserts the same kind of bound on `_plan_partitions` directly.
+        assert 1 < len(client.calls) < 30
         on_record.assert_not_called()
         assert result.record_count == 0
 
@@ -1887,7 +1892,9 @@ class TestTheEdatLadder:
 # ---------------------------------------------------------------------------
 
 
-def _eutils_client(count_fn, *, article_xml=MINIMAL_ARTICLE_XML, session_count_fn=None):
+def _eutils_client(
+    count_fn, *, article_xml=MINIMAL_ARTICLE_XML, session_count_fn=None, max_calls=300
+):
     """A fake E-utilities client: ESearch answers from *count_fn*, EFetch slices.
 
     EFetch synthesises the page its parameters name, exactly as the live
@@ -1905,13 +1912,29 @@ def _eutils_client(count_fn, *, article_xml=MINIMAL_ARTICLE_XML, session_count_f
     count NCBI reports once the session actually opens, as opposed to the
     count planning saw) testable independently. Without *session_count_fn*,
     both kinds share *count_fn*.
+
+    *max_calls* is a hard backstop, not a tuning knob: every legitimate use
+    in this file stays under a few dozen calls, so 300 is never meant to be
+    approached. Its job is to convert a re-partition loop that regressed back
+    to infinite (dropping `known_count` in favour of a fresh recount — see
+    `_plan_partitions`'s docstring) into a fast, loud `RuntimeError` from
+    inside the mock. `time.sleep` is patched to a no-op in every test that
+    uses this fake, so nothing else would ever stop such a loop or even slow
+    it down — an `assert client.get.call_count < N` after the call can only
+    fire if `fetch_pubmed` returns first, and an infinite loop never returns.
     """
     import itertools
 
     sessions: dict[str, int] = {}
     counter = itertools.count(1)
+    calls = itertools.count(1)
 
     def get(url, params=None):
+        if next(calls) > max_calls:
+            raise RuntimeError(
+                f"client.get called more than {max_calls} times — suspected infinite"
+                " re-partition loop rather than a genuine over-cap day"
+            )
         params = params or {}
         response = MagicMock()
         if url == ESEARCH_URL:
@@ -1989,11 +2012,15 @@ class TestAnOverCapDayIsFetchedRatherThanRefused:
         assert result.status == "failed"
         assert "lie outside the ladder" in result.error
 
-    def test_a_part_that_grew_past_the_cap_is_split_again(self):
-        # Planning sees each part fitting; the part's own ESearch then reports
-        # more than a session can serve. It must be split again rather than
-        # walked — an over-cap session's last page is silently clamped, so
-        # walking it would look like an ordinary short day.
+    def test_a_regrown_part_that_is_already_a_single_day_fails_unsplittable(self):
+        # Planning sees the part fitting; the part's own ESearch then reports
+        # more than a session can serve, for a part that has already narrowed
+        # to a single Entrez day. It cannot be split any further, so the day
+        # fails loudly rather than walking into the silent clamp.
+        #
+        # This exercises the raise-at-`lo == hi` branch of the re-split, not
+        # the "split into more than one part" branch — see
+        # `test_a_part_that_grew_past_the_cap_is_split_again` below for that.
         client = _eutils_client(
             _distribution_counter({date(2023, 6, 1): 2, date(2023, 6, 2): 2}),
             session_count_fn=lambda term: 4,
@@ -2001,15 +2028,59 @@ class TestAnOverCapDayIsFetchedRatherThanRefused:
 
         result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
 
-        # Re-splitting narrows to a single Entrez date, which cannot be split
-        # further, so the day fails loudly instead of looping.
         assert result.status == "failed"
         assert "cannot be split further" in result.error
 
+    def test_a_part_that_grew_past_the_cap_is_split_again(self):
+        # Four Entrez days of one record each, cap patched to 2: planning's
+        # binary search stops as soon as a range's count fits, which happens
+        # here at a *pair* of days rather than at a single one (verified by
+        # calling `_plan_partitions` directly against this distribution) — so
+        # each initial part spans two populated days, not one, and re-split
+        # actually has more than a single day to divide.
+        #
+        # `session_count_fn` reports over-cap only for a term whose range
+        # still holds two or more populated days, so the *day-level* search
+        # (which reports the true total of 4) and each *re-split leaf*
+        # (each of which narrows to exactly one populated day) both read
+        # normally, and only the two initial two-day parts trigger a re-plan.
+        distribution = {
+            date(2023, 6, 1): 1,
+            date(2023, 6, 2): 1,
+            date(2023, 6, 3): 1,
+            date(2023, 6, 4): 1,
+        }
+        base = _distribution_counter(distribution)
+
+        def session_count_fn(term: str) -> int:
+            m = re.search(r'"([\d/]+)"\[EDAT\] : "([\d/]+)"\[EDAT\]', term)
+            if m is None:
+                return base(term)
+            lo = datetime.strptime(m.group(1), "%Y/%m/%d").date()
+            hi = datetime.strptime(m.group(2), "%Y/%m/%d").date()
+            populated = [d for d in distribution if lo <= d <= hi]
+            return 3 if len(populated) >= 2 else base(term)
+
+        client = _eutils_client(base, session_count_fn=session_count_fn)
+        records = []
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=records.append, api_key=None)
+
+        # Every record still arrives — re-splitting is invisible to the
+        # caller — and the day completes rather than failing.
+        assert result.status == "completed"
+        assert result.record_count == 4
+        assert len(records) == 4
+
     def test_a_disagreeing_recount_terminates_instead_of_looping(self):
-        # The session count says over-cap; a fresh planning count says it fits.
-        # Without the session count driving the re-plan, the same part would be
-        # re-queued and re-fetched forever.
+        # The session count says over-cap; a fresh planning count of the same
+        # range says it fits. Without `known_count` driving the re-plan off
+        # the count that triggered it, a fresh recount here would form a
+        # single-part plan identical to the part just popped, which would be
+        # re-queued, re-fetched, re-found over-cap, and looped forever —
+        # `_eutils_client`'s own call-count backstop is what turns that into
+        # a fast failure here instead of a hang (`time.sleep` is a no-op and
+        # `pyproject.toml` sets no pytest timeout, so nothing else would).
         client = _eutils_client(
             _distribution_counter({date(2023, 6, 1): 2, date(2023, 6, 2): 2}),
             session_count_fn=lambda term: 4,
@@ -2052,3 +2123,208 @@ class TestTheUnderCapPathIsUnchanged:
             if "term" in c.kwargs.get("params", {})
         ]
         assert terms == ['("2024/03/15"[Date - Publication])']
+
+
+# ---------------------------------------------------------------------------
+# #105 review: a lost or skipped part must fail the day, not complete it
+# ---------------------------------------------------------------------------
+
+
+def _partitioned_client(distribution: dict[date, int], *, part_overrides=None):
+    """A fake for scenarios needing per-part control over one part's behaviour.
+
+    Like `_eutils_client`, every planning probe (`usehistory=False`) and the
+    day-level search answer from *distribution*. Unlike `_eutils_client`, a
+    session-opening ESearch whose EDAT range contains exactly one populated
+    date consults *part_overrides* (a mapping from that date to a dict of
+    overrides) before falling back to the real distribution — which is what
+    lets one part of a multi-part day misbehave while the others fetch
+    normally, the shape every test in this section needs.
+
+    Recognised overrides, all optional:
+
+    * ``count``: the ESearch-declared count for that part (default: the real
+      distribution count).
+    * ``no_session``: if true, the ESearch response omits ``WebEnv`` and
+      ``QueryKey`` entirely rather than reporting them.
+    * ``efetch_pages``: a list of raw EFetch response bodies, served in order
+      to that part's successive EFetch calls, in place of the normal
+      auto-generated pages — for scripting a stall (an empty page before the
+      count is met) or a partial-but-nonzero shortfall.
+    * ``efetch_error``: if true, EFetch returns a body `_efetch_page` refuses
+      to parse (an ``<eFetchResult><ERROR>`` document), in place of a page.
+
+    A range containing zero or more-than-one populated date always falls back
+    to the real distribution count — the empty-range skips and the
+    multi-day-to-single-day narrowing that planning performs on its own.
+    """
+    import itertools
+
+    part_overrides = part_overrides or {}
+    sessions: dict[str, dict] = {}
+    counter = itertools.count(1)
+
+    def which_day(term: str) -> date | None:
+        m = re.search(r'"([\d/]+)"\[EDAT\] : "([\d/]+)"\[EDAT\]', term)
+        if m is None:
+            return None
+        lo = datetime.strptime(m.group(1), "%Y/%m/%d").date()
+        hi = datetime.strptime(m.group(2), "%Y/%m/%d").date()
+        days = [d for d in distribution if lo <= d <= hi]
+        return days[0] if len(days) == 1 else None
+
+    def real_count(term: str) -> int:
+        m = re.search(r'"([\d/]+)"\[EDAT\] : "([\d/]+)"\[EDAT\]', term)
+        if m is None:
+            return sum(distribution.values())
+        lo = datetime.strptime(m.group(1), "%Y/%m/%d").date()
+        hi = datetime.strptime(m.group(2), "%Y/%m/%d").date()
+        return sum(n for d, n in distribution.items() if lo <= d <= hi)
+
+    def get(url, params=None):
+        params = params or {}
+        response = MagicMock()
+        if url == ESEARCH_URL:
+            key = str(next(counter))
+            if "usehistory" in params:
+                day = which_day(params["term"])
+                override = part_overrides.get(day, {}) if day is not None else {}
+                count = override.get("count", real_count(params["term"]))
+                if override.get("no_session"):
+                    response.text = f"<eSearchResult><Count>{count}</Count></eSearchResult>"
+                else:
+                    response.text = _make_esearch_xml(count, query_key=key)
+                sessions[key] = {"override": override, "total": count, "page_idx": 0}
+            else:
+                response.text = _make_esearch_xml(real_count(params["term"]))
+            return response
+        if url == EFETCH_URL:
+            state = sessions[params["query_key"]]
+            override = state["override"]
+            pages = override.get("efetch_pages")
+            if pages is not None:
+                idx = state["page_idx"]
+                state["page_idx"] += 1
+                if idx >= len(pages):
+                    raise AssertionError("efetch called past the scripted pages")
+                response.text = pages[idx]
+                return response
+            if override.get("efetch_error"):
+                response.text = "<eFetchResult><ERROR>boom</ERROR></eFetchResult>"
+                return response
+            total = state["total"]
+            n = max(0, min(int(params["retmax"]), total - int(params["retstart"])))
+            response.text = _make_efetch_xml(*([MINIMAL_ARTICLE_XML] * n))
+            return response
+        raise AssertionError(f"unexpected URL {url}")
+
+    client = MagicMock()
+    client.get.side_effect = get
+    return client
+
+
+@patch("bmlib.publications.fetchers.pubmed.time.sleep", lambda *_: None)
+class TestALostOrSkippedPartFailsTheDay:
+    """A regression that loses one part of a multi-part day must not complete it.
+
+    `sync()` never re-offers a day recorded `completed`, so each scenario
+    here is a distinct way `_fetch_partitioned` could silently record success
+    over a part that did not actually deliver — and each must fail the day.
+    """
+
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 1)
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 1)
+    def test_a_stalled_part_fails_the_day(self):
+        distribution = {date(2023, 6, 1): 1, date(2023, 6, 2): 1}
+        client = _partitioned_client(
+            distribution,
+            part_overrides={date(2023, 6, 2): {"efetch_pages": [_make_efetch_xml()]}},
+        )
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert result.status == "failed"
+        assert "2023-06-02" in result.error
+        assert "stopped short" in result.error
+        # The other part's record still arrived before the stall was found.
+        assert result.record_count == 1
+
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 5)
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 6)
+    def test_a_parts_own_shortfall_below_the_floor_fails_the_day(self):
+        # Promised 6 (two pages: retmax 5 then 1); both pages deliver a
+        # nonzero-but-partial count, so the part-level walk ends naturally
+        # rather than stalling, and still comes up short of the 50% floor —
+        # a different `reconcile_delivery` branch than the stall above.
+        distribution = {date(2023, 6, 1): 6, date(2023, 6, 2): 1}
+        client = _partitioned_client(
+            distribution,
+            part_overrides={
+                date(2023, 6, 1): {
+                    "efetch_pages": [
+                        _make_efetch_xml(MINIMAL_ARTICLE_XML),
+                        _make_efetch_xml(MINIMAL_ARTICLE_XML),
+                    ]
+                }
+            },
+        )
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert result.status == "failed"
+        assert "2023-06-01" in result.error
+        assert "50% floor" in result.error
+
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 1)
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 1)
+    def test_a_parts_efetch_error_fails_the_day(self):
+        distribution = {date(2023, 6, 1): 1, date(2023, 6, 2): 1}
+        client = _partitioned_client(
+            distribution,
+            part_overrides={date(2023, 6, 2): {"efetch_error": True}},
+        )
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert result.status == "failed"
+        assert "2023-06-02" in result.error
+        assert "boom" in result.error
+
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 1)
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 1)
+    def test_a_part_without_a_history_session_fails_the_day(self):
+        distribution = {date(2023, 6, 1): 1, date(2023, 6, 2): 1}
+        client = _partitioned_client(
+            distribution,
+            part_overrides={date(2023, 6, 2): {"no_session": True}},
+        )
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert result.status == "failed"
+        assert "2023-06-02" in result.error
+        assert "without a history session" in result.error
+
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_PAGE_SIZE", 1)
+    @patch("bmlib.publications.fetchers.pubmed.EFETCH_MAX_RETRIEVABLE", 1)
+    def test_the_day_level_reconcile_catches_a_cumulative_loss_no_part_reported(self):
+        # Five single-record days; three of them report 0 at fetch time (the
+        # `part_count == 0` skip — a legitimate, silent, per-part no-op, not
+        # a failure). No individual part ever fails its own reconcile, yet
+        # the day is missing 3 of 5 records overall — below the 50% floor —
+        # so only the final, day-level `reconcile_delivery` call can catch
+        # it. This is the "regression that loses one part of a day silently
+        # records the day completed" scenario, without any part-level error
+        # to have already caught it first.
+        distribution = {date(2023, 6, 1) + timedelta(days=i): 1 for i in range(5)}
+        populated = sorted(distribution)
+        overrides = {d: {"count": 0} for d in populated[1:4]}
+        client = _partitioned_client(distribution, part_overrides=overrides)
+
+        result = fetch_pubmed(client, date(2024, 1, 1), on_record=lambda r: None)
+
+        assert result.status == "failed"
+        assert "50% floor" in result.error
+        # Day-level, not part-level: no single part's own reconcile fired.
+        assert "part" not in result.error
+        assert result.record_count == 2
