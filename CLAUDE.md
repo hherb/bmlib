@@ -360,27 +360,31 @@ depth 13, 40 planning ESearches, parts summing exactly, no stuck Entrez date
 in six walks over five real days. The cost is stated rather than flagged off:
 ~562 requests and ~1 GB for such a day, ~6.2M records and ~25 GB **once**
 across a six-year backfill — against the refusal it replaces, which re-offered
-those days forever and stored nothing. Parts are checkpointed in
-`download_day_parts` (same transaction as their records, so a checkpoint never
-attests to records a rollback discarded), which is what makes an interrupted
-day resumable and what forced the per-part flush a 242k-record day needs
-anyway; a part is skipped only if its stored count still matches, and a
-skipped part must be credited or every resumed day fails its own day-total
-check. `SourceDescriptor.resumable` gates the new keywords, defaulting `False`
-because `register_source()` is public. The one case left is a **single Entrez
-date** over the cap, which cannot be split further: that day is still refused,
-naming the date and count — and it is not the structural population the month
-firsts were. A cap NCBI *raises* now costs unnecessary partitioning rather
-than a refusal — requests, not records, and quietly, where it used to be an
-ERROR; one NCBI *lowers* is still **not** reliably covered, because for a band
-up to `EFETCH_PAGE_SIZE` wide no page is ever requested past the new limit and
-the part completes on a shortfall note instead — the sampler is the guard there
-(`--partition` is what re-measures the ladder), and `docs/DECISIONS.md` has
-the measured band. The stride is *not* the defect #96 suspected: `retstart`
-indexes the session's UID list, measured against esearch's own `IdList`, so
-advancing by what arrived would re-request the tail of every short page and
-count the duplicates as delivery — which is exactly what would hide a real
-shortfall from `reconcile_delivery`.
+those days forever and stored nothing. Only the ESearch half of that is
+measured: the 40 planning calls above, plus one session call per part. The
+~485 EFetch pages are arithmetic over the record count and the 500-record page
+size, the byte figures are arithmetic over *those* at ~4 KB a record, and no
+full fetch of such a day has ever been run — do not quote either as measured.
+Parts are checkpointed in `download_day_parts` (same transaction as their
+records, so a checkpoint never attests to records a rollback discarded), which
+is what makes an interrupted day resumable and what forced the per-part flush
+a 242k-record day needs anyway; a part is skipped only if its stored count
+still matches, and a skipped part must be credited or every resumed day fails
+its own day-total check. `SourceDescriptor.resumable` gates the new keywords,
+defaulting `False` because `register_source()` is public. The one case left is
+a **single Entrez date** over the cap, which cannot be split further: that day
+is still refused, naming the date and count — and it is not the structural
+population the month firsts were. A cap NCBI *raises* now costs unnecessary
+partitioning rather than a refusal — requests, not records, and quietly, where
+it used to be an ERROR; one NCBI *lowers* is still **not** reliably covered,
+because for a band up to `EFETCH_PAGE_SIZE` wide no page is ever requested
+past the new limit and the part completes on a shortfall note instead — the
+sampler is the guard there (`--partition` is what re-measures the ladder), and
+`docs/DECISIONS.md` has the measured band. The stride is *not* the defect #96
+suspected: `retstart` indexes the session's UID list, measured against
+esearch's own `IdList`, so advancing by what arrived would re-request the tail
+of every short page and count the duplicates as delivery — which is exactly
+what would hide a real shortfall from `reconcile_delivery`.
 
 Finally, *the rule refuses to guess its own inputs* (#98, #99).
 `DownloadDay.from_dict()` raises rather than defaulting an absent

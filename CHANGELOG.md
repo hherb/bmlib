@@ -35,9 +35,13 @@ All notable changes to bmlib are documented here. The format is based on
   cover the day (`count(day AND root) >= count(day)`); short fails the day,
   because records outside the ladder are in no part's promise and every part
   would otherwise reconcile perfectly while the day is silently incomplete.
-  The 10,000-record day is partitioned like any other and completes with all
-  10,000 stored, so no day-size fails on the cap and none completes short of
-  it.
+  The 10,000-record day is routed down that same path — its ten-thousandth
+  record is requested with the rest — so the cap no longer refuses a day, and
+  no longer silently truncates one. That is a statement about the cap and not
+  a promise that a day arrives whole: a walk that comes up short but still
+  clears the `SHORTFALL_FAILURE_RATIO` floor completes the day on a note here
+  exactly as it does for every other source, and the cap has simply stopped
+  being one of the things that can cause it.
 
   **This is not an edge case in the field bmlib queries.** Measured
   2026-08-20: every first-of-month `[Date - Publication]` day holds

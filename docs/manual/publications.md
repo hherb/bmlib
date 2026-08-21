@@ -1401,8 +1401,11 @@ the 400 with `Client error '400 Bad Request'` — the right verdict, twenty
 requests later, naming neither cause nor remedy. With one exception: a day of
 *exactly* 10,000 records never asked past `retstart=9500`, so it walked to its
 end, was clamped to 9,999 delivered, cleared the shortfall floor and was
-recorded `completed` — losing one record durably. That day is partitioned too,
-so it no longer completes short.
+recorded `completed` — losing one record durably. That day is partitioned too
+now, so the silent clamp that cost it a record can no longer reach it. (That
+is a claim about the clamp, not a guarantee the day arrives whole: a walk that
+comes up short while still clearing the shortfall floor completes on a note
+here as it does anywhere else.)
 
 #### Titles and abstracts are Markdown
 

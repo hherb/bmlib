@@ -1268,9 +1268,12 @@ a test pins that it cannot ask for anything else.
   landed, `count > EFETCH_MAX_RETRIEVABLE` routes to `_fetch_partitioned`, and
   a day of exactly 10,000 records is partitioned like any other over-cap day —
   its ten-thousandth record is requested with the rest, so no day-size is
-  refused on the cap any more, and none walks to a natural end one record
-  short of its promise. The bullet is kept because the silent-clamp mechanism
-  it documents is still what the page walk is written around, and because a
+  refused on the cap any more, and none is silently clamped into completing
+  short of its promise. Both halves of that are claims about the cap, not a
+  guarantee that a day arrives whole: a walk still completes on a note when it
+  comes up short while clearing `SHORTFALL_FAILURE_RATIO`, as it does for
+  every source. The bullet is kept because the silent-clamp mechanism it
+  documents is still what the page walk is written around, and because a
   reader who finds this page while wondering why the walk looks the way it
   does should not have to rediscover the 10,000-record case to learn that it
   was real.
@@ -1414,14 +1417,16 @@ crossed the cap since planning.
   way to retrieve in bulk. They lose here on three counts. The baseline is the
   **whole corpus** (~37M records, tens of GB) with no publication-date
   selectivity, so reaching one day's 242,216 records means reading all 37M and
-  discarding 99.3% of them — two orders of magnitude worse, per day, than 562
-  requests. It only wins for a *full-corpus* load, at which point
-  `download_days`' entire per-day model is beside the point and the question
-  is no longer "how does this fetcher walk a day" but "does bmlib have a
-  second ingestion mode", which is a product decision and not this fix. And it
-  has no path at all for the ordinary incremental case, which is what `sync()`
-  is. A whole-corpus ingestion mode remains open as its own question; nothing
-  in #105 forecloses it.
+  discarding 99.3% of them — two orders of magnitude worse, per day, than the
+  ~562 requests the ladder costs (its ESearches measured, its EFetch pages
+  arithmetic over the record count; the comparison survives either way). It
+  only wins for a *full-corpus* load, at which point `download_days`' entire
+  per-day model is beside the point and the question is no longer "how does
+  this fetcher walk a day" but "does bmlib have a second ingestion mode",
+  which is a product decision and not this fix. And it has no path at all for
+  the ordinary incremental case, which is what `sync()` is. A whole-corpus
+  ingestion mode remains open as its own question; nothing in #105 forecloses
+  it.
 
 ## publications — retractions
 
