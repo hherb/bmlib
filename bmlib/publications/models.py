@@ -589,7 +589,10 @@ class PartCheckpoint:
     A day too large for one history session is fetched as parts (see
     ``fetchers/pubmed.py``). Each part's records and its checkpoint are written
     in one transaction, so a checkpoint never attests to records a rollback
-    discarded.
+    discarded. Not every finished part produces one: a part that reconciled
+    short of its own promise, or that held a record which would not store, has
+    its records written with no checkpoint beside them, so nothing here ever
+    describes a part that was not fully delivered.
 
     ``part_key`` is opaque to storage: the partitioning scheme belongs to the
     fetcher, so a second scheme needs no schema change. ``part_scheme`` names
