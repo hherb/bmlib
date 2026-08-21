@@ -8,110 +8,106 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
-- **A PubMed day larger than 9,999 records is now fetched, not refused**
-  (#105). The entry below contained the damage; this one repairs it. A day
-  whose `[Date - Publication]` count exceeds what one history session serves
-  is partitioned into Entrez-date (`[EDAT]`) ranges — the fixed root
-  `1900/01/01–2100/12/31`, recursively halved until every part is under the
-  cap — and each part is walked as an ordinary day-walk with its own session,
-  its own count and the existing stall and shortfall rules, after which the
-  day's whole delivery is reconciled against the day's own count as well. A
-  range rather than a facet because disjointness and coverage have to hold
-  structurally: a record carries several publication types, so `AND pt1` /
-  `AND pt2` fetches it twice and inflates delivery past the day's own count,
-  which is what would hide a real shortfall. Before any record is fetched the
-  root is verified to cover the day (`count(day AND root) >= count(day)`);
-  short fails the day, because records outside the ladder are in no part's
-  promise and every part would otherwise reconcile perfectly while the day is
-  silently incomplete.
+- **A PubMed day larger than 9,999 records is now fetched in parts, not
+  walked into a wall** (#105, found measuring #96). NCBI's search backend
+  serves only the first 9,999 records of a history session — `retstart=9999`
+  is HTTP 400, and a page whose window crosses the boundary is *silently*
+  clamped to it (`retstart=9500&retmax=500` → 499 records at HTTP 200).
+  0.10.0's `fetch_pubmed` paged on regardless, asked for record 10,000, and
+  failed the day with `Client error '400 Bad Request'` after twenty pointless
+  requests, naming neither the cause nor the remedy. One day-size did **not**
+  fail: a day of *exactly* 10,000 records never asks for a `retstart` above
+  9,998, so it walked to its natural end, was silently clamped to 9,999
+  delivered, cleared the shortfall floor, and was recorded `completed` —
+  durable, never re-offered, one record lost with only a note.
+
+  Both cases are now closed the same way. A day whose `[Date - Publication]`
+  count exceeds what one session serves is partitioned into Entrez-date
+  (`[EDAT]`) ranges — the fixed root `1900/01/01–2100/12/31`, recursively
+  halved until every part is under the cap — and each part is walked as an
+  ordinary day-walk with its own session, its own count and the existing
+  stall and shortfall rules, after which the day's whole delivery is
+  reconciled against the day's own count as well. A range rather than a facet
+  because disjointness and coverage have to hold structurally: a record
+  carries several publication types, so `AND pt1` / `AND pt2` fetches it
+  twice and inflates delivery past the day's own count, which is what would
+  hide a real shortfall. Before any record is fetched the root is verified to
+  cover the day (`count(day AND root) >= count(day)`); short fails the day,
+  because records outside the ladder are in no part's promise and every part
+  would otherwise reconcile perfectly while the day is silently incomplete.
+  The 10,000-record day is partitioned like any other and completes with all
+  10,000 stored, so no day-size fails on the cap and none completes short of
+  it.
+
+  **This is not an edge case in the field bmlib queries.** Measured
+  2026-08-20: every first-of-month `[Date - Publication]` day holds
+  49,543–90,571 records (a record carrying only a year and month is indexed
+  at day 1) and every 1 January holds 212,439–315,282, against a median
+  ordinary day of 4,890.
 
   **What it costs, which is the question a version number does not answer.**
-  A 242,216-record day (2024/01/01, measured) is ≈**562 requests** — 40
-  planning ESearches, 37 session ESearches, ~485 EFetch pages — and at roughly
-  4 KB a record about **1 GB**. A six-year backfill window holds some 72 such
-  days (66 month firsts at 49,543–90,571 and 6 January firsts at
-  212,439–315,282), so roughly **6.2M records and ~25 GB — once**. Once,
-  because the day is then `completed` and never offered again; the behaviour
-  it replaces re-offered those days on *every* run for the life of the
+  For a 242,216-record day (2024/01/01, its count and 37-part ladder measured
+  live 2026-08-21): 40 planning ESearches and 37 session ESearches, measured,
+  plus ~485 EFetch pages derived from the record count and the 500-record
+  page size — ≈**562 requests**, and at roughly 4 KB a record about **1 GB**.
+  The two derived figures have not been confirmed by a full fetch. A six-year
+  backfill window holds some 72 such days (66 month firsts at 49,543–90,571
+  and 6 January firsts at 212,439–315,282), so roughly **6.2M records and
+  ~25 GB — once**. Once, because the day is then `completed` and never
+  offered again, where refusing it — the interim containment this supersedes,
+  never released — re-offered the day on every run for the life of the
   installation and stored nothing at all. If that is not the trade you want
   for a given window, narrow the window: there is no flag, because an opt-in
   leaves "no publication is missed" false by default for exactly the
   operators least likely to find the flag.
 
-  **A partitioned day resumes.** Each part's records and its checkpoint commit
-  in one transaction, so a checkpoint can never attest to records a rollback
-  discarded, and an interrupted run does not repeat the parts that finished. A
-  part is skipped on a later run only if its key is checkpointed **and** its
-  count still matches what was stored — a part that has gained records since
-  is re-walked, since skipping it would lose them permanently and silently.
-  Skipped parts are credited to the day's reconciliation and to
-  `download_days.record_count`, so a day fetched across three runs is not
-  recorded as holding only the last run's share.
+  **A partitioned day resumes.** Each part's records and its checkpoint
+  commit in one transaction, so a checkpoint can never attest to records a
+  rollback discarded, and an interrupted run does not repeat the parts that
+  finished. A part is skipped on a later run only if its key is checkpointed
+  **and** its count still matches what this run's plan reports — a part that
+  has gained records since is re-walked, since skipping it would lose them
+  permanently and silently. Skipped parts are credited to the day's
+  reconciliation and to `download_days.record_count`, so a day fetched across
+  three runs is not recorded as holding only the last run's share.
 
   **New storage:** a `download_day_parts` table, created by `ensure_schema()`
-  through `CREATE TABLE IF NOT EXISTS` on both backends — an existing database
-  gains it on the next call, with no migration script. Its rows describe an
-  *unfinished* day: they are deleted in the same transaction that records the
-  day `completed`, so a day that finished leaves nothing behind and what is in
-  the table names the days a re-run will resume.
+  through `CREATE TABLE IF NOT EXISTS` on both backends — an existing
+  database gains it on the next call, with no migration script. Its rows
+  describe an *unfinished* day: they are deleted in the same transaction that
+  records the day `completed`, so a day that finished leaves nothing behind
+  and what is in the table names the days a re-run will resume.
 
-  **New public field:** `SourceDescriptor.resumable: bool = False`. `sync()`
-  passes the per-part resume keywords only to a fetcher whose descriptor
-  declares it. The default is `False` because `register_source()` is public: a
-  third-party fetcher written against an earlier bmlib does not accept those
-  keywords, and passing one would raise inside the per-day handler and record
-  a working source's day as failed.
+  **New public API:** `SourceDescriptor.resumable: bool = False`, and a
+  `PartCheckpoint` dataclass (exported from `bmlib.publications`) describing
+  one finished part — `part_scheme`, `part_key`, `promised`, `record_count`.
+  `sync()` passes the per-part resume keywords only to a fetcher whose
+  descriptor declares `resumable`. The default is `False` because
+  `register_source()` is public: a third-party fetcher written against an
+  earlier bmlib does not accept those keywords, and passing one would raise
+  inside the per-day handler and record a working source's day as failed.
 
-  **This dissolves #107** rather than answering it. That issue asked whether a
-  known-permanent refusal should have a `SyncReport` field of its own, because
-  a six-year backfill's ~72 structural days meant `errors` never returned to
-  empty and an operator alerting on non-emptiness was paged from day one. That
-  population no longer exists. What is left is one case the ladder cannot
-  reach — a **single Entrez date** holding more than the cap, which cannot be
-  split further — and that day is still `failed`, still re-offered, and still
-  an `errors` line on every run. It is not a structural population, though: no
-  such date occurred in six ladder walks over five real over-cap days. So
-  `errors` returns to empty in the ordinary case, and if a later measurement
-  finds stuck days are common, #107's `blocked` field is the right answer and
-  the issue should be reopened.
+  **The cap is still a hard-coded 9,999.** One NCBI *raises* now costs
+  unnecessary partitioning rather than a refusal — more requests, no records
+  lost, and nothing logged above INFO; one it *lowers* is still not reliably
+  caught, since for a band up to `EFETCH_PAGE_SIZE` wide no page is ever
+  requested past the new limit and the part completes on a shortfall note.
+  `scripts/sample_efetch_paging.py` is what detects either, and its
+  `--partition` mode is the standing evidence for the ladder; see
+  `docs/DECISIONS.md` for the measured band.
 
-- **A PubMed day larger than 9,999 records is refused, not walked into a wall**
-  (#105, found measuring #96). NCBI's search backend serves only the first
-  9,999 records of a history session — `retstart=9999` is HTTP 400, and a page
-  whose window crosses the boundary is *silently* clamped to it
-  (`retstart=9500&retmax=500` → 499 records at HTTP 200). `fetch_pubmed` used
-  to page on regardless, ask for record 10,000, and fail the day with
-  `Client error '400 Bad Request'` after twenty pointless requests, naming
-  neither the cause nor the remedy. It now refuses the day as soon as ESearch
-  reports the count, with an error saying how many records are out of reach.
-  One day-size did **not** fail before: a day of *exactly* 10,000 records
-  never asks for a `retstart` above 9,998, so it walked to its natural end,
-  was silently clamped to 9,999 delivered, cleared the shortfall floor, and
-  was recorded `completed` — durable, never re-offered, one record lost with
-  only a note. The guard closes that silent loss as well as the noisy one.
-  This is not an edge case in the field bmlib queries: measured 2026-08-20,
-  every first-of-month `[Date - Publication]` day holds 49,543–90,571 records
-  (a record carrying only a year and month is indexed at day 1) and every
-  1 January holds 212,439–315,282, against a median ordinary day of 4,890. The
-  day is still `failed` and still re-offered on every run — it cannot be
-  completed through this route, and recording it `completed` would durably
-  lose the remainder. **Nothing is fetched for such a day in the meantime**, on
-  purpose: storing the reachable 9,999 once and re-fetching them forever costs
-  ~3 GB per run across a six-year backfill and stores nothing new. Issue #105
-  is what makes those days fetchable, by partitioning them into sub-queries
-  that fit. Note the guard covers a cap NCBI *raises* (bmlib refuses fetchable
-  days, loudly) but not reliably one it *lowers* — see `docs/DECISIONS.md`;
-  `scripts/sample_efetch_paging.py` is what detects either. **Read the
-  sentences about refusing the day as historical**: #105's partitioning landed
-  in this same unreleased cycle, so an over-cap day is fetched rather than
-  refused and nothing is left un-fetched in the meantime — see the entry
-  above. That includes the note about a cap NCBI *raises*: bmlib no longer
-  refuses those days loudly, it partitions days it could have walked in one
-  session, which costs requests rather than records and is not loud at all. The entry is kept because the rest of it did not change and is not
-  reopened: the cap and its silent clamp are still what the walk is written
-  around, a day of exactly 10,000 records is still not allowed to complete one
-  record short, and the refusal itself survives for the one case the ladder
-  cannot reach.
+  **This dissolves #107** rather than answering it. That issue asked whether
+  a known-permanent refusal should have a `SyncReport` field of its own,
+  because a six-year backfill's ~72 structural days meant `errors` never
+  returned to empty and an operator alerting on non-emptiness was paged from
+  day one. That population no longer exists. What is left is one case the
+  ladder cannot reach — a **single Entrez date** holding more than the cap,
+  which cannot be split further — and that day is still `failed`, still
+  re-offered, and still an `errors` line on every run. It is not a structural
+  population, though: no such date occurred in six ladder walks over five
+  real over-cap days. So `errors` returns to empty in the ordinary case, and
+  if a later measurement finds stuck days are common, #107's `blocked` field
+  is the right answer and the issue should be reopened.
 
 - **A default template is installed atomically, or not at all** (#73).
   `TemplateEngine.install_defaults()` copied each default template with a

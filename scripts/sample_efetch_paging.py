@@ -25,9 +25,10 @@ answer, so all three are measured here rather than assumed:
 1. **How far the session serves.** ``EFETCH_MAX_RETRIEVABLE`` says 9,999. The
    backend enforces it in two different ways — an outright HTTP 400 past the
    boundary, and a *silent* clamp on the page that straddles it — and the
-   second is why a day over the cap is refused outright rather than walked as
-   far as it goes: a fetcher that asks for what the server will not send
-   cannot tell that page apart from a day missing records.
+   second is why a day over the cap is partitioned into Entrez-date ranges
+   that each fit, rather than walked as far as it goes: a fetcher that asks
+   for what the server will not send cannot tell that page apart from a day
+   missing records. ``--partition`` is what measures that ladder.
 
 2. **What ``retstart`` indexes.** Issue #96 asked whether a short non-empty
    page leaves records never requested. It does not: ``retstart`` offsets the

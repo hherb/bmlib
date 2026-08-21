@@ -1014,6 +1014,10 @@ report = sync(
 # Legacy configuration — still supported, ignored if source_configs is given
 report = sync(
     conn,
+    # A six-month backfill: this window holds six first-of-month days, one of
+    # them 1 January, and those six alone contribute roughly 600,000 records
+    # and a few GB, fetched in parts on top of the ordinary days — see
+    # "A day over 9,999 records is fetched in parts".
     date_from=date(2026, 1, 1),
     date_to=date(2026, 6, 30),
     email="researcher@example.com",
@@ -1314,22 +1318,25 @@ serves: fetching it as 37 Entrez-date parts
 Four things to know:
 
 - **The cost is real and it arrives without being asked for.** A
-  242,216-record day (2024/01/01, measured 2026-08-21) is about **562
-  requests** — 40 planning ESearches, 37 session ESearches, ~485 EFetch
-  pages — and at roughly 4 KB a record about **1 GB**. A six-year backfill
-  window holds some 72 such days, so roughly **6.2M records and ~25 GB**, and
-  the run that meets them is long. It is a one-off: the day is then
-  `completed` and never offered again, where the behaviour this replaces
-  failed the day on every run for ever and stored nothing. There is no flag to
-  turn it off — narrow the sync window if you do not want that trade for a
-  given range.
+  242,216-record day is about **562 requests**, and it is worth knowing which
+  half of that is measured. The measured half is the ladder — that day's
+  count, its 37 parts, the 40 planning ESearches and the 37 session ESearches
+  were all probed live on 2026-08-21. The rest is arithmetic and has never
+  been confirmed by a full fetch — ~485 EFetch pages, from the record count
+  over the 500-record page size, and ~**1 GB** at roughly 4 KB a record. A
+  six-year backfill window holds some 72 such days, so roughly **6.2M
+  records and ~25 GB**, and the run that meets them is long. It is a one-off:
+  the day is then `completed` and never offered again, where the behaviour
+  this replaces failed the day on every run for ever and stored nothing.
+  There is no flag to turn it off — narrow the sync window if you do not want
+  that trade for a given range.
 - **A partitioned day resumes.** Each part's records and its checkpoint are
   written in one transaction, so an interrupted run does not repeat the parts
   that finished — see [`download_day_parts`](#download_day_parts). A part is
-  skipped on a later run only if its stored count still matches what PubMed
-  reports for it now; a part that has gained records is re-walked, since
-  skipping it would lose them permanently and silently. `store_publication()`
-  merges, so a re-walk is idempotent.
+  skipped on a later run only if its stored count still matches what this
+  run's plan reports for it; a part that has gained records is re-walked,
+  since skipping it would lose them permanently and silently.
+  `store_publication()` merges, so a re-walk is idempotent.
 - **`FetchResult.record_count` counts only what *this* run walked**, and so
   does `on_progress`: on a resumed day both read lower than the day's real
   size, because the skipped parts were delivered by an earlier run.

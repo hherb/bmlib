@@ -1250,21 +1250,30 @@ a test pins that it cannot ask for anything else.
   than the fraction is still the right way to read the loss it was containing:
   9,999 is a fifth only of the *smallest* structural day, a seventh of the
   median month first and a thirty-second of 1 January.
-- **Before this, an over-cap day *mostly* failed anyway — inscrutably.** The
-  walk asked for record 10,000, `raise_for_status()` fired on the 400 before
-  the body was read, and the day failed with `Client error '400 Bad Request'`:
-  the right verdict, reached after twenty pointless requests, naming neither
-  the cause nor the remedy. **With one exception, and it is the one that
-  matters.** A day of *exactly* 10,000 records never issues a `retstart` above
-  9,998 — `range(0, 10000, 500)` stops at 9,500 — so it never met the 400 at
-  all. It walked to its natural end, its last page was silently clamped to
-  499, and it delivered 9,999 against a promise of 10,000: a shortfall of one
-  record in ten thousand, far above `SHORTFALL_FAILURE_RATIO`, so the day was
-  recorded **`completed`** — durable, never re-offered, one record lost with
-  only a note. So the guard does move exactly one day-size from success to
-  failure, and that is the half of it worth keeping: it closes a silent
-  durable loss, not just an unhelpful error message. #105 moves the rest the
-  other way.
+- **Before the containment, an over-cap day *mostly* failed anyway —
+  inscrutably.** The walk asked for record 10,000, `raise_for_status()` fired
+  on the 400 before the body was read, and the day failed with `Client error
+  '400 Bad Request'`: the right verdict, reached after twenty pointless
+  requests, naming neither the cause nor the remedy. **With one exception, and
+  it is the one that matters.** A day of *exactly* 10,000 records never issues
+  a `retstart` above 9,998 — `range(0, 10000, 500)` stops at 9,500 — so it
+  never met the 400 at all. It walked to its natural end, its last page was
+  silently clamped to 499, and it delivered 9,999 against a promise of 10,000:
+  a shortfall of one record in ten thousand, far above
+  `SHORTFALL_FAILURE_RATIO`, so the day was recorded **`completed`** —
+  durable, never re-offered, one record lost with only a note. Finding that is
+  what made the containment worth having: it moved exactly one day-size from
+  *silent* success to loud failure, closing a durable loss rather than merely
+  improving an error message. **All of that is now history too.** #105 has
+  landed, `count > EFETCH_MAX_RETRIEVABLE` routes to `_fetch_partitioned`, and
+  a day of exactly 10,000 records is partitioned like any other over-cap day —
+  its ten-thousandth record is requested with the rest, so no day-size is
+  refused on the cap any more, and none walks to a natural end one record
+  short of its promise. The bullet is kept because the silent-clamp mechanism
+  it documents is still what the page walk is written around, and because a
+  reader who finds this page while wondering why the walk looks the way it
+  does should not have to rediscover the 10,000-record case to learn that it
+  was real.
 - **The cap is a hard-coded 9,999 and that is a cost, not an oversight.** If
   NCBI *raises* it, bmlib partitions days it could now have walked in one
   session — extra ESearches and one session per part, with no record lost and
