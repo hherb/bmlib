@@ -198,6 +198,35 @@ All notable changes to bmlib are documented here. The format is based on
   real over-cap days. So `errors` returns to empty in the ordinary case, and
   if a later measurement finds stuck days are common, #107's `blocked` field
   is the right answer and the issue should be reopened.
+- **An identifier is read from the type the document declares, not from its
+  shape.** `JATSParser` took *any* `<article-id>` beginning `10.` as the DOI
+  when its `pub-id-type` was absent or unrecognised, overwriting a DOI already
+  read from `pub-id-type="doi"`. SAGE stamps every article it publishes with a
+  filename-form copy of the DOI — the slash replaced by an underscore — under
+  `pub-id-type="publisher-id"`, and puts it *after* the real one, so the wrong
+  value always won: PMC12759138 parsed as `10.1177_20552076251406653` where
+  its DOI is `10.1177/20552076251406653`. Two guards, either of which alone
+  would fix that document, because neither is sufficient in general. A value
+  that arrived under `pub-id-type="doi"` is **authoritative** and the shape
+  fallback may no longer replace it — so document order cannot decide, which
+  matters for a companion or collection DOI that is perfectly well-formed and
+  would still pass any shape test. And the fallback now requires DOI *shape*,
+  a `10.` prefix **and** a slash — the prefix and suffix of a DOI are joined
+  by one and it is not optional — so the underscore form fails on its own
+  merits even in a document carrying no typed DOI at all. `pmcid-ver`,
+  `pmcaid` and `pmcaiid` were already recognised-and-ignored and needed no
+  change; there is now a test that pins it, against a document carrying no
+  plain `pmc`, since in one that does the fallback would decline the versioned
+  id anyway and the test could not tell recognition from arriving second.
+  Found porting the fix to BioMedLit (bmlibrarian_lite #142).
+
+- **An untyped `PMC…` article-id no longer overwrites the PMC id** — the same
+  defect one branch down, found while fixing the DOI. The typed branch stores
+  `pmc_id` only `if not self.pmc_id`, and `JATSParser(known_pmc_id=…)` seeds
+  it — which is how `FullTextService` passes the id it fetched by — but the
+  untyped fallback assigned unconditionally, so an `<article-id>` under any
+  unrecognised type could replace both.
+
 
 - **A default template is installed atomically, or not at all** (#73).
   `TemplateEngine.install_defaults()` copied each default template with a

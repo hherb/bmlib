@@ -368,6 +368,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.pages = ""
         self.year = ""
         self.doi = ""
+        # Set once an <article-id pub-id-type="doi"> has been read, which
+        # locks the value against the shape-matching fallback below.
+        self.doi_is_typed = False
         self.pmc_id = known_pmc_id
         self.pmid = ""
         self.abstract_sections: list[JATSAbstractSection] = []
@@ -615,6 +618,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     id_type = self.current_article_id_type.lower()
                     if id_type == "doi":
                         self.doi = text
+                        # The document has declared this value the DOI, so no
+                        # later untyped id may replace it on the strength of
+                        # merely looking like one.
+                        self.doi_is_typed = True
                     elif id_type in (
                         "pmc",
                         "pmcid",
@@ -828,10 +835,28 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.element_stack.pop()
 
     def _classify_article_id(self, text: str) -> None:
-        if text.startswith("10."):
-            self.doi = text
+        """Classify an article-id whose `pub-id-type` was absent or unknown.
+
+        Shape is the only evidence here, so every branch defers to a value
+        that arrived with a type declaring what it was — otherwise document
+        order decides the answer, and a publisher's internal id that happens
+        to resemble a DOI overwrites the DOI itself.
+        """
+        if text.startswith("10.") and "/" in text:
+            # A DOI is a prefix and a suffix joined by a slash; the slash is
+            # not optional.  SAGE stamps every article with a filename-form
+            # copy of its DOI as `pub-id-type="publisher-id"`
+            # (`10.1177_20552076251406653`), which reaches here through the
+            # unknown-type fallthrough and clears a bare `10.` prefix test.
+            if not self.doi_is_typed:
+                self.doi = text
         elif text.startswith("PMC"):
-            self.pmc_id = text
+            # No flag needed here, unlike the DOI: `pmc_id` is already
+            # first-wins in the typed branch, and the caller's `known_pmc_id`
+            # seeds it, so "already set" covers both — and used not to be
+            # tested at all, letting an untyped id overwrite either one.
+            if not self.pmc_id:
+                self.pmc_id = text
         elif text.isdigit() and len(text) >= 7:
             # Bare numeric IDs without a recognised pub-id-type are
             # ambiguous — they could be PMC article IDs, publisher

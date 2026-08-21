@@ -46,9 +46,148 @@ class TestJATSParserMetadata:
         assert article.journal != ""
 
     def test_parse_identifiers(self):
+        # Asserted by value, not merely non-empty: the fixture carries a
+        # publisher-id holding a filename-form copy of the DOI, and a
+        # non-empty check passes just as happily on the wrong one.
         data = _load_fixture("sample_article.xml")
         article = JATSParser(data).parse()
-        assert article.doi != ""
+        assert (article.doi, article.pmc_id, article.pmid) == (
+            "10.1234/jbr.2024.001",
+            "PMC7614751",
+            "34567890",
+        )
+
+
+def _article_with_ids(ids: str) -> bytes:
+    """Build a minimal article whose <article-meta> carries `ids` verbatim."""
+    return f"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    {ids}
+    <title-group><article-title>An article</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>Intro</title><p>Text.</p></sec></body>
+</article>""".encode()
+
+
+class TestArticleIdentifiers:
+    """An identifier is read from its declared type, not from its shape.
+
+    The untyped path is a fallback for documents that omit `pub-id-type`.
+    It used to be able to *overwrite* a typed value, so document order
+    decided the answer — see the SAGE case in
+    `test_a_publisher_id_does_not_overwrite_the_typed_doi`.
+    """
+
+    # PMC12759138, as Europe PMC serves it: the publisher-id is the DOI with
+    # the slash replaced by an underscore, and it follows the real DOI.
+    SAGE_IDS = """<article-id pub-id-type="pmid">41488273</article-id>
+    <article-id pub-id-type="pmc">PMC12759138</article-id>
+    <article-id pub-id-type="doi">10.1177/20552076251406653</article-id>
+    <article-id pub-id-type="publisher-id">10.1177_20552076251406653</article-id>"""
+
+    def test_a_publisher_id_does_not_overwrite_the_typed_doi(self):
+        """SAGE stamps every article with a filename-form copy of its DOI."""
+        article = JATSParser(_article_with_ids(self.SAGE_IDS)).parse()
+
+        assert article.doi == "10.1177/20552076251406653"
+
+    def test_the_other_identifiers_in_that_document_survive_too(self):
+        article = JATSParser(_article_with_ids(self.SAGE_IDS)).parse()
+
+        assert (article.pmid, article.pmc_id) == ("41488273", "PMC12759138")
+
+    def test_a_doi_shaped_publisher_id_is_rejected_on_its_own_merits(self):
+        """With no typed DOI to defend it, order cannot be what saves us: a
+        DOI always carries a slash, so the underscore form is not one."""
+        ids = '<article-id pub-id-type="publisher-id">10.1177_20552076251406653</article-id>'
+        article = JATSParser(_article_with_ids(ids)).parse()
+
+        assert article.doi == ""
+
+    def test_a_well_formed_untyped_doi_after_the_typed_one_is_ignored(self):
+        """What pins the authority guard on its own.
+
+        On the SAGE document the two guards overlap — the underscore form
+        fails the shape test too — so neither is pinned there. A companion
+        or collection DOI carried under a type bmlib does not know is a
+        perfectly well-formed DOI, and only authority can settle it.
+        """
+        ids = """<article-id pub-id-type="doi">10.1177/real</article-id>
+        <article-id pub-id-type="publisher-id">10.9999/companion</article-id>"""
+        article = JATSParser(_article_with_ids(ids)).parse()
+
+        assert article.doi == "10.1177/real"
+
+    def test_a_typed_doi_still_wins_when_the_untyped_id_comes_first(self):
+        """The guard is about authority, not about which element came last."""
+        ids = """<article-id pub-id-type="publisher-id">10.9999/decoy</article-id>
+        <article-id pub-id-type="doi">10.1177/real</article-id>"""
+        article = JATSParser(_article_with_ids(ids)).parse()
+
+        assert article.doi == "10.1177/real"
+
+    def test_an_untyped_doi_is_still_read(self):
+        """Negative control: the fallback must still do its job, or the two
+        guards above would pass against a branch that never fires."""
+        ids = "<article-id>10.1234/jbr.2024.001</article-id>"
+        article = JATSParser(_article_with_ids(ids)).parse()
+
+        assert article.doi == "10.1234/jbr.2024.001"
+
+    def test_an_unrecognised_id_type_holding_a_real_doi_is_still_read(self):
+        """A type bmlib does not know falls through to the same fallback."""
+        ids = '<article-id pub-id-type="art-access-id">10.1234/jbr.2024.001</article-id>'
+        article = JATSParser(_article_with_ids(ids)).parse()
+
+        assert article.doi == "10.1234/jbr.2024.001"
+
+    def test_versioned_and_internal_pmc_ids_do_not_become_the_pmc_id(self):
+        """The shape PMC actually serves: the canonical id, then the rest."""
+        ids = """<article-id pub-id-type="pmc">PMC12759138</article-id>
+        <article-id pub-id-type="pmcid-ver">PMC12759138.1</article-id>
+        <article-id pub-id-type="pmcaid">12759138</article-id>
+        <article-id pub-id-type="pmcaiid">12759138</article-id>"""
+        article = JATSParser(_article_with_ids(ids)).parse()
+
+        assert article.pmc_id == "PMC12759138"
+
+    def test_a_versioned_pmc_id_alone_is_recognised_and_ignored(self):
+        """What pins `pmcid-ver`'s place in the recognised list.
+
+        In the document above the fallback would refuse the versioned id
+        anyway, having already got a PMC id — so that test cannot tell
+        recognition from arriving second. Only a document carrying no plain
+        `pmc` can. (`pmcaid` / `pmcaiid` need no such test: their values are
+        bare numerals, which the fallback already declines to guess at, so
+        listing them is documentation rather than behaviour.)
+        """
+        ids = '<article-id pub-id-type="pmcid-ver">PMC12759138.1</article-id>'
+        article = JATSParser(_article_with_ids(ids)).parse()
+
+        assert article.pmc_id == ""
+
+    def test_an_untyped_pmc_id_does_not_overwrite_the_typed_one(self):
+        ids = """<article-id pub-id-type="pmc">PMC12759138</article-id>
+        <article-id pub-id-type="archive-id">PMC0000000</article-id>"""
+        article = JATSParser(_article_with_ids(ids)).parse()
+
+        assert article.pmc_id == "PMC12759138"
+
+    def test_a_known_pmc_id_survives_an_untyped_pmc_article_id(self):
+        """`FullTextService` passes the PMC id it fetched by. The typed branch
+        already refused to overwrite it; the fallback did not."""
+        ids = '<article-id pub-id-type="archive-id">PMC0000000</article-id>'
+        article = JATSParser(_article_with_ids(ids), known_pmc_id="PMC12759138").parse()
+
+        assert article.pmc_id == "PMC12759138"
+
+    def test_an_untyped_pmc_id_is_still_read_when_nothing_claimed_it(self):
+        """Negative control for the two guards above."""
+        ids = "<article-id>PMC12759138</article-id>"
+        article = JATSParser(_article_with_ids(ids)).parse()
+
+        assert article.pmc_id == "PMC12759138"
 
 
 class TestTableBuilderHeaderClassification:
