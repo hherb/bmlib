@@ -923,6 +923,14 @@ def _fetch_partitioned(
     resumed run never issues the skipped part's own EFetch, so without this
     credit the reconcile would fail every resumed day.
 
+    A skipped part is credited to *delivered* (what the reconcile judges) but
+    never to *processed* (what ``on_progress`` and the returned
+    ``FetchResult.record_count`` report): those two count only records this
+    run itself walked. On a resumed day, the returned record count and the
+    progress total are therefore both less than the day's real size by
+    however many records the skipped parts hold — correct for "what did this
+    run do", not for "how big is this day".
+
     Args:
         client: An httpx-compatible HTTP client.
         target_date: The publication day being fetched.
@@ -933,20 +941,27 @@ def _fetch_partitioned(
             been called.
         on_record: Callback invoked with each parsed record.
         on_progress: Optional callback invoked after each page, reporting
-            progress against the whole day rather than against one part.
+            progress against the whole day rather than against one part. Does
+            not count a skipped part's credited records — see above.
         api_key: Optional NCBI API key.
         rate_limit: Seconds to sleep between requests.
         completed_parts: Parts of this day a previous run finished, keyed by
             part key. A part is skipped only if its stored ``promised`` still
             matches what this run's plan reports for it.
-        on_part_complete: Called with a :class:`PartCheckpoint` after each
-            part's walk has reconciled (whether or not it noted a shortfall).
-            The caller is expected to store the part's records and this
-            checkpoint in one transaction.
+        on_part_complete: Called with a :class:`PartCheckpoint` after a part's
+            walk reconciles clean — delivered its own ``promised`` in full,
+            with no note. A part that reconciled short of its promise (a note,
+            not a failure) is deliberately *not* checkpointed: skipping it on
+            a later resumed run would credit it at its full ``promised`` and
+            manufacture the very records the note is reporting missing, with
+            no note surviving into that run's result to say so. The caller is
+            expected to store the part's records and this checkpoint in one
+            transaction.
 
     Returns:
         The day's :class:`FetchResult`, ``completed`` only if every part
-        reconciled.
+        reconciled. ``record_count`` counts only what this run itself walked
+        — see the note on skipped parts above.
     """
     date_str = target_date.isoformat()
     checkpoints = dict(completed_parts or {})
@@ -1109,7 +1124,16 @@ def _fetch_partitioned(
         if verdict.note is not None:
             notes.append(verdict.note)
 
-        if on_part_complete is not None:
+        # Checkpoint only a part that reconciled with no note. A noted part
+        # delivered short of its own promise (F1, #105 review): checkpointing
+        # it would let a later resumed run skip it and credit the full
+        # `part_count` it never actually delivered, silently manufacturing
+        # the records the note is reporting missing — and that run's result
+        # would carry no note at all, since this run's note dies with it if
+        # a later part fails. Leaving it off the checkpoint means whichever
+        # run finally completes the day re-walks the part and carries its
+        # note honestly.
+        if on_part_complete is not None and verdict.note is None:
             on_part_complete(
                 PartCheckpoint(
                     part_scheme=PART_SCHEME,
@@ -1169,22 +1193,31 @@ def fetch_pubmed(
         Callback invoked with each parsed :class:`FetchedRecord`.
     on_progress:
         Optional callback invoked after each page with a :class:`SyncProgress`.
+        For a day large enough to be partitioned, does not count a skipped
+        part's credited records — see ``completed_parts`` below.
     api_key:
         Optional NCBI API key for higher rate limits.
     completed_parts:
         Parts of this day a previous run finished, keyed by part key. Only
         consulted for a day large enough to be partitioned. A part is skipped
         only if its stored ``promised`` still matches what the source reports
-        now.
+        now. A skipped part is credited to the day's own delivery reconcile,
+        but not to ``on_progress`` or to the returned record count — both
+        count only what this run itself walked, so on a resumed day they read
+        lower than the day's real size.
     on_part_complete:
-        Called with a :class:`PartCheckpoint` after each part's walk has
-        reconciled. The caller is expected to store the part's records and this
-        checkpoint in one transaction.
+        Called with a :class:`PartCheckpoint` after a part's walk reconciles
+        clean — delivered its own promise in full, with no note. A part that
+        reconciled short (a note, not a failure) is deliberately not
+        checkpointed, since skipping it on a later run would credit records it
+        never actually delivered. The caller is expected to store the part's
+        records and this checkpoint in one transaction.
 
     Returns
     -------
     FetchResult
-        Summary of the fetch operation.
+        Summary of the fetch operation. ``record_count`` counts only what this
+        run itself walked — see ``completed_parts`` above.
     """
     date_str = target_date.isoformat()
     rate_limit = RATE_LIMIT_WITH_KEY if api_key else RATE_LIMIT_WITHOUT_KEY
