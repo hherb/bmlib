@@ -33,6 +33,7 @@ from bmlib.publications.models import (
     FetchResult,
     FullTextSource,
     Grant,
+    PartCheckpoint,
     Publication,
     SyncProgress,
     SyncReport,
@@ -1419,6 +1420,109 @@ class TestGrantAndAffiliationModels:
             author="Smith, John", affiliation="St Elsewhere", position=2, publication_id=7
         )
         assert AuthorAffiliation.from_dict(aff.to_dict()) == aff
+
+
+class TestPartCheckpointModel:
+    """The one new public model on the day-selection path.
+
+    Its presence in ``download_day_parts`` is a claim that a part reconciled
+    clean and its records are stored, so a later run may skip it. That makes
+    it a durable claim of the same kind ``DownloadDay`` carries, and it is
+    read back by ``sync()`` before the per-day handler is entered.
+    """
+
+    def test_a_checkpoint_round_trips_through_a_dict(self):
+        cp = PartCheckpoint(
+            part_scheme="edat-range",
+            part_key="edat:2023-01-01:2023-06-30",
+            promised=6500,
+            record_count=6480,
+        )
+        assert PartCheckpoint.from_dict(cp.to_dict()) == cp
+
+    @pytest.mark.parametrize("field", ["part_scheme", "part_key", "promised", "record_count"])
+    def test_an_absent_column_is_a_value_error_naming_it(self, field):
+        # The `DownloadDay.from_dict` rule (#98, #99): a stored row is read
+        # strictly, and every rejection names the field. Indexing the dict
+        # directly raised `KeyError`, which the documented `except ValueError`
+        # does not catch.
+        row = {
+            "part_scheme": "edat-range",
+            "part_key": "edat:a:b",
+            "promised": 1,
+            "record_count": 1,
+        }
+        del row[field]
+
+        with pytest.raises(ValueError, match=field):
+            PartCheckpoint.from_dict(row)
+
+    @pytest.mark.parametrize("field", ["part_scheme", "part_key", "promised", "record_count"])
+    def test_a_null_column_is_a_value_error_naming_it(self, field):
+        # Both columns are NOT NULL in both DDLs, so a null is a malformed
+        # row. `str(None)` is `"None"`, which would deserialise a null
+        # `part_key` into a key that matches no plan — resume would silently
+        # degrade to re-fetching every unfinished day, with nothing raised.
+        row = {
+            "part_scheme": "edat-range",
+            "part_key": "edat:a:b",
+            "promised": 1,
+            "record_count": 1,
+        }
+        row[field] = None
+
+        with pytest.raises(ValueError, match=field):
+            PartCheckpoint.from_dict(row)
+
+    def test_an_unreadable_count_is_a_value_error_naming_the_field(self):
+        # SQLite applies no affinity enforcement, so a text value reaches an
+        # INTEGER NOT NULL column intact. `int('?')` reports neither the
+        # column nor the row.
+        with pytest.raises(ValueError, match="promised"):
+            PartCheckpoint.from_dict(
+                {
+                    "part_scheme": "edat-range",
+                    "part_key": "edat:a:b",
+                    "promised": "?",
+                    "record_count": 1,
+                }
+            )
+
+    @pytest.mark.parametrize(
+        ("kwargs", "expected"),
+        [
+            ({"part_scheme": ""}, "part_scheme"),
+            ({"part_key": ""}, "part_key"),
+            ({"part_key": "   "}, "part_key"),
+            ({"promised": 0}, "promised"),
+            ({"promised": -1}, "promised"),
+            ({"record_count": -1}, "record_count"),
+        ],
+    )
+    def test_a_checkpoint_that_cannot_describe_a_finished_part_is_refused(self, kwargs, expected):
+        # A planned part always promises at least one record, and a
+        # checkpointed one stored what it walked. Documented-but-unchecked is
+        # the failure mode this module spends the most words preventing.
+        fields = {
+            "part_scheme": "edat-range",
+            "part_key": "edat:a:b",
+            "promised": 1,
+            "record_count": 1,
+            **kwargs,
+        }
+
+        with pytest.raises(ValueError, match=expected):
+            PartCheckpoint(**fields)
+
+    def test_a_part_may_store_fewer_records_than_its_count_promised(self):
+        # Not an error: `promised` counts the record elements the server
+        # delivered and `record_count` those the fetcher parsed, and PubMed's
+        # efetch returns `<PubmedBookArticle>` elements the fetcher skips. The
+        # two are on different scales by design, so no cross-field rule.
+        cp = PartCheckpoint(
+            part_scheme="edat-range", part_key="edat:a:b", promised=500, record_count=498
+        )
+        assert cp.record_count < cp.promised
 
 
 class TestGrantAndAffiliationStorage:

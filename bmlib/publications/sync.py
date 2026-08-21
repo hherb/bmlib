@@ -637,6 +637,15 @@ def _store_records(
     return added, merged, failed
 
 
+class _DayPartsUnreadableError(Exception):
+    """This day's stored part rows could not be read.
+
+    Raised inside the per-day handler purely so one ``except`` records the
+    day, rather than a second copy of that block existing for this case. The
+    message is built at the read, where the cause is still in hand.
+    """
+
+
 class _DayOutcome(NamedTuple):
     """What to store for a day, and what to tell the caller about it."""
 
@@ -762,7 +771,12 @@ def _load_day_parts(conn: Any, source: str, day: date) -> dict[str, PartCheckpoi
     )
     parts = {}
     for row in rows:
-        cp = PartCheckpoint.from_dict(row)
+        # `fetch_all` hands back a driver row — `sqlite3.Row` here, psycopg2's
+        # `RealDictRow` there — and only the second is a `Mapping`.
+        # `PartCheckpoint.from_dict` takes one, so the conversion happens here
+        # rather than the model widening its contract to the union of two
+        # drivers' row types. Both support `keys()` and string indexing.
+        cp = PartCheckpoint.from_dict({key: row[key] for key in row.keys()})
         parts[cp.part_key] = cp
     return parts
 
@@ -974,9 +988,32 @@ def sync(
                 day_merged = 0
                 day_failed = 0
                 day_records: list[FetchedRecord] = []
-                prior_parts: dict[str, PartCheckpoint] = (
-                    _load_day_parts(conn, source, day) if resumable else {}
-                )
+                prior_parts: dict[str, PartCheckpoint] = {}
+                parts_error: str | None = None
+                if resumable:
+                    try:
+                        prior_parts = _load_day_parts(conn, source, day)
+                    except Exception as exc:
+                        # Guarded for the reason `_source_is_resumable` is,
+                        # one call earlier: this runs *before* the per-day
+                        # handler below, and the source loop carries only a
+                        # `finally`, so anything raised here leaves `sync()`
+                        # without returning a `SyncReport` at all — every
+                        # source's work in the run becomes unreportable (#99).
+                        #
+                        # It fails the day rather than proceeding with no
+                        # checkpoints. Fetching a day from scratch would be
+                        # correct, but recording it `completed` on a run that
+                        # could not read what an earlier run had already
+                        # stored is recording success over an unknown, and
+                        # `completed` is never re-offered. A failed day is,
+                        # and `store_publication` merges, so the retry is
+                        # idempotent.
+                        parts_error = (
+                            "could not read download_day_parts for"
+                            f" {source}/{day.isoformat()}: {type(exc).__name__}: {exc}"
+                        )
+                        logger.error("%s", parts_error)
                 skipped_keys: set[str] = set()
 
                 def handle_record(record: FetchedRecord) -> None:
@@ -1046,6 +1083,8 @@ def sync(
                     }
 
                 try:
+                    if parts_error is not None:
+                        raise _DayPartsUnreadableError(parts_error)
                     fetch_result = fetcher(
                         client,
                         day,

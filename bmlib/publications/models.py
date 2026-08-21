@@ -46,6 +46,66 @@ def _parse_datetime(value: str | datetime | None) -> datetime:
     return datetime.fromisoformat(value)
 
 
+def _require_text(value: object, field_name: str) -> str:
+    """Read a ``TEXT NOT NULL`` column a stored row must carry.
+
+    The counterpart of :func:`_require_datetime` for the string columns of
+    :class:`PartCheckpoint`, and it exists for the same reason: ``str(value)``
+    accepts everything. A null ``part_key`` becomes the literal ``"None"``,
+    which matches no planned part, so resume degrades to re-fetching every
+    unfinished day in full — a cost with no error, which is the one outcome
+    this family of rules is written to prevent.
+
+    Raises
+    ------
+    ValueError
+        If *value* is absent, ``None``, not a string, or blank.
+    """
+    if value is None:
+        raise ValueError(
+            f"{field_name} is required and must not be None;"
+            " it is NOT NULL in the schema, so a row lacking it is malformed"
+        )
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string, got {type(value).__name__}")
+    if not value.strip():
+        raise ValueError(f"{field_name} must not be blank")
+    return value
+
+
+def _require_count(value: object, field_name: str, *, minimum: int) -> int:
+    """Read an ``INTEGER NOT NULL`` column a stored row must carry.
+
+    ``int(value)`` reports neither the column nor the row on a bad value, and
+    raises ``TypeError`` rather than ``ValueError`` on ``None`` — so a caller
+    writing the documented ``except ValueError`` does not catch it (#99).
+    SQLite enforces no column affinity, so a text value does reach an
+    ``INTEGER NOT NULL`` column intact.
+
+    ``bool`` is rejected rather than silently read as 0 or 1: it is an ``int``
+    subclass, so nothing else here would catch it.
+
+    Raises
+    ------
+    ValueError
+        If *value* is absent, ``None``, not an integer, or below *minimum*.
+    """
+    if value is None:
+        raise ValueError(
+            f"{field_name} is required and must not be None;"
+            " it is NOT NULL in the schema, so a row lacking it is malformed"
+        )
+    if isinstance(value, bool) or not isinstance(value, int | str):
+        raise ValueError(f"{field_name} must be an integer, got {type(value).__name__}")
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} is not a readable integer: {value!r}") from exc
+    if number < minimum:
+        raise ValueError(f"{field_name} must be at least {minimum}, got {number}")
+    return number
+
+
 def _require_datetime(value: object, field_name: str) -> datetime:
     """Parse a timestamp a stored row must carry, rather than inventing one.
 
@@ -601,12 +661,72 @@ class PartCheckpoint:
     """
 
     part_scheme: str
+    """Which partitioning scheme wrote ``part_key``.
+
+    Stored on every row and read back, but never branched on — that is what it
+    is for. A scheme whose keys change spelling matches nothing rather than
+    matching wrongly, and this column is how the stale rows are recognised and
+    dropped deliberately. See ``docs/DECISIONS.md``.
+    """
+
     part_key: str
+    """This part's identity, opaque to storage and compared with ``==``.
+
+    The partitioning scheme belongs to the fetcher, so a second scheme needs
+    no schema change. A second spelling of the same range matches no
+    checkpoint, so resume degrades to a full re-fetch with nothing raised —
+    which is why the fetcher builds this through one constructor.
+    """
+
     promised: int
+    """The count the part's own session reported when it was walked.
+
+    Compared for equality against a later run's *planning* count to decide
+    whether the part may be skipped, and credited to the day's delivery
+    reconcile when it is. On the same scale as ``delivered`` — record elements
+    the server handed over — not as ``record_count``.
+    """
+
     record_count: int
+    """Records parsed and stored for this part; never the delivered count.
+
+    Lower than ``promised`` by however many ``<PubmedBookArticle>`` elements
+    the fetcher skipped, so the two are deliberately not commensurable.
+    """
+
+    def __post_init__(self) -> None:
+        """Refuse a checkpoint that cannot describe a part that finished.
+
+        Documented-but-unchecked is the failure mode this module spends the
+        most words preventing, and the siblings that carry invariants
+        (``ProcessingConfig``, ``TransparencyResult``) check theirs here. A
+        planned part always promises at least one record, and a checkpointed
+        one stored what it walked.
+
+        There is deliberately no ``record_count <= promised`` rule: the two
+        count different things (see the field docstrings), and
+        ``reconcile_delivery`` treats delivery at or above the promise as
+        clean, so the relation is normal but not guaranteed.
+
+        Raises
+        ------
+        ValueError
+            If either name is blank, ``promised`` is below 1, or
+            ``record_count`` is negative.
+        """
+        _require_text(self.part_scheme, "part_scheme")
+        _require_text(self.part_key, "part_key")
+        _require_count(self.promised, "promised", minimum=1)
+        _require_count(self.record_count, "record_count", minimum=0)
 
     def to_dict(self) -> dict[str, Any]:
-        """Return a plain-dict form of this checkpoint."""
+        """Return a plain-dict form of this checkpoint.
+
+        The four columns that describe the part itself, not the whole row:
+        ``source`` and ``date`` are the caller's context and ``completed_at``
+        is stamped by the writer and never read back, so a round trip through
+        this pair does not reproduce a ``download_day_parts`` row.
+        """
         return {
             "part_scheme": self.part_scheme,
             "part_key": self.part_key,
@@ -616,12 +736,25 @@ class PartCheckpoint:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> PartCheckpoint:
-        """Build a checkpoint from its plain-dict form."""
+        """Build a checkpoint from a stored row, refusing to guess a column.
+
+        Read strictly, for the reason ``DownloadDay.from_dict`` is (#98, #99):
+        this is the reader on the day-selection path, and it runs before
+        ``sync()`` enters the handler that owns a day — so anything it raises
+        that a caller cannot catch takes the whole multi-source run's report
+        with it. Every rejection is a ``ValueError`` naming the column.
+
+        Raises
+        ------
+        ValueError
+            If any of the four columns is absent, ``None``, of the wrong type,
+            or outside the range a finished part can have.
+        """
         return cls(
-            part_scheme=str(data["part_scheme"]),
-            part_key=str(data["part_key"]),
-            promised=int(data["promised"]),
-            record_count=int(data["record_count"]),
+            part_scheme=_require_text(data.get("part_scheme"), "part_scheme"),
+            part_key=_require_text(data.get("part_key"), "part_key"),
+            promised=_require_count(data.get("promised"), "promised", minimum=1),
+            record_count=_require_count(data.get("record_count"), "record_count", minimum=0),
         )
 
 

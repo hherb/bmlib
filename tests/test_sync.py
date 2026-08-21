@@ -26,7 +26,12 @@ import pytest
 from bmlib.db import connect_sqlite, execute, fetch_all, fetch_one, fetch_scalar
 from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.publications.fetchers import ALL_SOURCES
-from bmlib.publications.models import FetchedRecord, FetchResult, PartCheckpoint
+from bmlib.publications.models import (
+    FetchedRecord,
+    FetchResult,
+    PartCheckpoint,
+    SyncReport,
+)
 from bmlib.publications.schema import ensure_schema
 from bmlib.publications.storage import get_publication_by_doi
 from bmlib.publications.sync import (
@@ -1974,6 +1979,87 @@ class TestWhichSourcesMayBeResumed:
         escape the per-day handler and take the whole run's report with it.
         """
         assert _source_is_resumable("no_such_source_exists") is False
+
+
+class TestAnUnreadableCheckpointCostsADayNotTheRun:
+    """The part read runs before the per-day handler is entered.
+
+    `sync()`'s source loop carries only a `finally` that closes the client, so
+    anything raised outside the per-day `try` leaves `sync()` without
+    returning a `SyncReport` at all — every source's work in that run becomes
+    unreportable. The rule this module already applies to `_source_is_resumable`
+    one line above, applied to the database read beside it.
+
+    Failing *safe* rather than closed, uniquely here: unreadable checkpoints
+    mean "nothing may be skipped", which costs a re-fetch of that day, and
+    `store_publication` merges. Failing closed would let one corrupt row stop
+    a source's days from ever being fetched.
+    """
+
+    def test_a_read_failure_fails_the_day_and_still_returns_a_report(self):
+        conn = _fresh_conn()
+        day = date.today() - timedelta(days=3)
+
+        from unittest.mock import patch
+
+        def exploding_load(*_args, **_kwargs):
+            raise RuntimeError("connection reset while reading download_day_parts")
+
+        with patch("bmlib.publications.sync._load_day_parts", exploding_load):
+            report = sync(
+                conn,
+                sources=["pubmed"],
+                date_from=day,
+                date_to=day,
+                _fetcher_override={"pubmed": _make_fake_fetcher([_record("1")])},
+            )
+
+        assert isinstance(report, SyncReport)
+        assert report.errors
+        assert "download_day_parts" in report.errors[0]
+        assert (
+            fetch_scalar(
+                conn,
+                "SELECT status FROM download_days WHERE source = ? AND date = ?",
+                ("pubmed", day.isoformat()),
+            )
+            == "failed"
+        )
+
+    def test_an_unreadable_row_does_not_let_a_later_run_skip_its_part(self):
+        # The reason it fails the day rather than proceeding with no
+        # checkpoints: a day fetched as if from scratch is correct, but
+        # recording it `completed` on a run that could not read what an
+        # earlier run had already stored would be recording success over an
+        # unknown. The day is re-offered instead.
+        conn = _fresh_conn()
+        day = date.today() - timedelta(days=3)
+        execute(
+            conn,
+            "INSERT INTO download_day_parts (source, date, part_scheme, part_key,"
+            " promised, record_count, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("pubmed", day.isoformat(), "edat-range", "edat:a:b", "?", 5, "2026-08-20T00:00:00"),
+        )
+        conn.commit()
+
+        report = sync(
+            conn,
+            sources=["pubmed"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"pubmed": _make_fake_fetcher([_record("1")])},
+        )
+
+        assert isinstance(report, SyncReport)
+        assert report.errors
+        assert (
+            fetch_scalar(
+                conn,
+                "SELECT status FROM download_days WHERE source = ? AND date = ?",
+                ("pubmed", day.isoformat()),
+            )
+            == "failed"
+        )
 
 
 class TestSyncResumesAPartitionedDay:
