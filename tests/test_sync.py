@@ -2201,15 +2201,19 @@ class TestSyncResumesAPartitionedDay:
     def test_a_non_resumable_fetcher_is_called_with_todays_keywords_only(self):
         """`register_source()` is public, so a fetcher may predate these names.
 
-        The stub deliberately has no ``**kwargs`` for them: an unexpected
-        keyword raises inside the per-day handler and turns a working source
-        into a failed day.
+        The stub deliberately declares **no** ``**kwargs``, so any keyword
+        `sync()` adds for a resumable source — ``completed_parts``,
+        ``on_part_complete``, ``on_part_skipped`` — raises `TypeError` at the
+        call. That is caught by the per-day handler, which turns a working
+        source into a failed day, so an empty ``report.errors`` is what pins
+        the guard. A stub with ``**kwargs`` would absorb the extras and make
+        this a claim about a fetcher that happens to tolerate them.
         """
         conn = _fresh_conn()
-        seen: dict[str, object] = {}
+        calls: list[date] = []
 
-        def strict(client, day, *, on_record, on_progress=None, **config):
-            seen["config"] = config
+        def strict(client, day, *, on_record, on_progress=None):
+            calls.append(day)
             return FetchResult(
                 source="biorxiv", date=day.isoformat(), record_count=0, status="completed"
             )
@@ -2223,5 +2227,7 @@ class TestSyncResumesAPartitionedDay:
             _fetcher_override={"biorxiv": strict},
         )
 
+        # Without this the assertion below passes vacuously: a fetcher that
+        # was never called also records no errors.
+        assert calls == [date(2024, 1, 1)]
         assert report.errors == []
-        assert seen["config"] == {}

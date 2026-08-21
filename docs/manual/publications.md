@@ -45,6 +45,7 @@ from bmlib.publications import (
     Grant,
     AuthorAffiliation,
     DownloadDay,
+    PartCheckpoint,
 
     # Source registry
     SourceDescriptor,
@@ -369,6 +370,13 @@ class SyncProgress:
     message: str | None = None
 ```
 
+> **On a day fetched in parts *(unreleased, #105)*,** `records_total` stays the
+> **day's** count and `records_processed` accumulates across parts, so a
+> progress bar measures the day the caller asked for rather than restarting at
+> each part; `message` names the part being walked. On a *resumed* day the
+> counts read low, because a part an earlier run finished is skipped and never
+> re-processed.
+
 ---
 
 ### `SyncReport`
@@ -420,6 +428,7 @@ class SourceDescriptor:
     display_name: str
     description: str
     params: list[SourceParam] = field(default_factory=list)
+    resumable: bool = False          # unreleased, #105
 ```
 
 | Field | Type | Description |
@@ -433,6 +442,52 @@ class SourceDescriptor:
 | `SourceDescriptor.display_name` | `str` | Presentation name, e.g. `"PubMed"`. |
 | `SourceDescriptor.description` | `str` | What the source covers. |
 | `SourceDescriptor.params` | `list[SourceParam]` | Configurable parameters for this source. |
+| `SourceDescriptor.resumable` | `bool` | Whether `sync()` may pass this fetcher the per-part resume keywords. Default `False`. *(unreleased, #105)* |
+
+> **`resumable` — new, and `False` on purpose *(unreleased, #105)*.** A day too
+> large for one history session is fetched in parts, and a fetcher that can
+> report a finished part lets `sync()` checkpoint it so an interrupted run
+> resumes. `sync()` passes `completed_parts`, `on_part_complete` and
+> `on_part_skipped` **only** to a fetcher whose descriptor sets this. It
+> defaults to `False` because [`register_source()`](#registry-functions) is
+> public: a fetcher written against an earlier bmlib does not accept those
+> keywords, and passing one would raise inside the per-day handler and record a
+> working source's day as `failed`. Of the built-in sources only `pubmed` sets
+> it. See [Writing a Custom Fetcher](#writing-a-custom-fetcher).
+
+### `PartCheckpoint`
+
+> **New *(unreleased, #105)*.**
+
+One finished partition of a day, as stored in
+[`download_day_parts`](#download_day_parts).
+
+```python
+@dataclass
+class PartCheckpoint:
+    part_scheme: str
+    part_key: str
+    promised: int
+    record_count: int
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `part_scheme` | `str` | Which partitioning scheme wrote `part_key`. `fetch_pubmed` writes `"edat-range"`. |
+| `part_key` | `str` | The part's identity, opaque to storage. `fetch_pubmed` writes `"edat:<lo>:<hi>"`. |
+| `promised` | `int` | What the source said this part held when it was walked. |
+| `record_count` | `int` | What the walk actually delivered. |
+
+`to_dict()` / `from_dict()` as elsewhere. You only construct one of these if
+you are writing a resumable fetcher; `sync()` stores and reloads them for you.
+
+`part_key` is opaque because the partitioning scheme belongs to the fetcher,
+not to the schema — a second scheme needs no migration. The cost is that the
+skip rule is a **string comparison**: a key format that changes between
+releases matches nothing, resume silently degrades to re-fetching every
+unfinished day in full, and nothing is raised. Build the key in exactly one
+place and pin its output in a test, and change `part_scheme` when the format
+changes, so stale rows are recognisable rather than merely unmatched.
 
 ---
 
@@ -449,6 +504,7 @@ Create all publications tables if they do not exist, delegating to `bmlib.db.cre
 - **`publications`** — Core publication records, with unique **partial** indexes on `doi` and `pmid` (each `WHERE ... IS NOT NULL`, so any number of rows may have a `NULL` identifier) and a plain index on `publication_date`.
 - **`fulltext_sources`** — Full-text source URLs linked to publications. Unique on `(publication_id, url)`.
 - **`download_days`** — Tracks which source/date combinations have been fetched. Unique on `(source, date)`.
+- **`download_day_parts`** *(unreleased, #105)* — Which parts of an over-large day a previous run finished, so an interrupted fetch resumes. Unique on `(source, date, part_key)`. Rows exist only while a day is unfinished: `sync()` deletes the day's rows when it records the day `completed`.
 - **`retraction_notices`** — Retraction Watch notices, unique on `record_id`. See [Retractions](#retractions).
 - **`publication_grants`** and **`publication_affiliations`** — funding awards and author affiliations, each carrying a `source` column and indexed on `publication_id`.
 
@@ -845,7 +901,9 @@ Why it is built this way:
 
 > **Changed (0.10.0).** A day is recorded `"failed"` — and so retried — if **any** record failed to store, not only if the fetch itself failed (#90); and the fetcher's status is read against an allowlist, so anything that is not exactly `"completed"` or `"failed"` is logged and recorded as failed rather than coerced to success (#89). Both cases also append a line to `SyncReport.errors` naming the source and the day. Retrying is safe because `store_publication()` merges. The cost to know about: a record the storage layer will *never* accept pins its day into a retry on every run — loudly, with an ERROR and an `errors` line each time, rather than silently missing.
 
-The trade-off is memory: the whole day is held at once. In practice this is a few thousand records and tens of megabytes with abstracts. A source delivering far larger days would need chunked flushing.
+The trade-off is memory: the whole day is held at once. In practice this is a few thousand records and tens of megabytes with abstracts.
+
+> **Changed (unreleased, #105).** A source that declares [`SourceDescriptor.resumable`](#sourcedescriptor-and-sourceparam) drains that buffer **once per finished part** rather than once per day, which is what keeps a 242,000-record day out of memory. The part's records and its `download_day_parts` checkpoint commit in the same transaction, so a checkpoint can never attest to records a rollback discarded, and a part holding a record that would not store is not checkpointed at all. Whatever the parts did not already flush is stored by the day's own transaction as before, so the two paths converge on the same `download_days` upsert.
 
 **Failure isolation.** A fetcher exception — a misconfigured source (e.g. OpenAlex's required `email` missing), a network failure, or a bug inside the fetcher — is caught **per day**. It is logged, synthesised into a `FetchResult(status="failed", ...)`, appended to `SyncReport.errors`, and the run continues with the next day and the next source. One broken source never aborts a multi-source run or discards the report.
 
@@ -943,8 +1001,10 @@ def on_record(record):
 report = sync(
     conn,
     sources=["pubmed"],
-    date_from=date(2026, 6, 1),
-    date_to=date(2026, 6, 1),
+    # Not a first-of-month: that is a day of tens of thousands of records,
+    # fetched in parts — see "A day over 9,999 records is fetched in parts".
+    date_from=date(2026, 6, 3),
+    date_to=date(2026, 6, 3),
     on_record=on_record,
 )
 # Records are queryable only now that sync() has returned and committed.
@@ -1036,6 +1096,25 @@ Contract:
 - **Reconcile before you report `"completed"`.** If your source tells you how many records the day holds, compare that against what it actually handed over, and return `"failed"` when the walk stopped short — see *Reconciling a walk against the source's own count* below. A `"completed"` day is durable: once it is in the past *and was fetched after the day was over* (see *When a day is over*), `_days_needing_fetch()` does not offer it again unless `recheck_days` is set, which is not the default. The one re-offer that rule guarantees is not a second chance you can rely on — it happens on *D+1* and only if the caller's window still reaches back that far.
 - **Set `note` when the day completed imperfectly.** A day that came up short but not enough to fail is the case this exists for; `sync()` collects it into `SyncReport.notes`, which is the only place such a day is visible after the fact.
 - Rate-limit yourself. `sync()` does not throttle on your behalf.
+- **You will not be passed anything you did not ask for** *(unreleased, #105)*. `sync()` calls your fetcher with exactly `client`, `target_date`, `on_record`, `on_progress` and your own `source_configs` keys — nothing else — unless your `SourceDescriptor` sets `resumable=True`. That default exists because `register_source()` is public: a fetcher written against an earlier bmlib would raise on an unexpected keyword, and the raise is caught per day, so a working source would start recording `failed` days on upgrade.
+
+#### Resuming a day fetched in parts *(unreleased, #105)*
+
+Set `resumable=True` on your `SourceDescriptor` only if your fetcher splits an over-large day into parts and can say when one is finished. `sync()` then adds three keyword arguments, which you must declare:
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `completed_parts` | `Mapping[str, PartCheckpoint]` | Parts of this day a previous run finished, keyed by `part_key`. Empty on a first run. |
+| `on_part_complete` | `Callable[[PartCheckpoint], None]` | Call **after** a part's walk has reconciled cleanly, never before. `sync()` stores that part's records and the checkpoint in one transaction. |
+| `on_part_skipped` | `Callable[[str], None]` | Call with the `part_key` of every part you skipped because `completed_parts` still describes it. |
+
+Three rules, each of which protects a guard rather than a feature:
+
+- **Skip a part only if its key is checkpointed *and* its count still matches the stored `promised`.** Key alone is not enough: a part that has gained records since would be skipped for ever and those records would be permanently, silently absent. A count mismatch means re-walk, which is safe because `store_publication()` merges.
+- **Count a skipped part as delivered when you reconcile the day**, or every resumed day fails its own day-total check — a resumed run never delivers those records, and the day's own count still includes them.
+- **Report a skipped part through `on_part_skipped`, and only a skipped one.** That is what lets `sync()` credit its stored records to `download_days.record_count` without double-counting a part you actually re-walked.
+
+Do not checkpoint a part that reconciled with a *note*, or one whose records you could not fully deliver. A later run would skip it and credit records that never arrived, and the note reporting them missing would not survive to that run.
 
 **Example — registering a source backed by a local JSON dump:**
 
@@ -1173,6 +1252,10 @@ def fetch_pubmed(
     on_record: Callable[[FetchedRecord], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
     api_key: str | None = None,
+    # unreleased, #105 — supplied by sync(); only used for a partitioned day
+    completed_parts: Mapping[str, PartCheckpoint] | None = None,
+    on_part_complete: Callable[[PartCheckpoint], None] | None = None,
+    on_part_skipped: Callable[[str], None] | None = None,
 ) -> FetchResult
 ```
 
@@ -1197,58 +1280,122 @@ Fetch all PubMed articles published on `target_date` using NCBI E-utilities.
   in `completed` with 0 records, which a caller cannot tell from a genuinely
   quiet day (fixed after 0.9.1).
 
-#### A day over 9,999 records is refused *(unreleased, #96, #105)*
+#### A day over 9,999 records is fetched in parts *(unreleased, #96, #105)*
 
 NCBI's search backend serves only the **first 9,999 records** of a history
 session: `retstart=9999` is HTTP 400 (*"For PubMed, ESearch can only retrieve
 the first 9,999 records matching the query"*), and — more quietly — a page
 whose window crosses that boundary is clamped to it without a word, so
-`retstart=9500&retmax=500` comes back with 499 records at HTTP 200.
+`retstart=9500&retmax=500` comes back with 499 records at HTTP 200. So a day
+larger than that cannot be walked in one session, and walking it as far as it
+goes yields a last page indistinguishable from a day missing records.
 
-`fetch_pubmed` therefore refuses such a day as soon as ESearch reports the
-count, before requesting a single page:
+**This is not rare, because `[Date - Publication]` is not `[EDAT]`.** A record
+carrying only a year and a month is indexed at day 1 of that month, and one
+carrying only a year at 1 January. Measured 2026-08-20: every first-of-month
+day other than 1 January holds 49,543–90,571 records, and every 1 January
+212,439–315,282, against a median ordinary day of 4,890. A backfill meets one
+such day per month, plus a very large one per year.
 
-```python
-FetchResult(status="failed", record_count=0, error=
-    "PubMed reported 61378 records for 2026-02-01, but a history session serves only"
-    " its first 9999 records, so 51379 of them cannot be reached; ...")
+`fetch_pubmed` splits such a day into **Entrez-date ranges that each fit**. It
+counts the day inside the fixed root range `1900/01/01–2100/12/31`, halves any
+range still over the cap, and stops halving a range as soon as it fits; each
+resulting part is then walked exactly like an ordinary day — its own ESearch
+session, the same 500-record page stride, the same stall rule, reconciled
+against its own count — and the day's whole delivery is reconciled against the
+day's own count afterwards. Nothing is fetched until the whole ladder is
+planned, and the plan is logged at INFO before the first record arrives:
+
+```
+PubMed 2024-01-01 holds 242216 records, above the 9999 one history session
+serves: fetching it as 37 Entrez-date parts
 ```
 
-Two things to know:
+Four things to know:
 
-- **This is not rare, because `[Date - Publication]` is not `[EDAT]`.** A
-  record carrying only a year and a month is indexed at day 1 of that month,
-  and one carrying only a year at 1 January. Measured 2026-08-20: every
-  first-of-month day other than 1 January holds 49,543–90,571 records, and
-  every 1 January 212,439–315,282, against a median ordinary day of 4,890. So a backfill meets
-  one refused day per month, plus a very large one per year.
-- **The day is failed, so `sync()` re-offers it on every later run** — an
-  ERROR and a `SyncReport.errors` line each time. A six-year backfill carries
-  some 72 such days, so that surface never returns to empty until #105 lands:
-  alert on a *change* in `SyncReport.errors` rather than on it being non-empty
-  (issue #107 tracks giving a known-permanent refusal its own field). It cannot be recorded
-  `completed`: that would durably lose the records past the cap, and
-  `_days_needing_fetch()` would never offer the day again. Nothing is fetched
-  for it in the meantime, deliberately — storing the reachable 9,999 once and
-  re-fetching them forever costs about 3 GB a run across a six-year backfill
-  and stores nothing new after the first. (An absolute rather than a fraction:
-  9,999 is a fifth of the smallest structural day but a thirty-second of 1
-  January.) Issue #105 partitions such a day into sub-queries that each fit,
-  which is what makes the day fetchable rather than merely honest about being
-  unfetchable.
-- **`download_days.record_count` is what *this* run stored, not a running
-  total.** A day that was fetched successfully years ago and has since grown
-  past the cap — 1 January accrues year-only citations — is re-offered under
-  `recheck_days`, refused, and its row rewritten to `failed` with
-  `record_count=0`. The publications already stored are untouched; it is the
-  row that stops describing them.
+- **The cost is real and it arrives without being asked for.** A
+  242,216-record day (2024/01/01, measured 2026-08-21) is about **562
+  requests** — 40 planning ESearches, 37 session ESearches, ~485 EFetch
+  pages — and at roughly 4 KB a record about **1 GB**. A six-year backfill
+  window holds some 72 such days, so roughly **6.2M records and ~25 GB**, and
+  the run that meets them is long. It is a one-off: the day is then
+  `completed` and never offered again, where the behaviour this replaces
+  failed the day on every run for ever and stored nothing. There is no flag to
+  turn it off — narrow the sync window if you do not want that trade for a
+  given range.
+- **A partitioned day resumes.** Each part's records and its checkpoint are
+  written in one transaction, so an interrupted run does not repeat the parts
+  that finished — see [`download_day_parts`](#download_day_parts). A part is
+  skipped on a later run only if its stored count still matches what PubMed
+  reports for it now; a part that has gained records is re-walked, since
+  skipping it would lose them permanently and silently. `store_publication()`
+  merges, so a re-walk is idempotent.
+- **`FetchResult.record_count` counts only what *this* run walked**, and so
+  does `on_progress`: on a resumed day both read lower than the day's real
+  size, because the skipped parts were delivered by an earlier run.
+  `download_days.record_count` does *not* — `sync()` credits the skipped parts
+  from their checkpoints, so the stored row covers the whole day rather than
+  the last run's share.
+- **`download_days.record_count` is still what has been *stored*, not a
+  running total.** A day fetched successfully years ago that has since grown —
+  1 January accrues year-only citations — is re-offered under `recheck_days`
+  and re-fetched in full, and its row is rewritten with what that run stored.
+  A day that fails is rewritten with whatever that run managed; the
+  publications already stored are untouched, it is the row that stops
+  describing them.
 
-Before this the walk asked for record 10,000 anyway and the day failed on the
-400 with `Client error '400 Bad Request'` — the same verdict, twenty requests
-later, naming neither cause nor remedy. With one exception: a day of *exactly*
-10,000 records never asked past `retstart=9500`, so it walked to its end, was
-clamped to 9,999 delivered, cleared the shortfall floor and was recorded
-`completed` — losing one record durably. The guard closes that too.
+##### When a partitioned day still fails
+
+Every rule below fails the day rather than completing it short, and a failed
+day is re-offered on the next run, so a transient stays recoverable.
+
+- **A single Entrez date over the cap.** This is the one case the ladder
+  cannot reach: a range narrowed to one date cannot be halved again. Usually
+  it is caught at planning time, before any part is fetched; it can also
+  surface mid-walk, when a part's own count has crossed the cap since planning
+  and its range is already a single date. Either way the error names that date
+  and its count:
+
+  ```
+  # FetchResult.error — the message's shape; no such day has been observed yet,
+  # so the count and the date below are placeholders, not a measurement.
+  "<count> records share the Entrez date <YYYY-MM-DD>, above the 9999 a history
+   session serves, and an Entrez date cannot be split further; refusing the day"
+  ```
+
+  It is worded to be distinguishable from the blanket refusal it replaces, so
+  a log tells "still broken" apart from "broken differently".
+  `FetchResult.record_count` is what this run walked before giving up, which
+  is 0 when the ladder is refused at planning time and may be higher when a
+  part re-partitions mid-walk and cannot be split.
+
+  Such a day is `failed` on every run, so it is an `errors` line every run.
+  Nothing measured has produced one yet — six ladder walks over five real
+  over-cap days found no stuck Entrez date — so unlike the blanket refusal
+  this replaced, it is not a population you should expect to see. If you do
+  see one, it is worth reporting: it means the ladder needs a second rung.
+
+- **The root range does not cover the day.** Before descending, the count of
+  the day inside `1900/01/01–2100/12/31` is compared against the day's own
+  count. Coming up **short** means records of this day are indexed outside the
+  ladder, so they are in no part's promise and every part would reconcile
+  perfectly while the day is silently incomplete; the day is refused, naming
+  the shortfall. Coming up **long** is fine and proceeds — a record indexed
+  between the two ESearches is stamped with today's Entrez date, which is
+  inside the range.
+
+- **Any part fails to reconcile**, by the ordinary rules in *Reconciling a
+  walk against the source's own count*, or the day's total delivery comes up
+  short of the day's own count. The second catches a whole part going missing
+  even when every part passed on its own.
+
+Before all this, the walk asked for record 10,000 anyway and the day failed on
+the 400 with `Client error '400 Bad Request'` — the right verdict, twenty
+requests later, naming neither cause nor remedy. With one exception: a day of
+*exactly* 10,000 records never asked past `retstart=9500`, so it walked to its
+end, was clamped to 9,999 delivered, cleared the shortfall floor and was
+recorded `completed` — losing one record durably. That day is partitioned too,
+so it no longer completes short.
 
 #### Titles and abstracts are Markdown
 
@@ -1659,7 +1806,29 @@ Indexes: `idx_publications_doi` (unique, partial), `idx_publications_pmid` (uniq
 | `last_verified_at` | `TEXT` | |
 | | | `UNIQUE(source, date)` |
 
-Rows are upserted by `sync()` inside the day's transaction, with `ON CONFLICT (source, date) DO UPDATE`. `record_count` records how many records were **stored** (added + merged), which can be lower than the number fetched if individual records failed.
+Rows are upserted by `sync()` inside the day's transaction, with `ON CONFLICT (source, date) DO UPDATE`. `record_count` records how many records were **stored** (added + merged), which can be lower than the number fetched if individual records failed. For a day fetched in parts across several runs it also includes the records earlier runs stored for the parts this run skipped — see [`download_day_parts`](#download_day_parts).
+
+### `download_day_parts`
+
+> **New *(unreleased, #105)*.** Created by `ensure_schema()` through `CREATE TABLE IF NOT EXISTS` on both backends, so an existing database gains it on the next call with no migration script.
+
+| Column | Type (SQLite) | Type (PostgreSQL) | Constraints |
+|--------|---------------|-------------------|-------------|
+| `id` | `INTEGER` | `SERIAL` | `PRIMARY KEY` (`AUTOINCREMENT` on SQLite) |
+| `source` | `TEXT` | `TEXT` | `NOT NULL` |
+| `date` | `TEXT` | `TEXT` | `NOT NULL` |
+| `part_scheme` | `TEXT` | `TEXT` | `NOT NULL` — which scheme wrote `part_key`; `fetch_pubmed` writes `"edat-range"` |
+| `part_key` | `TEXT` | `TEXT` | `NOT NULL` — opaque to storage; `fetch_pubmed` writes `"edat:<lo>:<hi>"` |
+| `promised` | `INTEGER` | `INTEGER` | `NOT NULL` — what the source said this part held |
+| `record_count` | `INTEGER` | `INTEGER` | `NOT NULL` — what the walk delivered |
+| `completed_at` | `TEXT` | `TEXT` | `NOT NULL` |
+| | | | `UNIQUE(source, date, part_key)` |
+
+A row is written only after its part's walk reconciled cleanly, in the **same transaction as that part's records** — so a checkpoint can never attest to records a rollback discarded. A part that reconciled short, or that held a record which failed to store, is deliberately left un-checkpointed: the day is `failed` and re-offered, and a checkpoint beside the gap would make that retry skip the one part holding the missing records.
+
+**What an operator sees here is an unfinished day.** `sync()` deletes a day's rows in the same transaction that records the day `completed`, so a completed day leaves nothing behind and the rows that are here name the days a re-run will resume. A `(source, date)` whose rows never go away is worth looking at: it is a day that keeps failing partway, and it is being re-offered on every run. Keeping the rows past completion would both grow the table without bound and make a `recheck_days` re-fetch skip the parts it was explicitly asked to redo.
+
+Only a source whose [`SourceDescriptor.resumable`](#sourcedescriptor-and-sourceparam) is `True` ever writes rows here — of the built-ins, `pubmed`. The delete on completion is *not* conditioned on that flag, so a source whose descriptor stops declaring `resumable` does not strand its rows.
 
 ### `retraction_notices`
 

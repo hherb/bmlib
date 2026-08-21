@@ -916,8 +916,13 @@ class TestThePartitionMode:
 
         assert report.exact is True
         assert report.stuck == []
-        assert sum(1 for _ in range(report.parts)) == report.parts
-        assert report.parts > 1
+        assert report.day_count == 40_000
+        # No part may hold more than the cap, and a range holding nothing is
+        # skipped rather than counted, so the ladder has to land between
+        # ceil(40000/9999) parts and the ten Entrez dates the records sit on.
+        # `exact` above is what says those parts tile the root with no
+        # residue; this is what says they were not one bucket or forty.
+        assert 5 <= report.parts <= 10
 
     def test_a_single_entrez_day_over_the_cap_is_reported_stuck(self, monkeypatch):
         monkeypatch.setattr(sampler, "_count", _stub_count({date(2023, 6, 1): 25000}))

@@ -1230,21 +1230,26 @@ a test pins that it cannot ask for anything else.
   Worth stating because that is the reading a reader reproduces if they sample
   the field the *name* suggests; it was a one-off probe on 2026-08-20 and the
   sampler has no flag to repeat it.
-- **An over-cap day is refused before a single record is fetched.** It cannot
-  be `completed` — that would durably lose the remainder, which is the whole
-  point of the family above — so it is `failed`, and a failed day is re-offered
-  on *every* later run — which also means `SyncReport.errors` never returns to
-  empty while such a day is in the window; issue #107 is whether a
-  known-permanent refusal should have a field of its own. That makes the only
-  real question what the doomed run costs. Walking first would buy the first 9,999 records once and then
+- **An over-cap day was refused before a single record was fetched — and that
+  is now history, kept because the reasoning still binds the one case left.**
+  Such a day cannot be `completed` — that would durably lose the remainder,
+  which is the whole point of the family above — so it was `failed`, and a
+  failed day is re-offered on *every* later run, which also meant
+  `SyncReport.errors` never returned to empty while such a day was in the
+  window (issue #107, dissolved rather than answered — see the partitioning
+  entries below). That made the only real question what the doomed run costs.
+  Walking first would buy the first 9,999 records once and then
   re-fetch them forever: a six-year backfill carries some 72 structural days,
   ~3 GB per run, storing nothing new. Refusing costs one esearch. The
-  trade-off is deliberate and was the maintainer's call: **until #105 lands,
-  those days have no records at all rather than the reachable 9,999**, and "no
-  publication is missed" is what #105 restores by partitioning an over-cap day
-  into sub-queries that each fit. Stated as an absolute rather than a fraction
-  on purpose: 9,999 is a fifth only of the *smallest* structural day, a
-  seventh of the median month first and a thirty-second of 1 January.
+  trade-off was deliberate and was the maintainer's call: **while it stood,
+  those days had no records at all rather than the reachable 9,999** — a
+  containment, not a fix, and "no publication is missed" was false for as long
+  as one was in the window. **#105 has since landed and partitions such a day
+  into sub-queries that each fit**, so the refusal now applies only where the
+  ladder cannot reach: a single Entrez date over the cap. The absolute rather
+  than the fraction is still the right way to read the loss it was containing:
+  9,999 is a fifth only of the *smallest* structural day, a seventh of the
+  median month first and a thirty-second of 1 January.
 - **Before this, an over-cap day *mostly* failed anyway — inscrutably.** The
   walk asked for record 10,000, `raise_for_status()` fired on the 400 before
   the body was read, and the day failed with `Client error '400 Bad Request'`:
@@ -1261,8 +1266,13 @@ a test pins that it cannot ask for anything else.
   durable loss, not just an unhelpful error message. #105 moves the rest the
   other way.
 - **The cap is a hard-coded 9,999 and that is a cost, not an oversight.** If
-  NCBI *raises* it, bmlib refuses days it could now fetch — loudly, in an
-  ERROR naming the cap, which is why that direction is acceptable. If NCBI
+  NCBI *raises* it, bmlib partitions days it could now have walked in one
+  session — extra ESearches and one session per part, with no record lost and
+  nothing logged above INFO, which is why that direction is acceptable. (Until
+  #105 it was acceptable for the opposite reason: bmlib *refused* those days,
+  loudly, in an ERROR naming the cap. The change made that direction cheaper
+  and quieter, so it is now the sampler and not a log line that would tell
+  you.) If NCBI
   *lowers* it, the guard does **not** reliably fail closed, and it is worth
   being exact rather than reassuring about why. The walk meets a 400 only when
   it *requests* a page starting past the live limit, so for any count between
@@ -1278,6 +1288,131 @@ a test pins that it cannot ask for anything else.
   real guard against a moved cap**, in either direction: re-run it before
   touching either constant, and it reports agreement or `DISAGREES` against
   the live backend.
+
+The rest of this section is #105's fix — the partitioning that replaced that
+refusal — and the choices inside it that read as arbitrary and are not. The
+full argument is in
+`docs/superpowers/specs/2026-08-21-pubmed-day-partitioning-design.md`.
+
+- **Why an Entrez-date range, and not a facet.** Any predicate `P` splits a
+  day into `AND P` and `NOT P`, which is disjoint and covering by
+  construction — but only if `P` is something every record either satisfies or
+  does not, *and* both halves are subdividable by the same step. The facets a
+  reader reaches for first fail one of those, and the first failure is the
+  dangerous one. **Publication type, MeSH term**: a record carries several, so
+  `AND pt1` and `AND pt2` overlap, the same record is fetched twice, and
+  delivery is inflated *past the day's own count* — which is exactly what
+  would hide a real shortfall from `reconcile_delivery`, the guard this whole
+  family exists to keep working. **Journal, language**: can be absent, and the
+  vocabulary is unbounded and heavily skewed, so a ladder over one neither
+  terminates predictably nor covers. **`NOT P` chains generally**: the
+  complement of a facet value is not itself subdividable by the same
+  mechanism, so the recursion has no uniform step. A numeric range has both
+  properties as arithmetic: `[lo, mid]` and `[mid+1, hi]` tile `[lo, hi]`, and
+  each half is the same kind of thing as its parent, so one step recurses to
+  any depth. Entrez date is the range every record has exactly one of — and,
+  because a structural day's records were indexed across decades, it shards
+  such a day well rather than piling it into one bucket.
+- **The ladder root is a fixed `1900/01/01 – 2100/12/31`, not derived from the
+  target day.** Deriving it would mean assuming how far before or after
+  publication a record may be indexed, which is the thing the root probe
+  exists to *verify*. Sibling counts come from subtraction (`right = parent −
+  left`) rather than a second ESearch, which is sound only because the halves
+  tile — measured below, not assumed. A zero-count range is skipped rather
+  than recursed, so the decades at either end of the root that hold nothing
+  cost no further requests.
+
+The ladder was measured before it was implemented, and again afterwards — the
+second time by a descent that deliberately does not import the one it measures
+(`scripts/sample_efetch_paging.py --partition`), since a corpus labelled by
+the rule under test can only confirm that rule. Every probe is against the
+live backend on 2026-08-21:
+
+| Day | Probed by | Count | Root probe | Parts | Depth | ESearch calls | Sum of parts | Stuck |
+|---|---|---|---|---|---|---|---|---|
+| 2025/01/01 | sampler | 266,421 | = day count | 44 | 13 | 51 | exact | 0 |
+| 2024/01/01 | design | 242,216 | = day count | 37 | 13 | 40 | exact | 0 |
+| 2024/01/01 | sampler | 242,216 | = day count | 37 | 13 | 40 | exact | 0 |
+| 2023/01/01 | sampler | 257,836 | = day count | 41 | 13 | 44 | exact | 0 |
+| 2020/01/01 | design | 234,972 | = day count | 37 | 13 | 40 | exact | 0 |
+| 2015/01/01 | design | 227,173 | = day count | 36 | 13 | 40 | exact | 0 |
+
+Four things that establishes, each of which the design would otherwise be
+assuming: that an `[EDAT]` range term composes with a `[Date - Publication]`
+term at all; that the root **covers**, since `count(day AND root)` equalled
+`count(day)` on every day probed; that the halves **tile exactly**, since the
+leaves summed to the root with no residue, which is what makes subtraction
+sound and double-counting absent; and that the ladder **terminates well above
+its floor** — depth 13 of the ~17 halvings the root span allows, and no single
+Entrez date over the cap on any day probed. The design's own run measured the
+largest leaf at 9,931 and a single Entrez day of 2024/01/01 at 2,026 records.
+Both bounds matter: leaves sit *just* under the cap by construction, since
+halving stops the moment a part fits, which is why a part re-checks its own
+count when its session opens and re-partitions rather than walks if it has
+crossed the cap since planning.
+
+- **The root probe tolerates long and refuses short, and the asymmetry is the
+  same one that governs the day total.** Short (`root < day`) fails the day:
+  records of this day are indexed outside the ladder, they are in no part's
+  promise, and so every part would reconcile perfectly while the day is
+  silently incomplete — the exact durable, invisible loss #88–#95 exist to
+  prevent. Long (`root > day`) proceeds: the two counts are two ESearches at
+  two instants, and a record indexed between them is stamped EDAT=today, which
+  is *inside* the range, so it inflates rather than hides. Requiring equality
+  would fail a correct ladder on ordinary drift, and the day-total reconcile
+  still judges what actually arrived.
+- **A removal between the two root counts also reads as short, and fails the
+  day. That is accepted, not overlooked.** The alternative is a tolerance
+  band, which would be a second threshold nothing has measured — bmlib already
+  carries one (`SHORTFALL_FAILURE_RATIO`'s 0.5, which issue #92 exists to
+  measure), and that is one more than is comfortable. The verdict is
+  recoverable rather than durable: a failed day is re-offered on the next run,
+  which re-probes, so a genuine removal costs one re-planned day and not a
+  record.
+- **`part_key` is opaque to storage, and the cost of that is a silent
+  re-fetch.** The storage layer does not know how a fetcher partitions, so a
+  second rung — or another fetcher splitting some other way — needs no schema
+  change; typed `edat_lo`/`edat_hi` columns would bake one fetcher's scheme
+  into the shared schema. What it costs is worth naming, because it is the
+  worst kind: the skip rule is a **string comparison**, so a key format that
+  drifts between releases matches nothing, resume degrades to re-fetching
+  every unfinished day in full, and *nothing is raised* — a cost with no
+  error. Two things answer that, and both must be kept: `_part_key()` is the
+  one constructor for the string, with a test pinning its exact output
+  literally; and the `part_scheme` column records which scheme wrote the key,
+  so a scheme change is visible in the data and stale rows can be recognised
+  and dropped deliberately rather than silently mismatching. `part_scheme` is
+  written on every row and read back into `PartCheckpoint`, but **nothing
+  branches on it** — that is the point of it, not an oversight, and a future
+  scheme change is what it is waiting for.
+- **A part is not checkpointed unless it reconciled clean, and not unless
+  every one of its records stored.** Two rules, both fail-closed, both learned
+  in review of this change. A part that reconciled with a *note* delivered
+  short of its own promise without clearing the failure floor; checkpointing
+  it would let a later run skip it and credit the full `promised` it never
+  delivered, manufacturing the records the note was reporting missing — and
+  that later run would carry no note at all, since this run's note dies with
+  it if a subsequent part fails. A part holding a record that would not store
+  is the same shape: the store failure records the day `failed`, so it is
+  re-offered, and a checkpoint written beside the gap would make that retry
+  skip the one part holding the missing record. `_store_records` swallows a
+  record's own exception so one bad record cannot lose the batch, which is
+  precisely why the failure count has to be read back and acted on at the
+  checkpoint boundary.
+- **The PubMed FTP baseline is not the route, and this is recorded so it is
+  not re-derived.** NCBI's own 400 suggests EDirect, and the annual baseline
+  plus daily update files at `ftp.ncbi.nlm.nih.gov/pubmed/` are the documented
+  way to retrieve in bulk. They lose here on three counts. The baseline is the
+  **whole corpus** (~37M records, tens of GB) with no publication-date
+  selectivity, so reaching one day's 242,216 records means reading all 37M and
+  discarding 99.3% of them — two orders of magnitude worse, per day, than 562
+  requests. It only wins for a *full-corpus* load, at which point
+  `download_days`' entire per-day model is beside the point and the question
+  is no longer "how does this fetcher walk a day" but "does bmlib have a
+  second ingestion mode", which is a product decision and not this fix. And it
+  has no path at all for the ordinary incremental case, which is what `sync()`
+  is. A whole-corpus ingestion mode remains open as its own question; nothing
+  in #105 forecloses it.
 
 ## publications — retractions
 

@@ -1114,6 +1114,15 @@ def sync(
                     # already — crediting it as well would double it, and a
                     # re-walk that came up short is not checkpointed, so
                     # "everything this run did not checkpoint" would catch it.
+                    #
+                    # One cosmetic residue, named here so it is not later
+                    # re-discovered as a bug: the skip rule compares a part's
+                    # *current* count against the stored `promised`, so a part
+                    # whose count moved away and back again is skipped and
+                    # credited at the `record_count` the earlier run stored —
+                    # a number describing that range's old contents rather
+                    # than what is in `publications` now. It moves this row's
+                    # `record_count` only, which no day-selection rule reads.
                     carried = sum(
                         cp.record_count for key, cp in prior_parts.items() if key in skipped_keys
                     )

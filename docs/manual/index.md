@@ -113,8 +113,10 @@ conn = connect_sqlite("publications.db")
 report = sync(
     conn,
     sources=["pubmed", "biorxiv"],
-    date_from=date(2025, 1, 1),
-    date_to=date(2025, 1, 7),
+    # An ordinary week. A window containing a first-of-month meets a day of
+    # tens of thousands of records — see publications.md.
+    date_from=date(2025, 3, 3),
+    date_to=date(2025, 3, 9),
     email="researcher@example.com",
 )
 print(f"Added: {report.records_added}, Merged: {report.records_merged}")

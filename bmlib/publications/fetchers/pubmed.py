@@ -62,9 +62,10 @@ EFETCH_PAGE_SIZE = 500
 # matching the query. To obtain more than 9,999 PubMed records, consider using
 # EDirect…"* — and, more quietly, a page whose window crosses the boundary is
 # clamped to it: `retstart=9500&retmax=500` returned 499 records at HTTP 200
-# with no notice. A day larger than this cannot be completed through this
-# route at all, so `fetch_pubmed` refuses it on ESearch's count rather than
-# walking into the wall. Raising `EFETCH_PAGE_SIZE` does not raise this.
+# with no notice. A day larger than this cannot be completed through one
+# session at all, so `fetch_pubmed` never walks into the wall: it partitions
+# the day into Entrez-date ranges that each fit and walks those instead (see
+# `_plan_partitions`). Raising `EFETCH_PAGE_SIZE` does not raise this.
 #
 # This is a **record count**; the largest legal `retstart` is one less, which
 # is what NCBI's own error names. The guard below is `>` rather than `>=` for
