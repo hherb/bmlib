@@ -339,7 +339,15 @@ class TestTheSampleIsStratified:
         ]
 
     def test_the_offset_reaches_the_search_query(self):
-        """A flag the walk does not honour measures the default window twice."""
+        """A flag the walk does not honour measures the default window twice.
+
+        The expected window is *derived* rather than written down. This walk
+        reaches ``date.today()`` — the only test in this class that does, since
+        ``open_access_pmcids`` owns the clock — so a literal year would be a
+        dated CI failure: ``skip=600`` is exactly 50 years, and it rolls over
+        to 1977 on 2027-02-01. Deriving it keeps the mutation the test exists
+        for, because an unpassed offset still yields a recent month.
+        """
         queries: list[str] = []
 
         def fake_fetch(client, url, pace):
@@ -349,8 +357,24 @@ class TestTheSampleIsStratified:
         with mock.patch.object(sampler, "_fetch", fake_fetch):
             sampler.open_access_pmcids(None, None, target=1, months=1, skip_months=600)
 
+        first, last = sampler._month_windows(1, date.today(), skip=600)[0]
         assert queries, "the walk made no request"
-        assert "1976" in unquote(queries[0]), unquote(queries[0])
+        assert f"{first} TO {last}" in unquote(queries[0]), unquote(queries[0])
+
+    def test_a_negative_offset_is_refused_rather_than_silently_shrinking(self):
+        """``skip`` is both a loop bound and a slice index, so it degrades twice.
+
+        ``skip=-1, months=24`` returned a single window from two years ago and
+        ``skip=-24`` returned none at all — in both cases with a rate and a
+        Wilson interval printed over it. Refusing at the entry is what
+        ``sync()`` does with a negative ``recheck_days``, and for the reason.
+        """
+        with pytest.raises(ValueError, match="skip must not be negative"):
+            sampler._month_windows(24, date(2026, 3, 15), skip=-1)
+
+    def test_a_window_count_below_one_is_refused(self):
+        with pytest.raises(ValueError, match="months must be at least 1"):
+            sampler._month_windows(0, date(2026, 3, 15))
 
 
 class TestRowsSurviveTheJournal:
@@ -374,3 +398,180 @@ class TestRowsSurviveTheJournal:
         a perfect score."""
         with pytest.raises(ValueError):
             sampler.wilson(0, 0)
+
+
+class TestTheCommandLineWiring:
+    """The flag has to survive argparse and reach the walk.
+
+    ``open_access_pmcids`` is called positionally in ``main``, and nothing
+    covered that call or the parser defaults — so a swapped argument or a
+    changed default would silently measure the wrong window and write the
+    result out as evidence.
+    """
+
+    def test_the_offset_defaults_to_the_undisplaced_window(self):
+        args = sampler._build_arg_parser().parse_args([])
+
+        assert args.months_ago == 0
+        assert args.months == sampler.SAMPLE_MONTHS
+
+    def test_the_offset_is_parsed_from_the_command_line(self):
+        args = sampler._build_arg_parser().parse_args(["--months-ago", "336"])
+
+        assert args.months_ago == 336
+
+    def test_a_displaced_draw_may_not_overwrite_the_default_corpus(self):
+        """The default path is the *recent* draw, and the journal follows it.
+
+        So a displaced run without ``-o`` either replaces that corpus with an
+        older window under its name, or tops its rows up with another window's
+        and prints the pooled result as one rate. #127's whole claim is that
+        the window decides the answer, so a pooled number describes neither.
+        """
+        args = sampler._build_arg_parser().parse_args(["--months-ago", "336"])
+
+        refusal = sampler._validate_args(args)
+
+        assert refusal is not None
+        assert "-o" in refusal
+
+    def test_the_undisplaced_draw_still_writes_the_default_corpus(self):
+        """The negative control: the guard is not refusing every run."""
+        assert sampler._validate_args(sampler._build_arg_parser().parse_args([])) is None
+
+    def test_a_displaced_draw_naming_its_own_output_is_allowed(self):
+        args = sampler._build_arg_parser().parse_args(
+            ["--months-ago", "336", "-o", "tests/data/jats_exhibits.backfill.json"]
+        )
+
+        assert sampler._validate_args(args) is None
+
+    def test_a_negative_offset_is_refused_at_the_command_line(self):
+        args = sampler._build_arg_parser().parse_args(["--months-ago", "-5"])
+
+        assert sampler._validate_args(args) is not None
+
+
+class TestTheTableSideOfTheRankingIsCounted:
+    """Issue #135 — #127 routes a table's deposits through #117's ranking.
+
+    That rule was measured on figures alone. These counters are what a later
+    draw would settle it with, and they are kept *separate* from the figure
+    ones: the figure percentages are cited in ``jats_parser`` and CLAUDE.md,
+    and widening their denominator would invalidate every one of them.
+    """
+
+    def test_a_tables_deposits_are_counted_apart_from_a_figures(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1">
+              <graphic xlink:href="t1.jpg"/>
+              <graphic content-type="thumb" xlink:href="t1-thumb.gif"/></table-wrap>
+            <fig id="f1"><graphic xlink:href="f1.jpg"/></fig>"""),
+        )
+
+        assert (row.tables_with_graphic, row.tables_multi_graphic) == (1, 1)
+        assert (row.tables_last_is_thumb, row.tables_first_is_thumb) == (1, 0)
+        assert (row.figures_with_graphic, row.figures_multi_graphic) == (1, 0)
+
+    def test_a_thumbnail_deposited_first_is_located_at_that_end(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1">
+              <graphic specific-use="thumbnail" xlink:href="t1-thumb.gif"/>
+              <graphic xlink:href="t1.jpg"/></table-wrap>"""),
+        )
+
+        assert (row.tables_first_is_thumb, row.tables_last_is_thumb) == (1, 0)
+
+    def test_a_table_carrying_both_renditions_is_counted_apart(self):
+        """The population ``to_html()`` discards, measured like the kept one."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1"><graphic xlink:href="scan.png"/>
+              <table><tbody><tr><td>1</td></tr></tbody></table></table-wrap>
+            <table-wrap id="t2"><graphic xlink:href="only.png"/></table-wrap>"""),
+        )
+
+        assert (row.tables_with_both, row.tables_image_only) == (1, 1)
+        assert row.tables_with_graphic == 2
+
+    def test_a_corpus_predating_the_counter_says_so_rather_than_printing_zero(self, capsys):
+        """A silent zero is what this population looks like in the wrong window.
+
+        The four counters arrived with #135, so rows written before it sum to
+        zero on every one — indistinguishable from a draw in which no table
+        deposits an image, which is precisely the reading #127 spent two
+        windows disproving. The identity is exact by construction, so a
+        disagreement can only mean the rows predate the counter.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article('<table-wrap id="t1"><graphic xlink:href="scan.png"/></table-wrap>'),
+        )
+        stale = row.to_dict()
+        for key in sampler._TABLE_SIDE_COUNTERS:
+            del stale[key]
+        totals = sampler.Totals()
+        totals.add(sampler.ArticleMeasurement.from_dict(stale))
+
+        assert sampler.print_report(totals) is True
+        assert "NOT MEASURED" in capsys.readouterr().out
+
+    def test_a_freshly_measured_corpus_prints_the_rates(self, capsys):
+        """The negative control: the guard is not permanently on."""
+        totals = sampler.Totals()
+        totals.add(
+            sampler.measure_article(
+                "PMC1",
+                _article('<table-wrap id="t1"><graphic xlink:href="scan.png"/></table-wrap>'),
+            )
+        )
+
+        assert sampler.print_report(totals) is True
+        assert "NOT MEASURED" not in capsys.readouterr().out
+
+    def test_the_both_renditions_row_is_not_reported_as_zero_either(self, capsys):
+        """The recent corpus has no image-only table, so its counters agree at
+        zero and nothing about the *identity* between them reveals the gap.
+        Only an explicit sentinel does — which is why absence is recorded at
+        load rather than inferred at report."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                '<table-wrap id="t1"><table><tbody><tr><td>1</td></tr></tbody></table></table-wrap>'
+            ),
+        )
+        stale = row.to_dict()
+        for key in sampler._TABLE_SIDE_COUNTERS:
+            del stale[key]
+        totals = sampler.Totals()
+        totals.add(sampler.ArticleMeasurement.from_dict(stale))
+
+        assert sampler.print_report(totals) is True
+        line = next(ln for ln in capsys.readouterr().out.splitlines() if "AND a <table>" in ln)
+        assert "NOT MEASURED" in line, line
+
+    def test_one_stale_row_among_fresh_ones_still_reports_not_measured(self, capsys):
+        """The sentinel is small and the sum is not.
+
+        One row predating the counter contributes -1 while three hundred fresh
+        ones contribute real counts, so the total stays positive and the
+        population would print as a rate that silently omits the stale row. A
+        journal is topped up across runs, so a mixed one is the ordinary case.
+        """
+        image_only = _article('<table-wrap id="t1"><graphic xlink:href="scan.png"/></table-wrap>')
+        stale = sampler.measure_article("PMC1", image_only).to_dict()
+        for key in sampler._TABLE_SIDE_COUNTERS:
+            del stale[key]
+        totals = sampler.Totals()
+        totals.add(sampler.ArticleMeasurement.from_dict(stale))
+        for n in range(2, 30):
+            totals.add(sampler.measure_article(f"PMC{n}", image_only))
+
+        assert totals.sum_of("tables_with_graphic") > 0, "the sum must stay positive"
+        assert sampler.print_report(totals) is True
+        assert "NOT MEASURED" in capsys.readouterr().out
