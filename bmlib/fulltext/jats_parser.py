@@ -328,6 +328,30 @@ _TEXT_ACCUMULATING = frozenset(
     }
 )
 
+# A <sub-article> or <response> is a complete article of its own — its own
+# <front>, its own <body>, its own back matter — nested inside this one.
+# Nothing inside one is this article's, so no handler may fire there.
+#
+# The set is complete, and structurally so: of JATS's ~295 elements exactly
+# three admit <front>/<front-stub> and <body>, and the third is <article>
+# itself. Both have <article> and <sub-article> as their only parents, so
+# neither can appear in flowing content.
+#
+# Peer review is the case that motivated this (issue #110) — PLOS was
+# observed depositing each round as a <sub-article>, and PLOS, eLife, BMJ
+# Open and F1000 publish review histories as a matter of policy, so the rate
+# inside those journals is far above the 4-in-249 measured across PMC — but
+# it is not the only one. <sub-article> also carries the alternative-language
+# full text (SciELO's article-type="translation"), meeting abstracts, and
+# Europe PMC's own injected "associated-data" block, which is absent from
+# PMC's copy of the same record. Which is why the suppression is structural:
+# @article-type is CDATA #IMPLIED, four published vocabularies for it
+# disagree, and publishers deposit values in none of them (eLife's
+# "decision-letter", the F1000 platform's "response"), so no allow-list of
+# types could have decided this correctly.
+_NESTED_ARTICLE_ELEMENTS = frozenset({"sub-article", "response"})
+
+
 _INLINE_ELEMENTS = frozenset(
     {
         "bold",
@@ -382,11 +406,29 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # Parsing state
         self.element_stack: list[str] = []
         self.text_stack: list[str] = [""]
+        # How many <sub-article>/<response> elements are open. A depth and
+        # not a flag: JATS permits a nested article inside a nested article,
+        # and a flag cleared by the inner close re-admits the rest of the
+        # outer one.
+        self.nested_article_depth = 0
+        # How many were skipped in total, a nested one counted separately.
+        # Reported on JATSArticle because the suppression is otherwise
+        # invisible: it changes neither has_body nor content_kind unless it
+        # takes the whole body.
+        self.suppressed_nested_articles = 0
 
         # Article metadata state
         self.in_front = False
         self.in_article_meta = False
-        self.in_contrib_group = False
+        # The roles declared by the open <contrib-group> elements, innermost
+        # last; a bare <contrib> inherits the innermost. Held rather than a
+        # plain "are we in a group" boolean — that one was tracked and never
+        # read — and a *stack* rather than one value, because <collab> may
+        # contain a <contrib-group>: that is how a collaboration's member
+        # roster is tagged, and a single value let the roster's close clear
+        # the enclosing group's role, so an editor group's own members were
+        # then collected as this article's authors.
+        self.contrib_group_stack: list[str | None] = []
         self.in_contrib = False
         self.current_article_id_type: str | None = None
         self.current_author: _AuthorBuilder | None = None
@@ -494,17 +536,54 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
     def startElement(self, name: str, attrs: xml.sax.xmlreader.AttributesImpl) -> None:
         self.element_stack.append(name)
 
+        if name in _NESTED_ARTICLE_ELEMENTS:
+            self.nested_article_depth += 1
+            self.suppressed_nested_articles += 1
+            # The declared type is logged rather than read: it is CDATA
+            # #IMPLIED, the vocabularies that constrain it disagree, and
+            # publishers deposit values in none of them. What is skipped is
+            # decided structurally, by the element, never by its type. JATS
+            # spells the attribute per element — <sub-article> carries
+            # article-type, <response> carries response-type — so reading
+            # only the first would report every <response> as untyped.
+            type_attr = "response-type" if name == "response" else "article-type"
+            logger.debug(
+                "Skipping nested <%s %s=%r> at depth %d",
+                name,
+                type_attr,
+                attrs.get(type_attr),
+                self.nested_article_depth,
+            )
+
         if name in _TEXT_ACCUMULATING:
             self._push_text_buffer()
+
+        if self.nested_article_depth:
+            # Inside a nested article. Suppressed on the *opening* tag too,
+            # not only on the closes that write the outputs: an open leaves
+            # state behind. Where the nested article precedes the article's
+            # own <body> — out of order for JATS, which puts <sub-article>
+            # last, but well-formed — a nested <sec> whose close never comes
+            # pops nothing, so the article's own section is filed as a
+            # subsection of a review round's and never reaches body_sections.
+            # A float is worse than a section: <fig>/<table-wrap> set flags
+            # that the suppressed close never clears, and the leftover flag
+            # swallows the rest of the parse.
+            #
+            # The element and text stacks keep running, so the two stay
+            # balanced across the skipped region. characters() is the third
+            # thing that keeps running, and it is guarded separately — see
+            # there, since neither of these two handlers delivers text.
+            return
 
         if name == "front":
             self.in_front = True
         elif name == "article-meta":
             self.in_article_meta = True
         elif name == "contrib-group":
-            self.in_contrib_group = True
+            self.contrib_group_stack.append(attrs.get("content-type"))
         elif name == "contrib":
-            if attrs.get("contrib-type") == "author":
+            if self._is_author_contrib(attrs.get("contrib-type")):
                 self.in_contrib = True
                 self.current_author = _AuthorBuilder()
         elif name == "abstract":
@@ -569,6 +648,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.current_xref_rid = attrs.get("rid")
 
     def characters(self, content: str) -> None:
+        if self.nested_article_depth:
+            # Character data is delivered by neither startElement nor
+            # endElement, so the suppression there does not cover it. Text
+            # sitting directly inside a nested article — not wrapped in a
+            # child that pushes a buffer of its own — would otherwise land in
+            # whichever buffer is open above, which is the article's own
+            # paragraph. Discarding it needs no compensating pop: buffers are
+            # pushed and popped by the element handlers, never here.
+            return
         self._append_text(content)
         if self.in_table_wrap and self.current_table:
             self.current_table.append_cell_text(content)
@@ -589,17 +677,53 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         else:
             element_text = self.current_text
 
+        if name in _NESTED_ARTICLE_ELEMENTS and self.nested_article_depth:
+            # The depth test is unreachable by construction — expat rejects a
+            # close with no matching open, so no test can kill it — and is
+            # kept only so a future non-SAX feed cannot drive the depth
+            # negative and suppress the rest of the document.
+            self.nested_article_depth -= 1
+
         text = element_text.strip()
         normalized_text = _normalize_whitespace(element_text)
 
         # --- Handle element end ---
 
-        if name == "front":
+        if self.nested_article_depth:
+            # Still inside a nested article, so this close is not the
+            # article's either. Tested before every handler rather than at
+            # each one, because a handler added later would otherwise have to
+            # remember to opt out.
+            #
+            # Most handlers are already inert here — they need in_front,
+            # in_article_meta, in_body or a non-empty section_stack, none of
+            # which the suppressed open ever set. Two are not, and they are
+            # why this half is load-bearing on an *ordinarily* ordered
+            # document rather than only an out-of-order one. </abstract>
+            # flushes its buffer without clearing it, and only the opening tag
+            # clears, so a nested one re-emits the article's own abstract a
+            # second time. And <article-id> falls through to
+            # _classify_article_id when its type is absent or unrecognised,
+            # which would let a review round's identifier answer for the
+            # article's.
+            pass
+        elif name == "front":
             self.in_front = False
         elif name == "article-meta":
             self.in_article_meta = False
         elif name == "contrib-group":
-            self.in_contrib_group = False
+            # Popping restores the enclosing group's role, which is what a
+            # nested roster inside <collab> needs. It also empties the stack
+            # at the outermost close, and that half matters for a <contrib>
+            # with no enclosing group at all — out of place for JATS, and so
+            # exactly what a lenient parse must still answer for. Left on the
+            # stack, a closed group's role would decide it: after an editor
+            # group the stray contributor is dropped, after an author group
+            # it is collected, and neither is an answer the document gave.
+            # Guarded because a close with nothing open would otherwise raise
+            # on malformed input; SAX makes that unreachable today.
+            if self.contrib_group_stack:
+                self.contrib_group_stack.pop()
         elif name == "contrib":
             if self.in_contrib and self.current_author:
                 author = self.current_author.build()
@@ -834,6 +958,60 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         if self.element_stack:
             self.element_stack.pop()
 
+    def _is_author_contrib(self, contrib_type: str | None) -> bool:
+        """Is this ``<contrib>`` one of the article's authors?
+
+        JATS spells the contributor role two ways, and the per-contrib one is
+        the minority form in PMC: ``content-type="author"`` on the enclosing
+        ``<contrib-group>``, with bare children, is the dominant form.
+        Reading only ``contrib-type`` drops every author from roughly three
+        open-access articles in five (issue #111: 45 of 79 sampled, 57.0%; a
+        249-article sample put it at 60.6%).
+
+        Five rules, of which #111's sample earns two. **Measured:** a
+        contributor's own declaration decides on its own — it has to be able
+        to say ``editor`` inside an author group, and 33 of the 79 articles
+        rely on it; and a group naming any other role is taken at its word,
+        since 23 carry an ``editor`` group beside the author group and
+        reading its members as authors would be a new defect rather than a
+        wider fix.
+
+        **Not measured** — the sample contains no instance of any of them, so
+        each rests on convention rather than on the corpus. A ``<contrib>``
+        that declares nothing inherits the innermost enclosing group that
+        does; a group declaring nothing inherits in turn, and at the outermost
+        level that means authors. An empty attribute declares nothing rather
+        than declaring "not an author": read as a declaration it drops the
+        contributor, the same silent loss for a document whose only fault is
+        a stray empty attribute. And the comparison folds case — which JATS
+        itself asks for, on the Tag Library's own ``@article-type`` page:
+        *"Upper/lower/mixed case in attribute values … is likely to be
+        variable and thus unreliable for search/discovery. If possible, JATS
+        recommends a case-insensitive search for such values."* That is
+        written of ``@article-type`` rather than of these two attributes, so
+        it is precedent and not a citation; it is also the module's own habit
+        (``pub-id-type`` is folded too), and folding cannot cost anything,
+        since a role that is not ``author`` in any casing is excluded either
+        way while an unfolded ``Author`` drops a whole group.
+
+        The role is read from a *stack* of open groups rather than one value,
+        because ``<collab>`` may contain a ``<contrib-group>`` — a
+        collaboration's member roster. Innermost *declared* wins, so a bare
+        roster inside an ``editor`` group stays editors instead of resetting
+        to the authors default.
+
+        Args:
+            contrib_type: The ``contrib-type`` attribute of this
+                ``<contrib>``, or ``None`` where it carries none.
+
+        Returns:
+            ``True`` where the contributor is an author of this article.
+        """
+        if contrib_type:
+            return contrib_type.lower() == "author"
+        group_type = next((t for t in reversed(self.contrib_group_stack) if t), None)
+        return not group_type or group_type.lower() == "author"
+
     def _classify_article_id(self, text: str) -> None:
         """Classify an article-id whose `pub-id-type` was absent or unknown.
 
@@ -917,6 +1095,7 @@ class JATSParser:
             tables=h.tables,
             references=h.references,
             has_body=h.body_paragraph_count > 0,
+            suppressed_nested_articles=h.suppressed_nested_articles,
         )
 
     def to_html(self) -> str:

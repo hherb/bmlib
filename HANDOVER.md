@@ -1,95 +1,98 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-21. **0.10.0 is released and on PyPI**; three changes
-sit unreleased — #73's atomic template install (PR #102, on `main`), #96/#105's
-containment (PR #106, on `main`), and **#105's actual fix, on
-`fix/105-partition-over-cap-pubmed-days`**. All five version places agree at
-0.10.0.
+_Last updated: 2026-08-22. **0.10.0 is released and on PyPI**; four changes
+sit unreleased on `main` — #73's atomic template install (PR #102), #96/#105's
+partitioning of an over-cap PubMed day (PRs #106 and #114), and #109's typed
+article-id (PR #113) — plus **this session's two JATS fixes, on
+`fix/110-111-jats-subarticle-and-contrib-group`**. All five version places
+agree at 0.10.0. Three of the four unreleased changes are `fulltext` JATS
+fixes filed the same day; whoever cuts the next release should describe them
+together. Note that **#111 moves what a caller of `JATSParser` gets** — an
+author list that was empty for the majority of open-access articles is now
+populated. It does *not* move what a bmlib **sync** stores: no bmlib path
+carries `JATSArticle.authors` anywhere, `service.py` never reads the field,
+`FullTextResult` has none, and `publications` takes its authors from the
+fetchers. Only a downstream that calls `JATSParser` itself and persists the
+result needs to re-parse.
 
-**This session closed #105, and with it #107.** A PubMed day larger than 9,999
-records — every first-of-month and every 1 January under `[Date - Publication]`,
-because a record carrying only a year and a month is indexed at day 1 of it —
-used to be **refused outright**, so its records were simply absent. Last
-session shipped that refusal as deliberate containment and said so; this one
-replaces it. **"No publication is missed" now holds for every day-size the cap
-used to refuse** — which is a statement about the cap, not a promise that a day
-arrives whole. Two things still qualify it, both stated where they are decided:
-a single Entrez date over the cap cannot be split and is still refused, and a
-walk that comes up short while clearing `SHORTFALL_FAILURE_RATIO` completes the
-day on a note here exactly as it does for every other source.
+**This session fixed #110 and #111**, two silent defects in
+`fulltext/jats_parser.py`. Both were found on the way *out* of bmlib rather
+than in it: the Swift `BioMedLit` parser this module was ported from
+(8ef1cad) carries the same defects, and porting bmlib's fixes across surfaced
+them. Both produce a well-formed result that reads as the article's own, so
+neither raised anything, and #111 is the widest defect found in bmlib to date
+by share of records affected.
 
-**PR #114 was then reviewed and the findings fixed in the same branch.** Six
-of them were durable silent losses of the kind this whole family of rules
-exists to prevent, each reproduced end to end before being fixed and each now
-pinned: a derived count of zero dropping a range nobody had counted; a part
-whose own count collapsed to a small non-zero number being checkpointed as
-clean (the guard was written as exactly `== 0`); a day-level zero sealing a
-partially-fetched day *and deleting its checkpoints*; a part's session ESearch
-failing with no test and no cause reported; a malformed part row escaping
-`sync()` and taking the whole run's `SyncReport`; and a day refused on a
-count no ESearch had returned. Four mutations that had survived the entire
-suite now fail it. Details in `docs/DECISIONS.md` under the #96/#105 section
-and in `CHANGELOG.md`.
+- **#111 — every author dropped when the role is declared on the group.**
+  `<contrib contrib-type="author">` is the *minority* spelling in PMC; the
+  dominant one declares `content-type="author"` once on the enclosing
+  `<contrib-group>` and leaves the children bare. 45 of 79 random open-access
+  articles (57.0%) parsed with zero authors while their XML carried surnames
+  in `<front>`; a 249-article sample put it at 60.6%.
+- **#110 — a `<sub-article>`'s metadata and prose read as the article's.**
+  PLOS was observed depositing each peer-review round as a `<sub-article>`
+  with its own `<front>` and `<body>`; PLOS, eLife, BMJ Open and F1000 all
+  publish review histories as policy. PMC12774363 parsed as title "Associated
+  Data", DOI `…1012008.r006` — a real, resolvable review-round DOI, so it does
+  not 404 — and ~180 of its 230 body paragraphs were reviewer correspondence,
+  in exactly the funding, conflict and data-availability vocabulary a
+  transparency scan hunts for. That prose does *not* reach
+  `bmlib.transparency`, which fetches and regexes the raw XML itself and never
+  sees `JATSParser` output; the review of PR #118 established that, and the
+  real exposure is filed as **#119**.
 
-The mechanism is a recursion over **Entrez-date ranges**: `[lo, mid]` and
-`[mid+1, hi]` tile `[lo, hi]` as arithmetic and every record carries exactly
-one Entrez date, so the parts are disjoint and covering *by construction* —
-the property no facet has. A publication type or MeSH term can co-occur on one
-record, so those parts would overlap, double-fetch, and inflate delivery past
-the day's own count, which is precisely what would hide a real shortfall from
-`reconcile_delivery`. The design was **probed live before it was written**, and
-the probe is the reason to trust it: on three real over-cap days the root range
-covered the day exactly, the halves tiled with no residue, and 36–37 parts at
-depth 13 cost 40 ESearches to plan. The whole design doc is
-[`docs/superpowers/specs/2026-08-21-pubmed-day-partitioning-design.md`](docs/superpowers/specs/2026-08-21-pubmed-day-partitioning-design.md).
+**Mutation testing did more than confirm the fixes here — it corrected two of
+them.** Twelve mutations; three survived the suite as first written, and each
+named a rule the tests did not pin. The `</contrib-group>` clear was not doing
+what its comment claimed (a *following* group cannot inherit, because opening
+one assigns unconditionally; what it protects is a `<contrib>` outside any
+group). Suppressing only the *closing* tags looked sufficient — every output
+is written on a close, and JATS puts `<sub-article>` last — but an open leaves
+state behind, and a nested `<sec>` that never closes cost an article its whole
+body for a document merely out of order. And an empty `contrib-type=""` read
+as a declaration drops the contributor, which is #111 again. A fourth finding
+went the other way: `_BUFFERED` gave a nested article a text buffer of its own
+and no test or well-formed document could distinguish it, so it was removed —
+an unearned constant is not defence in depth. All twelve mutations die, and so do
+four more added afterwards for the role comparison's case folding.
 
-**A partitioned day is resumable, and that fell out of a latent bug rather than
-a wish.** `sync()` buffered a *whole day* in memory before storing it, and the
-comment at that buffer already named the limit partitioning was about to meet —
-"if a source ever delivers far larger days, flush in chunks here". A
-242,216-record day is not tens of MB. So the chunked flush was required
-regardless, the part is the natural chunk, and that is what makes the
-checkpoint trustworthy rather than merely convenient: **a part's rows and its
-checkpoint commit in one transaction**, so a checkpoint can never attest to
-records a rollback discarded. New table `download_day_parts`, created by
-`ensure_schema()` with no migration; opt-in per fetcher via
-`SourceDescriptor.resumable`, default `False`, because `register_source()` is
-public and an unexpected keyword would turn a working third-party source into a
-failed day.
+**The review of PR #118 then found three more, two of them defects.** Its own
+mutation pass showed the `endElement` suppression and a nested
+`<fig>`/`<table-wrap>` were unpinned — the suite passed 73/73 with either
+removed — and closing those gaps is what the branch's last commit does; the
+mechanisms are recorded in `CLAUDE.md` and the CHANGELOG. The two defects were
+`characters()`, which is delivered by neither suppressed handler and so let
+raw text inside a nested article into the article's own prose, and the
+contributor role being held as one value where `<collab>` may contain a
+`<contrib-group>`. Three further findings were filed rather than fixed here:
+**#119** (transparency regexes raw XML), **#120** (`<collab>` consortium
+authors dropped, 3.3% of articles), **#121** (a zero-author parse is
+undetectable — the detector that was missing while #111 was live, and still
+is).
 
-**Three fail-closed rules were added by review, not by design**, and each closes
-a durable silent loss the first cut had:
+The review also corrected the evidence, not only the code. Of the five rules
+in #111's fix, **three** are defensive rather than measured, not one: the
+issue's sample carries no group declaring nothing and no empty attribute, so
+only "a contributor's own type decides" and "another declared role is
+refused" are earned from it. Case folding, meanwhile, turns out to be better
+supported than it was credited: the JATS Tag Library recommends
+case-insensitive comparison of attribute values on its own `@article-type`
+page.
 
-- A part is **not checkpointed if its reconciliation returned a note.** Storing
-  a short part at its full promise, then crediting that promise on resume, made
-  the day reconcile clean and complete — records gone for good, with no note on
-  any returned `FetchResult`.
-- A part is **not checkpointed if any of its records failed to store.**
-  `_store_records` swallows a record's exception, so the checkpoint would
-  otherwise commit beside the gap and the retry would skip the part holding the
-  missing record.
-- `_plan_partitions` takes a **`known_count`**, so a part whose session count
-  disagrees with a fresh planning count is split rather than re-queued
-  unchanged. Without it that is an unbounded ESearch loop against NCBI.
+**PR #113 (#109) was rebased onto `main` this session and has since been
+merged.** It had conflicted in `CHANGELOG.md` and `CLAUDE.md` after #114
+landed, both resolved by keeping `main`'s #105 text and the branch's own
+additions. It is a third defect in the same file — a publisher's internal id
+taken as the DOI on 46% of SAGE articles — and this session's branch was
+rebased onto it afterwards. The one conflict between them was the predicted
+`CLAUDE.md` one, where both append a sentence to the same `fulltext/` bullet;
+both sentences were kept. The code merged with no conflict at all.
 
-**`scripts/sample_efetch_paging.py --partition` is the standing evidence**, and
-it deliberately does not import the ladder it measures — a corpus labelled by
-the rule under test can only confirm that rule. Its first live run agreed
-exactly: 3 of 3 days EXACT, zero stuck Entrez dates, exit 0, with 2024/01/01
-reproducing the design's own 242,216 records / 37 parts / depth 13 / 40 calls.
-
-**Tell downstreams what the version number cannot.** This change moves nothing
-stored, but the first run after it lands **fetches days that previously
-returned nothing**: about 562 requests and ~1 GB for a 242,000-record day, and
-a six-year backfill window holds some 72 such days — roughly 6.2M records and
-~25 GB, **once**, where the previous behaviour re-offered them forever and
-stored nothing. Both figures are part measured, part arithmetic, and
-`CHANGELOG.md` says which is which. 0.10.0's own one-off re-fetch of the whole
-sync window (#95) still applies on top.
-
-**Next up is one of the four remaining open issues, or Phase 3 of the
-bmlibrarian port, whose every row needs a design conversation.** None of the
-four loses records. See "Next up"._
+**Next up is one of the four remaining non-JATS issues, or Phase 3 of the
+bmlibrarian port, whose every row needs a design conversation.** #112, filed
+alongside #109–#111, is the odd one out: it is not a behaviour defect but
+three transparency measurements that do not reproduce against the committed
+corpus, and one of them is load-bearing for a future edit. See "Next up".
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -128,14 +131,13 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed six releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2374 passing + 63 skipped** on
-  `fix/105-partition-over-cap-pubmed-days` (`uv run pytest tests/ -q`); **2257
-  + 59** on `main`, so 117 are this branch's. (The 2187 previously recorded
-  here was `main` *before* PR #106 merged #96's 70 tests, which made the stated
-  delta double-count them; both numbers were re-measured in a worktree at the
-  merge-base.) With `BMLIB_TEST_POSTGRESQL_DSN` set the whole suite is **2435
-  passing + 2 skipped** — measured, not derived, because this branch adds SQL
-  and the PostgreSQL half had to run. Of the 63
+- **Tests: 2386 passing + 63 skipped on `main`** (`uv run pytest tests/ -q`),
+  which is 2374 before PR #113 merged plus its 12; **2407 + 63** on
+  `fix/110-111-jats-subarticle-and-contrib-group` after rebasing onto that, so
+  21 are this session's. All three measured, not derived. The
+  PostgreSQL half was **not** re-run for this session's branch and does not
+  need to be: it touches no SQL, and the last measured figure with
+  `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the #105 branch. Of the 63
   default skips, 61 are the PostgreSQL parameterisations, 1 is a
   PostgreSQL-only schema test, and 1 is `test_pymupdf_requires_dependency`,
   which runs only when PyMuPDF is *absent*. **PyMuPDF is installed in the dev
@@ -192,21 +194,68 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Four, every one found by review or measurement rather than by a failing test,
-and **none of them loses records**. (**#56, #68, #72 and #79** shipped in 0.9.1.
-**#78, #81, #88–#91, #95, #98 and #99** shipped in 0.10.0 — PRs #85, #87, #93,
-#97, #100. **#73** is on `main` unreleased in PR #102, whose own review filed
-**#103**. **#96** closed with PR #106, as correct rather than as fixed.
-**#105 and #107** close with this session's PR — #107 dissolved rather than
+Eight, every one found by review or measurement rather than by a failing
+test, and **none of them loses records** — though **#120** loses a
+contributor and **#119** feeds a scan text that is not the article's. (**#56, #68, #72 and #79** shipped in
+0.9.1. **#78, #81, #88–#91, #95, #98 and #99** shipped in 0.10.0 — PRs #85,
+#87, #93, #97, #100. **#73** is on `main` unreleased in PR #102, whose own
+review filed **#103**. **#96** closed with PR #106, as correct rather than as
+fixed. **#105 and #107** closed with PR #114 — #107 dissolved rather than
 being built: its saturation of `SyncReport.errors` came from a permanent,
-structural refusal that no longer happens. What remains of it is much smaller
-and is recorded in `docs/DECISIONS.md`: an Entrez date that alone exceeds the
-cap still fails its day permanently, but that is not a structural population —
-none of the six ladder walks, over five distinct real over-cap days, found
-one — so `errors`
-returns to empty in the ordinary case. If a later sampler run finds stuck dates
-are common, #107's `blocked` field is the right answer and the issue should be
-reopened.)
+structural refusal that no longer happens, and what remains of it is in
+`docs/DECISIONS.md`. **#109** closed with PR #113, rebased onto `main` this
+session and merged. **#110 and #111** close with this session's PR, whose
+review filed **#119**, **#120** and **#121**.)
+
+**#119 — `TransparencyAnalyzer` scans raw JATS XML, so `<sub-article>`
+reviewer prose still reaches its COI, funding and data-availability scans.**
+`_fetch_europepmc_fulltext` returns `resp.text` and `_extract_coi_text`
+regexes that string; there is no import path from `bmlib.transparency` to
+`bmlib.fulltext`, so #110's suppression does not touch it. Measured on two
+articles during the PR #118 review: 6 and 5 reviewer `competing interest`
+statements respectively, inside `<sub-article>` regions the scan reads. It
+fails *towards* leniency — a reviewer's "no competing interests" counts as
+the article's own disclosure. The fix needs measuring, since the scoring is
+calibrated against current behaviour.
+
+**#120 — `<collab>` consortium authors are silently dropped.**
+`_AuthorBuilder.build()` returns `None` without a `<surname>` and the call
+site has no `else`, so *"the INHERIT Trial Group"* never reaches
+`JATSArticle.authors`. Pre-existing rather than a regression, but #111's fix
+makes it the last thing standing between a correctly-identified contributor
+and the list. Measured on 1,025 open-access articles: 138 newly-admitted
+contribs carry no surname, and **34 articles (3.3%)** lose at least one — none
+loses all of them. Needs a model decision first, since `JATSAuthorInfo` has
+`surname`/`given_names` and a collaboration has neither.
+
+**#121 — a zero-author parse is indistinguishable from an author-less
+article.** `_build_html` has `if h.authors:` with no `else`, and
+`FullTextService` caches the result, so a broken parse renders and persists
+exactly like a correct one. This is the detector that was missing for the
+whole life of #111 — 108 of 183 sampled articles parsed to zero authors
+before the fix and nothing said so. #111 is fixed; the detector is not, so
+the next cause hides just as long.
+
+**#112 — three of the transparency funder-matching counts do not reproduce
+against the committed corpus.** Filed with #109–#111, from the same Swift
+port: `_is_industry_funder` was re-derived against
+`tests/data/funder_names.json` so the Swift side could carry the same
+justification, and three numbers disagree. **Nothing is a behaviour
+regression** — `tests/test_funder_matching.py` passes and both floors still
+hold — but `bmlib/transparency/analyzer.py` states measurements as the reason
+for each inclusion and exclusion, and those are what a future edit is checked
+against. The headline pair is stated as precision 0.917 / recall 0.324 and
+measures 0.909 / 0.333; the stated figures are self-consistent with a corpus
+holding 34 industry entries where this one holds 30, so they were taken
+against a revision never committed — the corpus has exactly one commit
+(be456a2) and the matcher is byte-identical since, so this is not drift.
+`pharmaceutic` is claimed to have no false positive and has one, and it is
+the *only* false positive in the matcher — the thing capping precision below
+1.000, and precisely the claim an editor adding a fourth stem would rely on.
+`co` is excluded for a collision the corpus does not contain, at the cost of
+a real true positive. Whoever takes this should re-derive every figure in
+those comments in one pass and say in each comment which corpus revision it
+was measured against, rather than fixing the three named.
 
 **#103 — `install_defaults()` reserves no `NAME_MAX` headroom for the
 temporary name.** `atomic_write()` stages through a name 38 characters longer

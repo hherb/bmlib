@@ -163,13 +163,22 @@ class JATSArticle:
     # cleanly but holds nothing beyond the abstract, so callers must not
     # mistake it for full text.
     #
-    # Two consequences of tracking what survived parsing rather than what the
-    # XML contained. A <p> sitting directly in <body> with no enclosing <sec>
-    # is dropped by the handler and so does not count — consistent with the
-    # rendered HTML, which has no body prose either, but it means a valid
-    # article of that shape reads as abstract-only. And the default is False,
-    # so a hand-built JATSArticle reports "no body" unless it says otherwise.
+    # It tracks what survived parsing rather than what the XML contained, and
+    # the default is False, so a hand-built JATSArticle reports "no body"
+    # unless it says otherwise. Unsectioned prose does count: a <p> sitting
+    # directly in <body> with no enclosing <sec> is collected into an
+    # untitled section, so an article of that shape is not mistaken for an
+    # abstract-only one.
     has_body: bool = False
+    # How many <sub-article>/<response> elements were skipped, counting a
+    # nested one separately. Nothing inside them is this article's, so they
+    # contribute nothing to the fields above — but they can hold most of a
+    # document's prose (a peer-review history, or the alternative-language
+    # full text SciELO deposits as article-type="translation"), and dropping
+    # that changes neither has_body nor FullTextResult.content_kind, which
+    # between them report only *total* loss. This is the one field that says
+    # a nested article was there at all.
+    suppressed_nested_articles: int = 0
 
 
 @dataclass

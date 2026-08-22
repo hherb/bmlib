@@ -441,6 +441,7 @@ pass.
 | JATS element | Parsed as |
 |-------------|-----------|
 | `front/article-meta` | Title, authors, journal, identifiers |
+| `contrib-group` / `contrib` | Authors — the role may be declared on either, see below |
 | `abstract/sec/title/p` | Structured abstract sections |
 | `body/sec/title/p` | Body sections with nesting |
 | `body/p` (no enclosing `<sec>`) | A titleless body section — see below |
@@ -450,6 +451,72 @@ pass.
 | `ref-list/ref/element-citation` | Structured references |
 | `bold/italic/sub/sup/monospace` | Inline formatting |
 | `xref` | Cross-reference anchor links |
+| `sub-article`, `response` | **Ignored** — a whole article of its own, see below |
+
+> **The contributor role may be declared on the group.** JATS spells it two
+> ways: `<contrib contrib-type="author">`, and `content-type="author"` on the
+> enclosing `<contrib-group>` with bare `<contrib>` children. The second is the
+> dominant form in PMC — reading only the first dropped every author from
+> roughly three open-access articles in five *(unreleased, #111)*. A
+> contributor's own `contrib-type` decides on its own, so an `editor` inside an
+> author group stays an editor and an `author` inside an editor group is still
+> collected; only a `<contrib>` declaring nothing inherits the group. A group
+> naming any other role is taken at its word, so the `content-type="editor"`
+> group that commonly sits beside the author group does not become authors.
+> Those two rules are the ones #111's sample earns; the remaining three rest
+> on convention, the sample carrying no instance of any of them. A group
+> declaring nothing inherits the group enclosing it, and at the outermost
+> level that means authors; an empty attribute (`contrib-type=""`) counts as
+> declaring nothing rather than as declaring "not an author"; and the
+> comparison folds case, which the JATS Tag Library asks for on its
+> `@article-type` page (*"JATS recommends a case-insensitive search for such
+> values"* — written of a different attribute, so precedent rather than
+> citation), which matches the module's own habit of folding `pub-id-type`,
+> and which cannot cost anything: a role that is not `author` in any casing
+> is excluded either way, while an unfolded `Author` drops the group.
+>
+> The enclosing role is a *stack*, because `<collab>` may contain a
+> `<contrib-group>` — a collaboration's member roster. Innermost declared
+> wins, so a bare roster inside an `editor` group stays editors. Held as one
+> value, the roster's close cleared the enclosing group's declaration and its
+> remaining members were collected as this article's authors.
+
+> **A `<sub-article>` is a different article, and is skipped entirely**
+> *(unreleased, #110)*. JATS lets one carry a complete `<front>` and `<body>`
+> of its own. PLOS was observed depositing each peer-review round that way,
+> and PLOS, eLife, BMJ Open and F1000 all publish review histories as a
+> matter of policy — but peer review is not the only use: `<sub-article>`
+> also carries the alternative-language full text (SciELO's
+> `article-type="translation"`), meeting abstracts, and Europe PMC's own
+> injected `associated-data` block, which is absent from PMC's copy of the
+> same record. Nothing inside a `<sub-article>` or a `<response>` reaches
+> `JATSArticle`: not its DOI (a review round's is real and resolvable, so it
+> fails silently rather than 404ing), not its title, not its authors, not its
+> abstract, not its references, not its figures or tables, and not its prose.
+>
+> The suppression is **structural** — by element and by depth, never by
+> `article-type`. That attribute is `CDATA #IMPLIED`, its four published
+> vocabularies disagree, and publishers deposit values in none of them
+> (eLife's `decision-letter`, the F1000 platform's `response`), so no
+> allow-list of types could decide it correctly. The set of two elements is
+> complete for the same structural reason: of JATS's ~295 elements exactly
+> three admit `<front>`/`<front-stub>` and `<body>`, and the third is
+> `<article>` itself.
+>
+> Nested articles nest, so the suppression counts depth rather than setting a
+> flag, and it applies to the opening tags as well as the closing ones: an
+> open leaves parser state behind, which for a nested article placed before
+> the article's own `<body>` cost the article its whole body. Character data
+> is guarded separately, since it is delivered by neither handler.
+> Sub-article prose does not count towards [`has_body`](#jatsarticle), and
+> [`suppressed_nested_articles`](#jatsarticle) reports how many were skipped
+> — without it the removal is invisible, because `has_body` and
+> `content_kind` report only *total* loss.
+>
+> This does **not** protect [`bmlib.transparency`](transparency.md), which
+> fetches and regexes the raw XML itself and never sees `JATSParser` output.
+> Reviewer correspondence about funding, conflicts and data availability
+> still reaches its scans; that is issue #119.
 
 > **`<sec>` is optional inside `<body>`.** Prose in bare `<p>` children of
 > `<body>` is collected into a `JATSBodySection` with an empty `title` — no
@@ -501,6 +568,7 @@ class JATSArticle:
     tables: list[JATSTableInfo]
     references: list[JATSReferenceInfo]
     has_body: bool = False
+    suppressed_nested_articles: int = 0
 ```
 
 **`has_body`** is `True` when `<body>` held at least one non-empty `<p>`
@@ -510,13 +578,23 @@ cleanly but carries only the abstract.
 
 It deliberately counts body paragraphs rather than `body_sections`, because
 back-matter sections land in the latter too: a "Data Availability" section
-would otherwise pass for an article body. Two consequences follow from
-tracking what survived parsing rather than what the XML contained. A `<p>`
-sitting directly in `<body>` with no enclosing `<sec>` is dropped by the
-handler and so does not count — consistent with the rendered HTML, which has
-no body prose either, but it means a valid article of that shape reads as
-abstract-only. And the default is `False`, so a hand-built `JATSArticle`
-reports "no body" unless it says otherwise.
+would otherwise pass for an article body. It tracks what survived parsing
+rather than what the XML contained, and the default is `False`, so a
+hand-built `JATSArticle` reports "no body" unless it says otherwise.
+Unsectioned prose does count: a `<p>` sitting directly in `<body>` with no
+enclosing `<sec>` is collected into an untitled section, so an article of
+that shape is not mistaken for an abstract-only one.
+
+**`suppressed_nested_articles`** is how many `<sub-article>`/`<response>`
+elements the parse skipped, a nested one counted separately. Nothing inside
+them is this article's, so they contribute nothing to the fields above — but
+they can hold most of a document's prose, and dropping that changes neither
+`has_body` nor `FullTextResult.content_kind`, which between them report only
+*total* loss. Measured across 1,022 open-access articles parsed before and
+after the #110 fix, 288 lose body text and 5,520,938 characters are removed,
+and `has_body` flips on none of them. This is the one field that says a
+nested article was there at all; each one is also logged at `DEBUG` with its
+`article-type` as it opens.
 
 ### JATSAuthorInfo
 
