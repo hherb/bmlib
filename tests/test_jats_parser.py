@@ -16,7 +16,6 @@
 
 """Tests for bmlib.fulltext.jats_parser."""
 
-import logging
 import xml.sax
 from pathlib import Path
 
@@ -2116,27 +2115,138 @@ class TestAGraphicBelongsToItsOwnExhibit:
             ("Results", ("Section prose.",))
         ]
 
-    def test_a_tables_own_graphic_is_dropped_and_said_so(self, caplog):
-        """A known limitation, pinned rather than left to be rediscovered.
 
-        ``JATSTableInfo`` has no graphic field, so a table deposited as a
-        scanned image renders as nothing and is otherwise indistinguishable
-        from an empty ``<table-wrap>``. Issue #127 carries the model change;
-        the DEBUG line is what makes the drop visible meanwhile.
-        """
-        with caplog.at_level(logging.DEBUG, logger="bmlib.fulltext.jats_parser"):
-            article = JATSParser(
-                _article_with_body("""
+def _table_containing(markup: str) -> bytes:
+    return _article_with_body(f"""
     <sec><title>Results</title>
       <table-wrap id="t1"><label>Table 1.</label>
-        <graphic xlink:href="scanned-table.png"/>
+        <caption><p>Baseline characteristics.</p></caption>
+{markup}
       </table-wrap>
     </sec>""")
-            ).parse()
 
-        assert [(t.id, t.label) for t in article.tables] == [("t1", "Table 1.")]
-        assert "scanned-table.png" in caplog.text
-        assert "t1" in caplog.text
+
+class TestATableDepositedAsAnImageKeepsIt:
+    """A ``<table-wrap>`` whose content is a ``<graphic>`` — issue #127.
+
+    ``JATSTableInfo`` carried ``html_content`` and no graphic field, so a
+    scanned or typographically complex table lost its only content: the parser
+    returned the id, the label and the caption over nothing, which is
+    indistinguishable from an empty ``<table-wrap>``. PR #126 fixed the half
+    that was *loud* in the wrong place — the image was being donated to an
+    enclosing ``<fig>`` — and left the drop, naming it at DEBUG.
+
+    The deposit is ranked exactly as a figure's is (#117): a scanned table may
+    be deposited beside a thumbnail too, and the rule lives in one place rather
+    than being re-derived here.
+    """
+
+    def test_a_table_deposited_as_an_image_keeps_its_href(self):
+        article = JATSParser(
+            _table_containing('        <graphic xlink:href="scanned-table.png"/>')
+        ).parse()
+
+        assert [(t.id, t.label, t.graphic_url) for t in article.tables] == [
+            ("t1", "Table 1.", "scanned-table.png")
+        ]
+
+    def test_a_thumbnail_deposited_beside_it_does_not_win(self):
+        article = JATSParser(
+            _table_containing("""
+        <graphic xlink:href="scan.jpg"/>
+        <graphic content-type="thumbnail" xlink:href="scan-thumb.gif"/>""")
+        ).parse()
+
+        assert article.tables[0].graphic_url == "scan.jpg"
+
+    def test_a_thumbnail_deposited_first_does_not_win_either(self):
+        """The half plain first-wins cannot answer, and the ranking can."""
+        article = JATSParser(
+            _table_containing("""
+        <graphic content-type="thumbnail" xlink:href="scan-thumb.gif"/>
+        <graphic xlink:href="scan.jpg"/>""")
+        ).parse()
+
+        assert article.tables[0].graphic_url == "scan.jpg"
+
+    def test_a_footnotes_graphic_is_not_the_tables_image(self):
+        """Ownership decides here exactly as it does inside a ``<fig>``."""
+        article = JATSParser(
+            _table_containing("""
+        <graphic xlink:href="scan.jpg"/>
+        <table-wrap-foot><fn><p><graphic xlink:href="icon.gif"/></p></fn></table-wrap-foot>""")
+        ).parse()
+
+        assert article.tables[0].graphic_url == "scan.jpg"
+
+    def test_a_nested_figures_graphic_is_not_the_tables_image(self):
+        """The mirror of ``TestAGraphicBelongsToItsOwnExhibit``'s first case.
+
+        Both exhibits now hold a graphic, so donating one to the other is a
+        live hazard in *both* directions rather than one.
+        """
+        article = JATSParser(
+            _table_containing("""
+        <fig id="f1"><graphic xlink:href="inset.jpg"/></fig>
+        <graphic xlink:href="scan.jpg"/>""")
+        ).parse()
+
+        assert article.tables[0].graphic_url == "scan.jpg"
+        assert article.figures[0].graphic_url == "inset.jpg"
+
+    def test_a_table_carrying_no_graphic_reports_none(self):
+        """The negative control: the field is not filled from somewhere else."""
+        article = JATSParser(
+            _table_containing("""
+        <table><tbody><tr><td>1</td></tr></tbody></table>""")
+        ).parse()
+
+        assert article.tables[0].graphic_url is None
+
+
+class TestRenderingATableDepositedAsAnImage:
+    """``_build_html``'s table branch, which emitted nothing for a graphic.
+
+    The image is rendered **only** where there is no ``<table>`` markup. A
+    ``<table-wrap>`` may carry both, and where it does the markup is the better
+    rendition — emitting both shows the same table twice. The model carries the
+    href either way, because that is data and the choice of rendition is the
+    renderer's.
+    """
+
+    def test_the_image_is_rendered_where_there_is_no_markup(self):
+        html = JATSParser(
+            _table_containing('        <graphic xlink:href="scanned-table.png"/>')
+        ).to_html()
+
+        assert "scanned-table.png" in html
+        assert "<img" in html
+
+    def test_the_href_is_resolved_against_the_articles_pmc_id(self):
+        """A table's deposit is resolved exactly as a figure's is."""
+        html = JATSParser(
+            _table_containing('        <graphic xlink:href="scanned-table"/>')
+        ).to_html()
+
+        assert "https://europepmc.org/articles/PMC1234567/bin/scanned-table.jpg" in html
+
+    def test_the_label_is_the_images_alt_text(self):
+        html = JATSParser(
+            _table_containing('        <graphic xlink:href="scanned-table.png"/>')
+        ).to_html()
+
+        assert 'alt="Table 1."' in html
+
+    def test_markup_and_image_together_render_the_markup_alone(self):
+        article, html = JATSParser(
+            _table_containing("""
+        <graphic xlink:href="scan.png"/>
+        <table><tbody><tr><td>1</td></tr></tbody></table>""")
+        ).parse_with_html()
+
+        assert article.tables[0].graphic_url == "scan.png"
+        assert "<table>" in html
+        assert "scan.png" not in html
 
 
 def _figure_containing(markup: str) -> bytes:

@@ -188,10 +188,17 @@ def _graphic_suitability(attrs: xml.sax.xmlreader.AttributesImpl, href: str) -> 
 
 
 @dataclass
-class _FigureBuilder:
-    id: str = ""
-    label: str = ""
-    caption: str = ""
+class _GraphicHolder:
+    """The half of an exhibit builder that chooses among ``<graphic>`` deposits.
+
+    Shared by :class:`_FigureBuilder` and :class:`_TableBuilder` rather than
+    written once each. A ``<table-wrap>`` may be deposited as an image too
+    (issue #127) — a scanned or typographically complex table — and nothing
+    about the choice among several deposits differs by exhibit: the publishers
+    that deposit a thumbnail beside a figure deposit one beside a table. Two
+    copies of a rule this heavily argued are two things to keep in step.
+    """
+
     graphic_href: str = ""
     graphic_rank: _GraphicSuitability | None = None
 
@@ -229,6 +236,13 @@ class _FigureBuilder:
             self.graphic_href = href
             self.graphic_rank = rank
 
+
+@dataclass
+class _FigureBuilder(_GraphicHolder):
+    id: str = ""
+    label: str = ""
+    caption: str = ""
+
     def build(self) -> JATSFigureInfo:
         return JATSFigureInfo(
             id=self.id,
@@ -239,7 +253,7 @@ class _FigureBuilder:
 
 
 @dataclass
-class _TableBuilder:
+class _TableBuilder(_GraphicHolder):
     id: str = ""
     label: str = ""
     caption: str = ""
@@ -327,6 +341,7 @@ class _TableBuilder:
             label=self.label,
             caption=self.caption,
             html_content=self._build_html_table(),
+            graphic_url=self.graphic_href or None,
         )
 
     def _build_html_table(self) -> str:
@@ -948,14 +963,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             current_table = self.current_table
             if owner == "fig" and current_figure is not None:
                 current_figure.offer_graphic(href, _graphic_suitability(attrs, href))
-            elif owner == "table-wrap" and current_table is not None and href:
-                # A <table-wrap>'s own image. `JATSTableInfo` has nowhere to
-                # put it, so it is dropped — but named, because a table whose
-                # only content is a <graphic> renders as nothing and is
-                # otherwise indistinguishable from an empty one. Issue #127.
-                logger.debug(
-                    "Dropping <graphic href=%r> in <table-wrap id=%r>", href, current_table.id
-                )
+            elif owner == "table-wrap" and current_table is not None:
+                # A <table-wrap>'s own image — a scanned or typographically
+                # complex table, which before issue #127 was dropped and left
+                # the table an id, a label and a caption over nothing. Ranked
+                # by the same rule a figure's deposits are, because it is the
+                # same rule: see `_GraphicHolder`.
+                current_table.offer_graphic(href, _graphic_suitability(attrs, href))
         elif name == "table-wrap":
             self.table_slots.append(None)
             self.exhibit_opens += 1
@@ -1576,7 +1590,7 @@ def _build_html(h: JATSArticle) -> str:
             anchor_id = fig.id or f"fig{i + 1}"
             parts.append(f'<figure id="{html_escape(anchor_id)}">')
             if fig.graphic_url:
-                full_url = _build_figure_url(fig.graphic_url, h.pmc_id)
+                full_url = _build_exhibit_url(fig.graphic_url, h.pmc_id)
                 parts.append(
                     f'  <img src="{html_escape(full_url)}" '
                     f'alt="{html_escape(fig_num)}" loading="lazy">'
@@ -1600,6 +1614,16 @@ def _build_html(h: JATSArticle) -> str:
                 parts.append(f'  <p class="table-caption">{html_escape(tbl.caption)}</p>')
             if tbl.html_content:
                 parts.append(tbl.html_content)
+            elif tbl.graphic_url:
+                # Only where there is no markup. A <table-wrap> may carry both,
+                # and where it does the <table> is the better rendition —
+                # emitting both shows one table twice. `JATSTableInfo` holds
+                # the href either way; choosing between them is the renderer's.
+                full_url = _build_exhibit_url(tbl.graphic_url, h.pmc_id)
+                parts.append(
+                    f'  <img src="{html_escape(full_url)}" '
+                    f'alt="{html_escape(tbl_num)}" loading="lazy">'
+                )
             parts.append("</div>")
 
     # References
@@ -1663,7 +1687,24 @@ def _format_body_section_html(section: JATSBodySection, level: int) -> list[str]
     return parts
 
 
-def _build_figure_url(path: str, pmc_id: str) -> str:
+def _build_exhibit_url(path: str, pmc_id: str) -> str:
+    """Resolve an exhibit's ``<graphic>`` href for the rendered HTML.
+
+    Named for the exhibit rather than the figure since issue #127: a
+    ``<table-wrap>`` deposits an image the same way and resolves it the same
+    way. A relative href is resolved against Europe PMC's per-article ``bin/``
+    directory, and one carrying no image extension is given ``.jpg``, which is
+    what that service serves.
+
+    Args:
+        path: The href as deposited.
+        pmc_id: The article's PMC identifier, with or without the prefix; an
+            empty one leaves a relative href alone rather than guessing a host.
+
+    Returns:
+        An absolute URL, or *path* unchanged when there is nothing to resolve
+        it against.
+    """
     if path.startswith("http://") or path.startswith("https://"):
         return path
     has_ext = any(path.lower().endswith(ext) for ext in (".gif", ".jpg", ".jpeg", ".png", ".svg"))

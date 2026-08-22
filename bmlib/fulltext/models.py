@@ -78,12 +78,23 @@ class JATSFigureInfo:
 
 @dataclass
 class JATSTableInfo:
-    """Parsed table metadata with pre-rendered HTML content."""
+    """Parsed table metadata with pre-rendered HTML content.
+
+    ``graphic_url`` is the table's own ``<graphic>`` deposit, filled the way a
+    figure's is and by the same ranking. A ``<table-wrap>`` whose only content
+    is an image — a scanned or typographically complex table — otherwise
+    carries an id, a label and a caption over nothing, which is
+    indistinguishable from an empty one (issue #127). A ``<table-wrap>`` may
+    carry both a ``<table>`` and a ``<graphic>``, so both fields may be set;
+    which one to show is the renderer's choice, and ``_build_html`` shows the
+    markup.
+    """
 
     id: str
     label: str
     caption: str
     html_content: str = ""
+    graphic_url: str | None = None
 
 
 @dataclass
