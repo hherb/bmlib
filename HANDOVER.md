@@ -1,94 +1,128 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-22. **0.10.0 is released and on PyPI**; seven changes
+_Last updated: 2026-08-22. **0.10.0 is released and on PyPI**; eight changes
 sit unreleased on `main` — #73's atomic template install (PR #102), #96/#105's
 partitioning of an over-cap PubMed day (PRs #106 and #114), #109's typed
 article-id (PR #113), #110/#111's JATS sub-article and contributor-group
 fixes (PR #118), #115/#116/#117/#131's exhibit nesting, ranking and
-sampler (PR #126) and #127's image-only table (PR #133) — plus **this
-session's #123/#125/#130 and #135, on
-`fix/123-125-130-title-caption-owner`**. All five version places agree at
-0.10.0.
-Five of the seven unreleased changes are `fulltext` JATS fixes filed within
+sampler (PR #126), #127's image-only table (PR #133) and
+#123/#125/#130/#135's owner-routed title and caption (PR #136) — plus **this
+session's #134/#121/#129, on `fix/134-121-129-parse-audit`**. All
+five version places agree at 0.10.0.
+Six of the eight unreleased changes are `fulltext` JATS fixes filed within
 days of each other; whoever cuts the next release should describe them
-together. Every unreleased ROADMAP row now carries an `*(unreleased)*`
-marker; eight did not, and #109 had no row at all.
+together. Every unreleased ROADMAP row carries an `*(unreleased)*`
+marker.
 
-**Three of them move what a caller of `JATSParser` gets**, and none moves
-what a bmlib *sync* stores. #111 populates an author list that was empty for
-the majority of open-access articles. #115/#117 change `JATSArticle.figures`
-and `.tables` — figures that were missing now appear, and a figure's
+**Five of them move what a caller of `JATSParser` gets**, and none moves what
+a bmlib *sync* stores. #111 populates an author list that was empty for the
+majority of open-access articles. #115/#117 change `JATSArticle.figures` and
+`.tables` — figures that were missing now appear, and a figure's
 `graphic_url` changes from a thumbnail to the full image for roughly half of
-all figures. #127 adds `JATSTableInfo.graphic_url` and fills
-it, so a table that came back with no content now carries its image. This
-session's #123/#125/#130 move a fourth: a section's `title` and an exhibit's
-`caption` are routed by their owning element, so a section renamed by a
-footnote group or a boxed text keeps its own heading and a figure caption
-truncated by a nested one comes back whole. No bmlib
-path carries `figures`, `tables` or `authors` anywhere: `service.py` never
-reads them, `FullTextResult` has none, and `publications` takes its authors
-from the fetchers. Only a downstream that calls `JATSParser` itself and
-persists the result needs to re-parse — but such a downstream should, because
-the stored values are not comparable across the upgrade.
+all figures. #127 adds `JATSTableInfo.graphic_url` and fills it, so a table
+that came back with no content now carries its image. #123/#125/#130 route a
+section's `title` and an exhibit's `caption` by their owning element, so
+`body_sections` moves for roughly one recent article in ten. This session's
+#129 is the fifth and much narrower one: an article lost to a malformed
+`colspan` now parses. No bmlib path carries `figures`, `tables` or `authors`
+anywhere — `service.py` never reads them, `FullTextResult` has none, and
+`publications` takes its authors from the fetchers — so only a downstream
+calling `JATSParser` itself and persisting the result needs to re-parse. It
+should: the stored values are not comparable across the upgrade.
 
-**This session fixed #123, #125 and #130 and closed #135**, and the useful
-half of it was the measuring, not the routing. The fix itself is in
+**Four rules carried forward from PR #136 (#123/#125/#130/#135)**, about
+measurement rather than routing, and all four argued in full in `CLAUDE.md`:
+*a rule's population can be large, empty, or both, and only a draw says which*
+(the `<title>` half is 10.3% of recent articles, the `<caption>` half measures
+empty in both windows); *when a rule replaces a guard, ask what else that
+guard was holding* (#125 one branch over, in the abstract, which reaches the
+cached HTML); *a number in a comment goes stale silently, and coherently* —
+`TestTheCitedPopulationsAreWhatTheCorporaHold` now breaks when a corpus moves;
+and *two enumerations, two containers nobody listed*, the back-filled window's
+entire population being a `<list>`.
+
+**And three from PR #133 (#127)**, all three now also recorded in `CLAUDE.md`
+and the exhibit sampler: *an issue can be closed as COMPLETED without being
+fixed* (see below, which now has a mechanism); *write the case the rule
+decides, not one that merely exercises the path* — mutation found the one new
+test that could not fail; and *a stratified sample of recent deposits is still
+one window* — #127's population reads 0 of 662 there and 11 of 93 in a
+1996-1998 draw.
+
+**This session added the net under the class the last five sessions kept
+finding** — #134's end-of-parse audit, with #121's zero-author detector at the
+same call site and #129's colspan fallback beside them. The fix is in
 `CHANGELOG.md`; six things are worth carrying forward.
 
-- **A rule's population can be large, empty, or both, and only a draw says
-  which.** The `<title>` half is **10.3% of recent articles** (69 titles in 31
-  of 300). The `<caption>` half measures **empty in both windows and in the
-  seven-article Swift corpus** — no `<caption>` nests inside another, none
-  inside an exhibit is owned by anything else. Same PR, same rule, opposite
-  evidence. Ship both; say which is which.
-- **When a rule replaces a guard, ask what else that guard was holding.**
-  Routing a `<title>` by its parent replaced the `if in_figure or
-  in_table_wrap:` opening the whole arm — which was also what kept an
-  exhibit's `<title>` out of the **abstract** branch, so a
-  `<table-wrap-foot><fn-group><title>` in a graphical abstract split the
-  abstract and installed itself as a heading. #125 exactly, in the one place
-  it is worse: `abstract_sections` reaches the cached HTML, `body_sections`
-  reaches no bmlib path. Caught in review, fixed before merge, population
-  measured empty (0 of 44).
-- **A number in a comment goes stale silently, and coherently.** The redraw
-  moved three figures and the docs were reconciled while
-  `jats_parser.py` was not — cited as `1,556`, `1,416` and `71 titles in 32
-  of 300`, each internally consistent (the quoted Wilson interval is exactly
-  the one `32/300` gives), so nothing read as wrong. Only summing the JSON
-  found them. `TestTheCitedPopulationsAreWhatTheCorporaHold` now fails when a
-  corpus moves under a comment; a redraw is *meant* to break it.
-- **A draft comment asserted publisher behaviour nobody had measured** — that
-  eLife deposits a captioned `<supplementary-material>` inside its figures. It
-  deposits supplements as nested `<fig>`. That is #135's mistake reappearing
-  within days of #135 being filed for it, which is the argument for measuring
-  *before* writing the comment rather than after.
-- **The instrument was wrong in the direction that flatters the rule.** The
-  sampler counted a table's `<graphic>` deposits by whole-subtree walk while
-  the parser routes by owner, so four of ten recent tables read as
-  multi-deposit; every one was a `<td>` cell image. Unnoticed, #135 would have
-  closed on a number about cell decoration. **Check that a counter measures
-  the population the code acts on**, not a superset of it — the residual #135
-  itself had named, which is why it was findable.
-- **Two enumerations, two containers nobody listed.** #125 names `<fn-group>`,
-  #130 names `<boxed-text>`; the back-filled window's entire population is a
-  **`<list>`**. Neither issue would have produced an allow-list that covered
-  it. That is the parent test's whole argument, and the third time it has been
-  made here (#116's `<label>`, #117's `<graphic>` owner, now this).
+- **A diagnostic's level is a claim, and the claim has to be measured.** The
+  audit is ERROR because expat rejects an unbalanced *document*, so no deposit
+  can reach it and every line means bmlib is wrong. #121 was designed as ERROR
+  too and demoted to WARNING before it shipped: `PMC12803704` is genuinely
+  author-less and still carries `<front>` surnames, so that branch *can* fire
+  on a correct parse (1 of 1,025 drawn during the Swift port — not
+  reproducible from any corpus committed here, and the docs now say so rather
+  than citing it bare). One false-positive class makes the whole channel
+  unreadable, and the audit shipped with one: `current_article_id_type` was
+  set unconditionally and cleared conditionally, so a JATS-invalid
+  `<article-id>` outside `<article-meta>` made it accuse an article it had
+  parsed perfectly.
+- **A net needs its own false-positive net, and it must be free.** The autouse
+  `parser_log` fixture fails any test in `test_jats_parser.py` whose parse
+  emits an ERROR, so all 186 pre-existing fixtures became a false-positive check
+  without being written as one. It earned its place immediately:
+  `current_abstract_text` was in the first draft of the audited state, and
+  `</abstract>` flushes without clearing, so the audit fired on every article
+  carrying an abstract. Nothing else in that module looks at logs — without
+  the fixture that ships green.
+- **Key the counter on structure, never on the routing it is checking.**
+  #121's `front_contributor_name_count` is gated on `in_front` and not
+  `in_contrib`, because the latter is set only once `_is_author_contrib` has
+  said yes — which is exactly what #111 got wrong. Keyed on it, the counter
+  goes to zero in precisely the case it exists to detect. Mutation-confirmed:
+  that one edit is killed by one test, written for it.
+- **A rule enforced by prose is not enforced, and this PR proved it on
+  itself.** `_ROUTING_FLAGS` says "add a flag to the handler, add it here" and
+  shipped already missing `implicit_body_section`, so a stranded unsectioned
+  `<body>` lost its whole prose with `has_body` still `True` and the audit
+  silent — the exact failure the module was written to catch. Review found it;
+  nothing in the suite could have. Same shape one level down: eleven fields
+  and eleven `if`s kept in step by nothing, two of them emitting
+  indistinguishable text. `TestTheAuditNetIsComplete` and
+  `TestEveryFieldIsReported` mechanise both.
+- **A detector must report what it checked, not what it concluded.** #121's
+  quiet branch claimed "genuinely author-less" on the evidence "no `<surname>`
+  in `<front>`" — but JATS names a contributor with
+  `(name | string-name | collab | …)`, so a `<string-name>`-only article, with
+  *every* author dropped, was certified as having none (#140, filed). Where a
+  check has known blind spots the message must name them, or a conclusion
+  drawn past them is indistinguishable from a correct one.
+- **Two tests passed before the code existed, for two different reasons.**
+  `all(... for m in [])` is vacuously true, so the "the diagnostic names the
+  article" test passed against the unaudited parser until an emptiness check
+  was added; and the negative controls passed because they assert silence,
+  which is what an absent feature also gives. The first is a bug, the second
+  is the point — tell them apart before reading a green as evidence.
 
-**Three notes from the previous session (#127, PR #133) still hold.** *An
-issue can be closed as COMPLETED without being fixed* — #127 was, so check a
-PR actually closes what was shut alongside it. *Mutation testing found the one
-new test that could not fail* — write the case the rule decides, not one that
-merely exercises the path. And *a stratified sample of recent deposits is
-still one window*: #127's population reads 0 of 662 there and 11 of 93 in a
-1996-1998 draw, so ask whether the draw can see a deposit before reading a
-zero as an answer.
+**A closing keyword in prose closed an issue nobody decided.** #137 was filed
+by PR #136's own review and named in the commit that filed it as *"Filed
+rather than fixed: #137 (…) and #138"* — GitHub read the `fixed: #137`
+substring as a keyword and closed it one second after the merge, while #138,
+in the same sentence with no keyword in front of it, stayed open. Reopened
+2026-08-22. This is the third instance of the class HANDOVER already warns
+about (an issue CLOSED/COMPLETED without being fixed) and the first with a
+mechanism: **the phrase does not have to be an intent to close.** Write
+`filed, not fixed — #137` or `#137 stays open`, never `rather than fixed:
+#137`, and check `gh issue view` after a merge rather than trusting the
+count.
 
-**Next up: #124, #128, #129, #134, #137 and #138 in `fulltext`, the three from
-the #118 review (#119, #120, #121), #132, the older non-JATS ones (#86, #92,
-#94, #103, #112), or Phase 3 of the bmlibrarian port, whose every row needs a
-design conversation.** #124 is the last one that still loses content; #132 and
-#138 both want a corpus redraw and should be paired.
+**Next up: #124, #128, #137, #138 and #140 in `fulltext`, #119 and #120 from
+the #118 review, #132, the older non-JATS ones (#86, #92, #94, #103, #112), or
+Phase 3 of the bmlibrarian port, whose every row needs a design
+conversation.** #124 is the last one that still loses content; #132 and #138
+both want a corpus redraw and should be paired; #120 and #140 are the two
+spellings of a contributor's name that the zero-author detector now *reports*
+and still does not *extract*, and they want one design decision between them —
+what a `JATSAuthor` holds when the deposit gives one undivided name.
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -123,11 +157,11 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   moves something stored, 0.9.0 and 0.10.0 are *minor* bumps that move nothing
   — so the version number answers the API question, never the data one, and a
   downstream reading only the number must still read this list.
-- **Tests: 2541 passing + 63 skipped on `main`**, **2569 + 63** on
-  `fix/123-125-130-title-caption-owner`, so 28 are this session's — 17 in
-  `test_jats_parser.py` and 11 in `test_jats_exhibit_sampler.py`
+- **Tests: 2578 passing + 63 skipped on `main`**, **2644 + 63** on
+  `fix/134-121-129-parse-audit`, so 66 are this session's — 17 in
+  `test_parse_audit.py` and 49 in `test_jats_parser.py`
   (`uv run pytest tests/ -q`). Both measured, not derived. The PostgreSQL half
-  was **not** re-run for this branch and does not need to be: it touches no
+  was **not** re-run for either branch and does not need to be: they touch no
   SQL, and the last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is
   2435 + 2 on the #105 branch. Of the 63 default skips, 61 are the PostgreSQL
   parameterisations, 1 is a PostgreSQL-only schema test, and 1 is
@@ -149,17 +183,17 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression worth fixing, not expected staleness. The
-  `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time. 0.10.0 promoted all thirteen it inherited — five `ROADMAP.md`
-  rows and eight spots in `docs/manual/publications.md` — and **none are
-  outstanding now**. Grep case-insensitively for `unreleased` rather than for
-  `(unreleased)`: three of those thirteen were spelled `*(unreleased, #99)*`
-  and `(changed, unreleased — …)`, which the parenthesised pattern misses.
-  Write the marker bare, never with a guessed version number: the number is
-  decided when the release is cut, and this family is a case in point — it
-  moves no API and so reads as a patch, while costing every installation a
-  re-fetch of its whole window. Markers inside `docs/superpowers/plans/` are
-  historical records — leave them alone.
+  `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
+  release time; **43 are outstanding for the next release** — 20 `ROADMAP.md`
+  rows and 23 spots across `docs/manual/publications.md` (13), `fulltext.md`
+  (7) and `templates.md` (3). Grep case-insensitively for `unreleased` rather
+  than for `(unreleased)`: three of 0.10.0's thirteen were spelled
+  `*(unreleased, #99)*` and `(changed, unreleased — …)`, which the
+  parenthesised pattern misses. Write the marker bare, never with a guessed
+  version number: the number is decided when the release is cut, and 0.10.0
+  is a case in point — it moved no API and so read as a patch, while costing
+  every installation a re-fetch of its whole window. Markers inside
+  `docs/superpowers/plans/` are historical records — leave them alone.
 - **`main` is protected by the `protect_main` ruleset** (added 2026-08-13):
   no deletion, no non-fast-forward push, and CodeQL code scanning plus code
   quality required to merge. CodeQL comes from GitHub's *default setup*, so
@@ -168,32 +202,31 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   rather than a close/reopen. It does **not** constrain the merge strategy.
 - **The release tag does not depend on the merge button** (#78, closed
   2026-08-13). The old recipe required a release PR be merged with `--merge`,
-  enforced by prose alone, and that was measurably not holding: **8 of the
-  last 40 merged PRs landed as single-parent commits** (#60, #62, #63, #65,
-  #66, #69, #74, #76), each collapsing a 3–7 commit branch. The fix #78
-  proposed — disabling squash and rebase repo-wide — was rejected because
-  that habit is deliberate and squash is wanted for ordinary feature PRs;
-  GitHub cannot condition the merge method on the branch, so there was no
-  setting that gives release PRs one rule and feature PRs another.
-  **The requirement was removed instead of enforced.** `main`'s tip is on
-  `main`'s first-parent line under *every* merge strategy, so the recipe now
-  tags `main`'s tip after pulling, guarded by two checks (see "Cutting a
-  release"). Squash away.
+  enforced by prose alone, and 8 of 40 merged PRs were not honouring it.
+  Rather than disable squash and rebase repo-wide — deliberate habits, and
+  GitHub cannot condition the merge method on the branch — the requirement was
+  removed: `main`'s tip is on `main`'s first-parent line under every strategy,
+  so the recipe tags the tip after pulling, guarded by two checks (see
+  "Cutting a release"). Squash away.
 
 ## Next up
 
 ### Open GitHub issues
 
-**Seventeen open** as this session starts, fifteen once this PR closes #123,
-#125, #130 and #135 and its own review files **#137** and **#138**. Every one was found by review or
+**Sixteen open** as this file is written (verified with `gh issue list`),
+thirteen once this PR closes #121, #129 and #134: #86, #92, #94, #103, #112,
+#119, #120, #124, #128, #132, #137, #138, #140 — #140 filed by this PR's own
+review, for the `<string-name>` contributors #121's detector now reports and
+still cannot extract. Every one was found by review or
 measurement rather than by a failing test, and **none of them loses records**
 — though **#124** loses an exhibit's footnotes, **#128** would lose every
-figure image in a document binding XLink to another prefix, **#129** loses a
-whole article to one malformed `colspan`, **#120** loses a contributor, and
-**#119** feeds a scan text that is not the article's. Count this against the
+figure image in a document binding XLink to another prefix, **#120** loses a
+contributor, and **#119** feeds a scan text that is not the article's. Count this against the
 repo before trusting it: the line has been wrong in three consecutive
 sessions, and one further way is an issue **closed as COMPLETED without being
-fixed**, which no count of open issues catches. (**#56, #68, #72 and #79** shipped in
+fixed**, which no count of open issues catches — #137 was closed that way by
+a stray `fixed: #137` inside the sentence saying it was *not* fixed, and is
+reopened. (**#56, #68, #72 and #79** shipped in
 0.9.1. **#78, #81, #88–#91, #95, #98 and #99** shipped in 0.10.0 — PRs #85,
 #87, #93, #97, #100. **#73** is on `main` unreleased in PR #102, whose own
 review filed **#103**. **#96** closed with PR #106, as correct rather than as
@@ -202,24 +235,14 @@ fixed. **#105 and #107** closed with PR #114. **#109** closed with PR #113.
 and **#121**. **#115, #116, #117 and #131** closed with PR #126, which filed
 **#123**, **#124**, **#127**, **#128**, **#129** and **#130**. **#127**
 closed with PR #133, which filed **#132**, **#134** and **#135**; **#123**,
-**#125**, **#130** and **#135** close with this session's PR, whose review
-filed **#137** and **#138**.)
+**#125**, **#130** and **#135** closed with PR #136, whose review
+filed **#137** and **#138**. **#121**, **#129** and **#134** close with this
+session's PR, whose review filed **#140**.)
 
 **#128 is weaker than filed**: every one of the 2,397 `<graphic>` hrefs in the
 two redrawn corpora uses the `xlink` prefix bound to the XLink namespace, so
 the literal-prefix match is safe on measured evidence. Worth downgrading
 rather than closing — no sample proves no publisher does otherwise.
-
-**#134 — the parser has no end-of-parse audit**, so a stack left open loses
-content in silence. Filed from the Swift port, where the same shape stranded
-a footnote counter above zero and drained every remaining paragraph into it,
-one at a time, unremarked — and survived to code review. Expat rejects an
-unbalanced *document*, which is exactly why this is a net and not an input
-check: it fires only when the *parser* is wrong, and #115, #123 and #130 are
-all that class. Wants one pure function over the handler's counters and
-stacks, called from `_run_parser()` (the one place `parse`, `to_html` and
-`parse_with_html` all funnel through), logging at ERROR. #121's
-"parse produced zero authors" belongs in the same place.
 
 **#132 is smaller than it was.** Both corpora were redrawn with every counter
 present, so every figure a comment cites is now re-derivable from the repo and
@@ -230,7 +253,7 @@ both committed draws**, so that figure has no in-repo evidence at all. Do it
 before the release that ships these rules, while the CHANGELOG is still free
 to edit. #138 wants a redraw too — pair them.
 
-**#137 and #138 came out of this PR's own review.** #137: a section-level
+**#137 and #138 came out of PR #136's own review.** #137: a section-level
 `<caption>`'s `<p>` children still reach `body_sections` while its `<title>`
 is now dropped, so one caption's two halves go different ways — a decision to
 make (keep, drop both, or model the containers), and the sampler records the
@@ -267,29 +290,20 @@ contribs carry no surname, and **34 articles (3.3%)** lose at least one — none
 loses all of them. Needs a model decision first, since `JATSAuthorInfo` has
 `surname`/`given_names` and a collaboration has neither.
 
-**#121 — a zero-author parse is indistinguishable from an author-less
-article.** `_build_html` has `if h.authors:` with no `else`, and
-`FullTextService` caches the result, so a broken parse renders and persists
-exactly like a correct one — the detector missing for the whole life of #111,
-during which 108 of 183 sampled articles parsed to zero authors and nothing
-said so. Belongs at #134's call site, which is the one place every entry
-point can hear it.
-
 **#112 — stated measurements that do not reproduce against the committed
 corpus**, the same failure as #132 above but one layer deeper.
-`bmlib/transparency/analyzer.py` states a measurement as the
-reason for each stem it includes and excludes, and three disagree with
+`bmlib/transparency/analyzer.py` gives a measurement as the reason for each
+funder stem it includes and excludes, and three disagree with
 `tests/data/funder_names.json`: the headline pair reads 0.917 / 0.324 and
 measures 0.909 / 0.333, `pharmaceutic` is claimed to have no false positive
-and has the matcher's *only* one — the thing capping precision below 1.000 —
-and `co` is excluded for a collision the corpus does not contain, at the cost
-of a real true positive. Not drift: the corpus has one commit (be456a2) and
-the matcher is byte-identical since, and the stated figures are
-self-consistent with a corpus holding 34 industry entries where this one holds
-30, so they were taken against a revision never committed. Nothing is a
-behaviour regression — `tests/test_funder_matching.py` passes and both floors
-hold. Re-derive every figure in one pass rather than fixing the three named,
-and say in each comment which corpus revision it came from.
+and has the matcher's *only* one, and `co` is excluded for a collision the
+corpus does not contain. Not drift — the corpus has one commit (be456a2) and
+the matcher is byte-identical since, and the stated figures are self-consistent
+with a corpus holding 34 industry entries where this one holds 30, so they
+were taken against a revision never committed. No behaviour regression: the
+tests pass and both floors hold. Re-derive every figure in one pass rather
+than fixing the three named, and say in each comment which corpus revision it
+came from.
 
 **#103 — `install_defaults()` reserves no `NAME_MAX` headroom for the
 temporary name.** `atomic_write()` stages through a name 38 characters longer
@@ -310,18 +324,17 @@ issue asks for would measure that and the `messages[0].status` vocabulary.
 **Do not tighten the guard without running it**; the tests pin *both* possible
 quiet-day shapes so it cannot come to depend on the unmeasured answer.
 
-**#92 — the shortfall floor is unmeasured**, filed as part of the #88 fix
-rather than after it, so that the one guessed constant in that change is on
-the record. `SHORTFALL_FAILURE_RATIO = 0.5` decides when a page walk that
-ended naturally but came up short is treated as truncated; it asserts only
-that no benign cause plausibly removes half a day's records, which is what
-can be argued without data. Every other threshold in bmlib was set from a
-sampled population, so this is the outlier. Two constraints for whoever takes it: a
+**#92 — the shortfall floor is unmeasured**, filed as part of the #88 fix so
+that its one guessed constant is on the record.
+`SHORTFALL_FAILURE_RATIO = 0.5` decides when a page walk that ended naturally
+but came up short is treated as truncated; it asserts only that no benign
+cause plausibly removes half a day's records. Every other threshold in bmlib
+was set from a sampled population, so this is the outlier. Two constraints: a
 `failed` day is re-offered on **every** later run, so a floor tightened past
 the real benign gap re-fetches that day forever; and OpenAlex is expensive to
 sample, at tens of thousands of works per publication date. Follow the
-`scripts/` sampler convention. One input from #96: efetch cannot produce the
-uniform-half-pages case this floor was worried about — a page is the slice it
+`scripts/` sampler convention. One input from #96 — efetch cannot produce the
+uniform-half-pages case this floor was worried about: a page is the slice it
 named or it is refused.
 
 **#86 — `docs/manual/llm.md` documents `LLMClient.generate` and
@@ -425,13 +438,12 @@ what still needs doing.
   one that false-flags rules newer ruff removed:
   `uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .`
 - **`uv run mypy` is a gate now too** (#81), pinned to **2.3.0** in the `dev`
-  extra with its settings in `pyproject.toml`. Take no arguments and add
-  none — the bare command is what the `types` CI job runs. It must run in
-  the dev venv: every extra but psycopg2 ships its own `py.typed` (that one
-  is covered by `types-psycopg2`), so against a bare interpreter mypy
-  reports the optional imports *and `jinja2`, a core dependency*, as missing
-  stubs. That is not hypothetical — it is why #81 opened claiming 24 errors
-  when there were 22. Anything deliberately
+  extra with its settings in `pyproject.toml`. Take no arguments — the bare
+  command is what the `types` CI job runs — and run it in the dev venv: every
+  extra but psycopg2 ships its own `py.typed` (that one is covered by
+  `types-psycopg2`), so against a bare interpreter mypy reports the optional
+  imports *and `jinja2`, a core dependency*, as missing stubs, which is why
+  #81 opened claiming 24 errors when there were 22. Anything deliberately
   unchecked is an inline `# type: ignore[code]` with its reason at the site,
   never a per-module `ignore_missing_imports`: `warn_unused_ignores` reports
   the first when it goes stale and can never report the second.
@@ -476,12 +488,10 @@ what still needs doing.
   catches tagging a commit that does not carry the version — which is the
   failure `release.yml` would otherwise find *after* the release is public.
   Checking the tag *afterwards* needs one piece of git arcana: these are
-  **annotated** tags, so `git rev-parse vX.Y.Z` returns the tag object's SHA
-  and not the commit's, and a comparison against a commit SHA fails for a
-  reason that has nothing to do with the release. Dereference it —
-  `git rev-parse 'vX.Y.Z^{commit}'`. Verified on v0.9.1: dereferenced, it is
-  `main`'s tip and is on `main`'s first-parent line; undereferenced, the same
-  check reports a mismatch.
+  **annotated** tags, so `git rev-parse vX.Y.Z` returns the tag object's SHA,
+  and a comparison against a commit SHA fails for a reason that has nothing to
+  do with the release. Dereference it — `git rev-parse 'vX.Y.Z^{commit}'`
+  (verified both ways on v0.9.1).
   A merge commit is still the nicer shape for a release, since it keeps the
   branch's commits on `main`, but it is now a preference and not a
   correctness requirement; then create the GitHub release, which is

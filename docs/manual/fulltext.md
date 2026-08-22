@@ -566,6 +566,68 @@ pass.
 > [`has_body`](#jatsarticle), so a `<body>` carrying only a captioned figure
 > still reports no body.
 
+> **A malformed span costs its own row, not the article** *(unreleased,
+> #129)*. `colspan` is CDATA in JATS, so `colspan="two"` — and
+> `colspan="20000000"` — are both well-formed markup. A non-numeric value used
+> to raise a `ValueError` out of the parse, which
+> [`FullTextService`](#fulltextservice) swallowed at DEBUG and reported as the
+> article being unavailable from that source, so one bad attribute on one cell
+> lost the whole article. A span is now refused — treated as one column — when
+> it will not parse as an integer **or when it exceeds 1000 columns**, the
+> latter because the parser materialises `colspan - 1` empty cells, so an
+> unbounded value costs hundreds of megabytes of rendered HTML (which is then
+> cached) or a `MemoryError` that loses the article exactly as before.
+>
+> A refused span is reported once per article at WARNING, because it is not
+> cosmetic: it shifts every later cell in its row one column left. See *What
+> the parser tells you when it goes wrong* below.
+
+### What the parser tells you when it goes wrong
+
+*(unreleased, #134, #121)*
+
+Nothing here changes what a correct parse returns. Two log channels were added
+because the parser used to fail in ways that look exactly like success.
+
+> **An unbalanced parse logs at ERROR.** The handler carries two dozen stacks,
+> depths and flags, and each decides where content is *routed*, so one left
+> unbalanced yields a thin article, an article missing its last sections, or
+> an article whose remaining prose was filed as caption text. Every entry
+> point is audited, and each imbalance logs one line naming what it cost.
+>
+> **An ERROR from `bmlib.fulltext.jats_parser` is a bmlib defect, not a bad
+> document.** `expat` rejects unbalanced XML before the parse returns, so no
+> deposit can provoke one. Please report it, with the article's identifier —
+> which every such line names as far as the document allows, falling back to
+> the title and then to a fixed "carrying no identifier or title" for a
+> document supplying neither. Nothing is raised: you still get whatever the
+> parse managed, which is why the line matters.
+
+> **A parse yielding no authors logs at WARNING** — but only where the
+> document's `<front>` named a contributor, which means they were most likely
+> routed elsewhere. An article whose `<front>` names none logs at DEBUG
+> instead. The distinction exists because the two used to be
+> indistinguishable: a broken parse and a correct one both render author-less
+> HTML, and `FullTextService` caches it.
+>
+> **"Named" covers every JATS spelling** — `<surname>`, `<string-name>` and
+> `<collab>` — not just `<surname>`. bmlib extracts authors only from
+> `<name>`, so a `<contrib-group>` built from `<string-name>` loses all of
+> them and one built from `<collab>` loses some; counting surnames alone put
+> both in the quiet branch and reported them as genuinely author-less.
+> Extracting either is separate open work, but the detector no longer
+> certifies an article it did not check.
+
+> **A `colspan` this parser will not honour logs at WARNING**, once per
+> article, naming how many cells were affected. This is *not* cosmetic: a
+> refused span is rendered as one column, and because the column count comes
+> from the first row and short rows are padded at the end, every later cell in
+> that row sits one column left of where the document put it — so a results
+> row reading `Mean=42, SD=7.1` renders as `n=42, Mean=7.1, SD=''`. WARNING
+> rather than ERROR because a deposit *can* provoke it, unlike the audit
+> above. A span is refused when it will not parse as an integer, or when it
+> exceeds 1000 columns — see the note on `colspan` earlier in this page.
+
 ---
 
 ## JATSArticle
