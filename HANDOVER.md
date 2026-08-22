@@ -7,7 +7,7 @@ article-id (PR #113), #110/#111's JATS sub-article and contributor-group
 fixes (PR #118) and #115/#116/#117/#131's exhibit nesting, ranking and
 sampler (PR #126, merged) — plus **this session's #127, on
 `fix/127-table-graphic`**. All five version places agree at 0.10.0.
-Five of the six unreleased changes are `fulltext` JATS fixes filed within
+Four of the six unreleased changes are `fulltext` JATS fixes filed within
 days of each other; whoever cuts the next release should describe them
 together. Every unreleased ROADMAP row now carries an `*(unreleased)*`
 marker; eight did not, and #109 had no row at all.
