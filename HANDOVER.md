@@ -9,10 +9,8 @@ sampler (PR #126, merged) — plus **this session's #127, on
 `fix/127-table-graphic`**. All five version places agree at 0.10.0.
 Five of the six unreleased changes are `fulltext` JATS fixes filed within
 days of each other; whoever cuts the next release should describe them
-together. Each unreleased ROADMAP row now carries an `*(unreleased)*` marker
-— eight of them did not, so there was nothing for the release recipe to
-promote and no way to tell a released row from an unreleased one; #109 had no
-row at all.
+together. Every unreleased ROADMAP row now carries an `*(unreleased)*`
+marker; eight did not, and #109 had no row at all.
 
 **Three of them move what a caller of `JATSParser` gets**, and none moves
 what a bmlib *sync* stores. #111 populates an author list that was empty for
@@ -28,61 +26,39 @@ persists the result needs to re-parse — but such a downstream should, because
 the stored values are not comparable across the upgrade.
 
 **This session fixed #127** — a `<table-wrap>` whose content is a `<graphic>`
-lost its only content — and corrected two pieces of repo state that were
-wrong on arrival.
+lost its only content — and corrected two pieces of repo state that were wrong
+on arrival. The fix itself is in `CHANGELOG.md`; three things are worth
+carrying forward.
 
 - **#127 was closed as COMPLETED in PR #126's merge batch without being
   fixed.** No commit carried a closing keyword for it and the PR body closes
-  only #115-#117, so it was a batch slip. Only the routing half had shipped
-  (`_graphic_owner` keeps a table's image off the enclosing figure, and logged
-  the drop at DEBUG); the model gap the issue is about was untouched. Reopened
-  with that stated, then fixed here. **When an issue is closed alongside a PR,
-  check the PR actually closes it** — a wrongly-closed issue is invisible in
-  exactly the way an open one is not.
-- **Eight unreleased ROADMAP rows carried a bare `✅ Done`** while #105's two
-  carried `*(unreleased)*`, so the release recipe's "promote any unreleased
-  markers" step had nothing to promote for them; #109 had no row at all. Both
-  fixed in the first commit of this branch.
-
-**What #127 needed, beyond the field.** The ranking rule moved into a shared
-`_GraphicHolder` base rather than being written twice — the publishers that
-deposit a thumbnail beside a figure deposit one beside a table, so it is the
-same rule, and CLAUDE.md's own argument against a second copy applies. The
-`<img>` is emitted **only where there is no `<table>` markup**: a
-`<table-wrap>` may carry both, and where it does the markup is the better
-rendition. The model holds the href either way, because that is data and the
-choice of rendition is the renderer's. `_build_figure_url` became
-`_build_exhibit_url`, since it now resolves a table's deposit too.
-
-**Mutation testing found the one test that could not fail.** With the owner
-test dropped — every `<graphic>` inside a `<table-wrap>` routed to the table —
-the whole new class still passed, because each foreign deposit was written
-*second*, where plain first-wins already answers it. That is the trap the
-figure class had already documented and the new class walked into anyway.
-`<supplementary-material>` sits in `<table-wrap>`'s content flow and so may be
-deposited *first*, which is the case ownership actually decides; the footnote
-one is kept as the control and says so. 8/8 mutants now die, including the
-mirror mutation on the figure branch.
-
-**The population was measured on a second window, and the first could not see
-it.** `scripts/sample_jats_exhibits.py` already counted image-only tables, and
-the committed 300-article corpus said **0 of 642** — which reads as "never
-happens". That draw is the last two whole months-strata of open-access
-deposits, i.e. born-digital XML. The sampler grew `--months-ago`, and a draw
-of 300 articles from 1996-1998 measures **11 of 93 tables — 11.8%
-[6.7-20.0]**. Those 11 sit in **2 articles of 300**, both from one journal,
-and in each they are *every* table the article has (6 of 6, 5 of 5). So it is
-a per-deposit property like eLife's figure nesting rather than a general rate
-— and where it fires the article loses its whole tabular content, which for a
-clinical paper is its data. PMC3437083 and PMC3437093 are the two; both were
-verified end-to-end against the fixed parser. The second corpus is committed
-as `tests/data/jats_exhibits.backfill.json`.
-
-**The general lesson, worth keeping**: a stratified sample of *recent*
-deposits is still one window. Stratification fixes the accession-block bias
-#131 found; it does nothing about a population that lives in back-filled
-material. Where a rule is about how publishers *deposit*, ask whether the
-draw can see the deposits in question before reading a zero as an answer.
+  only #115-#117, so it was a batch slip: only the routing half had shipped,
+  and the model gap the issue is about was untouched. **When an issue is
+  closed alongside a PR, check the PR actually closes it** — a wrongly-closed
+  issue is invisible in exactly the way an open one is not, and no count of
+  open issues can catch it. (Eight unreleased ROADMAP rows carrying a bare
+  `✅ Done` were the other piece, fixed in this branch's first commit.)
+- **Mutation testing found the one new test that could not fail.** With the
+  owner test dropped — every `<graphic>` inside a `<table-wrap>` routed to the
+  table — the whole new class still passed, because each foreign deposit was
+  written *second*, where plain first-wins already answers it. That is the
+  trap `TestAGraphicBelongsToItsOwnExhibit` had already documented, and the
+  new class walked into it anyway. `<supplementary-material>` sits in
+  `<table-wrap>`'s content flow and so may be deposited *first*, which is the
+  case ownership actually decides; the footnote one is the control and says
+  so. 8/8 mutants die, including the figure branch's mirror mutation.
+- **A stratified sample of *recent* deposits is still one window.** The
+  committed corpus said #127's population was **0 of 642** tables, which reads
+  as "never happens". It is the last two years of deposits — born-digital XML.
+  The sampler grew `--months-ago`, and a 1996-1998 draw measures **11 of 93 —
+  11.8% [6.7-20.0]**, sitting in **2 articles of 300** from one journal where
+  they are *every* table the article has (6 of 6, 5 of 5). A per-deposit
+  property like eLife's nesting, not a rate — and where it fires the article
+  loses its whole tabular content — for a clinical paper, its data.
+  PMC3437083 and PMC3437093 were verified end-to-end. Stratification fixes
+  #131's accession-block bias, not a population living in back-filled material. **Where a rule is about how publishers *deposit*,
+  ask whether the draw can see those deposits before reading a zero as an
+  answer.**
 
 **Next up is one of the remaining JATS issues (#123, #124, #125, #128, #129,
 #130), the three from the #118 review (#119, #120, #121), one of the older
@@ -210,26 +186,6 @@ and **#121**. **#115, #116, #117 and #131** closed with PR #126, which filed
 **#123**, **#124**, **#127**, **#128**, **#129** and **#130**. **#127**
 closes with this session's PR, which filed **#132**.)
 
-**#127's population is measured on two windows, and only the second sees it.**
-The committed recent draw says 0 of 642 tables; a 1996-1998 draw says 11 of 93
-(11.8%), concentrated in 2 articles of one journal where they are every table
-the article has. The session summary above has the rest, including the general
-lesson about stratified-but-recent draws.
-
-**#132 — the exhibit-rule figures cite a draw that is not in the repo.** Filed
-by this session, the same shape as #112. CLAUDE.md, the `[Unreleased]`
-CHANGELOG body and three comment blocks in `jats_parser.py` all cite "276
-open-access articles carrying 2,067 exhibits"; `tests/data/jats_exhibits.json`
-is a **300**-article draw carrying 1,467, and no quoted figure matches it. Every
-*conclusion* still reproduces on the committed draw — the two empty
-populations, the full one, and 0% thumbnail-first — so nothing is a behaviour
-defect; what is wrong is that the stated evidence points at a run whose corpus
-the later stratified one overwrote, and the journals are gitignored. Worth
-doing **before the release that ships these rules**, while the CHANGELOG body
-is still free to edit. One part needs care rather than substitution: the
-committed draw carries 0 nested exhibits, so #115's "0.7%, both eLife" has no
-in-repo evidence at all.
-
 **#128 is weaker than filed**: every `<graphic>` href in both draws uses the
 `xlink` prefix and every article binds XLink to it (1,036 in the backfill draw
 alone), so the literal-prefix match is safe on measured evidence. Worth
@@ -287,26 +243,32 @@ whole life of #111 — 108 of 183 sampled articles parsed to zero authors
 before the fix and nothing said so. #111 is fixed; the detector is not, so
 the next cause hides just as long.
 
-**#112 — three of the transparency funder-matching counts do not reproduce
-against the committed corpus.** Filed with #109–#111, from the same Swift
-port: `_is_industry_funder` was re-derived against
-`tests/data/funder_names.json` so the Swift side could carry the same
-justification, and three numbers disagree. **Nothing is a behaviour
-regression** — `tests/test_funder_matching.py` passes and both floors still
-hold — but `bmlib/transparency/analyzer.py` states measurements as the reason
-for each inclusion and exclusion, and those are what a future edit is checked
-against. The headline pair is stated as precision 0.917 / recall 0.324 and
-measures 0.909 / 0.333; the stated figures are self-consistent with a corpus
-holding 34 industry entries where this one holds 30, so they were taken
-against a revision never committed — the corpus has exactly one commit
-(be456a2) and the matcher is byte-identical since, so this is not drift.
-`pharmaceutic` is claimed to have no false positive and has one, and it is
-the *only* false positive in the matcher — the thing capping precision below
-1.000, and precisely the claim an editor adding a fourth stem would rely on.
-`co` is excluded for a collision the corpus does not contain, at the cost of
-a real true positive. Whoever takes this should re-derive every figure in
-those comments in one pass and say in each comment which corpus revision it
-was measured against, rather than fixing the three named.
+**#112 and #132 — stated measurements that do not reproduce against the
+committed corpus.** Two instances of one failure, worth taking together.
+**#132** (filed this session): CLAUDE.md, the `[Unreleased]` CHANGELOG body
+and three comment blocks in `jats_parser.py` cite "276 open-access articles
+carrying 2,067 exhibits", while `tests/data/jats_exhibits.json` is a
+**300**-article draw carrying 1,467 and no quoted figure matches it — the
+later stratified run overwrote the corpus and the journals are gitignored.
+Every *conclusion* still reproduces on the committed draw, so nothing is a
+behaviour defect; do it **before the release that ships these rules**, while
+the CHANGELOG body is still free to edit, and note that #115's "0.7%, both
+eLife" needs care rather than substitution — the committed draw carries 0
+nested exhibits, so that figure has no in-repo evidence at all.
+**#112**, on the transparency funder-matching counts, is the same shape one
+layer deeper. `bmlib/transparency/analyzer.py` states a measurement as the
+reason for each stem it includes and excludes, and three disagree with
+`tests/data/funder_names.json`: the headline pair reads 0.917 / 0.324 and
+measures 0.909 / 0.333, `pharmaceutic` is claimed to have no false positive
+and has the matcher's *only* one — the thing capping precision below 1.000 —
+and `co` is excluded for a collision the corpus does not contain, at the cost
+of a real true positive. Not drift: the corpus has one commit (be456a2) and
+the matcher is byte-identical since, and the stated figures are
+self-consistent with a corpus holding 34 industry entries where this one holds
+30, so they were taken against a revision never committed. Nothing is a
+behaviour regression — `tests/test_funder_matching.py` passes and both floors
+hold. Re-derive every figure in one pass rather than fixing the three named,
+and say in each comment which corpus revision it came from.
 
 **#103 — `install_defaults()` reserves no `NAME_MAX` headroom for the
 temporary name.** `atomic_write()` stages through a name 38 characters longer
@@ -321,16 +283,12 @@ to say so in the docstring, not to cap — capping would rename a caller's
 template and `render("<name>")` would then not find it.
 
 **#94 — bioRxiv's envelope shapes are unmeasured**, filed for the reason #92
-was: the second round's guard refuses a body carrying *neither* a
-`collection` key *nor* messages, rather than the obvious
-`isinstance(data.get("collection"), list)`. bioRxiv is known to report a
-quiet day by omitting `total`; whether it also omits `collection` is not
-known, and requiring a key a quiet day may not send would fail that day on
-every later run for the life of the installation. One case therefore stays
-indistinguishable from a quiet day — an error body carrying messages and no
-collection. The sampler measures both that and the `messages[0].status`
-vocabulary. **Do not tighten the guard without running it**, and note that
-the tests deliberately pin *both* possible quiet-day shapes so the guard
+was: its guard rests on an unmeasured quantity. The full argument is in
+CLAUDE.md under "A completed day is a durable claim" — in short, one error
+body (messages, no `collection`) stays indistinguishable from a quiet day,
+and the sampler this issue asks for would measure that and the
+`messages[0].status` vocabulary. **Do not tighten the guard without running
+it**; the tests deliberately pin *both* possible quiet-day shapes so it
 cannot come to depend on the unmeasured answer.
 
 **#92 — the shortfall floor is unmeasured**, filed as part of the #88 fix
@@ -350,15 +308,14 @@ this floor was worried about — a page is the slice it named or it is refused �
 so whatever the sample shows, it will not be that.
 
 **#86 — `docs/manual/llm.md` documents `LLMClient.generate` and
-`LLMClient.embed` twice each**, found while updating signatures for #81 and
-deliberately not folded into it. The same defect as #31 (`fulltext.md`'s
-doubled `## PDF Conversion`), and the same reason it is worth a session
-rather than a delete: the copies differ, so merging them is a judgement
-about which prose and which examples survive — one `generate` has the
-example, and the two `embed` sections disagree about whether the default is
-the provider's *chat* default model (the `embed_batch` section has it
-right). #81 updated **both** copies of `generate` so the duplication did not
-silently become a drift.
+`LLMClient.embed` twice each**, found while updating signatures for #81. The
+same defect as #31 (`fulltext.md`'s doubled `## PDF Conversion`), and worth a
+session rather than a delete for the same reason: the copies differ, so
+merging them is a judgement about which prose and examples survive — one
+`generate` has the example, and the two `embed` sections disagree about
+whether the default is the provider's *chat* default model (`embed_batch`'s
+has it right). #81 updated both copies of `generate`, so the duplication has
+not yet become a drift.
 
 ### Worth doing, not yet an issue
 
