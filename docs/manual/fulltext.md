@@ -566,6 +566,42 @@ pass.
 > [`has_body`](#jatsarticle), so a `<body>` carrying only a captioned figure
 > still reports no body.
 
+> **A malformed span costs its own cell and nothing more** *(unreleased,
+> #129)*. `colspan` is CDATA in JATS, so `colspan="two"` is well-formed
+> markup. It used to raise a `ValueError` out of the parse, which
+> [`FullTextService`](#fulltextservice) swallowed at DEBUG and reported as the
+> article being unavailable from that source — so one bad attribute on one
+> cell lost the whole article. The cell is now treated as one column and the
+> value is named at DEBUG.
+
+### What the parser tells you when it goes wrong
+
+*(unreleased, #134, #121)*
+
+Nothing here changes what a correct parse returns. Two log channels were added
+because the parser used to fail in ways that look exactly like success.
+
+> **An unbalanced parse logs at ERROR.** The handler carries a dozen stacks,
+> depths and flags, and each decides where content is *routed*, so one left
+> unbalanced yields a thin article, an article missing its last sections, or
+> an article whose remaining prose was filed as caption text. Every entry
+> point is audited, and each imbalance logs one line naming what it cost.
+>
+> **An ERROR from `bmlib.fulltext.jats_parser` is a bmlib defect, not a bad
+> document.** `expat` rejects unbalanced XML before the parse returns, so no
+> deposit can provoke one. Please report it, with the article's identifier —
+> which every such line carries. Nothing is raised: you still get whatever the
+> parse managed, which is why the line matters.
+
+> **A parse yielding no authors logs at WARNING** — but only where the
+> document's `<front>` carried a `<surname>`, which means the contributors
+> were most likely routed elsewhere. An article that genuinely lists none logs
+> at DEBUG instead. The distinction exists because the two used to be
+> indistinguishable: a broken parse and a correct one both render author-less
+> HTML, and `FullTextService` caches it. A consortium-only article
+> (`<collab>`, no `<surname>`) reaches the quiet branch and is still lost —
+> that is a separate open issue.
+
 ---
 
 ## JATSArticle

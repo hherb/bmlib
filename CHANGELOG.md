@@ -112,7 +112,92 @@ All notable changes to bmlib are documented here. The format is based on
   1,446 / 1,446 and 365 / 365 exhibits carry a direct-child label and carry
   one anywhere.
 
+- **An end-of-parse audit for the JATS handler** (#134) — new private
+  `bmlib/fulltext/_parse_audit.py`. `_JATSHandler` carries a dozen stacks,
+  depths and flags, and every one of them decides where content is *routed*;
+  `_run_parser()` returned the handler without looking at any of them. A parse
+  ending with one unbalanced produced a thin article, an article missing its
+  last sections, or an article whose remaining prose was filed as caption
+  text, and said nothing at all. A frozen `ParseUnwindState` — one field per
+  stack or counter, every field defaulting to its clean value so a test names
+  only the imbalance it is about — is read by a pure `unwind_diagnostics()`
+  returning one message per imbalance, each naming what the imbalance *cost*
+  rather than merely what was left open. `_run_parser()` is the one place
+  `parse`, `to_html` and `parse_with_html` all funnel through, so every entry
+  point is covered without any of them having to remember.
+
+  **A net, not an input check.** `expat` rejects an unbalanced *document*, so
+  nothing a publisher deposits can reach these predicates — they fire only
+  when the parser is wrong, which is not a hypothetical class: #115, #123 and
+  #130 are all stack-handling defects, and in the sibling Swift port the same
+  shape stranded a footnote counter above zero and drained every remaining
+  paragraph in the document into it, one at a time, unremarked, surviving to
+  code review. So the level is ERROR: every line is a claim that bmlib itself
+  is wrong. Nothing raises — a partial article reported loudly beats no
+  article, which is #129 below in the other direction.
+
+  Two fields the issue did not name. **Unfilled exhibit slots**, because
+  `build_figures()` filters the holes out and its docstring calls that filter
+  unreachable — if it ever is reached, an article silently loses a figure. And
+  **the routing flags, grouped into one field** rather than given one each: a
+  flag is set on a start tag and cleared on the matching end tag, so if the
+  end tag *arrived* and the handler failed to clear it, `element_stack` is
+  empty and only the flag shows it. `current_abstract_text` is deliberately
+  excluded — `</abstract>` flushes without clearing, so it is non-empty at the
+  end of every article carrying an abstract, and including it would have fired
+  the audit on nearly every real document.
+
+  What caught that is the new autouse `parser_log` fixture, which **fails any
+  test in `test_jats_parser.py` whose parse emits an ERROR**, making all 202
+  existing fixtures a false-positive check without being written as one.
+  Nothing else in the module looks at logs, so a predicate firing on
+  well-formed input would otherwise have shipped green and turned the ERROR
+  channel into noise from its first day — the same failure the audit exists to
+  end, one level up. Two mutants confirmed it has teeth, failing 192 and 86
+  tests respectively.
+
+- **A JATS parse that yields no authors now says so** (#121) — and says which
+  kind it is. An article parsing to zero authors renders HTML byte-identical
+  to one that genuinely lists none, and `FullTextService` caches that HTML, so
+  the correct answer and the catastrophic one persisted to disk the same way.
+  #111 dropped every author from 57% of open-access articles and survived
+  undetected until it was found from outside bmlib, while porting the parser
+  to Swift.
+
+  A new `front_surname_count` separates the two, **gated on `in_front` and not
+  on `in_contrib`**: the latter is set only once `_is_author_contrib` has said
+  yes, which is precisely the routing decision #111 got wrong, so a counter
+  keyed on it would go to zero in exactly the situation it exists to detect.
+  `<back>` is excluded because a bibliography is full of surnames and none is
+  a contributor.
+
+  **WARNING, not ERROR.** Unlike the audit beside it, this branch can fire on
+  a well-formed document bmlib parsed correctly — #121's own 1,025-article
+  measurement found one, `PMC12803704`, an `article-type="correction"` that is
+  genuinely author-less and still carries `<front>` surnames. ERROR is
+  reserved for "bmlib is wrong", and keeping that meaning exact is what the
+  audit's net above depends on. No surnames and no authors logs at DEBUG. A
+  consortium-only article reaches the quiet branch for a different reason and
+  is #120, still open: `<collab>` carries no `<surname>` at all.
+
 ### Fixed
+
+- **A malformed `colspan` cost the whole article** (#129). `colspan` is CDATA
+  in JATS, so `colspan="two"` — or `"1.5"`, or a whitespace-only value — is
+  well-formed markup, and `startElement` read it with a bare `int()`. The
+  `ValueError` propagated out of the SAX callback and out of
+  `JATSParser.parse()`, and every call site in `fulltext/service.py` sits
+  under a tier-level `except Exception` logging at DEBUG — so one malformed
+  attribute on one cell lost the entire article, and the tier chain then
+  reported it as *unavailable from that source*, which is a far larger claim
+  than "this table has a bad span". `_read_span()` falls back to 1 and names
+  the value at DEBUG; a cell spanning one column instead of two is a cosmetic
+  defect in one table, and losing the article is not. `rowspan` needs no
+  companion — this module never reads it — and a negative or zero value needs
+  none either, since `start_cell` already clamps with `max(1, …)`. An empty
+  `colspan=""` is still normalised ahead of the parse rather than reported:
+  it is an absent value, not a malformed one, and reporting it would stop
+  DEBUG distinguishing the values worth looking at.
 
 - **A `<title>` renamed the section it sat in, and a `<caption>` was routed by
   the wrong exhibit** (#125, #130, #123) — one defect wearing three hats.

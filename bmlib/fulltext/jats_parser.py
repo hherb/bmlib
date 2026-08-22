@@ -1788,7 +1788,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
 
 def _audit_parse(handler: _JATSHandler) -> None:
-    """Report, at ERROR, anything this parse left unbalanced (issue #134).
+    """Report what this parse left behind: an imbalance, or no authors at all.
+
+    An unbalanced stack or counter is issue #134 and logs at ERROR here; the
+    zero-author case is issue #121 and picks its own level in
+    :func:`_report_zero_authors`. Both live at this one call site because it
+    is the only place every entry point can hear them.
 
     Called from :meth:`JATSParser._run_parser`, which is the one place
     :meth:`~JATSParser.parse`, :meth:`~JATSParser.to_html` and
@@ -1798,8 +1803,10 @@ def _audit_parse(handler: _JATSHandler) -> None:
     ERROR, and not a raised exception: a partial article reported loudly beats
     no article, which is #129's mistake in the other direction. And ERROR
     rather than WARNING because ``expat`` rejects an unbalanced *document*, so
-    nothing a publisher deposits can reach these predicates — every line this
-    emits is a claim that bmlib itself is wrong.
+    nothing a publisher deposits can reach the audit's predicates — every
+    line they produce is a claim that bmlib itself is wrong. Keeping that
+    meaning exact is why the zero-author case, which *can* fire on a document
+    bmlib parsed correctly, is a WARNING instead.
 
     Args:
         handler: The handler the parse just finished with.

@@ -3244,6 +3244,23 @@ class TestAnUnparseableSpanCostsOneCellAndNotTheArticle:
 
         assert any("'1.5'" in message for message in parser_log.messages())
 
+    def test_an_empty_colspan_is_not_reported(self, parser_log):
+        """``colspan=""`` is an absent value, not a malformed one.
+
+        The ``or "1"`` ahead of the ``int()`` predates the fallback and now
+        looks redundant — remove it and an empty attribute reaches the
+        ``except`` and still yields one column. What it buys is silence:
+        without it every ``colspan=""`` in a corpus reports itself as
+        unparseable, and DEBUG stops distinguishing the values worth looking
+        at. Mutation-verified — this is the only test that removal fails.
+        """
+        data = _table_containing("<table><tbody><tr><td colspan=''>12.3</td></tr></tbody></table>")
+
+        html = JATSParser(data).parse().tables[0].html_content
+
+        assert html.count("<td>") == 1
+        assert not [m for m in parser_log.messages() if "colspan" in m]
+
     def test_a_well_formed_colspan_still_spans(self):
         """The negative control: the fallback must not swallow a good value.
 
