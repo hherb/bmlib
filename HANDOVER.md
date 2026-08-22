@@ -1,15 +1,19 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-21. **0.10.0 is released and on PyPI**; four changes
+_Last updated: 2026-08-22. **0.10.0 is released and on PyPI**; four changes
 sit unreleased on `main` — #73's atomic template install (PR #102), #96/#105's
 partitioning of an over-cap PubMed day (PRs #106 and #114), and #109's typed
 article-id (PR #113) — plus **this session's two JATS fixes, on
 `fix/110-111-jats-subarticle-and-contrib-group`**. All five version places
 agree at 0.10.0. Three of the four unreleased changes are `fulltext` JATS
 fixes filed the same day; whoever cuts the next release should describe them
-together, and note that **#111 moves what downstream stores** — a corpus
-synced before it holds empty author lists for the majority of its
-open-access articles.
+together. Note that **#111 moves what a caller of `JATSParser` gets** — an
+author list that was empty for the majority of open-access articles is now
+populated. It does *not* move what a bmlib **sync** stores: no bmlib path
+carries `JATSArticle.authors` anywhere, `service.py` never reads the field,
+`FullTextResult` has none, and `publications` takes its authors from the
+fetchers. Only a downstream that calls `JATSParser` itself and persists the
+result needs to re-parse.
 
 **This session fixed #110 and #111**, two silent defects in
 `fulltext/jats_parser.py`. Both were found on the way *out* of bmlib rather
@@ -26,12 +30,16 @@ by share of records affected.
   articles (57.0%) parsed with zero authors while their XML carried surnames
   in `<front>`; a 249-article sample put it at 60.6%.
 - **#110 — a `<sub-article>`'s metadata and prose read as the article's.**
-  PLOS, eLife, BMJ Open and F1000 deposit each peer-review round as a
-  `<sub-article>` with its own `<front>` and `<body>`. PMC12774363 parsed as
-  title "Associated Data", DOI `…1012008.r006` — a real, resolvable review-round
-  DOI, so it does not 404 — and ~180 of its 230 body paragraphs were reviewer
-  correspondence, which `TransparencyAnalyzer` then scans for exactly the
-  funding, conflict and data-availability vocabulary reviewers write in.
+  PLOS was observed depositing each peer-review round as a `<sub-article>`
+  with its own `<front>` and `<body>`; PLOS, eLife, BMJ Open and F1000 all
+  publish review histories as policy. PMC12774363 parsed as title "Associated
+  Data", DOI `…1012008.r006` — a real, resolvable review-round DOI, so it does
+  not 404 — and ~180 of its 230 body paragraphs were reviewer correspondence,
+  in exactly the funding, conflict and data-availability vocabulary a
+  transparency scan hunts for. That prose does *not* reach
+  `bmlib.transparency`, which fetches and regexes the raw XML itself and never
+  sees `JATSParser` output; the review of PR #118 established that, and the
+  real exposure is filed as **#119**.
 
 **Mutation testing did more than confirm the fixes here — it corrected two of
 them.** Twelve mutations; three survived the suite as first written, and each
@@ -45,13 +53,31 @@ body for a document merely out of order. And an empty `contrib-type=""` read
 as a declaration drops the contributor, which is #111 again. A fourth finding
 went the other way: `_BUFFERED` gave a nested article a text buffer of its own
 and no test or well-formed document could distinguish it, so it was removed —
-an unearned constant is not defence in depth. All twelve mutations now die,
-and so do four more added afterwards for the role comparison's case folding,
-which is the one rule in either fix that is **defensive rather than
-measured** and says so at the site: every sampled article spells the role
-lowercase, but `pub-id-type` is already folded a few handlers below and an
-unfolded `Author` would drop a whole group while no casing of another role is
-ever accepted.
+an unearned constant is not defence in depth. All twelve mutations die, and so do
+four more added afterwards for the role comparison's case folding.
+
+**The review of PR #118 then found three more, two of them defects.** Its own
+mutation pass showed the `endElement` suppression and a nested
+`<fig>`/`<table-wrap>` were unpinned — the suite passed 73/73 with either
+removed — and closing those gaps is what the branch's last commit does; the
+mechanisms are recorded in `CLAUDE.md` and the CHANGELOG. The two defects were
+`characters()`, which is delivered by neither suppressed handler and so let
+raw text inside a nested article into the article's own prose, and the
+contributor role being held as one value where `<collab>` may contain a
+`<contrib-group>`. Three further findings were filed rather than fixed here:
+**#119** (transparency regexes raw XML), **#120** (`<collab>` consortium
+authors dropped, 3.3% of articles), **#121** (a zero-author parse is
+undetectable — the detector that was missing while #111 was live, and still
+is).
+
+The review also corrected the evidence, not only the code. Of the five rules
+in #111's fix, **three** are defensive rather than measured, not one: the
+issue's sample carries no group declaring nothing and no empty attribute, so
+only "a contributor's own type decides" and "another declared role is
+refused" are earned from it. Case folding, meanwhile, turns out to be better
+supported than it was credited: the JATS Tag Library recommends
+case-insensitive comparison of attribute values on its own `@article-type`
+page.
 
 **PR #113 (#109) was rebased onto `main` this session and has since been
 merged.** It had conflicted in `CHANGELOG.md` and `CLAUDE.md` after #114
@@ -168,8 +194,9 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Five, every one found by review or measurement rather than by a failing test,
-and **none of them loses records**. (**#56, #68, #72 and #79** shipped in
+Eight, every one found by review or measurement rather than by a failing
+test, and **none of them loses records** — though **#120** loses a
+contributor and **#119** feeds a scan text that is not the article's. (**#56, #68, #72 and #79** shipped in
 0.9.1. **#78, #81, #88–#91, #95, #98 and #99** shipped in 0.10.0 — PRs #85,
 #87, #93, #97, #100. **#73** is on `main` unreleased in PR #102, whose own
 review filed **#103**. **#96** closed with PR #106, as correct rather than as
@@ -177,7 +204,37 @@ fixed. **#105 and #107** closed with PR #114 — #107 dissolved rather than
 being built: its saturation of `SyncReport.errors` came from a permanent,
 structural refusal that no longer happens, and what remains of it is in
 `docs/DECISIONS.md`. **#109** closed with PR #113, rebased onto `main` this
-session and merged. **#110 and #111** close with this session's PR.)
+session and merged. **#110 and #111** close with this session's PR, whose
+review filed **#119**, **#120** and **#121**.)
+
+**#119 — `TransparencyAnalyzer` scans raw JATS XML, so `<sub-article>`
+reviewer prose still reaches its COI, funding and data-availability scans.**
+`_fetch_europepmc_fulltext` returns `resp.text` and `_extract_coi_text`
+regexes that string; there is no import path from `bmlib.transparency` to
+`bmlib.fulltext`, so #110's suppression does not touch it. Measured on two
+articles during the PR #118 review: 6 and 5 reviewer `competing interest`
+statements respectively, inside `<sub-article>` regions the scan reads. It
+fails *towards* leniency — a reviewer's "no competing interests" counts as
+the article's own disclosure. The fix needs measuring, since the scoring is
+calibrated against current behaviour.
+
+**#120 — `<collab>` consortium authors are silently dropped.**
+`_AuthorBuilder.build()` returns `None` without a `<surname>` and the call
+site has no `else`, so *"the INHERIT Trial Group"* never reaches
+`JATSArticle.authors`. Pre-existing rather than a regression, but #111's fix
+makes it the last thing standing between a correctly-identified contributor
+and the list. Measured on 1,025 open-access articles: 138 newly-admitted
+contribs carry no surname, and **34 articles (3.3%)** lose at least one — none
+loses all of them. Needs a model decision first, since `JATSAuthorInfo` has
+`surname`/`given_names` and a collaboration has neither.
+
+**#121 — a zero-author parse is indistinguishable from an author-less
+article.** `_build_html` has `if h.authors:` with no `else`, and
+`FullTextService` caches the result, so a broken parse renders and persists
+exactly like a correct one. This is the detector that was missing for the
+whole life of #111 — 108 of 183 sampled articles parsed to zero authors
+before the fix and nothing said so. #111 is fixed; the detector is not, so
+the next cause hides just as long.
 
 **#112 — three of the transparency funder-matching counts do not reproduce
 against the committed corpus.** Filed with #109–#111, from the same Swift

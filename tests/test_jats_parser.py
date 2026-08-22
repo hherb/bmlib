@@ -753,6 +753,24 @@ class TestContributorRoleDeclaredOnTheGroup:
   </article-meta></front>
 </article>"""
 
+    NESTED_GROUP_INSIDE_A_COLLAB = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>A collaboration roster</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Hwang</surname><given-names>Sun-Hee</given-names></name></contrib>
+    </contrib-group>
+    <contrib-group content-type="editor">
+      <contrib><collab>Editorial Board
+        <contrib-group>
+          <contrib><name><surname>Member</surname><given-names>Bo</given-names></name></contrib>
+        </contrib-group>
+      </collab></contrib>
+      <contrib><name><surname>Bloggs</surname><given-names>Joe</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
     @staticmethod
     def _surnames(data: bytes) -> list[str]:
         return [a.surname for a in JATSParser(data).parse().authors]
@@ -780,6 +798,19 @@ class TestContributorRoleDeclaredOnTheGroup:
         author group.
         """
         assert self._surnames(self.EDITOR_GROUP_THEN_UNTYPED_GROUP) == ["Rivera"]
+
+    def test_a_nested_group_does_not_clear_the_enclosing_groups_role(self):
+        """The role is a stack, because ``<contrib-group>`` nests.
+
+        ``<collab>`` legally contains a ``<contrib-group>`` — that is how a
+        collaboration's member roster is tagged. Held as a single value, the
+        inner group's close cleared the *enclosing* group's declaration, and
+        every remaining bare ``<contrib>`` in it was then read as an author
+        of this article: the ``editor`` group's own members, collected
+        because a sibling's roster happened to close first. Both the
+        collaboration's members and the editor after them must stay out.
+        """
+        assert self._surnames(self.NESTED_GROUP_INSIDE_A_COLLAB) == ["Hwang"]
 
     def test_a_closed_groups_role_is_not_inherited_outside_it(self):
         """``</contrib-group>`` clears the role, and this is what needs it.
@@ -854,6 +885,7 @@ class TestSubArticlesAreNotTheArticle:
         <name><surname>Tanaka</surname><given-names>Yuki</given-names></name>
       </contrib>
     </contrib-group>
+    <abstract><p>The article's own abstract.</p></abstract>
   </article-meta></front>
   <body>
     <sec><title>Introduction</title><p>Prose belonging to the article itself.</p></sec>
@@ -967,6 +999,60 @@ class TestSubArticlesAreNotTheArticle:
   </body>
 </article>"""
 
+    RAW_TEXT_IN_A_NESTED_ARTICLE = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>The article</article-title></title-group>
+  </article-meta></front>
+  <body>
+    <sec><title>Introduction</title>
+      <p>Prose belonging to the article itself.<response>Reviewer text with no
+      element of its own.</response> More of the article's own prose.</p></sec>
+  </body>
+</article>"""
+
+    FIGURES_AND_TABLES_BEFORE_THE_BODY = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="doi">10.1000/article</article-id>
+    <title-group><article-title>The article</article-title></title-group>
+  </article-meta></front>
+  <sub-article>
+    <front-stub><article-id pub-id-type="doi">10.1000/article.r001</article-id></front-stub>
+    <body>
+      <fig id="rf1">
+        <caption><title>Reviewer figure</title><p>A figure the reviewer drew.</p></caption>
+      </fig>
+      <table-wrap id="rt1">
+        <caption><p>A table the reviewer drew.</p></caption>
+        <table><tbody><tr><td>Reviewer cell</td></tr></tbody></table>
+      </table-wrap>
+    </body>
+  </sub-article>
+  <body>
+    <sec><title>Introduction</title>
+      <p>Prose belonging to the article itself.</p></sec>
+  </body>
+</article>"""
+
+    INSIDE_A_SECTION = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>The article</article-title></title-group>
+    <abstract><p>The article's own abstract.</p></abstract>
+  </article-meta></front>
+  <body>
+    <sec><title>Introduction</title>
+      <p>Prose belonging to the article itself.</p>
+      <sub-article>
+        <front-stub><article-id pub-id-type="doi">10.1000/article.r001</article-id></front-stub>
+        <body><sec><title>Reviewer heading</title>
+          <p>Reviewer prose about funding.</p></sec></body>
+      </sub-article>
+    </sec>
+  </body>
+</article>"""
+
     @staticmethod
     def _paragraphs(data: bytes) -> list[str]:
         article = JATSParser(data).parse()
@@ -989,8 +1075,19 @@ class TestSubArticlesAreNotTheArticle:
         ]
 
     def test_a_review_rounds_abstract_is_not_the_articles(self):
+        """Two failures at once, which is why the article has one of its own.
+
+        The review round's abstract must not be collected — and the article's
+        must not be emitted twice. ``</abstract>`` flushes the buffer without
+        clearing it; only the *opening* tag clears, and that is suppressed, so
+        a nested ``</abstract>`` reaching the handler re-emits whatever the
+        article left there. Asserted against an article that has an abstract,
+        because against one that does not the buffer is empty and the
+        duplicate flush is a no-op — which made the obvious ``== []``
+        assertion vacuous.
+        """
         article = JATSParser(self.WITH_REVIEW_ROUNDS).parse()
-        assert article.abstract_sections == []
+        assert [s.content for s in article.abstract_sections] == ["The article's own abstract."]
 
     def test_a_review_rounds_references_are_not_the_articles(self):
         article = JATSParser(self.WITH_REVIEW_ROUNDS).parse()
@@ -1039,6 +1136,71 @@ class TestSubArticlesAreNotTheArticle:
 
         assert self._paragraphs(self.BEFORE_THE_BODY) == ["Prose belonging to the article itself."]
         assert article.has_body is True
+
+    def test_raw_text_inside_a_nested_article_is_not_article_prose(self):
+        """``characters()`` runs through the suppressed region, and it writes.
+
+        ``startElement`` returns early and ``endElement`` skips its handlers,
+        but character data is delivered by neither. Text sitting *directly*
+        inside a nested article — not wrapped in a child that pushes its own
+        buffer — lands in whichever buffer is open, which is the article's
+        own paragraph. Nothing here validates JATS, so that shape has to be
+        answered for rather than assumed away.
+        """
+        assert self._paragraphs(self.RAW_TEXT_IN_A_NESTED_ARTICLE) == [
+            "Prose belonging to the article itself. More of the article's own prose."
+        ]
+
+    def test_a_nested_articles_figures_and_tables_are_not_the_articles(self):
+        """Neither the float nor the state its open tag would leave behind.
+
+        The suppression is tested on the *opening* tag here as well as the
+        close: were ``<fig>``/``<table-wrap>`` handled above the guard, the
+        matching closes would still be suppressed, so ``in_figure`` and
+        ``in_table_wrap`` would stay set and swallow everything after them —
+        the article's own body included, which is what decides whether the
+        result is worth caching.
+        """
+        article = JATSParser(self.FIGURES_AND_TABLES_BEFORE_THE_BODY).parse()
+        assert article.figures == []
+        assert article.tables == []
+        assert self._paragraphs(self.FIGURES_AND_TABLES_BEFORE_THE_BODY) == [
+            "Prose belonging to the article itself."
+        ]
+        assert article.has_body is True
+
+    def test_a_nested_article_inside_a_section_does_not_extend_it(self):
+        """The closing half of the suppression, on its own.
+
+        With a nested article opened inside the article's own ``<sec>``, the
+        outer section is still on the stack, so the ``<p>`` and ``<title>``
+        handlers are live: unguarded, the review round's prose is appended to
+        the article's section and its heading replaces the article's own.
+        """
+        article = JATSParser(self.INSIDE_A_SECTION).parse()
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Introduction", ["Prose belonging to the article itself."])
+        ]
+
+    def test_a_suppressed_nested_article_is_counted(self):
+        """Silent removal is the failure mode this whole fix is about.
+
+        A nested article can carry most of a document's prose — a peer-review
+        history, or the alternative-language full text SciELO deposits as
+        ``article-type="translation"`` — and discarding it changes neither
+        ``has_body`` nor ``content_kind``, which between them only report
+        *total* loss. Without a count, nothing anywhere in the system records
+        that the parser saw a nested article at all.
+        """
+        assert JATSParser(self.WITH_REVIEW_ROUNDS).parse().suppressed_nested_articles == 2
+
+    def test_a_nested_article_inside_another_is_counted_too(self):
+        """The count is of articles suppressed, not of regions entered."""
+        assert JATSParser(self.NESTED).parse().suppressed_nested_articles == 2
+
+    def test_an_article_with_no_nested_article_counts_none(self):
+        data = _load_fixture("sample_article.xml")
+        assert JATSParser(data).parse().suppressed_nested_articles == 0
 
     def test_a_response_is_treated_like_a_sub_article(self):
         article = JATSParser(self.RESPONSE).parse()

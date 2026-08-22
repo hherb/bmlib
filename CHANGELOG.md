@@ -17,49 +17,99 @@ All notable changes to bmlib are documented here. The format is based on
   `<front>`, a separate 249-article sample putting it at 60.6%. It failed as
   a well-formed empty list, so it read as "this article lists no authors"
   rather than as a parser looking in the wrong place. The group's
-  `content-type` is now read and a bare `<contrib>` inherits it. Four rules,
-  each pinned: a contributor's own `contrib-type` decides on its own, so an
-  `editor` inside an author group stays an editor and an `author` inside an
-  editor group is still collected; a group declaring nothing is authors, by
-  JATS convention; a group naming any other role is taken at its word, since
-  the `content-type="editor"` group beside the author group is common enough
-  that collecting it would be a new defect rather than a wider fix; and an
-  empty attribute declares nothing rather than declaring "not an author",
-  which read as a declaration is the same silent loss for a document whose
-  only fault is a stray empty attribute. The comparison folds case — the one
-  rule here that is defensive rather than measured, since all 45 sampled
-  articles spell it lowercase; it is on the module's own precedent
-  (`pub-id-type` is folded a few handlers below) and cannot cost anything, a
-  role that is not `author` in any casing being excluded either way while an
-  unfolded `Author` drops the group. The role is cleared at
-  `</contrib-group>` — not, as it first appeared, so a following group cannot
-  inherit (opening one assigns unconditionally, absent attribute included),
-  but so that a `<contrib>` with no enclosing group at all does not inherit a
-  closed group's role. Nothing here validates JATS, so that input has to be
-  answered for.
+  `content-type` is now read and a bare `<contrib>` inherits it. Five rules,
+  each pinned by a named test, of which the sample earns two. **Measured:** a
+  contributor's own `contrib-type` decides on its own, so an `editor` inside
+  an author group stays an editor and an `author` inside an editor group is
+  still collected (33 of the 79 rely on it); and a group naming any other
+  role is taken at its word, since the `content-type="editor"` group beside
+  the author group appears in 23 of them and collecting it would be a new
+  defect rather than a wider fix. **Not measured** — #111's sample contains
+  no instance of any of these, so each rests on convention: a group declaring
+  nothing is authors; an empty attribute declares nothing rather than
+  declaring "not an author", which read as a declaration is the same silent
+  loss for a document whose only fault is a stray empty attribute; and the
+  comparison folds case, which the JATS Tag Library itself asks for on its
+  `@article-type` page (*"JATS recommends a case-insensitive search for such
+  values"* — written of a different attribute, so precedent rather than
+  citation), which is the module's own habit (`pub-id-type` is folded a few
+  handlers below), and which cannot cost anything, a role that is not
+  `author` in any casing being excluded either way while an unfolded `Author`
+  drops the group.
+
+  The role is held as a **stack** of the open groups, innermost declared
+  winning. A single value was wrong twice over, because `<collab>` legally
+  contains a `<contrib-group>` — that is how a collaboration's member roster
+  is tagged: the inner group's close cleared the enclosing group's
+  declaration, so an `editor` group's own remaining members were collected as
+  this article's authors, and the roster itself fell back to the
+  authors-by-default rule. Popping restores the enclosing role and empties
+  the stack at the outermost close, which is what a `<contrib>` with no
+  enclosing group at all needs — out of place for JATS, and so exactly what a
+  lenient parse must still answer for. Nothing here validates JATS, so that
+  input has to be answered for.
 
 - **A `<sub-article>`'s metadata and prose taken as the article's own**
   (#110). JATS lets a `<sub-article>` carry a complete `<front>` and `<body>`,
-  and PLOS, eLife, BMJ Open and F1000 deposit every peer-review round that
-  way; every handler fired again inside one, into the same accumulators.
+  and PLOS was observed depositing each peer-review round that way — PLOS,
+  eLife, BMJ Open and F1000 all publish review histories as a matter of
+  policy; every handler fired again inside one, into the same accumulators.
   PMC12774363 parsed as title "Associated Data", DOI
   `10.1371/journal.pgen.1012008.r006` — the sixth review round's, real and
   resolvable, so it does not 404 — and 230 body paragraphs of which about 180
-  are reviewer correspondence, which `TransparencyAnalyzer` then scans for
-  exactly the funding, conflict and data-availability vocabulary reviewers
-  write in. Uncommon and severe rather than widespread: 4 of 249 random
-  open-access articles (1.6%), but the population is not random, since those
-  publishers deposit review histories as policy. `<sub-article>` and
-  `<response>` now open a suppressed region in which no handler fires; the
-  element and text stacks keep running so the two stay balanced. A **depth**
-  rather than a flag, since JATS permits a nested article inside one and a
-  flag cleared by the inner close re-admits the rest of the outer. Suppressed
-  on the **opening** tags as well as the closes that write the outputs: an
-  open leaves state behind, and a nested `<sec>` whose close never comes pops
-  nothing, so for a nested article placed before the article's own `<body>`
-  the article's section was filed as a subsection of a review round's and
-  never flushed — losing the entire body to a document that is merely out of
-  order rather than malformed.
+  are reviewer correspondence, in exactly the funding, conflict and
+  data-availability vocabulary a transparency scan hunts for. (That prose
+  does *not* reach `bmlib.transparency`, which fetches and regexes the raw
+  XML itself and never sees `JATSParser` output — the exposure there is real
+  but separate, and is filed as #119.) Uncommon and severe rather than
+  widespread: 4 of 249 random open-access articles (1.6%), but the population
+  is not random, since those publishers deposit review histories as policy.
+
+  `<sub-article>` and `<response>` now open a suppressed region in which no
+  handler fires. The set of two is complete, and structurally so: of JATS's
+  ~295 elements exactly three admit `<front>`/`<front-stub>` and `<body>`,
+  and the third is `<article>` itself. The suppression is structural rather
+  than driven by `@article-type`, which is `CDATA #IMPLIED` and whose four
+  published vocabularies disagree — publishers deposit values in none of them
+  (eLife's `decision-letter`, the F1000 platform's `response`), so no
+  allow-list of types could have decided it. Peer review is not the only
+  thing suppressed: `<sub-article>` also carries the alternative-language
+  full text (SciELO's `article-type="translation"`), meeting abstracts, and
+  Europe PMC's own injected `associated-data` block, which is absent from
+  PMC's copy of the same record.
+
+  A **depth** rather than a flag, since JATS permits a nested article inside
+  one and a flag cleared by the inner close re-admits the rest of the outer;
+  measured, 16 of 16 nested occurrences in one sample are a `reviewer-report`
+  containing a `response`. Suppressed on the **opening** tags as well as the
+  closes that write the outputs: an open leaves state behind, and for a
+  nested article placed before the article's own `<body>` a nested `<sec>`
+  whose close never comes pops nothing, so the article's section was filed as
+  a subsection of a review round's and never flushed — losing the entire body
+  to a document that is merely out of order rather than malformed. A float is
+  worse: `<fig>`/`<table-wrap>` set flags the suppressed close never clears,
+  and the leftover flag swallows the rest of the parse.
+
+  The closing half is load-bearing on an **ordinarily ordered** document too,
+  which is why it has its own tests rather than riding on the opening half's.
+  Most handlers are already inert inside a suppressed region — they need
+  `in_front`, `in_article_meta`, `in_body` or a non-empty section stack, none
+  of which the suppressed open set. Two are not: `</abstract>` flushes its
+  buffer without clearing it and only the opening tag clears, so a nested one
+  re-emits the article's own abstract a second time; and `<article-id>` falls
+  through to the shape-matching fallback when its type is absent or
+  unrecognised, which would let a review round's identifier answer for the
+  article's.
+
+  The element and text stacks keep running, so the two stay balanced across
+  the skipped region. `characters()` is the third thing that keeps running,
+  and it is now guarded in its own right: text delivered by neither
+  `startElement` nor `endElement` — character data sitting *directly* inside
+  a nested article rather than in a child that pushes a buffer of its own —
+  otherwise landed in whichever buffer was open above, which is the article's
+  own paragraph. Unreachable in valid JATS, where a nested article's only
+  parents are `<article>` and `<sub-article>`; reachable on input that is
+  merely well-formed, which this module answers for rather than rejects.
 
 - **Four ways a partitioned PubMed day could still report success it did not
   have** (#105, all found by the review of PR #114, each reproduced end to end
@@ -317,6 +367,17 @@ All notable changes to bmlib are documented here. The format is based on
   otherwise unchanged: same type, same `errno`.
 
 ### Added
+
+- **`JATSArticle.suppressed_nested_articles`** — how many
+  `<sub-article>`/`<response>` elements the parse skipped, a nested one
+  counted separately, with a `logger.debug` naming each one's `article-type`
+  as it opens. The `<sub-article>` suppression that closed #110 is otherwise
+  entirely invisible: across 1,022 open-access articles parsed before and
+  after, 288 lose body text and 5,520,938 characters are removed, and
+  `has_body` flips on **none** of them, because it and
+  `FullTextResult.content_kind` report only *total* loss. A translation
+  sub-article alone can be ~90% as much text as the article itself. This is
+  the one field that says a nested article was there at all.
 
 - **`scripts/sample_efetch_paging.py`** — the instrument behind
   `EFETCH_MAX_RETRIEVABLE` and the fixed stride. Binary-searches the live
