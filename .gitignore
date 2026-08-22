@@ -19,3 +19,7 @@ coverage.xml
 # resumes rather than restarting. It is a working file; the corpus it
 # produces (pdf_metadata_titles.json) is what gets committed.
 tests/data/*.partial.jsonl
+
+# Same for the JATS exhibit sampler, which journals one row per article.
+# tests/data/jats_exhibits.json is the corpus that gets committed.
+tests/data/*.journal.jsonl

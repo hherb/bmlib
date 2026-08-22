@@ -1232,7 +1232,10 @@ class TestNestedFiguresKeepTheirParent:
     """A ``<fig>`` may contain another ``<fig>``, and the parent must survive it.
 
     eLife wraps every figure supplement inside the figure it belongs to, in
-    19.6% of 225 surveyed open-access articles. A single ``current_figure``
+    19.6% of 225 surveyed open-access articles — re-measured by
+    ``scripts/sample_jats_exhibits.py`` at 0.7% of a general draw, both of
+    them eLife, so it is that publisher's house style costing about half of
+    *its* figures rather than a general convention. A single ``current_figure``
     slot is overwritten by the inner open, appended and cleared by the inner
     close, and the parent's own ``</fig>`` then finds nothing to build — so the
     parent figure, its label, caption and graphic, is lost outright (issue
@@ -1758,7 +1761,8 @@ class TestNestedTablesKeepTheirParent:
     JATS lets a ``<table-wrap>`` open inside another's ``<table-wrap-foot>``,
     and the outer table was then lost outright — label, caption, rendered rows
     and all — exactly as the outer figure was in issue #115. Unmeasured, unlike
-    the figure nesting that issue measured at 19.6% of articles, but structural:
+    the figure nesting, re-measured at 0.7% of a general draw and concentrated
+    in eLife, but structural:
     every flag cleared on an end tag is a latent defect where the element can
     contain another of its own kind.
     """

@@ -34,8 +34,11 @@ none raised anything.
 - **#115 — a nested `<fig>` dropped its parent.** eLife wraps every figure
   supplement inside the figure it belongs to; the single `current_figure` slot
   was overwritten by the inner open and cleared by the inner close, so the
-  parent's own `</fig>` found nothing to build. 19.6% of 225 surveyed articles
-  nest a `<fig>`; PMC8754430 returned 9 of its 12. `in_figure` was cleared
+  parent's own `</fig>` found nothing to build. The original survey put
+  nesting at 19.6% of 225 articles; the new sampler re-measures it at **0.7%**
+  of a general draw (2 of 276, and 0 of a 300-article stratified draw), both
+  eLife — one publisher's house style costing about half of *its* figures,
+  not a general convention. PMC8754430 returned 9 of its 12. `in_figure` was cleared
   too, so the parent's remaining internals were reprinted as article prose.
 - **#116 — a `<table-wrap-foot><fn><label>` overwrote the table's number.**
   12.0% of the same 225 articles carry one; PMC12661592's single table was
@@ -160,8 +163,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed six releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2414 passing + 63 skipped on `main`**, **2483 + 63** on
-  `fix/115-117-jats-exhibit-nesting`, so 69 are this session's
+- **Tests: 2414 passing + 63 skipped on `main`**, **2505 + 63** on
+  `fix/115-117-jats-exhibit-nesting`, so 91 are this session's
   (`uv run pytest tests/ -q`). Both measured, not derived. The
   PostgreSQL half was **not** re-run for this session's branch and does not
   need to be: it touches no SQL, and the last measured figure with
@@ -243,7 +246,27 @@ closed with PR #118, whose review filed **#119**, **#120** and **#121**.
 **#124**, and — from its own review — **#127**, **#128**, **#129**, **#130**
 and **#131**.)
 
-**#127-#131 came from the review of PR #126** and are described in the session
+**#131 is closed by this session**: `scripts/sample_jats_exhibits.py` is the
+missing sampler, and running it settled three things the code was asserting
+rather than measuring. Two rules have an **empty** population — no
+`<alternatives>` member in 276 articles declares a `mime-subtype` or is
+archival at all, and exactly one `<graphic>` is owned by a non-exhibit inside
+an exhibit (a `<td>`, resolving the same either way) — so both are defensive,
+and the comments now say so instead of implying a population. The `<label>`
+parent rule's premise measures **full**: 2,033 exhibits carry a direct-child
+label and 2,033 carry one anywhere, so it cannot lose a label. And **the
+19.6% nesting figure does not reproduce**: it is 0.7% of a general draw (2 of
+276) and 0.0% of a 300-article stratified draw, with both nesting articles
+eLife — so #115 fixes one publisher's house style, which costs about half of
+*that publisher's* figures, rather than a general convention. #117's own
+figures re-measure at 49.9% / 49.5% against the cited 58.0% / 52.9%.
+
+**#128 is weaker than filed**: all 2,811 `<graphic>` hrefs in the sample use
+the `xlink` prefix and every article binds XLink to it, so the literal-prefix
+match is safe on measured evidence. Worth downgrading rather than closing —
+the sample cannot prove no publisher does otherwise.
+
+**#127-#130 came from the review of PR #126** and are described in the session
 summary above. **#131** is the one to do first: it is the missing sampler for
 the JATS exhibit populations, and both #127 and #128 turn on quantities
 nothing in the repo can currently measure.

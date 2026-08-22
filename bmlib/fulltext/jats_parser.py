@@ -111,6 +111,20 @@ _ARCHIVAL_MIME_SUBTYPES = frozenset({"tiff", "tif", "eps", "postscript"})
 # thumbnail from the extension is not.
 _ARCHIVAL_EXTENSIONS = frozenset({".tif", ".tiff", ".eps", ".ps"})
 
+# BOTH SETS ARE DEFENSIVE, AND THE MEASUREMENT SAYS SO. Over 276 open-access
+# Europe PMC articles (`scripts/sample_jats_exhibits.py`, issue #131): 912
+# figures carry an <alternatives> block and 1,819 <graphic> sit inside one, of
+# which **zero declare a mime-subtype at all** and **zero are archival by
+# either test** — every href in the sample is .jpg or .gif. So neither tier
+# fires on that corpus, and the ARCHIVAL rank is unreached.
+#
+# They are kept rather than deleted because the failure they prevent is silent
+# and permanent: an undeclared master deposited first ranks FULL, wins under
+# the strictly-better rule, and leaves the figure pointing at something no
+# browser renders. "No instance in 276 articles" is not "cannot happen", and
+# the cost of carrying the tiers is one comparison. Re-run the sampler before
+# concluding otherwise — that is what it is for.
+
 
 def _has_archival_extension(href: str) -> bool:
     """Does ``href`` name a print master by its file extension?
@@ -191,8 +205,17 @@ class _FigureBuilder:
         (PLOS, Springer), so "keep the last" yields a thumbnail for 52.9% of
         figures. "Keep the first" was correct for every article measured, but
         it inverts wherever an ``<alternatives>`` archival master is deposited
-        first — unmeasured, and no corpus instance exists. Ranking settles both
-        without caring which end it is.
+        first — no corpus instance exists. Ranking settles both without caring
+        which end it is.
+
+        Re-measured independently on 276 open-access Europe PMC articles
+        (``scripts/sample_jats_exhibits.py``): **49.9%** of the 1,833 figures
+        carrying a ``<graphic>`` carry more than one and **49.5%** end on a
+        thumbnail — a few points below the 58.0% / 52.9% above, which came
+        from a different draw. **0%** deposit a thumbnail *first*, so the
+        convention that motivates ranking over plain first-wins does not
+        appear in that sample at all. Ranking still earns its place on the
+        49.5%: it is what stops half of all figures resolving to a preview.
 
         *Strictly* better is what makes the first deposit win among equals.
 
@@ -509,6 +532,19 @@ _NESTED_ARTICLE_ELEMENTS = frozenset({"sub-article", "response"})
 # <boxed-text>, and a nested <table-wrap> — owns the image it holds. That side
 # needs no enumeration: anything not listed here is opaque, so a container this
 # module has never heard of keeps its own image rather than donating it.
+#
+# Measured over the same 276 articles: exactly **one** <graphic> in the sample
+# is owned by a non-exhibit inside an exhibit — an inline image in a <td> of
+# PMC13047053's table — and it resolves identically either way, because no
+# <fig> is open around it. Routing by owner therefore changed **no** figure's
+# image across the corpus.
+#
+# Kept for the reason the archival tiers are: what it prevents is silent. A
+# nested <table-wrap>/<fn>/<supplementary-material> inside a <fig> hands over
+# its image, and the strictly-better rule then makes that permanent where
+# "keep the last" used to overwrite it. The <p> member is not defensive at
+# all — JATS admits <p> inside <fig>, and without it a figure whose graphic is
+# wrapped in prose flow loses its image outright.
 _GRAPHIC_TRANSPARENT_WRAPPERS = frozenset({"alternatives", "p"})
 
 
@@ -614,7 +650,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         #
         # Both exhibits nest, so both are stacks and neither is a single slot.
         # A <fig> may contain another — eLife wraps every figure supplement
-        # inside the figure it belongs to, in 19.6% of surveyed articles — and
+        # inside the figure it belongs to. The original survey put this at
+        # 19.6% of articles; `scripts/sample_jats_exhibits.py` re-measures it
+        # at 0.7% of a general open-access draw (2 of 276, both eLife; 0 of a
+        # 300-article stratified draw), so it is one publisher's house style
+        # costing about half of *its* figures, not a general convention. The
+        # two articles lost 6 of 12 and 5 of 11 figures respectively. And
         # JATS lets a <table-wrap> open inside another's <table-wrap-foot>. As
         # one slot, the inner open overwrote the parent's builder, the inner
         # close emitted the child and cleared the slot, and the parent's own
@@ -1187,6 +1228,21 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # where a depth is merely close: an exhibit opened *inside* a
             # footnote still gets its own label, since its <label>'s parent is
             # the exhibit either way.
+            #
+            # THE PREMISE IS MEASURED (`scripts/sample_jats_exhibits.py`,
+            # issue #131). Over 276 open-access Europe PMC articles carrying
+            # 2,067 exhibits: 2,033 exhibits carry a <label> as a direct child
+            # and 2,033 carry one anywhere — the same number, so **no exhibit
+            # in the sample carries its label only indirectly** and this rule
+            # cannot lose one. Of 2,173 labels inside an exhibit, 93.6% are
+            # the exhibit's own; the rest sit in <fn> (105), <list-item> (34)
+            # and <supplementary-material> (1).
+            #
+            # The depth rule this replaced would still mis-assign the last two
+            # groups — 35 labels in 2 of the 276 articles (0.7%). Small, but
+            # both are corruptions rather than omissions: a <list-item>'s "•"
+            # became PMC12996797's table number, and eLife's "Figure 3—source
+            # data 1." became PMC12999171's figure number.
             parent = self.element_stack[-2] if len(self.element_stack) >= 2 else ""
             if parent == "fig" and self.current_figure is not None:
                 self.current_figure.label = text

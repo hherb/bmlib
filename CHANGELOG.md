@@ -6,6 +6,32 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`scripts/sample_jats_exhibits.py`** (#131), the live runner behind the
+  JATS exhibit rules below — the fifth in `scripts/`, and the one to re-run
+  before changing `_ARCHIVAL_MIME_SUBTYPES`, `_ARCHIVAL_EXTENSIONS`,
+  `_GRAPHIC_TRANSPARENT_WRAPPERS` or the `<label>` parent test. The rules had
+  shipped with their populations measured in a sibling repository and nothing
+  in-tree to re-earn a list member from, which is the one thing `CLAUDE.md`
+  requires of every other curated list here.
+
+  It does **not** import the parser's predicates — a corpus labelled by the
+  rule under test can only confirm that rule — and it draws a sample
+  **stratified by publication month**, because a single cursor walk returns a
+  contiguous block of accessions: its own first run drew 120 articles of which
+  106 carried no exhibit at all.
+
+  What it measured, over 276 open-access Europe PMC articles carrying 2,067
+  exhibits, is folded into the comments at each site. Two of the rules have an
+  **empty** population — no `<alternatives>` member declares a `mime-subtype`
+  or is archival at all, and exactly one `<graphic>` is owned by a non-exhibit
+  inside an exhibit (an inline image in a `<td>`, which resolves the same
+  either way). Both are kept, because what they prevent is silent and
+  permanent. The `<label>` parent rule's premise measures **full**: 2,033
+  exhibits carry a direct-child label and 2,033 carry one anywhere, so no
+  exhibit in the sample carries its label only indirectly.
+
 ### Fixed
 
 - **A nested `<fig>` dropped its parent figure** (#115). eLife wraps every
@@ -15,8 +41,13 @@ All notable changes to bmlib are documented here. The format is based on
   a single slot: the inner `<fig>` overwrote the parent's builder, the inner
   `</fig>` emitted the child and cleared the slot, and the parent's own
   `</fig>` then found nothing to build. The parent figure — label, caption and
-  graphic — was lost outright. **Measured:** 19.6% of 225 surveyed
-  open-access Europe PMC articles nest a `<fig>`; PMC8754430 carries 12 and
+  graphic — was lost outright. **Measured:** the original survey put nesting
+  at 19.6% of 225 open-access Europe PMC articles;
+  `scripts/sample_jats_exhibits.py` re-measures it at **0.7%** of a general
+  draw (2 of 276, and 0 of a 300-article stratified draw) — both of them
+  eLife, losing 6 of 12 and 5 of 11 figures. So this is one publisher's house
+  style costing about half of *its* figures, not a general convention.
+  Separately, PMC8754430 carries 12 and
   the parser returned 9, the three missing ones being exactly those with
   supplements. `in_figure` was cleared by the inner close too, so whatever the
   parent had left was read under the enclosing `<sec>`'s rules and reprinted
@@ -110,7 +141,10 @@ All notable changes to bmlib are documented here. The format is based on
 
   A `<graphic>` is now routed by its owning element, with `<alternatives>` —
   a wrapper around several encodings of one image — and `<p>` — prose flow,
-  which holds an image without owning it — transparent. Same
+  which holds an image without owning it — transparent. The `<p>` member is
+  load-bearing rather than defensive: JATS admits `<p>` inside `<fig>`, and
+  without it a figure whose graphic is wrapped in prose loses it outright.
+  Same
   principle as the `<label>` parent test, and for the same reason: no
   enumeration of the containers that may hold a `<graphic>`. A table's own
   `<graphic>` still has nowhere to go, since `JATSTableInfo` has no graphic
