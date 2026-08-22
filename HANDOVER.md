@@ -1,13 +1,14 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-22. **0.10.0 is released and on PyPI**; six changes
+_Last updated: 2026-08-22. **0.10.0 is released and on PyPI**; seven changes
 sit unreleased on `main` — #73's atomic template install (PR #102), #96/#105's
 partitioning of an over-cap PubMed day (PRs #106 and #114), #109's typed
 article-id (PR #113), #110/#111's JATS sub-article and contributor-group
-fixes (PR #118) and #115/#116/#117/#131's exhibit nesting, ranking and
-sampler (PR #126, merged) — plus **this session's #127, on
-`fix/127-table-graphic`**. All five version places agree at 0.10.0.
-Four of the six unreleased changes are `fulltext` JATS fixes filed within
+fixes (PR #118), #115/#116/#117/#131's exhibit nesting, ranking and
+sampler (PR #126) and #127's image-only table (PR #133) — plus **this
+session's #123/#125/#130, on `fix/123-125-130-title-caption-owner`**.
+All five version places agree at 0.10.0.
+Five of the seven unreleased changes are `fulltext` JATS fixes filed within
 days of each other; whoever cuts the next release should describe them
 together. Every unreleased ROADMAP row now carries an `*(unreleased)*`
 marker; eight did not, and #109 had no row at all.
@@ -17,18 +18,22 @@ what a bmlib *sync* stores. #111 populates an author list that was empty for
 the majority of open-access articles. #115/#117 change `JATSArticle.figures`
 and `.tables` — figures that were missing now appear, and a figure's
 `graphic_url` changes from a thumbnail to the full image for roughly half of
-all figures. This session's #127 adds `JATSTableInfo.graphic_url` and fills
-it, so a table that came back with no content now carries its image. No bmlib
+all figures. #127 adds `JATSTableInfo.graphic_url` and fills
+it, so a table that came back with no content now carries its image. This
+session's #123/#125/#130 move a fourth: a section's `title` and an exhibit's
+`caption` are routed by their owning element, so a section renamed by a
+footnote group or a boxed text keeps its own heading and a figure caption
+truncated by a nested one comes back whole. No bmlib
 path carries `figures`, `tables` or `authors` anywhere: `service.py` never
 reads them, `FullTextResult` has none, and `publications` takes its authors
 from the fetchers. Only a downstream that calls `JATSParser` itself and
 persists the result needs to re-parse — but such a downstream should, because
 the stored values are not comparable across the upgrade.
 
-**This session fixed #127** — a `<table-wrap>` whose content is a `<graphic>`
-lost its only content — and corrected two pieces of repo state that were wrong
-on arrival. The fix itself is in `CHANGELOG.md`; three things are worth
-carrying forward.
+**The previous session fixed #127** (PR #133, merged) — a `<table-wrap>` whose
+content is a `<graphic>` lost its only content — and corrected two pieces of
+repo state that were wrong on arrival. The fix itself is in `CHANGELOG.md`;
+three things are worth carrying forward.
 
 - **#127 was closed as COMPLETED in PR #126's merge batch without being
   fixed.** No commit carried a closing keyword for it and the PR body closes
@@ -60,11 +65,11 @@ carrying forward.
   ask whether the draw can see those deposits before reading a zero as an
   answer.**
 
-**Next up is one of the remaining JATS issues (#123, #124, #125, #128, #129,
-#130), the three from the #118 review (#119, #120, #121), one of the older
-non-JATS ones (#86, #92, #94, #103, #112), or Phase 3 of the bmlibrarian port,
-whose every row needs a design conversation.** #123 and #124 are the two that
-still lose content. See "Next up".
+**This session takes #123, #125 and #130 — one defect wearing three hats.**
+See "Next up" for what is left after it: #124, #128, #129, #134 in `fulltext`,
+the three from the #118 review (#119, #120, #121), the two measurement ones
+(#132, #135), the older non-JATS ones (#86, #92, #94, #103, #112), or Phase 3
+of the bmlibrarian port, whose every row needs a design conversation.
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -166,8 +171,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Fifteen once this PR closes #127, counting #132 which it filed (16 open as
-this is written, one of them #127 itself). Every one was found by review or
+**Seventeen open** as this session starts, fourteen once this PR closes #123,
+#125 and #130. Every one was found by review or
 measurement rather than by a failing test, and **none of them loses records**
 — though **#120** loses a contributor, **#123** and **#124** lose an exhibit's
 caption tail and its footnotes, **#128** would lose every figure image in a
@@ -184,13 +189,35 @@ fixed. **#105 and #107** closed with PR #114. **#109** closed with PR #113.
 **#110 and #111** closed with PR #118, whose review filed **#119**, **#120**
 and **#121**. **#115, #116, #117 and #131** closed with PR #126, which filed
 **#123**, **#124**, **#127**, **#128**, **#129** and **#130**. **#127**
-closes with this session's PR, which filed **#132**.)
+closed with PR #133, which filed **#132**, **#134** and **#135**.)
 
 **#128 is weaker than filed**: every `<graphic>` href in both draws uses the
 `xlink` prefix and every article binds XLink to it (1,036 in the backfill draw
 alone), so the literal-prefix match is safe on measured evidence. Worth
 downgrading rather than closing — the sample cannot prove no publisher does
 otherwise.
+
+**#134 — the parser has no end-of-parse audit**, so a stack left open loses
+content in silence. Filed from the Swift port, where the same shape stranded
+a footnote counter above zero and drained every remaining paragraph into it,
+one at a time, unremarked — and survived to code review. Expat rejects an
+unbalanced *document*, which is exactly why this is a net and not an input
+check: it fires only when the *parser* is wrong, and #115, #123 and #130 are
+all that class. Wants one pure function over the handler's counters and
+stacks, called from `_run_parser()` (the one place `parse`, `to_html` and
+`parse_with_html` all funnel through), logging at ERROR. #121's
+"parse produced zero authors" belongs in the same place.
+
+**#135 — #117's graphic ranking is measured on figures and reasoned onto
+tables.** #127 shares one `_GraphicHolder` between them, which is right; what
+was wrong was stating publisher behaviour as observed. Both committed corpora
+say only that the question does not arise in them — every one of the 11
+image-only tables carries exactly one deposit — so the rule is *unexercised*
+on tables, not confirmed. PR #133 added the table-side counters, so this is
+now only the live re-run of `scripts/sample_jats_exhibits.py` on both windows,
+plus folding the answer in (or recording the population as **empty**, in the
+house style). The same run answers `tables_with_both`, the rendition
+`to_html()` discards.
 
 
 **#123 — a nested `<caption>` truncates the enclosing caption and absorbs the
