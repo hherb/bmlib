@@ -425,7 +425,7 @@ class TestAnArticleThatCouldNotBeMeasuredIsNeverAFinding:
     def test_image_only_tables_are_reported_as_a_share_of_tables(self, capsys):
         """A bare count cannot be compared across two draws of different sizes.
 
-        #127's population is the one measured on two windows — 0 of 642 recent
+        #127's population is the one measured on two windows — 0 of 662 recent
         tables against a double-digit share of older ones — so it has to print
         as a rate, and the denominator has to be the tables rather than every
         exhibit, or a figure-heavy draw dilutes it.
@@ -747,3 +747,124 @@ class TestTheTableSideOfTheRankingIsCounted:
         assert totals.sum_of("tables_with_graphic") > 0, "the sum must stay positive"
         assert sampler.print_report(totals) is True
         assert "NOT MEASURED" in capsys.readouterr().out
+
+
+class TestTheCitedPopulationsAreWhatTheCorporaHold:
+    """Every number a comment cites has to be re-derivable from the repo.
+
+    This is the property the two committed corpora exist for, and it is not
+    self-enforcing: PR #136 redrew both windows and left three figures in
+    ``jats_parser.py`` at their pre-redraw values — ``1,556`` captions,
+    ``1,416`` direct-child captions, ``71 titles in 32 of 300`` — while
+    ``CLAUDE.md``, ``CHANGELOG.md``, ``ROADMAP.md`` and ``docs/manual`` all
+    carried the corpus values. They were internally coherent (the cited
+    Wilson interval is exactly the one ``32/300`` gives), so nothing looked
+    wrong; only summing the JSON found them.
+
+    The precedent is ``test_pdf_metadata_titles.py``, whose header asks for
+    numbers "computed rather than written down, so a re-sampled corpus moves
+    the reported bound instead of leaving a stale number in a docstring".
+    A comment cannot compute, so the next best thing is a test that fails
+    when the corpus moves under it.
+
+    Deliberately *not* a test of the parser or the sampler: it asserts only
+    that the prose and the data agree. A redraw is meant to break it — that
+    is the signal to reconcile the comments, and the failure names the file
+    to reconcile.
+    """
+
+    RECENT = Path(__file__).resolve().parent / "data" / "jats_exhibits.json"
+    BACKFILL = Path(__file__).resolve().parent / "data" / "jats_exhibits.backfill.json"
+
+    def _totals(self, path: Path) -> tuple[dict[str, int], dict[str, dict[str, int]], int]:
+        """Sum one corpus the way :func:`print_report` does.
+
+        Returns:
+            The integer counters, the ``Counter``-backed ones, and the number
+            of articles contributing at least one section-renaming title.
+        """
+        rows = json.loads(path.read_text())["rows"]
+        ints: dict[str, int] = {}
+        maps: dict[str, dict[str, int]] = {}
+        for row in rows:
+            for key, value in row.items():
+                if isinstance(value, int):
+                    ints[key] = ints.get(key, 0) + value
+                elif isinstance(value, dict):
+                    bucket = maps.setdefault(key, {})
+                    for name, count in value.items():
+                        bucket[name] = bucket.get(name, 0) + count
+        renaming_articles = sum(1 for row in rows if row.get("section_renaming_titles"))
+        return ints, maps, renaming_articles
+
+    def test_the_title_owner_population_is_what_the_comments_cite(self):
+        """The #125/#130 population, cited in five files and wrong in one."""
+        recent, recent_maps, recent_articles = self._totals(self.RECENT)
+        backfill, backfill_maps, backfill_articles = self._totals(self.BACKFILL)
+
+        assert sum(recent_maps["section_renaming_titles"].values()) == 69
+        assert recent_articles == 31
+        assert set(recent_maps["section_renaming_titles"]) == {"caption"}
+        assert sum(backfill_maps["section_renaming_titles"].values()) == 13
+        assert backfill_articles == 1
+        assert set(backfill_maps["section_renaming_titles"]) == {"list"}
+        assert recent["captions"] == 1550
+        assert backfill["captions"] == 288
+
+    def test_the_caption_premise_and_its_empty_populations_hold(self):
+        """#123's premise measures full and both its own populations empty."""
+        recent, recent_maps, _ = self._totals(self.RECENT)
+        backfill, backfill_maps, _ = self._totals(self.BACKFILL)
+
+        assert recent["exhibits_with_direct_caption"] == 1413
+        assert recent["exhibits_with_descendant_caption"] == 1413
+        assert backfill["exhibits_with_direct_caption"] == 288
+        assert backfill["exhibits_with_descendant_caption"] == 288
+        assert recent["nested_captions"] == 0
+        assert backfill["nested_captions"] == 0
+        assert set(recent_maps["exhibit_caption_owners"]) == {"fig", "table-wrap"}
+        assert set(backfill_maps["exhibit_caption_owners"]) == {"fig", "table-wrap"}
+
+    def test_the_label_premise_holds_on_both_windows(self):
+        """#116's premise, and the denominator the comment must not overstate."""
+        recent, recent_maps, _ = self._totals(self.RECENT)
+        backfill, backfill_maps, _ = self._totals(self.BACKFILL)
+
+        assert recent["exhibits_with_direct_label"] == 1446
+        assert recent["exhibits_with_descendant_label"] == 1446
+        assert backfill["exhibits_with_direct_label"] == 365
+        assert backfill["exhibits_with_descendant_label"] == 365
+        # 1,446 of the *labelled* exhibits, not of all 1,500 — 54 carry none.
+        assert recent["figures"] + recent["tables"] == 1500
+        assert set(recent_maps["label_parents"]) == {"fig", "table-wrap", "fn", "list-item"}
+
+    def test_the_graphic_populations_are_what_offer_graphic_cites(self):
+        """#117's shares and #127's two renditions, both cited as percentages."""
+        recent, _, _ = self._totals(self.RECENT)
+        backfill, _, _ = self._totals(self.BACKFILL)
+
+        assert (recent["figures_with_graphic"], backfill["figures_with_graphic"]) == (828, 276)
+        assert (recent["figures_multi_graphic"], backfill["figures_multi_graphic"]) == (437, 168)
+        assert (recent["last_is_thumb"], backfill["last_is_thumb"]) == (434, 165)
+        assert (recent["first_is_thumb"], backfill["first_is_thumb"]) == (0, 0)
+        assert recent["graphics"] + backfill["graphics"] == 2397
+        assert recent["alternatives_members"] + backfill["alternatives_members"] == 1329
+        assert recent["alternatives_declaring_mime"] + backfill["alternatives_declaring_mime"] == 0
+        assert recent["alternatives_archival"] + backfill["alternatives_archival"] == 0
+
+    def test_the_table_side_answers_135_as_an_empty_population(self):
+        """#135, and the #127 windows the ROADMAP and the sampler both cite."""
+        recent, recent_maps, _ = self._totals(self.RECENT)
+        backfill, backfill_maps, _ = self._totals(self.BACKFILL)
+
+        assert recent["tables"] + backfill["tables"] == 755
+        assert recent["tables_with_graphic"] + backfill["tables_with_graphic"] == 16
+        assert recent["tables_multi_graphic"] + backfill["tables_multi_graphic"] == 0
+        assert (recent["tables"], recent["tables_image_only"]) == (662, 0)
+        assert (backfill["tables"], backfill["tables_image_only"]) == (93, 11)
+        assert (recent["tables_with_both"], backfill["tables_with_both"]) == (5, 0)
+        assert sum(recent_maps["foreign_owned_graphics"].values()) == 36
+        assert set(recent_maps["foreign_owned_graphics"]) == {"td"}
+        assert backfill_maps.get("foreign_owned_graphics", {}) == {}
+        assert recent["nested_figures"] + recent["nested_tables"] == 0
+        assert backfill["nested_figures"] + backfill["nested_tables"] == 0

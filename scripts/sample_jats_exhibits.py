@@ -60,6 +60,17 @@ Eight questions, each answering a decision the parser makes:
    enclosing section, leaving not a blank but a heading the publisher never
    wrote.
 
+**One scope the walk does not share with the parser.** ``<sub-article>`` and
+``<response>`` open a region in which the parser fires no handler at all
+(issue #110), and this walk descends into them, so every counter here is a
+whole-document count where the parser's is a suppressed-region-excluding one.
+Measured for the population the counters are cited for: of the 69
+``section_renaming_titles`` in the recent draw, **69 sit outside any nested
+article and 0 inside**, so no figure quoted from these corpora is inflated.
+Issue #138 is the standing item to scope the walk and redraw; scoping it
+without a redraw would leave the committed corpora unre-derivable, which is
+the property they exist for.
+
 **It does not import the parser's predicates**, and a future refactor must not
 "deduplicate" the two. A corpus labelled by the rule under test can only
 confirm that rule — the standing rule ``sample_pdf_metadata_titles.py`` states
@@ -81,7 +92,7 @@ command run later draws a different sample.
 ``--months-ago`` displaces the whole stratified draw backwards by whole
 months. The default window is the last two years — born-digital XML — and at
 least one population is not in it at all: #127's image-only tables measure 0
-of 642 tables there and 11 of 93 in a draw ending 28 years back. A displaced
+of 662 tables there and 11 of 93 in a draw ending 28 years back. A displaced
 run must name its own ``-o``; writing one to the default path would replace
 the recent corpus, or pool the two windows through the shared journal.
 
@@ -256,11 +267,13 @@ class ArticleMeasurement:
         """Rebuild a row written by :meth:`to_dict`.
 
         A counter the row does not carry is set to ``NOT_MEASURED`` rather
-        than left at its zero default. Every one of these arrived with issue
-        #135, so an older corpus or journal carries none of them and each
-        would otherwise sum to zero — which is exactly what a genuine "no
-        table deposits an image" draw looks like, and reading one as the other
-        is the mistake #127 spent two windows disproving.
+        than left at its zero default. These arrived in two generations —
+        ``_TABLE_SIDE_COUNTERS`` with issue #135, ``_OWNER_SIDE_COUNTERS``
+        with #123/#125/#130 — so a corpus or journal older than either
+        carries none of that generation and each would otherwise sum to
+        zero, which is exactly what a genuine "no table deposits an image"
+        or "no caption nests" draw looks like; reading one as the other is
+        the mistake #127 spent two windows disproving.
         :meth:`Totals.measured` is what tests it.
         """
         row = cls(pmcid=str(data["pmcid"]))
@@ -743,7 +756,7 @@ def print_report(totals: Totals) -> bool:
 
     # Issue #135. The ranking these deposits go through was measured on
     # figures alone and reasoned onto tables; this is what would settle it.
-    print("\n5. SEVERAL <graphic> PER TABLE  (issue #135 — #117's rule, unmeasured here)")
+    print("\n5. SEVERAL <graphic> PER TABLE  (issue #135 — #117's rule, unexercised here)")
     tables_with_graphic = totals.sum_of("tables_with_graphic")
     tables_multi = totals.sum_of("tables_multi_graphic")
     tables_last = totals.sum_of("tables_last_is_thumb")
@@ -905,7 +918,7 @@ def _validate_args(args: argparse.Namespace) -> str | None:
     either overwrites the recent corpus with an older window under the recent
     corpus's name, or — journal present — tops one window's rows up with
     another's and prints the pooled result as one rate. This PR's whole claim
-    is that the window decides the answer (0 of 642 recent tables against 11
+    is that the window decides the answer (0 of 662 recent tables against 11
     of 93 from 1996-1998), so pooling two windows produces a number
     describing neither. Naming an explicit ``-o`` is the whole fix.
     """

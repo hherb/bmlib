@@ -2518,7 +2518,7 @@ class TestFurtherExhibitNestingShapes:
         ]
 
     def test_a_figure_inside_a_table_inside_a_figure_keeps_all_three_apart(self):
-        """Where ``open_seq``'s tie-breaking works hardest.
+        """Where routing by owner works hardest.
 
         Both stacks are non-empty at the innermost level, and each exhibit's
         own label, caption and graphic must reach it rather than the exhibit
@@ -2797,6 +2797,44 @@ class TestASectionTitleComesFromItsOwnElement:
             ("Methods", "How."),
         ]
 
+    def test_an_exhibits_title_inside_an_abstract_does_not_split_it(self):
+        """A graphical abstract's exhibit must not reach the abstract branch.
+
+        JATS admits ``<fig>`` and ``<table-wrap>`` in an ``<abstract>``, and
+        the guard that used to open the whole ``<title>`` arm — ``if
+        self.in_figure or self.in_table_wrap:`` — swallowed every title inside
+        one. Routing by parent replaced that arm, so without an explicit
+        exhibit test a ``<table-wrap-foot><fn-group><title>`` flushes the
+        pending abstract section and installs itself as the next heading,
+        splitting the abstract and re-attributing the prose after it.
+
+        The same failure as #125 one branch over, and the worse half of it:
+        ``abstract_sections`` is rendered into the HTML ``FullTextService``
+        caches, where ``body_sections`` reaches no bmlib path at all. The
+        population measures empty — 44 exhibits inside an ``<abstract>`` over
+        the two committed draws, none carrying a ``<title>``.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Graphical</article-title>
+  </title-group>
+  <abstract>
+    <p>Background and results.</p>
+    <table-wrap id="t1"><label>Table 1</label>
+      <table-wrap-foot><fn-group><title>Notes</title>
+        <fn><p>a footnote</p></fn></fn-group></table-wrap-foot>
+    </table-wrap>
+    <p>Conclusions follow.</p>
+  </abstract>
+  </article-meta></front>
+  <body><sec><title>Results</title><p>We measured the thing.</p></sec></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.content) for s in article.abstract_sections] == [
+            ("", "Background and results. Conclusions follow.")
+        ]
+
     def test_a_footnote_group_inside_a_table_was_already_covered(self):
         """The variant issue #125 predicted was separately reachable here.
 
@@ -2961,7 +2999,7 @@ class TestACaptionBelongsToTheElementThatOpenedIt:
         ]
 
     def test_an_inner_table_caption_stays_on_the_inner_table(self):
-        """The rule must keep what `_innermost_exhibit` already delivered:
+        """The rule must keep what the retired `_innermost_exhibit` delivered:
         exhibits nest both ways round, and a <table-wrap> inside a figure's
         footnote owns its own legend."""
         data = b"""<?xml version="1.0"?>
@@ -2983,3 +3021,102 @@ class TestACaptionBelongsToTheElementThatOpenedIt:
 
         assert article.figures[0].caption == "The figure caption."
         assert article.tables[0].caption == "The table caption."
+
+    def test_a_container_inside_a_caption_keeps_its_own_title(self):
+        """The owner test, at the one place an ambient test still passes.
+
+        Every other fixture here has the ``<title>`` arrive with no caption
+        open, so ``if parent == "caption"`` and ``if self.caption_stack`` agree
+        on all of them and the ambient form survives the whole suite —
+        mutation-verified. The discriminating shape is a ``<title>`` arriving
+        *while* a caption is open and owned by something else, which is not
+        hypothetical: it is the back-filled draw's entire measured population
+        (13 titles, all owned by a ``<list>``, in PMC7135044).
+
+        A ``<list>``'s own heading welded into a figure legend is the reason
+        this needs pinning rather than noting — a legend is prose, so one
+        extra phrase in it is invisible.
+        """
+        data = b"""<?xml version="1.0"?>
+<article xmlns:xlink="http://www.w3.org/1999/xlink">
+  <front><article-meta><title-group><article-title>Keyed</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <sec><title>Results</title>
+      <fig id="f1"><label>Figure 1</label>
+        <caption><title>Study flow.</title>
+          <p>Panels are ordered.</p>
+          <list list-type="simple"><title>Panel key</title>
+            <list-item><p>A, control.</p></list-item></list>
+        </caption>
+        <graphic xlink:href="f1.jpg"/></fig>
+      <p>Prose after the figure.</p>
+    </sec>
+  </body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert article.figures[0].caption == "Study flow. Panels are ordered. A, control."
+        assert article.body_sections[0].title == "Results"
+        assert article.body_sections[0].paragraphs == ["Prose after the figure."]
+
+    def test_a_tables_caption_lead_reaches_the_table(self):
+        """The ``<caption><title>`` lead, on the side no assertion covered.
+
+        ``if parent == "caption" and self.in_figure`` survives the whole suite
+        otherwise: every ``tables[…].caption`` assertion in this file uses a
+        ``<p>``-only caption, so a ``<table-wrap>``'s lead sentence could be
+        dropped silently. #135's figure/table asymmetry, reproduced on
+        captions.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Lead</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <sec><title>Results</title>
+      <table-wrap id="t1"><label>Table 1.</label>
+        <caption><title>Commonly asked questions.</title><p>Responses by group.</p></caption>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table></table-wrap>
+    </sec>
+  </body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert article.tables[0].caption == "Commonly asked questions. Responses by group."
+
+    def test_an_unmodelled_owner_inside_a_table_donates_nothing(self):
+        """An unowned caption, with a ``<table-wrap>`` open rather than a ``<fig>``.
+
+        The three existing unmodelled-owner fixtures all have a figure open
+        and no table, so ``current_table`` is ``None`` throughout and
+        ``_caption_owner`` returning it for an unknown parent is
+        indistinguishable from returning ``None`` — mutation-verified.
+
+        The ``<table-wrap-foot>`` prose after ``</caption>`` is the off-edge
+        half: it pins the pop going *off* on the table side, which is where
+        PR #126's two survivors hid.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Source data</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <sec><title>Results</title>
+      <table-wrap id="t1"><label>Table 1.</label>
+        <caption><p>Baseline characteristics.</p></caption>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><fn><p>CI, confidence interval.</p></fn></table-wrap-foot>
+        <supplementary-material id="sd1"><label>Table 1-source data 1.</label>
+          <caption><title>Raw counts.</title><p>Numbers behind the table.</p></caption>
+        </supplementary-material>
+      </table-wrap>
+      <p>Prose after the table.</p>
+    </sec>
+  </body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert article.tables[0].caption == "Baseline characteristics."
+        assert article.tables[0].label == "Table 1."
+        assert article.body_sections[0].paragraphs == ["Prose after the table."]

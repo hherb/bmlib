@@ -33,7 +33,7 @@ the stored values are not comparable across the upgrade.
 
 **This session fixed #123, #125 and #130 and closed #135**, and the useful
 half of it was the measuring, not the routing. The fix itself is in
-`CHANGELOG.md`; four things are worth carrying forward.
+`CHANGELOG.md`; six things are worth carrying forward.
 
 - **A rule's population can be large, empty, or both, and only a draw says
   which.** The `<title>` half is **10.3% of recent articles** (69 titles in 31
@@ -41,6 +41,22 @@ half of it was the measuring, not the routing. The fix itself is in
   seven-article Swift corpus** — no `<caption>` nests inside another, none
   inside an exhibit is owned by anything else. Same PR, same rule, opposite
   evidence. Ship both; say which is which.
+- **When a rule replaces a guard, ask what else that guard was holding.**
+  Routing a `<title>` by its parent replaced the `if in_figure or
+  in_table_wrap:` opening the whole arm — which was also what kept an
+  exhibit's `<title>` out of the **abstract** branch, so a
+  `<table-wrap-foot><fn-group><title>` in a graphical abstract split the
+  abstract and installed itself as a heading. #125 exactly, in the one place
+  it is worse: `abstract_sections` reaches the cached HTML, `body_sections`
+  reaches no bmlib path. Caught in review, fixed before merge, population
+  measured empty (0 of 44).
+- **A number in a comment goes stale silently, and coherently.** The redraw
+  moved three figures and the docs were reconciled while
+  `jats_parser.py` was not — cited as `1,556`, `1,416` and `71 titles in 32
+  of 300`, each internally consistent (the quoted Wilson interval is exactly
+  the one `32/300` gives), so nothing read as wrong. Only summing the JSON
+  found them. `TestTheCitedPopulationsAreWhatTheCorporaHold` now fails when a
+  corpus moves under a comment; a redraw is *meant* to break it.
 - **A draft comment asserted publisher behaviour nobody had measured** — that
   eLife deposits a captioned `<supplementary-material>` inside its figures. It
   deposits supplements as nested `<fig>`. That is #135's mistake reappearing
@@ -59,25 +75,20 @@ half of it was the measuring, not the routing. The fix itself is in
   it. That is the parent test's whole argument, and the third time it has been
   made here (#116's `<label>`, #117's `<graphic>` owner, now this).
 
-**Three notes from the previous session (#127, PR #133) still hold.**
-*An issue can be closed as COMPLETED without being fixed* — #127 was, in PR
-#126's merge batch, with no commit carrying a closing keyword; when an issue
-is closed alongside a PR, check the PR actually closes it, because no count of
-open issues catches the ones wrongly shut. *Mutation testing found the one new
-test that could not fail*, because each foreign deposit was written **second**,
-where plain first-wins already answers it — write the case the rule actually
-decides, not the one that merely exercises the code path. And *a stratified
-sample of recent deposits is still one window*: #127's population reads 0 of
-662 there and 11 of 93 in a 1996-1998 draw, so where a rule is about how
-publishers **deposit**, ask whether the draw can see those deposits before
-reading a zero as an answer. This session met that same wall twice, in the
-opposite direction — see the bullets above.
+**Three notes from the previous session (#127, PR #133) still hold.** *An
+issue can be closed as COMPLETED without being fixed* — #127 was, so check a
+PR actually closes what was shut alongside it. *Mutation testing found the one
+new test that could not fail* — write the case the rule decides, not one that
+merely exercises the path. And *a stratified sample of recent deposits is
+still one window*: #127's population reads 0 of 662 there and 11 of 93 in a
+1996-1998 draw, so ask whether the draw can see a deposit before reading a
+zero as an answer.
 
-**Next up: #124, #128, #129 and #134 in `fulltext`, the three from the #118
-review (#119, #120, #121), #132, the older non-JATS ones (#86, #92, #94,
-#103, #112), or Phase 3 of the bmlibrarian port, whose every row needs a
-design conversation.** #124 is the last one that still loses content, and
-#132 is now smaller than it was — see "Next up".
+**Next up: #124, #128, #129, #134, #137 and #138 in `fulltext`, the three from
+the #118 review (#119, #120, #121), #132, the older non-JATS ones (#86, #92,
+#94, #103, #112), or Phase 3 of the bmlibrarian port, whose every row needs a
+design conversation.** #124 is the last one that still loses content; #132 and
+#138 both want a corpus redraw and should be paired.
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -173,17 +184,16 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-**Seventeen open** as this session starts, thirteen once this PR closes #123,
-#125, #130 and #135. Every one was found by review or
+**Seventeen open** as this session starts, fifteen once this PR closes #123,
+#125, #130 and #135 and its own review files **#137** and **#138**. Every one was found by review or
 measurement rather than by a failing test, and **none of them loses records**
-— though **#120** loses a contributor, **#123** and **#124** lose an exhibit's
-caption tail and its footnotes, **#128** would lose every figure image in a
-document binding XLink to another prefix, **#129** loses a whole article to
-one malformed `colspan`, and **#119** feeds a scan text that is not the
-article's. Count this against the repo before trusting it: this line has been
-wrong in three consecutive sessions, and this session found a further way for
-it to be wrong — an issue **closed as COMPLETED without being fixed**, which
-no count of open issues can catch. (**#56, #68, #72 and #79** shipped in
+— though **#124** loses an exhibit's footnotes, **#128** would lose every
+figure image in a document binding XLink to another prefix, **#129** loses a
+whole article to one malformed `colspan`, **#120** loses a contributor, and
+**#119** feeds a scan text that is not the article's. Count this against the
+repo before trusting it: the line has been wrong in three consecutive
+sessions, and one further way is an issue **closed as COMPLETED without being
+fixed**, which no count of open issues catches. (**#56, #68, #72 and #79** shipped in
 0.9.1. **#78, #81, #88–#91, #95, #98 and #99** shipped in 0.10.0 — PRs #85,
 #87, #93, #97, #100. **#73** is on `main` unreleased in PR #102, whose own
 review filed **#103**. **#96** closed with PR #106, as correct rather than as
@@ -192,7 +202,8 @@ fixed. **#105 and #107** closed with PR #114. **#109** closed with PR #113.
 and **#121**. **#115, #116, #117 and #131** closed with PR #126, which filed
 **#123**, **#124**, **#127**, **#128**, **#129** and **#130**. **#127**
 closed with PR #133, which filed **#132**, **#134** and **#135**; **#123**,
-**#125**, **#130** and **#135** close with this session's PR.)
+**#125**, **#130** and **#135** close with this session's PR, whose review
+filed **#137** and **#138**.)
 
 **#128 is weaker than filed**: every one of the 2,397 `<graphic>` hrefs in the
 two redrawn corpora uses the `xlink` prefix bound to the XLink namespace, so
@@ -210,15 +221,25 @@ stacks, called from `_run_parser()` (the one place `parse`, `to_html` and
 `parse_with_html` all funnel through), logging at ERROR. #121's
 "parse produced zero authors" belongs in the same place.
 
-**#132 is smaller than it was.** Both corpora were redrawn this session with
-every counter present, so the figures a reader can re-derive from the repo now
-match the comments that cite them — including #127's (0 of **662** recent,
-11 of 93 back-filled, the same two articles), #128's XLink counts and the
-`<label>` premise. What remains is the 276-article draw itself: #115's "0.7%,
-both eLife" and #117's 49.9%/49.5% still cite a corpus that is not in the
-repo, and **nesting measures 0 in both committed draws**, so that figure now
-has no in-repo evidence at all. Do it before the release that ships these
-rules, while the CHANGELOG body is still free to edit.
+**#132 is smaller than it was.** Both corpora were redrawn with every counter
+present, so every figure a comment cites is now re-derivable from the repo and
+`TestTheCitedPopulationsAreWhatTheCorporaHold` keeps it that way. What remains
+is the 276-article draw itself: #115's "0.7%, both eLife" and #117's
+49.9%/49.5% cite a corpus that is not in the repo, and **nesting measures 0 in
+both committed draws**, so that figure has no in-repo evidence at all. Do it
+before the release that ships these rules, while the CHANGELOG is still free
+to edit. #138 wants a redraw too — pair them.
+
+**#137 and #138 came out of this PR's own review.** #137: a section-level
+`<caption>`'s `<p>` children still reach `body_sections` while its `<title>`
+is now dropped, so one caption's two halves go different ways — a decision to
+make (keep, drop both, or model the containers), and the sampler records the
+`<title>`'s parent but not the `<caption>`'s owner, so the population is not
+yet derivable. #138: `measure_article()` walks into `<sub-article>`, which the
+parser suppresses, so every sampler counter is a whole-document count.
+Measured harmless for the cited population (69 outside, 0 inside), but the fix
+is scope *and* redraw — scoping alone leaves the committed corpora
+unre-derivable.
 
 **#124 — table and figure footnote prose is dropped entirely.** Neither
 exhibit model has a `footnotes` field and nothing collects one, so a
@@ -232,14 +253,9 @@ carries abbreviation expansions and per-table funding notes.
 
 **#119 — `TransparencyAnalyzer` scans raw JATS XML, so `<sub-article>`
 reviewer prose still reaches its COI, funding and data-availability scans.**
-`_fetch_europepmc_fulltext` returns `resp.text` and `_extract_coi_text`
-regexes that string; there is no import path from `bmlib.transparency` to
-`bmlib.fulltext`, so #110's suppression does not touch it. Measured on two
-articles during the PR #118 review: 6 and 5 reviewer `competing interest`
-statements respectively, inside `<sub-article>` regions the scan reads. It
-fails *towards* leniency — a reviewer's "no competing interests" counts as
-the article's own disclosure. The fix needs measuring, since the scoring is
-calibrated against current behaviour.
+It regexes `resp.text` directly and never imports `bmlib.fulltext`, so #110's
+suppression does not touch it. Measured on two articles in the PR #118 review:
+6 and 5 reviewer `competing interest` hits against the article's own.
 
 **#120 — `<collab>` consortium authors are silently dropped.**
 `_AuthorBuilder.build()` returns `None` without a `<surname>` and the call
@@ -309,23 +325,19 @@ uniform-half-pages case this floor was worried about — a page is the slice it
 named or it is refused.
 
 **#86 — `docs/manual/llm.md` documents `LLMClient.generate` and
-`LLMClient.embed` twice each**, found while updating signatures for #81. Same
-defect as #31 (`fulltext.md`'s doubled `## PDF Conversion`), and worth a
-session rather than a delete for the same reason: the copies differ, so
-merging them is a judgement about which prose survives — one `generate` has
-the example, and the two `embed` sections disagree about whether the default
-is the provider's *chat* default model (`embed_batch`'s has it right).
+`LLMClient.embed` twice each** (found for #81; same defect as #31). Not a
+delete: the copies differ, so merging is a judgement about which prose
+survives — one `generate` has the example, and the two `embed` sections
+disagree on the default model (`embed_batch`'s is right).
 
 ### Worth doing, not yet an issue
 
 - **Widen bmlibrarian's `<0.6.0` pin** — `~/src/bmlibrarian` still pins
-  `bmlib[ollama]>=0.5.1,<0.6.0` and has missed six releases; widening it is a
-  downstream change, not a bmlib one. Read the intervening releases'
-  non-comparable
-  behaviour changes first — the transparency ones move stored scores, 0.8.0
-  moves every PubMed title and abstract, and **0.9.1 moves stored full text**
-  (#79: Tier 1d now downloads the free PDFs it used to skip). 0.9.0 adds
-  nothing to that list, but it carries three API changes, so the widened pin
+  `bmlib[ollama]>=0.5.1,<0.6.0` and has missed six releases; a downstream
+  change, not a bmlib one. Read the intervening non-comparable behaviour
+  changes first: the transparency ones move stored scores, 0.8.0 moves every
+  PubMed title and abstract, and **0.9.1 moves stored full text** (#79).
+  0.9.0 adds none of those but carries three API changes, so the widened pin
   should clear `FullTextService.cache` being nullable.
 - **Wire the segmenter and the rule-based extractors in.** Two halves of one
   roadmap item: the segmenter could give `CochraneAssessor` Methods/Results

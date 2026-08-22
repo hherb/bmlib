@@ -168,10 +168,27 @@ All notable changes to bmlib are documented here. The format is based on
   caller was caption routing, and naming the owner is exact where "the
   innermost exhibit open anywhere above" was merely usually right.
 
+  **The exhibit test the parent rule replaced on the section branch stays on
+  the abstract branch.** JATS admits a `<fig>` and a `<table-wrap>` inside an
+  `<abstract>` — a graphical abstract — and the `if in_figure or
+  in_table_wrap:` that used to open the whole `<title>` arm swallowed every
+  title inside one. Routing by parent replaced that arm, so without an
+  explicit guard a `<table-wrap-foot><fn-group><title>` in an abstract flushes
+  the pending abstract section and installs itself as the next heading,
+  splitting the abstract and re-attributing the prose after it: #125 one
+  branch over, and the worse half of it, since `abstract_sections` is rendered
+  into the HTML `FullTextService` caches while `body_sections` reaches no
+  bmlib path at all. Caught in review of this change, before release. The
+  population **measures empty** — 44 exhibits inside an `<abstract>` across
+  the two draws, none carrying a `<title>` (0 of 44, 0.0% [0.0-8.0]) — so it
+  is kept for the reason the `<alternatives>` archival tiers are.
+
   **Behaviour change for a caller of `JATSParser`.** A section renamed by a
   footnote group, a boxed text or a list keeps its own heading, and the
   usurping title is dropped rather than relocated — it was never a heading and
-  bmlib models none of those containers. A figure caption truncated by a
+  bmlib models none of those containers. Only the `<title>`: a section-level
+  `<caption>`'s `<p>` children never enter the exhibit branch and still reach
+  the section's prose, which is issue #137. A figure caption truncated by a
   nested one comes back whole. `JATSArticle.body_sections` and
   `.figures`/`.tables` therefore move for roughly one article in ten; nothing
   a bmlib *sync* stores is affected, since no bmlib path carries them.

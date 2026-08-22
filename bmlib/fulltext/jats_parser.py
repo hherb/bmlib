@@ -120,8 +120,17 @@ _ARCHIVAL_EXTENSIONS = frozenset({".tif", ".tiff", ".eps", ".ps"})
 #
 # The two committed draws agree, on 1,329 further <alternatives> members
 # across 600 articles: zero declaring a mime-subtype and zero archival by
-# either test. The back-filled window adds .png to the extensions seen and
-# nothing else.
+# either test.
+#
+# Extensions are counted over every deposit rather than over <alternatives>
+# members alone — the sampler holds the two in separate counters and never
+# cross-tabulates them, so no extension figure scoped to the members is
+# derivable from either corpus. At that wider scope, across all 2,397:
+# .jpg and .gif in both windows, .png in the back-filled one only, and 29
+# of the 1,361 recent deposits (2.1%) whose href carries no extension at all.
+# That last is the one directly material here, _ARCHIVAL_EXTENSIONS being
+# an extension test: it has nothing to read, and falls through to the
+# undeclared-and-not-first path rather than ranking ARCHIVAL.
 #
 # They are kept rather than deleted because the failure they prevent is silent
 # and permanent: an undeclared master deposited first ranks FULL, wins under
@@ -746,21 +755,24 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # this module does not model. Both halves are load-bearing (#123):
         #
         # A **stack** because captions nest. Held as a boolean, the inner
-        # </caption> cleared it, so a <media> legend inside a figure's caption
-        # truncated that caption at the point the legend ended and dropped
-        # every word after it.
+        # </caption> would clear it, so a <media> legend inside a figure's
+        # caption would truncate that caption at the point the legend ended
+        # and drop every word after it.
         #
         # The **owner** because a depth counter only fixes that half. The
         # legend's owner is not an exhibit bmlib models, so counted rather
-        # than named it still lands on the enclosing figure — and the case a
-        # depth cannot reach at all needs no nesting, since JATS admits a
-        # <caption> on <boxed-text>, <media> and <supplementary-material>,
+        # than named it would still land on the enclosing figure — and the
+        # case a depth cannot reach at all needs no nesting, since JATS admits
+        # a <caption> on <boxed-text>, <media> and <supplementary-material>,
         # any of which may sit inside a <fig> beside the figure's own.
+        #
+        # Both paragraphs are in the subjunctive on purpose: they describe
+        # what the retired boolean would do, not what a draw caught it doing.
         #
         # BOTH OF THOSE POPULATIONS MEASURE EMPTY, AND THIS SAYS SO RATHER
         # THAN IMPLYING ONE. Over the two committed draws (600 articles,
         # `scripts/sample_jats_exhibits.py`): **no <caption> nests inside
-        # another** — 0 of 1,556 recent and 0 of 288 back-filled — and every
+        # another** — 0 of 1,550 recent and 0 of 288 back-filled — and every
         # <caption> inside an exhibit is owned by that exhibit, with no third
         # owner appearing at all. The same holds of the seven-article corpus
         # in the sibling Swift repository, eLife's PMC8754430 included, which
@@ -773,8 +785,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # standing reminder of what that mistake costs.
         #
         # THE PREMISE IT RESTS ON MEASURES FULL, which is the half that could
-        # have lost content: 1,416 exhibits carry a direct-child <caption> and
-        # 1,416 carry one anywhere (288 and 288 back-filled), so no exhibit
+        # have lost content: 1,413 / 1,413 recent exhibits carry a direct-child
+        # <caption> and carry one anywhere (288 / 288 back-filled), so no exhibit
         # is captioned only indirectly and the parent can never come up empty
         # where the old rule found something.
         #
@@ -927,6 +939,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         Text whose innermost caption has no modelled owner is dropped for the
         same reason: it belongs to that element, not to the exhibit enclosing
         it.
+
+        Dropped *where this is reached at all*, which is not everywhere a
+        <caption> is. The ``<p>`` caller sits behind ``in_figure or
+        in_table_wrap``, so a <caption> at section level — issue #130's own
+        ``<boxed-text>`` shape — never enters it: only its ``<title>`` is
+        dropped, while its ``<p>`` children still fall through to the
+        section's prose. Better than before, which took the heading too, but
+        the two halves of one caption now go different ways. Issue #137.
 
         Args:
             text: Whitespace-normalised text of the caption child element.
@@ -1267,11 +1287,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # MEASURED, and this half is not a small population. Over the two
             # committed draws (`scripts/sample_jats_exhibits.py`), counting
             # only a <title> that a <sec> was open for and that no exhibit
-            # already excluded: **71 titles in 32 of 300 recent articles
-            # (10.7% [7.7-14.7]), every one owned by a <caption>** — issue
-            # #130's shape, a <boxed-text> or <media> legend at section level
-            # — and 13 in 1 of 300 back-filled articles, all owned by a
-            # <list>. Issue #125's own <fn-group> shape appears in neither
+            # already excluded: **69 titles in 31 of 300 recent articles
+            # (10.3% [7.4-14.3]), every one owned by a <caption>** — issue
+            # #130's shape. What owns that <caption> is *not* recorded — the
+            # sampler counts the <title>'s immediate parent alone — so a
+            # <boxed-text> or <media> legend at section level is the likely
+            # reading rather than a measured one. And 13 titles in 1 of 300
+            # back-filled articles, all owned by a <list>.
+            #
+            # Issue #125's own <fn-group> shape appears in neither
             # draw but reproduces on eLife's PMC8754430, which loses its
             # *Additional information* heading twice over. So the rate is a
             # floor: the publisher #125 was filed from is absent from both
@@ -1285,7 +1309,28 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             parent = self.element_stack[-2] if len(self.element_stack) >= 2 else ""
             if parent == "caption":
                 self._append_caption_text(normalized_text)
-            elif self.in_abstract:
+            elif self.in_abstract and not (self.in_figure or self.in_table_wrap):
+                # The exhibit test is what the parent rule replaced on the
+                # section branch, and it has to stay on this one. JATS admits
+                # a <fig> and a <table-wrap> in an <abstract> — a graphical
+                # abstract — and the old `if self.in_figure or
+                # self.in_table_wrap:` opening this whole branch swallowed
+                # every <title> inside one. Without it a <table-wrap-foot>
+                # <fn-group><title> in an abstract flushes the pending section
+                # and installs itself as the next heading, splitting the
+                # abstract and re-attributing the prose after it: exactly the
+                # heading-the-publisher-never-wrote failure this rule exists
+                # to remove, one branch over. It is also the worse half of it,
+                # because `abstract_sections` is rendered into the HTML that
+                # `FullTextService` caches while `body_sections` reaches no
+                # bmlib path at all.
+                #
+                # THE POPULATION MEASURES EMPTY, and this says so rather than
+                # implying one: over the two committed draws, 44 <fig> or
+                # <table-wrap> sit inside an <abstract> and **none carries a
+                # <title>** (0 of 44, 0.0% [0.0-8.0]). Kept for the reason the
+                # <alternatives> archival tiers are — what it prevents is
+                # silent and, through the cache, permanent.
                 if self.current_abstract_text or self.current_abstract_title:
                     content = " ".join(self.current_abstract_text)
                     self.abstract_sections.append(
@@ -1395,10 +1440,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # and <supplementary-material> (1).
             #
             # The two committed draws corroborate the premise on their own
-            # evidence: 1,446 of 1,446 recent exhibits and 365 of 365
+            # evidence: 1,446 / 1,446 recent exhibits and 365 / 365
             # back-filled ones carry a direct-child <label>, with the same
-            # count anywhere. Their non-exhibit label owners are <fn> (203 and
-            # 89) and <list-item> (4), and no <supplementary-material> at all,
+            # count anywhere. Both figures count *labelled* exhibits, not
+            # every exhibit: the recent draw holds 1,500, so 54 carry no
+            # <label> either way and the premise is about where a label
+            # sits, never about how many exhibits have one. Their
+            # non-exhibit label owners are <fn> (203 and 89) and
+            # <list-item> (4), and no <supplementary-material> at all,
             # that publisher being absent from both windows.
             #
             # The depth rule this replaced would still mis-assign the last two
