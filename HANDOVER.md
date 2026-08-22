@@ -38,7 +38,7 @@ none raised anything.
   nest a `<fig>`; PMC8754430 returned 9 of its 12. `in_figure` was cleared
   too, so the parent's remaining internals were reprinted as article prose.
 - **#116 — a `<table-wrap-foot><fn><label>` overwrote the table's number.**
-  12.0% of the same articles carry one; PMC12661592's single table was
+  12.0% of the same 225 articles carry one; PMC12661592's single table was
   labelled `a`. A swallowed label is not a blank — the renderer substitutes
   `Table {i + 1}`, so the symptom is an invented number.
 - **#117 — a figure with several `<graphic>` resolved to the thumbnail.**
@@ -54,25 +54,74 @@ figure enclosing it; both now route to the innermost open exhibit. Neither the
 issues nor the Swift reference had the second one — it was the test for
 #116's "compare against the exhibit's depth, not zero" rule that exposed it.
 
-**Mutation testing killed 28 of 29.** The survivor is the `is not None` filter
-on the reserved slots, which is unreachable by construction — expat rejects an
-unbalanced document, so no reservation is ever left unfilled — and is
-documented as such at the site, beside the two other guards of that kind. Two
-gaps it found first were closed by adding the tests that earn them:
-`table-wrap-foot` as a `_FOOTNOTE_CONTAINERS` member (a `<fn-group>`'s own
-heading), and two of the four archival mime-subtypes.
+**Mutation testing killed 28 of 29 in the first pass, and code review found
+two more survivors it had missed.** Deriving either ambient flag from the
+*slot* list rather than the stack — `bool(self.figure_slots)`, a
+five-character edit — passed all 121 tests while swallowing every paragraph
+and section title after the first `</fig>`, which is the exact symptom the
+derived-flag design exists to prevent. Cause: **no fixture placed body prose
+after an exhibit close**, so the suite pinned the flag going on and never off.
+Both leak fixtures now carry prose after the close and a following section,
+and both mutants die.
 
-**Two further defects were filed rather than fixed**, both reproducing on
-`main` after this branch: **#123** (a nested `<caption>` truncates the
-enclosing caption *and* absorbs the inner element's legend — same shape as
+The one true survivor is the `is not None` filter on the reserved slots,
+unreachable by construction — expat rejects an unbalanced document, so no
+reservation is ever left unfilled. That premise is now itself pinned by
+`test_an_unbalanced_document_is_refused_outright`; without it a future lenient
+feed would turn two documented-unreachable filters into live hole-hiders in
+silence. Two gaps mutation found first were closed by adding the tests that
+earn them: a `<fn-group>`'s own heading, and two of the four archival
+mime-subtypes.
+
+**Code review of the PR found three more defects, all fixed here.** Two were
+regressions this branch introduced, both of them silent and both on the axis
+the branch exists to fix:
+
+- **An undeclared archival master beat the web image beside it.** `mime-subtype`
+  is optional, so an `<alternatives>` TIFF declaring none ranked `FULL` and,
+  deposited first under #117's strictly-better rule, permanently beat the JPEG
+  after it. Pre-#117 "keep the last" got that case right. An archival master
+  is now also recognised by extension; a thumbnail still is not, and the
+  asymmetry is argued at the site — a first deposit is accepted whatever its
+  rank, so demoting can only break a tie, never empty a figure.
+- **A nested exhibit's `<graphic>` was donated to the figure enclosing it.**
+  `<label>` and caption moved onto the stacks; `<graphic>` kept asking
+  `current_figure`. A `<table-wrap>`, `<fn>` or `<supplementary-material>`
+  nested in a `<fig>` handed over its image, and #117's ranking made it stick
+  where "keep the last" had overwritten it. Now routed by its owning element,
+  with `<alternatives>` transparent.
+- **The #116 footnote-depth rule was replaced by a parent test.** The depth
+  needed `_FOOTNOTE_CONTAINERS` to enumerate every container whose `<label>`
+  is not the exhibit's, and the enumeration could not be completed by
+  inspection: an `<fn-group>` directly inside a `<fig>`, a `<disp-formula>`'s
+  `(1)`, a `<media>`'s `Video 1` and eLife's `<supplementary-material>`
+  `Figure 1-source data 1` all still overwrote the number. A `<label>` is a
+  direct child of the exhibit it numbers, so `element_stack[-2]` decides
+  outright — no list, and exact where the depth was merely close.
+
+**Five further defects were filed rather than fixed**: **#127** (a table
+deposited as a `<graphic>` has nowhere to go — the drop is now logged, but
+`JATSTableInfo` needs the field), **#128** (`xlink:href` matched by literal
+prefix, so a document binding XLink elsewhere loses every figure image),
+**#129** (a non-numeric `colspan` raises out of the SAX handler and the
+service swallows it at DEBUG, costing the whole article), **#130** (a
+`<boxed-text><caption><title>` renames the enclosing section — #125's mirror,
+and best done with #123) and **#131** (these JATS populations have no in-repo
+sampler, unlike every other curated list).
+
+**Two further defects were filed rather than fixed** earlier in the session,
+both reproducing on `main` after this branch: **#123** (a nested `<caption>`
+truncates the enclosing caption *and* absorbs the inner element's legend — same shape as
 #115, but a depth counter is not enough, since the caption's *owner* is what
 the routing needs) and **#124** (footnote prose is dropped entirely, so the
 rendered cell reads `12.3a` while the note it points at exists nowhere; needs
 a model decision first, a `footnotes` field on both exhibit models).
 
-**Next up is one of the remaining non-JATS issues, the two JATS ones just
-filed, or Phase 3 of the bmlibrarian port, whose every row needs a design
-conversation.** See "Next up".
+**Next up is one of the remaining non-JATS issues, the seven JATS ones filed
+this session (#123, #124, #127-#131), or Phase 3 of the bmlibrarian port,
+whose every row needs a design conversation.** #131 — a sampler for the JATS
+exhibit populations — is the one that unblocks the others: #127 and #128 both
+turn on quantities nothing in the repo can currently measure. See "Next up".
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -111,8 +160,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed six releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2414 passing + 63 skipped on `main`**, **2455 + 63** on
-  `fix/115-117-jats-exhibit-nesting`, so 41 are this session's
+- **Tests: 2414 passing + 63 skipped on `main`**, **2483 + 63** on
+  `fix/115-117-jats-exhibit-nesting`, so 69 are this session's
   (`uv run pytest tests/ -q`). Both measured, not derived. The
   PostgreSQL half was **not** re-run for this session's branch and does not
   need to be: it touches no SQL, and the last measured figure with
@@ -173,10 +222,15 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Ten, every one found by review or measurement rather than by a failing test,
-and **none of them loses records** — though **#120** loses a contributor,
-**#123** and **#124** lose an exhibit's caption tail and its footnotes, and
-**#119** feeds a scan text that is not the article's. (**#56, #68, #72 and
+Sixteen once this PR closes #115-#117 (19 open as this is written), every one
+found by review or measurement rather than by a failing test, and **none of
+them loses records** — though **#120** loses a contributor, **#123**, **#124**
+and **#127** lose an exhibit's caption tail, its footnotes and a scanned
+table's only content, **#128** would lose every figure image in a document
+binding XLink to another prefix, **#129** loses a whole article to one
+malformed `colspan`, and **#119** feeds a scan text that is not the article's.
+Count this against the repo before trusting it: this line has been wrong in
+two consecutive sessions. (**#56, #68, #72 and
 #79** shipped in 0.9.1. **#78, #81, #88–#91, #95, #98 and #99** shipped in
 0.10.0 — PRs #85, #87, #93, #97, #100. **#73** is on `main` unreleased in PR
 #102, whose own review filed **#103**. **#96** closed with PR #106, as correct
@@ -185,8 +239,14 @@ rather than being built: its saturation of `SyncReport.errors` came from a
 permanent, structural refusal that no longer happens, and what remains of it
 is in `docs/DECISIONS.md`. **#109** closed with PR #113. **#110 and #111**
 closed with PR #118, whose review filed **#119**, **#120** and **#121**.
-**#115, #116 and #117** close with this session's PR, which filed **#123** and
-**#124**.)
+**#115, #116 and #117** close with this session's PR, which filed **#123**,
+**#124**, and — from its own review — **#127**, **#128**, **#129**, **#130**
+and **#131**.)
+
+**#127-#131 came from the review of PR #126** and are described in the session
+summary above. **#131** is the one to do first: it is the missing sampler for
+the JATS exhibit populations, and both #127 and #128 turn on quantities
+nothing in the repo can currently measure.
 
 **#123 — a nested `<caption>` truncates the enclosing caption and absorbs the
 inner element's legend.** `in_caption` is a stored boolean cleared by the

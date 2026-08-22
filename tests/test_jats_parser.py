@@ -16,7 +16,11 @@
 
 """Tests for bmlib.fulltext.jats_parser."""
 
+import logging
+import xml.sax
 from pathlib import Path
+
+import pytest
 
 from bmlib.fulltext.jats_parser import JATSParser
 
@@ -1291,7 +1295,17 @@ class TestNestedFiguresKeepTheirParent:
 
         A ``<fig>`` almost always sits inside a ``<sec>``, so what the parent
         had left was read under the section's rules and reprinted as article
-        prose — which is what a transparency scan reads.
+        prose — reaching ``body_sections``, ``has_body`` and the rendered
+        HTML, and so any downstream scan over parser output. (Not
+        ``bmlib.transparency``, which regexes the raw XML itself and never
+        sees ``JATSParser`` — that exposure is issue #119.)
+
+        The prose *after* the parent closes is the other end of the same
+        flag, and pins it going **off**. Deriving ``in_figure`` from the slot
+        list rather than the stack — a five-character edit — leaves it true
+        for the rest of the document, swallowing every later paragraph and
+        every later section title, and no fixture that stops at the ``</fig>``
+        can tell.
         """
         article = JATSParser(
             _article_with_body("""
@@ -1303,11 +1317,14 @@ class TestNestedFiguresKeepTheirParent:
         <p><fig id="fig2s1"><label>Figure 2-figure supplement 1.</label></fig></p>
         <p>Parent figure internals after the supplement.</p>
       </fig>
-    </sec>""")
+      <p>Section prose after the figure.</p>
+    </sec>
+    <sec><title>Discussion</title><p>Prose in the next section.</p></sec>""")
         ).parse()
 
         assert [(s.title, tuple(s.paragraphs)) for s in article.body_sections] == [
-            ("Results", ("Section prose.",))
+            ("Results", ("Section prose.", "Section prose after the figure.")),
+            ("Discussion", ("Prose in the next section.",)),
         ]
 
     def test_the_parent_is_current_again_once_its_supplement_closes(self):
@@ -1786,7 +1803,12 @@ class TestNestedTablesKeepTheirParent:
         assert "inner cell" not in article.tables[0].html_content
 
     def test_the_outer_tables_internals_do_not_leak_into_the_section(self):
-        """The inner close cleared ``in_table_wrap`` while the outer was open."""
+        """The inner close cleared ``in_table_wrap`` while the outer was open.
+
+        Carries prose after the outer ``</table-wrap>`` for the reason the
+        figure counterpart does: it is what pins ``in_table_wrap`` going off,
+        and without it deriving the flag from ``table_slots`` survives.
+        """
         article = JATSParser(
             _article_with_body("""
     <sec><title>Results</title>
@@ -1798,11 +1820,14 @@ class TestNestedTablesKeepTheirParent:
         </p></fn></table-wrap-foot>
         <p>Outer table internals after the nested one.</p>
       </table-wrap>
-    </sec>""")
+      <p>Section prose after the table.</p>
+    </sec>
+    <sec><title>Discussion</title><p>Prose in the next section.</p></sec>""")
         ).parse()
 
         assert [(s.title, tuple(s.paragraphs)) for s in article.body_sections] == [
-            ("Results", ("Section prose.",))
+            ("Results", ("Section prose.", "Section prose after the table.")),
+            ("Discussion", ("Prose in the next section.",)),
         ]
 
     def test_an_unnested_table_still_works(self):
@@ -1886,3 +1911,478 @@ class TestAnInnerExhibitOwnsItsOwnContent:
         assert [(f.label, f.caption) for f in article.figures] == [
             ("Figure S1.", "The figure's caption.")
         ]
+
+
+class TestAnUndeclaredArchivalMasterDoesNotWin:
+    """``mime-subtype`` is optional, and an undeclared TIFF used to rank FULL.
+
+    #117 demotes an archival master so it cannot beat the web image beside it,
+    but it read only the declared ``mime-subtype``. An ``<alternatives>`` block
+    need not declare one, and an undeclared TIFF deposited *first* then ranked
+    ``FULL`` and — under the strictly-better rule that makes the first deposit
+    win among equals — beat the JPEG that followed it, permanently. The
+    pre-#117 "keep the last" resolved that case correctly, so it was a
+    regression rather than a residual.
+
+    An extension is read *here* and not for thumbnails because the costs are
+    not symmetric: a first deposit is accepted whatever its rank, so demoting
+    an archival master can only break a tie against a real web image, while a
+    ``.gif`` rule would discard the only image a figure has.
+    """
+
+    def test_an_undeclared_archival_master_deposited_first_does_not_win(self):
+        article = JATSParser(
+            _figure_with_graphics("""
+        <alternatives>
+          <graphic xlink:href="f9.tif"/>
+          <graphic mimetype="image" mime-subtype="jpeg" xlink:href="f9.jpg"/>
+        </alternatives>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "f9.jpg"
+
+    def test_an_undeclared_archival_master_deposited_last_does_not_win_either(self):
+        """The other deposit order, for the reason the thumbnail pair gives.
+
+        With the master first, "keep the last" would already resolve it, so
+        that order alone cannot fail if the extension is never consulted.
+        """
+        article = JATSParser(
+            _figure_with_graphics("""
+        <alternatives>
+          <graphic mimetype="image" mime-subtype="jpeg" xlink:href="f9.jpg"/>
+          <graphic xlink:href="f9.tif"/>
+        </alternatives>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "f9.jpg"
+
+    def test_a_lone_archival_master_is_still_the_figures_image(self):
+        """Demoting must never cost a figure the only image it has.
+
+        This is what makes reading the extension safe here and not for
+        thumbnails: ``offer_graphic`` accepts a first deposit whatever its
+        rank, so the demotion only ever breaks a tie.
+        """
+        article = JATSParser(
+            _figure_with_graphics('        <graphic xlink:href="f9.tif"/>')
+        ).parse()
+
+        assert article.figures[0].graphic_url == "f9.tif"
+
+    def test_every_archival_extension_loses_to_a_web_image(self):
+        for extension in (".tif", ".tiff", ".eps", ".ps"):
+            article = JATSParser(
+                _figure_with_graphics(f"""
+        <graphic xlink:href="master{extension}"/>
+        <graphic xlink:href="web.jpg"/>""")
+            ).parse()
+
+            assert article.figures[0].graphic_url == "web.jpg", extension
+
+    def test_an_extensionless_href_is_not_read_as_archival(self):
+        """PMC deposits extensionless hrefs; none of them is a print master."""
+        article = JATSParser(
+            _figure_with_graphics("""
+        <graphic xlink:href="pone.0012345.g001"/>
+        <graphic content-type="thumb" xlink:href="pone.0012345.g001.gif"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "pone.0012345.g001"
+
+    def test_a_query_string_does_not_hide_the_extension(self):
+        article = JATSParser(
+            _figure_with_graphics("""
+        <graphic xlink:href="f9.tif?download=1"/>
+        <graphic xlink:href="f9.jpg"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "f9.jpg"
+
+    def test_an_archival_master_still_beats_a_thumbnail_deposited_first(self):
+        """The rank order's remaining deposit order (``ARCHIVAL < THUMBNAIL``).
+
+        The declared-mime-subtype pair covers thumbnail-then-master; this is
+        master-then-thumbnail, where "keep the last" would answer differently.
+        """
+        article = JATSParser(
+            _figure_with_graphics("""
+        <graphic mimetype="image" mime-subtype="tiff" xlink:href="f1.tif"/>
+        <graphic content-type="thumb" xlink:href="f1-thumb.gif"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "f1-thumb.gif"
+
+
+class TestAGraphicBelongsToItsOwnExhibit:
+    """A ``<graphic>`` was routed to the innermost open *figure*, not its owner.
+
+    #115's sibling: ``<label>`` and caption text were moved onto the exhibit
+    stacks, but ``<graphic>`` kept asking ``current_figure``, which answers
+    "the innermost figure open anywhere above". A ``<graphic>`` held by a
+    nested ``<table-wrap>``, ``<fn>`` or ``<supplementary-material>`` was
+    therefore offered to the figure enclosing it.
+
+    #117 is what makes that permanent rather than transient: both deposits
+    rank ``FULL``, and ``offer_graphic`` accepts only a strictly better one, so
+    the foreign href arriving first now beats the figure's own for good.
+    Pre-#117 "keep the last" overwrote it, so each of these is a regression the
+    ranking introduced, not a pre-existing residual.
+
+    Ownership is decided by the enclosing element, with ``<alternatives>``
+    transparent — the same principle as ``<label>``'s parent test, and for the
+    same reason: it needs no enumeration of the containers that may hold a
+    ``<graphic>``.
+    """
+
+    def test_a_nested_tables_graphic_is_not_the_figures_image(self):
+        article = JATSParser(
+            _figure_with_graphics("""
+        <table-wrap id="t1"><graphic xlink:href="tbl.jpg"/></table-wrap>
+        <graphic xlink:href="real.jpg"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "real.jpg"
+
+    def test_a_footnotes_graphic_is_not_the_figures_image(self):
+        article = JATSParser(
+            _figure_with_graphics("""
+        <fn><p><graphic xlink:href="icon.gif"/></p></fn>
+        <graphic xlink:href="real.jpg"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "real.jpg"
+
+    def test_supplementary_materials_graphic_is_not_the_figures_image(self):
+        """eLife deposits source data inside the figure it belongs to."""
+        article = JATSParser(
+            _figure_with_graphics("""
+        <supplementary-material><graphic xlink:href="supp.jpg"/></supplementary-material>
+        <graphic xlink:href="real.jpg"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "real.jpg"
+
+    def test_the_figures_own_graphic_wins_from_either_position(self):
+        """With the foreign graphic last, plain first-wins already answers it.
+
+        So the three tests above — which all deposit the foreign graphic first
+        — are the ones that can fail. This is the mirror order, which must keep
+        working and would pass even with ownership never consulted.
+        """
+        article = JATSParser(
+            _figure_with_graphics("""
+        <graphic xlink:href="real.jpg"/>
+        <table-wrap id="t1"><graphic xlink:href="tbl.jpg"/></table-wrap>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "real.jpg"
+
+    def test_alternatives_is_transparent_for_ownership(self):
+        """The one wrapper that does *not* take ownership.
+
+        ``<alternatives>`` offers several encodings of a single image, so a
+        ``<graphic>`` inside it is still the exhibit's own.
+        """
+        article = JATSParser(
+            _figure_with_graphics("""
+        <alternatives><graphic xlink:href="f1.jpg"/></alternatives>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "f1.jpg"
+
+    def test_a_graphic_outside_any_figure_is_ignored_without_raising(self):
+        """Pins the guard, not just the routing.
+
+        Dropping the ``is not None`` test raises ``AttributeError`` out of
+        ``parse()`` for ordinary markup — a section-level
+        ``<supplementary-material>`` carries a ``<graphic>`` and no figure is
+        open — which the tier chain then swallows at DEBUG.
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <supplementary-material><graphic xlink:href="supp.jpg"/></supplementary-material>
+      <p>Section prose.</p>
+    </sec>""")
+        ).parse()
+
+        assert article.figures == []
+        assert [(s.title, tuple(s.paragraphs)) for s in article.body_sections] == [
+            ("Results", ("Section prose.",))
+        ]
+
+    def test_a_tables_own_graphic_is_dropped_and_said_so(self, caplog):
+        """A known limitation, pinned rather than left to be rediscovered.
+
+        ``JATSTableInfo`` has no graphic field, so a table deposited as a
+        scanned image renders as nothing and is otherwise indistinguishable
+        from an empty ``<table-wrap>``. Issue #127 carries the model change;
+        the DEBUG line is what makes the drop visible meanwhile.
+        """
+        with caplog.at_level(logging.DEBUG, logger="bmlib.fulltext.jats_parser"):
+            article = JATSParser(
+                _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="t1"><label>Table 1.</label>
+        <graphic xlink:href="scanned-table.png"/>
+      </table-wrap>
+    </sec>""")
+            ).parse()
+
+        assert [(t.id, t.label) for t in article.tables] == [("t1", "Table 1.")]
+        assert "scanned-table.png" in caplog.text
+        assert "t1" in caplog.text
+
+
+def _figure_containing(markup: str) -> bytes:
+    return _article_with_body(f"""
+    <sec><title>Results</title>
+      <fig id="f1"><label>Figure 1.</label>
+        <caption><p>Figure caption.</p></caption>
+{markup}
+      </fig>
+    </sec>""")
+
+
+class TestAnExhibitsLabelComesFromItsOwnElement:
+    """A ``<label>`` belongs to the element enclosing it, and JATS spells it
+    as a direct child — so the parent decides outright.
+
+    #116 fixed one member of this family by counting footnote depth: a
+    ``<table-wrap-foot><fn>``'s "a"/"b"/"*" marker was overwriting the table's
+    number for 12.0% of 225 surveyed articles. But the depth needed an
+    enumeration of every container whose ``<label>`` is not the exhibit's, and
+    that enumeration cannot be completed by inspection — ``<fn-group>``
+    directly inside a ``<fig>``, ``<disp-formula>``, ``<media>`` and eLife's
+    ``<supplementary-material>`` were all still overwriting it, each with a
+    different plausible-looking wrong answer.
+
+    Asking the parent needs no enumeration at all. It is also exact where a
+    depth was merely close: an exhibit opened *inside* a footnote keeps its own
+    label, because its ``<label>``'s parent is the exhibit either way.
+    """
+
+    def test_a_footnote_groups_label_inside_a_figure_is_not_the_figures_number(self):
+        """No ``<table-wrap-foot>`` to wrap it, so the depth rule never fired."""
+        article = JATSParser(
+            _figure_containing("""
+        <fn-group><label>Notes</label><fn><label>a</label><p>A note.</p></fn></fn-group>""")
+        ).parse()
+
+        assert article.figures[0].label == "Figure 1."
+
+    def test_a_display_formulas_label_is_not_the_figures_number(self):
+        article = JATSParser(
+            _figure_containing("""
+        <disp-formula><label>(1)</label></disp-formula>""")
+        ).parse()
+
+        assert article.figures[0].label == "Figure 1."
+
+    def test_supplementary_materials_label_is_not_the_figures_number(self):
+        """eLife's source-data convention, in the corpus that motivated #115."""
+        article = JATSParser(
+            _figure_containing("""
+        <supplementary-material>
+          <label>Figure 1-source data 1</label>
+        </supplementary-material>""")
+        ).parse()
+
+        assert article.figures[0].label == "Figure 1."
+
+    def test_a_medias_label_is_not_the_figures_number(self):
+        article = JATSParser(
+            _figure_containing("""
+        <media><label>Video 1</label></media>""")
+        ).parse()
+
+        assert article.figures[0].label == "Figure 1."
+
+    def test_a_labels_own_exhibit_still_wins_when_it_opens_inside_a_footnote(self):
+        """The case a "am I in a footnote?" test eats — #116 one level down.
+
+        Pinned here as well as under the depth rule it replaced, because the
+        parent test is what now delivers it.
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="t1"><label>Table 1.</label>
+        <table-wrap-foot><fn><label>a</label>
+          <p><fig id="f1"><label>Figure 1.</label></fig></p>
+        </fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [(t.id, t.label) for t in article.tables] == [("t1", "Table 1.")]
+        assert [(f.id, f.label) for f in article.figures] == [("f1", "Figure 1.")]
+
+
+class TestFurtherExhibitNestingShapes:
+    """Combinations the stacks must already handle, pinned so they stay so."""
+
+    def test_an_unbalanced_document_is_refused_outright(self):
+        """The premise the two ``is not None`` slot filters rest on.
+
+        Both are documented as unreachable because expat rejects an unbalanced
+        document before ``parse()`` returns. Nothing asserted that, so a future
+        lenient feed would turn two documented-unreachable filters into live
+        hole-hiders in silence.
+        """
+        with pytest.raises(xml.sax.SAXParseException):
+            JATSParser(
+                _article_with_body('<sec><title>Results</title><fig id="f1">').rsplit(
+                    b"</body>", 1
+                )[0]
+            ).parse()
+
+    def test_three_deep_tables_each_keep_their_own_label(self):
+        """The figures have this; the tables did not."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="A"><label>Table A.</label>
+        <table-wrap-foot><fn><p>
+          <table-wrap id="B"><label>Table B.</label>
+            <table-wrap-foot><fn><p>
+              <table-wrap id="C"><label>Table C.</label></table-wrap>
+            </p></fn></table-wrap-foot>
+          </table-wrap>
+        </p></fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [(t.id, t.label) for t in article.tables] == [
+            ("A", "Table A."),
+            ("B", "Table B."),
+            ("C", "Table C."),
+        ]
+
+    def test_a_figure_inside_a_table_inside_a_figure_keeps_all_three_apart(self):
+        """Where ``open_seq``'s tie-breaking works hardest.
+
+        Both stacks are non-empty at the innermost level, and each exhibit's
+        own label, caption and graphic must reach it rather than the exhibit
+        enclosing it.
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="F1"><label>Figure 1.</label>
+        <caption><p>Outer figure caption.</p></caption>
+        <table-wrap id="T1"><label>Table 1.</label>
+          <caption><p>Table caption.</p></caption>
+          <table-wrap-foot><fn><p>
+            <fig id="F2"><label>Figure 2.</label>
+              <caption><p>Inner figure caption.</p></caption>
+              <graphic xlink:href="f2.jpg"/>
+            </fig>
+          </p></fn></table-wrap-foot>
+        </table-wrap>
+        <graphic xlink:href="f1.jpg"/>
+      </fig>
+    </sec>""")
+        ).parse()
+
+        assert [(f.id, f.label, f.caption, f.graphic_url) for f in article.figures] == [
+            ("F1", "Figure 1.", "Outer figure caption.", "f1.jpg"),
+            ("F2", "Figure 2.", "Inner figure caption.", "f2.jpg"),
+        ]
+        assert [(t.id, t.label, t.caption) for t in article.tables] == [
+            ("T1", "Table 1.", "Table caption.")
+        ]
+
+    def test_a_figure_directly_inside_a_table_wrap_foot_keeps_its_label(self):
+        """Every other footnote fixture wraps in ``<fn>``."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="t1"><label>Table 1.</label>
+        <table-wrap-foot>
+          <fig id="f1"><label>Figure 1.</label></fig>
+        </table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [(t.id, t.label) for t in article.tables] == [("t1", "Table 1.")]
+        assert [(f.id, f.label) for f in article.figures] == [("f1", "Figure 1.")]
+
+    def test_both_nested_tables_are_present_regardless_of_order(self):
+        """The presence claim, split from the ordering one.
+
+        ``test_the_outer_table_is_not_dropped`` asserts an ordered list, so it
+        dies to the ordering mutant too and cannot show which of the two
+        claims failed.
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table-wrap-foot><fn><p>
+          <table-wrap id="T2"><label>Table S1.</label></table-wrap>
+        </p></fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert {t.id for t in article.tables} == {"T1", "T2"}
+
+    def test_a_sibling_exhibit_after_a_nested_pair_is_listed_last(self):
+        """A mis-indexed slot reservation the three-deep test cannot catch."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="f1"><label>Figure 1.</label>
+        <fig id="f1s1"><label>Figure 1-supplement 1.</label></fig>
+      </fig>
+      <fig id="f2"><label>Figure 2.</label></fig>
+    </sec>""")
+        ).parse()
+
+        assert [f.id for f in article.figures] == ["f1", "f1s1", "f2"]
+
+
+class TestAGraphicReachesItsFigureThroughProseFlow:
+    """``<p>`` contains an image without owning it.
+
+    JATS admits ``<p>`` inside ``<fig>``, so a ``<graphic>`` wrapped in one is
+    still the figure's. Reading the ``<p>`` as the owner costs the figure its
+    image — which is what routing by owner does unless prose flow is
+    transparent, and the ``current_figure`` routing it replaced got this case
+    right.
+    """
+
+    def test_a_graphic_wrapped_in_a_paragraph_is_still_the_figures(self):
+        article = JATSParser(
+            _figure_with_graphics('        <p><graphic xlink:href="real.jpg"/></p>')
+        ).parse()
+
+        assert article.figures[0].graphic_url == "real.jpg"
+
+    def test_a_paragraph_does_not_carry_a_graphic_out_of_a_footnote(self):
+        """Transparency must not reach *through* an owner.
+
+        ``<fn><p><graphic/></p></fn>`` still stops at the ``<fn>``: the walk
+        skips the ``<p>`` and finds the footnote, not the figure above it.
+        """
+        article = JATSParser(
+            _figure_with_graphics("""
+        <fn><p><graphic xlink:href="icon.gif"/></p></fn>
+        <graphic xlink:href="real.jpg"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "real.jpg"
+
+    def test_a_section_level_graphic_in_a_paragraph_belongs_to_no_figure(self):
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <p><graphic xlink:href="loose.jpg"/></p>
+    </sec>""")
+        ).parse()
+
+        assert article.figures == []
