@@ -41,9 +41,12 @@ exhibit at all. The month windows are what spread it.
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from datetime import date
 from pathlib import Path
+from unittest import mock
+from urllib.parse import unquote
 
 import pytest
 
@@ -287,6 +290,44 @@ class TestTheSampleIsStratified:
 
     def test_a_leap_february_keeps_its_last_day(self):
         assert sampler._month_windows(1, date(2024, 3, 1)) == [("2024-02-01", "2024-02-29")]
+
+    def test_an_offset_draws_from_older_months(self):
+        """``skip`` is what lets the draw reach back-filled deposits.
+
+        The default window is the last two years, which is born-digital XML;
+        a table deposited as a scanned image is a property of older material,
+        so measuring that population needs a draw that does not include the
+        recent months at all.
+        """
+        windows = sampler._month_windows(2, date(2026, 3, 15), skip=12)
+
+        assert windows == [("2025-02-01", "2025-02-28"), ("2025-01-01", "2025-01-31")]
+
+    def test_an_offset_of_zero_is_the_undisplaced_window(self):
+        """The negative control: the offset is not silently always applied."""
+        assert sampler._month_windows(2, date(2026, 3, 15), skip=0) == sampler._month_windows(
+            2, date(2026, 3, 15)
+        )
+
+    def test_an_offset_crossing_a_year_boundary_does_not_drift(self):
+        """Skipping is the same arithmetic as taking, not a subtraction of years."""
+        assert sampler._month_windows(1, date(2026, 3, 15), skip=14) == [
+            ("2024-12-01", "2024-12-31")
+        ]
+
+    def test_the_offset_reaches_the_search_query(self):
+        """A flag the walk does not honour measures the default window twice."""
+        queries: list[str] = []
+
+        def fake_fetch(client, url, pace):
+            queries.append(url)
+            return json.dumps({"resultList": {"result": [{"pmcid": "PMC1"}]}}).encode()
+
+        with mock.patch.object(sampler, "_fetch", fake_fetch):
+            sampler.open_access_pmcids(None, None, target=1, months=1, skip_months=600)
+
+        assert queries, "the walk made no request"
+        assert "1976" in unquote(queries[0]), unquote(queries[0])
 
 
 class TestRowsSurviveTheJournal:

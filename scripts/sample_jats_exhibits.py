@@ -338,30 +338,42 @@ def _fetch(client: httpx.Client, url: str, pace: Any) -> bytes | None:
     return None
 
 
-def _month_windows(months: int, today: date) -> list[tuple[str, str]]:
-    """The last *months* whole calendar months, most recent first.
+def _month_windows(months: int, today: date, skip: int = 0) -> list[tuple[str, str]]:
+    """*months* whole calendar months, most recent first, after skipping *skip*.
+
+    ``skip`` is what lets the draw reach material the default window cannot.
+    The last two years of open-access deposits are born-digital XML, and some
+    of the populations here are properties of *older* deposits — a
+    ``<table-wrap>`` carrying nothing but a scanned image (issue #127) is the
+    one this was added for. Counting the skipped months with the same
+    arithmetic as the taken ones is what keeps a year boundary from drifting.
 
     Args:
         months: How many windows to build.
         today: The date to count back from, injected so tests need no clock.
+        skip: How many whole months to step back before the first window.
 
     Returns:
         ``(first_day, last_day)`` ISO pairs, one per month.
     """
     windows: list[tuple[str, str]] = []
     year, month = today.year, today.month
-    for _ in range(months):
+    for _ in range(skip + months):
         month -= 1
         if month == 0:
             year, month = year - 1, 12
         first = date(year, month, 1)
         last = date(year + (month == 12), month % 12 + 1, 1) - timedelta(days=1)
         windows.append((first.isoformat(), last.isoformat()))
-    return windows
+    return windows[skip:]
 
 
 def open_access_pmcids(
-    client: httpx.Client, pace: Any, target: int, months: int = SAMPLE_MONTHS
+    client: httpx.Client,
+    pace: Any,
+    target: int,
+    months: int = SAMPLE_MONTHS,
+    skip_months: int = 0,
 ) -> list[str]:
     """Draw open-access PMC identifiers, **stratified by publication month**.
 
@@ -378,6 +390,10 @@ def open_access_pmcids(
         pace: Per-host pacer from :func:`_make_pacer`.
         target: How many identifiers to return.
         months: How many monthly strata to draw from.
+        skip_months: How many whole months to step back before the first
+            stratum — see :func:`_month_windows`. The default draw is the last
+            two years, which is born-digital XML; an older draw is what reaches
+            the back-filled deposits some populations live in.
 
     Returns:
         Up to *target* identifiers, interleaved across the strata so a short
@@ -385,7 +401,7 @@ def open_access_pmcids(
     """
     per_window: list[list[str]] = []
     wanted = max(1, target // max(1, months) + 1)
-    for first, last in _month_windows(months, date.today()):
+    for first, last in _month_windows(months, date.today(), skip=skip_months):
         collected: list[str] = []
         cursor = "*"
         while len(collected) < wanted:
@@ -568,6 +584,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--months", type=int, default=SAMPLE_MONTHS, help="Monthly strata to sample across."
     )
     parser.add_argument(
+        "--months-ago",
+        type=int,
+        default=0,
+        help=(
+            "Step back this many whole months before the first stratum. The "
+            "default draw is born-digital XML; use this to reach older, "
+            "back-filled deposits (issue #127's population lives there)."
+        ),
+    )
+    parser.add_argument(
         "-o", "--output", type=Path, default=DEFAULT_OUTPUT, help="Where to write the corpus."
     )
     parser.add_argument(
@@ -599,7 +625,9 @@ def main() -> int:
     with httpx.Client(headers=headers, timeout=60.0, follow_redirects=True) as client:
         pmcids = [
             p
-            for p in open_access_pmcids(client, pace, args.target + 150, args.months)
+            for p in open_access_pmcids(
+                client, pace, args.target + 150, args.months, args.months_ago
+            )
             if p not in seen
         ]
         journal.parent.mkdir(parents=True, exist_ok=True)

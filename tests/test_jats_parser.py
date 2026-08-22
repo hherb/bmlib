@@ -2169,8 +2169,32 @@ class TestATableDepositedAsAnImageKeepsIt:
 
         assert article.tables[0].graphic_url == "scan.jpg"
 
+    def test_supplementary_materials_graphic_is_not_the_tables_image(self):
+        """The case ownership actually decides, and the one that can fail.
+
+        ``<supplementary-material>`` sits in ``<table-wrap>``'s content flow, so
+        it may be deposited *before* the table's own image — and then plain
+        first-wins keeps the wrong href, since both rank ``FULL`` and
+        ``offer_graphic`` accepts only a strictly better deposit. Mutation
+        testing found this: with the owner test dropped, the whole class passed
+        because every foreign deposit here was written second.
+        """
+        article = JATSParser(
+            _table_containing("""
+        <supplementary-material><graphic xlink:href="supp.jpg"/></supplementary-material>
+        <graphic xlink:href="scan.jpg"/>""")
+        ).parse()
+
+        assert article.tables[0].graphic_url == "scan.jpg"
+
     def test_a_footnotes_graphic_is_not_the_tables_image(self):
-        """Ownership decides here exactly as it does inside a ``<fig>``."""
+        """The mirror order, which must keep working.
+
+        JATS puts ``<table-wrap-foot>`` after the table's content, so a
+        footnote's image can only ever be deposited second and first-wins
+        already answers it. Kept as the control: it would pass with ownership
+        never consulted.
+        """
         article = JATSParser(
             _table_containing("""
         <graphic xlink:href="scan.jpg"/>
