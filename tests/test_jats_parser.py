@@ -1501,6 +1501,29 @@ class TestAnExhibitLabelIsNotAFootnoteMarker:
 
         assert [t.label for t in article.tables] == ["Table 1."]
 
+    def test_a_footnote_groups_own_label_is_not_the_tables_number_either(self):
+        """Why the container is counted and not only ``<fn>``.
+
+        A ``<fn-group>`` carries a heading of its own — "Notes",
+        "Abbreviations" — as a ``<label>``, and that is no more the table's
+        number than a marker is. JATS admits ``<fn-group>`` here only inside
+        ``<table-wrap-foot>``, so counting the container covers it without a
+        member of its own.
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1">
+        <label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><fn-group><label>Notes</label>
+          <fn><p>Adjusted for age.</p></fn></fn-group></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [t.label for t in article.tables] == ["Table 1."]
+
     def test_a_reference_label_is_still_read(self):
         """The third branch of the same routing must keep working."""
         article = JATSParser(
@@ -1645,6 +1668,30 @@ class TestChoosingAmongSeveralGraphics:
         ).parse()
 
         assert article.figures[0].graphic_url == "fig1-thumb.gif"
+
+    def test_every_archival_mime_subtype_loses_to_a_web_image(self):
+        """All four members of the reject-list, each in the losing position."""
+        for subtype in ("tiff", "tif", "eps", "postscript"):
+            article = JATSParser(
+                _figure_with_graphics(f"""
+        <alternatives>
+          <graphic mime-subtype="{subtype}" xlink:href="master.bin"/>
+          <graphic mime-subtype="jpeg" xlink:href="fig1.jpg"/>
+        </alternatives>""")
+            ).parse()
+
+            assert article.figures[0].graphic_url == "fig1.jpg", subtype
+
+    def test_the_archival_comparison_folds_case(self):
+        article = JATSParser(
+            _figure_with_graphics("""
+        <alternatives>
+          <graphic mime-subtype="TIFF" xlink:href="master.tif"/>
+          <graphic mime-subtype="jpeg" xlink:href="fig1.jpg"/>
+        </alternatives>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "fig1.jpg"
 
     def test_the_first_wins_among_equals(self):
         """Accept a deposit only when it is *strictly* better."""

@@ -8,6 +8,75 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A nested `<fig>` dropped its parent figure** (#115). eLife wraps every
+  figure supplement inside the figure it belongs to, and `current_figure` was
+  a single slot: the inner `<fig>` overwrote the parent's builder, the inner
+  `</fig>` emitted the child and cleared the slot, and the parent's own
+  `</fig>` then found nothing to build. The parent figure — label, caption and
+  graphic — was lost outright. **Measured:** 19.6% of 225 surveyed
+  open-access Europe PMC articles nest a `<fig>`; PMC8754430 carries 12 and
+  the parser returned 9, the three missing ones being exactly those with
+  supplements. `in_figure` was cleared by the inner close too, so whatever the
+  parent had left was read under the enclosing `<sec>`'s rules and reprinted
+  as article prose — which is the text a transparency scan reads.
+
+  The open figures are now a **stack**, with `in_figure` and `current_figure`
+  derived from it rather than stored, so a stored flag cannot be reintroduced
+  by a later early return. The other half is **slot reservation**: the entry
+  in the figure list is reserved when `<fig>` opens and filled when it closes,
+  because an exhibit is *built* at its end tag but has to be *listed* at its
+  start. Plain pop-and-append restores the parent and still fails, listing
+  every supplement ahead of the figure that contains it, so a test that only
+  counts figures does not tell the two apart.
+
+  `current_table` was the same single slot and is fixed the same way: a
+  `<table-wrap>` opened inside another's `<table-wrap-foot>` lost the outer
+  table entirely. Unmeasured, unlike the figure case, but structural — and
+  found only because the figure fix was being pinned.
+
+- **A `<table-wrap-foot><fn><label>` overwrote the table's own number**
+  (#116). A footnote carries its marker — `a`, `b`, `*` — as its own
+  `<label>`, and every `<label>` was routed on the ambient "am I in a
+  figure/table?" flags, so the last footnote marker won. PMC12661592's single
+  table reported its label as `"a"`. **Measured:** 27 of 225 surveyed articles
+  (12.0%) carry a labelled `<table-wrap-foot><fn>`; `<fig>` has the identical
+  hole, JATS admitting `<fn>` there too. An empty label is not inert either —
+  the renderer substitutes `Figure {i + 1}`, so the symptom is an invented
+  number rather than a blank.
+
+  A footnote depth now decides it, compared against the depth the **exhibit**
+  opened at and never against zero: JATS lets a `<fig>` or `<table-wrap>` open
+  *inside* a footnote, and the obvious "am I in a footnote?" test eats that
+  exhibit's own label — the same defect one level down. The marker itself is
+  discarded rather than held, which is correct only because bmlib captures no
+  footnote prose for it to belong to; that gap is filed as **#124**.
+
+- **A figure with several `<graphic>` resolved to the thumbnail** (#117). The
+  last deposit won, and publishers commonly emit the full image first and a
+  thumbnail second. **Measured:** 58.0% of the 959 figures in the same
+  225-article survey carry more than one `<graphic>` and 52.9% end on a
+  thumbnail, so the majority of figures resolved to a preview.
+
+  Position cannot decide it, because the two multi-graphic conventions
+  disagree about order: a thumbnail is deposited *last* (PLOS, Springer) while
+  an `<alternatives>` archival master is deposited *first*, so first-wins
+  merely trades the thumbnail for a TIFF no renderer displays. The deposits
+  are **ranked** instead — `ARCHIVAL < THUMBNAIL < FULL` — and one is accepted
+  only when it is *strictly* better, which is what makes the first win among
+  equals. "Thumbnail" is read from `content-type` **or** `specific-use` as a
+  lowercased substring, neither attribute being case-controlled; nothing is
+  inferred from the file extension, since every thumbnail in the corpus is a
+  `.gif` only because PLOS and Springer both deposit that way, and elsewhere a
+  `.gif` is the one image a figure has.
+
+- **An inner exhibit's label and caption went to the exhibit enclosing it.**
+  Found while pinning #116's "compare against the exhibit's depth" rule, and
+  the same defect one level up: `<label>` and caption text asked whether a
+  figure was open *anywhere above* before considering the table, so a
+  `<table-wrap>` inside a figure's footnote lost its own number and legend to
+  the figure. Both now route to the innermost open exhibit, which among
+  properly nested elements is simply the one that opened last.
+
 - **Every author dropped when the contributor role is declared on the group**
   (#111). `JATSParser` collected a `<contrib>` only where it carried
   `contrib-type="author"`. JATS lets the role be declared once on the

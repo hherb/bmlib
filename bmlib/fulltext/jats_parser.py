@@ -118,6 +118,12 @@ def _graphic_suitability(attrs: xml.sax.xmlreader.AttributesImpl) -> _GraphicSui
     way, so an extension rule passes the corpus and then discards the only
     image a figure has wherever ``.gif`` *is* that image.
 
+    A deposit marked *both* — a TIFF thumbnail — is ranked ``THUMBNAIL``,
+    since that predicate is tested first. Neither ranking serves it well
+    because neither form renders, the corpus carries no instance, and no test
+    pins the order: it is the reference implementation's, and is recorded here
+    rather than asserted.
+
     Args:
         attrs: Attributes of the ``<graphic>`` start tag.
 
@@ -666,7 +672,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
     @property
     def tables(self) -> list[JATSTableInfo]:
-        """The tables, in the order their ``<table-wrap>`` elements *opened*."""
+        """The tables, in the order their ``<table-wrap>`` elements *opened*.
+
+        The filter is there for the reason :attr:`figures`' is, and is equally
+        unreachable: no test kills either, and both are kept so a future
+        non-SAX feed cannot put a hole in the result.
+        """
         return [table for table in self.table_slots if table is not None]
 
     def _innermost_exhibit(self) -> tuple[_FigureBuilder | _TableBuilder, int] | None:
@@ -1085,6 +1096,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 frame = self.figure_stack.pop()
                 self.figure_slots[frame.slot] = frame.builder.build()
         elif name in _FOOTNOTE_CONTAINERS:
+            # The depth test is unreachable by construction, like the one on
+            # nested_article_depth above: expat rejects a close with no
+            # matching open, so no test can kill it. Kept so a future non-SAX
+            # feed cannot drive the depth negative and hand every later
+            # exhibit's label to a footnote.
             if self.footnote_depth:
                 self.footnote_depth -= 1
         elif name == "caption":
