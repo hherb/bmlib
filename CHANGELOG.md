@@ -143,6 +143,13 @@ All notable changes to bmlib are documented here. The format is based on
   publisher the issue was filed from is absent from both draws, exactly as
   #127's population was absent from one.
 
+  Both shapes were checked end to end against the real deposits, old parser
+  against new. PMC8754430's back matter section reads *Author contributions*
+  before and *Additional information* after; PMC12755737's reads *Analysis of
+  10 Candidate Orphan Proteins Per AlphaFold Confidence Category.* before —
+  a `<supplementary-material>` caption's lead — and *Supporting information*
+  after.
+
   **`in_caption` was a stored boolean, so #123's two halves failed together.**
   A `<caption>` nested inside a figure's own was appended to the figure *and*
   its close cleared the flag, dropping the figure's caption tail after it. A

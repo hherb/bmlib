@@ -1276,6 +1276,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # *Additional information* heading twice over. So the rate is a
             # floor: the publisher #125 was filed from is absent from both
             # windows, exactly as #127's population was absent from one.
+            #
+            # Both shapes were checked against the real deposits, old parser
+            # against new: PMC8754430's section reads "Author contributions"
+            # before and "Additional information" after, and PMC12755737's
+            # reads a <supplementary-material> caption's lead before and
+            # "Supporting information" after.
             parent = self.element_stack[-2] if len(self.element_stack) >= 2 else ""
             if parent == "caption":
                 self._append_caption_text(normalized_text)

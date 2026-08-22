@@ -2845,11 +2845,21 @@ class TestACaptionBelongsToTheElementThatOpenedIt:
     so with a depth it still lands on the enclosing figure.
 
     The half a depth cannot reach at all is the *sibling* case, which needs no
-    nesting: eLife deposits a ``<supplementary-material>`` with a
-    ``<caption>`` of its own inside the ``<fig>``, beside the figure's
-    caption. Every word of *Figure 1—source data 1* was being appended to the
+    nesting: JATS admits a ``<caption>`` on ``<boxed-text>``, ``<media>`` and
+    ``<supplementary-material>``, any of which may sit inside a ``<fig>``
+    beside the figure's own, and every word of it was being appended to the
     figure's legend. That is the same shape #116 settled for ``<label>``, and
     it is the case a stack alone gets wrong.
+
+    **Both of #123's populations measure empty**, so these two fixtures are
+    hand-built rather than drawn from a corpus: no ``<caption>`` nests inside
+    another across the two committed draws (0 of 1,550 and 0 of 288), and none
+    inside an exhibit is owned by anything but that exhibit. The
+    ``<supplementary-material>`` fixture below is a shape JATS permits, not one
+    a publisher was observed depositing — an earlier draft of this docstring
+    attributed it to eLife, which deposits its figure supplements as nested
+    ``<fig>``. What is measured is the premise the rule rests on, and it is
+    full: every exhibit that carries a caption carries one directly.
     """
 
     NESTED_CAPTION = b"""<?xml version="1.0"?>

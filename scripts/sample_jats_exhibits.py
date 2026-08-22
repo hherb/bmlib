@@ -416,8 +416,10 @@ def _record_exhibit(el: ET.Element, tag: str, depth: int, row: ArticleMeasuremen
     if any(_local(c.tag) == "caption" for c in el.iter() if c is not el):
         row.exhibits_with_descendant_caption += 1
 
-    graphics = [g for g in el.iter() if _local(g.tag) == "graphic"]
     if tag == "fig":
+        # A whole-subtree walk, unlike the table branch below — see `_owned`
+        # for why the asymmetry is deliberate and why it costs nothing here.
+        graphics = [g for g in el.iter() if _local(g.tag) == "graphic"]
         if graphics:
             row.figures_with_graphic += 1
         if len(graphics) > 1:
@@ -429,11 +431,12 @@ def _record_exhibit(el: ET.Element, tag: str, depth: int, row: ArticleMeasuremen
     else:
         # The same three counts for a <table-wrap>, because #127 routes a
         # table's deposits through the *same* ranking a figure's go through
-        # and nothing measured that the rule holds there — issue #135. Kept
-        # as separate fields rather than folded into the figure ones: the
-        # figure percentages are cited in `jats_parser` and in CLAUDE.md, and
+        # and nothing had measured that the rule holds there — issue #135,
+        # which these counters answer as an empty population: across the two
+        # committed draws no table carries a second owned deposit. Kept as
+        # separate fields rather than folded into the figure ones: the figure
+        # percentages are cited in `jats_parser` and in CLAUDE.md, and
         # silently widening their denominator would invalidate every one.
-        # Owner-scoped, unlike the figure branch above — see `_owned`.
         graphics = _owned(el, "graphic")
         has_table = bool(_owned(el, "table"))
         if graphics:
