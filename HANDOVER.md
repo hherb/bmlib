@@ -1,14 +1,18 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-22. **0.10.0 is released and on PyPI**; five changes
+_Last updated: 2026-08-22. **0.10.0 is released and on PyPI**; six changes
 sit unreleased on `main` — #73's atomic template install (PR #102), #96/#105's
 partitioning of an over-cap PubMed day (PRs #106 and #114), #109's typed
-article-id (PR #113) and #110/#111's JATS sub-article and contributor-group
-fixes (PR #118) — plus **this session's exhibit-nesting fixes, on
-`fix/115-117-jats-exhibit-nesting`**. All five version places agree at 0.10.0.
-Four of the five unreleased changes are `fulltext` JATS fixes filed within
+article-id (PR #113), #110/#111's JATS sub-article and contributor-group
+fixes (PR #118) and #115/#116/#117/#131's exhibit nesting, ranking and
+sampler (PR #126, merged) — plus **this session's #127, on
+`fix/127-table-graphic`**. All five version places agree at 0.10.0.
+Five of the six unreleased changes are `fulltext` JATS fixes filed within
 days of each other; whoever cuts the next release should describe them
-together.
+together. Each unreleased ROADMAP row now carries an `*(unreleased)*` marker
+— eight of them did not, so there was nothing for the release recipe to
+promote and no way to tell a released row from an unreleased one; #109 had no
+row at all.
 
 **Two of them move what a caller of `JATSParser` gets**, and neither moves
 what a bmlib *sync* stores. #111 populates an author list that was empty for
