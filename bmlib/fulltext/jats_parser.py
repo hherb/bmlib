@@ -156,7 +156,7 @@ def _graphic_suitability(attrs: xml.sax.xmlreader.AttributesImpl, href: str) -> 
     exception to the rule above. A ``<graphic>`` in an ``<alternatives>`` block
     need not declare ``mime-subtype`` — and when it does not, an undeclared
     TIFF deposited first ranked ``FULL`` and, under
-    :meth:`_FigureBuilder.offer_graphic`'s strictly-better rule, beat the web
+    :meth:`_GraphicHolder.offer_graphic`'s strictly-better rule, beat the web
     image that followed it. What makes inferring safe *here* is that a first
     deposit is accepted whatever its rank, so demoting can only ever break a
     tie against a real web image — it can never discard the only image a figure
@@ -187,16 +187,33 @@ def _graphic_suitability(attrs: xml.sax.xmlreader.AttributesImpl, href: str) -> 
     return _GraphicSuitability.FULL
 
 
-@dataclass
+@dataclass(kw_only=True)
 class _GraphicHolder:
     """The half of an exhibit builder that chooses among ``<graphic>`` deposits.
 
     Shared by :class:`_FigureBuilder` and :class:`_TableBuilder` rather than
-    written once each. A ``<table-wrap>`` may be deposited as an image too
-    (issue #127) — a scanned or typographically complex table — and nothing
-    about the choice among several deposits differs by exhibit: the publishers
-    that deposit a thumbnail beside a figure deposit one beside a table. Two
-    copies of a rule this heavily argued are two things to keep in step.
+    written once each, because a ``<table-wrap>`` may be deposited as an image
+    too (issue #127) — a scanned or typographically complex table. Two copies
+    of a rule this heavily argued are two things to keep in step, and that is
+    the whole of the argument for sharing it.
+
+    **Whether a table is ever deposited with several ``<graphic>`` is not
+    measured**, and the ranking below is therefore reasoned onto tables rather
+    than observed on them. Both committed corpora say only that the question
+    does not arise in them: every one of the 11 image-only tables in
+    ``tests/data/jats_exhibits.backfill.json`` carries exactly one deposit,
+    declaring no ``content-type``, no ``specific-use`` and no
+    ``<alternatives>``, and the recent draw carries no image-only table at
+    all. With one deposit, ranking and plain first-wins agree, so nothing
+    here is contradicted — it is simply unexercised. ``sample_jats_exhibits``
+    counts the table side as of issue #135 so a later draw can settle it;
+    until one has, do not restate this as publisher behaviour.
+
+    ``kw_only`` because these two fields are inherited and would otherwise
+    lead both subclasses' generated ``__init__``, making ``_TableBuilder("t1")``
+    set the href rather than the id — and leaving ``graphic_rank`` ``None``
+    beside a set href, which is the one state the pairing below forbids.
+    ``offer_graphic`` is the only writer that keeps them in step.
     """
 
     graphic_href: str = ""
@@ -226,8 +243,14 @@ class _GraphicHolder:
 
         *Strictly* better is what makes the first deposit win among equals.
 
+        **Every percentage above is measured over figures.** Tables reach this
+        method too since issue #127, and no draw has yet found one carrying a
+        second deposit — see :class:`_GraphicHolder` for what that does and
+        does not license.
+
         Args:
-            href: The deposit's resolved href; an empty one is ignored.
+            href: The deposit's resolved href, already stripped by the caller;
+                an empty one is ignored.
             rank: Its suitability, from :func:`_graphic_suitability`.
         """
         if not href:
@@ -957,7 +980,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # enclosing it, and since both rank FULL and `offer_graphic`
             # accepts only a strictly better deposit, that foreign href then
             # beat the figure's own for good.
-            href = attrs.get("xlink:href") or attrs.get("href") or attrs.get("xlink-href") or ""
+            # Stripped because `offer_graphic`'s emptiness guard is falsiness
+            # and whitespace is truthy: XML normalises a pretty-printed
+            # attribute to spaces rather than collapsing it, so a wrapped
+            # href would take the ranking slot, block the real deposit that
+            # follows, and render as a broken src. No instance in either
+            # committed corpus (2,346 deposits, every extension unpadded) —
+            # this guards a population measured empty, not an observed one.
+            href = (
+                attrs.get("xlink:href") or attrs.get("href") or attrs.get("xlink-href") or ""
+            ).strip()
             owner = self._graphic_owner()
             current_figure = self.current_figure
             current_table = self.current_table
