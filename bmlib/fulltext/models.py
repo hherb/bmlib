@@ -89,7 +89,12 @@ class JATSTableInfo:
     which one to show is the renderer's choice, and ``to_html()`` shows the
     markup. A caller that wants the facsimile — because the markup lost a
     merged cell, or because it is showing the page as published — reads this
-    field directly.
+    field directly, and it is the only way to get at it: ``FullTextService``
+    discards the ``JATSArticle`` and caches the rendered HTML alone, so for a
+    service consumer that renderer choice is permanent. Both populations are
+    now measured over the two committed draws (600 articles, 755 tables): the
+    image is the *only* rendition for 11, all in the back-filled window, and
+    sits beside a ``<table>`` for 5, all in the recent one.
 
     ``graphic_url`` is ``str | None`` while ``html_content`` beside it is
     ``str``, which is deliberate on both counts: ``html_content`` is rendered

@@ -214,9 +214,12 @@ must not be re-done.
 ## fulltext — retrieval and JATS
 
 - **`_JATSHandler.endElement` tests `in_figure or in_table_wrap` before any
-  prose branch and routes on `in_caption`** — asking about the section first
+  prose branch, and routes the caption's own content by the open
+  `<caption>`'s owner (`caption_stack`)** — asking about the section first
   blanks the caption and renames the section; the same branch deliberately
-  drops non-caption `<p>` inside figures/tables. Pinned by
+  drops non-caption `<p>` inside figures/tables. The owner replaced a stored
+  `in_caption` boolean in issue #123, which both mis-routed a nested
+  caption and truncated the enclosing one at its close. Pinned by
   `TestJATSParserCaptionScoping` and
   `TestJATSParserUnsectionedBodyFurniture`.
 - **NCBI's ID Converter is consulted *after* the Europe PMC search** (the

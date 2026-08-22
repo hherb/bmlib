@@ -207,6 +207,178 @@ class TestCountingAgainstHandBuiltMarkup:
         assert row.specific_use_values == {"thumbnail": 1}
 
 
+class TestTheCaptionAndTitleOwnerPopulations:
+    """The premises behind the routing rules #123, #125 and #130 turn on.
+
+    The ``<label>`` rule's premise was earned by counting direct-child labels
+    against labels anywhere and finding the two equal. A ``<caption>`` and a
+    section ``<title>`` are now routed by their parent for the same reason, so
+    they owe the same evidence — and the populations they replace owe a size,
+    since #123's prevalence had never been measured against anything.
+    """
+
+    def test_a_direct_caption_and_a_supplements_caption_are_told_apart(self):
+        """eLife's shape: the sibling case a nesting depth never sees."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><label>Figure 1</label>
+              <caption><title>Study flow.</title><p>Lead.</p></caption>
+              <supplementary-material id="sd1">
+                <caption><p>Raw counts.</p></caption></supplementary-material>
+            </fig>"""),
+        )
+
+        assert row.exhibits_with_direct_caption == 1
+        assert row.exhibit_caption_owners == {"fig": 1, "supplementary-material": 1}
+
+    def test_an_exhibit_captioned_only_indirectly_violates_the_premise(self):
+        """The negative control, as for ``<label>``: every real article
+        measured so far captions its exhibits directly, so the "premise holds"
+        line would print for an instrument that could not detect otherwise."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><alternatives><caption><p>Indirect.</p></caption></alternatives></fig>"""),
+        )
+
+        assert row.exhibits_with_direct_caption == 0
+        assert row.exhibits_with_descendant_caption == 1
+
+    def test_a_nested_caption_is_counted_as_one(self):
+        """Issue #123's own population — a caption inside a caption."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><caption><p>Lead.</p>
+              <p><media><caption><p>Video legend.</p></caption></media></p>
+              <p>Tail.</p></caption></fig>"""),
+        )
+
+        assert (row.captions, row.nested_captions) == (2, 1)
+
+    def test_a_title_owned_by_a_footnote_group_inside_a_section_is_counted(self):
+        """Issue #125: the population that used to rename the section."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <sec><title>Additional information</title>
+              <fn-group><title>Competing interests</title><fn><p>None.</p></fn></fn-group>
+            </sec>"""),
+        )
+
+        assert row.sections == 1
+        assert row.sections_with_direct_title == 1
+        assert row.section_renaming_titles == {"fn-group": 1}
+
+    def test_a_boxed_texts_caption_title_inside_a_section_is_counted(self):
+        """Issue #130, which reaches the same branch one container along."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <sec><title>Results</title>
+              <boxed-text><caption><title>Box 1.</title></caption><p>Box.</p></boxed-text>
+            </sec>"""),
+        )
+
+        assert row.section_renaming_titles == {"caption": 1}
+
+    def test_a_title_inside_an_exhibit_was_never_the_sections(self):
+        """The exhibit branch already dropped these, so counting them would
+        report a change this fix did not make."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <sec><title>Results</title>
+              <table-wrap id="t1"><caption><title>Table 1.</title></caption>
+                <table-wrap-foot><fn-group><title>Abbreviations</title>
+                  </fn-group></table-wrap-foot></table-wrap>
+            </sec>"""),
+        )
+
+        assert row.section_renaming_titles == {}
+
+    def test_a_title_outside_any_section_was_never_the_sections_either(self):
+        """The usual position for a <ref-list> or an <app> is loose in
+        <back>, where no section is open and nothing was ever overwritten."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""<ref-list><title>References</title></ref-list>"""),
+        )
+
+        assert row.section_renaming_titles == {}
+
+
+class TestTheTableSideCountsWhatTheParserWouldRoute:
+    """A ``<td>``'s inline image is not the table's own rendition.
+
+    Issue #135 named this as a residual: the counters walked ``el.iter()``,
+    a whole subtree, while the parser routes a ``<graphic>`` by its **owner**.
+    The first live run made it real rather than theoretical — of the ten
+    recent-window tables carrying a ``<graphic>`` anywhere, the four holding
+    more than one are the two articles that between them deposit 35 of the
+    draw's 36 ``<td>``-owned images. Reported unscoped, the table side would
+    have read "40% of tables carry several deposits", which is a statement
+    about cell decoration and not about the ranking rule it was measuring.
+
+    The figure side deliberately keeps the subtree walk: its percentages are
+    cited in ``jats_parser`` and in CLAUDE.md, and re-scoping them silently
+    would invalidate every one. Both committed draws record zero nested
+    exhibits, so no ``<td>`` sits under a ``<fig>`` in either and the two
+    walks agree there anyway.
+    """
+
+    def test_a_cell_image_is_not_the_tables_own_deposit(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1"><label>Table 1</label>
+              <graphic xlink:href="t1.jpg"/>
+              <table><tbody><tr><td><graphic xlink:href="tick.gif"/></td></tr></tbody></table>
+            </table-wrap>"""),
+        )
+
+        assert row.tables_with_graphic == 1
+        assert row.tables_multi_graphic == 0
+        assert row.foreign_owned_graphics == {"td": 1}
+
+    def test_a_transparent_wrapper_still_hands_the_deposit_over(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1"><alternatives>
+              <graphic xlink:href="t1.tif"/><graphic xlink:href="t1.jpg"/>
+            </alternatives></table-wrap>"""),
+        )
+
+        assert (row.tables_with_graphic, row.tables_multi_graphic) == (1, 1)
+
+    def test_an_image_only_table_is_judged_on_what_it_owns(self):
+        """A table whose only graphic is a cell decoration still has its
+        markup, so it is not the population issue #127 is about."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1">
+              <table><tbody><tr><td><graphic xlink:href="tick.gif"/></td></tr></tbody></table>
+            </table-wrap>"""),
+        )
+
+        assert (row.tables_image_only, row.tables_with_graphic) == (0, 0)
+
+    def test_a_nested_exhibits_deposit_belongs_to_the_nested_exhibit(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1"><graphic xlink:href="t1.jpg"/>
+              <table-wrap-foot><fig id="f1"><graphic xlink:href="f1.jpg"/></fig>
+              </table-wrap-foot></table-wrap>"""),
+        )
+
+        assert (row.tables_with_graphic, row.tables_multi_graphic) == (1, 0)
+        assert (row.figures_with_graphic, row.figures_multi_graphic) == (1, 0)
+
+
 class TestAnArticleThatCouldNotBeMeasuredIsNeverAFinding:
     def test_unparseable_xml_is_unmeasured_rather_than_empty(self):
         assert sampler.measure_article("PMC1", b"<article><body>") is None
@@ -253,7 +425,7 @@ class TestAnArticleThatCouldNotBeMeasuredIsNeverAFinding:
     def test_image_only_tables_are_reported_as_a_share_of_tables(self, capsys):
         """A bare count cannot be compared across two draws of different sizes.
 
-        #127's population is the one measured on two windows — 0 of 642 recent
+        #127's population is the one measured on two windows — 0 of 662 recent
         tables against a double-digit share of older ones — so it has to print
         as a rate, and the denominator has to be the tables rather than every
         exhibit, or a figure-heavy draw dilutes it.
@@ -575,3 +747,124 @@ class TestTheTableSideOfTheRankingIsCounted:
         assert totals.sum_of("tables_with_graphic") > 0, "the sum must stay positive"
         assert sampler.print_report(totals) is True
         assert "NOT MEASURED" in capsys.readouterr().out
+
+
+class TestTheCitedPopulationsAreWhatTheCorporaHold:
+    """Every number a comment cites has to be re-derivable from the repo.
+
+    This is the property the two committed corpora exist for, and it is not
+    self-enforcing: PR #136 redrew both windows and left three figures in
+    ``jats_parser.py`` at their pre-redraw values — ``1,556`` captions,
+    ``1,416`` direct-child captions, ``71 titles in 32 of 300`` — while
+    ``CLAUDE.md``, ``CHANGELOG.md``, ``ROADMAP.md`` and ``docs/manual`` all
+    carried the corpus values. They were internally coherent (the cited
+    Wilson interval is exactly the one ``32/300`` gives), so nothing looked
+    wrong; only summing the JSON found them.
+
+    The precedent is ``test_pdf_metadata_titles.py``, whose header asks for
+    numbers "computed rather than written down, so a re-sampled corpus moves
+    the reported bound instead of leaving a stale number in a docstring".
+    A comment cannot compute, so the next best thing is a test that fails
+    when the corpus moves under it.
+
+    Deliberately *not* a test of the parser or the sampler: it asserts only
+    that the prose and the data agree. A redraw is meant to break it — that
+    is the signal to reconcile the comments, and the failure names the file
+    to reconcile.
+    """
+
+    RECENT = Path(__file__).resolve().parent / "data" / "jats_exhibits.json"
+    BACKFILL = Path(__file__).resolve().parent / "data" / "jats_exhibits.backfill.json"
+
+    def _totals(self, path: Path) -> tuple[dict[str, int], dict[str, dict[str, int]], int]:
+        """Sum one corpus the way :func:`print_report` does.
+
+        Returns:
+            The integer counters, the ``Counter``-backed ones, and the number
+            of articles contributing at least one section-renaming title.
+        """
+        rows = json.loads(path.read_text())["rows"]
+        ints: dict[str, int] = {}
+        maps: dict[str, dict[str, int]] = {}
+        for row in rows:
+            for key, value in row.items():
+                if isinstance(value, int):
+                    ints[key] = ints.get(key, 0) + value
+                elif isinstance(value, dict):
+                    bucket = maps.setdefault(key, {})
+                    for name, count in value.items():
+                        bucket[name] = bucket.get(name, 0) + count
+        renaming_articles = sum(1 for row in rows if row.get("section_renaming_titles"))
+        return ints, maps, renaming_articles
+
+    def test_the_title_owner_population_is_what_the_comments_cite(self):
+        """The #125/#130 population, cited in five files and wrong in one."""
+        recent, recent_maps, recent_articles = self._totals(self.RECENT)
+        backfill, backfill_maps, backfill_articles = self._totals(self.BACKFILL)
+
+        assert sum(recent_maps["section_renaming_titles"].values()) == 69
+        assert recent_articles == 31
+        assert set(recent_maps["section_renaming_titles"]) == {"caption"}
+        assert sum(backfill_maps["section_renaming_titles"].values()) == 13
+        assert backfill_articles == 1
+        assert set(backfill_maps["section_renaming_titles"]) == {"list"}
+        assert recent["captions"] == 1550
+        assert backfill["captions"] == 288
+
+    def test_the_caption_premise_and_its_empty_populations_hold(self):
+        """#123's premise measures full and both its own populations empty."""
+        recent, recent_maps, _ = self._totals(self.RECENT)
+        backfill, backfill_maps, _ = self._totals(self.BACKFILL)
+
+        assert recent["exhibits_with_direct_caption"] == 1413
+        assert recent["exhibits_with_descendant_caption"] == 1413
+        assert backfill["exhibits_with_direct_caption"] == 288
+        assert backfill["exhibits_with_descendant_caption"] == 288
+        assert recent["nested_captions"] == 0
+        assert backfill["nested_captions"] == 0
+        assert set(recent_maps["exhibit_caption_owners"]) == {"fig", "table-wrap"}
+        assert set(backfill_maps["exhibit_caption_owners"]) == {"fig", "table-wrap"}
+
+    def test_the_label_premise_holds_on_both_windows(self):
+        """#116's premise, and the denominator the comment must not overstate."""
+        recent, recent_maps, _ = self._totals(self.RECENT)
+        backfill, backfill_maps, _ = self._totals(self.BACKFILL)
+
+        assert recent["exhibits_with_direct_label"] == 1446
+        assert recent["exhibits_with_descendant_label"] == 1446
+        assert backfill["exhibits_with_direct_label"] == 365
+        assert backfill["exhibits_with_descendant_label"] == 365
+        # 1,446 of the *labelled* exhibits, not of all 1,500 — 54 carry none.
+        assert recent["figures"] + recent["tables"] == 1500
+        assert set(recent_maps["label_parents"]) == {"fig", "table-wrap", "fn", "list-item"}
+
+    def test_the_graphic_populations_are_what_offer_graphic_cites(self):
+        """#117's shares and #127's two renditions, both cited as percentages."""
+        recent, _, _ = self._totals(self.RECENT)
+        backfill, _, _ = self._totals(self.BACKFILL)
+
+        assert (recent["figures_with_graphic"], backfill["figures_with_graphic"]) == (828, 276)
+        assert (recent["figures_multi_graphic"], backfill["figures_multi_graphic"]) == (437, 168)
+        assert (recent["last_is_thumb"], backfill["last_is_thumb"]) == (434, 165)
+        assert (recent["first_is_thumb"], backfill["first_is_thumb"]) == (0, 0)
+        assert recent["graphics"] + backfill["graphics"] == 2397
+        assert recent["alternatives_members"] + backfill["alternatives_members"] == 1329
+        assert recent["alternatives_declaring_mime"] + backfill["alternatives_declaring_mime"] == 0
+        assert recent["alternatives_archival"] + backfill["alternatives_archival"] == 0
+
+    def test_the_table_side_answers_135_as_an_empty_population(self):
+        """#135, and the #127 windows the ROADMAP and the sampler both cite."""
+        recent, recent_maps, _ = self._totals(self.RECENT)
+        backfill, backfill_maps, _ = self._totals(self.BACKFILL)
+
+        assert recent["tables"] + backfill["tables"] == 755
+        assert recent["tables_with_graphic"] + backfill["tables_with_graphic"] == 16
+        assert recent["tables_multi_graphic"] + backfill["tables_multi_graphic"] == 0
+        assert (recent["tables"], recent["tables_image_only"]) == (662, 0)
+        assert (backfill["tables"], backfill["tables_image_only"]) == (93, 11)
+        assert (recent["tables_with_both"], backfill["tables_with_both"]) == (5, 0)
+        assert sum(recent_maps["foreign_owned_graphics"].values()) == 36
+        assert set(recent_maps["foreign_owned_graphics"]) == {"td"}
+        assert backfill_maps.get("foreign_owned_graphics", {}) == {}
+        assert recent["nested_figures"] + recent["nested_tables"] == 0
+        assert backfill["nested_figures"] + backfill["nested_tables"] == 0

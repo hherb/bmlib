@@ -118,6 +118,20 @@ _ARCHIVAL_EXTENSIONS = frozenset({".tif", ".tiff", ".eps", ".ps"})
 # either test** — every href in the sample is .jpg or .gif. So neither tier
 # fires on that corpus, and the ARCHIVAL rank is unreached.
 #
+# The two committed draws agree, on 1,329 further <alternatives> members
+# across 600 articles: zero declaring a mime-subtype and zero archival by
+# either test.
+#
+# Extensions are counted over every deposit rather than over <alternatives>
+# members alone — the sampler holds the two in separate counters and never
+# cross-tabulates them, so no extension figure scoped to the members is
+# derivable from either corpus. At that wider scope, across all 2,397:
+# .jpg and .gif in both windows, .png in the back-filled one only, and 29
+# of the 1,361 recent deposits (2.1%) whose href carries no extension at all.
+# That last is the one directly material here, _ARCHIVAL_EXTENSIONS being
+# an extension test: it has nothing to read, and falls through to the
+# undeclared-and-not-first path rather than ranking ARCHIVAL.
+#
 # They are kept rather than deleted because the failure they prevent is silent
 # and permanent: an undeclared master deposited first ranks FULL, wins under
 # the strictly-better rule, and leaves the figure pointing at something no
@@ -197,17 +211,21 @@ class _GraphicHolder:
     of a rule this heavily argued are two things to keep in step, and that is
     the whole of the argument for sharing it.
 
-    **Whether a table is ever deposited with several ``<graphic>`` is not
-    measured**, and the ranking below is therefore reasoned onto tables rather
-    than observed on them. Both committed corpora say only that the question
-    does not arise in them: every one of the 11 image-only tables in
-    ``tests/data/jats_exhibits.backfill.json`` carries exactly one deposit,
-    declaring no ``content-type``, no ``specific-use`` and no
-    ``<alternatives>``, and the recent draw carries no image-only table at
-    all. With one deposit, ranking and plain first-wins agree, so nothing
-    here is contradicted — it is simply unexercised. ``sample_jats_exhibits``
-    counts the table side as of issue #135 so a later draw can settle it;
-    until one has, do not restate this as publisher behaviour.
+    **THE TABLE SIDE MEASURES EMPTY, and this says so rather than implying a
+    population** (issue #135, now answered). Across the two committed draws —
+    755 ``<table-wrap>`` in 600 articles — **16 carry a ``<graphic>`` of their
+    own and not one carries two**. So the ranking below is *unexercised* on
+    tables rather than confirmed there: with a single deposit it and plain
+    first-wins agree, and nothing is contradicted. Sharing the rule is still
+    right, for the reason above; what would be wrong is restating it as
+    publisher behaviour, which an earlier draft of this docstring did.
+
+    The instrument had to be corrected before that number meant anything. The
+    sampler counted a table's deposits with a whole-subtree walk while the
+    parser routes a ``<graphic>`` by its **owner**, and the first live run
+    made the difference real: unscoped, four of ten recent-window tables
+    "carried several deposits", which were the ``<td>`` cell images of two
+    articles. Scoped to what the parser would route, the count is zero.
 
     ``kw_only`` because these two fields are inherited and would otherwise
     lead both subclasses' generated ``__init__``, making ``_TableBuilder("t1")``
@@ -241,10 +259,18 @@ class _GraphicHolder:
         appear in that sample at all. Ranking still earns its place on the
         49.5%: it is what stops half of all figures resolving to a preview.
 
+        The two draws now committed agree, and they are the ones a reader can
+        re-derive from: of 828 recent figures carrying a ``<graphic>``,
+        **52.8%** carry several and **52.4%** end on a thumbnail; of 276
+        back-filled ones, **60.9%** and **59.8%**. **0%** deposit a thumbnail
+        first in either. So the share sits between the 49.9% and the 58.0%
+        depending on the window, and the shape of the finding — half of all
+        figures, and never a thumbnail first — is the part that reproduces.
+
         *Strictly* better is what makes the first deposit win among equals.
 
         **Every percentage above is measured over figures.** Tables reach this
-        method too since issue #127, and no draw has yet found one carrying a
+        method too since issue #127, and no draw has found one carrying a
         second deposit — see :class:`_GraphicHolder` for what that does and
         does not license.
 
@@ -415,14 +441,15 @@ class _ExhibitFrame(Generic[_BuilderT]):
     start, so a plain pop-and-append emits every supplement ahead of the parent
     it belongs to; the reservation is what keeps the result in document order.
 
-    ``open_seq`` says which exhibit opened most recently, which among properly
-    nested elements is which one is innermost — see
-    :meth:`_JATSHandler._innermost_exhibit`.
+    There is no ordering field. One was carried until issue #123: caption text
+    was routed to whichever exhibit had opened most recently, so a sequence
+    number was needed to compare the two stacks. A ``<caption>`` is a direct
+    child of the element it describes, so its parent now names the owner
+    outright and the comparison has nothing left to break a tie for.
     """
 
     slot: int
     builder: _BuilderT
-    open_seq: int
 
 
 @dataclass
@@ -571,18 +598,23 @@ _NESTED_ARTICLE_ELEMENTS = frozenset({"sub-article", "response"})
 # needs no enumeration: anything not listed here is opaque, so a container this
 # module has never heard of keeps its own image rather than donating it.
 #
-# Measured over the same 276 articles: exactly **one** <graphic> in the sample
-# is owned by a non-exhibit inside an exhibit — an inline image in a <td> of
-# PMC13047053's table — and it resolves identically either way, because no
-# <fig> is open around it. Routing by owner therefore changed **no** figure's
-# image across the corpus.
+# THIS ONE IS NOT DEFENSIVE, AND THE FIGURE MOVED. The 276-article draw found
+# exactly one <graphic> owned by a non-exhibit inside an exhibit, which read as
+# a population of one. The two committed draws find **36, in 3 of 300 recent
+# articles, every one a <td>** — inline cell images, two of the three articles
+# carrying 35 between them — and 0 of 300 back-filled. The <td> is what makes
+# it consequential rather than merely more numerous: since #127 gave
+# JATSTableInfo a `graphic_url`, relaxing ownership lands a cell decoration in
+# it as though it were the table's own rendition, and the strictly-better rule
+# then makes that permanent. So this rule is now measured as load-bearing on
+# 36 deposits, not carried against a hypothetical.
 #
-# Kept for the reason the archival tiers are: what it prevents is silent. A
+# The rest is still what the archival tiers are: what it prevents is silent. A
 # nested <table-wrap>/<fn>/<supplementary-material> inside a <fig> hands over
-# its image, and the strictly-better rule then makes that permanent where
-# "keep the last" used to overwrite it. The <p> member is not defensive at
-# all — JATS admits <p> inside <fig>, and without it a figure whose graphic is
-# wrapped in prose flow loses its image outright.
+# its image, and the strictly-better rule makes that permanent where "keep the
+# last" used to overwrite it. The <p> member is not defensive at all — JATS
+# admits <p> inside <fig>, and without it a figure whose graphic is wrapped in
+# prose flow loses its image outright.
 _GRAPHIC_TRANSPARENT_WRAPPERS = frozenset({"alternatives", "p"})
 
 
@@ -690,8 +722,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # A <fig> may contain another — eLife wraps every figure supplement
         # inside the figure it belongs to. The original survey put this at
         # 19.6% of articles; `scripts/sample_jats_exhibits.py` re-measures it
-        # at 0.7% of a general open-access draw (2 of 276, both eLife; 0 of a
-        # 300-article stratified draw), so it is one publisher's house style
+        # at 0.7% of a general open-access draw (2 of 276, both eLife; and 0
+        # of *both* committed 300-article draws, recent and back-filled), so
+        # it is one publisher's house style
         # costing about half of *its* figures, not a general convention. The
         # two articles lost 6 of 12 and 5 of 11 figures respectively. And
         # JATS lets a <table-wrap> open inside another's <table-wrap-foot>. As
@@ -715,16 +748,53 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.table_stack: list[_ExhibitFrame[_TableBuilder]] = []
         # Caption text is carried in <p> and <title> — the same elements that
         # carry section prose and section headings — so routing it needs the
-        # enclosing <caption>, not just "a figure is open somewhere above".
+        # enclosing <caption> and not just "a figure is open somewhere above".
         #
-        # Still a stored boolean, so a nested <caption> truncates the enclosing
-        # one — issue #123. A depth is not enough there, unlike the exhibit
-        # stacks above: the routing needs the caption's *owner*.
-        self.in_caption = False
-        # Bumped by every <fig> and <table-wrap> open and recorded on the
-        # frame, so that content belonging to an exhibit can be routed to the
-        # innermost one rather than to whichever kind is tested first.
-        self.exhibit_opens = 0
+        # One entry per open <caption>, innermost last, holding the builder
+        # that <caption> belongs to — or None where its owner is an element
+        # this module does not model. Both halves are load-bearing (#123):
+        #
+        # A **stack** because captions nest. Held as a boolean, the inner
+        # </caption> would clear it, so a <media> legend inside a figure's
+        # caption would truncate that caption at the point the legend ended
+        # and drop every word after it.
+        #
+        # The **owner** because a depth counter only fixes that half. The
+        # legend's owner is not an exhibit bmlib models, so counted rather
+        # than named it would still land on the enclosing figure — and the
+        # case a depth cannot reach at all needs no nesting, since JATS admits
+        # a <caption> on <boxed-text>, <media> and <supplementary-material>,
+        # any of which may sit inside a <fig> beside the figure's own.
+        #
+        # Both paragraphs are in the subjunctive on purpose: they describe
+        # what the retired boolean would do, not what a draw caught it doing.
+        #
+        # BOTH OF THOSE POPULATIONS MEASURE EMPTY, AND THIS SAYS SO RATHER
+        # THAN IMPLYING ONE. Over the two committed draws (600 articles,
+        # `scripts/sample_jats_exhibits.py`): **no <caption> nests inside
+        # another** — 0 of 1,550 recent and 0 of 288 back-filled — and every
+        # <caption> inside an exhibit is owned by that exhibit, with no third
+        # owner appearing at all. The same holds of the seven-article corpus
+        # in the sibling Swift repository, eLife's PMC8754430 included, which
+        # deposits its figure supplements as nested <fig> rather than as
+        # captioned <supplementary-material>. So this half is prospective, in
+        # the sense the <alternatives> archival tiers are: kept because what
+        # it prevents is silent and permanent, not because a draw found it.
+        # An earlier draft of this comment asserted the eLife shape as
+        # observed; the measurement retired that, and issue #135 is the
+        # standing reminder of what that mistake costs.
+        #
+        # THE PREMISE IT RESTS ON MEASURES FULL, which is the half that could
+        # have lost content: 1,413 / 1,413 recent exhibits carry a direct-child
+        # <caption> and carry one anywhere (288 / 288 back-filled), so no exhibit
+        # is captioned only indirectly and the parent can never come up empty
+        # where the old rule found something.
+        #
+        # Naming the owner is also what retired `_innermost_exhibit()`: a
+        # <caption> is a direct child of what it describes, so its parent
+        # answers exactly, where "the innermost exhibit open anywhere above"
+        # was merely usually right.
+        self.caption_stack: list[_FigureBuilder | _TableBuilder | None] = []
 
         # Reference state
         self.in_ref_list = False
@@ -805,29 +875,6 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 return name
         return ""
 
-    def _innermost_exhibit(self) -> _FigureBuilder | _TableBuilder | None:
-        """The builder of the open exhibit that encloses no other, if any.
-
-        Exhibits nest both ways round — a ``<table-wrap>`` inside a figure's
-        footnote, a ``<fig>`` inside a table's — so asking "is a figure open
-        anywhere above?" first, as the ``in_figure``/``in_table_wrap`` flags
-        invite, hands the inner exhibit's own content to the outer one. Among
-        properly nested elements the innermost is simply the one that opened
-        last, which is what ``open_seq`` records.
-
-        Returns:
-            The innermost open exhibit's builder, or ``None`` when none is
-            open. Callers that need to know *which kind* it is test the type;
-            a ``<label>`` does not, being routed by its parent element instead.
-        """
-        figure = self.figure_stack[-1] if self.figure_stack else None
-        table = self.table_stack[-1] if self.table_stack else None
-        if figure is not None and (table is None or figure.open_seq > table.open_seq):
-            return figure.builder
-        if table is not None:
-            return table.builder
-        return None
-
     # -- Text stack helpers --------------------------------------------------
 
     @property
@@ -854,22 +901,59 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
     # -- Section and caption helpers -----------------------------------------
 
+    def _caption_owner(self, parent: str) -> _FigureBuilder | _TableBuilder | None:
+        """The builder a ``<caption>`` just opened under ``parent`` belongs to.
+
+        ``<caption>`` is a direct child of the element it describes, so the
+        parent decides outright — the ``<label>`` idiom, one element away. It
+        is exact where "the innermost exhibit open anywhere above" was only
+        usually right: ``<boxed-text>``, ``<media>``, ``<supplementary-material>``
+        and ``<fig-group>`` all admit a ``<caption>`` too, and inside a
+        ``<fig>`` each of them would donate its legend to the figure. No draw
+        has found one doing so — see ``caption_stack``, which records that
+        population as empty rather than claiming it.
+
+        Args:
+            parent: The element enclosing the ``<caption>``.
+
+        Returns:
+            The owning exhibit's builder, or ``None`` when the owner is an
+            element this module does not model — whose caption is then held by
+            nothing rather than by the wrong thing.
+        """
+        if parent == "fig":
+            return self.current_figure
+        if parent == "table-wrap":
+            return self.current_table
+        return None
+
     def _append_caption_text(self, text: str) -> None:
-        """Append caption prose to the innermost open exhibit.
+        """Append caption prose to the innermost open ``<caption>``'s owner.
 
         A ``<caption>`` carries a ``<title>`` lead and one or more ``<p>``
         elements, which arrive in document order, so they are joined with a
         single space into the one ``caption`` string the models expose.
 
-        The caption goes to the *innermost* open exhibit, for the reason
-        :meth:`_innermost_exhibit` gives: exhibits nest both ways round, and
-        "the figure if one is open, else the table" gives an inner table's
-        caption to the figure enclosing it.
+        Text arriving with no caption open is furniture — a cell, a footnote —
+        and is dropped, which is what keeps table internals out of the prose.
+        Text whose innermost caption has no modelled owner is dropped for the
+        same reason: it belongs to that element, not to the exhibit enclosing
+        it.
+
+        Dropped *where this is reached at all*, which is not everywhere a
+        <caption> is. The ``<p>`` caller sits behind ``in_figure or
+        in_table_wrap``, so a <caption> at section level — issue #130's own
+        ``<boxed-text>`` shape — never enters it: only its ``<title>`` is
+        dropped, while its ``<p>`` children still fall through to the
+        section's prose. Better than before, which took the heading too, but
+        the two halves of one caption now go different ways. Issue #137.
 
         Args:
             text: Whitespace-normalised text of the caption child element.
         """
-        builder = self._innermost_exhibit()
+        if not self.caption_stack:
+            return
+        builder = self.caption_stack[-1]
         if builder is None or not text:
             return
         if builder.caption:
@@ -962,16 +1046,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # Reserve the slot now, fill it at </fig>: listed where it opened,
             # built where it closed.
             self.figure_slots.append(None)
-            self.exhibit_opens += 1
             self.figure_stack.append(
                 _ExhibitFrame(
                     slot=len(self.figure_slots) - 1,
                     builder=_FigureBuilder(id=attrs.get("id", "")),
-                    open_seq=self.exhibit_opens,
                 )
             )
         elif name == "caption":
-            self.in_caption = True
+            # `element_stack[-1]` is this <caption>, as at <article-id> above.
+            parent = self.element_stack[-2] if len(self.element_stack) >= 2 else ""
+            self.caption_stack.append(self._caption_owner(parent))
         elif name == "graphic":
             # Routed by its owner, like a <label> — not by "is a figure open
             # anywhere above?", which is what `current_figure` answers. A
@@ -985,7 +1069,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # attribute to spaces rather than collapsing it, so a wrapped
             # href would take the ranking slot, block the real deposit that
             # follows, and render as a broken src. No instance in either
-            # committed corpus (2,346 deposits, every extension unpadded) —
+            # committed corpus (2,397 deposits, every extension unpadded) —
             # this guards a population measured empty, not an observed one.
             href = (
                 attrs.get("xlink:href") or attrs.get("href") or attrs.get("xlink-href") or ""
@@ -1004,12 +1088,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 current_table.offer_graphic(href, _graphic_suitability(attrs, href))
         elif name == "table-wrap":
             self.table_slots.append(None)
-            self.exhibit_opens += 1
             self.table_stack.append(
                 _ExhibitFrame(
                     slot=len(self.table_slots) - 1,
                     builder=_TableBuilder(id=attrs.get("id", "")),
-                    open_seq=self.exhibit_opens,
                 )
             )
         elif name == "thead":
@@ -1182,14 +1264,73 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 )
             self.in_abstract = False
         elif name == "title":
-            if self.in_figure or self.in_table_wrap:
-                # <caption><title> is the caption's lead, not a section
-                # heading — but it is the same element name as one, so
-                # without this it would rename the enclosing <sec> after
-                # the figure.
-                if self.in_caption:
-                    self._append_caption_text(normalized_text)
-            elif self.in_abstract:
+            # Routed by the element that owns it, like a <label> and a
+            # <graphic>, and for the reason both are: <sec> is far from the
+            # only JATS element carrying a <title>. <caption> does — it is the
+            # caption's lead, not a heading — and so do <fn-group> (modelled
+            # `(label?, title?, (fn|p)+)`), <ref-list>, <glossary>, <app> and
+            # <boxed-text>. Asked only "is a section open?", any of them
+            # renamed it: eLife's *Additional information* section holds an
+            # <fn-group> per contribution type and the last one won
+            # (PMC8754430, issue #125), and a <boxed-text><caption><title> at
+            # section level did the same (issue #130). The result is not a
+            # blank but a heading the publisher never wrote.
+            #
+            # The parent test needs no enumeration of the elements that carry
+            # a <title>, which is what made this uncloseable by inspection —
+            # the same argument the <label> rule turns on, and the draws
+            # settle it rather than merely illustrating it: the two issues
+            # name <fn-group> and <boxed-text>, and the back-filled window's
+            # whole population is a **<list>**, which neither issue mentions
+            # and no enumeration written from them would have held.
+            #
+            # MEASURED, and this half is not a small population. Over the two
+            # committed draws (`scripts/sample_jats_exhibits.py`), counting
+            # only a <title> that a <sec> was open for and that no exhibit
+            # already excluded: **69 titles in 31 of 300 recent articles
+            # (10.3% [7.4-14.3]), every one owned by a <caption>** — issue
+            # #130's shape. What owns that <caption> is *not* recorded — the
+            # sampler counts the <title>'s immediate parent alone — so a
+            # <boxed-text> or <media> legend at section level is the likely
+            # reading rather than a measured one. And 13 titles in 1 of 300
+            # back-filled articles, all owned by a <list>.
+            #
+            # Issue #125's own <fn-group> shape appears in neither
+            # draw but reproduces on eLife's PMC8754430, which loses its
+            # *Additional information* heading twice over. So the rate is a
+            # floor: the publisher #125 was filed from is absent from both
+            # windows, exactly as #127's population was absent from one.
+            #
+            # Both shapes were checked against the real deposits, old parser
+            # against new: PMC8754430's section reads "Author contributions"
+            # before and "Additional information" after, and PMC12755737's
+            # reads a <supplementary-material> caption's lead before and
+            # "Supporting information" after.
+            parent = self.element_stack[-2] if len(self.element_stack) >= 2 else ""
+            if parent == "caption":
+                self._append_caption_text(normalized_text)
+            elif self.in_abstract and not (self.in_figure or self.in_table_wrap):
+                # The exhibit test is what the parent rule replaced on the
+                # section branch, and it has to stay on this one. JATS admits
+                # a <fig> and a <table-wrap> in an <abstract> — a graphical
+                # abstract — and the old `if self.in_figure or
+                # self.in_table_wrap:` opening this whole branch swallowed
+                # every <title> inside one. Without it a <table-wrap-foot>
+                # <fn-group><title> in an abstract flushes the pending section
+                # and installs itself as the next heading, splitting the
+                # abstract and re-attributing the prose after it: exactly the
+                # heading-the-publisher-never-wrote failure this rule exists
+                # to remove, one branch over. It is also the worse half of it,
+                # because `abstract_sections` is rendered into the HTML that
+                # `FullTextService` caches while `body_sections` reaches no
+                # bmlib path at all.
+                #
+                # THE POPULATION MEASURES EMPTY, and this says so rather than
+                # implying one: over the two committed draws, 44 <fig> or
+                # <table-wrap> sit inside an <abstract> and **none carries a
+                # <title>** (0 of 44, 0.0% [0.0-8.0]). Kept for the reason the
+                # <alternatives> archival tiers are — what it prevents is
+                # silent and, through the cache, permanent.
                 if self.current_abstract_text or self.current_abstract_title:
                     content = " ".join(self.current_abstract_text)
                     self.abstract_sections.append(
@@ -1197,20 +1338,28 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     )
                     self.current_abstract_text = []
                 self.current_abstract_title = text
-            elif self.section_stack:
+            elif parent == "sec" and self.section_stack:
+                # A structured abstract's <sec><title> has the same parent and
+                # is answered by the branch above, not this one — but not
+                # because of the order: <sec> inside an <abstract> pushes no
+                # builder, so `section_stack` is what actually keeps them
+                # apart, and swapping the two branches changes nothing today.
+                # The order is kept as the cheaper guard of the two to reason
+                # about, and is recorded here as not load-bearing so a later
+                # reader does not take it for one.
                 self.section_stack[-1].title = normalized_text
         elif name == "p":
             if self.in_figure or self.in_table_wrap:
                 # Figure and table internals, tested before every prose branch
                 # because a <fig> or <table-wrap> usually sits inside a <sec>:
                 # asking about the section first would blank the caption and
-                # reprint it as article prose. Only <caption> content is kept.
-                # Cell and footnote <p> is dropped — characters() already
+                # reprint it as article prose. Only <caption> content is kept,
+                # and `_append_caption_text` decides which caption's owner gets
+                # it. Cell and footnote <p> is dropped — characters() already
                 # collects cells into the rendered table, so letting it through
                 # would duplicate furniture into the prose and count it towards
                 # has_body.
-                if self.in_caption:
-                    self._append_caption_text(normalized_text)
+                self._append_caption_text(normalized_text)
             elif self.in_abstract:
                 if normalized_text:
                     self.current_abstract_text.append(normalized_text)
@@ -1252,7 +1401,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 frame = self.figure_stack.pop()
                 self.figure_slots[frame.slot] = frame.builder.build()
         elif name == "caption":
-            self.in_caption = False
+            # Popping restores the enclosing caption, which is the half a
+            # boolean got wrong: cleared by the inner close, it truncated the
+            # outer caption at the point the inner one ended. Guarded because
+            # a close with nothing open would otherwise raise on malformed
+            # input; SAX makes that unreachable today.
+            if self.caption_stack:
+                self.caption_stack.pop()
         elif name == "label":
             # A <label> belongs to the element that encloses it, and JATS
             # spells it as a direct child, so the parent decides outright
@@ -1283,6 +1438,17 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # cannot lose one. Of 2,173 labels inside an exhibit, 93.6% are
             # the exhibit's own; the rest sit in <fn> (105), <list-item> (34)
             # and <supplementary-material> (1).
+            #
+            # The two committed draws corroborate the premise on their own
+            # evidence: 1,446 / 1,446 recent exhibits and 365 / 365
+            # back-filled ones carry a direct-child <label>, with the same
+            # count anywhere. Both figures count *labelled* exhibits, not
+            # every exhibit: the recent draw holds 1,500, so 54 carry no
+            # <label> either way and the premise is about where a label
+            # sits, never about how many exhibits have one. Their
+            # non-exhibit label owners are <fn> (203 and 89) and
+            # <list-item> (4), and no <supplementary-material> at all,
+            # that publisher being absent from both windows.
             #
             # The depth rule this replaced would still mis-assign the last two
             # groups — 35 labels in 2 of the 276 articles (0.7%). Small, but

@@ -536,6 +536,21 @@ pass.
 > `JATSFigureInfo.caption` / `JATSTableInfo.caption`, never in the enclosing
 > section's paragraphs or title. A `<caption>` holding both a `<title>` and one
 > or more `<p>` is space-joined in document order.
+>
+> The caption goes to the element that **opened** it, not to whichever exhibit
+> is open above it *(unreleased, #123)*. `<boxed-text>`, `<media>` and
+> `<supplementary-material>` all admit a `<caption>` of their own, including
+> inside a `<fig>`; bmlib models none of them, so such a caption is held by
+> nothing rather than appended to the figure, and a caption nested inside
+> another no longer truncates the enclosing one.
+
+> **A section's title comes from its own `<sec>`** *(unreleased, #125, #130)*.
+> `<fn-group>`, `<ref-list>`, `<glossary>`, `<app>`, `<boxed-text>` and every
+> `<caption>` carry a `<title>` too, and one nested inside a section used to
+> replace that section's heading — leaving not a blank but text that was never
+> a heading. `JATSBodySection.title` now holds only the `<sec>`'s own; a title
+> belonging to something bmlib does not model is dropped rather than
+> relocated. Measured at 69 titles in 31 of 300 recent open-access articles.
 
 > **A table may be deposited as an image.** A `<table-wrap>` whose content is
 > a `<graphic>` — a scanned or typographically complex table — puts its href in
