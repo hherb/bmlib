@@ -2642,3 +2642,334 @@ class TestAGraphicReachesItsFigureThroughProseFlow:
         ).parse()
 
         assert article.figures == []
+
+
+class TestASectionTitleComesFromItsOwnElement:
+    """A ``<title>`` names the element that *owns* it, not whichever ``<sec>``
+    happens to be open above it.
+
+    ``<sec>`` is far from the only JATS element carrying a ``<title>``:
+    ``<fn-group>`` is modelled ``(label?, title?, (fn|p)+)``, and
+    ``<ref-list>``, ``<glossary>``, ``<app>``, ``<boxed-text>`` and every
+    ``<caption>`` carry one too. Routing on "is a section open?" alone let any
+    of them rename the enclosing section — issues #125 and #130, the same
+    defect the ``<label>`` parent test settled for exhibit numbers in #116.
+
+    The usual position for a ``<ref-list>`` or an ``<app>`` is loose in
+    ``<back>`` with no section open, which is why this stayed hidden until a
+    publisher nested one. eLife nests two: PMC8754430's *Additional
+    information* section holds a ``<fn-group>`` per contribution type, and the
+    last one won.
+
+    A swallowed title is not a blank, which is what makes it worth a test
+    rather than a note — the section keeps a heading, and the heading is text
+    that was never one.
+    """
+
+    ELIFE_BACK_MATTER = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Additional</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>Results</title><p>We measured the thing.</p></sec></body>
+  <back>
+    <sec sec-type="additional-information" id="s5"><title>Additional information</title>
+      <fn-group content-type="competing-interest"><title>Competing interests</title>
+        <fn fn-type="COI-statement"><p>The authors declare none.</p></fn></fn-group>
+      <fn-group content-type="author-contribution"><title>Author contributions</title>
+        <fn><p>AB, conceptualisation.</p></fn></fn-group>
+    </sec>
+  </back>
+</article>"""
+
+    BOXED_TEXT_IN_SECTION = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Boxed</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <sec><title>Results</title><p>Section prose.</p>
+      <boxed-text id="b1"><caption><title>Box 1. Key points</title>
+          <p>Box caption prose.</p></caption>
+        <p>Box prose.</p></boxed-text>
+    </sec>
+  </body>
+</article>"""
+
+    REF_LIST_IN_SECTION = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Reffed</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>Results</title><p>We measured the thing.</p></sec></body>
+  <back>
+    <sec id="s6"><title>Additional information</title>
+      <ref-list><title>References</title>
+        <ref id="r1"><label>1</label><element-citation>
+          <article-title>A cited paper</article-title></element-citation></ref>
+      </ref-list>
+    </sec>
+  </back>
+</article>"""
+
+    def test_a_footnote_groups_title_does_not_rename_the_section(self):
+        """PMC8754430's shape: the last <fn-group> won twice over."""
+        article = JATSParser(self.ELIFE_BACK_MATTER).parse()
+
+        assert [s.title for s in article.body_sections] == [
+            "Results",
+            "Additional information",
+        ]
+
+    def test_a_footnote_groups_prose_still_reaches_the_section(self):
+        """Dropping the title must not drop the statement under it."""
+        article = JATSParser(self.ELIFE_BACK_MATTER).parse()
+
+        back = article.body_sections[-1]
+        assert tuple(back.paragraphs) == (
+            "The authors declare none.",
+            "AB, conceptualisation.",
+        )
+
+    def test_a_boxed_texts_caption_title_does_not_rename_the_section(self):
+        """<boxed-text> admits a <caption> at section level — issue #130."""
+        article = JATSParser(self.BOXED_TEXT_IN_SECTION).parse()
+
+        assert [s.title for s in article.body_sections] == ["Results"]
+
+    def test_a_boxed_texts_prose_still_reaches_the_section(self):
+        """Including its caption's own <p>, which has nowhere better to go."""
+        article = JATSParser(self.BOXED_TEXT_IN_SECTION).parse()
+
+        assert tuple(article.body_sections[0].paragraphs) == (
+            "Section prose.",
+            "Box caption prose.",
+            "Box prose.",
+        )
+
+    def test_a_reference_lists_title_does_not_rename_the_section(self):
+        article = JATSParser(self.REF_LIST_IN_SECTION).parse()
+
+        assert [s.title for s in article.body_sections] == [
+            "Results",
+            "Additional information",
+        ]
+
+    def test_a_reference_list_nested_in_a_section_still_parses(self):
+        article = JATSParser(self.REF_LIST_IN_SECTION).parse()
+
+        assert [r.article_title for r in article.references] == ["A cited paper"]
+
+    def test_a_sections_own_title_is_still_read(self):
+        """The negative control: the rule must not cost a real section title."""
+        article = JATSParser(self.ELIFE_BACK_MATTER).parse()
+
+        assert article.body_sections[0].title == "Results"
+
+    def test_a_nested_sections_title_is_still_read(self):
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Nested</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <sec><title>Methods</title><p>Outer prose.</p>
+      <sec><title>Participants</title><p>Inner prose.</p></sec>
+    </sec>
+  </body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert article.body_sections[0].title == "Methods"
+        assert [s.title for s in article.body_sections[0].subsections] == ["Participants"]
+
+    def test_an_abstract_section_title_is_still_read(self):
+        """<abstract> keeps its own accumulator, and <sec> inside it pushes no
+        builder — so the abstract branch must stay ahead of the parent test."""
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Structured</article-title></title-group>
+    <abstract><sec><title>Background</title><p>Why.</p></sec>
+      <sec><title>Methods</title><p>How.</p></sec></abstract>
+  </article-meta></front>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.content) for s in article.abstract_sections] == [
+            ("Background", "Why."),
+            ("Methods", "How."),
+        ]
+
+    def test_a_footnote_group_inside_a_table_was_already_covered(self):
+        """The variant issue #125 predicted was separately reachable here.
+
+        It was not. A ``<table-wrap-foot><fn-group><title>`` sits inside an
+        open exhibit, and until this fix the ``<title>`` branch tested that
+        ahead of the section branch, so it was dropped rather than promoted.
+        Measured rather than assumed: this test passed before the fix, which
+        is what makes it a control on it. The prediction came from the sibling
+        Swift parser, whose guard was a footnote *depth* that back matter
+        leaves at zero.
+
+        It is no longer only a control — the ambient exhibit test is gone and
+        the parent test now carries it — so it is one of the tests that dies
+        if the routing is reverted.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Footed</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <sec><title>Results</title><p>Section prose.</p>
+      <table-wrap id="t1"><label>Table 1</label>
+        <caption><p>A caption for the table.</p></caption>
+        <table><tbody><tr><td><p>Treated</p></td></tr></tbody></table>
+        <table-wrap-foot><fn-group><title>Abbreviations</title>
+          <fn><p>CI, confidence interval.</p></fn></fn-group></table-wrap-foot>
+      </table-wrap>
+    </sec>
+  </body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [s.title for s in article.body_sections] == ["Results"]
+        assert article.tables[0].caption == "A caption for the table."
+
+
+class TestACaptionBelongsToTheElementThatOpenedIt:
+    """Caption prose goes to the ``<caption>``'s *owner*, not to the innermost
+    open exhibit — issue #123.
+
+    ``in_caption`` was a stored boolean, so the two halves failed together. A
+    ``<caption>`` nested inside a figure's own — a ``<media>`` legend, say —
+    was appended to the figure, *and* its close cleared the flag, so the
+    figure's own caption tail after it was dropped. A depth counter fixes only
+    the second half: the inner legend's owner is not an exhibit bmlib models,
+    so with a depth it still lands on the enclosing figure.
+
+    The half a depth cannot reach at all is the *sibling* case, which needs no
+    nesting: eLife deposits a ``<supplementary-material>`` with a
+    ``<caption>`` of its own inside the ``<fig>``, beside the figure's
+    caption. Every word of *Figure 1—source data 1* was being appended to the
+    figure's legend. That is the same shape #116 settled for ``<label>``, and
+    it is the case a stack alone gets wrong.
+    """
+
+    NESTED_CAPTION = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Nested caption</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <sec><title>Results</title><p>Section prose.</p>
+      <fig id="f1"><label>Figure 1</label>
+        <caption><title>Study flow.</title>
+          <p>Caption lead.</p>
+          <p><media mimetype="video" xlink:href="v1.mp4">
+            <caption><p>Video legend.</p></caption></media></p>
+          <p>Caption tail.</p></caption>
+        <graphic xlink:href="f1.jpg"/></fig>
+      <p>Prose after the figure.</p>
+    </sec>
+  </body>
+</article>"""
+
+    SIBLING_SUPPLEMENT_CAPTION = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Supplemented</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <sec><title>Results</title><p>Section prose.</p>
+      <fig id="f1"><label>Figure 1</label>
+        <caption><title>Study flow.</title><p>Caption lead.</p></caption>
+        <graphic xlink:href="f1.jpg"/>
+        <supplementary-material id="sd1"><label>Figure 1\xe2\x80\x94source data 1.</label>
+          <caption><title>Raw counts.</title>
+            <p>Numbers behind panel A.</p></caption></supplementary-material>
+      </fig>
+      <p>Prose after the figure.</p>
+    </sec>
+  </body>
+</article>"""
+
+    def test_the_enclosing_caption_keeps_its_tail(self):
+        """The inner </caption> used to clear the flag and drop everything
+        after it — the truncation half of #123."""
+        article = JATSParser(self.NESTED_CAPTION).parse()
+
+        assert article.figures[0].caption == "Study flow. Caption lead. Caption tail."
+
+    def test_a_nested_captions_legend_does_not_join_the_figure(self):
+        """The absorption half. A depth counter keeps the tail and still files
+        the <media> legend on the figure, so this is what needs the owner."""
+        article = JATSParser(self.NESTED_CAPTION).parse()
+
+        assert "Video legend" not in article.figures[0].caption
+
+    def test_a_nested_captions_legend_does_not_become_section_prose_either(self):
+        """It is furniture of an element bmlib does not model, so it is
+        dropped — not promoted into the article's body."""
+        article = JATSParser(self.NESTED_CAPTION).parse()
+
+        assert tuple(article.body_sections[0].paragraphs) == (
+            "Section prose.",
+            "Prose after the figure.",
+        )
+
+    def test_a_sibling_supplements_caption_does_not_join_the_figure(self):
+        """eLife's shape. No nesting at all, so a depth counter never fires."""
+        article = JATSParser(self.SIBLING_SUPPLEMENT_CAPTION).parse()
+
+        assert article.figures[0].caption == "Study flow. Caption lead."
+
+    def test_prose_after_the_figure_is_still_section_prose(self):
+        """Both fixtures carry prose past the </fig>, so the caption state is
+        pinned going *off* as well as on — a stack that never popped would
+        swallow it."""
+        article = JATSParser(self.SIBLING_SUPPLEMENT_CAPTION).parse()
+
+        assert tuple(article.body_sections[0].paragraphs) == (
+            "Section prose.",
+            "Prose after the figure.",
+        )
+
+    def test_two_figures_do_not_share_a_caption(self):
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Two</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <sec><title>Results</title>
+      <fig id="f1"><label>Figure 1</label>
+        <caption><p>The first caption.</p></caption></fig>
+      <fig id="f2"><label>Figure 2</label>
+        <caption><p>The second caption.</p></caption></fig>
+    </sec>
+  </body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [f.caption for f in article.figures] == [
+            "The first caption.",
+            "The second caption.",
+        ]
+
+    def test_an_inner_table_caption_stays_on_the_inner_table(self):
+        """The rule must keep what `_innermost_exhibit` already delivered:
+        exhibits nest both ways round, and a <table-wrap> inside a figure's
+        footnote owns its own legend."""
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Both ways</article-title>
+  </title-group></article-meta></front>
+  <body>
+    <sec><title>Results</title>
+      <fig id="f1"><label>Figure 1</label>
+        <caption><p>The figure caption.</p></caption>
+        <table-wrap id="t1"><label>Table 1</label>
+          <caption><p>The table caption.</p></caption>
+          <table><tbody><tr><td><p>x</p></td></tr></tbody></table></table-wrap>
+      </fig>
+    </sec>
+  </body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert article.figures[0].caption == "The figure caption."
+        assert article.tables[0].caption == "The table caption."

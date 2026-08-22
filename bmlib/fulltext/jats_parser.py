@@ -415,14 +415,15 @@ class _ExhibitFrame(Generic[_BuilderT]):
     start, so a plain pop-and-append emits every supplement ahead of the parent
     it belongs to; the reservation is what keeps the result in document order.
 
-    ``open_seq`` says which exhibit opened most recently, which among properly
-    nested elements is which one is innermost — see
-    :meth:`_JATSHandler._innermost_exhibit`.
+    There is no ordering field. One was carried until issue #123: caption text
+    was routed to whichever exhibit had opened most recently, so a sequence
+    number was needed to compare the two stacks. A ``<caption>`` is a direct
+    child of the element it describes, so its parent now names the owner
+    outright and the comparison has nothing left to break a tie for.
     """
 
     slot: int
     builder: _BuilderT
-    open_seq: int
 
 
 @dataclass
@@ -715,16 +716,30 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.table_stack: list[_ExhibitFrame[_TableBuilder]] = []
         # Caption text is carried in <p> and <title> — the same elements that
         # carry section prose and section headings — so routing it needs the
-        # enclosing <caption>, not just "a figure is open somewhere above".
+        # enclosing <caption> and not just "a figure is open somewhere above".
         #
-        # Still a stored boolean, so a nested <caption> truncates the enclosing
-        # one — issue #123. A depth is not enough there, unlike the exhibit
-        # stacks above: the routing needs the caption's *owner*.
-        self.in_caption = False
-        # Bumped by every <fig> and <table-wrap> open and recorded on the
-        # frame, so that content belonging to an exhibit can be routed to the
-        # innermost one rather than to whichever kind is tested first.
-        self.exhibit_opens = 0
+        # One entry per open <caption>, innermost last, holding the builder
+        # that <caption> belongs to — or None where its owner is an element
+        # this module does not model. Both halves are load-bearing (#123):
+        #
+        # A **stack** because captions nest. Held as a boolean, the inner
+        # </caption> cleared it, so a <media> legend inside a figure's caption
+        # truncated that caption at the point the legend ended and dropped
+        # every word after it.
+        #
+        # The **owner** because a depth counter only fixes that half. The
+        # legend's owner is not an exhibit bmlib models, so counted rather
+        # than named it still lands on the enclosing figure — and the case a
+        # depth cannot reach at all needs no nesting: eLife deposits a
+        # <supplementary-material> carrying a <caption> of its own beside the
+        # figure's, inside the <fig>, and every word of *Figure 1—source data
+        # 1* was appended to the figure's legend.
+        #
+        # Naming the owner is also what retired `_innermost_exhibit()`: a
+        # <caption> is a direct child of what it describes, so its parent
+        # answers exactly, where "the innermost exhibit open anywhere above"
+        # was merely usually right.
+        self.caption_stack: list[_FigureBuilder | _TableBuilder | None] = []
 
         # Reference state
         self.in_ref_list = False
@@ -805,29 +820,6 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 return name
         return ""
 
-    def _innermost_exhibit(self) -> _FigureBuilder | _TableBuilder | None:
-        """The builder of the open exhibit that encloses no other, if any.
-
-        Exhibits nest both ways round — a ``<table-wrap>`` inside a figure's
-        footnote, a ``<fig>`` inside a table's — so asking "is a figure open
-        anywhere above?" first, as the ``in_figure``/``in_table_wrap`` flags
-        invite, hands the inner exhibit's own content to the outer one. Among
-        properly nested elements the innermost is simply the one that opened
-        last, which is what ``open_seq`` records.
-
-        Returns:
-            The innermost open exhibit's builder, or ``None`` when none is
-            open. Callers that need to know *which kind* it is test the type;
-            a ``<label>`` does not, being routed by its parent element instead.
-        """
-        figure = self.figure_stack[-1] if self.figure_stack else None
-        table = self.table_stack[-1] if self.table_stack else None
-        if figure is not None and (table is None or figure.open_seq > table.open_seq):
-            return figure.builder
-        if table is not None:
-            return table.builder
-        return None
-
     # -- Text stack helpers --------------------------------------------------
 
     @property
@@ -854,22 +846,49 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
     # -- Section and caption helpers -----------------------------------------
 
+    def _caption_owner(self, parent: str) -> _FigureBuilder | _TableBuilder | None:
+        """The builder a ``<caption>`` just opened under ``parent`` belongs to.
+
+        ``<caption>`` is a direct child of the element it describes, so the
+        parent decides outright — the ``<label>`` idiom, one element away. It
+        is exact where "the innermost exhibit open anywhere above" was only
+        usually right: ``<boxed-text>``, ``<media>``, ``<supplementary-material>``
+        and ``<fig-group>`` all admit a ``<caption>`` too, and inside a
+        ``<fig>`` each of them was donating its legend to the figure.
+
+        Args:
+            parent: The element enclosing the ``<caption>``.
+
+        Returns:
+            The owning exhibit's builder, or ``None`` when the owner is an
+            element this module does not model — whose caption is then held by
+            nothing rather than by the wrong thing.
+        """
+        if parent == "fig":
+            return self.current_figure
+        if parent == "table-wrap":
+            return self.current_table
+        return None
+
     def _append_caption_text(self, text: str) -> None:
-        """Append caption prose to the innermost open exhibit.
+        """Append caption prose to the innermost open ``<caption>``'s owner.
 
         A ``<caption>`` carries a ``<title>`` lead and one or more ``<p>``
         elements, which arrive in document order, so they are joined with a
         single space into the one ``caption`` string the models expose.
 
-        The caption goes to the *innermost* open exhibit, for the reason
-        :meth:`_innermost_exhibit` gives: exhibits nest both ways round, and
-        "the figure if one is open, else the table" gives an inner table's
-        caption to the figure enclosing it.
+        Text arriving with no caption open is furniture — a cell, a footnote —
+        and is dropped, which is what keeps table internals out of the prose.
+        Text whose innermost caption has no modelled owner is dropped for the
+        same reason: it belongs to that element, not to the exhibit enclosing
+        it.
 
         Args:
             text: Whitespace-normalised text of the caption child element.
         """
-        builder = self._innermost_exhibit()
+        if not self.caption_stack:
+            return
+        builder = self.caption_stack[-1]
         if builder is None or not text:
             return
         if builder.caption:
@@ -962,16 +981,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # Reserve the slot now, fill it at </fig>: listed where it opened,
             # built where it closed.
             self.figure_slots.append(None)
-            self.exhibit_opens += 1
             self.figure_stack.append(
                 _ExhibitFrame(
                     slot=len(self.figure_slots) - 1,
                     builder=_FigureBuilder(id=attrs.get("id", "")),
-                    open_seq=self.exhibit_opens,
                 )
             )
         elif name == "caption":
-            self.in_caption = True
+            # `element_stack[-1]` is this <caption>, as at <article-id> above.
+            parent = self.element_stack[-2] if len(self.element_stack) >= 2 else ""
+            self.caption_stack.append(self._caption_owner(parent))
         elif name == "graphic":
             # Routed by its owner, like a <label> — not by "is a figure open
             # anywhere above?", which is what `current_figure` answers. A
@@ -1004,12 +1023,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 current_table.offer_graphic(href, _graphic_suitability(attrs, href))
         elif name == "table-wrap":
             self.table_slots.append(None)
-            self.exhibit_opens += 1
             self.table_stack.append(
                 _ExhibitFrame(
                     slot=len(self.table_slots) - 1,
                     builder=_TableBuilder(id=attrs.get("id", "")),
-                    open_seq=self.exhibit_opens,
                 )
             )
         elif name == "thead":
@@ -1182,13 +1199,24 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 )
             self.in_abstract = False
         elif name == "title":
-            if self.in_figure or self.in_table_wrap:
-                # <caption><title> is the caption's lead, not a section
-                # heading — but it is the same element name as one, so
-                # without this it would rename the enclosing <sec> after
-                # the figure.
-                if self.in_caption:
-                    self._append_caption_text(normalized_text)
+            # Routed by the element that owns it, like a <label> and a
+            # <graphic>, and for the reason both are: <sec> is far from the
+            # only JATS element carrying a <title>. <caption> does — it is the
+            # caption's lead, not a heading — and so do <fn-group> (modelled
+            # `(label?, title?, (fn|p)+)`), <ref-list>, <glossary>, <app> and
+            # <boxed-text>. Asked only "is a section open?", any of them
+            # renamed it: eLife's *Additional information* section holds an
+            # <fn-group> per contribution type and the last one won
+            # (PMC8754430, issue #125), and a <boxed-text><caption><title> at
+            # section level did the same (issue #130). The result is not a
+            # blank but a heading the publisher never wrote.
+            #
+            # The parent test needs no enumeration of the elements that carry
+            # a <title>, which is what made this uncloseable by inspection —
+            # the same argument the <label> rule turns on.
+            parent = self.element_stack[-2] if len(self.element_stack) >= 2 else ""
+            if parent == "caption":
+                self._append_caption_text(normalized_text)
             elif self.in_abstract:
                 if self.current_abstract_text or self.current_abstract_title:
                     content = " ".join(self.current_abstract_text)
@@ -1197,20 +1225,28 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     )
                     self.current_abstract_text = []
                 self.current_abstract_title = text
-            elif self.section_stack:
+            elif parent == "sec" and self.section_stack:
+                # A structured abstract's <sec><title> has the same parent and
+                # is answered by the branch above, not this one — but not
+                # because of the order: <sec> inside an <abstract> pushes no
+                # builder, so `section_stack` is what actually keeps them
+                # apart, and swapping the two branches changes nothing today.
+                # The order is kept as the cheaper guard of the two to reason
+                # about, and is recorded here as not load-bearing so a later
+                # reader does not take it for one.
                 self.section_stack[-1].title = normalized_text
         elif name == "p":
             if self.in_figure or self.in_table_wrap:
                 # Figure and table internals, tested before every prose branch
                 # because a <fig> or <table-wrap> usually sits inside a <sec>:
                 # asking about the section first would blank the caption and
-                # reprint it as article prose. Only <caption> content is kept.
-                # Cell and footnote <p> is dropped — characters() already
+                # reprint it as article prose. Only <caption> content is kept,
+                # and `_append_caption_text` decides which caption's owner gets
+                # it. Cell and footnote <p> is dropped — characters() already
                 # collects cells into the rendered table, so letting it through
                 # would duplicate furniture into the prose and count it towards
                 # has_body.
-                if self.in_caption:
-                    self._append_caption_text(normalized_text)
+                self._append_caption_text(normalized_text)
             elif self.in_abstract:
                 if normalized_text:
                     self.current_abstract_text.append(normalized_text)
@@ -1252,7 +1288,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 frame = self.figure_stack.pop()
                 self.figure_slots[frame.slot] = frame.builder.build()
         elif name == "caption":
-            self.in_caption = False
+            # Popping restores the enclosing caption, which is the half a
+            # boolean got wrong: cleared by the inner close, it truncated the
+            # outer caption at the point the inner one ended. Guarded because
+            # a close with nothing open would otherwise raise on malformed
+            # input; SAX makes that unreachable today.
+            if self.caption_stack:
+                self.caption_stack.pop()
         elif name == "label":
             # A <label> belongs to the element that encloses it, and JATS
             # spells it as a direct child, so the parent decides outright
