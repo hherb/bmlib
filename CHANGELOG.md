@@ -6,7 +6,158 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`scripts/sample_jats_exhibits.py`** (#131), the live runner behind the
+  JATS exhibit rules below — the fifth in `scripts/`, and the one to re-run
+  before changing `_ARCHIVAL_MIME_SUBTYPES`, `_ARCHIVAL_EXTENSIONS`,
+  `_GRAPHIC_TRANSPARENT_WRAPPERS` or the `<label>` parent test. The rules had
+  shipped with their populations measured in a sibling repository and nothing
+  in-tree to re-earn a list member from, which is the one thing `CLAUDE.md`
+  requires of every other curated list here.
+
+  It does **not** import the parser's predicates — a corpus labelled by the
+  rule under test can only confirm that rule — and it draws a sample
+  **stratified by publication month**, because a single cursor walk returns a
+  contiguous block of accessions: its own first run drew 120 articles of which
+  106 carried no exhibit at all.
+
+  What it measured, over 276 open-access Europe PMC articles carrying 2,067
+  exhibits, is folded into the comments at each site. Two of the rules have an
+  **empty** population — no `<alternatives>` member declares a `mime-subtype`
+  or is archival at all, and exactly one `<graphic>` is owned by a non-exhibit
+  inside an exhibit (an inline image in a `<td>`, which resolves the same
+  either way). Both are kept, because what they prevent is silent and
+  permanent. The `<label>` parent rule's premise measures **full**: 2,033
+  exhibits carry a direct-child label and 2,033 carry one anywhere, so no
+  exhibit in the sample carries its label only indirectly.
+
 ### Fixed
+
+- **A nested `<fig>` dropped its parent figure** (#115). eLife wraps every
+  figure supplement inside the figure it belongs to — the convention that
+  motivated the issue, though the measurement below counts every publisher's
+  nesting, not eLife's share. `current_figure` was
+  a single slot: the inner `<fig>` overwrote the parent's builder, the inner
+  `</fig>` emitted the child and cleared the slot, and the parent's own
+  `</fig>` then found nothing to build. The parent figure — label, caption and
+  graphic — was lost outright. **Measured:** the original survey put nesting
+  at 19.6% of 225 open-access Europe PMC articles;
+  `scripts/sample_jats_exhibits.py` re-measures it at **0.7%** of a general
+  draw (2 of 276, and 0 of a 300-article stratified draw) — both of them
+  eLife, losing 6 of 12 and 5 of 11 figures. So this is one publisher's house
+  style costing about half of *its* figures, not a general convention.
+  Separately, PMC8754430 carries 12 and
+  the parser returned 9, the three missing ones being exactly those with
+  supplements. `in_figure` was cleared by the inner close too, so whatever the
+  parent had left was read under the enclosing `<sec>`'s rules and reprinted
+  as article prose, reaching `body_sections`, `has_body` and the rendered
+  HTML — and so any downstream scan over parser output. Not
+  `bmlib.transparency`, which regexes the raw XML itself and never sees
+  `JATSParser`; that exposure is **#119**.
+
+  The open figures are now a **stack**, with `in_figure` and `current_figure`
+  derived from it rather than stored, so a stored flag cannot be reintroduced
+  by a later early return. The other half is **slot reservation**: the entry
+  in the figure list is reserved when `<fig>` opens and filled when it closes,
+  because an exhibit is *built* at its end tag but has to be *listed* at its
+  start. Plain pop-and-append restores the parent and still fails, listing
+  every supplement ahead of the figure that contains it, so a test that only
+  counts figures does not tell the two apart.
+
+  `current_table` was the same single slot and is fixed the same way: a
+  `<table-wrap>` opened inside another's `<table-wrap-foot>` lost the outer
+  table entirely. Unmeasured, unlike the figure case, but structural — and
+  found only because the figure fix was being pinned.
+
+- **A `<table-wrap-foot><fn><label>` overwrote the table's own number**
+  (#116). A footnote carries its marker — `a`, `b`, `*` — as its own
+  `<label>`, and every `<label>` was routed on the ambient "am I in a
+  figure/table?" flags, so the last footnote marker won. PMC12661592's single
+  table reported its label as `"a"`. **Measured:** 27 of 225 surveyed articles
+  (12.0%) carry a labelled `<table-wrap-foot><fn>`; `<fig>` has the identical
+  hole, JATS admitting `<fn>` there too. An empty label is not inert either —
+  the renderer substitutes `Table {i + 1}` for a table and `Figure {i + 1}`
+  for a figure, so the symptom is an invented number rather than a blank.
+
+  **The label is now routed by its parent element**, `<label>` being a direct
+  child of the exhibit it numbers. That replaced a first cut which counted
+  footnote depth: the depth needed an enumeration of every container whose
+  `<label>` is not the exhibit's, and review showed the enumeration could not
+  be completed by inspection — an `<fn-group>` directly inside a `<fig>` (no
+  `<table-wrap-foot>` to wrap it), a `<disp-formula>`'s `(1)`, a `<media>`'s
+  `Video 1` and eLife's `<supplementary-material>` `Figure 1-source data 1`
+  each still overwrote the number, with a different plausible-looking wrong
+  answer. Asking the parent needs no enumeration, and is exact where the depth
+  was merely close: an exhibit opened *inside* a footnote keeps its own label,
+  because its `<label>`'s parent is the exhibit either way. The marker itself
+  is discarded rather than held, which is correct only because bmlib captures
+  no footnote prose for it to belong to; that gap is filed as **#124**.
+
+- **A figure with several `<graphic>` resolved to the thumbnail** (#117). The
+  last deposit won, and publishers commonly emit the full image first and a
+  thumbnail second. **Measured:** 58.0% of the 959 figures in the same
+  225-article survey *that carry a `<graphic>` at all* carry more than one,
+  and 52.9% end on a thumbnail, so the majority of figures resolved to a
+  preview.
+
+  Position cannot decide it, because the two multi-graphic conventions
+  disagree about order: a thumbnail is deposited *last* (PLOS, Springer) while
+  an `<alternatives>` archival master is deposited *first*. First-wins was
+  correct for every article measured, but it inverts wherever a master is
+  deposited first, trading the thumbnail for a TIFF no renderer displays —
+  unmeasured, and no corpus instance exists. The deposits
+  are **ranked** instead — `ARCHIVAL < THUMBNAIL < FULL` — and one is accepted
+  only when it is *strictly* better, which is what makes the first win among
+  equals. "Thumbnail" is read from `content-type` **or** `specific-use` as a
+  lowercased substring, neither attribute being case-controlled; **a thumbnail
+  is never inferred from the file extension**, since every thumbnail in the
+  corpus is a `.gif` only because PLOS and Springer both deposit that way, and
+  elsewhere a `.gif` is the one image a figure has.
+
+- **An undeclared archival master beat the web image beside it.** Found
+  reviewing the #117 fix above, and a regression that fix introduced:
+  `mime-subtype` is optional, so an `<alternatives>` TIFF that declares none
+  ranked `FULL`, and — deposited first, under the strictly-better rule that
+  makes the first win among equals — permanently beat the JPEG that followed.
+  The pre-#117 "keep the last" resolved that case correctly.
+
+  **An archival master *is* now inferred from the extension** (`.tif`,
+  `.tiff`, `.eps`, `.ps`), and the asymmetry with the thumbnail rule above is
+  deliberate rather than an exception to it: a first deposit is accepted
+  whatever its rank, so demoting a master can only ever break a tie against a
+  real web image, while a `.gif` rule would discard the only image a figure
+  has. A lone master is still the figure's image, which is the test that pins
+  the difference.
+
+- **A nested exhibit's `<graphic>` was donated to the figure enclosing it.**
+  The sibling of the entry below, and the one it missed: `<label>` and caption
+  text were moved onto the exhibit stacks, but `<graphic>` kept asking
+  `current_figure` — "the innermost figure open anywhere above". A `<graphic>`
+  held by a nested `<table-wrap>`, `<fn>` or `<supplementary-material>` was
+  offered to the enclosing figure, and #117's strictly-better rule is what
+  made it stick: both deposits rank `FULL`, so the foreign href arriving first
+  beat the figure's own for good, where "keep the last" had overwritten it.
+
+  A `<graphic>` is now routed by its owning element, with `<alternatives>` —
+  a wrapper around several encodings of one image — and `<p>` — prose flow,
+  which holds an image without owning it — transparent. The `<p>` member is
+  load-bearing rather than defensive: JATS admits `<p>` inside `<fig>`, and
+  without it a figure whose graphic is wrapped in prose loses it outright.
+  Same
+  principle as the `<label>` parent test, and for the same reason: no
+  enumeration of the containers that may hold a `<graphic>`. A table's own
+  `<graphic>` still has nowhere to go, since `JATSTableInfo` has no graphic
+  field; it is dropped with a DEBUG line naming the href and the table, and
+  the model gap is filed as **#127**.
+
+- **An inner exhibit's label and caption went to the exhibit enclosing it.**
+  Found while pinning #116's exhibit-scoped label rule, and the same defect
+  one level up: `<label>` and caption text asked whether a
+  figure was open *anywhere above* before considering the table, so a
+  `<table-wrap>` inside a figure's footnote lost its own number and legend to
+  the figure. Both now route to the innermost open exhibit, which among
+  properly nested elements is simply the one that opened last.
 
 - **Every author dropped when the contributor role is declared on the group**
   (#111). `JATSParser` collected a `<contrib>` only where it carried

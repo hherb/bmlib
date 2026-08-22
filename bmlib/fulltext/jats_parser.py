@@ -28,8 +28,10 @@ import re
 import xml.sax
 import xml.sax.handler
 from dataclasses import dataclass, field
+from enum import IntEnum
 from html import escape as html_escape
 from io import BytesIO
+from typing import Generic, TypeVar
 
 from bmlib.fulltext.models import (
     JATSAbstractSection,
@@ -81,12 +83,151 @@ class _SectionBuilder:
         )
 
 
+class _GraphicSuitability(IntEnum):
+    """How well a ``<graphic>`` deposit serves as *the* image of its figure.
+
+    Ordered worst to best, so the deposits can be ranked rather than chosen by
+    position — see :func:`_graphic_suitability`.
+    """
+
+    ARCHIVAL = 1
+    """A print master no browser renders: TIFF, EPS, PostScript."""
+
+    THUMBNAIL = 2
+    """A reduced preview. Renders, but is not the figure."""
+
+    FULL = 3
+    """Everything else — the ordinary case, and the one to keep."""
+
+
+# JATS mime-subtypes of the archival masters deposited beside a web image,
+# normally inside <alternatives>. None of `content-type`, `specific-use` or
+# `mime-subtype` is case-controlled, so all three are lowercased before
+# comparison.
+_ARCHIVAL_MIME_SUBTYPES = frozenset({"tiff", "tif", "eps", "postscript"})
+
+# The same masters as they appear in an href that declares no `mime-subtype`.
+# See `_graphic_suitability` for why inferring *here* is safe where inferring a
+# thumbnail from the extension is not.
+_ARCHIVAL_EXTENSIONS = frozenset({".tif", ".tiff", ".eps", ".ps"})
+
+# BOTH SETS ARE DEFENSIVE, AND THE MEASUREMENT SAYS SO. Over 276 open-access
+# Europe PMC articles (`scripts/sample_jats_exhibits.py`, issue #131): 912
+# figures carry an <alternatives> block and 1,819 <graphic> sit inside one, of
+# which **zero declare a mime-subtype at all** and **zero are archival by
+# either test** — every href in the sample is .jpg or .gif. So neither tier
+# fires on that corpus, and the ARCHIVAL rank is unreached.
+#
+# They are kept rather than deleted because the failure they prevent is silent
+# and permanent: an undeclared master deposited first ranks FULL, wins under
+# the strictly-better rule, and leaves the figure pointing at something no
+# browser renders. "No instance in 276 articles" is not "cannot happen", and
+# the cost of carrying the tiers is one comparison. Re-run the sampler before
+# concluding otherwise — that is what it is for.
+
+
+def _has_archival_extension(href: str) -> bool:
+    """Does ``href`` name a print master by its file extension?
+
+    Args:
+        href: The deposit's resolved href.
+
+    Returns:
+        ``True`` if the path ends in a known archival extension.
+    """
+    path = href.split("?", 1)[0].split("#", 1)[0].strip().lower()
+    return any(path.endswith(extension) for extension in _ARCHIVAL_EXTENSIONS)
+
+
+def _graphic_suitability(attrs: xml.sax.xmlreader.AttributesImpl, href: str) -> _GraphicSuitability:
+    """Rank one ``<graphic>`` deposit by how well it serves as the figure.
+
+    ``content-type`` and ``specific-use`` are both open-valued in JATS and
+    neither is case-controlled, so "thumbnail" is matched as a lowercased
+    substring — ``thumb`` and ``thumbnail`` are both current spellings and a
+    third is possible.
+
+    **A thumbnail is never inferred from the file extension.** Every thumbnail
+    in the surveyed corpus is a ``.gif`` because PLOS and Springer both deposit
+    that way, so an extension rule passes the corpus and then discards the only
+    image a figure has wherever ``.gif`` *is* that image.
+
+    **An archival master is**, and the asymmetry is deliberate rather than an
+    exception to the rule above. A ``<graphic>`` in an ``<alternatives>`` block
+    need not declare ``mime-subtype`` — and when it does not, an undeclared
+    TIFF deposited first ranked ``FULL`` and, under
+    :meth:`_FigureBuilder.offer_graphic`'s strictly-better rule, beat the web
+    image that followed it. What makes inferring safe *here* is that a first
+    deposit is accepted whatever its rank, so demoting can only ever break a
+    tie against a real web image — it can never discard the only image a figure
+    has, which is exactly the cost that rules the thumbnail half out.
+
+    A deposit marked *both* — a TIFF thumbnail — is ranked ``THUMBNAIL``,
+    since that predicate is tested first. Neither ranking serves it well
+    because the deposit is a TIFF either way, so neither describes something a
+    browser can show; the corpus carries no instance and no test pins the
+    order. It is the reference implementation's, and is recorded here rather
+    than asserted.
+
+    Args:
+        attrs: Attributes of the ``<graphic>`` start tag.
+        href: The deposit's resolved href, read for its extension only.
+
+    Returns:
+        The deposit's suitability, worst to best.
+    """
+    content_type = (attrs.get("content-type") or "").lower()
+    specific_use = (attrs.get("specific-use") or "").lower()
+    if "thumb" in content_type or "thumb" in specific_use:
+        return _GraphicSuitability.THUMBNAIL
+    if (attrs.get("mime-subtype") or "").lower() in _ARCHIVAL_MIME_SUBTYPES:
+        return _GraphicSuitability.ARCHIVAL
+    if _has_archival_extension(href):
+        return _GraphicSuitability.ARCHIVAL
+    return _GraphicSuitability.FULL
+
+
 @dataclass
 class _FigureBuilder:
     id: str = ""
     label: str = ""
     caption: str = ""
     graphic_href: str = ""
+    graphic_rank: _GraphicSuitability | None = None
+
+    def offer_graphic(self, href: str, rank: _GraphicSuitability) -> None:
+        """Keep ``href`` only if it is a strictly better deposit than the one held.
+
+        A figure commonly deposits the same image more than once and only one
+        href fits the model: 58.0% of the 959 surveyed figures that carry a
+        ``<graphic>`` at all — from a 225-article survey — carry several.
+        Position cannot decide between them. A thumbnail is deposited *last*
+        (PLOS, Springer), so "keep the last" yields a thumbnail for 52.9% of
+        figures. "Keep the first" was correct for every article measured, but
+        it inverts wherever an ``<alternatives>`` archival master is deposited
+        first — no corpus instance exists. Ranking settles both without caring
+        which end it is.
+
+        Re-measured independently on 276 open-access Europe PMC articles
+        (``scripts/sample_jats_exhibits.py``): **49.9%** of the 1,833 figures
+        carrying a ``<graphic>`` carry more than one and **49.5%** end on a
+        thumbnail — a few points below the 58.0% / 52.9% above, which came
+        from a different draw. **0%** deposit a thumbnail *first*, so the
+        convention that motivates ranking over plain first-wins does not
+        appear in that sample at all. Ranking still earns its place on the
+        49.5%: it is what stops half of all figures resolving to a preview.
+
+        *Strictly* better is what makes the first deposit win among equals.
+
+        Args:
+            href: The deposit's resolved href; an empty one is ignored.
+            rank: Its suitability, from :func:`_graphic_suitability`.
+        """
+        if not href:
+            return
+        if self.graphic_rank is None or rank > self.graphic_rank:
+            self.graphic_href = href
+            self.graphic_rank = rank
 
     def build(self) -> JATSFigureInfo:
         return JATSFigureInfo(
@@ -215,6 +356,35 @@ class _TableBuilder:
         parts.append("  </tbody>")
         parts.append("</table>")
         return "\n".join(parts)
+
+
+_BuilderT = TypeVar("_BuilderT", _FigureBuilder, _TableBuilder)
+
+
+@dataclass
+class _ExhibitFrame(Generic[_BuilderT]):
+    """One open ``<fig>`` or ``<table-wrap>``.
+
+    Both are stacks rather than single slots because both nest: eLife wraps
+    every figure supplement inside the figure it belongs to, and JATS lets a
+    ``<table-wrap>`` open inside another's ``<table-wrap-foot>``. Held as one
+    slot, the inner open overwrote the parent's builder, the inner close
+    emitted the child and cleared the slot, and the parent's own end tag found
+    nothing to build — losing the parent outright (issue #115).
+
+    ``slot`` is the index reserved in the owning slot list when the element
+    opened. An exhibit is *built* at its end tag but has to be *listed* at its
+    start, so a plain pop-and-append emits every supplement ahead of the parent
+    it belongs to; the reservation is what keeps the result in document order.
+
+    ``open_seq`` says which exhibit opened most recently, which among properly
+    nested elements is which one is innermost — see
+    :meth:`_JATSHandler._innermost_exhibit`.
+    """
+
+    slot: int
+    builder: _BuilderT
+    open_seq: int
 
 
 @dataclass
@@ -352,6 +522,32 @@ _TEXT_ACCUMULATING = frozenset(
 _NESTED_ARTICLE_ELEMENTS = frozenset({"sub-article", "response"})
 
 
+# Elements a <graphic> may sit inside without ceasing to be the enclosing
+# exhibit's own image. <alternatives> is a "choose one of these" wrapper around
+# several encodings of a single image, and <p> is prose flow that contains an
+# image without owning it — JATS admits both inside <fig>, and reading either
+# as the owner costs the figure its image.
+#
+# Every other container — <fn>, <supplementary-material>, <media>,
+# <boxed-text>, and a nested <table-wrap> — owns the image it holds. That side
+# needs no enumeration: anything not listed here is opaque, so a container this
+# module has never heard of keeps its own image rather than donating it.
+#
+# Measured over the same 276 articles: exactly **one** <graphic> in the sample
+# is owned by a non-exhibit inside an exhibit — an inline image in a <td> of
+# PMC13047053's table — and it resolves identically either way, because no
+# <fig> is open around it. Routing by owner therefore changed **no** figure's
+# image across the corpus.
+#
+# Kept for the reason the archival tiers are: what it prevents is silent. A
+# nested <table-wrap>/<fn>/<supplementary-material> inside a <fig> hands over
+# its image, and the strictly-better rule then makes that permanent where
+# "keep the last" used to overwrite it. The <p> member is not defensive at
+# all — JATS admits <p> inside <fig>, and without it a figure whose graphic is
+# wrapped in prose flow loses its image outright.
+_GRAPHIC_TRANSPARENT_WRAPPERS = frozenset({"alternatives", "p"})
+
+
 _INLINE_ELEMENTS = frozenset(
     {
         "bold",
@@ -399,8 +595,6 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.pmid = ""
         self.abstract_sections: list[JATSAbstractSection] = []
         self.body_sections: list[JATSBodySection] = []
-        self.figures: list[JATSFigureInfo] = []
-        self.tables: list[JATSTableInfo] = []
         self.references: list[JATSReferenceInfo] = []
 
         # Parsing state
@@ -453,14 +647,46 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.body_paragraph_count = 0
 
         # Figure / table state
-        self.in_figure = False
-        self.in_table_wrap = False
+        #
+        # Both exhibits nest, so both are stacks and neither is a single slot.
+        # A <fig> may contain another — eLife wraps every figure supplement
+        # inside the figure it belongs to. The original survey put this at
+        # 19.6% of articles; `scripts/sample_jats_exhibits.py` re-measures it
+        # at 0.7% of a general open-access draw (2 of 276, both eLife; 0 of a
+        # 300-article stratified draw), so it is one publisher's house style
+        # costing about half of *its* figures, not a general convention. The
+        # two articles lost 6 of 12 and 5 of 11 figures respectively. And
+        # JATS lets a <table-wrap> open inside another's <table-wrap-foot>. As
+        # one slot, the inner open overwrote the parent's builder, the inner
+        # close emitted the child and cleared the slot, and the parent's own
+        # end tag found nothing to build (issue #115).
+        #
+        # One slot per exhibit in *open* order, reserved when the element opens
+        # and filled when it closes. Pop-and-append would restore the parent
+        # but list it after its own supplement, since an exhibit is built at
+        # its end tag and the child's arrives first.
+        self.figure_slots: list[JATSFigureInfo | None] = []
+        self.table_slots: list[JATSTableInfo | None] = []
+        # The open exhibits, innermost last. `in_figure`, `current_figure`,
+        # `in_table_wrap` and `current_table` are derived from these rather
+        # than stored: a stored flag is what the inner close cleared while the
+        # parent was still open, which read the rest of the parent as article
+        # prose, and it would come back the moment someone added an early
+        # return.
+        self.figure_stack: list[_ExhibitFrame[_FigureBuilder]] = []
+        self.table_stack: list[_ExhibitFrame[_TableBuilder]] = []
         # Caption text is carried in <p> and <title> — the same elements that
         # carry section prose and section headings — so routing it needs the
         # enclosing <caption>, not just "a figure is open somewhere above".
+        #
+        # Still a stored boolean, so a nested <caption> truncates the enclosing
+        # one — issue #123. A depth is not enough there, unlike the exhibit
+        # stacks above: the routing needs the caption's *owner*.
         self.in_caption = False
-        self.current_figure: _FigureBuilder | None = None
-        self.current_table: _TableBuilder | None = None
+        # Bumped by every <fig> and <table-wrap> open and recorded on the
+        # frame, so that content belonging to an exhibit can be routed to the
+        # innermost one rather than to whichever kind is tested first.
+        self.exhibit_opens = 0
 
         # Reference state
         self.in_ref_list = False
@@ -472,6 +698,97 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # Cross-reference state
         self.current_xref_type: str | None = None
         self.current_xref_rid: str | None = None
+
+    # -- Exhibit stack helpers -----------------------------------------------
+
+    @property
+    def in_figure(self) -> bool:
+        """Is a ``<fig>`` open? Derived, never stored — see ``figure_stack``."""
+        return bool(self.figure_stack)
+
+    @property
+    def in_table_wrap(self) -> bool:
+        """Is a ``<table-wrap>`` open? Derived, never stored."""
+        return bool(self.table_stack)
+
+    @property
+    def current_figure(self) -> _FigureBuilder | None:
+        """The innermost open ``<fig>``.
+
+        Innermost rather than "whichever was opened most recently and not yet
+        emitted": a ``<graphic>`` or ``<label>`` belongs to the figure that
+        encloses it, and the parent becomes current again when its supplement
+        closes.
+        """
+        return self.figure_stack[-1].builder if self.figure_stack else None
+
+    @property
+    def current_table(self) -> _TableBuilder | None:
+        """The innermost open ``<table-wrap>``, for the same reason."""
+        return self.table_stack[-1].builder if self.table_stack else None
+
+    def build_figures(self) -> list[JATSFigureInfo]:
+        """Build the figures, in the order their ``<fig>`` elements *opened*.
+
+        A method rather than a property because each call renders a fresh
+        list: as an attribute it read like the mutable list it replaced, so
+        ``h.figures.append(...)`` would have become a silent no-op.
+
+        A slot still holding ``None`` was reserved by a ``<fig>`` that never
+        closed, which ``xml.sax`` cannot deliver — expat rejects an unbalanced
+        document before :meth:`JATSParser.parse` returns, which
+        ``test_an_unbalanced_document_is_refused_outright`` pins. The filter
+        only keeps the reservation from being able to put a hole in the
+        result.
+        """
+        return [figure for figure in self.figure_slots if figure is not None]
+
+    def build_tables(self) -> list[JATSTableInfo]:
+        """Build the tables, in the order their ``<table-wrap>`` elements *opened*.
+
+        The filter is there for the reason :meth:`build_figures`' is, and is
+        equally unreachable; both are kept so a future non-SAX feed cannot put
+        a hole in the result.
+        """
+        return [table for table in self.table_slots if table is not None]
+
+    def _graphic_owner(self) -> str:
+        """The element a ``<graphic>`` currently being opened belongs to.
+
+        ``element_stack[-1]`` is the ``<graphic>`` itself, so the walk starts
+        one above it and skips only the wrappers that do not take ownership
+        (:data:`_GRAPHIC_TRANSPARENT_WRAPPERS`).
+
+        Returns:
+            The owning element's name, or ``""`` if there is none.
+        """
+        for name in reversed(self.element_stack[:-1]):
+            if name not in _GRAPHIC_TRANSPARENT_WRAPPERS:
+                return name
+        return ""
+
+    def _innermost_exhibit(self) -> _FigureBuilder | _TableBuilder | None:
+        """The builder of the open exhibit that encloses no other, if any.
+
+        Exhibits nest both ways round — a ``<table-wrap>`` inside a figure's
+        footnote, a ``<fig>`` inside a table's — so asking "is a figure open
+        anywhere above?" first, as the ``in_figure``/``in_table_wrap`` flags
+        invite, hands the inner exhibit's own content to the outer one. Among
+        properly nested elements the innermost is simply the one that opened
+        last, which is what ``open_seq`` records.
+
+        Returns:
+            The innermost open exhibit's builder, or ``None`` when none is
+            open. Callers that need to know *which kind* it is test the type;
+            a ``<label>`` does not, being routed by its parent element instead.
+        """
+        figure = self.figure_stack[-1] if self.figure_stack else None
+        table = self.table_stack[-1] if self.table_stack else None
+        if figure is not None and (table is None or figure.open_seq > table.open_seq):
+            return figure.builder
+        if table is not None:
+            return table.builder
+        return None
 
     # -- Text stack helpers --------------------------------------------------
 
@@ -500,18 +817,21 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
     # -- Section and caption helpers -----------------------------------------
 
     def _append_caption_text(self, text: str) -> None:
-        """Append caption prose to whichever of the figure or table is open.
+        """Append caption prose to the innermost open exhibit.
 
         A ``<caption>`` carries a ``<title>`` lead and one or more ``<p>``
         elements, which arrive in document order, so they are joined with a
         single space into the one ``caption`` string the models expose.
 
+        The caption goes to the *innermost* open exhibit, for the reason
+        :meth:`_innermost_exhibit` gives: exhibits nest both ways round, and
+        "the figure if one is open, else the table" gives an inner table's
+        caption to the figure enclosing it.
+
         Args:
             text: Whitespace-normalised text of the caption child element.
         """
-        builder: _FigureBuilder | _TableBuilder | None = (
-            self.current_figure if self.in_figure else self.current_table
-        )
+        builder = self._innermost_exhibit()
         if builder is None or not text:
             return
         if builder.caption:
@@ -601,35 +921,73 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self._flush_implicit_body_section()
                 self.section_stack.append(_SectionBuilder())
         elif name == "fig":
-            self.in_figure = True
-            self.current_figure = _FigureBuilder(id=attrs.get("id", ""))
+            # Reserve the slot now, fill it at </fig>: listed where it opened,
+            # built where it closed.
+            self.figure_slots.append(None)
+            self.exhibit_opens += 1
+            self.figure_stack.append(
+                _ExhibitFrame(
+                    slot=len(self.figure_slots) - 1,
+                    builder=_FigureBuilder(id=attrs.get("id", "")),
+                    open_seq=self.exhibit_opens,
+                )
+            )
         elif name == "caption":
             self.in_caption = True
         elif name == "graphic":
-            if self.in_figure and self.current_figure is not None:
-                href = attrs.get("xlink:href") or attrs.get("href") or attrs.get("xlink-href") or ""
-                if href:
-                    self.current_figure.graphic_href = href
+            # Routed by its owner, like a <label> — not by "is a figure open
+            # anywhere above?", which is what `current_figure` answers. A
+            # <graphic> held by a nested <table-wrap>, <fn> or
+            # <supplementary-material> was being offered to the figure
+            # enclosing it, and since both rank FULL and `offer_graphic`
+            # accepts only a strictly better deposit, that foreign href then
+            # beat the figure's own for good.
+            href = attrs.get("xlink:href") or attrs.get("href") or attrs.get("xlink-href") or ""
+            owner = self._graphic_owner()
+            current_figure = self.current_figure
+            current_table = self.current_table
+            if owner == "fig" and current_figure is not None:
+                current_figure.offer_graphic(href, _graphic_suitability(attrs, href))
+            elif owner == "table-wrap" and current_table is not None and href:
+                # A <table-wrap>'s own image. `JATSTableInfo` has nowhere to
+                # put it, so it is dropped — but named, because a table whose
+                # only content is a <graphic> renders as nothing and is
+                # otherwise indistinguishable from an empty one. Issue #127.
+                logger.debug(
+                    "Dropping <graphic href=%r> in <table-wrap id=%r>", href, current_table.id
+                )
         elif name == "table-wrap":
-            self.in_table_wrap = True
-            self.current_table = _TableBuilder(id=attrs.get("id", ""))
+            self.table_slots.append(None)
+            self.exhibit_opens += 1
+            self.table_stack.append(
+                _ExhibitFrame(
+                    slot=len(self.table_slots) - 1,
+                    builder=_TableBuilder(id=attrs.get("id", "")),
+                    open_seq=self.exhibit_opens,
+                )
+            )
         elif name == "thead":
-            if self.in_table_wrap and self.current_table:
-                self.current_table.start_header()
+            current_table = self.current_table
+            if current_table is not None:
+                current_table.start_header()
         elif name == "tbody":
-            if self.in_table_wrap and self.current_table:
-                self.current_table.start_body()
+            current_table = self.current_table
+            if current_table is not None:
+                current_table.start_body()
         elif name == "tr":
-            if self.in_table_wrap and self.current_table:
-                self.current_table.start_row()
+            current_table = self.current_table
+            if current_table is not None:
+                current_table.start_row()
         elif name == "th":
-            if self.in_table_wrap and self.current_table:
+            current_table = self.current_table
+            if current_table is not None:
                 colspan = int(attrs.get("colspan", "1") or "1")
-                self.current_table.start_cell(is_header=True, colspan=colspan)
+                current_table.start_cell(is_header=True, colspan=colspan)
         elif name == "td":
-            if self.in_table_wrap and self.current_table:
+            current_table = self.current_table
+            if current_table is not None:
                 colspan = int(attrs.get("colspan", "1") or "1")
-                self.current_table.start_cell(is_header=False, colspan=colspan)
+                current_table.start_cell(is_header=False, colspan=colspan)
         elif name == "ref-list":
             self.in_ref_list = True
         elif name == "ref":
@@ -658,8 +1016,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # pushed and popped by the element handlers, never here.
             return
         self._append_text(content)
-        if self.in_table_wrap and self.current_table:
-            self.current_table.append_cell_text(content)
+        current_table = self.current_table
+        if current_table is not None:
+            current_table.append_cell_text(content)
 
     def endElement(self, name: str) -> None:
         # Pop text buffer
@@ -837,37 +1196,82 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     self.body_sections.append(section)
 
         elif name == "fig":
-            if self.current_figure:
-                self.figures.append(self.current_figure.build())
-            self.in_figure = False
-            self.current_figure = None
+            if self.figure_stack:
+                # Guarded because a close with nothing open would otherwise
+                # raise on malformed input; SAX makes that unreachable today.
+                # The way it stops being unreachable is a suppression region
+                # guarded on `startElement` alone — which is what
+                # `_NESTED_ARTICLE_ELEMENTS` is, and why both of its halves
+                # are guarded together.
+                frame = self.figure_stack.pop()
+                self.figure_slots[frame.slot] = frame.builder.build()
         elif name == "caption":
             self.in_caption = False
         elif name == "label":
-            if self.in_figure and self.current_figure:
+            # A <label> belongs to the element that encloses it, and JATS
+            # spells it as a direct child, so the parent decides outright
+            # (`element_stack[-1]` is this <label>, as at <article-id> above).
+            #
+            # Routing on the ambient "is an exhibit open?" flags instead let
+            # any labelled descendant overwrite the exhibit's number: a
+            # <table-wrap-foot><fn>'s "a"/"b"/"*" marker did so for 12.0% of
+            # the 225 surveyed articles (issue #116), and a <fn-group>'s
+            # "Notes", a <disp-formula>'s "(1)" and eLife's
+            # <supplementary-material> "Figure 1—source data 1" all did the
+            # same. A swallowed label is not a blank either — the renderer
+            # substitutes `Table {i + 1}` or `Figure {i + 1}`, so the symptom
+            # is an invented number.
+            #
+            # Asking the parent needs no enumeration of the containers that
+            # may carry a <label>, which is what a depth counter needed and
+            # what could not be completed by inspection. It is also exact
+            # where a depth is merely close: an exhibit opened *inside* a
+            # footnote still gets its own label, since its <label>'s parent is
+            # the exhibit either way.
+            #
+            # THE PREMISE IS MEASURED (`scripts/sample_jats_exhibits.py`,
+            # issue #131). Over 276 open-access Europe PMC articles carrying
+            # 2,067 exhibits: 2,033 exhibits carry a <label> as a direct child
+            # and 2,033 carry one anywhere — the same number, so **no exhibit
+            # in the sample carries its label only indirectly** and this rule
+            # cannot lose one. Of 2,173 labels inside an exhibit, 93.6% are
+            # the exhibit's own; the rest sit in <fn> (105), <list-item> (34)
+            # and <supplementary-material> (1).
+            #
+            # The depth rule this replaced would still mis-assign the last two
+            # groups — 35 labels in 2 of the 276 articles (0.7%). Small, but
+            # both are corruptions rather than omissions: a <list-item>'s "•"
+            # became PMC12996797's table number, and eLife's "Figure 3—source
+            # data 1." became PMC12999171's figure number.
+            parent = self.element_stack[-2] if len(self.element_stack) >= 2 else ""
+            if parent == "fig" and self.current_figure is not None:
                 self.current_figure.label = text
-            elif self.in_table_wrap and self.current_table:
+            elif parent == "table-wrap" and self.current_table is not None:
                 self.current_table.label = text
             elif self.in_ref and self.current_reference:
                 self.current_reference.label = text
 
         elif name == "thead":
-            if self.in_table_wrap and self.current_table:
-                self.current_table.end_header()
+            current_table = self.current_table
+            if current_table is not None:
+                current_table.end_header()
         elif name == "tbody":
-            if self.in_table_wrap and self.current_table:
-                self.current_table.end_body()
+            current_table = self.current_table
+            if current_table is not None:
+                current_table.end_body()
         elif name == "tr":
-            if self.in_table_wrap and self.current_table:
-                self.current_table.end_row()
+            current_table = self.current_table
+            if current_table is not None:
+                current_table.end_row()
         elif name in ("th", "td"):
-            if self.in_table_wrap and self.current_table:
-                self.current_table.end_cell()
+            current_table = self.current_table
+            if current_table is not None:
+                current_table.end_cell()
         elif name == "table-wrap":
-            if self.current_table:
-                self.tables.append(self.current_table.build())
-            self.in_table_wrap = False
-            self.current_table = None
+            if self.table_stack:
+                # Guarded for the reason </fig> is; SAX makes it unreachable.
+                table_frame = self.table_stack.pop()
+                self.table_slots[table_frame.slot] = table_frame.builder.build()
 
         elif name == "ref-list":
             self.in_ref_list = False
@@ -1091,8 +1495,8 @@ class JATSParser:
             pmid=h.pmid,
             abstract_sections=h.abstract_sections,
             body_sections=h.body_sections,
-            figures=h.figures,
-            tables=h.tables,
+            figures=h.build_figures(),
+            tables=h.build_tables(),
             references=h.references,
             has_body=h.body_paragraph_count > 0,
             suppressed_nested_articles=h.suppressed_nested_articles,

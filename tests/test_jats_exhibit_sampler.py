@@ -1,0 +1,312 @@
+# bmlib — shared library for biomedical literature tools
+# Copyright (C) 2024-2026 Dr Horst Herb
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Offline tests for ``scripts/sample_jats_exhibits.py``.
+
+The script is a live runner — it fetches real JATS from Europe PMC — but the
+populations it prints are the evidence behind the parser's exhibit rules, so
+the counting has to be trustworthy offline. Four properties are pinned here.
+
+**An article that could not be measured is never a finding.** A transport
+failure, a non-200 or a document that will not parse is *unmeasured*: excluded
+from every denominator, and reported as ERROR rather than as a rate once it
+eats more than a fifth of the sample. A zero nesting rate is what some
+populations genuinely look like, and a dead host must not read as one.
+
+**The sampler does not share the parser's predicates.** A corpus labelled by
+the rule under test can only confirm that rule, so the sampler carries its own
+thumbnail and archival tests. The test below asserts they are actually
+different, which is what a future "deduplication" would break.
+
+**The sample is stratified.** A single cursor walk returns a contiguous block
+of accessions; the first live run drew 120 articles of which 106 carried no
+exhibit at all. The month windows are what spread it.
+
+**Counting is checked against hand-built markup**, not against the parser.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+from datetime import date
+from pathlib import Path
+
+import pytest
+
+_PATH = Path(__file__).resolve().parent.parent / "scripts" / "sample_jats_exhibits.py"
+_spec = importlib.util.spec_from_file_location("bmlib_jats_exhibit_sampler", _PATH)
+if _spec is None or _spec.loader is None:  # pragma: no cover - the script is in-tree
+    raise ImportError(f"cannot load the sampler from {_PATH}")
+sampler = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = sampler
+# The sampler does `from _sampling import …`, and `scripts/` is not a package.
+# Running the script puts that directory on sys.path as sys.path[0]; loading it
+# by path here does not, so insert it explicitly.
+if str(_PATH.parent) not in sys.path:
+    sys.path.insert(0, str(_PATH.parent))
+_spec.loader.exec_module(sampler)
+
+
+def _article(body: str) -> bytes:
+    """Wrap *body* in a minimal article that actually declares XLink.
+
+    Without the declaration the fixture is not well-formed and every row comes
+    back ``None`` — which the sampler is right to treat as unmeasured, but
+    which would make these tests measure nothing while appearing to pass.
+    """
+    return (
+        f'<article xmlns:xlink="http://www.w3.org/1999/xlink"><body>{body}</body></article>'
+    ).encode()
+
+
+class TestCountingAgainstHandBuiltMarkup:
+    """The populations, checked against markup whose answer is known by eye."""
+
+    def test_a_direct_label_and_a_footnote_label_are_told_apart(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1"><label>Table 1</label>
+              <table-wrap-foot><fn><label>a</label><p>note</p></fn></table-wrap-foot>
+            </table-wrap>"""),
+        )
+
+        assert row.tables == 1
+        assert row.exhibits_with_direct_label == 1
+        assert row.label_parents == {"table-wrap": 1, "fn": 1}
+
+    def test_an_exhibit_labelled_only_indirectly_violates_the_premise(self):
+        """The negative control for the parent rule's premise.
+
+        Every real article measured so far carries its exhibit labels as
+        direct children, so the "premise holds" line would print for a
+        sampler that could not detect a violation at all. This is the shape
+        that must make it print the other thing.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><caption><label>Figure 1</label></caption></fig>"""),
+        )
+
+        assert row.exhibits_with_direct_label == 0
+        assert row.exhibits_with_descendant_label == 1
+        assert row.label_parents == {"caption": 1}
+
+    def test_nesting_is_counted_at_depth_not_at_the_outermost(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><label>Figure 1</label>
+              <fig id="f1s1"><label>Figure 1—supplement 1</label></fig>
+            </fig>"""),
+        )
+
+        assert (row.figures, row.nested_figures) == (2, 1)
+
+    def test_alternatives_members_are_counted_with_their_declarations(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><alternatives>
+              <graphic xlink:href="f1.tif"/>
+              <graphic mime-subtype="jpeg" xlink:href="f1.jpg"/>
+            </alternatives></fig>"""),
+        )
+
+        assert row.alternatives_members == 2
+        assert row.alternatives_declaring_mime == 1
+        assert row.alternatives_archival == 1
+
+    def test_a_thumbnail_is_located_at_whichever_end_it_sits(self):
+        last = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><graphic xlink:href="a.jpg"/>
+              <graphic content-type="thumb" xlink:href="a.gif"/></fig>"""),
+        )
+        first = sampler.measure_article(
+            "PMC2",
+            _article("""
+            <fig id="f1"><graphic content-type="thumb" xlink:href="a.gif"/>
+              <graphic xlink:href="a.jpg"/></fig>"""),
+        )
+
+        assert (last.figures_multi_graphic, last.last_is_thumb, last.first_is_thumb) == (1, 1, 0)
+        assert (first.figures_multi_graphic, first.last_is_thumb, first.first_is_thumb) == (1, 0, 1)
+
+    def test_a_graphic_owned_by_a_non_exhibit_is_recorded_with_its_owner(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><label>Figure 1</label>
+              <fn><p><graphic xlink:href="icon.gif"/></p></fn>
+              <graphic xlink:href="real.jpg"/>
+            </fig>"""),
+        )
+
+        assert row.foreign_owned_graphics == {"fn": 1}
+
+    def test_alternatives_and_p_do_not_take_ownership(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><p><graphic xlink:href="a.jpg"/></p>
+              <alternatives><graphic xlink:href="b.jpg"/></alternatives></fig>"""),
+        )
+
+        assert row.foreign_owned_graphics == {}
+
+    def test_a_table_deposited_as_an_image_is_counted(self):
+        """Issue #127's population."""
+        image_only = sampler.measure_article(
+            "PMC1",
+            _article('<table-wrap id="t1"><graphic xlink:href="scan.png"/></table-wrap>'),
+        )
+        with_table = sampler.measure_article(
+            "PMC2",
+            _article("""
+            <table-wrap id="t1"><graphic xlink:href="scan.png"/>
+              <table><tbody><tr><td>x</td></tr></tbody></table></table-wrap>"""),
+        )
+
+        assert image_only.tables_image_only == 1
+        assert with_table.tables_image_only == 0
+
+    def test_attribute_values_are_counted_before_any_allow_list(self):
+        """Issue #79's rule: a value the parser never accepts must still show.
+
+        Counted after filtering, the table could only ever confirm the
+        allow-list, which is precisely the defect #79 was.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><graphic content-type="print-only" xlink:href="a.jpg"/>
+              <graphic specific-use="THUMBNAIL" xlink:href="b.gif"/></fig>"""),
+        )
+
+        assert row.content_type_values == {"print-only": 1}
+        assert row.specific_use_values == {"thumbnail": 1}
+
+
+class TestAnArticleThatCouldNotBeMeasuredIsNeverAFinding:
+    def test_unparseable_xml_is_unmeasured_rather_than_empty(self):
+        assert sampler.measure_article("PMC1", b"<article><body>") is None
+
+    def test_an_unmeasured_article_enters_no_denominator(self):
+        totals = sampler.Totals()
+        totals.add(sampler.measure_article("PMC1", _article('<fig id="f1"/>')))
+        totals.unmeasured += 1
+
+        assert totals.articles == 1
+        assert totals.attempts == 2
+        assert totals.sum_of("figures") == 1
+
+    def test_a_sample_past_the_threshold_is_not_reportable(self):
+        totals = sampler.Totals()
+        for index in range(4):
+            totals.add(sampler.measure_article(f"PMC{index}", _article('<fig id="f1"/>')))
+        totals.unmeasured = 4
+
+        assert totals.unmeasured_share > sampler.UNMEASURED_SHARE_ERROR_THRESHOLD
+        assert totals.reportable is False
+
+    def test_an_empty_sample_is_not_reportable_either(self):
+        """Zero rows is not a clean run; it is no evidence at all."""
+        assert sampler.Totals().reportable is False
+
+    def test_the_report_refuses_to_print_rates_when_unreportable(self, capsys):
+        totals = sampler.Totals()
+        totals.add(sampler.measure_article("PMC1", _article('<fig id="f1"/>')))
+        totals.unmeasured = 9
+
+        assert sampler.print_report(totals) is False
+        assert "ERROR" in capsys.readouterr().out
+
+    def test_a_reportable_sample_prints_its_populations(self, capsys):
+        totals = sampler.Totals()
+        totals.add(
+            sampler.measure_article("PMC1", _article('<fig id="f1"><label>Figure 1</label></fig>'))
+        )
+
+        assert sampler.print_report(totals) is True
+        assert "PREMISE HOLDS" in capsys.readouterr().out
+
+
+class TestTheSamplerDoesNotShareTheParsersPredicates:
+    """A corpus labelled by the rule under test can only confirm that rule."""
+
+    def test_the_archival_hints_are_wider_than_the_parsers(self):
+        from bmlib.fulltext.jats_parser import _ARCHIVAL_EXTENSIONS, _ARCHIVAL_MIME_SUBTYPES
+
+        parser_side = _ARCHIVAL_MIME_SUBTYPES | {e.lstrip(".") for e in _ARCHIVAL_EXTENSIONS}
+
+        assert sampler._ARCHIVAL_HINTS - parser_side, (
+            "the sampler must be able to report a deposit the parser does not "
+            "classify as archival, or it can only confirm the parser's list"
+        )
+
+    def test_the_sampler_classifies_a_deposit_the_parser_would_not(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                '<fig id="f1"><alternatives><graphic xlink:href="f1.svg"/></alternatives></fig>'
+            ),
+        )
+
+        assert row.alternatives_archival == 1
+
+
+class TestTheSampleIsStratified:
+    def test_the_windows_are_whole_calendar_months_most_recent_first(self):
+        windows = sampler._month_windows(3, date(2026, 3, 15))
+
+        assert windows == [
+            ("2026-02-01", "2026-02-28"),
+            ("2026-01-01", "2026-01-31"),
+            ("2025-12-01", "2025-12-31"),
+        ]
+
+    def test_a_december_window_does_not_overflow_the_year(self):
+        assert sampler._month_windows(1, date(2026, 1, 9)) == [("2025-12-01", "2025-12-31")]
+
+    def test_a_leap_february_keeps_its_last_day(self):
+        assert sampler._month_windows(1, date(2024, 3, 1)) == [("2024-02-01", "2024-02-29")]
+
+
+class TestRowsSurviveTheJournal:
+    def test_a_row_round_trips_through_its_dict_form(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><label>Figure 1</label>
+              <fn><label>a</label></fn>
+              <graphic content-type="thumb" xlink:href="a.gif"/>
+              <graphic xlink:href="a.jpg"/></fig>"""),
+        )
+
+        restored = sampler.ArticleMeasurement.from_dict(row.to_dict())
+
+        assert restored.to_dict() == row.to_dict()
+        assert restored.label_parents == row.label_parents
+
+    def test_wilson_refuses_an_empty_denominator(self):
+        """Borrowed from ``_sampling``; a zero-attempt interval would print as
+        a perfect score."""
+        with pytest.raises(ValueError):
+            sampler.wilson(0, 0)
