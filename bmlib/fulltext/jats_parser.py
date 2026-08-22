@@ -118,6 +118,11 @@ _ARCHIVAL_EXTENSIONS = frozenset({".tif", ".tiff", ".eps", ".ps"})
 # either test** — every href in the sample is .jpg or .gif. So neither tier
 # fires on that corpus, and the ARCHIVAL rank is unreached.
 #
+# The two committed draws agree, on 1,329 further <alternatives> members
+# across 600 articles: zero declaring a mime-subtype and zero archival by
+# either test. The back-filled window adds .png to the extensions seen and
+# nothing else.
+#
 # They are kept rather than deleted because the failure they prevent is silent
 # and permanent: an undeclared master deposited first ranks FULL, wins under
 # the strictly-better rule, and leaves the figure pointing at something no
@@ -197,17 +202,21 @@ class _GraphicHolder:
     of a rule this heavily argued are two things to keep in step, and that is
     the whole of the argument for sharing it.
 
-    **Whether a table is ever deposited with several ``<graphic>`` is not
-    measured**, and the ranking below is therefore reasoned onto tables rather
-    than observed on them. Both committed corpora say only that the question
-    does not arise in them: every one of the 11 image-only tables in
-    ``tests/data/jats_exhibits.backfill.json`` carries exactly one deposit,
-    declaring no ``content-type``, no ``specific-use`` and no
-    ``<alternatives>``, and the recent draw carries no image-only table at
-    all. With one deposit, ranking and plain first-wins agree, so nothing
-    here is contradicted — it is simply unexercised. ``sample_jats_exhibits``
-    counts the table side as of issue #135 so a later draw can settle it;
-    until one has, do not restate this as publisher behaviour.
+    **THE TABLE SIDE MEASURES EMPTY, and this says so rather than implying a
+    population** (issue #135, now answered). Across the two committed draws —
+    755 ``<table-wrap>`` in 600 articles — **16 carry a ``<graphic>`` of their
+    own and not one carries two**. So the ranking below is *unexercised* on
+    tables rather than confirmed there: with a single deposit it and plain
+    first-wins agree, and nothing is contradicted. Sharing the rule is still
+    right, for the reason above; what would be wrong is restating it as
+    publisher behaviour, which an earlier draft of this docstring did.
+
+    The instrument had to be corrected before that number meant anything. The
+    sampler counted a table's deposits with a whole-subtree walk while the
+    parser routes a ``<graphic>`` by its **owner**, and the first live run
+    made the difference real: unscoped, four of ten recent-window tables
+    "carried several deposits", which were the ``<td>`` cell images of two
+    articles. Scoped to what the parser would route, the count is zero.
 
     ``kw_only`` because these two fields are inherited and would otherwise
     lead both subclasses' generated ``__init__``, making ``_TableBuilder("t1")``
@@ -241,10 +250,18 @@ class _GraphicHolder:
         appear in that sample at all. Ranking still earns its place on the
         49.5%: it is what stops half of all figures resolving to a preview.
 
+        The two draws now committed agree, and they are the ones a reader can
+        re-derive from: of 828 recent figures carrying a ``<graphic>``,
+        **52.8%** carry several and **52.4%** end on a thumbnail; of 276
+        back-filled ones, **60.9%** and **59.8%**. **0%** deposit a thumbnail
+        first in either. So the share sits between the 49.9% and the 58.0%
+        depending on the window, and the shape of the finding — half of all
+        figures, and never a thumbnail first — is the part that reproduces.
+
         *Strictly* better is what makes the first deposit win among equals.
 
         **Every percentage above is measured over figures.** Tables reach this
-        method too since issue #127, and no draw has yet found one carrying a
+        method too since issue #127, and no draw has found one carrying a
         second deposit — see :class:`_GraphicHolder` for what that does and
         does not license.
 
@@ -572,18 +589,23 @@ _NESTED_ARTICLE_ELEMENTS = frozenset({"sub-article", "response"})
 # needs no enumeration: anything not listed here is opaque, so a container this
 # module has never heard of keeps its own image rather than donating it.
 #
-# Measured over the same 276 articles: exactly **one** <graphic> in the sample
-# is owned by a non-exhibit inside an exhibit — an inline image in a <td> of
-# PMC13047053's table — and it resolves identically either way, because no
-# <fig> is open around it. Routing by owner therefore changed **no** figure's
-# image across the corpus.
+# THIS ONE IS NOT DEFENSIVE, AND THE FIGURE MOVED. The 276-article draw found
+# exactly one <graphic> owned by a non-exhibit inside an exhibit, which read as
+# a population of one. The two committed draws find **36, in 3 of 300 recent
+# articles, every one a <td>** — inline cell images, two of the three articles
+# carrying 35 between them — and 0 of 300 back-filled. The <td> is what makes
+# it consequential rather than merely more numerous: since #127 gave
+# JATSTableInfo a `graphic_url`, relaxing ownership lands a cell decoration in
+# it as though it were the table's own rendition, and the strictly-better rule
+# then makes that permanent. So this rule is now measured as load-bearing on
+# 36 deposits, not carried against a hypothetical.
 #
-# Kept for the reason the archival tiers are: what it prevents is silent. A
+# The rest is still what the archival tiers are: what it prevents is silent. A
 # nested <table-wrap>/<fn>/<supplementary-material> inside a <fig> hands over
-# its image, and the strictly-better rule then makes that permanent where
-# "keep the last" used to overwrite it. The <p> member is not defensive at
-# all — JATS admits <p> inside <fig>, and without it a figure whose graphic is
-# wrapped in prose flow loses its image outright.
+# its image, and the strictly-better rule makes that permanent where "keep the
+# last" used to overwrite it. The <p> member is not defensive at all — JATS
+# admits <p> inside <fig>, and without it a figure whose graphic is wrapped in
+# prose flow loses its image outright.
 _GRAPHIC_TRANSPARENT_WRAPPERS = frozenset({"alternatives", "p"})
 
 
@@ -691,8 +713,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # A <fig> may contain another — eLife wraps every figure supplement
         # inside the figure it belongs to. The original survey put this at
         # 19.6% of articles; `scripts/sample_jats_exhibits.py` re-measures it
-        # at 0.7% of a general open-access draw (2 of 276, both eLife; 0 of a
-        # 300-article stratified draw), so it is one publisher's house style
+        # at 0.7% of a general open-access draw (2 of 276, both eLife; and 0
+        # of *both* committed 300-article draws, recent and back-filled), so
+        # it is one publisher's house style
         # costing about half of *its* figures, not a general convention. The
         # two articles lost 6 of 12 and 5 of 11 figures respectively. And
         # JATS lets a <table-wrap> open inside another's <table-wrap-foot>. As
@@ -730,10 +753,30 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # The **owner** because a depth counter only fixes that half. The
         # legend's owner is not an exhibit bmlib models, so counted rather
         # than named it still lands on the enclosing figure — and the case a
-        # depth cannot reach at all needs no nesting: eLife deposits a
-        # <supplementary-material> carrying a <caption> of its own beside the
-        # figure's, inside the <fig>, and every word of *Figure 1—source data
-        # 1* was appended to the figure's legend.
+        # depth cannot reach at all needs no nesting, since JATS admits a
+        # <caption> on <boxed-text>, <media> and <supplementary-material>,
+        # any of which may sit inside a <fig> beside the figure's own.
+        #
+        # BOTH OF THOSE POPULATIONS MEASURE EMPTY, AND THIS SAYS SO RATHER
+        # THAN IMPLYING ONE. Over the two committed draws (600 articles,
+        # `scripts/sample_jats_exhibits.py`): **no <caption> nests inside
+        # another** — 0 of 1,556 recent and 0 of 288 back-filled — and every
+        # <caption> inside an exhibit is owned by that exhibit, with no third
+        # owner appearing at all. The same holds of the seven-article corpus
+        # in the sibling Swift repository, eLife's PMC8754430 included, which
+        # deposits its figure supplements as nested <fig> rather than as
+        # captioned <supplementary-material>. So this half is prospective, in
+        # the sense the <alternatives> archival tiers are: kept because what
+        # it prevents is silent and permanent, not because a draw found it.
+        # An earlier draft of this comment asserted the eLife shape as
+        # observed; the measurement retired that, and issue #135 is the
+        # standing reminder of what that mistake costs.
+        #
+        # THE PREMISE IT RESTS ON MEASURES FULL, which is the half that could
+        # have lost content: 1,416 exhibits carry a direct-child <caption> and
+        # 1,416 carry one anywhere (288 and 288 back-filled), so no exhibit
+        # is captioned only indirectly and the parent can never come up empty
+        # where the old rule found something.
         #
         # Naming the owner is also what retired `_innermost_exhibit()`: a
         # <caption> is a direct child of what it describes, so its parent
@@ -854,7 +897,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         is exact where "the innermost exhibit open anywhere above" was only
         usually right: ``<boxed-text>``, ``<media>``, ``<supplementary-material>``
         and ``<fig-group>`` all admit a ``<caption>`` too, and inside a
-        ``<fig>`` each of them was donating its legend to the figure.
+        ``<fig>`` each of them would donate its legend to the figure. No draw
+        has found one doing so — see ``caption_stack``, which records that
+        population as empty rather than claiming it.
 
         Args:
             parent: The element enclosing the ``<caption>``.
@@ -1004,7 +1049,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # attribute to spaces rather than collapsing it, so a wrapped
             # href would take the ranking slot, block the real deposit that
             # follows, and render as a broken src. No instance in either
-            # committed corpus (2,346 deposits, every extension unpadded) —
+            # committed corpus (2,397 deposits, every extension unpadded) —
             # this guards a population measured empty, not an observed one.
             href = (
                 attrs.get("xlink:href") or attrs.get("href") or attrs.get("xlink-href") or ""
@@ -1213,7 +1258,24 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             #
             # The parent test needs no enumeration of the elements that carry
             # a <title>, which is what made this uncloseable by inspection —
-            # the same argument the <label> rule turns on.
+            # the same argument the <label> rule turns on, and the draws
+            # settle it rather than merely illustrating it: the two issues
+            # name <fn-group> and <boxed-text>, and the back-filled window's
+            # whole population is a **<list>**, which neither issue mentions
+            # and no enumeration written from them would have held.
+            #
+            # MEASURED, and this half is not a small population. Over the two
+            # committed draws (`scripts/sample_jats_exhibits.py`), counting
+            # only a <title> that a <sec> was open for and that no exhibit
+            # already excluded: **71 titles in 32 of 300 recent articles
+            # (10.7% [7.7-14.7]), every one owned by a <caption>** — issue
+            # #130's shape, a <boxed-text> or <media> legend at section level
+            # — and 13 in 1 of 300 back-filled articles, all owned by a
+            # <list>. Issue #125's own <fn-group> shape appears in neither
+            # draw but reproduces on eLife's PMC8754430, which loses its
+            # *Additional information* heading twice over. So the rate is a
+            # floor: the publisher #125 was filed from is absent from both
+            # windows, exactly as #127's population was absent from one.
             parent = self.element_stack[-2] if len(self.element_stack) >= 2 else ""
             if parent == "caption":
                 self._append_caption_text(normalized_text)
@@ -1325,6 +1387,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # cannot lose one. Of 2,173 labels inside an exhibit, 93.6% are
             # the exhibit's own; the rest sit in <fn> (105), <list-item> (34)
             # and <supplementary-material> (1).
+            #
+            # The two committed draws corroborate the premise on their own
+            # evidence: 1,446 of 1,446 recent exhibits and 365 of 365
+            # back-filled ones carry a direct-child <label>, with the same
+            # count anywhere. Their non-exhibit label owners are <fn> (203 and
+            # 89) and <list-item> (4), and no <supplementary-material> at all,
+            # that publisher being absent from both windows.
             #
             # The depth rule this replaced would still mis-assign the last two
             # groups — 35 labels in 2 of the 276 articles (0.7%). Small, but

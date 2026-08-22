@@ -207,6 +207,178 @@ class TestCountingAgainstHandBuiltMarkup:
         assert row.specific_use_values == {"thumbnail": 1}
 
 
+class TestTheCaptionAndTitleOwnerPopulations:
+    """The premises behind the routing rules #123, #125 and #130 turn on.
+
+    The ``<label>`` rule's premise was earned by counting direct-child labels
+    against labels anywhere and finding the two equal. A ``<caption>`` and a
+    section ``<title>`` are now routed by their parent for the same reason, so
+    they owe the same evidence — and the populations they replace owe a size,
+    since #123's prevalence had never been measured against anything.
+    """
+
+    def test_a_direct_caption_and_a_supplements_caption_are_told_apart(self):
+        """eLife's shape: the sibling case a nesting depth never sees."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><label>Figure 1</label>
+              <caption><title>Study flow.</title><p>Lead.</p></caption>
+              <supplementary-material id="sd1">
+                <caption><p>Raw counts.</p></caption></supplementary-material>
+            </fig>"""),
+        )
+
+        assert row.exhibits_with_direct_caption == 1
+        assert row.exhibit_caption_owners == {"fig": 1, "supplementary-material": 1}
+
+    def test_an_exhibit_captioned_only_indirectly_violates_the_premise(self):
+        """The negative control, as for ``<label>``: every real article
+        measured so far captions its exhibits directly, so the "premise holds"
+        line would print for an instrument that could not detect otherwise."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><alternatives><caption><p>Indirect.</p></caption></alternatives></fig>"""),
+        )
+
+        assert row.exhibits_with_direct_caption == 0
+        assert row.exhibits_with_descendant_caption == 1
+
+    def test_a_nested_caption_is_counted_as_one(self):
+        """Issue #123's own population — a caption inside a caption."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><caption><p>Lead.</p>
+              <p><media><caption><p>Video legend.</p></caption></media></p>
+              <p>Tail.</p></caption></fig>"""),
+        )
+
+        assert (row.captions, row.nested_captions) == (2, 1)
+
+    def test_a_title_owned_by_a_footnote_group_inside_a_section_is_counted(self):
+        """Issue #125: the population that used to rename the section."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <sec><title>Additional information</title>
+              <fn-group><title>Competing interests</title><fn><p>None.</p></fn></fn-group>
+            </sec>"""),
+        )
+
+        assert row.sections == 1
+        assert row.sections_with_direct_title == 1
+        assert row.section_renaming_titles == {"fn-group": 1}
+
+    def test_a_boxed_texts_caption_title_inside_a_section_is_counted(self):
+        """Issue #130, which reaches the same branch one container along."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <sec><title>Results</title>
+              <boxed-text><caption><title>Box 1.</title></caption><p>Box.</p></boxed-text>
+            </sec>"""),
+        )
+
+        assert row.section_renaming_titles == {"caption": 1}
+
+    def test_a_title_inside_an_exhibit_was_never_the_sections(self):
+        """The exhibit branch already dropped these, so counting them would
+        report a change this fix did not make."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <sec><title>Results</title>
+              <table-wrap id="t1"><caption><title>Table 1.</title></caption>
+                <table-wrap-foot><fn-group><title>Abbreviations</title>
+                  </fn-group></table-wrap-foot></table-wrap>
+            </sec>"""),
+        )
+
+        assert row.section_renaming_titles == {}
+
+    def test_a_title_outside_any_section_was_never_the_sections_either(self):
+        """The usual position for a <ref-list> or an <app> is loose in
+        <back>, where no section is open and nothing was ever overwritten."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""<ref-list><title>References</title></ref-list>"""),
+        )
+
+        assert row.section_renaming_titles == {}
+
+
+class TestTheTableSideCountsWhatTheParserWouldRoute:
+    """A ``<td>``'s inline image is not the table's own rendition.
+
+    Issue #135 named this as a residual: the counters walked ``el.iter()``,
+    a whole subtree, while the parser routes a ``<graphic>`` by its **owner**.
+    The first live run made it real rather than theoretical — of the ten
+    recent-window tables carrying a ``<graphic>`` anywhere, the four holding
+    more than one are the two articles that between them deposit 35 of the
+    draw's 36 ``<td>``-owned images. Reported unscoped, the table side would
+    have read "40% of tables carry several deposits", which is a statement
+    about cell decoration and not about the ranking rule it was measuring.
+
+    The figure side deliberately keeps the subtree walk: its percentages are
+    cited in ``jats_parser`` and in CLAUDE.md, and re-scoping them silently
+    would invalidate every one. Both committed draws record zero nested
+    exhibits, so no ``<td>`` sits under a ``<fig>`` in either and the two
+    walks agree there anyway.
+    """
+
+    def test_a_cell_image_is_not_the_tables_own_deposit(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1"><label>Table 1</label>
+              <graphic xlink:href="t1.jpg"/>
+              <table><tbody><tr><td><graphic xlink:href="tick.gif"/></td></tr></tbody></table>
+            </table-wrap>"""),
+        )
+
+        assert row.tables_with_graphic == 1
+        assert row.tables_multi_graphic == 0
+        assert row.foreign_owned_graphics == {"td": 1}
+
+    def test_a_transparent_wrapper_still_hands_the_deposit_over(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1"><alternatives>
+              <graphic xlink:href="t1.tif"/><graphic xlink:href="t1.jpg"/>
+            </alternatives></table-wrap>"""),
+        )
+
+        assert (row.tables_with_graphic, row.tables_multi_graphic) == (1, 1)
+
+    def test_an_image_only_table_is_judged_on_what_it_owns(self):
+        """A table whose only graphic is a cell decoration still has its
+        markup, so it is not the population issue #127 is about."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1">
+              <table><tbody><tr><td><graphic xlink:href="tick.gif"/></td></tr></tbody></table>
+            </table-wrap>"""),
+        )
+
+        assert (row.tables_image_only, row.tables_with_graphic) == (0, 0)
+
+    def test_a_nested_exhibits_deposit_belongs_to_the_nested_exhibit(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1"><graphic xlink:href="t1.jpg"/>
+              <table-wrap-foot><fig id="f1"><graphic xlink:href="f1.jpg"/></fig>
+              </table-wrap-foot></table-wrap>"""),
+        )
+
+        assert (row.tables_with_graphic, row.tables_multi_graphic) == (1, 0)
+        assert (row.figures_with_graphic, row.figures_multi_graphic) == (1, 0)
+
+
 class TestAnArticleThatCouldNotBeMeasuredIsNeverAFinding:
     def test_unparseable_xml_is_unmeasured_rather_than_empty(self):
         assert sampler.measure_article("PMC1", b"<article><body>") is None

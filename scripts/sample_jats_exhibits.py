@@ -27,7 +27,7 @@ stand behind their own allow-lists. Issue #131 is why it exists: the rules
 shipped without it, and the populations behind them lived only in a sibling
 repository.
 
-Six questions, each answering a decision the parser makes:
+Eight questions, each answering a decision the parser makes:
 
 1. **Is a ``<label>`` a direct child of the exhibit it numbers?** This is the
    premise of the parent-based routing that replaced #116's footnote-depth
@@ -49,6 +49,16 @@ Six questions, each answering a decision the parser makes:
    does a ``<table-wrap>`` carry one with no ``<table>`` (#127) — or with
    both, which is the rendition ``to_html()`` drops? Plus the XLink prefix
    actually used, which is what #128 turns on.
+7. **Is a ``<caption>`` a direct child of the element it describes**, what
+   else carries one inside an exhibit, and how often does one nest inside
+   another? Questions 1 and 2 again for the element routed by the rule
+   issue #123 installed, plus that issue's own prevalence, which had been
+   measured against nothing.
+8. **What owns a ``<title>`` that a section was open for?** The population
+   issues #125 and #130 are about — a ``<fn-group>``, a ``<ref-list>``, a
+   ``<boxed-text>``'s ``<caption>`` — every one of which used to rename the
+   enclosing section, leaving not a blank but a heading the publisher never
+   wrote.
 
 **It does not import the parser's predicates**, and a future refactor must not
 "deduplicate" the two. A corpus labelled by the rule under test can only
@@ -141,6 +151,11 @@ _ARCHIVAL_HINTS = frozenset({"tiff", "tif", "eps", "ps", "postscript", "svg", "p
 # Likewise this sampler's own thumbnail test, not the parser's.
 _THUMB_PATTERN = re.compile(r"thumb", re.IGNORECASE)
 
+# And its own idea of a wrapper that does not take ownership of a <graphic>,
+# stated here rather than imported so the measurement can disagree with the
+# parser's `_GRAPHIC_TRANSPARENT_WRAPPERS`.
+_TRANSPARENT_WRAPPERS = frozenset({"alternatives", "p"})
+
 # The counters that arrived with issue #135, and the sentinel a row written
 # before them is loaded with. Zero is not usable as "absent" here: it is also
 # what a draw in which no table deposits an image genuinely measures, and #127
@@ -155,6 +170,18 @@ _TABLE_SIDE_COUNTERS = (
     "tables_multi_graphic",
     "tables_last_is_thumb",
     "tables_first_is_thumb",
+)
+# The second such generation, arriving with issues #123, #125 and #130 — the
+# caption and title owner rules. Same sentinel and same reason: a draw in
+# which no caption nests measures zero, and so does a corpus written before
+# anything counted them.
+_OWNER_SIDE_COUNTERS = (
+    "captions",
+    "nested_captions",
+    "exhibits_with_direct_caption",
+    "exhibits_with_descendant_caption",
+    "sections",
+    "sections_with_direct_title",
 )
 
 
@@ -208,6 +235,14 @@ class ArticleMeasurement:
     tables_last_is_thumb: int = 0
     tables_first_is_thumb: int = 0
     href_prefixes: Counter[str] = field(default_factory=Counter)
+    captions: int = 0
+    nested_captions: int = 0
+    exhibits_with_direct_caption: int = 0
+    exhibits_with_descendant_caption: int = 0
+    exhibit_caption_owners: Counter[str] = field(default_factory=Counter)
+    sections: int = 0
+    sections_with_direct_title: int = 0
+    section_renaming_titles: Counter[str] = field(default_factory=Counter)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise for the journal and the corpus file."""
@@ -229,7 +264,7 @@ class ArticleMeasurement:
         :meth:`Totals.measured` is what tests it.
         """
         row = cls(pmcid=str(data["pmcid"]))
-        for name in _TABLE_SIDE_COUNTERS:
+        for name in (*_TABLE_SIDE_COUNTERS, *_OWNER_SIDE_COUNTERS):
             if name not in data:
                 setattr(row, name, NOT_MEASURED)
         for key, value in data.items():
@@ -276,10 +311,7 @@ def measure_article(pmcid: str, xml: bytes) -> ArticleMeasurement | None:
         return None
 
     row = ArticleMeasurement(pmcid=pmcid)
-    # Ownership is judged against this sampler's own idea of a transparent
-    # wrapper, stated here rather than imported so the measurement can
-    # disagree with the parser.
-    transparent = {"alternatives", "p"}
+    transparent = set(_TRANSPARENT_WRAPPERS)
 
     def walk(el: ET.Element, exhibit: str | None, chain: list[str], exhibit_depth: int) -> None:
         for child in el:
@@ -294,10 +326,69 @@ def measure_article(pmcid: str, xml: bytes) -> ArticleMeasurement | None:
             if tag == "graphic":
                 _record_graphic(child, exhibit, chain, transparent, row)
                 continue
+            if tag == "caption":
+                row.captions += 1
+                if "caption" in chain:
+                    # Issue #123's own population: a <caption> inside another.
+                    # Held as a boolean, the inner close truncated the outer.
+                    row.nested_captions += 1
+                if exhibit is not None:
+                    row.exhibit_caption_owners[chain[-1] if chain else exhibit] += 1
+            elif tag == "sec":
+                row.sections += 1
+                if any(_local(c.tag) == "title" for c in child):
+                    row.sections_with_direct_title += 1
+            elif tag == "title" and exhibit is None and "sec" in chain and chain[-1] != "sec":
+                # The population issues #125 and #130 are about, and only it:
+                # a <title> that a section was open for, owned by something
+                # else. `exhibit is None` because the parser already dropped
+                # a <title> inside a <fig> or <table-wrap> before this fix, so
+                # counting those would report a change that was not made.
+                row.section_renaming_titles[chain[-1]] += 1
             walk(child, exhibit, chain + [tag], exhibit_depth)
 
     walk(root, None, [], 0)
     return row
+
+
+def _owned(el: ET.Element, wanted: str) -> list[ET.Element]:
+    """The *wanted* descendants that *el* itself owns.
+
+    The same judgement :func:`_record_graphic` makes, applied downwards: a
+    descendant belongs to *el* only if every element between them is a
+    transparent wrapper. A whole-subtree ``el.iter()`` counts a ``<td>``'s
+    inline image and a nested exhibit's deposit as the outer exhibit's, which
+    is not what the parser routes — issue #135's stated residual, and not a
+    theoretical one: of the ten recent-window tables carrying a ``<graphic>``
+    anywhere, the four holding more than one are the two articles depositing
+    35 of the draw's 36 ``<td>``-owned images.
+
+    The **figure** counters deliberately keep the subtree walk: their
+    percentages are cited at ``offer_graphic`` and in CLAUDE.md, and
+    re-scoping them silently would invalidate every one. Both committed draws
+    record zero nested exhibits and every foreign owner is a ``<td>``, which
+    can only sit under a ``<table-wrap>``, so the two walks agree on the
+    figure side in this evidence anyway.
+
+    Args:
+        el: The exhibit element.
+        wanted: The local name to collect.
+
+    Returns:
+        The owned elements, in document order.
+    """
+    found: list[ET.Element] = []
+
+    def descend(node: ET.Element) -> None:
+        for child in node:
+            name = _local(child.tag)
+            if name == wanted:
+                found.append(child)
+            elif name in _TRANSPARENT_WRAPPERS:
+                descend(child)
+
+    descend(el)
+    return found
 
 
 def _record_exhibit(el: ET.Element, tag: str, depth: int, row: ArticleMeasurement) -> None:
@@ -318,6 +409,13 @@ def _record_exhibit(el: ET.Element, tag: str, depth: int, row: ArticleMeasuremen
     if descendant:
         row.exhibits_with_descendant_label += 1
 
+    # The same pair for <caption>, which is now routed by its parent for the
+    # reason <label> is — so it owes the same premise (#123).
+    if any(_local(c.tag) == "caption" for c in el):
+        row.exhibits_with_direct_caption += 1
+    if any(_local(c.tag) == "caption" for c in el.iter() if c is not el):
+        row.exhibits_with_descendant_caption += 1
+
     graphics = [g for g in el.iter() if _local(g.tag) == "graphic"]
     if tag == "fig":
         if graphics:
@@ -335,7 +433,9 @@ def _record_exhibit(el: ET.Element, tag: str, depth: int, row: ArticleMeasuremen
         # as separate fields rather than folded into the figure ones: the
         # figure percentages are cited in `jats_parser` and in CLAUDE.md, and
         # silently widening their denominator would invalidate every one.
-        has_table = any(_local(c.tag) == "table" for c in el.iter())
+        # Owner-scoped, unlike the figure branch above — see `_owned`.
+        graphics = _owned(el, "graphic")
+        has_table = bool(_owned(el, "table"))
         if graphics:
             row.tables_with_graphic += 1
             if has_table:
@@ -706,6 +806,57 @@ def print_report(totals: Totals) -> bool:
             print(f"      {name:<28} {count:>6}   {taken} by the thumbnail test")
         if not values:
             print("      (none deposited)")
+
+    # Issues #123, #125 and #130 — the caption and title owner rules. Sections
+    # 1 and 2 asked these of <label>; a <caption> is now routed the same way
+    # and owes the same premise.
+    print("\n9. IS A <caption> A DIRECT CHILD OF ITS EXHIBIT?  (issue #123's premise)")
+    if not all(totals.measured(name) for name in _OWNER_SIDE_COUNTERS):
+        print("   NOT MEASURED — these rows predate the counter. Re-run to fill it.")
+    else:
+        direct_caption = totals.sum_of("exhibits_with_direct_caption")
+        descendant_caption = totals.sum_of("exhibits_with_descendant_caption")
+        print(f"   exhibits with a direct-child <caption> : {direct_caption}")
+        print(f"   exhibits with a descendant <caption>   : {descendant_caption}")
+        print(
+            "   PREMISE HOLDS: no exhibit carries its caption only indirectly"
+            if direct_caption >= descendant_caption
+            else "   PREMISE VIOLATED: an exhibit carries a caption only indirectly"
+        )
+        captions = totals.sum_of("captions")
+        nested = totals.sum_of("nested_captions")
+        print(
+            f"   <caption> nested inside another        : "
+            f"{nested:>6}  {_pct(nested, captions)}   of {captions}"
+        )
+        owners = totals.counter_of("exhibit_caption_owners")
+        total_owned = sum(owners.values())
+        print("   what owns a <caption> inside an exhibit:")
+        for name, count in owners.most_common(10):
+            own = "  <-- the exhibit itself" if name in _EXHIBITS else ""
+            print(f"      {name:<26} {count:>6}  {_pct(count, total_owned)}{own}")
+
+    print("\n10. WHAT OWNS A <title> A SECTION WAS OPEN FOR  (issues #125, #130)")
+    if not all(totals.measured(name) for name in _OWNER_SIDE_COUNTERS):
+        print("   NOT MEASURED — these rows predate the counter. Re-run to fill it.")
+    else:
+        sections = totals.sum_of("sections")
+        print(f"   <sec> elements                         : {sections}")
+        print(
+            f"   ...carrying a direct-child <title>     : "
+            f"{totals.sum_of('sections_with_direct_title'):>6}"
+        )
+        renaming = totals.counter_of("section_renaming_titles")
+        stolen = sum(renaming.values())
+        affected = totals.articles_where("section_renaming_titles")
+        print(
+            f"   <title> inside a <sec>, owned elsewhere: "
+            f"{stolen:>6}   in {affected} articles  {_pct(affected, totals.articles)}"
+        )
+        for name, count in renaming.most_common(12):
+            print(f"      {name:<26} {count:>6}  {_pct(count, stolen)}")
+        if not renaming:
+            print("      (none — no section title was overwritten in this draw)")
     return True
 
 

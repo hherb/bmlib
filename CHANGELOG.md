@@ -15,15 +15,16 @@ All notable changes to bmlib are documented here. The format is based on
   deposit is chosen among several by the same ranking a figure's is, moved
   into a shared `_GraphicHolder` rather than written twice, because two copies
   of a rule that heavily argued are two things to keep in step. **Whether a
-  table is ever deposited with several `<graphic>` is not measured**: every
-  one of the 11 image-only tables below carries exactly one, declaring no
-  `content-type`, no `specific-use` and no `<alternatives>`, so ranking and
-  plain first-wins agree and the rule is unexercised rather than confirmed.
-  The sampler now counts the table side so a later draw can settle it (#135).
-  A deposited href is stripped first: XML normalises a pretty-printed
+  table is ever deposited with several `<graphic>` has now been measured, and
+  the population is empty** (#135): across the two committed draws — 755
+  `<table-wrap>` in 600 articles — 16 carry a `<graphic>` of their own and not
+  one carries two. So ranking and plain first-wins agree there and the rule is
+  *unexercised* on tables rather than confirmed, which is what the comments
+  say. Sharing it is still right; stating publisher behaviour as observed was
+  not. A deposited href is stripped first: XML normalises a pretty-printed
   attribute to spaces rather than collapsing it, and a padded href is truthy,
   so it would take the ranking slot, block the real deposit behind it and
-  render as a broken `src`. No instance in either corpus (2,346 deposits) —
+  render as a broken `src`. No instance in either corpus (2,397 deposits) —
   the guard is for a population measured empty. `to_html()` renders the image
   as an `<img>`, but **only where there is no `<table>` markup**: a
   `<table-wrap>` may carry both, and where it does the markup is the better
@@ -31,7 +32,7 @@ All notable changes to bmlib are documented here. The format is based on
 
   **Measured on two windows, and the second is what makes it visible.** In the
   committed recent draw (300 articles from the last two years) the population
-  is **0 of 642 tables**. In a second draw of 300 articles from 1996-1998
+  is **0 of 662 tables**. In a second draw of 300 articles from 1996-1998
   (`tests/data/jats_exhibits.backfill.json`, taken with the sampler's new
   `--months-ago`) it is **11 of 93 — 11.8% [6.7-20.0]**. Those 11 sit in 2
   articles of 300, both from one journal, and in each they are *every* table
@@ -57,7 +58,7 @@ All notable changes to bmlib are documented here. The format is based on
   are counted back from *today* and the same command run later draws a
   different sample — without it "1996-1998" lives only in prose.
 
-- **The table side of #117's ranking is counted** (#135) —
+- **The table side of #117's ranking is counted, and answered** (#135) —
   `tables_with_graphic`, `tables_multi_graphic`, `tables_first_is_thumb`,
   `tables_last_is_thumb` and `tables_with_both`, in their own report section
   and deliberately **not** folded into the figure counters, whose percentages
@@ -67,6 +68,18 @@ All notable changes to bmlib are documented here. The format is based on
   an image, which is the exact misreading #127 needed two windows to correct.
   So absence is loaded as a sentinel and reported as **NOT MEASURED**, never
   as 0%.
+
+  The live run those counters were added for has now been made, on both
+  windows, and it required **fixing the instrument first**. The counters
+  walked `el.iter()`, a whole subtree, while the parser routes a `<graphic>`
+  by its **owner** — the residual the issue itself named. Unscoped, four of
+  ten recent-window tables "carried several deposits"; every one was the
+  `<td>` cell images of two articles. Scoped to what the parser would route
+  (`_owned`), no table in either draw carries a second deposit at all. The
+  figure counters keep the subtree walk on purpose, their percentages being
+  cited; both draws record zero nested exhibits and every foreign owner is a
+  `<td>`, which can only sit under a `<table-wrap>`, so the two walks agree
+  on the figure side in this evidence anyway.
 
 - **`scripts/sample_jats_exhibits.py`** (#131), the live runner behind the
   JATS exhibit rules below — the fifth in `scripts/`, and the one to re-run
@@ -83,16 +96,78 @@ All notable changes to bmlib are documented here. The format is based on
   106 carried no exhibit at all.
 
   What it measured, over 276 open-access Europe PMC articles carrying 2,067
-  exhibits, is folded into the comments at each site. Two of the rules have an
-  **empty** population — no `<alternatives>` member declares a `mime-subtype`
-  or is archival at all, and exactly one `<graphic>` is owned by a non-exhibit
-  inside an exhibit (an inline image in a `<td>`, which resolves the same
-  either way). Both are kept, because what they prevent is silent and
-  permanent. The `<label>` parent rule's premise measures **full**: 2,033
-  exhibits carry a direct-child label and 2,033 carry one anywhere, so no
-  exhibit in the sample carries its label only indirectly.
+  exhibits, is folded into the comments at each site — and **both committed
+  corpora have since been redrawn** with every counter present, so a reader
+  can re-derive from the repo what that vanished draw only asserted. One rule
+  keeps an **empty** population on the new evidence too: across 1,329 further
+  `<alternatives>` members, none declares a `mime-subtype` and none is
+  archival by either test. **One moved, and matters more than it did**: the
+  276-article draw found exactly one `<graphic>` owned by a non-exhibit inside
+  an exhibit, which read as a population of one; the recent draw finds **36,
+  in 3 of 300 articles, every one a `<td>`**. Since #127 gave `JATSTableInfo`
+  a `graphic_url`, relaxing ownership would land those cell decorations in it
+  as though they were the table's own rendition, so the rule is now measured
+  as load-bearing rather than carried against a hypothetical. The `<label>`
+  parent rule's premise measures **full** in all three draws: 2,033 / 2,033,
+  1,446 / 1,446 and 365 / 365 exhibits carry a direct-child label and carry
+  one anywhere.
 
 ### Fixed
+
+- **A `<title>` renamed the section it sat in, and a `<caption>` was routed by
+  the wrong exhibit** (#125, #130, #123) — one defect wearing three hats.
+  A `<title>` was routed by "is a section open?" and a `<caption>`'s prose by
+  "is an exhibit open?", when both belong to the element that encloses them.
+  The `<label>` parent test settled the same question in #116, and the
+  argument carries: it needs no enumeration of the elements involved, which is
+  what made this uncloseable by inspection.
+
+  **`<sec>` is far from the only JATS element carrying a `<title>`.**
+  `<fn-group>` is modelled `(label?, title?, (fn|p)+)`, and `<ref-list>`,
+  `<glossary>`, `<app>`, `<boxed-text>` and every `<caption>` carry one too.
+  Any of them renamed the enclosing section — leaving not a blank but a
+  heading the publisher never wrote, which is why it survived so long.
+  eLife's *Additional information* section holds an `<fn-group>` per
+  contribution type, so PMC8754430's heading was overwritten twice and the
+  last one won (#125); a `<boxed-text><caption><title>` at section level did
+  the same (#130), and there the caption's `<p>` children still reach the
+  section, so that half corrupts without losing anything.
+
+  **Measured, and this half is not a small population.** Counting only a
+  `<title>` that a `<sec>` was open for and that no exhibit already excluded:
+  **69 titles in 31 of 300 recent articles — 10.3% [7.4-14.3] — every one
+  owned by a `<caption>`**, and 13 in 1 of 300 back-filled articles, all owned
+  by a **`<list>`**, which neither issue mentions and no enumeration written
+  from them would have covered. #125's own `<fn-group>` shape appears in
+  neither window but reproduces on PMC8754430, so the rate is a floor: the
+  publisher the issue was filed from is absent from both draws, exactly as
+  #127's population was absent from one.
+
+  **`in_caption` was a stored boolean, so #123's two halves failed together.**
+  A `<caption>` nested inside a figure's own was appended to the figure *and*
+  its close cleared the flag, dropping the figure's caption tail after it. A
+  depth counter fixes only the second: the inner legend's owner is not an
+  exhibit bmlib models, so counted rather than named it still lands on the
+  figure. The state is therefore a stack **of owners**. Both of that half's
+  populations **measure empty** and the comments say so rather than implying
+  one: no `<caption>` nests inside another (0 of 1,550 recent, 0 of 288
+  back-filled) and every `<caption>` inside an exhibit is owned by that
+  exhibit, in both draws and in the seven-article corpus in the sibling Swift
+  repository. The premise the rule rests on measures **full** — 1,413 of 1,413
+  and 288 of 288 exhibits carry a direct-child `<caption>` — so the parent can
+  never come up empty where the old rule found something.
+
+  `_innermost_exhibit()` and `_ExhibitFrame.open_seq` go with it: their only
+  caller was caption routing, and naming the owner is exact where "the
+  innermost exhibit open anywhere above" was merely usually right.
+
+  **Behaviour change for a caller of `JATSParser`.** A section renamed by a
+  footnote group, a boxed text or a list keeps its own heading, and the
+  usurping title is dropped rather than relocated — it was never a heading and
+  bmlib models none of those containers. A figure caption truncated by a
+  nested one comes back whole. `JATSArticle.body_sections` and
+  `.figures`/`.tables` therefore move for roughly one article in ten; nothing
+  a bmlib *sync* stores is affected, since no bmlib path carries them.
 
 - **A nested `<fig>` dropped its parent figure** (#115). eLife wraps every
   figure supplement inside the figure it belongs to — the convention that
