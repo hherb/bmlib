@@ -1208,3 +1208,634 @@ class TestSubArticlesAreNotTheArticle:
         assert article.doi == "10.1000/article"
         assert article.title == "The article"
         assert self._paragraphs(self.RESPONSE) == ["The article's own prose."]
+
+
+def _article_with_body(body: str) -> bytes:
+    """Wrap ``body`` markup in a minimal well-formed JATS article."""
+    return f"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="pmc">PMC1234567</article-id>
+    <title-group><article-title>Real article</article-title></title-group>
+  </article-meta></front>
+  <body>
+{body}
+  </body>
+</article>""".encode()
+
+
+class TestNestedFiguresKeepTheirParent:
+    """A ``<fig>`` may contain another ``<fig>``, and the parent must survive it.
+
+    eLife wraps every figure supplement inside the figure it belongs to, in
+    19.6% of 225 surveyed open-access articles. A single ``current_figure``
+    slot is overwritten by the inner open, appended and cleared by the inner
+    close, and the parent's own ``</fig>`` then finds nothing to build — so the
+    parent figure, its label, caption and graphic, is lost outright (issue
+    #115). Measured on PMC8754430: 9 of 12 figures, the three missing ones
+    being exactly those carrying supplements.
+    """
+
+    PARENT_AND_SUPPLEMENT = _article_with_body("""
+    <sec>
+      <title>Results</title>
+      <p>Section prose.</p>
+      <fig id="fig2">
+        <label>Figure 2.</label>
+        <caption><title>Parent figure caption.</title></caption>
+        <graphic xlink:href="parent.jpg"/>
+        <p>
+          <fig id="fig2s1">
+            <label>Figure 2-figure supplement 1.</label>
+            <caption><title>Supplement caption.</title></caption>
+            <graphic xlink:href="supplement.jpg"/>
+          </fig>
+        </p>
+      </fig>
+    </sec>""")
+
+    def test_the_parent_figure_is_not_dropped(self):
+        article = JATSParser(self.PARENT_AND_SUPPLEMENT).parse()
+
+        assert [f.label for f in article.figures] == [
+            "Figure 2.",
+            "Figure 2-figure supplement 1.",
+        ]
+
+    def test_the_parent_is_listed_where_it_opened_not_where_it_closed(self):
+        """Document order: the parent opens first, so it is listed first.
+
+        Pop-and-append restores the parent but emits it *after* its own
+        supplement, because a figure is built at its end tag and the child's
+        comes first. The slot is what makes this test distinguish the two.
+        """
+        article = JATSParser(self.PARENT_AND_SUPPLEMENT).parse()
+
+        assert [f.id for f in article.figures] == ["fig2", "fig2s1"]
+
+    def test_each_graphic_belongs_to_the_innermost_open_figure(self):
+        article = JATSParser(self.PARENT_AND_SUPPLEMENT).parse()
+
+        assert [f.graphic_url for f in article.figures] == ["parent.jpg", "supplement.jpg"]
+
+    def test_each_caption_belongs_to_the_innermost_open_figure(self):
+        article = JATSParser(self.PARENT_AND_SUPPLEMENT).parse()
+
+        assert [f.caption for f in article.figures] == [
+            "Parent figure caption.",
+            "Supplement caption.",
+        ]
+
+    def test_the_parents_remaining_internals_do_not_leak_into_the_section(self):
+        """The other half of #115: the inner close cleared ``in_figure``.
+
+        A ``<fig>`` almost always sits inside a ``<sec>``, so what the parent
+        had left was read under the section's rules and reprinted as article
+        prose — which is what a transparency scan reads.
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <sec>
+      <title>Results</title>
+      <p>Section prose.</p>
+      <fig id="fig2">
+        <label>Figure 2.</label>
+        <p><fig id="fig2s1"><label>Figure 2-figure supplement 1.</label></fig></p>
+        <p>Parent figure internals after the supplement.</p>
+      </fig>
+    </sec>""")
+        ).parse()
+
+        assert [(s.title, tuple(s.paragraphs)) for s in article.body_sections] == [
+            ("Results", ("Section prose.",))
+        ]
+
+    def test_the_parent_is_current_again_once_its_supplement_closes(self):
+        """The positive counterpart: *current*, not merely open.
+
+        Every other case here loads the parent before the child opens, so it
+        passes whether the pop restores the parent or leaves the child current.
+        Depositing the parent's own label, caption and graphic *after* the
+        child closes is the order that tells those apart.
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <sec>
+      <title>Results</title>
+      <fig id="fig2">
+        <p>
+          <fig id="fig2s1">
+            <label>Figure 2-figure supplement 1.</label>
+            <caption><title>Supplement caption.</title></caption>
+            <graphic xlink:href="supplement.jpg"/>
+          </fig>
+        </p>
+        <label>Figure 2.</label>
+        <caption><title>Parent figure caption.</title></caption>
+        <graphic xlink:href="parent.jpg"/>
+      </fig>
+    </sec>""")
+        ).parse()
+
+        assert [f.label for f in article.figures] == [
+            "Figure 2.",
+            "Figure 2-figure supplement 1.",
+        ]
+        assert [f.caption for f in article.figures] == [
+            "Parent figure caption.",
+            "Supplement caption.",
+        ]
+        assert [f.graphic_url for f in article.figures] == ["parent.jpg", "supplement.jpg"]
+
+    def test_figures_nested_three_deep_stay_in_document_order(self):
+        """The corpus tops out at two; nothing should start caring at three."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec>
+      <title>Results</title>
+      <fig id="a">
+        <label>A.</label>
+        <p><fig id="b">
+          <label>B.</label>
+          <p><fig id="c"><label>C.</label></fig></p>
+        </fig></p>
+      </fig>
+    </sec>""")
+        ).parse()
+
+        assert [f.label for f in article.figures] == ["A.", "B.", "C."]
+
+    def test_an_unnested_figure_still_works(self):
+        """The ordinary shape, which is 80.4% of articles."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec>
+      <title>Results</title>
+      <fig id="f1">
+        <label>Figure 1.</label>
+        <caption><p>Only figure.</p></caption>
+        <graphic xlink:href="f1.jpg"/>
+      </fig>
+    </sec>""")
+        ).parse()
+
+        assert [(f.id, f.label, f.caption, f.graphic_url) for f in article.figures] == [
+            ("f1", "Figure 1.", "Only figure.", "f1.jpg")
+        ]
+
+
+class TestAnExhibitLabelIsNotAFootnoteMarker:
+    """A ``<fn>`` carries its own marker as a ``<label>``, and it is not the
+    exhibit's number.
+
+    ``<label>`` was routed on the ambient "am I in a figure/table?" flags
+    alone, so a footnote marker — ``a``, ``b``, ``*`` — overwrote the exhibit's
+    own number, last one winning (issue #116). Measured: 27 of 225 surveyed
+    articles (12.0%) carry a labelled ``<table-wrap-foot><fn>``. The table
+    loses its number wherever it is rendered or cross-referenced, and an empty
+    label is not inert either — the renderer substitutes ``Table {i + 1}``, so
+    the symptom is an invented number rather than a blank.
+    """
+
+    def test_a_table_footnote_marker_does_not_overwrite_the_tables_number(self):
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1">
+        <label>Table 1.</label>
+        <caption><title>Commonly asked questions.</title></caption>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><fn id="T1_FN1"><label>a</label>
+          <p>AI: artificial intelligence.</p></fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [t.label for t in article.tables] == ["Table 1."]
+
+    def test_the_last_of_several_footnote_markers_does_not_win_either(self):
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1">
+        <label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot>
+          <fn><label>a</label><p>Adjusted for age.</p></fn>
+          <fn><label>b</label><p>Adjusted for sex.</p></fn>
+        </table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [t.label for t in article.tables] == ["Table 1."]
+
+    def test_a_figure_footnote_marker_does_not_overwrite_the_figures_number(self):
+        """``in_figure`` has the identical hole — JATS allows ``<fn>`` in ``<fig>``."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="f1">
+        <label>Figure 1.</label>
+        <caption><p>A figure.</p></caption>
+        <fn><label>*</label><p>Scale bar 10um.</p></fn>
+      </fig>
+    </sec>""")
+        ).parse()
+
+        assert [f.label for f in article.figures] == ["Figure 1."]
+
+    def test_a_figure_opened_inside_a_footnote_keeps_its_own_label(self):
+        """Why the depth is compared against the exhibit's, never against zero.
+
+        JATS lets a ``<fig>`` open *inside* a footnote. "Am I inside a
+        footnote?" is therefore the wrong question — it eats the nested
+        exhibit's own label, which is #116 again one level down.
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1">
+        <label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><fn><label>a</label>
+          <p><fig id="ffn"><label>Figure S1.</label>
+            <caption><p>A figure inside a footnote.</p></caption></fig></p>
+        </fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [t.label for t in article.tables] == ["Table 1."]
+        assert [f.label for f in article.figures] == ["Figure S1."]
+
+    def test_a_table_opened_inside_a_figures_footnote_keeps_its_own_label(self):
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="f1">
+        <label>Figure 1.</label>
+        <fn><label>*</label>
+          <p><table-wrap id="Tfn"><label>Table S1.</label>
+            <table><tbody><tr><td>1</td></tr></tbody></table></table-wrap></p>
+        </fn>
+      </fig>
+    </sec>""")
+        ).parse()
+
+        assert [f.label for f in article.figures] == ["Figure 1."]
+        assert [t.label for t in article.tables] == ["Table S1."]
+
+    def test_the_exhibits_own_label_still_arrives_after_its_footnote_closes(self):
+        """A label deposited after the footnote is the exhibit's again."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1">
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><fn><label>a</label><p>Adjusted.</p></fn></table-wrap-foot>
+        <label>Table 1.</label>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [t.label for t in article.tables] == ["Table 1."]
+
+    def test_a_reference_label_is_still_read(self):
+        """The third branch of the same routing must keep working."""
+        article = JATSParser(
+            b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>Methods</title><p>Prose.</p></sec></body>
+  <back><ref-list><ref id="CR1"><label>1</label>
+    <element-citation><source>J</source><year>2020</year></element-citation>
+  </ref></ref-list></back>
+</article>"""
+        ).parse()
+
+        assert [r.label for r in article.references] == ["1"]
+
+
+def _figure_with_graphics(graphics: str) -> bytes:
+    return _article_with_body(f"""
+    <sec><title>Results</title>
+      <fig id="f1"><label>Figure 1.</label>
+{graphics}
+      </fig>
+    </sec>""")
+
+
+class TestChoosingAmongSeveralGraphics:
+    """A figure commonly deposits the same image more than once.
+
+    Only one href fits the model, and the parser kept the last, so a figure
+    resolved to the thumbnail publishers deposit second (issue #117). Measured
+    across 225 open-access articles: 58.0% of 959 figures carry more than one
+    ``<graphic>``, and 52.9% end on a thumbnail.
+
+    Position cannot decide it, because the two multi-graphic conventions
+    disagree about order: a thumbnail is deposited *last* (PLOS, Springer)
+    while an ``<alternatives>`` archival master is deposited *first*, so
+    first-wins trades the thumbnail for a TIFF no renderer displays. The
+    deposits are ranked instead, and a new one is accepted only when it is
+    *strictly* better — which is what makes the first win among equals.
+    """
+
+    def test_a_thumbnail_deposited_last_does_not_beat_the_image(self):
+        article = JATSParser(
+            _figure_with_graphics("""
+        <graphic content-type="image" xlink:href="pone.0338891.g001.jpg"/>
+        <graphic content-type="thumb" xlink:href="pone.0338891.g001.gif"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "pone.0338891.g001.jpg"
+
+    def test_a_thumbnail_deposited_first_does_not_win_either(self):
+        """The order that catches an attribute dropped from the predicate.
+
+        With the thumbnail last, plain first-wins already resolves the image,
+        so a test in that order passes even with ``content-type`` never
+        consulted. Only this order can fail.
+        """
+        article = JATSParser(
+            _figure_with_graphics("""
+        <graphic content-type="thumb" xlink:href="g001.gif"/>
+        <graphic content-type="image" xlink:href="g001.jpg"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "g001.jpg"
+
+    def test_specific_use_marks_a_thumbnail_deposited_last(self):
+        article = JATSParser(
+            _figure_with_graphics("""
+        <graphic xlink:href="fig1.jpg"/>
+        <graphic specific-use="thumbnail" xlink:href="fig1-thumb.gif"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "fig1.jpg"
+
+    def test_specific_use_marks_a_thumbnail_deposited_first(self):
+        article = JATSParser(
+            _figure_with_graphics("""
+        <graphic specific-use="thumbnail" xlink:href="fig1-thumb.gif"/>
+        <graphic xlink:href="fig1.jpg"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "fig1.jpg"
+
+    def test_the_content_type_comparison_folds_case(self):
+        """Neither attribute is case-controlled; both are open-valued."""
+        article = JATSParser(
+            _figure_with_graphics("""
+        <graphic content-type="Thumb" xlink:href="fig1-thumb.gif"/>
+        <graphic xlink:href="fig1.jpg"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "fig1.jpg"
+
+    def test_the_specific_use_comparison_folds_case(self):
+        article = JATSParser(
+            _figure_with_graphics("""
+        <graphic specific-use="THUMBNAIL" xlink:href="fig1-thumb.gif"/>
+        <graphic xlink:href="fig1.jpg"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "fig1.jpg"
+
+    def test_a_figure_carrying_only_thumbnails_keeps_one(self):
+        """A thumbnail is held provisionally, not refused."""
+        article = JATSParser(
+            _figure_with_graphics("""
+        <graphic content-type="thumb" xlink:href="only-thumb.gif"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "only-thumb.gif"
+
+    def test_an_archival_master_deposited_first_does_not_win(self):
+        """``<alternatives>`` deposits the TIFF first; no renderer displays it."""
+        article = JATSParser(
+            _figure_with_graphics("""
+        <alternatives>
+          <graphic mime-subtype="tiff" xlink:href="fig1.tif"/>
+          <graphic mime-subtype="jpeg" xlink:href="fig1.jpg"/>
+        </alternatives>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "fig1.jpg"
+
+    def test_an_archival_master_deposited_last_does_not_win_either(self):
+        article = JATSParser(
+            _figure_with_graphics("""
+        <alternatives>
+          <graphic mime-subtype="jpeg" xlink:href="fig1.jpg"/>
+          <graphic mime-subtype="eps" xlink:href="fig1.eps"/>
+        </alternatives>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "fig1.jpg"
+
+    def test_a_thumbnail_beats_an_archival_master(self):
+        """Three tiers, not two: a thumbnail at least renders."""
+        article = JATSParser(
+            _figure_with_graphics("""
+        <graphic mime-subtype="tiff" xlink:href="fig1.tif"/>
+        <graphic content-type="thumb" xlink:href="fig1-thumb.gif"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "fig1-thumb.gif"
+
+    def test_the_first_wins_among_equals(self):
+        """Accept a deposit only when it is *strictly* better."""
+        article = JATSParser(
+            _figure_with_graphics("""
+        <graphic xlink:href="first.jpg"/>
+        <graphic xlink:href="second.jpg"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "first.jpg"
+
+    def test_nothing_is_inferred_from_the_file_extension(self):
+        """Every corpus thumbnail is a ``.gif``, and that proves nothing.
+
+        A ``.gif`` is the thumbnail at PLOS and the only image a figure has
+        elsewhere, so an extension rule passes the corpus and then discards
+        that figure's only image.
+        """
+        article = JATSParser(
+            _figure_with_graphics("""
+        <graphic xlink:href="fig1.gif"/>
+        <graphic xlink:href="fig1.jpg"/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "fig1.gif"
+
+    def test_an_empty_href_never_displaces_a_real_one(self):
+        article = JATSParser(
+            _figure_with_graphics("""
+        <graphic content-type="thumb" xlink:href="fig1-thumb.gif"/>
+        <graphic xlink:href=""/>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url == "fig1-thumb.gif"
+
+    def test_a_single_graphic_still_works(self):
+        article = JATSParser(
+            _figure_with_graphics('        <graphic xlink:href="f1.jpg"/>')
+        ).parse()
+
+        assert article.figures[0].graphic_url == "f1.jpg"
+
+
+class TestNestedTablesKeepTheirParent:
+    """``current_table`` is the same single slot ``current_figure`` was.
+
+    JATS lets a ``<table-wrap>`` open inside another's ``<table-wrap-foot>``,
+    and the outer table was then lost outright — label, caption, rendered rows
+    and all — exactly as the outer figure was in issue #115. Unmeasured, unlike
+    the figure nesting that issue measured at 19.6% of articles, but structural:
+    every flag cleared on an end tag is a latent defect where the element can
+    contain another of its own kind.
+    """
+
+    NESTED_TABLES = _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1">
+        <label>Table 1.</label>
+        <caption><p>The outer table.</p></caption>
+        <table><tbody><tr><td>outer cell</td></tr></tbody></table>
+        <table-wrap-foot><fn><p>
+          <table-wrap id="T2">
+            <label>Table S1.</label>
+            <caption><p>The inner table.</p></caption>
+            <table><tbody><tr><td>inner cell</td></tr></tbody></table>
+          </table-wrap>
+        </p></fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+
+    def test_the_outer_table_is_not_dropped(self):
+        article = JATSParser(self.NESTED_TABLES).parse()
+
+        assert [t.id for t in article.tables] == ["T1", "T2"]
+
+    def test_each_table_keeps_its_own_label(self):
+        article = JATSParser(self.NESTED_TABLES).parse()
+
+        assert [t.label for t in article.tables] == ["Table 1.", "Table S1."]
+
+    def test_each_table_keeps_its_own_caption(self):
+        article = JATSParser(self.NESTED_TABLES).parse()
+
+        assert [t.caption for t in article.tables] == ["The outer table.", "The inner table."]
+
+    def test_each_tables_rows_reach_its_own_rendering(self):
+        article = JATSParser(self.NESTED_TABLES).parse()
+
+        assert "outer cell" in article.tables[0].html_content
+        assert "outer cell" not in article.tables[1].html_content
+        assert "inner cell" in article.tables[1].html_content
+        assert "inner cell" not in article.tables[0].html_content
+
+    def test_the_outer_tables_internals_do_not_leak_into_the_section(self):
+        """The inner close cleared ``in_table_wrap`` while the outer was open."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <p>Section prose.</p>
+      <table-wrap id="T1">
+        <label>Table 1.</label>
+        <table-wrap-foot><fn><p>
+          <table-wrap id="T2"><label>Table S1.</label></table-wrap>
+        </p></fn></table-wrap-foot>
+        <p>Outer table internals after the nested one.</p>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [(s.title, tuple(s.paragraphs)) for s in article.body_sections] == [
+            ("Results", ("Section prose.",))
+        ]
+
+    def test_an_unnested_table_still_works(self):
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="t1">
+        <label>Table 1.</label>
+        <caption><p>Only table.</p></caption>
+        <table><tbody><tr><td>a cell</td></tr></tbody></table>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [(t.id, t.label, t.caption) for t in article.tables] == [
+            ("t1", "Table 1.", "Only table.")
+        ]
+        assert "a cell" in article.tables[0].html_content
+
+
+class TestAnInnerExhibitOwnsItsOwnContent:
+    """Exhibits nest both ways round, so "figure first" is not "innermost".
+
+    ``<label>`` and caption text were routed by asking whether a figure was
+    open *anywhere above* before considering the table, which hands an inner
+    table's own content to the figure enclosing it. Found while pinning #116's
+    "compare against the exhibit's depth, not against zero" rule, and the same
+    defect one level up: routing on an ambient flag rather than on the
+    enclosing element.
+    """
+
+    TABLE_INSIDE_A_FIGURES_FOOTNOTE = _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="f1">
+        <label>Figure 1.</label>
+        <caption><p>The figure's caption.</p></caption>
+        <fn><label>*</label>
+          <p><table-wrap id="Tfn">
+            <label>Table S1.</label>
+            <caption><p>The table's caption.</p></caption>
+            <table><tbody><tr><td>1</td></tr></tbody></table>
+          </table-wrap></p>
+        </fn>
+      </fig>
+    </sec>""")
+
+    def test_the_inner_tables_caption_does_not_go_to_the_enclosing_figure(self):
+        article = JATSParser(self.TABLE_INSIDE_A_FIGURES_FOOTNOTE).parse()
+
+        assert [f.caption for f in article.figures] == ["The figure's caption."]
+        assert [t.caption for t in article.tables] == ["The table's caption."]
+
+    def test_the_inner_tables_label_does_not_go_to_the_enclosing_figure(self):
+        article = JATSParser(self.TABLE_INSIDE_A_FIGURES_FOOTNOTE).parse()
+
+        assert [f.label for f in article.figures] == ["Figure 1."]
+        assert [t.label for t in article.tables] == ["Table S1."]
+
+    def test_a_figure_inside_a_tables_footnote_owns_its_caption_too(self):
+        """The mirror image, so neither kind is merely winning by test order."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1">
+        <label>Table 1.</label>
+        <caption><p>The table's caption.</p></caption>
+        <table><tbody><tr><td>1</td></tr></tbody></table>
+        <table-wrap-foot><fn><p>
+          <fig id="ffn">
+            <label>Figure S1.</label>
+            <caption><p>The figure's caption.</p></caption>
+          </fig>
+        </p></fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [(t.label, t.caption) for t in article.tables] == [
+            ("Table 1.", "The table's caption.")
+        ]
+        assert [(f.label, f.caption) for f in article.figures] == [
+            ("Figure S1.", "The figure's caption.")
+        ]
