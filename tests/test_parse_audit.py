@@ -100,12 +100,17 @@ class TestEachImbalanceIsReportedWithItsCost:
         """
         [message] = unwind_diagnostics(ParseUnwindState(unfilled_figure_slots=1))
 
-        assert "never built" in message
+        # "never built" alone is shared by four of the eleven diagnostics, so
+        # asserting it here passed while this branch emitted the *table*
+        # wording — mutation-confirmed. The phrases below are unique.
+        assert "figure slot(s)" in message
+        assert "build_figures()" in message
 
     def test_an_unfilled_table_slot_is_reported(self):
         [message] = unwind_diagnostics(ParseUnwindState(unfilled_table_slots=1))
 
-        assert "never built" in message
+        assert "table slot(s)" in message
+        assert "build_tables()" in message
 
     def test_a_leftover_text_buffer_is_reported(self):
         [message] = unwind_diagnostics(ParseUnwindState(excess_text_buffers=1))
@@ -152,3 +157,49 @@ class TestSeveralImbalancesAreReportedSeparately:
         )
 
         assert "discarded" in messages[0]
+
+
+class TestEveryFieldIsReported:
+    """The "add a field, add an ``if``" obligation, mechanised.
+
+    ``ParseUnwindState`` and ``unwind_diagnostics`` are two halves of one
+    rule, and nothing but prose kept them in step: a field captured by
+    ``unwind_state()`` and given no branch here is an imbalance the audit
+    *sees* and never reports, which is exactly the silence the module exists
+    to break. The per-field tests above cover the eleven fields that exist
+    today; these two cover the twelfth, whenever someone adds it.
+    """
+
+    @staticmethod
+    def _dirty_value(default: object) -> object:
+        """A value the audit must read as an imbalance, for any field type."""
+        return ("x",) if isinstance(default, tuple) else 1
+
+    def test_every_field_alone_produces_a_diagnostic(self):
+        clean = ParseUnwindState()
+
+        for spec in dataclasses.fields(ParseUnwindState):
+            dirty = self._dirty_value(getattr(clean, spec.name))
+
+            assert unwind_diagnostics(ParseUnwindState(**{spec.name: dirty})), (
+                f"{spec.name} is captured but never reported"
+            )
+
+    def test_no_two_fields_share_a_diagnostic(self):
+        """The half the per-field loop cannot see.
+
+        A field whose ``if`` was copied from its neighbour and never
+        re-worded passes the loop above — it does produce *a* diagnostic — so
+        the count is what catches it. This is the assertion that would have
+        caught the two ``never built`` lines being indistinguishable.
+        """
+        clean = ParseUnwindState()
+        every_field = {
+            spec.name: self._dirty_value(getattr(clean, spec.name))
+            for spec in dataclasses.fields(ParseUnwindState)
+        }
+
+        messages = unwind_diagnostics(ParseUnwindState(**every_field))
+
+        assert len(messages) == len(every_field)
+        assert len(set(messages)) == len(messages)

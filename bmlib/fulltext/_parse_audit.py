@@ -16,7 +16,7 @@
 
 """What a JATS parse left behind, and what that cost (issue #134).
 
-``_JATSHandler`` carries a dozen stacks, depths and flags, and every one of
+``_JATSHandler`` carries two dozen stacks, depths and flags, and every one of
 them decides where content is *routed* rather than merely what it looks like.
 A parse that ends with one of them unbalanced returns a thin article, an
 article missing its last sections, or an article whose remaining prose was
@@ -25,13 +25,22 @@ filed as caption text — and, before this module, said nothing at all.
 **This is a net, not an input check.** ``expat`` rejects an unbalanced
 *document* before :meth:`~bmlib.fulltext.jats_parser.JATSParser.parse`
 returns, so nothing a publisher can deposit reaches these predicates. They
-fire only when the *parser* is wrong — which is not a hypothetical class here:
-#115 (a nested ``<fig>`` overwrote its parent), #123 (a nested ``<caption>``
-truncated the enclosing one) and #130 are all stack-handling defects, and in
-the sibling Swift port the same shape stranded a footnote counter above zero
-so that every remaining paragraph in the document drained into the footnote
-branch and was discarded, one at a time, in silence. It survived to code
-review.
+fire only when the *parser* is wrong.
+
+**It is prospective for most of that class, and the comments must not imply
+otherwise.** The obvious precedents — #115 (a nested ``<fig>`` overwrote its
+parent), #123 (a nested ``<caption>`` would have truncated the enclosing one,
+a population measured empty) and #130 — would each have unwound *clean*: #115
+cleared ``in_figure``/``current_figure`` unconditionally at ``</fig>``, #123's
+``in_caption`` was a bare boolean set and cleared in matching pairs, and #130
+routed a ``<title>`` by an ambient test that leaves no state at all. None of
+them left residue, which is precisely why all three went undetected until they
+were found from outside bmlib. The one genuine precedent is the sibling Swift
+port, where the same shape stranded a footnote counter above zero so that every
+remaining paragraph in the document drained into the footnote branch and was
+discarded, one at a time, in silence — and survived to code review. So this
+module is kept for what it prevents, which is silent and permanent, not for a
+draw that caught it.
 
 Two rules hold this module together.
 
@@ -57,7 +66,7 @@ this, and ``fulltext`` must import on a core install (issue #64).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -94,9 +103,10 @@ class ParseUnwindState:
             answers parent lookups — ``[-2]`` for a ``<label>``'s owner, the
             walk in ``_graphic_owner`` — so a stale entry mis-routes *by
             element*, and a depth would not say which.
-        stuck_flags: The names of any boolean or single-slot builder still
-            set. Grouped into one field rather than given one field each: they
-            all fail the same way and an operator reads them as a set.
+        stuck_flags: The names of any boolean or single-slot value still set —
+            some are builders, some are bare ``str | None`` markers. Grouped
+            into one field rather than given one field each: they all fail the
+            same way and an operator reads them as a set.
     """
 
     nested_article_depth: int = 0
@@ -109,7 +119,7 @@ class ParseUnwindState:
     unfilled_table_slots: int = 0
     excess_text_buffers: int = 0
     open_elements: tuple[str, ...] = ()
-    stuck_flags: tuple[str, ...] = field(default_factory=tuple)
+    stuck_flags: tuple[str, ...] = ()
 
 
 def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
@@ -178,7 +188,8 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
     if state.open_elements:
         messages.append(
             "element stack not unwound (" + " > ".join(state.open_elements) + "): "
-            "<label> and <graphic> owner lookups after the imbalance read the wrong parent"
+            "parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) "
+            "after the imbalance read the wrong parent"
         )
     if state.stuck_flags:
         messages.append(

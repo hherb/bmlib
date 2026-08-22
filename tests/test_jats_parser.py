@@ -17,11 +17,13 @@
 """Tests for bmlib.fulltext.jats_parser."""
 
 import logging
+import re
 import xml.sax
 from pathlib import Path
 
 import pytest
 
+from bmlib.fulltext._parse_audit import unwind_diagnostics
 from bmlib.fulltext.jats_parser import JATSParser, _JATSHandler
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -3282,8 +3284,11 @@ def _drop_end_tag(monkeypatch, tag: str) -> None:
     ``expat`` rejects an unbalanced *document* before ``parse()`` returns, so
     no input can reach the end-of-parse audit — it fires only when the
     handler is wrong. Swallowing one ``endElement`` call is the smallest
-    faithful stand-in for that class of defect, and it is how the audit's own
-    tests hand it the residue #115, #123 and #130 each left behind.
+    faithful stand-in for that class of defect.
+
+    It is a stand-in and not a re-enactment: #115, #123 and #130 would each
+    have unwound *clean*, which is exactly why they went undetected. The audit
+    is prospective for that class — see ``_parse_audit``'s module docstring.
     """
     original = _JATSHandler.endElement
 
@@ -3450,7 +3455,25 @@ class TestEveryEntryPointIsAudited:
     ``parse_with_html`` all funnel through, which is why the audit sits there
     rather than in ``parse()``. This pins that claim: give ``to_html`` its own
     parse path later and these fail.
+
+    Each asserts the *specific* diagnostic rather than "some ERROR happened",
+    which a second unrelated imbalance would have satisfied just as well.
     """
+
+    def test_run_parser_itself_audits(self, monkeypatch, parser_log):
+        """The design claim, which the two below cannot make.
+
+        ``to_html`` and ``parse_with_html`` both delegate to ``parse()``, so
+        they hold equally if the audit is moved out of ``_run_parser`` and
+        into ``parse`` — mutation-confirmed green. What is actually claimed is
+        that the *funnel* audits, so the funnel is called directly.
+        """
+        parser_log.expect_errors()
+        _drop_end_tag(monkeypatch, "fig")
+
+        JATSParser(_AUDITED_ARTICLE)._run_parser()
+
+        assert any("<fig> still open" in m for m in parser_log.messages(logging.ERROR))
 
     def test_to_html_is_audited(self, monkeypatch, parser_log):
         parser_log.expect_errors()
@@ -3458,7 +3481,7 @@ class TestEveryEntryPointIsAudited:
 
         JATSParser(_AUDITED_ARTICLE).to_html()
 
-        assert parser_log.messages(logging.ERROR) != []
+        assert any("<fig> still open" in m for m in parser_log.messages(logging.ERROR))
 
     def test_parse_with_html_is_audited(self, monkeypatch, parser_log):
         parser_log.expect_errors()
@@ -3466,7 +3489,19 @@ class TestEveryEntryPointIsAudited:
 
         JATSParser(_AUDITED_ARTICLE).parse_with_html()
 
-        assert parser_log.messages(logging.ERROR) != []
+        assert any("<fig> still open" in m for m in parser_log.messages(logging.ERROR))
+
+    def test_the_audit_runs_exactly_once_per_entry_point(self, monkeypatch, parser_log):
+        """``parse_with_html`` builds one handler and must not audit twice.
+
+        A duplicated line in a bulk sync reads as two broken articles.
+        """
+        parser_log.expect_errors()
+        _drop_end_tag(monkeypatch, "fig")
+
+        JATSParser(_AUDITED_ARTICLE).parse_with_html()
+
+        assert len([m for m in parser_log.messages(logging.ERROR) if "<fig> still open" in m]) == 1
 
 
 def _article_with_front(front: str) -> bytes:
@@ -3514,7 +3549,7 @@ class TestAZeroAuthorParseIsNotSilent:
         assert article.authors == []
         assert any("no authors" in m for m in parser_log.messages(logging.WARNING))
 
-    def test_the_warning_counts_the_surnames_and_names_the_article(self, parser_log):
+    def test_the_warning_counts_the_contributors_and_names_the_article(self, parser_log):
         """The count is what separates a near miss from a wholesale drop."""
         data = _article_with_front(
             '<contrib-group content-type="editor">'
@@ -3528,7 +3563,7 @@ class TestAZeroAuthorParseIsNotSilent:
         warnings = parser_log.messages(logging.WARNING)
         assert warnings
         assert all("PMC1234567" in message for message in warnings)
-        assert any("2 <surname>" in message for message in warnings)
+        assert any("named 2 contributor(s)" in message for message in warnings)
 
     def test_an_article_carrying_no_front_surname_does_not_warn(self, parser_log):
         """The genuinely author-less article, which is not a defect claim.
@@ -3603,3 +3638,532 @@ class TestAZeroAuthorParseIsNotSilent:
 
         assert article.authors == []
         assert any("no authors" in m for m in parser_log.messages(logging.WARNING))
+
+
+class TestTheAuditNetIsComplete:
+    """The "add a flag to the handler, add it here" rule, mechanised — #134.
+
+    ``_ROUTING_FLAGS`` is a tuple of attribute *names*, so nothing but prose
+    kept it in step with the handler. Both halves of that were live defects
+    when this class was written: ``implicit_body_section`` was missing from
+    the net (a whole unsectioned ``<body>`` could vanish with the audit
+    silent), and 14 of the 15 listed names could be deleted with the suite
+    still green.
+    """
+
+    #: Handler attributes that are *outputs* or bookkeeping, not routing
+    #: state, so a non-clean value at end of parse costs nothing.
+    _NOT_ROUTING = frozenset(
+        {
+            "_locator",
+            "abstract_sections",
+            "authors",
+            "body_paragraph_count",
+            "body_sections",
+            "doi",
+            "doi_is_typed",
+            "front_contributor_name_count",
+            "issue",
+            "journal",
+            "pages",
+            "pmc_id",
+            "pmid",
+            "references",
+            "rejected_spans",
+            "suppressed_nested_articles",
+            "title",
+            "volume",
+            "year",
+        }
+    )
+
+    #: Routing state read by a *dedicated* ``ParseUnwindState`` field rather
+    #: than through the grouped ``stuck_flags``.
+    _AUDITED_AS_A_STACK = frozenset(
+        {
+            "caption_stack",
+            "contrib_group_stack",
+            "element_stack",
+            "figure_slots",
+            "figure_stack",
+            "nested_article_depth",
+            "section_stack",
+            "table_slots",
+            "table_stack",
+            "text_stack",
+        }
+    )
+
+    #: Deliberately excluded, each because ``</abstract>`` flushes without
+    #: clearing — only a *subsequent* ``<abstract>`` open clears — so both are
+    #: non-empty at the end of every article carrying a titled abstract.
+    #: Auditing either would fire on almost every real document.
+    _DELIBERATELY_EXCLUDED = frozenset({"current_abstract_text", "current_abstract_title"})
+
+    def test_the_audit_covers_every_routing_flag(self):
+        """A flag added to the handler and not to the net is a hole in it.
+
+        The exclusions above are named individually, so adding a flag makes
+        this fail rather than silently widening the blind spot — which is the
+        whole failure mode ``_parse_audit`` exists to end, one level up.
+        """
+        handler = _JATSHandler()
+        accounted = (
+            set(_JATSHandler._ROUTING_FLAGS)
+            | self._NOT_ROUTING
+            | self._AUDITED_AS_A_STACK
+            | self._DELIBERATELY_EXCLUDED
+        )
+
+        unaccounted = sorted(set(vars(handler)) - accounted)
+
+        assert not unaccounted, (
+            f"handler attributes reaching neither the audit nor a named exclusion: {unaccounted}"
+        )
+
+    def test_every_routing_flag_names_a_real_attribute(self):
+        """``getattr`` has no default, so a stale name raises on every parse.
+
+        That failure is loud rather than silent — it reddens this whole module
+        — but it lands in ``service.py``'s tier-level ``except Exception`` in
+        production, which loses the article. Naming it here says which flag.
+        """
+        handler = _JATSHandler()
+
+        missing = [name for name in _JATSHandler._ROUTING_FLAGS if not hasattr(handler, name)]
+
+        assert not missing, f"_ROUTING_FLAGS names attributes the handler does not have: {missing}"
+
+    def test_a_clean_parse_leaves_every_audited_flag_falsy(self):
+        """The false-positive half: every listed flag must clear on its own.
+
+        A flag that is legitimately truthy at end of parse would make the
+        audit ERROR on ordinary articles — which is exactly why the two
+        abstract fields are excluded, and the trap that caught the first
+        draft.
+        """
+        handler = _run_handler(_AUDITED_ARTICLE)
+
+        stuck = [name for name in _JATSHandler._ROUTING_FLAGS if getattr(handler, name)]
+
+        assert not stuck, f"a well-formed document left these set: {stuck}"
+
+
+def _run_handler(data: bytes) -> _JATSHandler:
+    """Parse ``data`` and hand back the handler, for capture-side assertions."""
+    return JATSParser(data)._run_parser()
+
+
+_NESTED_ARTICLE_DOCUMENT = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="pmc">PMC2222222</article-id>
+    <title-group><article-title>Host article</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Nakamura</surname></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <body><sec><title>Results</title><p>Host prose.</p></sec></body>
+  <sub-article article-type="peer-review">
+    <front-stub><title-group>
+      <article-title>Review round 1</article-title>
+    </title-group></front-stub>
+    <body><sec><title>Reviewer 1</title><p>Reviewer prose.</p></sec></body>
+  </sub-article>
+</article>"""
+
+
+class TestTheAuditCapturesWhatItReports:
+    """The capture half, which the pure tests in ``test_parse_audit.py`` cannot reach.
+
+    ``unwind_state()`` maps handler state onto ``ParseUnwindState``. A field
+    hardcoded to its clean value there is an imbalance the predicates would
+    describe perfectly and never be handed — and three fields were in exactly
+    that position: ``nested_article_depth`` and both slot counts could each be
+    pinned to zero with the whole suite green.
+    """
+
+    def test_a_nested_article_left_open_is_captured(self, monkeypatch, parser_log):
+        """The imbalance that costs the *rest of the document*, not just its own content.
+
+        While ``nested_article_depth`` is above zero every handler is
+        suppressed, so an unbalanced ``<sub-article>`` discards everything
+        after it — which is why its diagnostic is ordered first.
+        """
+        parser_log.expect_errors()
+        _drop_end_tag(monkeypatch, "sub-article")
+
+        JATSParser(_NESTED_ARTICLE_DOCUMENT).parse()
+
+        assert any(
+            "<sub-article>/<response> still open" in m for m in parser_log.messages(logging.ERROR)
+        )
+
+    def test_a_balanced_nested_article_is_silent(self):
+        """The negative control: suppression itself must not read as an imbalance.
+
+        ``<sub-article>`` is suppressed on its *opening* tag too, so the push
+        and pop of every stack have to stay paired across the suppressed
+        region. If they did not, every PLOS peer-review deposit would ERROR.
+        """
+        handler = _run_handler(_NESTED_ARTICLE_DOCUMENT)
+
+        assert unwind_diagnostics(handler.unwind_state()) == []
+        assert handler.suppressed_nested_articles == 1
+
+    def test_an_unfilled_figure_slot_is_captured(self, monkeypatch, parser_log):
+        """``build_figures()`` drops the hole without a word — the audit must not.
+
+        The existing open-``<fig>`` test leaves a slot unfilled incidentally
+        but asserts only on the stack, so ``unfilled_figure_slots`` could be
+        hardcoded to 0 with the suite green.
+        """
+        parser_log.expect_errors()
+        _drop_end_tag(monkeypatch, "fig")
+
+        JATSParser(_AUDITED_ARTICLE).parse()
+
+        assert any("figure slot(s)" in m for m in parser_log.messages(logging.ERROR))
+
+    def test_an_unfilled_table_slot_is_captured(self, monkeypatch, parser_log):
+        parser_log.expect_errors()
+        _drop_end_tag(monkeypatch, "table-wrap")
+
+        JATSParser(_AUDITED_ARTICLE).parse()
+
+        assert any("table slot(s)" in m for m in parser_log.messages(logging.ERROR))
+
+    def test_a_stranded_implicit_body_section_is_reported(self, monkeypatch, parser_log):
+        """Unsectioned ``<body>`` prose is single-slot routing state — #134's hole.
+
+        ``implicit_body_section`` holds loose ``<body>`` paragraphs until
+        ``</body>`` flushes them. Left stranded the article loses that prose
+        outright, and ``has_body`` stays ``True`` because
+        ``body_paragraph_count`` already counted it — so the model shows
+        nothing wrong either. It was missing from ``_ROUTING_FLAGS``, covered
+        only by ``in_body`` being cleared on the adjacent line.
+        """
+        parser_log.expect_errors()
+        monkeypatch.setattr(_JATSHandler, "_flush_implicit_body_section", lambda self: None)
+        data = _article_with_body("<p>Loose prose with no sec.</p>")
+
+        article = JATSParser(data).parse()
+
+        assert article.body_sections == []
+        assert any("implicit_body_section" in m for m in parser_log.messages(logging.ERROR))
+
+
+class TestACorrectParseNeverLogsAnError:
+    """ERROR means "bmlib is wrong", and the audit's whole design rests on it.
+
+    A predicate that fires on a document bmlib handled correctly makes every
+    other ERROR unreadable, which is the failure the audit exists to end one
+    level up. The autouse ``parser_log`` fixture is the general guard; these
+    are the shapes that were found firing.
+    """
+
+    def test_an_article_id_outside_article_meta_is_not_a_defect_claim(self):
+        """``current_article_id_type`` was set unconditionally and cleared conditionally.
+
+        An ``<article-id>`` outside ``<article-meta>``/``<front>`` is
+        JATS-invalid, but this parser is deliberately lenient about invalid
+        markup, and the stray id is correctly ignored — the article parses
+        perfectly. Before the clear was dedented, the audit still reported it
+        as a stuck routing flag, which is a false accusation twice over: the
+        parse was right, and a stale value mis-routes nothing because the next
+        ``<article-id>`` open overwrites it.
+
+        The autouse fixture is what fails this test if the ERROR returns; the
+        assertions below pin that the parse really was correct, so a future
+        "fix" that suppresses the ERROR by breaking the parse fails too.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="pmc">PMC3333333</article-id>
+    <title-group><article-title>Ordinary paper</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Sorensen</surname></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <body><sec><title>Intro</title><p>Body prose.</p></sec></body>
+  <back><article-id pub-id-type="doi">10.1/stray</article-id></back>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert article.pmc_id == "PMC3333333"
+        assert article.title == "Ordinary paper"
+        assert [s.title for s in article.body_sections] == ["Intro"]
+        # The stray id is outside <article-meta>, so it is ignored rather than
+        # believed — the point is that ignoring it is also silent.
+        assert article.doi == ""
+
+
+class TestTheZeroAuthorDetectorReadsEverySpelling:
+    """ "No ``<surname>``" is not "no contributor" — the quiet branch's claim.
+
+    JATS models a ``<contrib>``'s name as
+    ``(name | string-name | collab | anonymous | …)`` and bmlib extracts only
+    ``<name>``. Counting surnames alone, the two spellings it does not extract
+    both reached the DEBUG branch and were reported as *genuinely*
+    author-less, which is a positive claim their evidence never supported —
+    and ``<string-name>`` loses **every** author, not merely some.
+
+    Counting is not parsing. Extracting either spelling remains its own issue;
+    what these pin is that the detector no longer certifies an article it did
+    not check.
+    """
+
+    def test_a_string_name_contributor_warns_rather_than_certifying(self, parser_log):
+        data = _article_with_front(
+            '<contrib-group content-type="author">'
+            "<contrib><string-name>Jane Q Smith</string-name></contrib>"
+            "<contrib><string-name>Ahmed Al-Rashid</string-name></contrib>"
+            "</contrib-group>"
+        )
+
+        article = JATSParser(data).parse()
+
+        assert article.authors == []
+        warnings = parser_log.messages(logging.WARNING)
+        assert any("named 2 contributor(s)" in m for m in warnings)
+
+    def test_a_collab_only_article_warns_rather_than_certifying(self, parser_log):
+        """The consortium article, whose extraction is still #120.
+
+        It reached the quiet branch for a different reason — ``<collab>``
+        carries no ``<surname>`` at all — and was equally certified
+        author-less.
+        """
+        data = _article_with_front(
+            '<contrib-group content-type="author">'
+            "<contrib><collab>The CONSORT Group</collab></contrib>"
+            "</contrib-group>"
+        )
+
+        article = JATSParser(data).parse()
+
+        assert article.authors == []
+        assert any("named 1 contributor(s)" in m for m in parser_log.messages(logging.WARNING))
+
+    def test_the_quiet_branch_reports_its_evidence_not_a_conclusion(self, parser_log):
+        """The DEBUG half of "says which kind it is", which was deletable green.
+
+        An operator grepping after a bulk sync has to be able to tell
+        "checked, named nobody" from "not checked at all", so the line names
+        the article and the three spellings it looked for.
+        """
+        data = _article_with_front("<abstract><p>No contributors at all.</p></abstract>")
+
+        article = JATSParser(data).parse()
+
+        assert article.authors == []
+        assert not parser_log.messages(logging.WARNING)
+        debug = parser_log.messages(logging.DEBUG)
+        expected = "named no contributor via <surname>, <string-name> or <collab>"
+        assert any("PMC1234567" in m and expected in m for m in debug)
+
+    def test_a_nested_article_s_contributors_are_not_counted(self, parser_log):
+        """A suppressed ``<sub-article>``'s ``<front>`` must not rescue the count.
+
+        The counter is gated on ``in_front``, and the suppression returns
+        above the branch that sets it, so nested contributors are excluded for
+        free. That is asserted rather than assumed: a reorder there turns
+        every peer-review deposit over an author-less article into a spurious
+        WARNING, which is the "warning nobody reads" outcome the quiet branch
+        exists to protect.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="pmc">PMC4444444</article-id>
+    <title-group><article-title>Author-less correction</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>Notice</title><p>Correction prose.</p></sec></body>
+  <sub-article article-type="peer-review">
+    <front-stub>
+      <contrib-group content-type="author">
+        <contrib><name><surname>Reviewer</surname></name></contrib>
+      </contrib-group>
+    </front-stub>
+    <body><p>Reviewer prose.</p></body>
+  </sub-article>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert article.authors == []
+        assert not parser_log.messages(logging.WARNING)
+
+    def test_a_reference_contributor_is_not_counted(self, parser_log):
+        """``<back>`` is excluded — a bibliography names people who are not contributors.
+
+        Counted document-wide, every author-less article carrying references
+        would read as a defect.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="pmc">PMC5555555</article-id>
+    <title-group><article-title>Author-less notice</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>Notice</title><p>Prose.</p></sec></body>
+  <back><ref-list><ref><element-citation>
+    <person-group><name><surname>Chowdhury</surname></name></person-group>
+    <collab>A Cited Consortium</collab>
+  </element-citation></ref></ref-list></back>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert article.authors == []
+        assert not parser_log.messages(logging.WARNING)
+
+
+class TestARefusedSpanIsBoundedAndReported:
+    """Both ends of ``colspan``, and what a refusal actually costs — #129.
+
+    The first cut of #129 bounded the value ``int()`` *refuses* and left the
+    value it accepts unbounded, and justified DEBUG on the grounds that a
+    dropped span is "a cosmetic defect in one table". Neither held.
+    """
+
+    def test_a_refused_span_shifts_every_later_cell_in_its_row(self):
+        """Why the report is a WARNING: this is wrong data, not a wrong width.
+
+        ``_build_html_table`` fixes the column count from the *first* row and
+        ``_pad_row`` pads short rows at the *end*, so a span rendered as 1
+        instead of 2 does not blank a cell — it slides the rest of the row one
+        column left. The values below land under the wrong headings, which no
+        reader of the rendered table can see.
+        """
+        data = _table_containing(
+            "<table>"
+            "<thead><tr><th>Group</th><th>n</th><th>Mean</th><th>SD</th></tr></thead>"
+            "<tbody><tr><td colspan='two'>Treatment arm</td><td>42</td><td>7.1</td></tr></tbody>"
+            "</table>"
+        )
+
+        html = JATSParser(data).to_html()
+
+        body = re.search(r"<tbody>.*?</tbody>", html, re.S).group(0)
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", body, re.S)
+        # The document says Mean=42, SD=7.1. Under the headings above, this is
+        # n=42, Mean=7.1, SD=blank — the corruption the WARNING reports.
+        assert cells == ["Treatment arm", "42", "7.1", ""]
+
+    def test_a_refused_span_is_reported_once_per_article_at_warning(self, parser_log):
+        """Once per article, not once per cell — a wide table drowned the channel.
+
+        WARNING and not ERROR because a publisher's deposit reaches this one,
+        unlike the end-of-parse audit; reporting it at ERROR would spend the
+        "an ERROR here means bmlib is wrong" contract the audit depends on.
+        """
+        row = "".join(f"<td colspan='x{i}'>{i}</td>" for i in range(4))
+        data = _table_containing(f"<table><tbody><tr>{row}</tr></tbody></table>")
+
+        JATSParser(data).parse()
+
+        warnings = parser_log.messages(logging.WARNING)
+        assert len(warnings) == 1
+        assert "4 table cell(s)" in warnings[0]
+        assert "one column left" in warnings[0]
+
+    def test_a_span_beyond_the_bound_is_refused_rather_than_materialised(self, parser_log):
+        """The half that reintroduced #129, in the shape the fix did not cover.
+
+        ``end_cell`` appends ``colspan - 1`` empty strings, so an accepted
+        eight-digit span costs hundreds of megabytes of rendered HTML — which
+        ``FullTextService`` then caches — or a ``MemoryError`` out of the SAX
+        callback, which the tier chain reports as the article being
+        unavailable from that source. That is #129 verbatim, and
+        ``MemoryError`` is not a ``_BUG_TYPES`` member, so nothing says so.
+        """
+        data = _table_containing(
+            "<table><tbody><tr><td colspan='20000000'>x</td></tr></tbody></table>"
+        )
+
+        html = JATSParser(data).to_html()
+
+        assert len(html) < 100_000
+        assert any("exceeds the 1000-column bound" in m for m in parser_log.messages())
+        assert any("1 table cell(s)" in m for m in parser_log.messages(logging.WARNING))
+
+    def test_a_span_inside_the_bound_is_still_honoured(self, parser_log):
+        """The negative control: the bound must not refuse a real wide table."""
+        data = _table_containing("<table><tbody><tr><td colspan='1000'>x</td></tr></tbody></table>")
+
+        html = JATSParser(data).to_html()
+
+        assert html.count("<td") == 1000
+        assert not parser_log.messages(logging.WARNING)
+
+    def test_a_well_formed_document_reports_no_span(self, parser_log):
+        """No refusal, no line — the channel stays readable."""
+        data = _table_containing(
+            "<table><tbody><tr><td colspan='2'>12.3</td><td>4.5</td></tr></tbody></table>"
+        )
+
+        JATSParser(data).parse()
+
+        assert not [m for m in parser_log.messages(logging.WARNING) if "colspan" in m]
+
+
+class TestTheDiagnosticNamesTheArticle:
+    """An ERROR carrying no identity is unactionable in a bulk sync — #134.
+
+    ``describe_article()`` falls back through the identifiers in the order a
+    reader can act on them, then the title, then a fixed string. Only the
+    ``pmc_id`` rung was pinned, so collapsing the other four into the generic
+    fallback was green — and the title rung matters most, because it is the
+    one that fires for a document carrying no identifier at all, which is the
+    parse most likely to be broken.
+    """
+
+    @staticmethod
+    def _describe(front: str) -> str:
+        handler = _JATSHandler()
+        data = f"""<?xml version="1.0"?>
+<article><front><article-meta>{front}</article-meta></front>
+<body><sec><title>S</title><p>p</p></sec></body></article>""".encode()
+        handler = _run_handler(data)
+        return handler.describe_article()
+
+    def test_a_pmc_id_is_preferred(self):
+        described = self._describe(
+            '<article-id pub-id-type="pmc">PMC9999999</article-id>'
+            '<article-id pub-id-type="doi">10.1/x</article-id>'
+            "<title-group><article-title>T</article-title></title-group>"
+        )
+
+        assert described == "PMC9999999"
+
+    def test_a_doi_is_used_when_there_is_no_pmc_id(self):
+        described = self._describe(
+            '<article-id pub-id-type="doi">10.1/only-doi</article-id>'
+            "<title-group><article-title>T</article-title></title-group>"
+        )
+
+        assert described == "10.1/only-doi"
+
+    def test_a_pmid_is_used_when_there_is_neither(self):
+        described = self._describe(
+            '<article-id pub-id-type="pmid">31234567</article-id>'
+            "<title-group><article-title>T</article-title></title-group>"
+        )
+
+        assert described == "31234567"
+
+    def test_the_title_is_used_when_no_identifier_was_deposited(self):
+        described = self._describe(
+            "<title-group><article-title>A paper carrying no id</article-title></title-group>"
+        )
+
+        assert described == "'A paper carrying no id'"
+
+    def test_a_document_with_neither_still_names_itself(self):
+        """The last rung. A line naming nothing beats no line at all."""
+        described = self._describe("")
+
+        assert described == "an article carrying no identifier or title"
