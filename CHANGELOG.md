@@ -8,6 +8,33 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **`JATSTableInfo.graphic_url`** (#127) — a `<table-wrap>` whose content is a
+  `<graphic>` keeps its image. A scanned or typographically complex table used
+  to lose its only content: the parser returned an id, a label and a caption
+  over nothing, which is indistinguishable from an empty `<table-wrap>`. The
+  deposit is chosen among several by the same ranking a figure's is, moved
+  into a shared `_GraphicHolder` rather than written twice — the publishers
+  that deposit a thumbnail beside a figure deposit one beside a table.
+  `to_html()` renders it as an `<img>`, but **only where there is no `<table>`
+  markup**: a `<table-wrap>` may carry both, and where it does the markup is
+  the better rendition. The model holds the href either way.
+
+  **Measured on two windows, and the second is what makes it visible.** In the
+  committed recent draw (300 articles from the last two years) the population
+  is **0 of 642 tables**. In a second draw of 300 articles from 1996-1998
+  (`tests/data/jats_exhibits.backfill.json`, taken with the sampler's new
+  `--months-ago`) it is **11 of 93 — 11.8% [6.7-20.0]**. Those 11 sit in 2
+  articles of 300, both from one journal, and in each they are *every* table
+  the article has (6 of 6, 5 of 5). So it is a per-deposit property like
+  eLife's figure nesting rather than a general rate — and where it fires the
+  article loses its whole tabular content. PMC3437083 and PMC3437093 are the
+  two; both are clinical papers whose data is entirely in those tables.
+
+- **`--months-ago` on `scripts/sample_jats_exhibits.py`** — the stratified
+  draw can be displaced backwards by whole months. A stratified sample of
+  *recent* deposits is still one window, and #127's population lives in
+  back-filled material the default draw cannot see at all.
+
 - **`scripts/sample_jats_exhibits.py`** (#131), the live runner behind the
   JATS exhibit rules below — the fifth in `scripts/`, and the one to re-run
   before changing `_ARCHIVAL_MIME_SUBTYPES`, `_ARCHIVAL_EXTENSIONS`,
