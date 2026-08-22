@@ -406,7 +406,7 @@ class JATSParser:
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `data` | `bytes` | Raw JATS XML content — **bytes, not `str`** |
-| `known_pmc_id` | `str` | Optional PMC ID for constructing figure URLs. A bare numeric ID is prefixed with `PMC` |
+| `known_pmc_id` | `str` | Optional PMC ID, used to resolve a figure's or table's `<graphic>` href at render time. A bare numeric ID is prefixed with `PMC` |
 
 **Security:** external entity loading is disabled on the SAX parser (`feature_external_ges` and `feature_external_pes` are both set to `False`), so hostile XML cannot pull in external resources.
 
@@ -426,7 +426,7 @@ Returns an HTML string with semantic markup:
 - `<h2>Abstract</h2>` with `<strong>` section labels
 - `<h2>`–`<h6>` for nested body sections
 - `<figure>` with `<img>` and `<figcaption>` for figures
-- `<div class="table-container">` with `<table>` for tables
+- `<div class="table-container">` with `<table>` for tables, or an `<img>` where the table was deposited only as an image
 - `<ol class="references">` for bibliography
 
 ### `parse_with_html()` → `tuple[JATSArticle, str]`
@@ -445,9 +445,10 @@ pass.
 | `abstract/sec/title/p` | Structured abstract sections |
 | `body/sec/title/p` | Body sections with nesting |
 | `body/p` (no enclosing `<sec>`) | A titleless body section — see below |
-| `fig/graphic/label/caption` | Figures with Europe PMC image URLs |
+| `fig/graphic/label/caption` | Figures, keeping the `<graphic>` href as deposited |
 | `caption/title` + `caption/p` | Caption text, space-joined in document order |
 | `table-wrap/thead/tbody/tr/th/td` | Tables (rendered as HTML `<table>`) |
+| `table-wrap/graphic` | A table deposited as an image — see below |
 | `ref-list/ref/element-citation` | Structured references |
 | `bold/italic/sub/sup/monospace` | Inline formatting |
 | `xref` | Cross-reference anchor links |
@@ -535,6 +536,13 @@ pass.
 > `JATSFigureInfo.caption` / `JATSTableInfo.caption`, never in the enclosing
 > section's paragraphs or title. A `<caption>` holding both a `<title>` and one
 > or more `<p>` is space-joined in document order.
+
+> **A table may be deposited as an image.** A `<table-wrap>` whose content is
+> a `<graphic>` — a scanned or typographically complex table — puts its href in
+> `JATSTableInfo.graphic_url`, chosen among several deposits by the same
+> ranking a figure's is *(unreleased, #127)*. It used to be dropped,
+> and the table came back as an id, a label and a caption over nothing —
+> indistinguishable from an empty `<table-wrap>`.
 >
 > Everything else inside a `<fig>` or `<table-wrap>` is furniture and is kept
 > out of the prose: table cell text reaches `html_content` through the table
@@ -637,7 +645,7 @@ class JATSFigureInfo:
     id: str                        # XML id for cross-references
     label: str                     # e.g. "Figure 1"
     caption: str
-    graphic_url: str | None = None # Constructed Europe PMC image URL
+    graphic_url: str | None = None # The <graphic> href, as deposited
 ```
 
 ### JATSTableInfo
@@ -646,10 +654,22 @@ class JATSFigureInfo:
 @dataclass
 class JATSTableInfo:
     id: str
-    label: str              # e.g. "Table 1"
+    label: str                     # e.g. "Table 1"
     caption: str
-    html_content: str = ""  # Pre-rendered HTML <table>
+    html_content: str = ""         # Pre-rendered HTML <table>
+    graphic_url: str | None = None # The <graphic> href, as deposited
 ```
+
+`graphic_url` on both is the href **as the document deposited it**, which for
+Europe PMC is usually a bare filename. `to_html()` resolves it against the
+article's PMC id at render time; a caller reading the field itself gets the
+raw value and resolves it however it needs to.
+
+A `<table-wrap>` may carry a `<table>`, a `<graphic>`, or both, so
+`html_content` and `graphic_url` are independent. `to_html()` renders the
+markup where there is any and the image only otherwise — where a table
+carries both, the markup is the better rendition and showing both renders one
+table twice.
 
 ### JATSReferenceInfo
 

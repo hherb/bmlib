@@ -27,7 +27,7 @@ stand behind their own allow-lists. Issue #131 is why it exists: the rules
 shipped without it, and the populations behind them lived only in a sibling
 repository.
 
-Five questions, each answering a decision the parser makes:
+Six questions, each answering a decision the parser makes:
 
 1. **Is a ``<label>`` a direct child of the exhibit it numbers?** This is the
    premise of the parent-based routing that replaced #116's footnote-depth
@@ -41,9 +41,14 @@ Five questions, each answering a decision the parser makes:
    case. Both tiers are dead code if nothing archival is ever deposited.
 4. **How are several ``<graphic>`` deposited?** Counts per figure, and which
    end the thumbnail sits at — the population behind #117's ranking.
-5. **Is a ``<graphic>`` ever owned by something other than its exhibit**, and
-   does a ``<table-wrap>`` carry one with no ``<table>`` (#127)? Plus the
-   XLink prefix actually used, which is what #128 turns on.
+5. **The same question for a ``<table-wrap>``**, counted separately (#135).
+   #127 routes a table's deposits through #117's ranking, which was measured
+   on figures alone; until a draw finds a table carrying more than one, that
+   rule is reasoned onto tables rather than observed on them.
+6. **Is a ``<graphic>`` ever owned by something other than its exhibit**, and
+   does a ``<table-wrap>`` carry one with no ``<table>`` (#127) — or with
+   both, which is the rendition ``to_html()`` drops? Plus the XLink prefix
+   actually used, which is what #128 turns on.
 
 **It does not import the parser's predicates**, and a future refactor must not
 "deduplicate" the two. A corpus labelled by the rule under test can only
@@ -59,11 +64,22 @@ must not read as a clean population.
 Writes ``tests/data/jats_exhibits.json``, or ``*.unreportable.json`` when any
 population trips that threshold — so a throttled run cannot replace evidence a
 later reader takes as measured. The journal keeps every row, so refusing costs
-a re-run and nothing else.
+a re-run and nothing else. The written corpus records the ``window`` it was
+drawn from, because the strata are counted back from *today* and the same
+command run later draws a different sample.
+
+``--months-ago`` displaces the whole stratified draw backwards by whole
+months. The default window is the last two years — born-digital XML — and at
+least one population is not in it at all: #127's image-only tables measure 0
+of 642 tables there and 11 of 93 in a draw ending 28 years back. A displaced
+run must name its own ``-o``; writing one to the default path would replace
+the recent corpus, or pool the two windows through the shared journal.
 
 Usage::
 
     uv run python scripts/sample_jats_exhibits.py --target 300
+    uv run python scripts/sample_jats_exhibits.py --target 300 --months-ago 336 \
+        -o tests/data/jats_exhibits.backfill.json
 """
 
 from __future__ import annotations
@@ -125,6 +141,22 @@ _ARCHIVAL_HINTS = frozenset({"tiff", "tif", "eps", "ps", "postscript", "svg", "p
 # Likewise this sampler's own thumbnail test, not the parser's.
 _THUMB_PATTERN = re.compile(r"thumb", re.IGNORECASE)
 
+# The counters that arrived with issue #135, and the sentinel a row written
+# before them is loaded with. Zero is not usable as "absent" here: it is also
+# what a draw in which no table deposits an image genuinely measures, and #127
+# is the case of a population that reads as empty in the wrong window. A
+# negative value cannot be produced by counting, so a row carrying one predates
+# the counter rather than saying anything about deposits — asked per row by
+# `Totals.measured`, never of the sum, which one stale row cannot turn negative.
+NOT_MEASURED = -1
+_TABLE_SIDE_COUNTERS = (
+    "tables_with_both",
+    "tables_with_graphic",
+    "tables_multi_graphic",
+    "tables_last_is_thumb",
+    "tables_first_is_thumb",
+)
+
 
 def _local(tag: str) -> str:
     """The local name of a possibly namespace-qualified tag."""
@@ -170,6 +202,11 @@ class ArticleMeasurement:
     specific_use_values: Counter[str] = field(default_factory=Counter)
     foreign_owned_graphics: Counter[str] = field(default_factory=Counter)
     tables_image_only: int = 0
+    tables_with_both: int = 0
+    tables_with_graphic: int = 0
+    tables_multi_graphic: int = 0
+    tables_last_is_thumb: int = 0
+    tables_first_is_thumb: int = 0
     href_prefixes: Counter[str] = field(default_factory=Counter)
 
     def to_dict(self) -> dict[str, Any]:
@@ -181,8 +218,20 @@ class ArticleMeasurement:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ArticleMeasurement:
-        """Rebuild a row written by :meth:`to_dict`."""
+        """Rebuild a row written by :meth:`to_dict`.
+
+        A counter the row does not carry is set to ``NOT_MEASURED`` rather
+        than left at its zero default. Every one of these arrived with issue
+        #135, so an older corpus or journal carries none of them and each
+        would otherwise sum to zero — which is exactly what a genuine "no
+        table deposits an image" draw looks like, and reading one as the other
+        is the mistake #127 spent two windows disproving.
+        :meth:`Totals.measured` is what tests it.
+        """
         row = cls(pmcid=str(data["pmcid"]))
+        for name in _TABLE_SIDE_COUNTERS:
+            if name not in data:
+                setattr(row, name, NOT_MEASURED)
         for key, value in data.items():
             if key == "pmcid":
                 continue
@@ -279,9 +328,30 @@ def _record_exhibit(el: ET.Element, tag: str, depth: int, row: ArticleMeasuremen
                 row.last_is_thumb += 1
             if _is_thumbnail(graphics[0]):
                 row.first_is_thumb += 1
-    elif graphics and not any(_local(c.tag) == "table" for c in el.iter()):
-        # A table deposited as an image and nothing else — issue #127.
-        row.tables_image_only += 1
+    else:
+        # The same three counts for a <table-wrap>, because #127 routes a
+        # table's deposits through the *same* ranking a figure's go through
+        # and nothing measured that the rule holds there — issue #135. Kept
+        # as separate fields rather than folded into the figure ones: the
+        # figure percentages are cited in `jats_parser` and in CLAUDE.md, and
+        # silently widening their denominator would invalidate every one.
+        has_table = any(_local(c.tag) == "table" for c in el.iter())
+        if graphics:
+            row.tables_with_graphic += 1
+            if has_table:
+                # Both renditions deposited. `to_html()` shows the markup and
+                # drops the image, so this is the population that choice
+                # discards — measured for the same reason the kept one is.
+                row.tables_with_both += 1
+            else:
+                # A table deposited as an image and nothing else — issue #127.
+                row.tables_image_only += 1
+        if len(graphics) > 1:
+            row.tables_multi_graphic += 1
+            if _is_thumbnail(graphics[-1]):
+                row.tables_last_is_thumb += 1
+            if _is_thumbnail(graphics[0]):
+                row.tables_first_is_thumb += 1
 
 
 def _record_graphic(
@@ -338,30 +408,57 @@ def _fetch(client: httpx.Client, url: str, pace: Any) -> bytes | None:
     return None
 
 
-def _month_windows(months: int, today: date) -> list[tuple[str, str]]:
-    """The last *months* whole calendar months, most recent first.
+def _month_windows(months: int, today: date, skip: int = 0) -> list[tuple[str, str]]:
+    """*months* whole calendar months, most recent first, after skipping *skip*.
+
+    ``skip`` is what lets the draw reach material the default window cannot.
+    The last two years of open-access deposits are born-digital XML, and some
+    of the populations here are properties of *older* deposits — a
+    ``<table-wrap>`` carrying nothing but a scanned image (issue #127) is the
+    one this was added for. Counting the skipped months with the same
+    arithmetic as the taken ones is what keeps a year boundary from drifting.
 
     Args:
-        months: How many windows to build.
+        months: How many windows to build; at least one.
         today: The date to count back from, injected so tests need no clock.
+        skip: How many whole months to step back before the first window;
+            never negative.
 
     Returns:
         ``(first_day, last_day)`` ISO pairs, one per month.
+
+    Raises:
+        ValueError: If *months* is below 1 or *skip* is negative. Neither
+            degrades gracefully — ``skip`` is both a loop bound and a slice
+            index, so a negative one silently returns the *oldest* few of a
+            list already shortened by it (``skip=-1, months=24`` yields one
+            window from two years ago, ``skip=-24`` yields none at all), and
+            the run then prints a rate with a Wilson interval over a draw
+            nobody asked for. The same shape as ``sync()``'s negative
+            ``recheck_days``, and refused at the same place: the entry.
     """
+    if months < 1:
+        raise ValueError(f"months must be at least 1, got {months}")
+    if skip < 0:
+        raise ValueError(f"skip must not be negative, got {skip}")
     windows: list[tuple[str, str]] = []
     year, month = today.year, today.month
-    for _ in range(months):
+    for _ in range(skip + months):
         month -= 1
         if month == 0:
             year, month = year - 1, 12
         first = date(year, month, 1)
         last = date(year + (month == 12), month % 12 + 1, 1) - timedelta(days=1)
         windows.append((first.isoformat(), last.isoformat()))
-    return windows
+    return windows[skip:]
 
 
 def open_access_pmcids(
-    client: httpx.Client, pace: Any, target: int, months: int = SAMPLE_MONTHS
+    client: httpx.Client,
+    pace: Any,
+    target: int,
+    months: int = SAMPLE_MONTHS,
+    skip_months: int = 0,
 ) -> list[str]:
     """Draw open-access PMC identifiers, **stratified by publication month**.
 
@@ -378,6 +475,10 @@ def open_access_pmcids(
         pace: Per-host pacer from :func:`_make_pacer`.
         target: How many identifiers to return.
         months: How many monthly strata to draw from.
+        skip_months: How many whole months to step back before the first
+            stratum — see :func:`_month_windows`. The default draw is the last
+            two years, which is born-digital XML; an older draw is what reaches
+            the back-filled deposits some populations live in.
 
     Returns:
         Up to *target* identifiers, interleaved across the strata so a short
@@ -385,7 +486,7 @@ def open_access_pmcids(
     """
     per_window: list[list[str]] = []
     wanted = max(1, target // max(1, months) + 1)
-    for first, last in _month_windows(months, date.today()):
+    for first, last in _month_windows(months, date.today(), skip=skip_months):
         collected: list[str] = []
         cursor = "*"
         while len(collected) < wanted:
@@ -444,6 +545,17 @@ class Totals:
 
     def articles_where(self, attribute: str) -> int:
         return sum(1 for r in self.rows if getattr(r, attribute))
+
+    def measured(self, attribute: str) -> bool:
+        """Did **every** row actually carry *attribute*?
+
+        Asked per row rather than of the sum, because the sentinel is a small
+        negative and the sum is not: one stale row among three hundred fresh
+        ones still totals positive, and the population would then print as a
+        rate that quietly omits it. A journal is topped up across runs, so a
+        mixed one is the ordinary case rather than a corner.
+        """
+        return all(getattr(r, attribute) >= 0 for r in self.rows)
 
     @property
     def attempts(self) -> int:
@@ -526,16 +638,54 @@ def print_report(totals: Totals) -> bool:
         f"{first_thumb:>6}  {_pct(first_thumb, with_graphic)}"
     )
 
-    print("\n5. OWNERSHIP, IMAGE-ONLY TABLES AND THE XLINK PREFIX")
+    # Issue #135. The ranking these deposits go through was measured on
+    # figures alone and reasoned onto tables; this is what would settle it.
+    print("\n5. SEVERAL <graphic> PER TABLE  (issue #135 — #117's rule, unmeasured here)")
+    tables_with_graphic = totals.sum_of("tables_with_graphic")
+    tables_multi = totals.sum_of("tables_multi_graphic")
+    tables_last = totals.sum_of("tables_last_is_thumb")
+    tables_first = totals.sum_of("tables_first_is_thumb")
+    if not all(totals.measured(name) for name in _TABLE_SIDE_COUNTERS):
+        print("   NOT MEASURED — these rows predate the counter (issue #135). Re-run to fill it.")
+    else:
+        print(f"   tables carrying a <graphic>            : {tables_with_graphic}")
+        print(
+            f"   ...carrying more than one              : "
+            f"{tables_multi:>6}  {_pct(tables_multi, tables_with_graphic)}"
+        )
+        print(
+            f"   ...whose LAST deposit is a thumbnail   : "
+            f"{tables_last:>6}  {_pct(tables_last, tables_with_graphic)}"
+        )
+        print(
+            f"   ...whose FIRST deposit is a thumbnail  : "
+            f"{tables_first:>6}  {_pct(tables_first, tables_with_graphic)}"
+        )
+
+    print("\n6. OWNERSHIP, IMAGE-ONLY TABLES AND THE XLINK PREFIX")
     foreign = totals.counter_of("foreign_owned_graphics")
     print(f"   <graphic> owned by a non-exhibit inside one: {sum(foreign.values())}")
     for name, count in foreign.most_common(8):
         print(f"      {name:<23} {count:>6}")
     image_only = totals.sum_of("tables_image_only")
-    print(f"   <table-wrap> with a <graphic> and no <table>: {image_only}   (issue #127)")
+    # A share of the TABLES, not of every exhibit: this population is the one
+    # measured on two windows, and a bare count cannot be compared across draws
+    # of different sizes while a figure-heavy draw would dilute an exhibit-wide
+    # denominator. Issue #127.
+    print(
+        f"   <table-wrap> with a <graphic> and no <table>: "
+        f"{image_only:>6}  {_pct(image_only, tables)}   (issue #127)"
+    )
+    both = totals.sum_of("tables_with_both")
+    both_rate = (
+        f"{both:>6}  {_pct(both, tables)}"
+        if totals.measured("tables_with_both")
+        else "NOT MEASURED (issue #135)"
+    )
+    print(f"   <table-wrap> with a <graphic> AND a <table> : {both_rate}   (to_html drops it)")
     print(f"   xlink href namespaces: {dict(totals.counter_of('href_prefixes'))}   (issue #128)")
 
-    print("\n6. NESTING  (issue #115's population)")
+    print("\n7. NESTING  (issue #115's population)")
     nested_articles = sum(1 for r in totals.rows if r.nested_figures or r.nested_tables)
     print(f"   nested <fig>                           : {totals.sum_of('nested_figures')}")
     print(f"   nested <table-wrap>                    : {totals.sum_of('nested_tables')}")
@@ -544,7 +694,7 @@ def print_report(totals: Totals) -> bool:
         f"{_pct(nested_articles, totals.articles)}"
     )
 
-    print("\n7. GRAPHIC ATTRIBUTE VALUES  (counted before any allow-list)")
+    print("\n8. GRAPHIC ATTRIBUTE VALUES  (counted before any allow-list)")
     for label, attribute in (
         ("content-type", "content_type_values"),
         ("specific-use", "specific_use_values"),
@@ -568,12 +718,55 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--months", type=int, default=SAMPLE_MONTHS, help="Monthly strata to sample across."
     )
     parser.add_argument(
+        "--months-ago",
+        type=int,
+        default=0,
+        help=(
+            "Step back this many whole months before the first stratum. The "
+            "default draw is born-digital XML; use this to reach older, "
+            "back-filled deposits (issue #127's population lives there)."
+        ),
+    )
+    parser.add_argument(
         "-o", "--output", type=Path, default=DEFAULT_OUTPUT, help="Where to write the corpus."
     )
     parser.add_argument(
         "--per-host-interval", type=float, default=0.7, help="Minimum seconds between requests."
     )
     return parser
+
+
+def _validate_args(args: argparse.Namespace) -> str | None:
+    """Refuse a run that would print a rate over a draw nobody asked for.
+
+    Returns the reason, or ``None`` when the run may proceed. Two rules:
+
+    *The window arithmetic is not negotiable.* ``--months-ago`` and
+    ``--months`` are checked here as well as in :func:`_month_windows`,
+    because argparse's ``type=int`` accepts a minus sign happily and the
+    degradation is silent — see that function's ``Raises``.
+
+    *A displaced draw may not land on the default output.* The journal is
+    derived from ``--output``, so a run with ``--months-ago`` and no ``-o``
+    either overwrites the recent corpus with an older window under the recent
+    corpus's name, or — journal present — tops one window's rows up with
+    another's and prints the pooled result as one rate. This PR's whole claim
+    is that the window decides the answer (0 of 642 recent tables against 11
+    of 93 from 1996-1998), so pooling two windows produces a number
+    describing neither. Naming an explicit ``-o`` is the whole fix.
+    """
+    if args.months < 1:
+        return f"--months must be at least 1, got {args.months}"
+    if args.months_ago < 0:
+        return f"--months-ago must not be negative, got {args.months_ago}"
+    if args.months_ago and args.output == DEFAULT_OUTPUT:
+        return (
+            f"--months-ago {args.months_ago} draws a displaced window, which must not "
+            f"be written to {DEFAULT_OUTPUT} — that path is the recent draw, and its "
+            "journal would pool the two. Pass an explicit -o, as "
+            "tests/data/jats_exhibits.backfill.json was."
+        )
+    return None
 
 
 def main() -> int:
@@ -583,6 +776,10 @@ def main() -> int:
     tops the sample up rather than starting over.
     """
     args = _build_arg_parser().parse_args()
+    refusal = _validate_args(args)
+    if refusal is not None:
+        sys.stderr.write(f"{refusal}\n")
+        return 2
     journal = args.output.with_suffix(".journal.jsonl")
     totals = Totals()
     seen: set[str] = set()
@@ -594,12 +791,21 @@ def main() -> int:
             seen.add(row.pmcid)
             totals.add(row)
 
+    # Resolved once, before any request, so the corpus can state the window it
+    # was drawn from. Without it "1996-1998" lives only in prose: the windows
+    # are counted back from `date.today()`, so the same command a year from now
+    # draws a different draw, and nothing in the written file would say which
+    # one it is. Issue #132 is the same failure by another route — a cited
+    # measurement whose corpus is not in the repo.
+    windows = _month_windows(args.months, date.today(), skip=args.months_ago)
     pace = _make_pacer(args.per_host_interval)
     headers = {"User-Agent": _USER_AGENT}
     with httpx.Client(headers=headers, timeout=60.0, follow_redirects=True) as client:
         pmcids = [
             p
-            for p in open_access_pmcids(client, pace, args.target + 150, args.months)
+            for p in open_access_pmcids(
+                client, pace, args.target + 150, args.months, args.months_ago
+            )
             if p not in seen
         ]
         journal.parent.mkdir(parents=True, exist_ok=True)
@@ -626,6 +832,12 @@ def main() -> int:
             {
                 "articles": totals.articles,
                 "unmeasured": totals.unmeasured,
+                "window": {
+                    "months": args.months,
+                    "months_ago": args.months_ago,
+                    "first": windows[-1][0],
+                    "last": windows[0][1],
+                },
                 "rows": [r.to_dict() for r in sorted(totals.rows, key=lambda r: r.pmcid)],
             },
             indent=2,

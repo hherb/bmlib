@@ -78,12 +78,35 @@ class JATSFigureInfo:
 
 @dataclass
 class JATSTableInfo:
-    """Parsed table metadata with pre-rendered HTML content."""
+    """Parsed table metadata with pre-rendered HTML content.
+
+    ``graphic_url`` is the table's own ``<graphic>`` deposit, filled the way a
+    figure's is and by the same ranking. A ``<table-wrap>`` whose only content
+    is an image — a scanned or typographically complex table — otherwise
+    carries an id, a label and a caption over nothing, which is
+    indistinguishable from an empty one (issue #127). A ``<table-wrap>`` may
+    carry both a ``<table>`` and a ``<graphic>``, so both fields may be set;
+    which one to show is the renderer's choice, and ``to_html()`` shows the
+    markup. A caller that wants the facsimile — because the markup lost a
+    merged cell, or because it is showing the page as published — reads this
+    field directly.
+
+    ``graphic_url`` is ``str | None`` while ``html_content`` beside it is
+    ``str``, which is deliberate on both counts: ``html_content`` is rendered
+    output, where empty and absent are the same state and ``""`` is the
+    natural bottom, whereas ``graphic_url`` is a value the document either
+    deposited or did not, and ``""`` is not a valid href. Matching
+    :class:`JATSFigureInfo`'s already-shipped ``str | None`` matters more than
+    matching the neighbouring field, since a caller writing ``if
+    x.graphic_url`` over both exhibits should not have to know which class it
+    is holding.
+    """
 
     id: str
     label: str
     caption: str
     html_content: str = ""
+    graphic_url: str | None = None
 
 
 @dataclass

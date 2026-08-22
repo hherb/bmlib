@@ -8,6 +8,66 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **`JATSTableInfo.graphic_url`** (#127) — a `<table-wrap>` whose content is a
+  `<graphic>` keeps its image. A scanned or typographically complex table used
+  to lose its only content: the parser returned an id, a label and a caption
+  over nothing, which is indistinguishable from an empty `<table-wrap>`. The
+  deposit is chosen among several by the same ranking a figure's is, moved
+  into a shared `_GraphicHolder` rather than written twice, because two copies
+  of a rule that heavily argued are two things to keep in step. **Whether a
+  table is ever deposited with several `<graphic>` is not measured**: every
+  one of the 11 image-only tables below carries exactly one, declaring no
+  `content-type`, no `specific-use` and no `<alternatives>`, so ranking and
+  plain first-wins agree and the rule is unexercised rather than confirmed.
+  The sampler now counts the table side so a later draw can settle it (#135).
+  A deposited href is stripped first: XML normalises a pretty-printed
+  attribute to spaces rather than collapsing it, and a padded href is truthy,
+  so it would take the ranking slot, block the real deposit behind it and
+  render as a broken `src`. No instance in either corpus (2,346 deposits) —
+  the guard is for a population measured empty. `to_html()` renders the image
+  as an `<img>`, but **only where there is no `<table>` markup**: a
+  `<table-wrap>` may carry both, and where it does the markup is the better
+  rendition. The model holds the href either way.
+
+  **Measured on two windows, and the second is what makes it visible.** In the
+  committed recent draw (300 articles from the last two years) the population
+  is **0 of 642 tables**. In a second draw of 300 articles from 1996-1998
+  (`tests/data/jats_exhibits.backfill.json`, taken with the sampler's new
+  `--months-ago`) it is **11 of 93 — 11.8% [6.7-20.0]**. Those 11 sit in 2
+  articles of 300, both from one journal, and in each they are *every* table
+  the article has (6 of 6, 5 of 5). So it is a per-deposit property like
+  eLife's figure nesting rather than a general rate — and where it fires the
+  article loses its whole tabular content. PMC3437083 and PMC3437093 are the
+  two; both are clinical papers whose data is entirely in those tables.
+
+- **`--months-ago` on `scripts/sample_jats_exhibits.py`** — the stratified
+  draw can be displaced backwards by whole months. A stratified sample of
+  *recent* deposits is still one window, and #127's population lives in
+  back-filled material the default draw cannot see at all.
+
+  Three rules keep a displaced draw from quietly becoming the evidence.
+  **A negative offset is refused**, at the entry: `skip` is both a loop bound
+  and a slice index, so `--months-ago -1` returned a single window from two
+  years ago and `-24` returned none at all, each printed as a rate with a
+  Wilson interval — the same shape as `sync()`'s negative `recheck_days`.
+  **A displaced draw must name its own `-o`**, since the default path is the
+  recent corpus and the journal follows it, so writing there would replace
+  that corpus under its name or pool two windows into a number describing
+  neither. And **the written corpus records its `window`**, because the strata
+  are counted back from *today* and the same command run later draws a
+  different sample — without it "1996-1998" lives only in prose.
+
+- **The table side of #117's ranking is counted** (#135) —
+  `tables_with_graphic`, `tables_multi_graphic`, `tables_first_is_thumb`,
+  `tables_last_is_thumb` and `tables_with_both`, in their own report section
+  and deliberately **not** folded into the figure counters, whose percentages
+  are cited in `jats_parser` and CLAUDE.md and would be invalidated by a wider
+  denominator. A row written before these carries none of them, and each would
+  then sum to zero — indistinguishable from a draw in which no table deposits
+  an image, which is the exact misreading #127 needed two windows to correct.
+  So absence is loaded as a sentinel and reported as **NOT MEASURED**, never
+  as 0%.
+
 - **`scripts/sample_jats_exhibits.py`** (#131), the live runner behind the
   JATS exhibit rules below — the fifth in `scripts/`, and the one to re-run
   before changing `_ARCHIVAL_MIME_SUBTYPES`, `_ARCHIVAL_EXTENSIONS`,
@@ -147,9 +207,9 @@ All notable changes to bmlib are documented here. The format is based on
   Same
   principle as the `<label>` parent test, and for the same reason: no
   enumeration of the containers that may hold a `<graphic>`. A table's own
-  `<graphic>` still has nowhere to go, since `JATSTableInfo` has no graphic
-  field; it is dropped with a DEBUG line naming the href and the table, and
-  the model gap is filed as **#127**.
+  `<graphic>` was left with nowhere to go, `JATSTableInfo` having no graphic
+  field, and was dropped with a DEBUG line naming the href and the table. That
+  model gap was filed as **#127** and is fixed above, in this same release.
 
 - **An inner exhibit's label and caption went to the exhibit enclosing it.**
   Found while pinning #116's exhibit-scoped label rule, and the same defect

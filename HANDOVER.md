@@ -1,130 +1,70 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-22. **0.10.0 is released and on PyPI**; five changes
+_Last updated: 2026-08-22. **0.10.0 is released and on PyPI**; six changes
 sit unreleased on `main` — #73's atomic template install (PR #102), #96/#105's
 partitioning of an over-cap PubMed day (PRs #106 and #114), #109's typed
-article-id (PR #113) and #110/#111's JATS sub-article and contributor-group
-fixes (PR #118) — plus **this session's exhibit-nesting fixes, on
-`fix/115-117-jats-exhibit-nesting`**. All five version places agree at 0.10.0.
-Four of the five unreleased changes are `fulltext` JATS fixes filed within
+article-id (PR #113), #110/#111's JATS sub-article and contributor-group
+fixes (PR #118) and #115/#116/#117/#131's exhibit nesting, ranking and
+sampler (PR #126, merged) — plus **this session's #127, on
+`fix/127-table-graphic`**. All five version places agree at 0.10.0.
+Four of the six unreleased changes are `fulltext` JATS fixes filed within
 days of each other; whoever cuts the next release should describe them
-together.
+together. Every unreleased ROADMAP row now carries an `*(unreleased)*`
+marker; eight did not, and #109 had no row at all.
 
-**Two of them move what a caller of `JATSParser` gets**, and neither moves
+**Three of them move what a caller of `JATSParser` gets**, and none moves
 what a bmlib *sync* stores. #111 populates an author list that was empty for
-the majority of open-access articles. This session's #115/#117 change
-`JATSArticle.figures` and `.tables` — figures that were missing now appear,
-and a figure's `graphic_url` changes from a thumbnail to the full image for
-roughly half of all figures. No bmlib path carries `figures`, `tables` or
-`authors` anywhere: `service.py` never reads them, `FullTextResult` has none,
-and `publications` takes its authors from the fetchers. Only a downstream
-that calls `JATSParser` itself and persists the result needs to re-parse —
-but such a downstream should, because the stored values are not comparable
-across the upgrade.
+the majority of open-access articles. #115/#117 change `JATSArticle.figures`
+and `.tables` — figures that were missing now appear, and a figure's
+`graphic_url` changes from a thumbnail to the full image for roughly half of
+all figures. This session's #127 adds `JATSTableInfo.graphic_url` and fills
+it, so a table that came back with no content now carries its image. No bmlib
+path carries `figures`, `tables` or `authors` anywhere: `service.py` never
+reads them, `FullTextResult` has none, and `publications` takes its authors
+from the fetchers. Only a downstream that calls `JATSParser` itself and
+persists the result needs to re-parse — but such a downstream should, because
+the stored values are not comparable across the upgrade.
 
-**This session fixed #115, #116 and #117**, the three measured JATS exhibit
-defects, and two more found while pinning them. They are the same family as
-#110/#111 and were found the same way — on the way *out* of bmlib, by porting
-fixes to the Swift `BioMedLit` parser this module descends from
-(hherb/bmlibrarian_lite#166, whose `doc/cross_platform/jats_parsing.md`
-carries the normative state machine and whose `JATSNestingTests.swift` has the
-cases). All of them produce a well-formed result that reads as correct, so
-none raised anything.
+**This session fixed #127** — a `<table-wrap>` whose content is a `<graphic>`
+lost its only content — and corrected two pieces of repo state that were wrong
+on arrival. The fix itself is in `CHANGELOG.md`; three things are worth
+carrying forward.
 
-- **#115 — a nested `<fig>` dropped its parent.** eLife wraps every figure
-  supplement inside the figure it belongs to; the single `current_figure` slot
-  was overwritten by the inner open and cleared by the inner close, so the
-  parent's own `</fig>` found nothing to build. The original survey put
-  nesting at 19.6% of 225 articles; the new sampler re-measures it at **0.7%**
-  of a general draw (2 of 276, and 0 of a 300-article stratified draw), both
-  eLife — one publisher's house style costing about half of *its* figures,
-  not a general convention. PMC8754430 returned 9 of its 12. `in_figure` was cleared
-  too, so the parent's remaining internals were reprinted as article prose.
-- **#116 — a `<table-wrap-foot><fn><label>` overwrote the table's number.**
-  12.0% of the same 225 articles carry one; PMC12661592's single table was
-  labelled `a`. A swallowed label is not a blank — the renderer substitutes
-  `Table {i + 1}`, so the symptom is an invented number.
-- **#117 — a figure with several `<graphic>` resolved to the thumbnail.**
-  58.0% of 959 figures carry more than one and 52.9% end on a thumbnail.
+- **#127 was closed as COMPLETED in PR #126's merge batch without being
+  fixed.** No commit carried a closing keyword for it and the PR body closes
+  only #115-#117, so it was a batch slip: only the routing half had shipped,
+  and the model gap the issue is about was untouched. **When an issue is
+  closed alongside a PR, check the PR actually closes it** — a wrongly-closed
+  issue is invisible in exactly the way an open one is not, and no count of
+  open issues can catch it. (Eight unreleased ROADMAP rows carrying a bare
+  `✅ Done` were the other piece, fixed in this branch's first commit.)
+- **Mutation testing found the one new test that could not fail.** With the
+  owner test dropped — every `<graphic>` inside a `<table-wrap>` routed to the
+  table — the whole new class still passed, because each foreign deposit was
+  written *second*, where plain first-wins already answers it. That is the
+  trap `TestAGraphicBelongsToItsOwnExhibit` had already documented, and the
+  new class walked into it anyway. `<supplementary-material>` sits in
+  `<table-wrap>`'s content flow and so may be deposited *first*, which is the
+  case ownership actually decides; the footnote one is the control and says
+  so. 8/8 mutants die, including the figure branch's mirror mutation.
+- **A stratified sample of *recent* deposits is still one window.** The
+  committed corpus said #127's population was **0 of 642** tables, which reads
+  as "never happens". It is the last two years of deposits — born-digital XML.
+  The sampler grew `--months-ago`, and a 1996-1998 draw measures **11 of 93 —
+  11.8% [6.7-20.0]**, sitting in **2 articles of 300** from one journal where
+  they are *every* table the article has (6 of 6, 5 of 5). A per-deposit
+  property like eLife's nesting, not a rate — and where it fires the article
+  loses its whole tabular content — for a clinical paper, its data.
+  PMC3437083 and PMC3437093 were verified end-to-end. Stratification fixes
+  #131's accession-block bias, not a population living in back-filled material. **Where a rule is about how publishers *deposit*,
+  ask whether the draw can see those deposits before reading a zero as an
+  answer.**
 
-**Two more defects were found while pinning those, and both are fixed here.**
-`current_table` was the same single slot `current_figure` was, so a
-`<table-wrap>` inside another's `<table-wrap-foot>` lost the outer table
-outright — #115 on the other exhibit, unmeasured but structural. And `<label>`
-and caption text asked whether a figure was open *anywhere above* before
-considering the table, so an inner table's own number and legend went to the
-figure enclosing it; both now route to the innermost open exhibit. Neither the
-issues nor the Swift reference had the second one — it was the test for
-#116's "compare against the exhibit's depth, not zero" rule that exposed it.
-
-**Mutation testing killed 28 of 29 in the first pass, and code review found
-two more survivors it had missed.** Deriving either ambient flag from the
-*slot* list rather than the stack — `bool(self.figure_slots)`, a
-five-character edit — passed all 121 tests while swallowing every paragraph
-and section title after the first `</fig>`, which is the exact symptom the
-derived-flag design exists to prevent. Cause: **no fixture placed body prose
-after an exhibit close**, so the suite pinned the flag going on and never off.
-Both leak fixtures now carry prose after the close and a following section,
-and both mutants die.
-
-The one true survivor is the `is not None` filter on the reserved slots,
-unreachable by construction — expat rejects an unbalanced document, so no
-reservation is ever left unfilled. That premise is now itself pinned by
-`test_an_unbalanced_document_is_refused_outright`; without it a future lenient
-feed would turn two documented-unreachable filters into live hole-hiders in
-silence. Two gaps mutation found first were closed by adding the tests that
-earn them: a `<fn-group>`'s own heading, and two of the four archival
-mime-subtypes.
-
-**Code review of the PR found three more defects, all fixed here.** Two were
-regressions this branch introduced, both of them silent and both on the axis
-the branch exists to fix:
-
-- **An undeclared archival master beat the web image beside it.** `mime-subtype`
-  is optional, so an `<alternatives>` TIFF declaring none ranked `FULL` and,
-  deposited first under #117's strictly-better rule, permanently beat the JPEG
-  after it. Pre-#117 "keep the last" got that case right. An archival master
-  is now also recognised by extension; a thumbnail still is not, and the
-  asymmetry is argued at the site — a first deposit is accepted whatever its
-  rank, so demoting can only break a tie, never empty a figure.
-- **A nested exhibit's `<graphic>` was donated to the figure enclosing it.**
-  `<label>` and caption moved onto the stacks; `<graphic>` kept asking
-  `current_figure`. A `<table-wrap>`, `<fn>` or `<supplementary-material>`
-  nested in a `<fig>` handed over its image, and #117's ranking made it stick
-  where "keep the last" had overwritten it. Now routed by its owning element,
-  with `<alternatives>` transparent.
-- **The #116 footnote-depth rule was replaced by a parent test.** The depth
-  needed `_FOOTNOTE_CONTAINERS` to enumerate every container whose `<label>`
-  is not the exhibit's, and the enumeration could not be completed by
-  inspection: an `<fn-group>` directly inside a `<fig>`, a `<disp-formula>`'s
-  `(1)`, a `<media>`'s `Video 1` and eLife's `<supplementary-material>`
-  `Figure 1-source data 1` all still overwrote the number. A `<label>` is a
-  direct child of the exhibit it numbers, so `element_stack[-2]` decides
-  outright — no list, and exact where the depth was merely close.
-
-**Five further defects were filed rather than fixed**: **#127** (a table
-deposited as a `<graphic>` has nowhere to go — the drop is now logged, but
-`JATSTableInfo` needs the field), **#128** (`xlink:href` matched by literal
-prefix, so a document binding XLink elsewhere loses every figure image),
-**#129** (a non-numeric `colspan` raises out of the SAX handler and the
-service swallows it at DEBUG, costing the whole article), **#130** (a
-`<boxed-text><caption><title>` renames the enclosing section — #125's mirror,
-and best done with #123) and **#131** (these JATS populations have no in-repo
-sampler, unlike every other curated list).
-
-**Two further defects were filed rather than fixed** earlier in the session,
-both reproducing on `main` after this branch: **#123** (a nested `<caption>`
-truncates the enclosing caption *and* absorbs the inner element's legend — same shape as
-#115, but a depth counter is not enough, since the caption's *owner* is what
-the routing needs) and **#124** (footnote prose is dropped entirely, so the
-rendered cell reads `12.3a` while the note it points at exists nowhere; needs
-a model decision first, a `footnotes` field on both exhibit models).
-
-**Next up is one of the remaining non-JATS issues, the seven JATS ones filed
-this session (#123, #124, #127-#131), or Phase 3 of the bmlibrarian port,
-whose every row needs a design conversation.** #131 — a sampler for the JATS
-exhibit populations — is the one that unblocks the others: #127 and #128 both
-turn on quantities nothing in the repo can currently measure. See "Next up".
+**Next up is one of the remaining JATS issues (#123, #124, #125, #128, #129,
+#130), the three from the #118 review (#119, #120, #121), one of the older
+non-JATS ones (#86, #92, #94, #103, #112), or Phase 3 of the bmlibrarian port,
+whose every row needs a design conversation.** #123 and #124 are the two that
+still lose content. See "Next up".
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -163,8 +103,9 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 - **`~/src/bmlibrarian` still pins `bmlib[ollama]>=0.5.1,<0.6.0`**, so it has
   now missed six releases. Widening it is a downstream change, not a bmlib
   one.
-- **Tests: 2414 passing + 63 skipped on `main`**, **2505 + 63** on
-  `fix/115-117-jats-exhibit-nesting`, so 91 are this session's
+- **Tests: 2505 passing + 63 skipped on `main`**, **2520 + 63** on
+  `fix/127-table-graphic`, so 15 are this session's — 14 added and one
+  replaced, the DEBUG-line test that pinned #127's drop
   (`uv run pytest tests/ -q`). Both measured, not derived. The
   PostgreSQL half was **not** re-run for this session's branch and does not
   need to be: it touches no SQL, and the last measured figure with
@@ -225,51 +166,32 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-Sixteen once this PR closes #115-#117 (19 open as this is written), every one
-found by review or measurement rather than by a failing test, and **none of
-them loses records** — though **#120** loses a contributor, **#123**, **#124**
-and **#127** lose an exhibit's caption tail, its footnotes and a scanned
-table's only content, **#128** would lose every figure image in a document
-binding XLink to another prefix, **#129** loses a whole article to one
-malformed `colspan`, and **#119** feeds a scan text that is not the article's.
-Count this against the repo before trusting it: this line has been wrong in
-two consecutive sessions. (**#56, #68, #72 and
-#79** shipped in 0.9.1. **#78, #81, #88–#91, #95, #98 and #99** shipped in
-0.10.0 — PRs #85, #87, #93, #97, #100. **#73** is on `main` unreleased in PR
-#102, whose own review filed **#103**. **#96** closed with PR #106, as correct
-rather than as fixed. **#105 and #107** closed with PR #114 — #107 dissolved
-rather than being built: its saturation of `SyncReport.errors` came from a
-permanent, structural refusal that no longer happens, and what remains of it
-is in `docs/DECISIONS.md`. **#109** closed with PR #113. **#110 and #111**
-closed with PR #118, whose review filed **#119**, **#120** and **#121**.
-**#115, #116 and #117** close with this session's PR, which filed **#123**,
-**#124**, and — from its own review — **#127**, **#128**, **#129**, **#130**
-and **#131**.)
+Fifteen once this PR closes #127, counting #132 which it filed (16 open as
+this is written, one of them #127 itself). Every one was found by review or
+measurement rather than by a failing test, and **none of them loses records**
+— though **#120** loses a contributor, **#123** and **#124** lose an exhibit's
+caption tail and its footnotes, **#128** would lose every figure image in a
+document binding XLink to another prefix, **#129** loses a whole article to
+one malformed `colspan`, and **#119** feeds a scan text that is not the
+article's. Count this against the repo before trusting it: this line has been
+wrong in three consecutive sessions, and this session found a further way for
+it to be wrong — an issue **closed as COMPLETED without being fixed**, which
+no count of open issues can catch. (**#56, #68, #72 and #79** shipped in
+0.9.1. **#78, #81, #88–#91, #95, #98 and #99** shipped in 0.10.0 — PRs #85,
+#87, #93, #97, #100. **#73** is on `main` unreleased in PR #102, whose own
+review filed **#103**. **#96** closed with PR #106, as correct rather than as
+fixed. **#105 and #107** closed with PR #114. **#109** closed with PR #113.
+**#110 and #111** closed with PR #118, whose review filed **#119**, **#120**
+and **#121**. **#115, #116, #117 and #131** closed with PR #126, which filed
+**#123**, **#124**, **#127**, **#128**, **#129** and **#130**. **#127**
+closes with this session's PR, which filed **#132**.)
 
-**#131 is closed by this session**: `scripts/sample_jats_exhibits.py` is the
-missing sampler, and running it settled three things the code was asserting
-rather than measuring. Two rules have an **empty** population — no
-`<alternatives>` member in 276 articles declares a `mime-subtype` or is
-archival at all, and exactly one `<graphic>` is owned by a non-exhibit inside
-an exhibit (a `<td>`, resolving the same either way) — so both are defensive,
-and the comments now say so instead of implying a population. The `<label>`
-parent rule's premise measures **full**: 2,033 exhibits carry a direct-child
-label and 2,033 carry one anywhere, so it cannot lose a label. And **the
-19.6% nesting figure does not reproduce**: it is 0.7% of a general draw (2 of
-276) and 0.0% of a 300-article stratified draw, with both nesting articles
-eLife — so #115 fixes one publisher's house style, which costs about half of
-*that publisher's* figures, rather than a general convention. #117's own
-figures re-measure at 49.9% / 49.5% against the cited 58.0% / 52.9%.
+**#128 is weaker than filed**: every `<graphic>` href in both draws uses the
+`xlink` prefix and every article binds XLink to it (1,036 in the backfill draw
+alone), so the literal-prefix match is safe on measured evidence. Worth
+downgrading rather than closing — the sample cannot prove no publisher does
+otherwise.
 
-**#128 is weaker than filed**: all 2,811 `<graphic>` hrefs in the sample use
-the `xlink` prefix and every article binds XLink to it, so the literal-prefix
-match is safe on measured evidence. Worth downgrading rather than closing —
-the sample cannot prove no publisher does otherwise.
-
-**#127-#130 came from the review of PR #126** and are described in the session
-summary above. **#131** is the one to do first: it is the missing sampler for
-the JATS exhibit populations, and both #127 and #128 turn on quantities
-nothing in the repo can currently measure.
 
 **#123 — a nested `<caption>` truncates the enclosing caption and absorbs the
 inner element's legend.** `in_caption` is a stored boolean cleared by the
@@ -321,26 +243,32 @@ whole life of #111 — 108 of 183 sampled articles parsed to zero authors
 before the fix and nothing said so. #111 is fixed; the detector is not, so
 the next cause hides just as long.
 
-**#112 — three of the transparency funder-matching counts do not reproduce
-against the committed corpus.** Filed with #109–#111, from the same Swift
-port: `_is_industry_funder` was re-derived against
-`tests/data/funder_names.json` so the Swift side could carry the same
-justification, and three numbers disagree. **Nothing is a behaviour
-regression** — `tests/test_funder_matching.py` passes and both floors still
-hold — but `bmlib/transparency/analyzer.py` states measurements as the reason
-for each inclusion and exclusion, and those are what a future edit is checked
-against. The headline pair is stated as precision 0.917 / recall 0.324 and
-measures 0.909 / 0.333; the stated figures are self-consistent with a corpus
-holding 34 industry entries where this one holds 30, so they were taken
-against a revision never committed — the corpus has exactly one commit
-(be456a2) and the matcher is byte-identical since, so this is not drift.
-`pharmaceutic` is claimed to have no false positive and has one, and it is
-the *only* false positive in the matcher — the thing capping precision below
-1.000, and precisely the claim an editor adding a fourth stem would rely on.
-`co` is excluded for a collision the corpus does not contain, at the cost of
-a real true positive. Whoever takes this should re-derive every figure in
-those comments in one pass and say in each comment which corpus revision it
-was measured against, rather than fixing the three named.
+**#112 and #132 — stated measurements that do not reproduce against the
+committed corpus.** Two instances of one failure, worth taking together.
+**#132** (filed this session): CLAUDE.md, the `[Unreleased]` CHANGELOG body
+and three comment blocks in `jats_parser.py` cite "276 open-access articles
+carrying 2,067 exhibits", while `tests/data/jats_exhibits.json` is a
+**300**-article draw carrying 1,467 and no quoted figure matches it — the
+later stratified run overwrote the corpus and the journals are gitignored.
+Every *conclusion* still reproduces on the committed draw, so nothing is a
+behaviour defect; do it **before the release that ships these rules**, while
+the CHANGELOG body is still free to edit, and note that #115's "0.7%, both
+eLife" needs care rather than substitution — the committed draw carries 0
+nested exhibits, so that figure has no in-repo evidence at all.
+**#112**, on the transparency funder-matching counts, is the same shape one
+layer deeper. `bmlib/transparency/analyzer.py` states a measurement as the
+reason for each stem it includes and excludes, and three disagree with
+`tests/data/funder_names.json`: the headline pair reads 0.917 / 0.324 and
+measures 0.909 / 0.333, `pharmaceutic` is claimed to have no false positive
+and has the matcher's *only* one — the thing capping precision below 1.000 —
+and `co` is excluded for a collision the corpus does not contain, at the cost
+of a real true positive. Not drift: the corpus has one commit (be456a2) and
+the matcher is byte-identical since, and the stated figures are
+self-consistent with a corpus holding 34 industry entries where this one holds
+30, so they were taken against a revision never committed. Nothing is a
+behaviour regression — `tests/test_funder_matching.py` passes and both floors
+hold. Re-derive every figure in one pass rather than fixing the three named,
+and say in each comment which corpus revision it came from.
 
 **#103 — `install_defaults()` reserves no `NAME_MAX` headroom for the
 temporary name.** `atomic_write()` stages through a name 38 characters longer
@@ -355,16 +283,12 @@ to say so in the docstring, not to cap — capping would rename a caller's
 template and `render("<name>")` would then not find it.
 
 **#94 — bioRxiv's envelope shapes are unmeasured**, filed for the reason #92
-was: the second round's guard refuses a body carrying *neither* a
-`collection` key *nor* messages, rather than the obvious
-`isinstance(data.get("collection"), list)`. bioRxiv is known to report a
-quiet day by omitting `total`; whether it also omits `collection` is not
-known, and requiring a key a quiet day may not send would fail that day on
-every later run for the life of the installation. One case therefore stays
-indistinguishable from a quiet day — an error body carrying messages and no
-collection. The sampler measures both that and the `messages[0].status`
-vocabulary. **Do not tighten the guard without running it**, and note that
-the tests deliberately pin *both* possible quiet-day shapes so the guard
+was: its guard rests on an unmeasured quantity. The full argument is in
+CLAUDE.md under "A completed day is a durable claim" — in short, one error
+body (messages, no `collection`) stays indistinguishable from a quiet day,
+and the sampler this issue asks for would measure that and the
+`messages[0].status` vocabulary. **Do not tighten the guard without running
+it**; the tests deliberately pin *both* possible quiet-day shapes so it
 cannot come to depend on the unmeasured answer.
 
 **#92 — the shortfall floor is unmeasured**, filed as part of the #88 fix
@@ -384,15 +308,14 @@ this floor was worried about — a page is the slice it named or it is refused �
 so whatever the sample shows, it will not be that.
 
 **#86 — `docs/manual/llm.md` documents `LLMClient.generate` and
-`LLMClient.embed` twice each**, found while updating signatures for #81 and
-deliberately not folded into it. The same defect as #31 (`fulltext.md`'s
-doubled `## PDF Conversion`), and the same reason it is worth a session
-rather than a delete: the copies differ, so merging them is a judgement
-about which prose and which examples survive — one `generate` has the
-example, and the two `embed` sections disagree about whether the default is
-the provider's *chat* default model (the `embed_batch` section has it
-right). #81 updated **both** copies of `generate` so the duplication did not
-silently become a drift.
+`LLMClient.embed` twice each**, found while updating signatures for #81. The
+same defect as #31 (`fulltext.md`'s doubled `## PDF Conversion`), and worth a
+session rather than a delete for the same reason: the copies differ, so
+merging them is a judgement about which prose and examples survive — one
+`generate` has the example, and the two `embed` sections disagree about
+whether the default is the provider's *chat* default model (`embed_batch`'s
+has it right). #81 updated both copies of `generate`, so the duplication has
+not yet become a drift.
 
 ### Worth doing, not yet an issue
 

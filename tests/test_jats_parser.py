@@ -16,7 +16,6 @@
 
 """Tests for bmlib.fulltext.jats_parser."""
 
-import logging
 import xml.sax
 from pathlib import Path
 
@@ -192,6 +191,39 @@ class TestArticleIdentifiers:
         article = JATSParser(_article_with_ids(ids)).parse()
 
         assert article.pmc_id == "PMC12759138"
+
+
+class TestAnExhibitBuildersFirstArgumentIsItsId:
+    """``_GraphicHolder`` is a base class, so its fields lead by default.
+
+    Both builders inherit ``graphic_href``/``graphic_rank``, and a dataclass
+    puts a base's fields *first* in the generated ``__init__`` — so without
+    ``kw_only`` on the base, ``_TableBuilder("t1")`` sets the href and leaves
+    ``graphic_rank`` ``None`` beside it, which is the one pairing
+    ``offer_graphic`` exists to maintain. The next deposit of any rank then
+    wins outright. Both parameters are ``str``-compatible at position 0, so
+    mypy cannot see it; only this can.
+    """
+
+    def test_a_positional_argument_is_the_id_for_both_builders(self):
+        from bmlib.fulltext.jats_parser import _FigureBuilder, _TableBuilder
+
+        assert _FigureBuilder("f1").id == "f1"
+        assert _TableBuilder("t1").id == "t1"
+        assert _TableBuilder("t1").graphic_href == ""
+
+    def test_the_deposit_fields_cannot_be_passed_positionally(self):
+        """``offer_graphic`` is their only legitimate writer.
+
+        ``_FigureBuilder`` declares exactly three fields of its own, so a
+        fourth positional argument can only be reaching an inherited one — it
+        raises here and would silently populate the deposit fields if the base
+        were an ordinary dataclass.
+        """
+        from bmlib.fulltext.jats_parser import _FigureBuilder
+
+        with pytest.raises(TypeError):
+            _FigureBuilder("f1", "Figure 1.", "A caption.", "sneaked-in.png")
 
 
 class TestTableBuilderHeaderClassification:
@@ -2040,6 +2072,13 @@ class TestAGraphicBelongsToItsOwnExhibit:
     """
 
     def test_a_nested_tables_graphic_is_not_the_figures_image(self):
+        """Both halves are asserted, and the table half only became meaningful
+        with #127: before it there was no field to receive the href, so the
+        deposit's arriving nowhere was indistinguishable from its arriving in
+        the right place. Asserting the figure alone leaves `and not
+        self.figure_stack` on the table branch alive — a mutant that silently
+        drops the whole content of every table nested inside a figure.
+        """
         article = JATSParser(
             _figure_with_graphics("""
         <table-wrap id="t1"><graphic xlink:href="tbl.jpg"/></table-wrap>
@@ -2047,6 +2086,7 @@ class TestAGraphicBelongsToItsOwnExhibit:
         ).parse()
 
         assert article.figures[0].graphic_url == "real.jpg"
+        assert article.tables[0].graphic_url == "tbl.jpg"
 
     def test_a_footnotes_graphic_is_not_the_figures_image(self):
         article = JATSParser(
@@ -2116,27 +2156,239 @@ class TestAGraphicBelongsToItsOwnExhibit:
             ("Results", ("Section prose.",))
         ]
 
-    def test_a_tables_own_graphic_is_dropped_and_said_so(self, caplog):
-        """A known limitation, pinned rather than left to be rediscovered.
 
-        ``JATSTableInfo`` has no graphic field, so a table deposited as a
-        scanned image renders as nothing and is otherwise indistinguishable
-        from an empty ``<table-wrap>``. Issue #127 carries the model change;
-        the DEBUG line is what makes the drop visible meanwhile.
-        """
-        with caplog.at_level(logging.DEBUG, logger="bmlib.fulltext.jats_parser"):
-            article = JATSParser(
-                _article_with_body("""
+def _table_containing(markup: str) -> bytes:
+    return _article_with_body(f"""
     <sec><title>Results</title>
       <table-wrap id="t1"><label>Table 1.</label>
-        <graphic xlink:href="scanned-table.png"/>
+        <caption><p>Baseline characteristics.</p></caption>
+{markup}
       </table-wrap>
     </sec>""")
-            ).parse()
 
-        assert [(t.id, t.label) for t in article.tables] == [("t1", "Table 1.")]
-        assert "scanned-table.png" in caplog.text
-        assert "t1" in caplog.text
+
+class TestATableDepositedAsAnImageKeepsIt:
+    """A ``<table-wrap>`` whose content is a ``<graphic>`` — issue #127.
+
+    ``JATSTableInfo`` carried ``html_content`` and no graphic field, so a
+    scanned or typographically complex table lost its only content: the parser
+    returned the id, the label and the caption over nothing, which is
+    indistinguishable from an empty ``<table-wrap>``. PR #126 fixed the half
+    that was *loud* in the wrong place — the image was being donated to an
+    enclosing ``<fig>`` — and left the drop, naming it at DEBUG.
+
+    The deposit is ranked exactly as a figure's is (#117): a scanned table may
+    be deposited beside a thumbnail too, and the rule lives in one place rather
+    than being re-derived here.
+    """
+
+    def test_a_table_deposited_as_an_image_keeps_its_href(self):
+        article = JATSParser(
+            _table_containing('        <graphic xlink:href="scanned-table.png"/>')
+        ).parse()
+
+        assert [(t.id, t.label, t.graphic_url) for t in article.tables] == [
+            ("t1", "Table 1.", "scanned-table.png")
+        ]
+
+    def test_a_thumbnail_deposited_beside_it_does_not_win(self):
+        article = JATSParser(
+            _table_containing("""
+        <graphic xlink:href="scan.jpg"/>
+        <graphic content-type="thumbnail" xlink:href="scan-thumb.gif"/>""")
+        ).parse()
+
+        assert article.tables[0].graphic_url == "scan.jpg"
+
+    def test_a_thumbnail_deposited_first_does_not_win_either(self):
+        """The half plain first-wins cannot answer, and the ranking can."""
+        article = JATSParser(
+            _table_containing("""
+        <graphic content-type="thumbnail" xlink:href="scan-thumb.gif"/>
+        <graphic xlink:href="scan.jpg"/>""")
+        ).parse()
+
+        assert article.tables[0].graphic_url == "scan.jpg"
+
+    def test_supplementary_materials_graphic_is_not_the_tables_image(self):
+        """The case ownership actually decides, and the one that can fail.
+
+        ``<supplementary-material>`` sits in ``<table-wrap>``'s content flow, so
+        it may be deposited *before* the table's own image — and then plain
+        first-wins keeps the wrong href, since both rank ``FULL`` and
+        ``offer_graphic`` accepts only a strictly better deposit. Mutation
+        testing found this: with the owner test dropped, the whole class passed
+        because every foreign deposit here was written second.
+        """
+        article = JATSParser(
+            _table_containing("""
+        <supplementary-material><graphic xlink:href="supp.jpg"/></supplementary-material>
+        <graphic xlink:href="scan.jpg"/>""")
+        ).parse()
+
+        assert article.tables[0].graphic_url == "scan.jpg"
+
+    def test_a_footnotes_graphic_is_not_the_tables_image(self):
+        """The mirror order, which must keep working.
+
+        JATS puts ``<table-wrap-foot>`` after the table's content, so a
+        footnote's image can only ever be deposited second and first-wins
+        already answers it. Kept as the control: it would pass with ownership
+        never consulted.
+        """
+        article = JATSParser(
+            _table_containing("""
+        <graphic xlink:href="scan.jpg"/>
+        <table-wrap-foot><fn><p><graphic xlink:href="icon.gif"/></p></fn></table-wrap-foot>""")
+        ).parse()
+
+        assert article.tables[0].graphic_url == "scan.jpg"
+
+    def test_a_nested_figures_graphic_is_not_the_tables_image(self):
+        """The mirror of ``TestAGraphicBelongsToItsOwnExhibit``'s first case.
+
+        Both exhibits now hold a graphic, so donating one to the other is a
+        live hazard in *both* directions rather than one.
+        """
+        article = JATSParser(
+            _table_containing("""
+        <fig id="f1"><graphic xlink:href="inset.jpg"/></fig>
+        <graphic xlink:href="scan.jpg"/>""")
+        ).parse()
+
+        assert article.tables[0].graphic_url == "scan.jpg"
+        assert article.figures[0].graphic_url == "inset.jpg"
+
+    def test_a_nested_tables_graphic_is_not_the_outer_tables_image(self):
+        """#115's defect shape, in the direction #127 opened.
+
+        JATS lets a ``<table-wrap>`` open inside another's
+        ``<table-wrap-foot>``, and until #127 the inner one had no graphic
+        field, so this direction could not be got wrong. It can now: routing
+        the deposit to ``table_stack[0]`` rather than the innermost open table
+        donates the supplement's image to the table enclosing it, and #117's
+        ranking then makes that permanent — both rank ``FULL``, so whichever
+        arrives first wins for good.
+        """
+        article = JATSParser(
+            _table_containing("""
+        <graphic xlink:href="outer.png"/>
+        <table-wrap-foot><table-wrap id="inner">
+          <graphic xlink:href="inner.png"/>
+        </table-wrap></table-wrap-foot>""")
+        ).parse()
+
+        assert [(t.id, t.graphic_url) for t in article.tables] == [
+            ("t1", "outer.png"),
+            ("inner", "inner.png"),
+        ]
+
+    def test_the_outer_tables_graphic_wins_from_either_position(self):
+        """The mirror order, and the one that can actually fail.
+
+        With the outer table's own deposit first, plain "whoever arrives
+        first" already answers it. Deposited *after* the nested table's, only
+        routing by the innermost open exhibit keeps them apart.
+        """
+        article = JATSParser(
+            _table_containing("""
+        <table-wrap-foot><table-wrap id="inner">
+          <graphic xlink:href="inner.png"/>
+        </table-wrap></table-wrap-foot>
+        <graphic xlink:href="outer.png"/>""")
+        ).parse()
+
+        assert [(t.id, t.graphic_url) for t in article.tables] == [
+            ("t1", "outer.png"),
+            ("inner", "inner.png"),
+        ]
+
+    def test_an_inline_image_in_a_cell_is_not_the_tables_deposit(self):
+        """The one instance the 276-article draw found of a non-exhibit owner.
+
+        It was recorded as resolving the same either way, which was true only
+        while ``JATSTableInfo`` had nowhere to put an href. Now it would land
+        in ``graphic_url`` as a cell decoration masquerading as the table's
+        own rendition, so the case has to be pinned rather than noted.
+        """
+        article = JATSParser(
+            _table_containing("""
+        <table><tbody><tr><td><graphic xlink:href="tick.gif"/></td></tr></tbody></table>""")
+        ).parse()
+
+        assert article.tables[0].graphic_url is None
+
+    def test_a_wrapped_href_does_not_displace_the_real_deposit(self):
+        """XML normalises a pretty-printed attribute; it does not collapse it.
+
+        So a href wrapped across lines arrives padded with spaces, which is
+        truthy — it would pass the emptiness guard, take the ranking slot, and
+        block the real deposit behind it. Neither committed corpus carries an
+        instance; this pins a guard whose population measures empty.
+        """
+        article, html = JATSParser(
+            _table_containing("""
+        <graphic xlink:href="
+            "/>
+        <graphic xlink:href="scan.png"/>""")
+        ).parse_with_html()
+
+        assert article.tables[0].graphic_url == "scan.png"
+        assert "bin/scan.png" in html
+
+    def test_a_table_carrying_no_graphic_reports_none(self):
+        """The negative control: the field is not filled from somewhere else."""
+        article = JATSParser(
+            _table_containing("""
+        <table><tbody><tr><td>1</td></tr></tbody></table>""")
+        ).parse()
+
+        assert article.tables[0].graphic_url is None
+
+
+class TestRenderingATableDepositedAsAnImage:
+    """``_build_html``'s table branch, which emitted nothing for a graphic.
+
+    The image is rendered **only** where there is no ``<table>`` markup. A
+    ``<table-wrap>`` may carry both, and where it does the markup is the better
+    rendition — emitting both shows the same table twice. The model carries the
+    href either way, because that is data and the choice of rendition is the
+    renderer's.
+    """
+
+    def test_the_image_is_rendered_where_there_is_no_markup(self):
+        html = JATSParser(
+            _table_containing('        <graphic xlink:href="scanned-table.png"/>')
+        ).to_html()
+
+        assert "scanned-table.png" in html
+        assert "<img" in html
+
+    def test_the_href_is_resolved_against_the_articles_pmc_id(self):
+        """A table's deposit is resolved exactly as a figure's is."""
+        html = JATSParser(
+            _table_containing('        <graphic xlink:href="scanned-table"/>')
+        ).to_html()
+
+        assert "https://europepmc.org/articles/PMC1234567/bin/scanned-table.jpg" in html
+
+    def test_the_label_is_the_images_alt_text(self):
+        html = JATSParser(
+            _table_containing('        <graphic xlink:href="scanned-table.png"/>')
+        ).to_html()
+
+        assert 'alt="Table 1."' in html
+
+    def test_markup_and_image_together_render_the_markup_alone(self):
+        article, html = JATSParser(
+            _table_containing("""
+        <graphic xlink:href="scan.png"/>
+        <table><tbody><tr><td>1</td></tr></tbody></table>""")
+        ).parse_with_html()
+
+        assert article.tables[0].graphic_url == "scan.png"
+        assert "<table>" in html
+        assert "scan.png" not in html
 
 
 def _figure_containing(markup: str) -> bytes:
