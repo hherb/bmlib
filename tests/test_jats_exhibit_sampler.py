@@ -250,6 +250,29 @@ class TestAnArticleThatCouldNotBeMeasuredIsNeverAFinding:
         assert sampler.print_report(totals) is True
         assert "PREMISE HOLDS" in capsys.readouterr().out
 
+    def test_image_only_tables_are_reported_as_a_share_of_tables(self, capsys):
+        """A bare count cannot be compared across two draws of different sizes.
+
+        #127's population is the one measured on two windows — 0 of 642 recent
+        tables against a double-digit share of older ones — so it has to print
+        as a rate, and the denominator has to be the tables rather than every
+        exhibit, or a figure-heavy draw dilutes it.
+        """
+        totals = sampler.Totals()
+        totals.add(
+            sampler.measure_article(
+                "PMC1",
+                _article("""
+                <table-wrap id="t1"><graphic xlink:href="scan.png"/></table-wrap>
+                <table-wrap id="t2"><table><tbody><tr><td>1</td></tr></tbody></table></table-wrap>
+                <fig id="f1"><graphic xlink:href="f1.jpg"/></fig>"""),
+            )
+        )
+
+        assert sampler.print_report(totals) is True
+        line = next(ln for ln in capsys.readouterr().out.splitlines() if "and no <table>" in ln)
+        assert "50.0%" in line, line
+
 
 class TestTheSamplerDoesNotShareTheParsersPredicates:
     """A corpus labelled by the rule under test can only confirm that rule."""

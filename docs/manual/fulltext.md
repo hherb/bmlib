@@ -536,6 +536,13 @@ pass.
 > section's paragraphs or title. A `<caption>` holding both a `<title>` and one
 > or more `<p>` is space-joined in document order.
 >
+> **A table may be deposited as an image.** A `<table-wrap>` whose content is
+> a `<graphic>` — a scanned or typographically complex table — puts its href in
+> `JATSTableInfo.graphic_url`, chosen among several deposits by the same
+> ranking a figure's is (below) *(unreleased, #127)*. It used to be dropped,
+> and the table came back as an id, a label and a caption over nothing —
+> indistinguishable from an empty `<table-wrap>`.
+
 > Everything else inside a `<fig>` or `<table-wrap>` is furniture and is kept
 > out of the prose: table cell text reaches `html_content` through the table
 > renderer, and cell and `<table-wrap-foot>` paragraphs are not repeated into
@@ -637,7 +644,7 @@ class JATSFigureInfo:
     id: str                        # XML id for cross-references
     label: str                     # e.g. "Figure 1"
     caption: str
-    graphic_url: str | None = None # Constructed Europe PMC image URL
+    graphic_url: str | None = None # The <graphic> href, as deposited
 ```
 
 ### JATSTableInfo
@@ -646,10 +653,22 @@ class JATSFigureInfo:
 @dataclass
 class JATSTableInfo:
     id: str
-    label: str              # e.g. "Table 1"
+    label: str                     # e.g. "Table 1"
     caption: str
-    html_content: str = ""  # Pre-rendered HTML <table>
+    html_content: str = ""         # Pre-rendered HTML <table>
+    graphic_url: str | None = None # The <graphic> href, as deposited
 ```
+
+`graphic_url` on both is the href **as the document deposited it**, which for
+Europe PMC is usually a bare filename. `to_html()` resolves it against the
+article's PMC id at render time; a caller reading the field itself gets the
+raw value and resolves it however it needs to.
+
+A `<table-wrap>` may carry a `<table>`, a `<graphic>`, or both, so
+`html_content` and `graphic_url` are independent. `to_html()` renders the
+markup where there is any and the image only otherwise — where a table
+carries both, the markup is the better rendition and showing both renders one
+table twice.
 
 ### JATSReferenceInfo
 

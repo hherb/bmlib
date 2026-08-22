@@ -548,7 +548,14 @@ def print_report(totals: Totals) -> bool:
     for name, count in foreign.most_common(8):
         print(f"      {name:<23} {count:>6}")
     image_only = totals.sum_of("tables_image_only")
-    print(f"   <table-wrap> with a <graphic> and no <table>: {image_only}   (issue #127)")
+    # A share of the TABLES, not of every exhibit: this population is the one
+    # measured on two windows, and a bare count cannot be compared across draws
+    # of different sizes while a figure-heavy draw would dilute an exhibit-wide
+    # denominator. Issue #127.
+    print(
+        f"   <table-wrap> with a <graphic> and no <table>: "
+        f"{image_only:>6}  {_pct(image_only, tables)}   (issue #127)"
+    )
     print(f"   xlink href namespaces: {dict(totals.counter_of('href_prefixes'))}   (issue #128)")
 
     print("\n6. NESTING  (issue #115's population)")
