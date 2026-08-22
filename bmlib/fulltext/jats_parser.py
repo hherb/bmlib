@@ -31,8 +31,9 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from html import escape as html_escape
 from io import BytesIO
-from typing import Generic, TypeVar
+from typing import ClassVar, Generic, TypeVar
 
+from bmlib.fulltext._parse_audit import ParseUnwindState, unwind_diagnostics
 from bmlib.fulltext.models import (
     JATSAbstractSection,
     JATSArticle,
@@ -514,6 +515,36 @@ def _pad_row(row: list[str], count: int) -> list[str]:
     return row + [""] * (count - len(row))
 
 
+def _read_span(attrs: xml.sax.xmlreader.AttributesImpl) -> int:
+    """Read a cell's ``colspan``, falling back to 1 on a value ``int()`` refuses.
+
+    ``colspan`` is CDATA in JATS, so ``"two"``, ``"1.5"`` and a
+    whitespace-only value are all well-formed markup. A bare ``int()`` raised
+    a ``ValueError`` from inside the SAX callback, which propagated out of
+    :meth:`JATSParser.parse` — and every call site in ``fulltext/service.py``
+    sits under a tier-level ``except Exception`` logging at DEBUG, so one
+    malformed attribute on one cell lost the whole article and the chain then
+    reported it as unavailable from that source (issue #129).
+
+    A cell spanning one column instead of two is a cosmetic defect in one
+    table; losing the article is not. ``rowspan`` needs no companion — this
+    module never reads it — and a negative or zero value needs none either,
+    since :meth:`_TableBuilder.start_cell` already clamps with ``max(1, …)``.
+
+    Args:
+        attrs: The cell element's attributes.
+
+    Returns:
+        The declared span, or 1 where the declaration will not parse.
+    """
+    raw = attrs.get("colspan", "1") or "1"
+    try:
+        return int(raw)
+    except ValueError:
+        logger.debug("Unparseable colspan=%r; treating the cell as one column", raw)
+        return 1
+
+
 # Elements that accumulate their own text content (push a new text buffer).
 _TEXT_ACCUMULATING = frozenset(
     {
@@ -694,6 +725,23 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # then collected as this article's authors.
         self.contrib_group_stack: list[str | None] = []
         self.in_contrib = False
+        # <surname> elements seen anywhere inside <front>, whether or not the
+        # contributor carrying one was collected. What tells a genuinely
+        # author-less article from a parse that looked in the wrong place
+        # (issue #121), and gated on `in_front` — a structural fact — rather
+        # than on `in_contrib`, which is set only once `_is_author_contrib`
+        # has said yes. Keyed on that, the counter would go to zero in
+        # exactly the situation it exists to detect: #111 dropped every
+        # author from 57% of open-access articles by answering that question
+        # wrongly, and a counter sharing the answer would have reported every
+        # one of them as author-less.
+        #
+        # `<back>` is excluded for the opposite reason — a bibliography is
+        # full of surnames and none of them is a contributor, so counted
+        # document-wide every author-less article with references would read
+        # as a defect. A suppressed <sub-article>'s <front> never sets the
+        # flag, so nested contributors are excluded for free.
+        self.front_surname_count = 0
         self.current_article_id_type: str | None = None
         self.current_author: _AuthorBuilder | None = None
 
@@ -834,6 +882,81 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
     def current_table(self) -> _TableBuilder | None:
         """The innermost open ``<table-wrap>``, for the same reason."""
         return self.table_stack[-1].builder if self.table_stack else None
+
+    # -- End-of-parse audit --------------------------------------------------
+
+    #: Routing state that is a bare flag or a single slot rather than a stack.
+    #: Reported as one grouped diagnostic — they all fail the same way, and an
+    #: operator reads them as a set. **Add a flag to the handler, add it
+    #: here**: an incomplete net is what lets the next one hide.
+    #:
+    #: `current_abstract_text` is deliberately absent. `</abstract>` flushes
+    #: its buffer without clearing it — only a suppressed *open* clears — so
+    #: it is non-empty at the end of every article that carries an abstract,
+    #: and including it would have made the audit fire on almost every real
+    #: document. `tests/test_jats_parser.py`'s `parser_log` fixture is what
+    #: caught that, and is why every fixture in that module is a
+    #: false-positive check.
+    _ROUTING_FLAGS: ClassVar[tuple[str, ...]] = (
+        "in_front",
+        "in_article_meta",
+        "in_contrib",
+        "in_abstract",
+        "in_body",
+        "in_back",
+        "in_ref_list",
+        "in_ref",
+        "in_ref_citation",
+        "in_ref_person_group",
+        "current_author",
+        "current_reference",
+        "current_article_id_type",
+        "current_xref_type",
+        "current_xref_rid",
+    )
+
+    def unwind_state(self) -> ParseUnwindState:
+        """Snapshot the routing state this parse ended with.
+
+        The handler-coupled half of the audit; :mod:`bmlib.fulltext._parse_audit`
+        holds the pure half that reads the snapshot. Split that way so the
+        predicates can be handed the residue a defect would leave without
+        having to build a handler and reach into fifteen of its attributes.
+
+        ``excess_text_buffers`` subtracts the one buffer ``text_stack`` always
+        holds, so a clean parse maps to the struct's defaults exactly.
+
+        Returns:
+            The state, all-default where the parse unwound cleanly.
+        """
+        return ParseUnwindState(
+            nested_article_depth=self.nested_article_depth,
+            open_sections=len(self.section_stack),
+            open_figures=len(self.figure_stack),
+            open_tables=len(self.table_stack),
+            open_captions=len(self.caption_stack),
+            open_contrib_groups=len(self.contrib_group_stack),
+            unfilled_figure_slots=sum(slot is None for slot in self.figure_slots),
+            unfilled_table_slots=sum(slot is None for slot in self.table_slots),
+            excess_text_buffers=max(0, len(self.text_stack) - 1),
+            open_elements=tuple(self.element_stack),
+            stuck_flags=tuple(name for name in self._ROUTING_FLAGS if getattr(self, name)),
+        )
+
+    def describe_article(self) -> str:
+        """Name the article this parse was of, for a diagnostic line.
+
+        An ERROR carrying no identity is unactionable in a bulk sync, where
+        the parse that produced it is one of thousands. Falls back through the
+        identifiers in the order a reader can act on them, and finally to the
+        title, which is set even for a document carrying no identifier at all.
+        """
+        for identifier in (self.pmc_id, self.doi, self.pmid):
+            if identifier:
+                return identifier
+        if self.title:
+            return f"'{self.title[:60]}'"
+        return "an article carrying no identifier or title"
 
     def build_figures(self) -> list[JATSFigureInfo]:
         """Build the figures, in the order their ``<fig>`` elements *opened*.
@@ -1109,13 +1232,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "th":
             current_table = self.current_table
             if current_table is not None:
-                colspan = int(attrs.get("colspan", "1") or "1")
-                current_table.start_cell(is_header=True, colspan=colspan)
+                current_table.start_cell(is_header=True, colspan=_read_span(attrs))
         elif name == "td":
             current_table = self.current_table
             if current_table is not None:
-                colspan = int(attrs.get("colspan", "1") or "1")
-                current_table.start_cell(is_header=False, colspan=colspan)
+                current_table.start_cell(is_header=False, colspan=_read_span(attrs))
         elif name == "ref-list":
             self.in_ref_list = True
         elif name == "ref":
@@ -1504,6 +1625,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.current_reference.finish_current_author()
                 self.in_ref_person_group = False
         elif name == "surname":
+            if self.in_front:
+                self.front_surname_count += 1
             if self.in_ref_person_group and self.current_reference:
                 self.current_reference.current_author_surname = text
             elif self.in_contrib and self.current_author:
@@ -1664,6 +1787,74 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 # ---------------------------------------------------------------------------
 
 
+def _audit_parse(handler: _JATSHandler) -> None:
+    """Report, at ERROR, anything this parse left unbalanced (issue #134).
+
+    Called from :meth:`JATSParser._run_parser`, which is the one place
+    :meth:`~JATSParser.parse`, :meth:`~JATSParser.to_html` and
+    :meth:`~JATSParser.parse_with_html` all funnel through — so every entry
+    point is covered without any of them having to remember.
+
+    ERROR, and not a raised exception: a partial article reported loudly beats
+    no article, which is #129's mistake in the other direction. And ERROR
+    rather than WARNING because ``expat`` rejects an unbalanced *document*, so
+    nothing a publisher deposits can reach these predicates — every line this
+    emits is a claim that bmlib itself is wrong.
+
+    Args:
+        handler: The handler the parse just finished with.
+    """
+    article = handler.describe_article()
+    for message in unwind_diagnostics(handler.unwind_state()):
+        logger.error("JATS parse of %s: %s", article, message)
+
+    if not handler.authors:
+        _report_zero_authors(handler, article)
+
+
+def _report_zero_authors(handler: _JATSHandler, article: str) -> None:
+    """Say whether a parse that produced no authors looked in the wrong place.
+
+    An article that parses to zero authors renders HTML byte-identical to one
+    that genuinely lists none, and ``FullTextService`` caches that HTML — so
+    the correct answer and the catastrophic one persist to disk the same way.
+    Issue #111 dropped every author from 57% of open-access articles and
+    survived undetected until it was found from outside bmlib, while porting
+    the parser to Swift. This is the detector that was missing throughout
+    (issue #121).
+
+    ``front_surname_count`` is what separates the two: a document carrying
+    contributor surnames in its ``<front>`` and yielding no authors was most
+    likely mis-routed, while one carrying none is simply author-less.
+
+    **WARNING and not ERROR**, unlike the audit above it. That distinction can
+    fire on a well-formed document bmlib parsed correctly — #121's own
+    1,025-article measurement found one, ``PMC12803704``, an
+    ``article-type="correction"`` that is genuinely author-less and still
+    carries ``<front>`` surnames — so it is a "look at this", where ERROR here
+    means only "bmlib is wrong". A consortium-only article reaches the quiet
+    branch for a different reason and is issue #120, still open: ``<collab>``
+    carries no ``<surname>`` at all.
+
+    Args:
+        handler: The handler the parse just finished with.
+        article: How to name the article in the message.
+    """
+    if handler.front_surname_count:
+        logger.warning(
+            "JATS parse of %s produced no authors, but its <front> carried "
+            "%d <surname>: the contributors were most likely routed elsewhere",
+            article,
+            handler.front_surname_count,
+        )
+    else:
+        logger.debug(
+            "JATS parse of %s produced no authors, and its <front> carried no "
+            "<surname>: the article appears genuinely author-less",
+            article,
+        )
+
+
 class JATSParser:
     """Parse JATS XML to structured data or HTML.
 
@@ -1689,6 +1880,7 @@ class JATSParser:
         parser.setFeature(xml.sax.handler.feature_external_ges, False)
         parser.setFeature(xml.sax.handler.feature_external_pes, False)
         parser.parse(BytesIO(self._data))
+        _audit_parse(handler)
         return handler
 
     def parse(self) -> JATSArticle:

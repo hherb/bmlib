@@ -1,18 +1,18 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-22. **0.10.0 is released and on PyPI**; seven changes
+_Last updated: 2026-08-22. **0.10.0 is released and on PyPI**; eight changes
 sit unreleased on `main` — #73's atomic template install (PR #102), #96/#105's
 partitioning of an over-cap PubMed day (PRs #106 and #114), #109's typed
 article-id (PR #113), #110/#111's JATS sub-article and contributor-group
 fixes (PR #118), #115/#116/#117/#131's exhibit nesting, ranking and
-sampler (PR #126) and #127's image-only table (PR #133) — plus **this
-session's #123/#125/#130 and #135, on
-`fix/123-125-130-title-caption-owner`**. All five version places agree at
-0.10.0.
-Five of the seven unreleased changes are `fulltext` JATS fixes filed within
+sampler (PR #126), #127's image-only table (PR #133) and
+#123/#125/#130/#135's owner-routed title and caption (PR #136, merged).
+Nothing is in flight: the working tree is clean and `main` is the tip. All
+five version places agree at 0.10.0.
+Six of the eight unreleased changes are `fulltext` JATS fixes filed within
 days of each other; whoever cuts the next release should describe them
-together. Every unreleased ROADMAP row now carries an `*(unreleased)*`
-marker; eight did not, and #109 had no row at all.
+together. Every unreleased ROADMAP row carries an `*(unreleased)*`
+marker.
 
 **Three of them move what a caller of `JATSParser` gets**, and none moves
 what a bmlib *sync* stores. #111 populates an author list that was empty for
@@ -20,18 +20,19 @@ the majority of open-access articles. #115/#117 change `JATSArticle.figures`
 and `.tables` — figures that were missing now appear, and a figure's
 `graphic_url` changes from a thumbnail to the full image for roughly half of
 all figures. #127 adds `JATSTableInfo.graphic_url` and fills
-it, so a table that came back with no content now carries its image. This
-session's #123/#125/#130 move a fourth: a section's `title` and an exhibit's
+it, so a table that came back with no content now carries its image.
+#123/#125/#130 move a fourth: a section's `title` and an exhibit's
 `caption` are routed by their owning element, so a section renamed by a
-footnote group or a boxed text keeps its own heading and a figure caption
-truncated by a nested one comes back whole. No bmlib
+footnote group, a boxed text or a list keeps its own heading and a figure
+caption truncated by a nested one comes back whole — `body_sections` moves
+for roughly one recent article in ten. No bmlib
 path carries `figures`, `tables` or `authors` anywhere: `service.py` never
 reads them, `FullTextResult` has none, and `publications` takes its authors
 from the fetchers. Only a downstream that calls `JATSParser` itself and
 persists the result needs to re-parse — but such a downstream should, because
 the stored values are not comparable across the upgrade.
 
-**This session fixed #123, #125 and #130 and closed #135**, and the useful
+**PR #136 fixed #123, #125 and #130 and closed #135**, and the useful
 half of it was the measuring, not the routing. The fix itself is in
 `CHANGELOG.md`; six things are worth carrying forward.
 
@@ -84,11 +85,24 @@ still one window*: #127's population reads 0 of 662 there and 11 of 93 in a
 1996-1998 draw, so ask whether the draw can see a deposit before reading a
 zero as an answer.
 
+**A closing keyword in prose closed an issue nobody decided.** #137 was filed
+by PR #136's own review and named in the commit that filed it as *"Filed
+rather than fixed: #137 (…) and #138"* — GitHub read the `fixed: #137`
+substring as a keyword and closed it one second after the merge, while #138,
+in the same sentence with no keyword in front of it, stayed open. Reopened
+2026-08-22. This is the third instance of the class HANDOVER already warns
+about (an issue CLOSED/COMPLETED without being fixed) and the first with a
+mechanism: **the phrase does not have to be an intent to close.** Write
+`filed, not fixed — #137` or `#137 stays open`, never `rather than fixed:
+#137`, and check `gh issue view` after a merge rather than trusting the
+count.
+
 **Next up: #124, #128, #129, #134, #137 and #138 in `fulltext`, the three from
 the #118 review (#119, #120, #121), #132, the older non-JATS ones (#86, #92,
 #94, #103, #112), or Phase 3 of the bmlibrarian port, whose every row needs a
 design conversation.** #124 is the last one that still loses content; #132 and
-#138 both want a corpus redraw and should be paired.
+#138 both want a corpus redraw and should be paired; #134 is the net under
+the whole class #115/#123/#130 belong to, and #121 lands at its call site.
 
 This file briefs the next session on what is done, what is still open, and
 the conventions to keep. Update it whenever a session materially changes the
@@ -123,13 +137,10 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   moves something stored, 0.9.0 and 0.10.0 are *minor* bumps that move nothing
   — so the version number answers the API question, never the data one, and a
   downstream reading only the number must still read this list.
-- **Tests: 2541 passing + 63 skipped on `main`**, **2569 + 63** on
-  `fix/123-125-130-title-caption-owner`, so 28 are this session's — 17 in
-  `test_jats_parser.py` and 11 in `test_jats_exhibit_sampler.py`
-  (`uv run pytest tests/ -q`). Both measured, not derived. The PostgreSQL half
-  was **not** re-run for this branch and does not need to be: it touches no
-  SQL, and the last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is
-  2435 + 2 on the #105 branch. Of the 63 default skips, 61 are the PostgreSQL
+- **Tests: 2578 passing + 63 skipped on `main`** (`uv run pytest tests/ -q`),
+  measured after PR #136 merged. The PostgreSQL half was **not** re-run for
+  that branch and did not need to be: it touches no SQL, and the last measured
+  figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the #105 branch. Of the 63 default skips, 61 are the PostgreSQL
   parameterisations, 1 is a PostgreSQL-only schema test, and 1 is
   `test_pymupdf_requires_dependency`, which runs only when PyMuPDF is
   *absent*. **PyMuPDF is installed in the dev venv** (PR #55 did it so the
@@ -151,8 +162,10 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   Treat drift as a regression worth fixing, not expected staleness. The
   `(unreleased)` markers in `docs/manual/` and `ROADMAP.md` are promoted at
   release time. 0.10.0 promoted all thirteen it inherited — five `ROADMAP.md`
-  rows and eight spots in `docs/manual/publications.md` — and **none are
-  outstanding now**. Grep case-insensitively for `unreleased` rather than for
+  rows and eight spots in `docs/manual/publications.md`. **Thirty-eight are
+  outstanding for the next release**: 17 `ROADMAP.md` rows and 21 spots across
+  `docs/manual/publications.md` (13), `fulltext.md` (5) and `templates.md`
+  (3). Grep case-insensitively for `unreleased` rather than for
   `(unreleased)`: three of those thirteen were spelled `*(unreleased, #99)*`
   and `(changed, unreleased — …)`, which the parenthesised pattern misses.
   Write the marker bare, never with a guessed version number: the number is
@@ -184,8 +197,8 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-**Seventeen open** as this session starts, fifteen once this PR closes #123,
-#125, #130 and #135 and its own review files **#137** and **#138**. Every one was found by review or
+**Fifteen open**: #86, #92, #94, #103, #112, #119, #120, #121, #124, #128,
+#129, #132, #134, #137, #138. Every one was found by review or
 measurement rather than by a failing test, and **none of them loses records**
 — though **#124** loses an exhibit's footnotes, **#128** would lose every
 figure image in a document binding XLink to another prefix, **#129** loses a
@@ -193,7 +206,9 @@ whole article to one malformed `colspan`, **#120** loses a contributor, and
 **#119** feeds a scan text that is not the article's. Count this against the
 repo before trusting it: the line has been wrong in three consecutive
 sessions, and one further way is an issue **closed as COMPLETED without being
-fixed**, which no count of open issues catches. (**#56, #68, #72 and #79** shipped in
+fixed**, which no count of open issues catches — #137 was closed that way by
+a stray `fixed: #137` inside the sentence saying it was *not* fixed, and is
+reopened. (**#56, #68, #72 and #79** shipped in
 0.9.1. **#78, #81, #88–#91, #95, #98 and #99** shipped in 0.10.0 — PRs #85,
 #87, #93, #97, #100. **#73** is on `main` unreleased in PR #102, whose own
 review filed **#103**. **#96** closed with PR #106, as correct rather than as
@@ -202,7 +217,7 @@ fixed. **#105 and #107** closed with PR #114. **#109** closed with PR #113.
 and **#121**. **#115, #116, #117 and #131** closed with PR #126, which filed
 **#123**, **#124**, **#127**, **#128**, **#129** and **#130**. **#127**
 closed with PR #133, which filed **#132**, **#134** and **#135**; **#123**,
-**#125**, **#130** and **#135** close with this session's PR, whose review
+**#125**, **#130** and **#135** closed with PR #136, whose review
 filed **#137** and **#138**.)
 
 **#128 is weaker than filed**: every one of the 2,397 `<graphic>` hrefs in the
@@ -230,7 +245,7 @@ both committed draws**, so that figure has no in-repo evidence at all. Do it
 before the release that ships these rules, while the CHANGELOG is still free
 to edit. #138 wants a redraw too — pair them.
 
-**#137 and #138 came out of this PR's own review.** #137: a section-level
+**#137 and #138 came out of PR #136's own review.** #137: a section-level
 `<caption>`'s `<p>` children still reach `body_sections` while its `<title>`
 is now dropped, so one caption's two halves go different ways — a decision to
 make (keep, drop both, or model the containers), and the sampler records the
