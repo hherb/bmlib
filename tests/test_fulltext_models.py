@@ -76,6 +76,17 @@ class TestAnUndividedContributorName:
 
         assert author.full_name == "Jane Smith"
 
+    def test_a_collaboration_wins_over_an_undivided_personal_name(self):
+        """The documented order between the two undivided forms.
+
+        Reachable only from a ``<contrib>`` carrying both spellings, which is
+        not a shape anything has measured — pinned so the rule the docstring
+        states is the rule the code applies.
+        """
+        author = JATSAuthorInfo(collab="The CONSORT Group", string_name="Jane Q Smith")
+
+        assert author.full_name == "The CONSORT Group"
+
     def test_a_collaboration_carries_no_surname(self):
         """The point of the separate field, stated as an assertion.
 

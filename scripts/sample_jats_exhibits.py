@@ -194,6 +194,23 @@ _OWNER_SIDE_COUNTERS = (
     "sections",
     "sections_with_direct_title",
 )
+# The third generation, arriving with issues #120 and #140 — the two spellings
+# of a contributor's name that give one undivided string. Same sentinel and
+# same reason as the two above: an article naming every contributor with
+# `<name>` measures zero here, and so does a row written before anything
+# counted them.
+_CONTRIB_SIDE_COUNTERS = (
+    "contribs",
+    "nested_contribs",
+    "collabs_with_a_roster",
+    "articles_losing_every_author",
+)
+# How a `<contrib>` names its contributor. JATS models it as
+# `(name | string-name | collab | anonymous | ...)`; bmlib collects the first
+# three and the fourth carries no name to collect. Counted as its own
+# vocabulary rather than as four fields so a spelling nobody has thought of
+# still prints, the way `label_parents` does one section up.
+_CONTRIB_NAME_ELEMENTS = frozenset({"name", "string-name", "collab", "anonymous"})
 
 
 def _local(tag: str) -> str:
@@ -254,6 +271,11 @@ class ArticleMeasurement:
     sections: int = 0
     sections_with_direct_title: int = 0
     section_renaming_titles: Counter[str] = field(default_factory=Counter)
+    contribs: int = 0
+    contrib_name_spellings: Counter[str] = field(default_factory=Counter)
+    nested_contribs: int = 0
+    collabs_with_a_roster: int = 0
+    articles_losing_every_author: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise for the journal and the corpus file."""
@@ -267,17 +289,18 @@ class ArticleMeasurement:
         """Rebuild a row written by :meth:`to_dict`.
 
         A counter the row does not carry is set to ``NOT_MEASURED`` rather
-        than left at its zero default. These arrived in two generations —
+        than left at its zero default. These arrived in three generations —
         ``_TABLE_SIDE_COUNTERS`` with issue #135, ``_OWNER_SIDE_COUNTERS``
-        with #123/#125/#130 — so a corpus or journal older than either
-        carries none of that generation and each would otherwise sum to
-        zero, which is exactly what a genuine "no table deposits an image"
-        or "no caption nests" draw looks like; reading one as the other is
-        the mistake #127 spent two windows disproving.
+        with #123/#125/#130, ``_CONTRIB_SIDE_COUNTERS`` with #120/#140 — so a
+        corpus or journal older than a generation carries none of it, and
+        each would otherwise sum to zero, which is exactly what a genuine "no
+        table deposits an image", "no caption nests" or "no contributor is
+        named undivided" draw looks like; reading one as the other is the
+        mistake #127 spent two windows disproving.
         :meth:`Totals.measured` is what tests it.
         """
         row = cls(pmcid=str(data["pmcid"]))
-        for name in (*_TABLE_SIDE_COUNTERS, *_OWNER_SIDE_COUNTERS):
+        for name in (*_TABLE_SIDE_COUNTERS, *_OWNER_SIDE_COUNTERS, *_CONTRIB_SIDE_COUNTERS):
             if name not in data:
                 setattr(row, name, NOT_MEASURED)
         for key, value in data.items():
@@ -351,6 +374,8 @@ def measure_article(pmcid: str, xml: bytes) -> ArticleMeasurement | None:
                 row.sections += 1
                 if any(_local(c.tag) == "title" for c in child):
                     row.sections_with_direct_title += 1
+            elif tag == "contrib":
+                _record_contrib(child, chain, row)
             elif tag == "title" and exhibit is None and "sec" in chain and chain[-1] != "sec":
                 # The population issues #125 and #130 are about, and only it:
                 # a <title> that a section was open for, owned by something
@@ -361,7 +386,64 @@ def measure_article(pmcid: str, xml: bytes) -> ArticleMeasurement | None:
             walk(child, exhibit, chain + [tag], exhibit_depth)
 
     walk(root, None, [], 0)
+    # A per-article question, so it is answered once the walk is over: an
+    # article naming no contributor with `<name>` loses *every* author to the
+    # two undivided spellings, which is the difference between #140 and #120
+    # (100% of an article's authors against 3.3% of articles losing at least
+    # one). Asked of the spellings actually deposited rather than of bmlib's
+    # output, so it stays answerable after the fix that makes the loss stop.
+    undivided = row.contrib_name_spellings["string-name"] + row.contrib_name_spellings["collab"]
+    if undivided and not row.contrib_name_spellings["name"]:
+        row.articles_losing_every_author = 1
     return row
+
+
+def _record_contrib(el: ET.Element, chain: list[str], row: ArticleMeasurement) -> None:
+    """Count one ``<contrib>``: how it names its contributor, and how it nests.
+
+    **Scoped to what the parser routes**, not to the subtree. A ``<collab>``
+    may carry a ``<contrib-group>`` of the collaboration's own members, so a
+    ``<contrib>`` nests inside another; a whole-subtree walk would credit each
+    member's ``<name>`` to the consortium and report the article as naming
+    every contributor the structured way. The descent therefore stops at a
+    nested ``<contrib>``, which is where the parser's own frame stack hands
+    routing to the inner contributor.
+
+    Args:
+        el: The ``<contrib>`` element.
+        chain: The local names between the article root and *el*, outermost
+            first, so ``"contrib" in chain`` answers the nesting question.
+        row: The measurement to count into.
+    """
+    row.contribs += 1
+    if "contrib" in chain:
+        # Issue #120's roster case, and the reason the parser holds a stack of
+        # frames rather than one builder.
+        row.nested_contribs += 1
+
+    found = 0
+
+    def descend(node: ET.Element) -> None:
+        nonlocal found
+        for child in node:
+            name = _local(child.tag)
+            if name in _CONTRIB_NAME_ELEMENTS:
+                found += 1
+                row.contrib_name_spellings[name] += 1
+                if name == "collab" and any(_local(c.tag) == "contrib-group" for c in child):
+                    row.collabs_with_a_roster += 1
+            if name != "contrib":
+                # `<name-alternatives>` and friends wrap a name without being
+                # one, so the spelling is looked for at depth — the way the
+                # parser's own arms fire anywhere inside the open `<contrib>`.
+                descend(child)
+
+    descend(el)
+    if not found:
+        # Its own vocabulary entry rather than a silence: a `<contrib>` naming
+        # nobody is what the parser reports at DEBUG and drops, so a draw in
+        # which that is common is worth seeing.
+        row.contrib_name_spellings["(none)"] += 1
 
 
 def _owned(el: ET.Element, wanted: str) -> list[ET.Element]:
@@ -873,6 +955,36 @@ def print_report(totals: Totals) -> bool:
             print(f"      {name:<26} {count:>6}  {_pct(count, stolen)}")
         if not renaming:
             print("      (none — no section title was overwritten in this draw)")
+
+    # Issues #120 and #140 — the two spellings of a contributor's name that
+    # give one undivided string, and which bmlib extracted from neither until
+    # they were fixed. The rule that fixed them is spec-driven (JATS says the
+    # name is undivided, and refusing to split it is what "measured, not
+    # assumed" means here), so what this section answers is how much of a
+    # corpus each spelling reaches, and whether a `<contrib>` nests often
+    # enough for the parser's frame stack to be load-bearing in practice.
+    print("\n11. HOW A <contrib> NAMES ITS CONTRIBUTOR  (issues #120, #140)")
+    if not all(totals.measured(name) for name in _CONTRIB_SIDE_COUNTERS):
+        print("   NOT MEASURED — these rows predate the counter. Re-run to fill it.")
+    else:
+        contribs = totals.sum_of("contribs")
+        print(f"   <contrib> elements                     : {contribs}")
+        spellings = totals.counter_of("contrib_name_spellings")
+        named = sum(spellings.values())
+        for name, count in spellings.most_common(10):
+            collected = "" if name == "(none)" else "  <-- collected as an author"
+            print(f"      {name:<26} {count:>6}  {_pct(count, named)}{collected}")
+        if not spellings:
+            print("      (no <contrib> in this draw)")
+        nested = totals.sum_of("nested_contribs")
+        rosters = totals.sum_of("collabs_with_a_roster")
+        print(f"   <contrib> nested inside another        : {nested:>6}  {_pct(nested, contribs)}")
+        print(f"   <collab> carrying a <contrib-group>    : {rosters:>6}")
+        losing = totals.articles_where("articles_losing_every_author")
+        print(
+            f"   articles naming every contributor undivided: "
+            f"{losing:>6}   of {totals.articles}  {_pct(losing, totals.articles)}"
+        )
     return True
 
 

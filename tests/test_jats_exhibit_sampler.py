@@ -64,6 +64,22 @@ if str(_PATH.parent) not in sys.path:
 _spec.loader.exec_module(sampler)
 
 
+def _section(report: str, heading: str) -> list[str]:
+    """The report lines belonging to one numbered section.
+
+    Several sections can print ``NOT MEASURED``, so an assertion made against
+    the whole report cannot say which one did — and would pass for a run in
+    which the section under test printed a rate it had no rows for.
+    """
+    lines = report.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith(heading))
+    end = next(
+        (i for i, line in enumerate(lines[start + 1 :], start + 1) if line[:1].isdigit()),
+        len(lines),
+    )
+    return lines[start:end]
+
+
 def _article(body: str) -> bytes:
     """Wrap *body* in a minimal article that actually declares XLink.
 
@@ -444,6 +460,206 @@ class TestAnArticleThatCouldNotBeMeasuredIsNeverAFinding:
         assert sampler.print_report(totals) is True
         line = next(ln for ln in capsys.readouterr().out.splitlines() if "and no <table>" in ln)
         assert "50.0%" in line, line
+
+
+class TestHowAContribNamesItsContributorIsCounted:
+    """The populations behind issues #120 and #140.
+
+    JATS names a contributor with ``(name | string-name | collab | ...)`` and
+    bmlib extracted only the first, so a consortium author vanished and an
+    article deposited with ``<string-name>`` parsed to no authors at all. The
+    fix is spec-driven — the deposit gives one undivided string, and splitting
+    it would be assumed rather than measured — so what these counters answer is
+    how much of a corpus each spelling reaches, and whether a ``<contrib>``
+    nests often enough for the parser's frame stack to earn its place.
+    """
+
+    def test_each_spelling_is_counted_under_its_own_name(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <contrib-group content-type="author">
+              <contrib><name><surname>Real</surname></name></contrib>
+              <contrib><string-name>Jane Q Smith</string-name></contrib>
+              <contrib><collab>the INHERIT Trial Group</collab></contrib>
+              <contrib><anonymous/></contrib>
+            </contrib-group>"""),
+        )
+
+        assert row.contribs == 4
+        assert row.contrib_name_spellings == {
+            "name": 1,
+            "string-name": 1,
+            "collab": 1,
+            "anonymous": 1,
+        }
+
+    def test_a_contrib_naming_nobody_gets_its_own_vocabulary_entry(self):
+        """The shape the parser reports at DEBUG and drops.
+
+        Counted rather than passed over, because a draw in which it is common
+        says something about a publisher and a silence says nothing.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                '<contrib-group content-type="author">'
+                '<contrib><xref ref-type="aff" rid="a1"/></contrib>'
+                "</contrib-group>"
+            ),
+        )
+
+        assert row.contrib_name_spellings == {"(none)": 1}
+
+    def test_a_rosters_names_are_not_credited_to_the_collaboration(self):
+        """The owner-scoping rule, which a subtree walk gets wrong.
+
+        A ``<collab>`` may carry a ``<contrib-group>`` of the collaboration's
+        own members, so a ``<contrib>`` nests inside another. Counting the
+        subtree credits each member's ``<name>`` to the consortium, which
+        reports the article as naming every contributor the structured way —
+        the manufactured population #135's residual is about, one element
+        family over.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <contrib-group content-type="author">
+              <contrib><collab>the INHERIT Trial Group
+                <contrib-group>
+                  <contrib><name><surname>Member</surname></name></contrib>
+                  <contrib><name><surname>Other</surname></name></contrib>
+                </contrib-group>
+              </collab></contrib>
+            </contrib-group>"""),
+        )
+
+        assert row.contribs == 3
+        assert row.contrib_name_spellings == {"collab": 1, "name": 2}
+        assert row.nested_contribs == 2
+        assert row.collabs_with_a_roster == 1
+
+    def test_a_name_below_a_wrapper_still_counts(self):
+        """``<name-alternatives>`` wraps a name without being one.
+
+        Looked for at depth, the way the parser's own arms fire anywhere
+        inside the open ``<contrib>`` — a direct-child test would report this
+        contributor as naming nobody.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <contrib-group content-type="author">
+              <contrib><name-alternatives>
+                <name><surname>Nakamura</surname></name>
+                <string-name>Nakamura Kenji</string-name>
+              </name-alternatives></contrib>
+            </contrib-group>"""),
+        )
+
+        assert row.contrib_name_spellings == {"name": 1, "string-name": 1}
+
+    def test_an_article_naming_nobody_with_name_loses_every_author(self):
+        """#140's distinguishing claim, and the reason it is not #120.
+
+        ``<collab>`` costs an article some of its contributors; an article
+        naming all of them undivided loses the lot.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                '<contrib-group content-type="author">'
+                "<contrib><string-name>Jane Q Smith</string-name></contrib>"
+                "</contrib-group>"
+            ),
+        )
+
+        assert row.articles_losing_every_author == 1
+
+    def test_one_structured_name_is_enough_to_keep_the_article(self):
+        """The negative control: a partial loss is #120, not #140."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <contrib-group content-type="author">
+              <contrib><name><surname>Real</surname></name></contrib>
+              <contrib><collab>the INHERIT Trial Group</collab></contrib>
+            </contrib-group>"""),
+        )
+
+        assert row.articles_losing_every_author == 0
+
+    def test_a_row_written_before_these_counters_reads_as_not_measured(self):
+        """A zero here is a real answer, so an absent counter must not read as one.
+
+        The third generation of counters to arrive on this row; both earlier
+        ones were mis-readable the same way, and #127 is the case where a
+        population that genuinely measures zero in one window measures 11.8%
+        in another.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                '<contrib-group content-type="author">'
+                "<contrib><name><surname>Real</surname></name></contrib>"
+                "</contrib-group>"
+            ),
+        )
+        stale = row.to_dict()
+        for name in sampler._CONTRIB_SIDE_COUNTERS:
+            del stale[name]
+
+        restored = sampler.ArticleMeasurement.from_dict(stale)
+        totals = sampler.Totals()
+        totals.add(restored)
+
+        assert restored.contribs == sampler.NOT_MEASURED
+        assert not totals.measured("contribs")
+        assert totals.measured("figures")
+
+    def test_the_report_says_so_under_this_section_and_not_another(self, capsys):
+        """Asserted against the section's own lines, not against the whole report.
+
+        Four sections can print that phrase, so a bare ``"NOT MEASURED" in
+        out`` passes for a run in which *this* one printed a rate over rows
+        that never carried the counter.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                '<contrib-group content-type="author">'
+                "<contrib><collab>the INHERIT Trial Group</collab></contrib>"
+                "</contrib-group>"
+            ),
+        )
+        stale = row.to_dict()
+        for name in sampler._CONTRIB_SIDE_COUNTERS:
+            del stale[name]
+        totals = sampler.Totals()
+        totals.add(sampler.ArticleMeasurement.from_dict(stale))
+
+        assert sampler.print_report(totals) is True
+        section = _section(capsys.readouterr().out, "11. HOW A <contrib>")
+        assert any("NOT MEASURED" in line for line in section)
+
+    def test_a_freshly_measured_corpus_reports_the_spellings(self, capsys):
+        """The negative control, again scoped to this section."""
+        totals = sampler.Totals()
+        totals.add(
+            sampler.measure_article(
+                "PMC1",
+                _article(
+                    '<contrib-group content-type="author">'
+                    "<contrib><collab>the INHERIT Trial Group</collab></contrib>"
+                    "</contrib-group>"
+                ),
+            )
+        )
+
+        assert sampler.print_report(totals) is True
+        section = _section(capsys.readouterr().out, "11. HOW A <contrib>")
+        assert not any("NOT MEASURED" in line for line in section)
+        assert any("collab" in line for line in section)
 
 
 class TestTheSamplerDoesNotShareTheParsersPredicates:

@@ -1006,6 +1006,20 @@ class TestAnUndividedContributorName:
   <body><sec><title>Results</title><p>Prose after the roster.</p></sec></body>
 </article>"""
 
+    COLLAB_WITH_A_NON_AUTHOR_ROSTER = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>A consortium and its editors</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><collab>the INHERIT Trial Group
+        <contrib-group content-type="editor">
+          <contrib><name><surname>Editor</surname><given-names>Ed</given-names></name></contrib>
+        </contrib-group>
+      </collab></contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
     STRING_NAMES_ONLY = b"""<?xml version="1.0"?>
 <article>
   <front><article-meta>
@@ -1115,6 +1129,22 @@ class TestAnUndividedContributorName:
 
         assert article.authors[-1].full_name == "Di After"
         assert article.body_sections[0].paragraphs == ["Prose after the roster."]
+
+    def test_a_nested_contributor_bmlib_does_not_collect_leaves_the_frame_alone(self):
+        """The ``None`` frames, which two separate one-line edits get wrong.
+
+        A ``<contrib>`` bmlib is *not* collecting still pushes a frame, and
+        ``current_author`` reads the top of the stack rather than the nearest
+        entry that happens to hold a builder. Skip the push and this editor's
+        end tag pops the consortium's own frame, building it before
+        ``</collab>`` has written its name; walk past the ``None`` instead and
+        the editor's ``<surname>`` is written into the consortium's builder and
+        wins the rendering. Both leave the article with the wrong contributor
+        and neither is visible in a fixture whose nesting is all one role.
+        """
+        article = JATSParser(self.COLLAB_WITH_A_NON_AUTHOR_ROSTER).parse()
+
+        assert [a.full_name for a in article.authors] == ["the INHERIT Trial Group"]
 
     def test_an_undivided_personal_name_is_collected(self):
         assert self._names(self.STRING_NAMES_ONLY) == ["Jane Q Smith", "Ahmed Al-Rashid"]
