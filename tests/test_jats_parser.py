@@ -16,15 +16,19 @@
 
 """Tests for bmlib.fulltext.jats_parser."""
 
+import ast
 import logging
 import re
 import xml.sax
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
+from bmlib.fulltext import jats_parser as jats_parser_module
 from bmlib.fulltext._parse_audit import unwind_diagnostics
-from bmlib.fulltext.jats_parser import JATSParser, _JATSHandler
+from bmlib.fulltext.jats_parser import _TEXT_ACCUMULATING, JATSParser, _JATSHandler
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -5372,3 +5376,516 @@ class TestTheDiagnosticNamesTheArticle:
         described = self._describe("")
 
         assert described == "an article carrying no identifier or title"
+
+
+#: The three names :meth:`_JATSHandler.endElement` binds to the popped text
+#: buffer. The invariant #151 mechanises is written about ``text`` alone;
+#: ``normalized_text`` and ``element_text`` are the same buffer one line
+#: either side of it, and an arm consuming either directly is the same
+#: hazard. So the net is deliberately wider than the prose it enforces, which
+#: is the safe direction for a net.
+_BUFFER_NAMES = frozenset({"text", "normalized_text", "element_text"})
+
+#: The accumulating set the *synthetic* controls below are judged against —
+#: their own, never the parser's. A control asserting that ``<institution>``
+#: does not accumulate is asserting something #142 is entitled to change, and
+#: judging it against the real ``_TEXT_ACCUMULATING`` would redden four tests
+#: the day it does, each for the opposite of the reason it was written. The
+#: real handler is judged against the real set; nothing else is.
+_SYNTHETIC_ACCUMULATING = frozenset({"surname", "collab", "source"})
+
+
+@dataclass(frozen=True)
+class _BufferRead:
+    """One read of the popped text buffer inside ``endElement``."""
+
+    #: Which of :data:`_BUFFER_NAMES` was read.
+    read: str
+    line: int
+    #: Element names that can reach the read, or ``None`` where nothing above
+    #: it constrains ``name`` — which means *every* element, not "none".
+    elements: frozenset[str] | None
+    #: Guards that do mention ``name`` and that the walker could not read.
+    #: Non-empty is a failure in its own right: a walk that quietly skips what
+    #: it cannot classify is the vacuous green #151 exists to prevent.
+    unreadable_guards: tuple[str, ...]
+    #: Is this read part of a statement *binding* one of the buffer names?
+    #: The two that define ``text`` and ``normalized_text`` are the method's
+    #: plumbing rather than an arm, and are the only unguarded reads allowed.
+    binds_a_buffer: bool
+
+
+def _elements_admitted(
+    test: ast.expr, namespace: Mapping[str, object]
+) -> tuple[frozenset[str] | None, tuple[str, ...]]:
+    """Which element names does ``test`` admit, and what could not be read?
+
+    Returns ``(elements, unreadable)``. ``elements`` is ``None`` where the
+    test places no constraint on ``name`` at all — a guard like
+    ``if self.nested_article_depth:`` narrows reachability in some other
+    dimension, and treating it as no constraint keeps the reported element
+    set *wider* than reality, which can only over-report.
+    """
+    if isinstance(test, ast.Compare) and _is_the_element_name(test.left):
+        if len(test.ops) == 1 and isinstance(test.ops[0], ast.Eq):
+            comparator = test.comparators[0]
+            if isinstance(comparator, ast.Constant) and isinstance(comparator.value, str):
+                return frozenset({comparator.value}), ()
+        if len(test.ops) == 1 and isinstance(test.ops[0], ast.In):
+            admitted = _string_collection(test.comparators[0], namespace)
+            if admitted is not None:
+                return admitted, ()
+        return None, (ast.unparse(test),)
+
+    if isinstance(test, ast.BoolOp):
+        elements: frozenset[str] | None = None
+        unreadable: list[str] = []
+        for operand in test.values:
+            operand_elements, operand_unreadable = _elements_admitted(operand, namespace)
+            unreadable.extend(operand_unreadable)
+            if isinstance(test.op, ast.And):
+                # An operand that does not constrain ``name`` simply does not
+                # narrow the set; the rest still do.
+                if operand_elements is not None:
+                    elements = operand_elements if elements is None else elements & operand_elements
+            else:
+                # ``or`` is only as narrow as its widest branch, so one
+                # unconstraining operand makes the whole test unconstraining.
+                if operand_elements is None:
+                    return None, tuple(unreadable)
+                elements = operand_elements if elements is None else elements | operand_elements
+        return elements, tuple(unreadable)
+
+    if _mentions_the_element_name(test):
+        # It talks about ``name`` in a shape this walker does not read — a
+        # negated test, a call, a walrus. Reporting it is the point: the walk
+        # must demand a decision rather than pass over what it cannot judge.
+        return None, (ast.unparse(test),)
+
+    return None, ()
+
+
+def _is_the_element_name(node: ast.expr) -> bool:
+    """Is ``node`` the ``name`` parameter ``endElement`` dispatches on?"""
+    return isinstance(node, ast.Name) and node.id == "name"
+
+
+def _mentions_the_element_name(node: ast.AST) -> bool:
+    return any(_is_the_element_name(child) for child in ast.walk(node))
+
+
+def _string_collection(node: ast.expr, namespace: Mapping[str, object]) -> frozenset[str] | None:
+    """Read a literal or module-level collection of element names, or give up."""
+    if isinstance(node, ast.Tuple | ast.List | ast.Set):
+        if all(isinstance(e, ast.Constant) and isinstance(e.value, str) for e in node.elts):
+            return frozenset(e.value for e in node.elts)  # type: ignore[attr-defined]
+        return None
+    if isinstance(node, ast.Name):
+        resolved = namespace.get(node.id)
+        if isinstance(resolved, frozenset | set | tuple | list) and all(
+            isinstance(member, str) for member in resolved
+        ):
+            return frozenset(resolved)
+    return None
+
+
+def _binds_a_buffer(node: ast.stmt) -> bool:
+    targets: list[ast.expr] = []
+    if isinstance(node, ast.Assign):
+        targets = list(node.targets)
+    elif isinstance(node, ast.AnnAssign | ast.AugAssign):
+        targets = [node.target]
+    return any(isinstance(t, ast.Name) and t.id in _BUFFER_NAMES for t in targets)
+
+
+def _buffer_reads_in_end_element(
+    source: str, *, namespace: Mapping[str, object]
+) -> list[_BufferRead]:
+    """Every read of the text buffer in ``endElement``, with what reaches it.
+
+    Raises rather than returning nothing when the method cannot be found: a
+    walker that answers "no reads" to a renamed or restructured method is the
+    failure mode this whole class exists to rule out.
+    """
+    module = ast.parse(source)
+    handler = next(
+        (n for n in module.body if isinstance(n, ast.ClassDef) and n.name == "_JATSHandler"),
+        None,
+    )
+    if handler is None:
+        raise AssertionError("no _JATSHandler class in the source handed to the walker")
+    method = next(
+        (n for n in handler.body if isinstance(n, ast.FunctionDef) and n.name == "endElement"),
+        None,
+    )
+    if method is None:
+        raise AssertionError("_JATSHandler has no endElement for the walker to read")
+
+    reads: list[_BufferRead] = []
+
+    def walk(
+        node: ast.AST,
+        guards: tuple[tuple[frozenset[str] | None, tuple[str, ...]], ...],
+        binds: bool,
+    ) -> None:
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            if node.id in _BUFFER_NAMES:
+                elements, unreadable = _combine(guards)
+                reads.append(
+                    _BufferRead(
+                        read=node.id,
+                        line=node.lineno,
+                        elements=elements,
+                        unreadable_guards=unreadable,
+                        binds_a_buffer=binds,
+                    )
+                )
+            return
+        if isinstance(node, ast.If):
+            # A read in the *body* is guarded by the test; a read in the test
+            # itself is credited with only the guards above it. Short-circuit
+            # evaluation makes that pessimistic for ``name == "x" and text``,
+            # where the read really is guarded — deliberately, because the
+            # error is towards a wider element set, so such a read is still
+            # reported and only the message is less precise. The ``orelse``
+            # keeps the outer guards rather than gaining ``not test``: an
+            # ``elif`` chain lives there, and declining to narrow by negation
+            # over-reports in the same safe direction.
+            walk(node.test, guards, False)
+            constraint = _elements_admitted(node.test, namespace)
+            for statement in node.body:
+                walk(statement, (*guards, constraint), False)
+            for statement in node.orelse:
+                walk(statement, guards, False)
+            return
+        if isinstance(node, ast.stmt):
+            binds = _binds_a_buffer(node)
+        for child in ast.iter_child_nodes(node):
+            walk(child, guards, binds)
+
+    for statement in method.body:
+        walk(statement, (), False)
+    return reads
+
+
+def _combine(
+    guards: tuple[tuple[frozenset[str] | None, tuple[str, ...]], ...],
+) -> tuple[frozenset[str] | None, tuple[str, ...]]:
+    elements: frozenset[str] | None = None
+    unreadable: list[str] = []
+    for guard_elements, guard_unreadable in guards:
+        unreadable.extend(guard_unreadable)
+        if guard_elements is not None:
+            elements = guard_elements if elements is None else elements & guard_elements
+    return elements, tuple(unreadable)
+
+
+def _synthetic_handler(arm: str) -> str:
+    """A minimal ``endElement`` carrying the real one's preamble plus ``arm``.
+
+    The preamble is what makes the controls honest: the two statements that
+    bind ``text`` and ``normalized_text`` are unguarded reads of the buffer in
+    the real method too, so a control that omitted them would exercise a
+    shape the real walk never meets.
+    """
+    return (
+        "class _JATSHandler:\n"
+        "    def endElement(self, name):\n"
+        "        if name in _TEXT_ACCUMULATING:\n"
+        "            element_text = self._pop_text_buffer()\n"
+        "        else:\n"
+        "            element_text = self.current_text\n"
+        "        text = element_text.strip()\n"
+        "        normalized_text = _normalize_whitespace(element_text)\n"
+        '        if name == "surname":\n'
+        "            self.surname = text\n"
+        f"{arm}"
+    )
+
+
+class TestOnlyAnAccumulatingElementReadsTheBuffer:
+    """``_inside_mixed_citation``'s prospective half, mechanised — #151.
+
+    That helper keeps its strict-ancestor slice (``element_stack[:-1]``) as
+    *prospective* and argues it is harmless with a whole-method claim: no arm
+    of :meth:`_JATSHandler.endElement` reads ``text`` for an element outside
+    ``_TEXT_ACCUMULATING``, so the base buffer is written and never consulted.
+
+    Nothing tied the two together. The claim is a property of a 500-line
+    method asserted in one helper's docstring 300 lines away, and the next
+    queued issue is exactly the shape that breaks it — #142 wants a
+    ``<collab>``'s ``<institution>``/``<addr-line>`` children read, and
+    neither is in ``_TEXT_ACCUMULATING``. Adding such an arm would not fail a
+    test; it would quietly make a paragraph false while the code around it
+    still relied on the reasoning.
+
+    ``TestTheAuditNetIsComplete`` is the precedent — "a rule enforced by prose
+    is not enforced" — and it caught a routing flag shipping missing from the
+    net it was supposed to be in.
+    """
+
+    def test_an_arm_reading_a_buffer_it_does_not_own_is_reported(self):
+        """The teeth control, in #142's own shape.
+
+        A walk that finds nothing passes, so the walker has to be shown
+        failing on the change it exists to catch before its green on the real
+        file means anything.
+        """
+        source = _synthetic_handler(
+            '        elif name == "institution":\n            self.x = text\n'
+        )
+
+        reads = _buffer_reads_in_end_element(source, namespace={})
+
+        offending = [read for read in reads if read.elements == frozenset({"institution"})]
+        assert offending, f"the walker did not see the <institution> arm at all: {reads}"
+        assert offending[0].read == "text"
+        assert self._findings(offending, _SYNTHETIC_ACCUMULATING) == [
+            "text at line 12: read for an element that does not accumulate: ['institution']"
+        ]
+
+    def test_a_guard_the_walker_cannot_read_is_reported_rather_than_skipped(self):
+        """The other half of the teeth, and the one that decides vacuity.
+
+        The issue asked for this walk and said in the same breath that getting
+        the arm identification wrong "gives a test that passes vacuously". A
+        guard mentioning ``name`` in a shape the walker does not read must
+        therefore fail the suite and demand a decision, never be passed over
+        as though it had been judged harmless.
+        """
+        source = _synthetic_handler(
+            "        elif _decide(name):\n            self.x = normalized_text\n"
+        )
+
+        findings = self._findings(
+            _buffer_reads_in_end_element(source, namespace={}), _SYNTHETIC_ACCUMULATING
+        )
+
+        assert findings == [
+            "normalized_text at line 12: guard the walker cannot read: _decide(name)"
+        ]
+
+    def test_an_arm_admitting_a_named_set_of_elements_is_read_through_it(self):
+        """#142's likeliest shape, and the walker's one unexercised resolution.
+
+        A guard is as often ``name in _SOME_SET`` as ``name == "x"``, and the
+        module-level sets that already appear in ``endElement`` guard arms
+        reading no buffer — so nothing exercised this path until a control
+        did. Refusing to resolve the set would make such an arm *unreadable*
+        rather than a violation, which is still a failure, but it would stop
+        the walk saying which elements are the problem.
+        """
+        source = _synthetic_handler(
+            "        elif name in _ADDRESS_ELEMENTS:\n            self.x = text\n"
+        )
+
+        findings = self._findings(
+            _buffer_reads_in_end_element(
+                source, namespace={"_ADDRESS_ELEMENTS": frozenset({"institution", "addr-line"})}
+            ),
+            _SYNTHETIC_ACCUMULATING,
+        )
+
+        assert findings == [
+            "text at line 12: read for an element that does not accumulate: "
+            "['addr-line', 'institution']"
+        ]
+
+    def test_an_and_guard_keeps_the_element_test_its_other_half_does_not_make(self):
+        """``and`` narrows, and a branch about something else must not erase it.
+
+        ``endElement``'s own ``name in _NESTED_ARTICLE_ELEMENTS and
+        self.nested_article_depth`` is this shape. Dropping the element half
+        because the other branch says nothing about ``name`` would leave the
+        arm unconstrained, reporting it as reachable for every element — a
+        false accusation rather than a miss, but one that would bury the real
+        findings under noise the first time such an arm read the buffer.
+        """
+        source = _synthetic_handler(
+            '        elif name == "institution" and self.in_address:\n            self.x = text\n'
+        )
+
+        reads = _buffer_reads_in_end_element(source, namespace={})
+
+        assert [read.elements for read in reads if read.line == 12] == [frozenset({"institution"})]
+
+    def test_an_or_guard_is_only_as_narrow_as_its_widest_branch(self):
+        """``or`` widens, and one unconstraining branch removes the guard.
+
+        ``name == "collab" or self.in_address`` reaches the read for *any*
+        element the second branch admits, so crediting it with ``{collab}``
+        would certify an arm the walker never judged — the under-reporting
+        direction. Two name branches do compose into their union. No arm in
+        ``endElement`` is spelled either way today, so this control is the
+        only thing exercising the rule.
+        """
+        source = _synthetic_handler(
+            '        elif name == "collab" or self.in_address:\n'
+            "            self.x = text\n"
+            '        elif name == "source" or name == "institution":\n'
+            "            self.y = normalized_text\n"
+        )
+
+        reads = _buffer_reads_in_end_element(source, namespace={})
+
+        by_line = {read.line: read for read in reads}
+        assert by_line[12].elements is None
+        assert by_line[14].elements == frozenset({"source", "institution"})
+        assert self._findings(reads, _SYNTHETIC_ACCUMULATING) == [
+            "text at line 12: reachable for every element, and binds no buffer",
+            "normalized_text at line 14: read for an element that does not accumulate: "
+            "['institution']",
+        ]
+
+    def test_an_arm_mixing_accumulating_and_other_elements_is_still_reported(self):
+        """One admitted element that does not accumulate is enough.
+
+        The likeliest way to break the invariant is not a new arm but an
+        element added to an existing one — ``name in ("collab", ...)`` gaining
+        ``"institution"``, which is #142 almost exactly. Asking whether the
+        arm's elements *overlap* ``_TEXT_ACCUMULATING`` rather than whether
+        they are *contained* by it passes such an arm silently, and it is the
+        one slip in this class that loses a violation rather than inventing
+        one.
+        """
+        source = _synthetic_handler(
+            '        elif name in ("collab", "institution"):\n            self.x = text\n'
+        )
+
+        findings = self._findings(
+            _buffer_reads_in_end_element(source, namespace={}), _SYNTHETIC_ACCUMULATING
+        )
+
+        assert findings == [
+            "text at line 12: read for an element that does not accumulate: ['institution']"
+        ]
+
+    def test_nested_guards_narrow_the_element_set_rather_than_widening_it(self):
+        """Guards compose by intersection, and the direction is load-bearing.
+
+        Two ``name`` tests above one read admit only what both admit. Widening
+        instead — the obvious slip, since every other combination in this
+        walker is a union — would report an element the read cannot be reached
+        for, which is a false accusation of a defect the module does not have.
+        No arm nests ``name`` tests today, so this control is what exercises
+        the rule at all.
+        """
+        source = _synthetic_handler(
+            '        elif name == "collab":\n'
+            '            if name in ("collab", "institution"):\n'
+            "                self.x = text\n"
+        )
+
+        reads = _buffer_reads_in_end_element(source, namespace={})
+
+        nested = [read for read in reads if read.line == 13]
+        assert [read.elements for read in nested] == [frozenset({"collab"})]
+        assert self._findings(nested, _SYNTHETIC_ACCUMULATING) == []
+
+    def test_a_read_no_guard_constrains_is_reported(self):
+        """An arm need not be in the chain to break the invariant.
+
+        A ``text``-reading statement added *after* the dispatch chain runs for
+        every element there is, so "the walker found no matching arm" cannot
+        mean "nothing to report". The two statements binding ``text`` and
+        ``normalized_text`` are the only unguarded reads the rule allows, and
+        they are recognised by what they bind rather than by their line.
+        """
+        source = _synthetic_handler("        self.trailing = text\n")
+
+        findings = self._findings(
+            _buffer_reads_in_end_element(source, namespace={}), _SYNTHETIC_ACCUMULATING
+        )
+
+        assert findings == ["text at line 11: reachable for every element, and binds no buffer"]
+
+    def test_no_arm_reads_a_buffer_for_an_element_that_does_not_accumulate(self):
+        """The invariant itself, over the real handler.
+
+        A failure here is not a broken test: it is the docstring of
+        ``_inside_mixed_citation`` having become false. Either the new arm's
+        element belongs in ``_TEXT_ACCUMULATING``, or the strict-ancestor
+        slice has stopped being prospective and the citation's own buffer now
+        escapes into whatever encloses the ``<ref-list>``.
+        """
+        findings = self._findings(self._reads_in_the_real_handler(), _TEXT_ACCUMULATING)
+
+        assert not findings, (
+            "endElement no longer honours _inside_mixed_citation's claim:\n" + "\n".join(findings)
+        )
+
+    def test_the_walk_still_finds_the_arms_it_is_meant_to_be_reading(self):
+        """The positive control, and the reason a green above means anything.
+
+        ``endElement`` dispatches through one ``if``/``elif`` chain today.
+        Restructure it — a dispatch table, a per-element method, a match
+        statement — and this walker would report nothing at all while the test
+        above stayed green, which is the shape of a net that has quietly
+        stopped being one. These six arms all read the buffer now, so the walk
+        has to keep seeing them.
+        """
+        reads = self._reads_in_the_real_handler()
+
+        seen = {element for read in reads if read.elements for element in read.elements}
+        expected = {"surname", "article-title", "pub-id", "xref", "label", "mixed-citation"}
+        missing = sorted(expected - seen)
+
+        assert not missing, (
+            f"the walk no longer sees these buffer-reading arms: {missing} — "
+            "endElement's shape has changed and the walker has not followed it"
+        )
+
+    def test_a_walker_that_cannot_find_the_method_says_so(self):
+        """The linchpin: "no reads" must never be an answer the walk can give.
+
+        Every other test here reads a finding list, so a walker that quietly
+        returned ``[]`` for a method it could not locate would turn four of
+        them green at once. Rename the method, split the class, and this is
+        what fails instead.
+        """
+        source = _synthetic_handler("").replace("endElement", "end_element")
+
+        with pytest.raises(AssertionError, match="no endElement"):
+            _buffer_reads_in_end_element(source, namespace={})
+
+    def test_a_walker_that_cannot_find_the_class_says_so(self):
+        """The same linchpin one level out, for a handler that has been split."""
+        source = _synthetic_handler("").replace("class _JATSHandler", "class _OtherHandler")
+
+        with pytest.raises(AssertionError, match="no _JATSHandler class"):
+            _buffer_reads_in_end_element(source, namespace={})
+
+    @staticmethod
+    def _reads_in_the_real_handler() -> list[_BufferRead]:
+        source = Path(jats_parser_module.__file__).read_text(encoding="utf-8")
+        return _buffer_reads_in_end_element(source, namespace=vars(jats_parser_module))
+
+    @staticmethod
+    def _findings(reads: list[_BufferRead], accumulating: frozenset[str]) -> list[str]:
+        """Every read that breaks the invariant, or that the walk could not judge.
+
+        ``accumulating`` is passed rather than defaulted so a control cannot
+        silently be judged against the parser's own set. The synthetic ones
+        must not be: they assert that ``<institution>`` does not accumulate,
+        which is exactly what #142 may legitimately change, and four of them
+        would then fail for the opposite of the reason they were written.
+
+        Three verdicts and only one of them is silence. A read the walker
+        could not classify is a finding in its own right — that is the whole
+        difference between this and a walk that reports what it happens to
+        understand.
+        """
+        findings = []
+        for read in reads:
+            where = f"{read.read} at line {read.line}"
+            if read.unreadable_guards:
+                findings.append(
+                    f"{where}: guard the walker cannot read: " + "; ".join(read.unreadable_guards)
+                )
+            elif read.elements is None:
+                if not read.binds_a_buffer:
+                    findings.append(f"{where}: reachable for every element, and binds no buffer")
+            elif not read.elements <= accumulating:
+                outside = sorted(read.elements - accumulating)
+                findings.append(f"{where}: read for an element that does not accumulate: {outside}")
+        return findings
