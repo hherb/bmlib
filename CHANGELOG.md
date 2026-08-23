@@ -199,6 +199,67 @@ All notable changes to bmlib are documented here. The format is based on
   audit's net above depends on. A `<front>` naming no contributor at all logs
   at DEBUG.
 
+- **The prospective half of `_inside_mixed_citation` is mechanised** (#151).
+  That helper keeps its strict-ancestor slice (`element_stack[:-1]`) as
+  prospective and argues it is currently harmless with a whole-method claim:
+  no arm of `endElement` reads `text` for an element outside
+  `_TEXT_ACCUMULATING`, so the base buffer is written and never consulted.
+  The claim was true and nothing tied the two together — it is a property of
+  a 500-line method asserted in one helper's docstring 300 lines away, and
+  the next queued issue is exactly the shape that breaks it, since #142 wants
+  a `<collab>`'s `<institution>`/`<addr-line>` children read and neither
+  accumulates. Adding such an arm would fail no test; it would quietly make a
+  paragraph false while the code around it still relied on the reasoning.
+  `TestTheAuditNetIsComplete` is the precedent — *a rule enforced by prose is
+  not enforced* — and it caught a routing flag shipping missing from the net
+  it belonged in.
+
+  `TestOnlyAnAccumulatingElementReadsTheBuffer` walks `endElement`'s arms with
+  `ast` and reports every read of the popped buffer together with the element
+  names that can reach it. **Three names are tracked, not one** — `text`,
+  `normalized_text` and `element_text` — because the latter two are the same
+  buffer a line either side, so the net is deliberately wider than the prose
+  it enforces.
+
+  **Every outcome fails closed, which is the whole design.** A guard the
+  walker cannot read is a finding in its own right rather than a read passed
+  over; a read no `name` test constrains is reachable for every element and
+  reported unless it is one of the two statements that *bind* `text` and
+  `normalized_text`; and the verdict is containment in `_TEXT_ACCUMULATING`,
+  never overlap with it, since the likeliest breakage is an existing arm
+  gaining an element rather than a new arm appearing. The walker raises when
+  it cannot find the class or the method: *no reads* must never be an answer
+  it can give, or a restructure turns four tests green at once.
+
+  Five of the twelve tests exist only so a green means something — a teeth
+  control in #142's own shape, an unreadable-guard control, a control for a
+  read the chain does not guard, a positive control asserting the walk still
+  sees six named buffer-reading arms, and the raise. Verified end to end in
+  both directions: #142's arm added verbatim to the real parser is reported
+  by line and element, an existing arm widened to admit `<institution>` is
+  reported twice, and the *permitted* change — that arm plus the matching
+  `_TEXT_ACCUMULATING` membership — goes green. 16 mutants of the walker, 16
+  caught. The synthetic controls are judged against an accumulating set of
+  their own rather than the parser's, found by running that third case:
+  asserting `<institution>` does not accumulate is asserting something #142 is
+  entitled to change, and four controls would have failed for the opposite of
+  the reason they were written.
+
+  Its sibling is a comment gap at three sites, and measuring it corrected the
+  issue's own account. `element_stack[:-1]` is a *strict*-ancestor slice only
+  because `element_stack.pop()` sits at the end of `endElement`, and nothing
+  said so at either end. Moving the pop reddens 58 tests when placed before
+  the handler arms and 65 when placed above the buffer pop at the top — and
+  **only the second reaches the citation slice**, because
+  `_inside_mixed_citation` is evaluated inside `_pop_text_buffer`'s own
+  argument, so "moving the pop up fails it" is true only of a placement the
+  issue did not name. Two neighbours turn out not to ride on it at all: the
+  `<caption>` parent test is made in `startElement`, where the push is what
+  places it, and `<article-id>`'s is pinned by nothing, being disjoined as
+  `parent == "article-meta" or self.in_front`.
+
+  No behaviour change: one test class and three comments.
+
 ### Fixed
 
 - **A `<ref>` carrying several citation elements lost all but the last, and
@@ -305,7 +366,9 @@ All notable changes to bmlib are documented here. The format is based on
   `<citation-alternatives>` — where the unconditional write was
   last-writer-wins and an `<element-citation>` deposited second wiped the
   string the publisher did typeset. Several `<mixed-citation>` in one `<ref>`
-  is a modelling decision rather than a defect fix, and is #149.
+  was left as a modelling decision rather than a defect fix at this point in
+  the work, and is the entry above — settled in the same PR by measuring the
+  population.
 
   **What moves for a caller, measured rather than reasoned.** The first
   account of this was wrong in the direction that matters — it said every
