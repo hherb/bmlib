@@ -44,8 +44,10 @@ class JATSAuthorInfo:
     folded into ``surname``:
 
     - ``collab`` — a collaboration, consortium or group (*"the INHERIT Trial
-      Group"*). Not a person at all, and frequently the only contributor a
-      trial paper credits (issue #120).
+      Group"*). Not a person at all. In the only draw that has measured it —
+      1,025 open-access articles, from the PR #118 review — a collaboration
+      was always credited *beside* a structured name, so no article lost all
+      its contributors to this spelling (issue #120).
     - ``string_name`` — a person whose name the depositor did not split
       (*"Jane Q Smith"*). A ``<string-name>`` **may** carry ``<surname>`` and
       ``<given-names>`` children, and where it does those fill the structured
@@ -58,16 +60,26 @@ class JATSAuthorInfo:
     can make that decision itself, knowing that it is making one.
 
     Keeping them out of ``surname`` is what lets that consumer tell them
-    apart: ``surname`` is sorted and de-duplicated on, and an organisation
-    silently sitting in it is indistinguishable from a person. Emptiness is
-    the predicate — ``bool(collab)`` asks "is this an organisation?" and
-    ``bool(string_name)`` asks "is this name undivided, so must not be treated
-    as a surname?" — so there is no flag that can disagree with the string it
-    describes.
+    apart: ``surname`` is what downstream code sorts and de-duplicates on, and
+    an organisation silently sitting in it is indistinguishable from a person.
+    Emptiness is the predicate — ``bool(collab)`` asks "is this an
+    organisation?" and ``bool(string_name)`` asks "is this name undivided, so
+    must not be treated as a surname?" — so there is no flag that can disagree
+    with the string it describes.
+
+    **A contributor may now carry an empty ``surname``.** Before #120 and #140
+    a collaboration produced no entry at all, so code reading ``surname``
+    unconditionally never saw one — ``sorted(authors, key=...surname)`` now
+    front-loads consortia and ``a.surname[0]`` now raises. Read
+    :attr:`full_name`, or branch on ``collab`` / ``string_name``.
     """
 
     surname: str = ""
     given_names: str = ""
+    #: Reserved: nothing populates this today — bmlib's JATS parser has no
+    #: ``<aff>`` handler, so it is always empty — but a parser that can fill it
+    #: should not need a schema change. Do not read it as "this contributor
+    #: declared no affiliation".
     affiliations: list[str] = field(default_factory=list)
     #: A collaboration's name, where this contributor is one (issue #120).
     collab: str = ""
@@ -81,13 +93,35 @@ class JATSAuthorInfo:
         A structured name wins over both undivided forms, because a
         ``<contrib>`` carrying a ``<name>`` *and* a ``<collab>`` is *"Smith, on
         behalf of the Y Group"* — the person is the contributor and the
-        collaboration is an attribution attached to them. ``collab`` is
-        preferred over ``string_name`` for the same reason one level down: a
-        group naming itself says more than an unsplit personal name beside it.
+        collaboration is an attribution attached to them.
+
+        The order between the two undivided forms is **arbitrary**. No deposit
+        carrying both has been measured, and the principle above does not
+        settle it: a ``string_name`` *is* a person, so "the person is the
+        contributor" would argue for the opposite order. It is fixed only so
+        the rule is deterministic, and pinned so the code keeps applying
+        whichever rule this docstring states.
         """
         if self.surname or self.given_names:
             return f"{self.given_names} {self.surname}".strip()
         return self.collab or self.string_name
+
+    @property
+    def is_named(self) -> bool:
+        """Did any spelling of a name arrive?
+
+        A question, not a guarantee: a ``<contrib>`` naming nobody —
+        ``<anonymous/>``, or one carrying only an ``<xref>`` — is well-formed
+        JATS, so an unnamed contributor is a document's answer and not an
+        error. The parser's builder gates on this rather than repeating the
+        four-way test, so "named" has one definition, on the public type, for
+        the downstream that has to make the same judgement.
+
+        Reads through :attr:`full_name`, so a field holding only whitespace
+        counts as unnamed — ``bmlib.citations`` already treats a blank string
+        as no author, and the parser strips before assigning either way.
+        """
+        return bool(self.full_name.strip())
 
 
 @dataclass

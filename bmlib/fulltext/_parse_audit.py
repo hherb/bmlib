@@ -91,16 +91,19 @@ class ParseUnwindState:
         open_contrib_groups: ``<contrib-group>`` role declarations still on
             the stack. A contributor inherits the innermost, so a stale entry
             hands a later ``<contrib>`` a role from a group that had closed.
-        open_contribs: ``<contrib>`` frames still on the stack. A contributor
-            is built at its end tag, so one left open is never built — and
-            every ``<surname>``, ``<collab>`` and ``<string-name>`` read after
-            the imbalance is written into that stranded builder instead of the
-            contributor it belongs to.
+        open_contribs: ``<contrib>`` frames still on the stack, including the
+            ``None`` ones a *non-author* ``<contrib>`` pushes. An author frame
+            left open is never built, and every ``<surname>``,
+            ``<given-names>``, ``<collab>`` and ``<string-name>`` read while it
+            is innermost goes to that stranded builder instead of the
+            contributor it belongs to; a stranded ``None`` frame drops those
+            names instead.
         unfilled_author_slots: Slots reserved by a ``<contrib>`` that never
             closed. ``build_authors()`` filters these out without a word,
             which is a silently missing contributor. Counted separately from
-            ``open_contribs`` for the reason the figure pair is: a defect can
-            strand the slot without stranding the frame.
+            ``open_contribs`` because the two can diverge: a non-author frame
+            reserves no slot, and a ``<contrib>`` naming nobody gives its slot
+            back, so neither number is derivable from the other.
         unfilled_figure_slots: Slots reserved by a ``<fig>`` that never
             closed. ``build_figures()`` filters these out without a word,
             which is a silently missing figure.

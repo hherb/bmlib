@@ -702,14 +702,21 @@ nested article was there at all; each one is also logged at `DEBUG` with its
 class JATSAuthorInfo:
     surname: str = ""
     given_names: str = ""
-    affiliations: list[str] = field(default_factory=list)
+    affiliations: list[str] = field(default_factory=list)  # reserved; always empty
     collab: str = ""       # a collaboration, not a person       (unreleased, #120)
     string_name: str = ""  # an undivided personal name          (unreleased, #140)
 
     @property
     def full_name(self) -> str: ...  # "John A Smith"; the collaboration or the
-                                     # undivided name where there is no surname
+                                     # undivided name where there is no
+                                     # structured name at all
+    @property
+    def is_named(self) -> bool: ...  # did any spelling of a name arrive?
 ```
+
+> `affiliations` is **reserved and never populated** — bmlib's JATS parser has
+> no `<aff>` handler, so it is always `[]`. Do not read it as *"this
+> contributor declared no affiliation"*.
 
 > **A name that arrives undivided is kept undivided** *(unreleased, #120,
 > #140)*. JATS names a contributor with `(name | string-name | collab | …)`
@@ -733,14 +740,26 @@ class JATSAuthorInfo:
 > contributor and the collaboration is an attribution attached to them.
 >
 > **This changes what a corpus holds.** Before it, a `<collab>` consortium
-> author was dropped (34 of 1,025 open-access articles lost at least one) and
+> author was dropped (34 of the 1,025 open-access articles drawn in the PR
+> #118 review lost at least one contributor — a count of `<contrib>` elements
+> carrying no `<surname>`, so not a rate for either spelling alone) and
 > an article naming every contributor with `<string-name>` parsed to *no
 > authors at all*. Both now appear in `JATSArticle.authors` and in the
 > `<p class="authors">` line of the rendered HTML that `FullTextService`
 > caches, so stored full text is not comparable across the upgrade.
 >
-> A `<string-name>` inside a reference's `<person-group>` now also reaches
-> `JATSReferenceInfo.authors`, where a `<collab>` already did.
+> **A contributor may now carry an empty `surname`.** Before this, a
+> collaboration produced no entry at all, so code reading `surname`
+> unconditionally never saw one: `sorted(authors, key=lambda a: a.surname)`
+> now front-loads consortia and `a.surname[0]` now raises. Read `full_name`,
+> or branch on `collab` / `string_name`.
+>
+> A `<string-name>` cited in a reference now also reaches
+> `JATSReferenceInfo.authors`, where a `<collab>` already did — both gated on
+> the whole citation, so either spelling counts as a direct child of
+> `<mixed-citation>` as well as inside a `<person-group>`. A `<string-name>`
+> that *divides* into `<surname>` and `<given-names>` fills those instead, and
+> the element's own text — the punctuation between them — is not an author.
 
 ### JATSAbstractSection
 

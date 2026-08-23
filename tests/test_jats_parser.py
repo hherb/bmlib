@@ -968,7 +968,9 @@ class TestAnUndividedContributorName:
 
     ``_AuthorBuilder.build()`` refused anything without a ``<surname>`` and the
     call site dropped it without a word, so a ``<collab>`` consortium author
-    vanished (34 of 1,025 open-access articles lost at least one) and a
+    vanished (34 of the 1,025 open-access articles drawn in the PR #118
+    review lost at least one contributor; that draw counted ``<contrib>``
+    elements carrying no ``<surname>``, a set both spellings share) and a
     ``<contrib-group>`` built from ``<string-name>`` parsed to *zero* authors —
     a well-formed empty list, which reads as "this article credits nobody"
     rather than as a parser that looked in the wrong place.
@@ -1016,8 +1018,117 @@ class TestAnUndividedContributorName:
           <contrib><name><surname>Editor</surname><given-names>Ed</given-names></name></contrib>
         </contrib-group>
       </collab></contrib>
+      <contrib><name><surname>After</surname><given-names>Di</given-names></name></contrib>
     </contrib-group>
   </article-meta></front>
+  <body><sec><title>Results</title><p>Prose after the editor roster.</p></sec></body>
+</article>"""
+
+    #: A consortium whose ``<collab>`` carries *only* a roster, so the outer
+    #: ``<contrib>`` names nobody and gives its slot back while the member it
+    #: encloses has already filled one. The only shape in which
+    #: ``del author_slots[slot]`` differs from ``pop()`` and from
+    #: ``del author_slots[-1]``: every other nameless ``<contrib>`` is last,
+    #: where all three truncate the same entry.
+    CONSORTIUM_NAMING_NOBODY = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>A roster with no consortium name</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><collab>
+        <contrib-group>
+          <contrib><name><surname>Member</surname><given-names>Bo</given-names></name></contrib>
+        </contrib-group>
+      </collab></contrib>
+      <contrib><name><surname>After</surname><given-names>Di</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <body><sec><title>Results</title><p>Prose after the roster.</p></sec></body>
+</article>"""
+
+    #: A roster whose members are named undivided. ``<string-name>`` merges its
+    #: text back into its parent so a ``<mixed-citation>`` keeps the name it
+    #: prints inline — and the nearest accumulating ancestor of a roster member
+    #: is the enclosing ``<collab>``, so without the ``<contrib>`` test the
+    #: members were appended to the consortium's own name.
+    UNDIVIDED_ROSTER_MEMBERS = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>A consortium of undivided names</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><collab>the INHERIT Trial Group
+        <contrib-group>
+          <contrib><string-name>Jane Q Smith</string-name></contrib>
+          <contrib><string-name>Ahmed Al-Rashid</string-name></contrib>
+        </contrib-group>
+      </collab></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <body><sec><title>Results</title><p>Prose after the roster.</p></sec></body>
+</article>"""
+
+    #: A contributor carrying given names and no surname, and a
+    #: ``<string-name>`` that divides into given names alone. Neither is
+    #: reached by a ``surname``-only predicate.
+    GIVEN_NAMES_WITHOUT_A_SURNAME = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>A mononym</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><given-names>Prince</given-names></name></contrib>
+      <contrib><string-name><given-names>Cher</given-names></string-name></contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
+    #: JATS 1.2 names a contributor with ``<on-behalf-of>`` too. bmlib does not
+    #: extract it, so this article has no authors — the point is that the
+    #: detector must not then certify it as naming nobody.
+    ON_BEHALF_OF_ONLY = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="pmc">PMC7654321</article-id>
+    <title-group><article-title>An attribution and no name</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><on-behalf-of>the XYZ Group</on-behalf-of></contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
+    #: Two cited authors named with a *divided* ``<string-name>`` — JATS lets
+    #: it carry ``<surname>`` and ``<given-names>`` children, and the element's
+    #: own buffer then holds only the punctuation between them.
+    DIVIDED_STRING_NAMES_IN_A_CITATION = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Citing two divided names</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <back><ref-list>
+    <ref id="R1"><element-citation>\
+<person-group person-group-type="author">\
+<string-name><surname>Smith</surname>, <given-names>J</given-names></string-name>\
+<string-name><surname>Jones</surname>, <given-names>A</given-names></string-name>\
+</person-group><article-title>A cited paper</article-title></element-citation></ref>
+  </ref-list></back>
+</article>"""
+
+    #: A collaboration cited as a direct child of ``<mixed-citation>``, outside
+    #: any ``<person-group>``.
+    COLLAB_IN_A_CITATION = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Citing a collaboration</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <back><ref-list>
+    <ref id="R1"><mixed-citation><collab>the WHO Study Group</collab>. \
+<article-title>A cited paper</article-title>. <year>2020</year>.</mixed-citation></ref>
+  </ref-list></back>
 </article>"""
 
     STRING_NAMES_ONLY = b"""<?xml version="1.0"?>
@@ -1141,10 +1252,19 @@ class TestAnUndividedContributorName:
         the editor's ``<surname>`` is written into the consortium's builder and
         wins the rendering. Both leave the article with the wrong contributor
         and neither is visible in a fixture whose nesting is all one role.
+
+        The contributor *after* the roster is the other edge: a ``None`` frame
+        has to pop as well as push, and a fixture stopping at ``</collab>``
+        pins only the push. The body prose is the same test for the text
+        buffers the roster opened.
         """
         article = JATSParser(self.COLLAB_WITH_A_NON_AUTHOR_ROSTER).parse()
 
-        assert [a.full_name for a in article.authors] == ["the INHERIT Trial Group"]
+        assert [a.full_name for a in article.authors] == [
+            "the INHERIT Trial Group",
+            "Di After",
+        ]
+        assert article.body_sections[0].paragraphs == ["Prose after the editor roster."]
 
     def test_an_undivided_personal_name_is_collected(self):
         assert self._names(self.STRING_NAMES_ONLY) == ["Jane Q Smith", "Ahmed Al-Rashid"]
@@ -1190,8 +1310,7 @@ class TestAnUndividedContributorName:
 
         assert [a.full_name for a in article.authors] == ["A Real"]
         assert any(
-            "carried no <name>, <collab> or <string-name>" in m
-            for m in parser_log.messages(logging.DEBUG)
+            "yielded no name bmlib could read" in m for m in parser_log.messages(logging.WARNING)
         )
 
     def test_a_collaboration_reaches_the_rendered_html(self):
@@ -1228,6 +1347,138 @@ class TestAnUndividedContributorName:
         references = JATSParser(self.STRING_NAME_IN_A_CITATION).parse().references
 
         assert references[0].citation.startswith("Smith J")
+
+    def test_a_cited_name_outside_a_person_group_is_still_a_cited_author(self):
+        """The two undivided spellings are gated alike, on the whole citation.
+
+        JATS admits either as a direct child of ``<mixed-citation>`` and
+        ``<element-citation>``. Gated on ``in_ref_person_group`` — a strict
+        subset of ``in_ref_citation``, which is what ``<collab>`` uses — a
+        ``<string-name>`` sitting in the markup produced an empty ``authors``
+        with nothing logged, which is the failure direction #120 and #140 are
+        about.
+        """
+        references = JATSParser(self.STRING_NAME_IN_A_CITATION).parse().references
+
+        assert references[0].authors == ["Smith J"]
+
+    def test_a_cited_collaboration_reaches_the_reference_authors(self):
+        """The spelling ``<string-name>``'s reference branch is modelled on.
+
+        Asserted rather than assumed: the claim that ``<collab>`` "already
+        worked" here was made in prose by the fix beside it and by nothing
+        else, so deleting this branch outright was a green change.
+        """
+        references = JATSParser(self.COLLAB_IN_A_CITATION).parse().references
+
+        assert references[0].authors == ["the WHO Study Group"]
+
+    def test_a_cited_collaboration_stays_in_the_citation_string(self):
+        """The other edge of the merge, for the other undivided spelling.
+
+        ``<collab>`` accumulated a buffer without being inline, so its text was
+        taken from the citation and never returned — the exact defect the
+        ``<string-name>`` entry beside it was added to avoid, one line up in
+        the same set, costing every consortium-authored reference its author.
+        """
+        references = JATSParser(self.COLLAB_IN_A_CITATION).parse().references
+
+        assert references[0].citation.startswith("the WHO Study Group")
+
+    def test_a_divided_cited_name_adds_no_punctuation_author(self):
+        """A ``<string-name>``'s own buffer is not a name when it divides.
+
+        Its ``<surname>`` and ``<given-names>`` children route through their
+        own arms, so the element's buffer holds only what sits between them —
+        a comma. Appending that put a bare ``","`` in ``authors``, *ahead* of
+        the name itself, and rendered it into the reference list bmlib caches.
+        """
+        references = JATSParser(self.DIVIDED_STRING_NAMES_IN_A_CITATION).parse().references
+
+        assert references[0].authors == ["J Smith", "A Jones"]
+
+    def test_two_divided_cited_names_do_not_collapse_onto_the_last(self):
+        """The same close has to *flush*, not merely refrain from appending.
+
+        Only ``</name>`` and ``</person-group>`` finish a pending cited author,
+        and neither closes between two adjacent ``<string-name>`` — so the
+        first one's parts were overwritten by the second's and that author was
+        lost outright, silently and independently of the punctuation above.
+        """
+        references = JATSParser(self.DIVIDED_STRING_NAMES_IN_A_CITATION).parse().references
+
+        assert "J Smith" in references[0].authors
+
+    def test_a_roster_of_undivided_names_leaves_the_consortium_alone(self):
+        """An undivided name inside a ``<contrib>`` belongs to that contributor.
+
+        ``<string-name>`` merges its buffer back into its parent so a
+        ``<mixed-citation>`` keeps a name it prints inline. The nearest
+        accumulating ancestor of a roster member is the enclosing
+        ``<collab>``, so an unconditional merge appended every member to the
+        consortium's own name — *"the INHERIT Trial GroupJane Q SmithAhmed
+        Al-Rashid"* — silently, in the very shape #120 exists to collect.
+        """
+        authors = JATSParser(self.UNDIVIDED_ROSTER_MEMBERS).parse().authors
+
+        assert [a.full_name for a in authors] == [
+            "the INHERIT Trial Group",
+            "Jane Q Smith",
+            "Ahmed Al-Rashid",
+        ]
+        assert authors[0].collab == "the INHERIT Trial Group"
+
+    def test_a_roster_member_survives_a_consortium_that_names_nobody(self):
+        """The give-back deletes *its own* slot, not the last one.
+
+        A ``<contrib>`` naming nobody that **encloses** one that does is the
+        only shape in which ``del author_slots[slot]`` differs from ``pop()``
+        or ``del author_slots[-1]``: everywhere else the nameless contributor
+        is last. Both of those edits took the member's filled slot instead,
+        losing the contributor and leaving the audit to ERROR on a document
+        bmlib had read correctly.
+        """
+        article = JATSParser(self.CONSORTIUM_NAMING_NOBODY).parse()
+
+        assert [a.full_name for a in article.authors] == ["Bo Member", "Di After"]
+
+    def test_a_contributor_named_only_by_given_names_is_collected(self):
+        """A mononym has no ``<surname>``, and neither does half of ``build()``.
+
+        Dropped, the article is *also* certified author-less, because the
+        ``<front>`` counter reads ``<surname>``, ``<collab>``,
+        ``<string-name>`` and ``<on-behalf-of>`` — not ``<given-names>``. That
+        is #121's silence with a green suite.
+        """
+        assert self._names(self.GIVEN_NAMES_WITHOUT_A_SURNAME) == ["Prince", "Cher"]
+
+    def test_a_string_name_that_divides_into_given_names_alone_stays_structured(self):
+        """The second half of the "did a structured name arrive?" guard.
+
+        Tested against ``surname`` alone the guard short-circuits, and a
+        ``<string-name>`` carrying only ``<given-names>`` puts its leftover
+        buffer into ``string_name`` beside the name it already divided into.
+        """
+        author = JATSParser(self.GIVEN_NAMES_WITHOUT_A_SURNAME).parse().authors[1]
+
+        assert author.given_names == "Cher"
+        assert author.string_name == ""
+
+    def test_a_contributor_named_only_by_on_behalf_of_is_not_certified_authorless(self, parser_log):
+        """A fourth spelling, and the detector must not conclude past it.
+
+        bmlib does not extract ``<on-behalf-of>``, so this article has no
+        authors either way. What #120 and #140 cost was the *quiet* branch
+        being reached — an article whose only contributor was named in a
+        spelling bmlib did not read, reported as naming nobody. Counting the
+        spelling is what keeps the loud branch loud while extraction waits.
+        """
+        article = JATSParser(self.ON_BEHALF_OF_ONLY).parse()
+
+        assert article.authors == []
+        assert any(
+            "named" in m and "contributor(s)" in m for m in parser_log.messages(logging.WARNING)
+        )
 
 
 class TestSubArticlesAreNotTheArticle:
@@ -3567,6 +3818,21 @@ def _drop_end_tag(monkeypatch, tag: str) -> None:
     monkeypatch.setattr(_JATSHandler, "endElement", patched)
 
 
+#: One ``<contrib>``, declared an editor's, so bmlib pushes a frame for it and
+#: reserves no author slot. The separator between ``open_contribs`` and
+#: ``unfilled_author_slots``.
+_EDITOR_ONLY_ARTICLE = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="pmc">PMC1234567</article-id>
+    <title-group><article-title>An editor and no author</article-title></title-group>
+    <contrib-group content-type="editor">
+      <contrib><name><surname>Adeyemi</surname><given-names>K</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
+
 _AUDITED_ARTICLE = b"""<?xml version="1.0"?>
 <article>
   <front><article-meta>
@@ -3913,7 +4179,8 @@ class TestTheAuditNetIsComplete:
     kept it in step with the handler. Both halves of that were live defects
     when this class was written: ``implicit_body_section`` was missing from
     the net (a whole unsectioned ``<body>`` could vanish with the audit
-    silent), and 14 of the 15 listed names could be deleted with the suite
+    silent), and when this class was written all but one of the names then
+    listed could be deleted with the suite
     still green.
     """
 
@@ -3925,6 +4192,7 @@ class TestTheAuditNetIsComplete:
             "abstract_sections",
             "body_paragraph_count",
             "body_sections",
+            "contribs_naming_nobody",
             "doi",
             "doi_is_typed",
             "front_contributor_name_count",
@@ -4090,9 +4358,13 @@ class TestTheAuditCapturesWhatItReports:
         parser_log.expect_errors()
         _drop_end_tag(monkeypatch, "contrib")
 
-        JATSParser(_AUDITED_ARTICLE).parse()
+        article = JATSParser(_AUDITED_ARTICLE).parse()
 
         assert any("<contrib> still open" in m for m in parser_log.messages(logging.ERROR))
+        # The filter is what keeps the reservation from putting a `None` in a
+        # `list[JATSAuthorInfo]`. Deleting it is otherwise a green change: the
+        # only document that can produce a hole is this one.
+        assert article.authors == []
 
     def test_an_unfilled_author_slot_is_captured(self, monkeypatch, parser_log):
         """``build_authors()`` drops the hole without a word — the audit must not."""
@@ -4102,6 +4374,24 @@ class TestTheAuditCapturesWhatItReports:
         JATSParser(_AUDITED_ARTICLE).parse()
 
         assert any("author slot(s)" in m for m in parser_log.messages(logging.ERROR))
+
+    def test_an_open_non_author_contrib_is_a_frame_and_not_a_slot(self, monkeypatch, parser_log):
+        """The two contributor fields are counted separately because they diverge.
+
+        ``_AUDITED_ARTICLE`` carries one ``<contrib>``, so dropping its end tag
+        moves both numbers together and either field could be computed from
+        the other with the suite still green. A **non-author** ``<contrib>``
+        pushes a frame and reserves no slot, which is the shape that tells them
+        apart — and the one the docstring's claim rests on.
+        """
+        parser_log.expect_errors()
+        _drop_end_tag(monkeypatch, "contrib")
+
+        JATSParser(_EDITOR_ONLY_ARTICLE).parse()
+
+        errors = parser_log.messages(logging.ERROR)
+        assert any("<contrib> still open" in m for m in errors)
+        assert not any("author slot(s)" in m for m in errors)
 
     def test_a_contributor_naming_nobody_is_not_an_unfilled_slot(self, parser_log):
         """The false-positive half, and the reason the reservation is given back.
@@ -4289,7 +4579,8 @@ class TestTheZeroAuthorDetectorReadsEverySpelling:
 
         An operator grepping after a bulk sync has to be able to tell
         "checked, named nobody" from "not checked at all", so the line names
-        the article and the three spellings it looked for.
+        the article and every spelling it looked for — including
+        ``<on-behalf-of>``, which bmlib counts and does not extract.
         """
         data = _article_with_front("<abstract><p>No contributors at all.</p></abstract>")
 
@@ -4298,7 +4589,7 @@ class TestTheZeroAuthorDetectorReadsEverySpelling:
         assert article.authors == []
         assert not parser_log.messages(logging.WARNING)
         debug = parser_log.messages(logging.DEBUG)
-        expected = "named no contributor via <surname>, <string-name> or <collab>"
+        expected = "named no contributor via <surname>, <string-name>, <collab> or <on-behalf-of>"
         assert any("PMC1234567" in m and expected in m for m in debug)
 
     def test_a_nested_article_s_contributors_are_not_counted(self, parser_log):

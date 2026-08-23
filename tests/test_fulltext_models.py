@@ -76,12 +76,47 @@ class TestAnUndividedContributorName:
 
         assert author.full_name == "Jane Smith"
 
+    def test_given_names_alone_render_as_the_full_name(self):
+        """A mononym is a structured name with no ``<surname>``.
+
+        Tested on ``surname`` alone, the branch falls through to the undivided
+        forms and a contributor carrying only given names renders empty — and
+        with neither undivided field set, :attr:`is_named` then calls a named
+        contributor unnamed and the parser drops them.
+        """
+        author = JATSAuthorInfo(given_names="Prince")
+
+        assert author.full_name == "Prince"
+        assert author.is_named
+
+    def test_a_contributor_carrying_no_spelling_at_all_is_not_named(self):
+        """``<anonymous/>``, or a ``<contrib>`` carrying only an ``<xref>``.
+
+        Well-formed JATS, so this is the document's answer rather than an
+        error — which is why the predicate is a question on the type and not a
+        raising ``__post_init__``. The parser is built inside a SAX callback,
+        where a raise escapes into ``FullTextService``'s tier-level handler and
+        costs the whole article (issue #129).
+        """
+        assert not JATSAuthorInfo().is_named
+
+    def test_a_name_that_is_only_whitespace_is_not_a_name(self):
+        """Reachable from a caller, though not from the parser, which strips.
+
+        ``bmlib.citations`` already settled that a blank string is no author;
+        reading the predicate through ``full_name`` keeps the two agreeing.
+        """
+        assert not JATSAuthorInfo(collab="   ").is_named
+
     def test_a_collaboration_wins_over_an_undivided_personal_name(self):
         """The documented order between the two undivided forms.
 
-        Reachable only from a ``<contrib>`` carrying both spellings, which is
-        not a shape anything has measured — pinned so the rule the docstring
-        states is the rule the code applies.
+        **Arbitrary, and pinned as arbitrary.** No deposit carrying both has
+        been measured, and the principle that settles the structured case does
+        not reach this one — a ``string_name`` *is* a person, so "the person is
+        the contributor" would argue the other way. Fixed only so the rule is
+        deterministic, and pinned so the code keeps applying whichever rule the
+        docstring states.
         """
         author = JATSAuthorInfo(collab="The CONSORT Group", string_name="Jane Q Smith")
 

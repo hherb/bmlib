@@ -494,6 +494,63 @@ class TestHowAContribNamesItsContributorIsCounted:
             "anonymous": 1,
         }
 
+    def test_a_spelling_nobody_listed_prints_as_itself(self):
+        """The vocabulary is open, which is the whole reason it is a vocabulary.
+
+        JATS's contributor model ends in ``...``, and ``<on-behalf-of>`` is in
+        that tail. Counted against a closed set, an unforeseen spelling falls
+        into ``"(none)"`` and the article is reported as naming nobody — #121's
+        mis-certification, inside the instrument built to detect the next
+        #120. #130's ``<list>`` is the standing precedent that an enumeration
+        written from the issues to hand misses the container nobody thought of.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                '<contrib-group content-type="author">'
+                "<contrib><on-behalf-of>the XYZ Group</on-behalf-of></contrib>"
+                "<contrib><future-name>Nobody has listed this</future-name></contrib>"
+                "</contrib-group>"
+            ),
+        )
+
+        # The unlisted spelling prints under its own name *and* is counted as
+        # naming nobody, because whether it names a contributor is exactly what
+        # is not known about it. Two facts, not a conclusion — a reader sees
+        # both the element and how bmlib's reading treated it.
+        assert row.contrib_name_spellings == {
+            "on-behalf-of": 1,
+            "future-name": 1,
+            "(none)": 1,
+        }
+
+    def test_only_the_spellings_bmlib_extracts_are_marked_collected(self, capsys):
+        """``<anonymous/>`` names a contributor and is deliberately not collected.
+
+        The annotation used to read "anything that is not ``(none)``", which
+        printed a false claim in the evidence table a rule change is judged
+        against.
+        """
+        totals = sampler.Totals()
+        totals.add(
+            sampler.measure_article(
+                "PMC1",
+                _article(
+                    '<contrib-group content-type="author">'
+                    "<contrib><anonymous/></contrib>"
+                    "<contrib><collab>the INHERIT Trial Group</collab></contrib>"
+                    "</contrib-group>"
+                ),
+            )
+        )
+
+        assert sampler.print_report(totals) is True
+        section = _section(capsys.readouterr().out, "11. HOW A <contrib>")
+        anonymous = next(ln for ln in section if "anonymous" in ln)
+        collab = next(ln for ln in section if "collab" in ln)
+        assert "collected as an author" not in anonymous
+        assert "collected as an author" in collab
+
     def test_a_contrib_naming_nobody_gets_its_own_vocabulary_entry(self):
         """The shape the parser reports at DEBUG and drops.
 

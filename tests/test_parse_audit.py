@@ -114,7 +114,7 @@ class TestEachImbalanceIsReportedWithItsCost:
         """
         [message] = unwind_diagnostics(ParseUnwindState(unfilled_figure_slots=1))
 
-        # "never built" alone is shared by four of the eleven diagnostics, so
+        # "never built" alone is shared by several diagnostics, so
         # asserting it here passed while this branch emitted the *table*
         # wording — mutation-confirmed. The phrases below are unique.
         assert "figure slot(s)" in message
@@ -180,8 +180,10 @@ class TestEveryFieldIsReported:
     rule, and nothing but prose kept them in step: a field captured by
     ``unwind_state()`` and given no branch here is an imbalance the audit
     *sees* and never reports, which is exactly the silence the module exists
-    to break. The per-field tests above cover the eleven fields that exist
-    today; these two cover the twelfth, whenever someone adds it.
+    to break. The per-field tests above cover every field that exists today;
+    these two cover the next one, whenever someone adds it. Deliberately
+    without a count: the loop below is generic over ``dataclasses.fields``, and
+    a number here goes stale in silence the first time the struct grows.
     """
 
     @staticmethod

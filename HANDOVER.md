@@ -15,8 +15,8 @@ days of each other; whoever cuts the next release should describe them
 together. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker.
 
-**Six of them move what a caller of `JATSParser` gets, and three of those
-move what a bmlib *sync* stores.** #111 populates an author list that was
+**Six of them move what a caller of `JATSParser` gets, and every one of those
+six moves what a bmlib *sync* stores.** #111 populates an author list that was
 empty for the majority of open-access articles. #115/#117 change
 `JATSArticle.figures` and `.tables` — figures that were missing now appear,
 and a figure's `graphic_url` changes from a thumbnail to the full image for
@@ -26,16 +26,19 @@ it, so a table that came back with no content now carries its image.
 owning element, so `body_sections` moves for roughly one recent article in
 ten. #129 is narrower: an article lost to a malformed `colspan` now parses.
 This session's #120/#140 collect a contributor whose name arrived undivided —
-a `<collab>` consortium author (3.3% of open-access articles lost at least
+a contributor named undivided (34 of the 1,025 open-access articles drawn
+in the PR #118 review, 3.3%, lost at least
 one) and a `<string-name>` one (an article deposited that way lost *all* of
 them).
 
-**`figures` and `tables` reach no bmlib path, but `authors` do** — a claim
-this file had backwards until 2026-08-23. `_render_html` writes
-`<p class="authors">` from `a.full_name`, `FullTextService` calls
-`parse_with_html()` and caches that HTML, so #111, #120 and #140 all change
-what a *sync* stores; `body_sections` and `abstract_sections` reach it the
-same way, which is #125's argument one branch over. `FullTextResult` still
+**All six reach a bmlib path, through the cached HTML** — a claim this file
+had backwards twice, first saying `authors` reached nothing and then saying
+`figures` and `tables` do. `_build_html` renders `h.authors` as
+`<p class="authors">` from `a.full_name`, and renders `h.figures` and
+`h.tables` into the same string; `FullTextService` calls `parse_with_html()`
+and caches it. So #111, #115, #117, #120, #127 and #140 all change what a
+*sync* stores, and `body_sections` and `abstract_sections` reach it the same
+way, which is #125's argument one branch over. `FullTextResult` still
 has no author field and `publications` still takes its authors from the
 fetchers, so nothing *structured* is stored — but a downstream holding cached
 full text should re-fetch, not only one calling `JATSParser` itself. The
@@ -61,14 +64,33 @@ false-positive net, and it must be free — the autouse `parser_log` fixture
 makes all 186 pre-existing fixtures one without being written as one. Key a
 counter on *structure*, never on the routing it is checking. A rule enforced
 by prose is not enforced, which is why `TestTheAuditNetIsComplete` exists — it
-demanded this session's two new audit fields the moment the contrib stack did.
+forced the accounting decision for this session's two stacks the moment they
+existed. It demands a *choice*, not a field: its exclusion sets are name
+lists, so nothing ties a member to a `ParseUnwindState` field.
 A detector must report what it *checked*, not what it concluded. And a test
 can pass before its code exists, vacuously (a bug) or because it asserts
 silence (the point); tell those apart before reading a green as evidence.
 
-**This session closed #120 and #140** — the two spellings of a contributor's
-name that give one undivided string. The fix is in `CHANGELOG.md`; four things
+**This session settled 120 and 140** — the two spellings of a contributor's
+name that give one undivided string. The fix is in `CHANGELOG.md`; six things
 are worth carrying forward.
+
+- **The fix's own review found two silent regressions, both in the paths it
+  touched but did not guard.** A `<string-name>` that *divides* put a bare
+  `","` in `references[].authors` ahead of the name it belongs to — the
+  contributor branch carried exactly that guard and the reference branch did
+  not — and two divided siblings collapsed onto the last of them, which
+  predated the work. And making `<string-name>` inline so a `<mixed-citation>`
+  keeps a name it prints appended every roster member to the enclosing
+  `<collab>`'s own name, in the very shape #120 exists to collect. Both landed
+  in the HTML `FullTextService` caches, both passed the full suite. **When a
+  fix extends a routing rule, walk every other path that rule reaches** — the
+  guard you wrote on one branch is the guard the others need.
+- **The same rule stated in prose on one branch is not applied on the next.**
+  The comment added for `<string-name>`'s inline merge described a defect
+  `<collab>` had all along, one line above it in the same set: consortium-
+  authored references were losing their author from the rendered citation.
+  A comment arguing for a rule is a place to check the rule's other instances.
 
 - **The same defect shape three times, and the module had already been caught
   by all three.** A single slot where the markup nests (#115's exhibits), a
@@ -90,7 +112,16 @@ are worth carrying forward.
   counters (section 11) and was deliberately **not** re-run: a run redraws both
   committed windows from today's strata, moving every figure cited in
   `CLAUDE.md`, and would bake in #138's scope defect. So no rate exists for
-  `<string-name>`, and none should be quoted.
+  `<string-name>`, and none should be quoted — nor for `<collab>`, since #120's
+  own 3.3% counted `<contrib>` elements carrying no `<surname>`, a set both
+  spellings share. Seven sites had re-labelled that figure as `<collab>`'s.
+- **An instrument's vocabulary has to be open, or it certifies.** Section 11
+  counted spellings against a closed frozenset while its comment claimed the
+  opposite, so an unforeseen spelling fell into `(none)` and was reported as a
+  contributor naming nobody — #121's mis-certification inside the tool built
+  to detect the next #120. `<on-behalf-of>` is the live instance: a fourth
+  JATS spelling, unextracted (#144), which reached the *quiet* branch of the
+  zero-author detector until it was added to `front_contributor_name_count`.
 - **A mutation harness that restores with `git checkout -- <file>` deletes
   whatever is uncommitted in it.** It ate this session's sampler edits.
   Commit first, or hold the original source in the harness and write it back.
@@ -112,11 +143,14 @@ PR bodies and any quotation of either, which is why this paragraph names
 neither. And check `gh issue view` after every merge that mentions an issue in
 prose.
 
-**Next up: #124, #128, #137 and #138 in `fulltext`, #119 from the #118 review,
-#132, the older non-JATS ones (#86, #92, #94, #103, #112), or Phase 3 of the
-bmlibrarian port, whose every row needs a design conversation.** #124 is now
-the last open issue that still loses content, and needs a model decision
-first. #132 and #138 both want a corpus redraw and should be paired — with a
+**Next up: #124, #128, #137, #138 and #142–#146 in `fulltext`, #119 from the
+#118 review, #132, the older non-JATS ones (#86, #92, #94, #103, #112), or
+Phase 3 of the bmlibrarian port, whose every row needs a design conversation.**
+#124 and #146 are the two open issues that still lose content — #146 is the
+rendered citation string, where every structured field is fine. #124 needs a
+model decision first. #142 and #143 both want section 11 to measure a
+population before a rule is picked, so they pair with the redraw below;
+#144 and #145 are extraction, each behind a design question the issue states. #132 and #138 both want a corpus redraw and should be paired — with a
 third reason now, since this session's sampler counters are in no committed
 draw.
 
@@ -210,7 +244,7 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 ### Open GitHub issues
 
 **Thirteen open** as this file is written (verified with `gh issue list`,
-after reopening #137 for the second time), eleven once this PR closes #120 and
+after reopening #137 for the second time), eleven once this PR lands 120 and
 #140: #86, #92, #94, #103, #112, #119, #124, #128, #132, #137, #138. Every one
 was found by review or measurement rather than by a failing test, and **none
 of them loses records** — though **#124** loses an exhibit's footnotes,
