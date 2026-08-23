@@ -87,9 +87,28 @@ slice is currently harmless with a whole-method claim: no arm of `endElement`
 reads `text` for an element outside `_TEXT_ACCUMULATING`. True when written,
 tied to nothing, and #142 is exactly the change that breaks it. No behaviour
 moves; `TestOnlyAnAccumulatingElementReadsTheBuffer` walks the arms with `ast`
-and reports every read of the popped buffer with the element names reaching
-it. Six things worth carrying forward.
+and reports every read of the buffer with the element names reaching it. Eight
+things worth carrying forward, two of them found only in review of the first
+cut.
 
+- **Key a net on the thing, not on the names the thing currently has.** The
+  first cut watched three locals — `text`, `normalized_text`, `element_text` —
+  and the claim it stands for is that the base buffer is never *consulted*.
+  `self.current_text` returns that same buffer, and the preamble binds
+  `element_text` from it, so the two are the same value; #142's own arm
+  written as `self.collab_address = self.current_text.strip()` passed the
+  whole suite green while making the slice load-bearing. Whether the guard
+  fired turned on which of two synonymous spellings the author typed. The walk
+  now watches five spellings including `self._pop_text_buffer()`.
+- **An exemption must be defined by what a statement does, not by what it
+  binds.** Reads that merely re-shape the buffer are passed over. Recognising
+  those by their assignment target alone exempted *any* statement assigning to
+  a buffer name, so `text = self._collab_child(name, text)` beside the
+  preamble — a per-element hook, the natural way to add handling without
+  disturbing a forty-branch `elif` — read the buffer for every element in
+  silence. It was the one shape inside the method producing no finding at all.
+  The rule now also requires that the statement hand the buffer to no method
+  on the handler, and that it stand under no guard.
 - **Every outcome of a net must fail closed, including "I could not tell".**
   A guard the walker cannot read is a finding in its own right, never a read
   passed over — a walk that reports only what it understands is the vacuous
@@ -101,24 +120,44 @@ it. Six things worth carrying forward.
   acquiring `"institution"` is #142 almost exactly. An overlap test passes
   that silently, and it was the one mutation in the class that *lost* a
   violation rather than inventing one.
+- **A positive control sized as a canary decays.** The inventory of arms the
+  walk must keep seeing was six element names while the walk saw nineteen, so
+  thirty-eight of the fifty-three reads it is built from could leave without a
+  word —
+  and extracting *one* arm into a helper, the likelier refactor, left all six
+  in place. It now carries the whole nineteen, as a floor rather than an
+  equality so that #142 adding a legitimate arm needs no edit to let it
+  through. Reads that only bind the buffer are excluded from it, or the
+  preamble's own `_TEXT_ACCUMULATING`-guarded read satisfies containment by
+  itself however many arms have gone; `<abstract>` is the witness pinning that.
 - **A control must not be judged against production data it does not own.**
-  Four synthetic controls asserted that `<institution>` does not accumulate —
+  Seven synthetic controls assert that `<institution>` does not accumulate —
   which is precisely what #142 is entitled to change, so the day it does they
   fail for the opposite of their own reason. Found by running the *permitted*
   change end to end, not by reading them. They now carry their own
   accumulating set; only the real handler is judged against the real one.
 - **Verify a net in both directions on the real file.** The violating arm
-  added verbatim to `jats_parser.py` is reported by line and element; the arm
-  *plus* its `_TEXT_ACCUMULATING` membership goes green. Twelve tests and 16
-  mutants of the walker say the machinery works; only those two say it decides
-  the right thing.
+  added verbatim to `jats_parser.py` is reported by line and element, in each
+  of four spellings, and so are an existing arm widened, an arm extracted into
+  a helper, a preamble hook, a guarded rebinding and an unreadable guard in an
+  `or`'s right branch — nine mutations, nine caught; the arm *plus* its
+  `_TEXT_ACCUMULATING` membership leaves all twenty green. Twenty tests and 12
+  mutants of the walker say the machinery works; only those ten say it decides
+  the right thing. Two of the 12 survived the first round, which is where the
+  last two controls came from.
 - **"Move the pop up" had to name how far.** The issue's own claim — that
   `test_the_citation_string_is_what_the_publisher_typeset` pins the
   strict-ancestor slice — is true only for a pop moved *above* the buffer pop
   at the top of `endElement`, since that is where `_inside_mixed_citation` is
-  evaluated. A pop moved anywhere below it reddens 58 tests and leaves all
-  four citation tests green. Measured, not reasoned; the first mutation I ran
-  was in the wrong place and quietly proved nothing.
+  evaluated. A pop moved anywhere below it reddens 58 tests and leaves the
+  citation tests green. Measured, not reasoned; the first mutation I ran was
+  in the wrong place and quietly proved nothing. **And the guard is seven
+  tests across two classes, not four in one** — three of
+  `TestAMixedCitationKeepsTheTextItPrints`' six and four in
+  `TestARefCarryingSeveralCitationsKeepsThemAll`, the majority, which the
+  first draft of the comment omitted while naming a test as though it sat
+  outside the class it belongs to. Read the difference set; do not enumerate
+  from test names.
 - **A guard that decides nothing is worth finding.** The same measurement
   showed `<article-id>`'s reachability guard reddening *nought* tests, and
   both halves of `parent == "article-meta" or self.in_front` turn out to be

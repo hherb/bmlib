@@ -5386,20 +5386,71 @@ class TestTheDiagnosticNamesTheArticle:
 #: is the safe direction for a net.
 _BUFFER_NAMES = frozenset({"text", "normalized_text", "element_text"})
 
+#: The buffer's *other* spellings, and the net is keyed on all of them
+#: because the invariant is about the base buffer being consulted at all —
+#: not about three local identifiers. ``self.current_text`` returns
+#: ``text_stack[-1]`` directly, and ``endElement``'s own preamble reads
+#: ``element_text = self.current_text`` for a non-accumulating element, so
+#: the two are the *same value* by construction: an arm reading either is
+#: byte-identically the hazard. Keyed on the locals alone, the review of #151
+#: found ``elif name in ("institution", "addr-line"):
+#: self.collab_address = self.current_text.strip()`` — #142's own arm, in the
+#: spelling an implementer reasoning "the ``<collab>`` buffer is already
+#: open" would reach for — passing the whole suite green.
+_BUFFER_ATTRIBUTES = frozenset({"current_text", "text_stack"})
+
+#: The method that pops the buffer. Calling it a second time in an arm takes
+#: and clears ``text_stack[0]`` — the base buffer the invariant is entirely
+#: about — so a call is a read like any other.
+_BUFFER_METHODS = frozenset({"_pop_text_buffer"})
+
 #: The accumulating set the *synthetic* controls below are judged against —
 #: their own, never the parser's. A control asserting that ``<institution>``
 #: does not accumulate is asserting something #142 is entitled to change, and
-#: judging it against the real ``_TEXT_ACCUMULATING`` would redden four tests
-#: the day it does, each for the opposite of the reason it was written. The
-#: real handler is judged against the real set; nothing else is.
+#: judging it against the real ``_TEXT_ACCUMULATING`` would redden seven tests
+#: the day it does, each for the opposite of the reason it was written
+#: (measured, by adding ``institution`` and ``addr-line`` here and running the
+#: class). The real handler is judged against the real set; nothing else is.
 _SYNTHETIC_ACCUMULATING = frozenset({"surname", "collab", "source"})
+
+
+#: Every element whose ``endElement`` arm consumes the text buffer, as the
+#: walk currently resolves them. This is the positive control's inventory —
+#: the thing that notices a read leaving the method — so it is a measurement
+#: of the handler and must be re-measured, never edited to make a test pass.
+#: It is read as a floor, so an arm legitimately *added* needs no edit here;
+#: only an arm whose read stops being visible does.
+_ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER = frozenset(
+    {
+        "article-id",
+        "article-title",
+        "collab",
+        "fpage",
+        "given-names",
+        "issue",
+        "journal-title",
+        "label",
+        "lpage",
+        "mixed-citation",
+        "p",
+        "pub-id",
+        "source",
+        "string-name",
+        "surname",
+        "title",
+        "volume",
+        "xref",
+        "year",
+    }
+)
 
 
 @dataclass(frozen=True)
 class _BufferRead:
-    """One read of the popped text buffer inside ``endElement``."""
+    """One read of the text buffer inside ``endElement``."""
 
-    #: Which of :data:`_BUFFER_NAMES` was read.
+    #: How the buffer was spelled: one of :data:`_BUFFER_NAMES`, or the
+    #: ``self.<attr>`` / ``self.<method>()`` form for the other spellings.
     read: str
     line: int
     #: Element names that can reach the read, or ``None`` where nothing above
@@ -5409,10 +5460,22 @@ class _BufferRead:
     #: Non-empty is a failure in its own right: a walk that quietly skips what
     #: it cannot classify is the vacuous green #151 exists to prevent.
     unreadable_guards: tuple[str, ...]
-    #: Is this read part of a statement *binding* one of the buffer names?
-    #: The two that define ``text`` and ``normalized_text`` are the method's
-    #: plumbing rather than an arm, and are the only unguarded reads allowed.
+    #: Is this read part of a statement that *binds* one of the buffer names?
+    #: Such a statement is the method's preamble rather than one of its arms,
+    #: which is what keeps ``element_text = self._pop_text_buffer(...)`` — a
+    #: read reaching every accumulating element — out of the positive
+    #: control's inventory of arms that *consume* the buffer.
     binds_a_buffer: bool
+    #: Is this read part of a statement that merely *re-shapes* the buffer
+    #: rather than consuming it? Strictly stronger than
+    #: :attr:`binds_a_buffer`; see :func:`_is_plumbing_statement`.
+    is_plumbing: bool
+    #: Is there any guard at all above the read? Paired with
+    #: :attr:`is_plumbing` this is what identifies the method's preamble: the
+    #: statements that bind ``element_text``, ``text`` and ``normalized_text``
+    #: stand at the top of the method body under no guard, and are the only
+    #: unguarded reads the rule allows.
+    guarded: bool
 
 
 def _elements_admitted(
@@ -5440,6 +5503,7 @@ def _elements_admitted(
     if isinstance(test, ast.BoolOp):
         elements: frozenset[str] | None = None
         unreadable: list[str] = []
+        unconstrained = False
         for operand in test.values:
             operand_elements, operand_unreadable = _elements_admitted(operand, namespace)
             unreadable.extend(operand_unreadable)
@@ -5448,13 +5512,20 @@ def _elements_admitted(
                 # narrow the set; the rest still do.
                 if operand_elements is not None:
                     elements = operand_elements if elements is None else elements & operand_elements
-            else:
+            elif operand_elements is None:
                 # ``or`` is only as narrow as its widest branch, so one
                 # unconstraining operand makes the whole test unconstraining.
-                if operand_elements is None:
-                    return None, tuple(unreadable)
+                unconstrained = True
+            else:
                 elements = operand_elements if elements is None else elements | operand_elements
-        return elements, tuple(unreadable)
+        # The loop runs to the end even once ``or`` is known to be
+        # unconstraining, because an unreadable guard in a *later* operand is
+        # a finding in its own right and returning early dropped it: the
+        # verdict then fell back to "reachable for every element", which
+        # the plumbing exemption can absorb, so the drop turned a fail-closed
+        # reading into a green one. Order-dependent silence is exactly what
+        # this walk exists not to have.
+        return (None if unconstrained else elements), tuple(unreadable)
 
     if _mentions_the_element_name(test):
         # It talks about ``name`` in a shape this walker does not read — a
@@ -5489,13 +5560,57 @@ def _string_collection(node: ast.expr, namespace: Mapping[str, object]) -> froze
     return None
 
 
+def _is_plumbing_statement(node: ast.stmt) -> bool:
+    """Does ``node`` merely re-shape the buffer, rather than consume it?
+
+    Two conditions, and the second is what the review of #151 added. The
+    statement must **bind** a buffer name — tuple and starred targets are
+    unpacked, so rewriting the preamble as ``text, normalized_text =
+    element_text.strip(), _normalize_whitespace(...)`` stays plumbing instead
+    of being reported as two violations — and it must **hand the buffer to no
+    method on the handler**.
+
+    Binding alone was too weak, and in the direction that loses a violation.
+    ``text = self._collab_child(name, text)`` wedged above the dispatch chain
+    binds a buffer, stands under no guard, and runs for *every* element there
+    is — a per-element hook is the natural way to add handling without
+    disturbing a forty-branch ``elif`` chain, and it is precisely how #142
+    might be written. Passing the buffer to ``self`` is how it gets stashed,
+    so a statement that does so is consuming it whatever it also assigns to.
+    ``element_text.strip()`` and ``_normalize_whitespace(element_text)`` call
+    nothing on ``self`` and stay exempt; ``self._pop_text_buffer(...)`` does,
+    but it is guarded by ``_TEXT_ACCUMULATING`` and cleared by containment
+    long before this predicate is consulted.
+    """
+    if not _binds_a_buffer(node):
+        return False
+    return not any(_is_a_call_on_the_handler(child) for child in ast.walk(node))
+
+
 def _binds_a_buffer(node: ast.stmt) -> bool:
+    """Does ``node`` assign to one of the buffer names?"""
     targets: list[ast.expr] = []
     if isinstance(node, ast.Assign):
         targets = list(node.targets)
     elif isinstance(node, ast.AnnAssign | ast.AugAssign):
         targets = [node.target]
-    return any(isinstance(t, ast.Name) and t.id in _BUFFER_NAMES for t in targets)
+    return any(_binds_a_buffer_name(target) for target in targets)
+
+
+def _is_a_call_on_the_handler(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and _is_self_attribute(node.func)
+    )
+
+
+def _binds_a_buffer_name(target: ast.expr) -> bool:
+    if isinstance(target, ast.Tuple | ast.List):
+        return any(_binds_a_buffer_name(element) for element in target.elts)
+    if isinstance(target, ast.Starred):
+        return _binds_a_buffer_name(target.value)
+    return isinstance(target, ast.Name) and target.id in _BUFFER_NAMES
 
 
 def _buffer_reads_in_end_element(
@@ -5523,49 +5638,110 @@ def _buffer_reads_in_end_element(
 
     reads: list[_BufferRead] = []
 
+    def record(
+        spelling: str,
+        node: ast.AST,
+        guards: tuple[tuple[frozenset[str] | None, tuple[str, ...]], ...],
+        statement: ast.stmt | None,
+    ) -> None:
+        elements, unreadable = _combine(guards)
+        reads.append(
+            _BufferRead(
+                read=spelling,
+                line=getattr(node, "lineno", 0),
+                elements=elements,
+                unreadable_guards=unreadable,
+                binds_a_buffer=statement is not None and _binds_a_buffer(statement),
+                is_plumbing=statement is not None and _is_plumbing_statement(statement),
+                guarded=bool(guards),
+            )
+        )
+
     def walk(
         node: ast.AST,
         guards: tuple[tuple[frozenset[str] | None, tuple[str, ...]], ...],
-        binds: bool,
+        statement: ast.stmt | None,
     ) -> None:
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
             if node.id in _BUFFER_NAMES:
-                elements, unreadable = _combine(guards)
-                reads.append(
-                    _BufferRead(
-                        read=node.id,
-                        line=node.lineno,
-                        elements=elements,
-                        unreadable_guards=unreadable,
-                        binds_a_buffer=binds,
-                    )
-                )
+                record(node.id, node, guards, statement)
             return
+        if isinstance(node, ast.Call) and _is_a_buffer_call(node):
+            # ``self._pop_text_buffer(...)``. Recorded and then walked into,
+            # since its keyword arguments are ordinary expressions that may
+            # themselves read a buffer.
+            record(f"self.{_attribute_name(node.func)}()", node, guards, statement)
+            for child in ast.iter_child_nodes(node):
+                walk(child, guards, statement)
+            return
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+            if _is_self_attribute(node) and node.attr in _BUFFER_ATTRIBUTES:
+                record(f"self.{node.attr}", node, guards, statement)
+                return
         if isinstance(node, ast.If):
-            # A read in the *body* is guarded by the test; a read in the test
-            # itself is credited with only the guards above it. Short-circuit
-            # evaluation makes that pessimistic for ``name == "x" and text``,
-            # where the read really is guarded — deliberately, because the
-            # error is towards a wider element set, so such a read is still
-            # reported and only the message is less precise. The ``orelse``
-            # keeps the outer guards rather than gaining ``not test``: an
-            # ``elif`` chain lives there, and declining to narrow by negation
-            # over-reports in the same safe direction.
-            walk(node.test, guards, False)
+            # A read in the *body* is guarded by the test. A read in the test
+            # itself is credited with the guards above it plus, for an
+            # ``and``, the operands to its *left* — which is exactly what
+            # short-circuit evaluation guarantees, so it narrows without
+            # giving anything up. Crediting the outer guards alone reported
+            # ``elif name == "journal-title" and text:`` as reachable for
+            # every element: a false accusation carrying the message that a
+            # load-bearing invariant is broken, whose only remedy would be to
+            # restructure correct code. The ``orelse`` keeps the outer guards
+            # rather than gaining ``not test``: an ``elif`` chain lives there,
+            # and declining to narrow by negation over-reports in the safe
+            # direction.
+            walk_test(node.test, guards)
             constraint = _elements_admitted(node.test, namespace)
-            for statement in node.body:
-                walk(statement, (*guards, constraint), False)
-            for statement in node.orelse:
-                walk(statement, guards, False)
+            for child in node.body:
+                walk(child, (*guards, constraint), None)
+            for child in node.orelse:
+                walk(child, guards, None)
             return
         if isinstance(node, ast.stmt):
-            binds = _binds_a_buffer(node)
+            statement = node
         for child in ast.iter_child_nodes(node):
-            walk(child, guards, binds)
+            walk(child, guards, statement)
 
-    for statement in method.body:
-        walk(statement, (), False)
+    def walk_test(
+        test: ast.expr,
+        guards: tuple[tuple[frozenset[str] | None, tuple[str, ...]], ...],
+    ) -> None:
+        """Walk a guard expression, narrowing across ``and`` as it goes.
+
+        Only ``and`` narrows: ``or`` reaches its right-hand operand precisely
+        when the left one was *false*, so the left constrains nothing there
+        and the outer guards are all that may be credited.
+        """
+        if isinstance(test, ast.BoolOp) and isinstance(test.op, ast.And):
+            narrowed = guards
+            for operand in test.values:
+                walk_test(operand, narrowed)
+                narrowed = (*narrowed, _elements_admitted(operand, namespace))
+            return
+        walk(test, guards, None)
+
+    for child in method.body:
+        walk(child, (), None)
     return reads
+
+
+def _attribute_name(node: ast.expr) -> str:
+    return node.attr if isinstance(node, ast.Attribute) else ast.unparse(node)
+
+
+def _is_self_attribute(node: ast.Attribute) -> bool:
+    return isinstance(node.value, ast.Name) and node.value.id == "self"
+
+
+def _is_a_buffer_call(node: ast.AST) -> bool:
+    """Is ``node`` a call to one of :data:`_BUFFER_METHODS` on ``self``?"""
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and _is_self_attribute(node.func)
+        and node.func.attr in _BUFFER_METHODS
+    )
 
 
 def _combine(
@@ -5580,18 +5756,36 @@ def _combine(
     return elements, tuple(unreadable)
 
 
+#: The line ``_synthetic_handler`` places the caller's arm on. Named rather
+#: than written into each expected message, so adding a line to the preamble
+#: is a one-line correction here instead of four opaque off-by-one diffs.
+_SYNTHETIC_ARM_LINE = 11
+
+
 def _synthetic_handler(arm: str) -> str:
     """A minimal ``endElement`` carrying the real one's preamble plus ``arm``.
 
-    The preamble is what makes the controls honest: the two statements that
-    bind ``text`` and ``normalized_text`` are unguarded reads of the buffer in
-    the real method too, so a control that omitted them would exercise a
-    shape the real walk never meets.
+    The preamble is what makes the controls honest: it holds every shape the
+    real walk meets before the dispatch chain — the two statements binding
+    ``text`` and ``normalized_text`` under no guard, and both spellings of the
+    buffer the preamble itself reads (``self._pop_text_buffer()`` and
+    ``self.current_text``). A control that omitted them would exercise a shape
+    the real walk never sees.
+
+    The accumulating guard is spelled as a *literal* rather than as the real
+    module's ``_TEXT_ACCUMULATING``, because these sources are walked with an
+    empty namespace: a name the walker cannot resolve is — correctly — an
+    unreadable guard, which would bury every control's own finding under one
+    from the preamble. The members are :data:`_SYNTHETIC_ACCUMULATING`'s, so
+    the controls stay judged against their own set and never the parser's.
+
+    Keep the preamble ten lines long, or update :data:`_SYNTHETIC_ARM_LINE`.
     """
+    accumulating = ", ".join(repr(element) for element in sorted(_SYNTHETIC_ACCUMULATING))
     return (
         "class _JATSHandler:\n"
         "    def endElement(self, name):\n"
-        "        if name in _TEXT_ACCUMULATING:\n"
+        f"        if name in ({accumulating}):\n"
         "            element_text = self._pop_text_buffer()\n"
         "        else:\n"
         "            element_text = self.current_text\n"
@@ -5622,6 +5816,22 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
     ``TestTheAuditNetIsComplete`` is the precedent — "a rule enforced by prose
     is not enforced" — and it caught a routing flag shipping missing from the
     net it was supposed to be in.
+
+    **The net is keyed on the buffer, not on three identifiers.** The claim it
+    stands for is that the base buffer is never *consulted*, and the buffer
+    has five spellings: the three locals in :data:`_BUFFER_NAMES`, plus
+    ``self.current_text`` and ``self._pop_text_buffer()``. Keyed on the locals
+    alone, the review of #151 wrote #142's own arm in the second spelling and
+    passed the whole suite — so which of two synonymous forms the implementer
+    reached for decided whether the guard fired. See
+    :data:`_BUFFER_ATTRIBUTES`.
+
+    Two things the walk cannot see, stated so a green is not read as more than
+    it is. It covers ``endElement``'s **own body**: an arm that delegates to a
+    helper takes its read out of reach, which is what
+    ``test_the_walk_still_finds_the_arms_it_is_meant_to_be_reading`` exists to
+    notice. And it reasons about *reachability*, never about values — a read
+    it reports as reachable for an element may still be dead in practice.
     """
 
     def test_an_arm_reading_a_buffer_it_does_not_own_is_reported(self):
@@ -5641,7 +5851,8 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
         assert offending, f"the walker did not see the <institution> arm at all: {reads}"
         assert offending[0].read == "text"
         assert self._findings(offending, _SYNTHETIC_ACCUMULATING) == [
-            "text at line 12: read for an element that does not accumulate: ['institution']"
+            f"text at line {_SYNTHETIC_ARM_LINE + 1}: "
+            "read for an element that does not accumulate: ['institution']"
         ]
 
     def test_a_guard_the_walker_cannot_read_is_reported_rather_than_skipped(self):
@@ -5662,18 +5873,22 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
         )
 
         assert findings == [
-            "normalized_text at line 12: guard the walker cannot read: _decide(name)"
+            f"normalized_text at line {_SYNTHETIC_ARM_LINE + 1}: "
+            "guard the walker cannot read: _decide(name)"
         ]
 
     def test_an_arm_admitting_a_named_set_of_elements_is_read_through_it(self):
         """#142's likeliest shape, and the walker's one unexercised resolution.
 
-        A guard is as often ``name in _SOME_SET`` as ``name == "x"``, and the
-        module-level sets that already appear in ``endElement`` guard arms
-        reading no buffer — so nothing exercised this path until a control
-        did. Refusing to resolve the set would make such an arm *unreadable*
-        rather than a violation, which is still a failure, but it would stop
-        the walk saying which elements are the problem.
+        A guard is as often ``name in _SOME_SET`` as ``name == "x"``. The
+        resolution itself is exercised against the real module on every run —
+        ``endElement``'s own ``name in _TEXT_ACCUMULATING`` and ``name in
+        _NESTED_ARTICLE_ELEMENTS`` both resolve through it — but neither of
+        those arms *consumes* a buffer, so what nothing exercised until this
+        control is a set-guarded arm that does. Refusing to resolve the set
+        would make such an arm *unreadable* rather than a violation, which is
+        still a failure, but it would stop the walk saying which elements are
+        the problem.
         """
         source = _synthetic_handler(
             "        elif name in _ADDRESS_ELEMENTS:\n            self.x = text\n"
@@ -5687,8 +5902,8 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
         )
 
         assert findings == [
-            "text at line 12: read for an element that does not accumulate: "
-            "['addr-line', 'institution']"
+            f"text at line {_SYNTHETIC_ARM_LINE + 1}: "
+            "read for an element that does not accumulate: ['addr-line', 'institution']"
         ]
 
     def test_an_and_guard_keeps_the_element_test_its_other_half_does_not_make(self):
@@ -5707,7 +5922,200 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
 
         reads = _buffer_reads_in_end_element(source, namespace={})
 
-        assert [read.elements for read in reads if read.line == 12] == [frozenset({"institution"})]
+        in_the_arm = [read for read in reads if read.line == _SYNTHETIC_ARM_LINE + 1]
+        assert [read.elements for read in in_the_arm] == [frozenset({"institution"})]
+
+    def test_a_buffer_reached_through_the_handler_is_still_a_read(self):
+        """#142's other spelling, and the one the first net missed entirely.
+
+        ``self.current_text`` returns ``text_stack[-1]``, and the preamble
+        binds ``element_text`` from it for every non-accumulating element — so
+        an arm reading it consults the base buffer just as surely as one
+        reading ``text``. Keyed on the three locals alone, this arm passed the
+        whole suite green while making ``_inside_mixed_citation``'s slice
+        load-bearing: parsing a ``<back>`` whose ``<ref-list>`` is followed by
+        an ``<institution>`` put the citation into the institution's text.
+
+        An implementer reasoning "the ``<collab>`` buffer is already open, so
+        ``current_text`` has what I want" writes exactly this, which made
+        whether #142 was caught turn on which of two synonymous spellings the
+        author happened to type.
+        """
+        source = _synthetic_handler(
+            '        elif name == "institution":\n'
+            "            self.collab_address = self.current_text.strip()\n"
+        )
+
+        findings = self._findings(
+            _buffer_reads_in_end_element(source, namespace={}), _SYNTHETIC_ACCUMULATING
+        )
+
+        assert findings == [
+            f"self.current_text at line {_SYNTHETIC_ARM_LINE + 1}: "
+            "read for an element that does not accumulate: ['institution']"
+        ]
+
+    def test_popping_the_buffer_a_second_time_is_a_read(self):
+        """The third spelling, which takes the base buffer rather than reading it.
+
+        With one buffer on the stack ``_pop_text_buffer()`` returns *and
+        clears* ``text_stack[0]``, so an arm calling it is not merely
+        consulting the buffer the invariant is about — it is emptying it.
+        """
+        source = _synthetic_handler(
+            '        elif name == "institution":\n'
+            "            self.collab_address = self._pop_text_buffer()\n"
+        )
+
+        findings = self._findings(
+            _buffer_reads_in_end_element(source, namespace={}), _SYNTHETIC_ACCUMULATING
+        )
+
+        assert findings == [
+            f"self._pop_text_buffer() at line {_SYNTHETIC_ARM_LINE + 1}: "
+            "read for an element that does not accumulate: ['institution']"
+        ]
+
+    def test_a_per_element_hook_in_the_preamble_is_not_plumbing(self):
+        """The exemption's teeth, and why binding alone was too weak.
+
+        A one-line hook sitting outside the dispatch chain is the natural way
+        to add per-element handling without disturbing a forty-branch
+        ``elif``, and it reads the buffer for *every* element there is.
+        Recognised as plumbing merely because it assigns to ``text``, it was
+        silently allowed — the one shape inside the method that produced no
+        finding at all. :func:`_is_plumbing_statement` now asks what the
+        statement *does*: handing the buffer to a method on the handler is how
+        it gets stashed, whatever else the statement also assigns to.
+        """
+        source = _synthetic_handler("        text = self._collab_child(name, text)\n")
+
+        findings = self._findings(
+            _buffer_reads_in_end_element(source, namespace={}), _SYNTHETIC_ACCUMULATING
+        )
+
+        assert findings == [
+            f"text at line {_SYNTHETIC_ARM_LINE}: reachable for every element, and is not plumbing"
+        ]
+
+    def test_the_preamble_stays_plumbing_when_it_binds_two_names_at_once(self):
+        """The other side of that exemption: an innocent rewrite must stay quiet.
+
+        ``text, normalized_text = element_text.strip(), _normalize_whitespace(
+        element_text)`` is the same two plumbing statements written as one.
+        Reading only bare ``Name`` targets reported it as two violations —
+        a false accusation whose only remedy is to un-refactor correct code.
+        """
+        source = (
+            "class _JATSHandler:\n"
+            "    def endElement(self, name):\n"
+            "        element_text = self.current_text\n"
+            "        text, normalized_text = element_text.strip(), element_text\n"
+            '        if name == "surname":\n'
+            "            self.surname = text\n"
+        )
+
+        findings = self._findings(
+            _buffer_reads_in_end_element(source, namespace={}), _SYNTHETIC_ACCUMULATING
+        )
+
+        assert findings == []
+
+    def test_an_and_guard_narrows_a_read_in_the_test_itself(self):
+        """Short-circuiting guarantees it, so the walk may bank it.
+
+        ``elif name == "journal-title" and text:`` reaches its second operand
+        only when the first was true, so the read really is guarded. Crediting
+        a test-position read with the outer guards alone reported it as
+        reachable for every element — under a message announcing that a
+        load-bearing invariant had broken, whose only remedy would have been
+        to restructure correct code. The real handler is one line-edit away
+        from this shape: ``elif self.in_front and self.in_article_meta and
+        self.pages and text:`` escapes only because its ``name`` test sits on
+        an enclosing ``if``.
+
+        ``or`` gets no such treatment, and must not: its right-hand operand is
+        reached precisely when the left was *false*.
+        """
+        source = _synthetic_handler(
+            '        elif name == "institution" and text:\n            self.x = text\n'
+        )
+
+        reads = _buffer_reads_in_end_element(source, namespace={})
+
+        in_the_test = [read for read in reads if read.line == _SYNTHETIC_ARM_LINE]
+        assert [read.elements for read in in_the_test] == [frozenset({"institution"})]
+        assert self._findings(reads, _SYNTHETIC_ACCUMULATING) == [
+            f"text at line {_SYNTHETIC_ARM_LINE}: "
+            "read for an element that does not accumulate: ['institution']",
+            f"text at line {_SYNTHETIC_ARM_LINE + 1}: "
+            "read for an element that does not accumulate: ['institution']",
+        ]
+
+    def test_an_unreadable_guard_in_a_later_or_branch_is_still_reported(self):
+        """Order must not decide whether the walk demands a decision.
+
+        ``or`` stops narrowing at its first unconstraining operand, and the
+        walk used to *return* there — dropping any unreadable guard to its
+        right. The verdict then fell back to "reachable for every element",
+        which the plumbing exemption can absorb, so the pair
+        ``elif self.in_address or _decide(name): text = self._x(text)`` went
+        silent while the same two operands the other way round reported.
+        """
+        source = _synthetic_handler(
+            "        elif self.in_address or _decide(name):\n            self.x = text\n"
+        )
+
+        findings = self._findings(
+            _buffer_reads_in_end_element(source, namespace={}), _SYNTHETIC_ACCUMULATING
+        )
+
+        assert findings == [
+            f"text at line {_SYNTHETIC_ARM_LINE + 1}: guard the walker cannot read: _decide(name)"
+        ]
+
+    def test_two_element_tests_joined_by_and_are_intersected(self):
+        """``and`` narrows, and one constraining operand does not prove it.
+
+        The control above pairs a ``name`` test with a branch about something
+        else, so ``elements`` is set from the single constraining operand and
+        intersection and union agree. Mutating ``&`` to ``|`` there survived
+        the whole class. Two ``name`` tests is the shape that tells them
+        apart: an arm reachable only for ``<collab>`` would be credited with
+        ``<institution>`` as well, which is a false accusation.
+        """
+        source = _synthetic_handler(
+            '        elif name == "collab" and name in ("collab", "institution"):\n'
+            "            self.x = text\n"
+        )
+
+        reads = _buffer_reads_in_end_element(source, namespace={})
+
+        in_the_arm = [read for read in reads if read.line == _SYNTHETIC_ARM_LINE + 1]
+        assert [read.elements for read in in_the_arm] == [frozenset({"collab"})]
+        assert self._findings(in_the_arm, _SYNTHETIC_ACCUMULATING) == []
+
+    def test_a_guarded_rebinding_of_the_buffer_is_not_plumbing(self):
+        """The preamble is unguarded, and that half of the test is load-bearing.
+
+        A statement that binds a buffer under a guard saying nothing about
+        ``name`` is not the method's plumbing — it is an arm that happens to
+        assign to ``normalized_text``, and it reads the buffer for every
+        element the guard admits, which is all of them. Dropping the
+        ``guarded`` half of the exemption survived every other test here.
+        """
+        source = _synthetic_handler(
+            "        elif self.in_address:\n            normalized_text = text.upper()\n"
+        )
+
+        findings = self._findings(
+            _buffer_reads_in_end_element(source, namespace={}), _SYNTHETIC_ACCUMULATING
+        )
+
+        assert findings == [
+            f"text at line {_SYNTHETIC_ARM_LINE + 1}: "
+            "reachable for every element, and is not plumbing"
+        ]
 
     def test_an_or_guard_is_only_as_narrow_as_its_widest_branch(self):
         """``or`` widens, and one unconstraining branch removes the guard.
@@ -5729,12 +6137,13 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
         reads = _buffer_reads_in_end_element(source, namespace={})
 
         by_line = {read.line: read for read in reads}
-        assert by_line[12].elements is None
-        assert by_line[14].elements == frozenset({"source", "institution"})
+        assert by_line[_SYNTHETIC_ARM_LINE + 1].elements is None
+        assert by_line[_SYNTHETIC_ARM_LINE + 3].elements == frozenset({"source", "institution"})
         assert self._findings(reads, _SYNTHETIC_ACCUMULATING) == [
-            "text at line 12: reachable for every element, and binds no buffer",
-            "normalized_text at line 14: read for an element that does not accumulate: "
-            "['institution']",
+            f"text at line {_SYNTHETIC_ARM_LINE + 1}: "
+            "reachable for every element, and is not plumbing",
+            f"normalized_text at line {_SYNTHETIC_ARM_LINE + 3}: "
+            "read for an element that does not accumulate: ['institution']",
         ]
 
     def test_an_arm_mixing_accumulating_and_other_elements_is_still_reported(self):
@@ -5757,7 +6166,8 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
         )
 
         assert findings == [
-            "text at line 12: read for an element that does not accumulate: ['institution']"
+            f"text at line {_SYNTHETIC_ARM_LINE + 1}: "
+            "read for an element that does not accumulate: ['institution']"
         ]
 
     def test_nested_guards_narrow_the_element_set_rather_than_widening_it(self):
@@ -5767,8 +6177,15 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
         instead — the obvious slip, since every other combination in this
         walker is a union — would report an element the read cannot be reached
         for, which is a false accusation of a defect the module does not have.
-        No arm nests ``name`` tests today, so this control is what exercises
-        the rule at all.
+
+        The real handler nests, and in the one arm this whole invariant is
+        about: ``elif name in ("mixed-citation", "element-citation"):``
+        encloses ``if name == "mixed-citation":``, whose body appends
+        ``element_text`` to the reference's citation parts. The walk resolves
+        that read to ``{mixed-citation}`` by exactly this intersection.
+        Widening would credit it with ``element-citation`` as well — harmless
+        only because both happen to accumulate, and this control is what says
+        the walk is not leaning on that coincidence.
         """
         source = _synthetic_handler(
             '        elif name == "collab":\n'
@@ -5778,7 +6195,7 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
 
         reads = _buffer_reads_in_end_element(source, namespace={})
 
-        nested = [read for read in reads if read.line == 13]
+        nested = [read for read in reads if read.line == _SYNTHETIC_ARM_LINE + 2]
         assert [read.elements for read in nested] == [frozenset({"collab"})]
         assert self._findings(nested, _SYNTHETIC_ACCUMULATING) == []
 
@@ -5787,9 +6204,9 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
 
         A ``text``-reading statement added *after* the dispatch chain runs for
         every element there is, so "the walker found no matching arm" cannot
-        mean "nothing to report". The two statements binding ``text`` and
-        ``normalized_text`` are the only unguarded reads the rule allows, and
-        they are recognised by what they bind rather than by their line.
+        mean "nothing to report". The preamble's binds are the only unguarded
+        reads the rule allows, and they are recognised by what they *do* —
+        see :func:`_is_plumbing_statement` — rather than by their line.
         """
         source = _synthetic_handler("        self.trailing = text\n")
 
@@ -5797,7 +6214,9 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
             _buffer_reads_in_end_element(source, namespace={}), _SYNTHETIC_ACCUMULATING
         )
 
-        assert findings == ["text at line 11: reachable for every element, and binds no buffer"]
+        assert findings == [
+            f"text at line {_SYNTHETIC_ARM_LINE}: reachable for every element, and is not plumbing"
+        ]
 
     def test_no_arm_reads_a_buffer_for_an_element_that_does_not_accumulate(self):
         """The invariant itself, over the real handler.
@@ -5817,31 +6236,73 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
     def test_the_walk_still_finds_the_arms_it_is_meant_to_be_reading(self):
         """The positive control, and the reason a green above means anything.
 
-        ``endElement`` dispatches through one ``if``/``elif`` chain today.
-        Restructure it — a dispatch table, a per-element method, a match
-        statement — and this walker would report nothing at all while the test
-        above stayed green, which is the shape of a net that has quietly
-        stopped being one. These six arms all read the buffer now, so the walk
-        has to keep seeing them.
+        ``endElement`` dispatches through one forty-branch ``if``/``elif``
+        chain. Move an arm's read out into a helper — ``elif name in
+        ("source", "institution"): self._end_scalar_field(name)`` — and the
+        walk sees nothing there while the test above stays green, which is
+        the shape of a net that has quietly stopped being one. The walk covers
+        this method's own body and cannot follow a call out of it, so the
+        inventory below is what notices the arm leaving.
+
+        **The whole inventory, not a canary.** It was six names while the walk
+        saw nineteen, so thirty-eight of the fifty-three reads the inventory is
+        built from could have left without a word — and a *partial* extraction, one arm at a
+        time, is a likelier refactor than the wholesale kind.
+
+        Containment and deliberately not equality, because this control's job
+        is to notice a read *disappearing*. An arm appearing is the invariant
+        test's business one method up: a new consumer of an element that does
+        not accumulate is what that test reports, and a new consumer of one
+        that does is the legitimate shape of #142, which must stay green
+        without anyone editing an inventory to let it through.
+
+        A wholesale restructure fails loudly by a different route and needs no
+        help from this test: a ``match`` statement leaves every read
+        unconstrained, so each one is reported as reachable for every element.
+
+        Reads inside a statement that *binds* a buffer are excluded, being the
+        preamble rather than an arm — otherwise ``element_text =
+        self._pop_text_buffer(...)``, guarded by ``_TEXT_ACCUMULATING``, would
+        enter the inventory as forty-four elements no arm consumes.
         """
         reads = self._reads_in_the_real_handler()
 
-        seen = {element for read in reads if read.elements for element in read.elements}
-        expected = {"surname", "article-title", "pub-id", "xref", "label", "mixed-citation"}
-        missing = sorted(expected - seen)
+        seen = {
+            element
+            for read in reads
+            if read.elements is not None and not read.binds_a_buffer
+            for element in read.elements
+        }
+
+        # The preamble's own read is guarded by ``_TEXT_ACCUMULATING``, so
+        # counting it would make ``seen`` that whole set — and containment
+        # would then be satisfied by the preamble alone however many arms had
+        # lost their reads. ``<abstract>`` accumulates and no arm consumes it,
+        # which makes it the witness that the exclusion is still in force.
+        assert "abstract" not in seen, (
+            "the inventory has been polluted by a read that only binds the "
+            "buffer, so it can no longer notice an arm's read disappearing"
+        )
+
+        missing = sorted(_ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER - seen)
 
         assert not missing, (
             f"the walk no longer sees these buffer-reading arms: {missing} — "
-            "endElement's shape has changed and the walker has not followed it"
+            "either endElement's shape has changed and the walker has not "
+            "followed it, or the arm's read has moved out into a helper, "
+            "where nothing here can see it"
         )
 
     def test_a_walker_that_cannot_find_the_method_says_so(self):
         """The linchpin: "no reads" must never be an answer the walk can give.
 
-        Every other test here reads a finding list, so a walker that quietly
-        returned ``[]`` for a method it could not locate would turn four of
-        them green at once. Rename the method, split the class, and this is
-        what fails instead.
+        A walker that quietly returned ``[]`` for a method it could not locate
+        leaves four of these twenty green — measured — and one of the four
+        is ``test_no_arm_reads_a_buffer_for_an_element_that_does_not_accumulate``,
+        the invariant itself, which asserts that the finding list is empty.
+        The other three are this test's sibling, the control asserting the
+        preamble stays plumbing, and this one. Rename the method, split the
+        class, and this is what fails instead.
         """
         source = _synthetic_handler("").replace("endElement", "end_element")
 
@@ -5867,13 +6328,21 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
         ``accumulating`` is passed rather than defaulted so a control cannot
         silently be judged against the parser's own set. The synthetic ones
         must not be: they assert that ``<institution>`` does not accumulate,
-        which is exactly what #142 may legitimately change, and four of them
+        which is exactly what #142 may legitimately change, and seven of them
         would then fail for the opposite of the reason they were written.
 
         Three verdicts and only one of them is silence. A read the walker
         could not classify is a finding in its own right — that is the whole
         difference between this and a walk that reports what it happens to
         understand.
+
+        The one silence is narrow on purpose: a read reachable for every
+        element is passed over only when it *binds* a buffer **and** stands
+        under no guard at all, which is the two plumbing statements at the top
+        of the method and nothing else. Exempting on the binding alone let an
+        arm under a guard that says nothing about ``name`` — or a
+        per-element hook folded into the preamble — read the base buffer for
+        every element in silence.
         """
         findings = []
         for read in reads:
@@ -5883,8 +6352,8 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
                     f"{where}: guard the walker cannot read: " + "; ".join(read.unreadable_guards)
                 )
             elif read.elements is None:
-                if not read.binds_a_buffer:
-                    findings.append(f"{where}: reachable for every element, and binds no buffer")
+                if read.guarded or not read.is_plumbing:
+                    findings.append(f"{where}: reachable for every element, and is not plumbing")
             elif not read.elements <= accumulating:
                 outside = sorted(read.elements - accumulating)
                 findings.append(f"{where}: read for an element that does not accumulate: {outside}")

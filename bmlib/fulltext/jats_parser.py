@@ -1347,6 +1347,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         true when it was written and nothing tied the two together, which is
         the ``TestTheAuditNetIsComplete`` situation one module over.
 
+        Read *"reads the buffer"* as this paragraph means it — consults it at
+        all — and not as three local names. The walk is keyed on
+        ``self.current_text`` and ``self._pop_text_buffer()`` as well as on
+        ``text``/``normalized_text``/``element_text``, because for a
+        non-accumulating element ``element_text = self.current_text`` makes the
+        first two the same value; keyed on the locals alone it passed an arm
+        reading ``self.current_text`` for ``<institution>``, which is #142 in
+        the spelling an implementer is as likely to write.
+
         Returns:
             ``True`` when a ``<mixed-citation>`` is open strictly above the
             element being closed.
@@ -1358,10 +1367,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # which is where this predicate is evaluated, so nothing short of that
         # reaches it — and the slice silently becomes "excludes the parent",
         # reading a `<mixed-citation>`'s own children as outside it. Pinned by
-        # `test_the_citation_string_is_what_the_publisher_typeset` and the
-        # three in `TestAMixedCitationKeepsTheTextItPrints`, all four of which
-        # stay green for a pop moved anywhere below that call. See the comment
-        # at the pop itself for what else moves with it.
+        # seven tests across two classes — three in
+        # `TestAMixedCitationKeepsTheTextItPrints` (of its six) and four in
+        # `TestARefCarryingSeveralCitationsKeepsThemAll` — all of which stay
+        # green for a pop moved anywhere below that call. The set is the
+        # measured difference between the two placements below, not a reading
+        # of the test names: the second class holds the majority of the guard
+        # and an earlier draft of this comment omitted it, which would have
+        # told a maintainer rewriting #149's tests that nothing was at stake.
+        # See the comment at the pop itself for what else moves with it.
         return "mixed-citation" in self.element_stack[:-1]
 
     # -- Section and caption helpers -----------------------------------------
