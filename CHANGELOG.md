@@ -201,6 +201,59 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A `<ref>` carrying several citation elements lost all but the last, and
+  welded their authors into one byline** (#149). JATS admits several citation
+  elements in one `<ref>`, and both close arms assigned
+  `JATSReferenceInfo.citation` unconditionally, so every part but the last was
+  discarded. The structured fields did the opposite — scalars were last-wins
+  while `authors` *accumulated* — so one reference reported 40 authors and
+  rendered `"A. Ricci, J. S. K. Clark, et al."`, two people from two different
+  papers presented as one paper's byline.
+
+  **Measured before the rule was picked**: 216 such references in 21 of 880
+  local PMC articles, and **not one uses `<citation-alternatives>`** — every
+  case is bare siblings, so this is never "the same reference deposited
+  twice". Two shapes, both a single bibliography entry as printed:
+
+  - **149 with each part labelled** — RSC's `(a)`/`(b)`/`(c)`: several distinct
+    works under one bibliography number;
+  - **61 unlabelled** — one reference *split*, its tail (a URL, an
+    `[Online]. Available:` note) deposited as a second element.
+
+  The second shape is what rules out emitting one `JATSReferenceInfo` per
+  part: it would split a single work into a work plus a bare URL. So a `<ref>`
+  remains one reference, `references` keeps its length, and:
+
+  **The parts are joined with nothing between them**, because that is what the
+  deposit holds — the character data between consecutive citation elements is
+  empty in **586 of 586** occurrences. Each part's *raw* text is kept and the
+  whole normalised once at `</ref>`, the module's "strip once, at the outermost
+  call" rule, which preserves the space in front of `(b)` while not inventing
+  one in front of `, [Online]`.
+
+  **The structured fields come from the first part.** Every field arm is gated
+  on `in_ref_citation`, so leaving it unset for the later parts is the whole of
+  first-wins. For a split reference the first part *is* the work; for a
+  multi-part one it is work `(a)`, and `citation` still carries all of them.
+  Nothing is discarded — bmlib simply stops assembling one reference out of
+  several different works. 86 references drew fields from more than one part.
+
+  **And a part's marker is no longer the reference's number.** The `<label>`
+  arm's reference branch was gated on the ambient `in_ref` flag — the very
+  routing #116 established is wrong, missing on this one branch — so RSC's
+  `(a)`/`(b)` overwrote the reference's own label, last one winning. It is a
+  parent test now, like the `<fig>` and `<table-wrap>` branches beside it.
+  Measured: 158 references in 14 articles, and **nought** where a real
+  reference label was overwritten, so the entire population was a number the
+  publisher never wrote on a reference that has none — #116's own symptom,
+  an invented value rather than a blank. The markers are not lost; they sit in
+  `citation`, where the deposit puts them.
+
+  Found in the review of PR #148, and settled with a measurement rather than a
+  preference: `<citation-alternatives>` at 0 of 216 is what killed the
+  one-reference-per-part option, and the empty separator at 586 of 586 is what
+  chose the join.
+
 - **A `<mixed-citation>`'s rendered string lost every non-inline child**
   (#146). `JATSReferenceInfo.citation` is built from the `<mixed-citation>`
   text buffer, and a child that accumulates a buffer of its own without

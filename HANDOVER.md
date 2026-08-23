@@ -151,23 +151,25 @@ messages, PR bodies and any quotation of either, which is why this paragraph
 names neither. And after every merge that mentions an issue in prose, diff
 `gh issue list` against the commit's own list of what it filed.
 
-**Next up: #124, #128, #137, #138, #142–#145 and #147, #149, #150 and #151 in
+**Next up: #124, #128, #137, #138, #142–#145, #147, #150 and #151 in
 `fulltext`, #119 from the #118 review, #132, the older non-JATS ones (#86,
 #92, #94, #103, #112), or Phase 3 of the bmlibrarian port, whose every row
-needs a design conversation.** **#124, #144, #147, #149 and #150 all lose
-content the document carries**, and the first four are blocked on the same
-kind of decision — what to attach a footnote marker to, which contributor
-spelling to extract, how to delimit LaTeX in prose, what several citation
-elements in one `<ref>` mean — so none is a drive-by. (An earlier revision of
-this line named only #124 and #147, which was wrong twice: #144 is a
-contributor the document names and bmlib does not collect, and #150 is a
-reference rendered as an empty bullet.) #142, #143, #147, #149 and #150 all
+needs a design conversation.** **#124, #144, #147 and #150 all lose
+content the document carries**, and all four are blocked on the same kind of
+decision — what to attach a footnote marker to, which contributor spelling to
+extract, how to delimit LaTeX in prose, whether a note-only `<ref>` is a
+reference at all — so none is a drive-by. (An earlier revision of this line
+named only #124 and #147, which was wrong twice: #144 is a contributor the
+document names and bmlib does not collect, and #150 is a reference rendered as
+an empty bullet. #149 was a fifth and is fixed in this PR — its decision came
+from measuring the population, which is the move the other four are still
+waiting on.) #142, #143, #147 and #150 all
 want a population measured before a rule is picked, so they pair with the
 redraw below; #144 and #145 are extraction, each behind a design question the
 issue states. #151 is the one that needs no draw — it is a prose invariant to
 mechanise, and #142 is the change that will break it. #132 and #138 both want
 a corpus redraw and should be paired — with the further reasons that PR #141's
-sampler counters are in no committed draw, and #142, #143, #147, #149 and
+sampler counters are in no committed draw, and #142, #143, #147 and
 #150 each want a population from them.
 
 This file briefs the next session on what is done, what is still open, and the
@@ -253,12 +255,10 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 reopening #142 — see the closing-keyword paragraph above — and filing #147 and
 then #149, #150 and #151 from this PR's own review): #86, #92, #94, #103,
 #112, #119, #124, #128, #132, #137, #138, #142, #143, #144, #145, #146, #147,
-#149, #150, #151; nineteen once this PR lands #146. Every one
+#149, #150, #151; eighteen once this PR lands #146 and #149. Every one
 was found by review or measurement rather than by a failing test, and **none
 of them loses records** — though **#124** loses an exhibit's footnotes,
-**#147** loses a formula from the prose that contains it, **#149** loses every
-citation string but the last from a multi-part reference and welds their
-authors into one byline, **#150** renders a note-only reference as an empty
+**#147** loses a formula from the prose that contains it, **#150** renders a note-only reference as an empty
 bullet, **#128** would lose every figure image in a document binding XLink to
 another prefix, and **#119** feeds a scan text that is not the article's. Count this
 against the repo before trusting it: the line has been wrong in three
@@ -349,12 +349,17 @@ of 10,671 `<mixed-citation>` across 227 articles and 0 in the local corpus, so
 it is unexercised rather than a second live defect.
 
 **#149, #150 and #151 came out of PR #148's own review**, all in the reference
-half. **#149** — a `<ref>` may carry several citation elements, and the two
-halves of the model disagree about them: `citation` is last-wins (134
-references in 17 local articles, 352 strings discarded) while `authors`
-*accumulates*, so one RSC multi-part reference reports 40 authors welded from
-different papers. Wants a modelling decision and a population, so it pairs
-with the redraw. **#150** — a `<ref>` whose only content is a `<note>`
+half. **#149 is fixed in this PR** — a `<ref>` may carry several citation
+elements, and the two halves of the model disagreed: `citation` was last-wins
+while `authors` *accumulated*, so one RSC multi-part reference reported 40
+authors welded from different papers. The measurement picked the rule rather
+than an argument: 216 such references in 21 of 880 local articles, **0 using
+`<citation-alternatives>`**, and 61 of them a single reference whose URL tail
+was deposited separately — which is what rules out one `JATSReferenceInfo` per
+part. It also turned up a `<label>` branch still gated on the ambient `in_ref`,
+#116's routing, letting a part's `(a)`/`(b)` marker become the reference's
+number (158 references in 14 articles, nought overwriting a real label).
+**#150** — a `<ref>` whose only content is a `<note>`
 renders as an empty `<li>`, 4 instances in one publisher. **#151** — the
 prospective half of `_inside_mixed_citation` rests on a whole-`endElement`
 invariant asserted in one docstring and enforced nowhere, and #142 is exactly

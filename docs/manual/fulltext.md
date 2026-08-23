@@ -874,6 +874,19 @@ class JATSReferenceInfo:
 > carries both spellings, the `<mixed-citation>` wins whatever the deposit
 > order.
 >
+> **A `<ref>` may carry several citation elements, and all of them are kept**
+> *(unreleased, #149)*. JATS admits several, and each used to overwrite the
+> last. They are now joined with nothing between them — which is what the
+> deposit holds, the character data between them measuring empty in 586 of 586
+> occurrences — and the **structured fields come from the first part**, since
+> assembling across parts welded a byline out of several different works (one
+> reference reported 40 authors). A `<ref>` is still one `JATSReferenceInfo`:
+> 61 of the 216 measured cases are a single reference whose URL tail was
+> deposited separately, so splitting per part would break a work in two.
+> Relatedly, a part's own `<label>` — RSC deposits `(a)`, `(b)`, `(c)` — is no
+> longer mistaken for the reference's number; it stays in `citation`, where the
+> publisher put it.
+>
 > **What moved, measured.** Against the previous release over 880 local PMC
 > articles / 20,770 references: `citation` for 4,499 (21.7%) in 191 articles
 > — 3,541 rebuilt by the merge, 958 in 84 articles emptied of an

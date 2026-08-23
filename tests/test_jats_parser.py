@@ -4054,6 +4054,185 @@ class TestACitedNameOutsideAPersonGroupIsStillAName:
         assert "J. Tan, L. M. Almeida" in html
 
 
+class TestARefCarryingSeveralCitationsKeepsThemAll:
+    """One ``<ref>``, several citation elements — issue #149.
+
+    JATS admits several, and both close arms assigned
+    :attr:`JATSReferenceInfo.citation` unconditionally, so every part but the
+    last was discarded. The structured fields did the opposite: scalars were
+    last-wins while ``authors`` *accumulated*, so one reference reported a
+    byline welded from several different works.
+
+    Measured over 880 local PMC articles: **216 such references in 21
+    articles, and not one uses ``<citation-alternatives>``** — every case is
+    bare siblings, so this is never "the same reference deposited twice". Two
+    shapes, and both are a single bibliography entry as the publisher prints
+    it, which is why bmlib still emits one ``JATSReferenceInfo`` per ``<ref>``:
+
+    * **149 with each part labelled** — RSC's ``(a)``/``(b)``/``(c)``: several
+      distinct works under one bibliography number.
+    * **61 unlabelled** — one reference *split*, its tail (a URL, an
+      ``[Online]. Available:`` note) deposited as a second element.
+
+    The second shape is what rules out emitting one reference per part: it
+    would split a single work into a work plus a bare URL.
+
+    **The parts are joined with nothing between them**, because that is what
+    the deposit has: the character data between consecutive citation elements
+    is empty in **586 of 586** occurrences. Each part's *raw* text is kept and
+    the whole is normalised once at ``</ref>`` — the module's "strip once, at
+    the outermost call" rule — which is what preserves the space in front of
+    ``(b)`` while not inventing one in front of ``, [Online]``.
+    """
+
+    #: RSC's multi-part reference: one bibliography number, several works,
+    #: each part carrying its own ``<label>``.
+    RSC_MULTIPART_REFERENCE = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>An article that cites</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <back><ref-list>
+    <ref id="cit1"><label>1</label>\
+<mixed-citation id="cit1a"><label> (a) </label>\
+<named-content content-type="citation-string">Jackson E. R. Curr Top Med Chem 2012;12:706.\
+</named-content></mixed-citation>\
+<mixed-citation id="cit1b"><label> (b) </label>\
+<named-content content-type="citation-string">Nowack B. Water Res 2003;37:2533.\
+</named-content></mixed-citation></ref>
+  </ref-list></back>
+</article>"""
+
+    #: One reference whose tail was deposited as a second element. The tail
+    #: opens with punctuation, so a join that inserts a space is visibly wrong.
+    SPLIT_REFERENCE_WITH_URL_TAIL = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>An article that cites</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <back><ref-list>
+    <ref id="cit7"><mixed-citation><source>Sensors</source>. <year>2019</year>;19:3977\
+</mixed-citation><mixed-citation>, [Online]. Available: https://example.org/3977\
+</mixed-citation></ref>
+  </ref-list></back>
+</article>"""
+
+    #: The whole of the measured label population: the ``<ref>`` carries no
+    #: ``<label>`` of its own, and each part carries a marker. 158 references
+    #: in 14 of 880 local PMC articles; nought where a real reference label
+    #: was overwritten.
+    MULTIPART_WITH_NO_REFERENCE_LABEL = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>An article that cites</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <back><ref-list>
+    <ref id="cit3"><mixed-citation><label> (a) </label>Jackson E. R. 2012.\
+</mixed-citation><mixed-citation><label> (b) </label>Nowack B. 2003.\
+</mixed-citation></ref>
+  </ref-list></back>
+</article>"""
+
+    #: Two works, each fully marked up. This is the shape that welded a byline:
+    #: `authors` accumulated across both parts.
+    TWO_WORKS_EACH_MARKED_UP = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>An article that cites</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <back><ref-list>
+    <ref id="cit2"><mixed-citation>\
+<person-group><name><surname>Ricci</surname>, <given-names>A</given-names></name></person-group>. \
+<article-title>The first work</article-title>. <year>2019</year>.\
+</mixed-citation><mixed-citation> \
+<person-group><name><surname>Clark</surname>, <given-names>J</given-names></name></person-group>. \
+<article-title>The second work</article-title>. <year>2021</year>.\
+</mixed-citation></ref>
+  </ref-list></back>
+</article>"""
+
+    def test_every_part_reaches_the_citation_string(self):
+        """Last-wins discarded all but the final part."""
+        citation = JATSParser(self.RSC_MULTIPART_REFERENCE).parse().references[0].citation
+
+        assert citation == (
+            "(a) Jackson E. R. Curr Top Med Chem 2012;12:706. (b) Nowack B. Water Res 2003;37:2533."
+        )
+
+    def test_a_split_reference_is_rejoined_without_an_invented_space(self):
+        """The deposit has nothing between the parts, so neither does the join."""
+        citation = JATSParser(self.SPLIT_REFERENCE_WITH_URL_TAIL).parse().references[0].citation
+
+        assert citation == "Sensors. 2019;19:3977, [Online]. Available: https://example.org/3977"
+
+    def test_the_structured_fields_come_from_the_first_part(self):
+        """Assembling across parts welds a byline no publisher deposited."""
+        reference = JATSParser(self.TWO_WORKS_EACH_MARKED_UP).parse().references[0]
+
+        assert reference.authors == ["A Ricci"]
+        assert reference.article_title == "The first work"
+        assert reference.year == "2019"
+
+    def test_the_later_parts_are_still_in_the_string(self):
+        """First-wins narrows the fields; it must not discard the deposit."""
+        citation = JATSParser(self.TWO_WORKS_EACH_MARKED_UP).parse().references[0].citation
+
+        assert "The first work" in citation
+        assert "The second work" in citation
+
+    def test_a_reference_keeps_its_own_label(self):
+        """A part's marker is not the reference's number — #116 one family over.
+
+        The reference branch of the ``<label>`` arm was gated on the ambient
+        ``in_ref`` flag, which is exactly what the comment above it argues
+        against: a ``<label>`` belongs to the element enclosing it, and JATS
+        spells it as a direct child. So each part's ``(a)``/``(b)`` marker
+        overwrote the reference's own number, last one winning.
+        """
+        reference = JATSParser(self.RSC_MULTIPART_REFERENCE).parse().references[0]
+
+        assert reference.label == "1"
+
+    def test_a_reference_with_no_label_of_its_own_gets_none(self):
+        """The invented value is the failure #116 names, not a blank one.
+
+        Measured: 158 references in 14 of 880 local PMC articles carry no
+        ``<label>`` of their own and had a part's marker supplied as one.
+        Nought carry a real label that a deeper one overwrote — so the whole
+        population is a fabricated number, and the marker is in ``citation``
+        where the publisher put it.
+        """
+        reference = JATSParser(self.MULTIPART_WITH_NO_REFERENCE_LABEL).parse().references[0]
+
+        assert reference.label == ""
+        assert reference.citation.startswith("(a) ")
+
+    def test_a_single_citation_reference_is_unaffected(self):
+        """The join must be identity for the overwhelmingly common shape."""
+        reference = (
+            JATSParser(TestAMixedCitationKeepsTheTextItPrints.NLM_JOURNAL_DEPOSIT)
+            .parse()
+            .references[0]
+        )
+
+        assert reference.citation == (
+            "Smith, J, Doe, A. An observed effect. J Med. 2020;10(2):100-109. doi: 10.1/xyz."
+        )
+        assert reference.authors == ["J Smith", "A Doe"]
+
+
 class TestAnUndividedNameInProseStaysInTheProse:
     """Why ``<collab>``/``<string-name>`` stay in ``_INLINE_ELEMENTS`` — #146.
 

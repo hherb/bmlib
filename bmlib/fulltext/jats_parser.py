@@ -510,7 +510,26 @@ class _ContribFrame:
 class _ReferenceBuilder:
     id: str = ""
     label: str = ""
-    citation: str = ""
+    #: One entry per ``<mixed-citation>`` in this ``<ref>``, holding that
+    #: element's **raw** text. A ``<ref>`` may carry several — JATS admits it,
+    #: and 216 references in 21 of 880 local PMC articles do — so this is a
+    #: list and not a slot, which is what an unconditional assignment made it
+    #: (issue #149: every part but the last was discarded).
+    #:
+    #: Raw rather than normalised, and joined with **nothing** between them,
+    #: because that is what the deposit holds: the character data between
+    #: consecutive citation elements is empty in 586 of 586 occurrences, and
+    #: the visual separation lives inside the parts — RSC's ``<label> (b) </label>``
+    #: carries its own leading space. Normalising each part would eat it and
+    #: run ``(a)`` into ``(b)``; normalising once in :meth:`build` keeps it,
+    #: while still not inventing a space in front of a tail that opens with
+    #: punctuation. That is the module's "strip once, at the outermost call"
+    #: rule, already written down for ``_text_with_formatting``.
+    citation_parts: list[str] = field(default_factory=list)
+    #: How many citation elements this ``<ref>`` has opened, counting both
+    #: spellings. Only the first fills the structured fields; see the
+    #: ``<mixed-citation>`` arm of ``startElement``.
+    citation_element_count: int = 0
     authors: list[str] = field(default_factory=list)
     current_author_surname: str = ""
     current_author_given_names: str = ""
@@ -537,7 +556,7 @@ class _ReferenceBuilder:
         return JATSReferenceInfo(
             id=self.id,
             label=self.label,
-            citation=self.citation,
+            citation=_normalize_whitespace("".join(self.citation_parts)),
             authors=list(self.authors),
             article_title=self.article_title,
             source=self.source,
@@ -1556,8 +1575,21 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.in_ref = True
             self.current_reference = _ReferenceBuilder(id=attrs.get("id", ""))
         elif name in ("mixed-citation", "element-citation"):
-            if self.in_ref:
-                self.in_ref_citation = True
+            if self.in_ref and self.current_reference:
+                # Only the FIRST citation element of a <ref> fills the
+                # structured fields. A <ref> may carry several — 216 references
+                # in 21 of 880 local PMC articles do — and every field arm is
+                # gated on `in_ref_citation`, so leaving it False for the rest
+                # is the whole of first-wins: scalars stop being last-wins and
+                # `authors` stops *accumulating*, which was welding a byline
+                # out of several different works (issue #149 — one reference
+                # reported 40 authors, and rendered two people from two
+                # different papers as though they were one paper's). The
+                # deposit is not lost: every part's text still reaches
+                # `citation_parts` at the close, which is gated on `in_ref`.
+                self.current_reference.citation_element_count += 1
+                if self.current_reference.citation_element_count == 1:
+                    self.in_ref_citation = True
         elif name == "person-group":
             if self.in_ref_citation:
                 self.in_ref_person_group = True
@@ -1938,7 +1970,20 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.current_figure.label = text
             elif parent == "table-wrap" and self.current_table is not None:
                 self.current_table.label = text
-            elif self.in_ref and self.current_reference:
+            elif parent == "ref" and self.current_reference:
+                # The same parent test, and it was missing here alone: this
+                # branch was gated on the ambient `in_ref`, which is the very
+                # routing #116 established is wrong, one element family over.
+                # A <ref> may hold several citation elements, and RSC gives
+                # each its own <label> — "(a)", "(b)", "(c)" — so the ambient
+                # flag let the last part's marker become the reference's
+                # number. Measured over 880 local PMC articles: 158 references
+                # in 14 of them, and **nought** where a real reference label
+                # was overwritten — so the whole population is a number the
+                # publisher never wrote, on a reference that has none. Which
+                # is #116's own symptom: a swallowed label is not a blank, it
+                # is an invented value. The markers are not lost either way;
+                # they sit in `citation`, where the deposit puts them.
                 self.current_reference.label = text
 
         elif name == "thead":
@@ -1986,10 +2031,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # JATS admits them as siblings and inside <citation-alternatives>
                 # — so an unconditional assignment is last-writer-wins: an
                 # <element-citation> deposited second wiped a <mixed-citation>
-                # the publisher did typeset. Writing on one branch only makes
+                # the publisher did typeset. Appending on one branch only makes
                 # the documented "empty" true and states the precedence.
+                #
+                # Appended raw, and appended rather than assigned: see
+                # `_ReferenceBuilder.citation_parts` for why a <ref> is a list
+                # of parts and why they are joined without a separator.
                 if name == "mixed-citation":
-                    self.current_reference.citation = normalized_text
+                    self.current_reference.citation_parts.append(element_text)
                 self.in_ref_citation = False
         elif name == "person-group":
             if self.in_ref_citation and self.current_reference:
