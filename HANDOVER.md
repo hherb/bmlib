@@ -1,134 +1,129 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-22. **0.10.0 is released and on PyPI**; eight changes
+_Last updated: 2026-08-23. **0.10.0 is released and on PyPI**; nine changes
 sit unreleased on `main` — #73's atomic template install (PR #102), #96/#105's
 partitioning of an over-cap PubMed day (PRs #106 and #114), #109's typed
 article-id (PR #113), #110/#111's JATS sub-article and contributor-group
 fixes (PR #118), #115/#116/#117/#131's exhibit nesting, ranking and
-sampler (PR #126), #127's image-only table (PR #133) and
-#123/#125/#130/#135's owner-routed title and caption (PR #136) — plus **this
-session's #134/#121/#129, on `fix/134-121-129-parse-audit`**. All
+sampler (PR #126), #127's image-only table (PR #133),
+#123/#125/#130/#135's owner-routed title and caption (PR #136) and
+#134/#121/#129's end-of-parse audit (PR #139) — plus **this session's
+#120/#140, on `fix/120-140-undivided-author-names`**. All
 five version places agree at 0.10.0.
-Six of the eight unreleased changes are `fulltext` JATS fixes filed within
+Seven of the nine unreleased changes are `fulltext` JATS fixes filed within
 days of each other; whoever cuts the next release should describe them
 together. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker.
 
-**Five of them move what a caller of `JATSParser` gets**, and none moves what
-a bmlib *sync* stores. #111 populates an author list that was empty for the
-majority of open-access articles. #115/#117 change `JATSArticle.figures` and
-`.tables` — figures that were missing now appear, and a figure's
-`graphic_url` changes from a thumbnail to the full image for roughly half of
-all figures. #127 adds `JATSTableInfo.graphic_url` and fills it, so a table
-that came back with no content now carries its image. #123/#125/#130 route a
-section's `title` and an exhibit's `caption` by their owning element, so
-`body_sections` moves for roughly one recent article in ten. This session's
-#129 is the fifth and much narrower one: an article lost to a malformed
-`colspan` now parses. No bmlib path carries `figures`, `tables` or `authors`
-anywhere — `service.py` never reads them, `FullTextResult` has none, and
-`publications` takes its authors from the fetchers — so only a downstream
-calling `JATSParser` itself and persisting the result needs to re-parse. It
-should: the stored values are not comparable across the upgrade.
+**Six of them move what a caller of `JATSParser` gets, and three of those
+move what a bmlib *sync* stores.** #111 populates an author list that was
+empty for the majority of open-access articles. #115/#117 change
+`JATSArticle.figures` and `.tables` — figures that were missing now appear,
+and a figure's `graphic_url` changes from a thumbnail to the full image for
+roughly half of all figures. #127 adds `JATSTableInfo.graphic_url` and fills
+it, so a table that came back with no content now carries its image.
+#123/#125/#130 route a section's `title` and an exhibit's `caption` by their
+owning element, so `body_sections` moves for roughly one recent article in
+ten. #129 is narrower: an article lost to a malformed `colspan` now parses.
+This session's #120/#140 collect a contributor whose name arrived undivided —
+a `<collab>` consortium author (3.3% of open-access articles lost at least
+one) and a `<string-name>` one (an article deposited that way lost *all* of
+them).
 
-**Four rules carried forward from PR #136 (#123/#125/#130/#135)**, about
-measurement rather than routing, and all four argued in full in `CLAUDE.md`:
-*a rule's population can be large, empty, or both, and only a draw says which*
-(the `<title>` half is 10.3% of recent articles, the `<caption>` half measures
-empty in both windows); *when a rule replaces a guard, ask what else that
-guard was holding* (#125 one branch over, in the abstract, which reaches the
-cached HTML); *a number in a comment goes stale silently, and coherently* —
-`TestTheCitedPopulationsAreWhatTheCorporaHold` now breaks when a corpus moves;
-and *two enumerations, two containers nobody listed*, the back-filled window's
-entire population being a `<list>`.
+**`figures` and `tables` reach no bmlib path, but `authors` do** — a claim
+this file had backwards until 2026-08-23. `_render_html` writes
+`<p class="authors">` from `a.full_name`, `FullTextService` calls
+`parse_with_html()` and caches that HTML, so #111, #120 and #140 all change
+what a *sync* stores; `body_sections` and `abstract_sections` reach it the
+same way, which is #125's argument one branch over. `FullTextResult` still
+has no author field and `publications` still takes its authors from the
+fetchers, so nothing *structured* is stored — but a downstream holding cached
+full text should re-fetch, not only one calling `JATSParser` itself. The
+stored values are not comparable across the upgrade either way.
 
-**And three from PR #133 (#127)**, all three now also recorded in `CLAUDE.md`
-and the exhibit sampler: *an issue can be closed as COMPLETED without being
-fixed* (see below, which now has a mechanism); *write the case the rule
-decides, not one that merely exercises the path* — mutation found the one new
-test that could not fail; and *a stratified sample of recent deposits is still
-one window* — #127's population reads 0 of 662 there and 11 of 93 in a
-1996-1998 draw.
+**Seven rules carried forward from PRs #133 and #136**, all argued in full in
+`CLAUDE.md` and at their call sites, so only the shortest form is kept here. A
+rule's population can be large, empty, or both, and only a draw says which.
+When a rule replaces a guard, ask what else that guard was holding. A number
+in a comment goes stale silently and coherently, which is why
+`TestTheCitedPopulationsAreWhatTheCorporaHold` exists. Two enumerations can
+both miss a container nobody listed. An issue can be closed as COMPLETED
+without being fixed (see below, which now has a mechanism, twice). Write the
+case the rule *decides*, not one that merely exercises the path. And a
+stratified sample of recent deposits is still one window — #127's population
+reads 0 of 662 in the recent draw and 11 of 93 in a 1996-1998 one.
 
-**This session added the net under the class the last five sessions kept
-finding** — #134's end-of-parse audit, with #121's zero-author detector at the
-same call site and #129's colspan fallback beside them. The fix is in
-`CHANGELOG.md`; six things are worth carrying forward.
+**PR #139 (#134/#121/#129) put a net under the class the previous five
+sessions kept finding**, and its six lessons are argued in full in `CLAUDE.md`
+and at the call sites, so only the shortest form is kept here. A diagnostic's
+*level* is a claim that has to be measured. A net needs its own
+false-positive net, and it must be free — the autouse `parser_log` fixture
+makes all 186 pre-existing fixtures one without being written as one. Key a
+counter on *structure*, never on the routing it is checking. A rule enforced
+by prose is not enforced, which is why `TestTheAuditNetIsComplete` exists — it
+demanded this session's two new audit fields the moment the contrib stack did.
+A detector must report what it *checked*, not what it concluded. And a test
+can pass before its code exists, vacuously (a bug) or because it asserts
+silence (the point); tell those apart before reading a green as evidence.
 
-- **A diagnostic's level is a claim, and the claim has to be measured.** The
-  audit is ERROR because expat rejects an unbalanced *document*, so no deposit
-  can reach it and every line means bmlib is wrong. #121 was designed as ERROR
-  too and demoted to WARNING before it shipped: `PMC12803704` is genuinely
-  author-less and still carries `<front>` surnames, so that branch *can* fire
-  on a correct parse (1 of 1,025 drawn during the Swift port — not
-  reproducible from any corpus committed here, and the docs now say so rather
-  than citing it bare). One false-positive class makes the whole channel
-  unreadable, and the audit shipped with one: `current_article_id_type` was
-  set unconditionally and cleared conditionally, so a JATS-invalid
-  `<article-id>` outside `<article-meta>` made it accuse an article it had
-  parsed perfectly.
-- **A net needs its own false-positive net, and it must be free.** The autouse
-  `parser_log` fixture fails any test in `test_jats_parser.py` whose parse
-  emits an ERROR, so all 186 pre-existing fixtures became a false-positive check
-  without being written as one. It earned its place immediately:
-  `current_abstract_text` was in the first draft of the audited state, and
-  `</abstract>` flushes without clearing, so the audit fired on every article
-  carrying an abstract. Nothing else in that module looks at logs — without
-  the fixture that ships green.
-- **Key the counter on structure, never on the routing it is checking.**
-  #121's `front_contributor_name_count` is gated on `in_front` and not
-  `in_contrib`, because the latter is set only once `_is_author_contrib` has
-  said yes — which is exactly what #111 got wrong. Keyed on it, the counter
-  goes to zero in precisely the case it exists to detect. Mutation-confirmed:
-  that one edit is killed by one test, written for it.
-- **A rule enforced by prose is not enforced, and this PR proved it on
-  itself.** `_ROUTING_FLAGS` says "add a flag to the handler, add it here" and
-  shipped already missing `implicit_body_section`, so a stranded unsectioned
-  `<body>` lost its whole prose with `has_body` still `True` and the audit
-  silent — the exact failure the module was written to catch. Review found it;
-  nothing in the suite could have. Same shape one level down: eleven fields
-  and eleven `if`s kept in step by nothing, two of them emitting
-  indistinguishable text. `TestTheAuditNetIsComplete` and
-  `TestEveryFieldIsReported` mechanise both.
-- **A detector must report what it checked, not what it concluded.** #121's
-  quiet branch claimed "genuinely author-less" on the evidence "no `<surname>`
-  in `<front>`" — but JATS names a contributor with
-  `(name | string-name | collab | …)`, so a `<string-name>`-only article, with
-  *every* author dropped, was certified as having none (#140, filed). Where a
-  check has known blind spots the message must name them, or a conclusion
-  drawn past them is indistinguishable from a correct one.
-- **Two tests passed before the code existed, for two different reasons.**
-  `all(... for m in [])` is vacuously true, so the "the diagnostic names the
-  article" test passed against the unaudited parser until an emptiness check
-  was added; and the negative controls passed because they assert silence,
-  which is what an absent feature also gives. The first is a bug, the second
-  is the point — tell them apart before reading a green as evidence.
+**This session closed #120 and #140** — the two spellings of a contributor's
+name that give one undivided string. The fix is in `CHANGELOG.md`; four things
+are worth carrying forward.
 
-**A closing keyword in prose closed an issue nobody decided.** #137 was filed
-by PR #136's own review and named in the commit that filed it as *"Filed
-rather than fixed: #137 (…) and #138"* — GitHub read the `fixed: #137`
-substring as a keyword and closed it one second after the merge, while #138,
-in the same sentence with no keyword in front of it, stayed open. Reopened
-2026-08-22. This is the third instance of the class HANDOVER already warns
-about (an issue CLOSED/COMPLETED without being fixed) and the first with a
-mechanism: **the phrase does not have to be an intent to close.** Write
-`filed, not fixed — #137` or `#137 stays open`, never `rather than fixed:
-#137`, and check `gh issue view` after a merge rather than trusting the
-count.
+- **The same defect shape three times, and the module had already been caught
+  by all three.** A single slot where the markup nests (#115's exhibits), a
+  list appended at the close where the element opened (#115's slots), and a
+  text buffer read from the ancestor rather than the element (the
+  `_TEXT_ACCUMULATING` idiom). None of the three was in the issue; each was
+  found by asking what the *neighbouring* rules already knew. Read the rules
+  next to the one you are adding before deciding a fix is one line.
+- **A stack of frames needs the entries it will not use.** A `<contrib>` bmlib
+  does not collect still pushes a `None` frame, and `current_author` reads the
+  *top* of the stack rather than the nearest entry holding a builder. Both are
+  one-line edits away from wrong, both survived the first mutation run, and
+  one fixture — an editor nested inside an author's `<collab>` roster — kills
+  both. The population that distinguishes them is exactly the one no fixture
+  had.
+- **A rule can be spec-driven and still owe an instrument.** JATS says the
+  name is undivided, so no draw changes what to do with it — #140's "measure
+  first" asks about *reach*, not about the rule. The sampler gained the
+  counters (section 11) and was deliberately **not** re-run: a run redraws both
+  committed windows from today's strata, moving every figure cited in
+  `CLAUDE.md`, and would bake in #138's scope defect. So no rate exists for
+  `<string-name>`, and none should be quoted.
+- **A mutation harness that restores with `git checkout -- <file>` deletes
+  whatever is uncommitted in it.** It ate this session's sampler edits.
+  Commit first, or hold the original source in the harness and write it back.
 
-**Next up: #124, #128, #137, #138 and #140 in `fulltext`, #119 and #120 from
-the #118 review, #132, the older non-JATS ones (#86, #92, #94, #103, #112), or
-Phase 3 of the bmlibrarian port, whose every row needs a design
-conversation.** #124 is the last one that still loses content; #132 and #138
-both want a corpus redraw and should be paired; #120 and #140 are the two
-spellings of a contributor's name that the zero-author detector now *reports*
-and still does not *extract*, and they want one design decision between them —
-what a `JATSAuthor` holds when the deposit gives one undivided name.
+**A closing keyword in prose closed an issue nobody decided — twice, and the
+second time it was the warning about the first.** PR #136's filing commit said
+*"filed rather than ‹keyword›: ‹number›"* of #137; GitHub read the
+keyword-and-number substring literally and closed it one second after the
+merge, while #138, in the same sentence with nothing in front of it, stayed
+open. It was reopened 2026-08-22 with a comment explaining the mechanism — and
+PR #139's body then **quoted that sentence in order to warn about it**, closing
+#137 again two seconds after *that* merge. Reopened 2026-08-23.
 
-This file briefs the next session on what is done, what is still open, and
-the conventions to keep. Update it whenever a session materially changes the
-plan; delete sections that are finished and no longer instructive. Per-PR
-implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
-— do not re-narrate it here.
+The parser does not care that the substring sits in a quotation, a blockquote,
+a code span or bold markers, nor that the sentence says the opposite. So the
+rule is not "phrase it carefully" but **never reproduce the substring at
+all** — describe it, or write the number without its `#`, in commit messages,
+PR bodies and any quotation of either, which is why this paragraph names
+neither. And check `gh issue view` after every merge that mentions an issue in
+prose.
+
+**Next up: #124, #128, #137 and #138 in `fulltext`, #119 from the #118 review,
+#132, the older non-JATS ones (#86, #92, #94, #103, #112), or Phase 3 of the
+bmlibrarian port, whose every row needs a design conversation.** #124 is now
+the last open issue that still loses content, and needs a model decision
+first. #132 and #138 both want a corpus redraw and should be paired — with a
+third reason now, since this session's sampler counters are in no committed
+draw.
+
+This file briefs the next session on what is done, what is still open, and the
+conventions to keep. Update it whenever a session materially changes the plan;
+delete sections that are finished and no longer instructive. Per-PR detail
+lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 
 ## Current state
 
@@ -157,13 +152,14 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   moves something stored, 0.9.0 and 0.10.0 are *minor* bumps that move nothing
   — so the version number answers the API question, never the data one, and a
   downstream reading only the number must still read this list.
-- **Tests: 2578 passing + 63 skipped on `main`**, **2644 + 63** on
-  `fix/134-121-129-parse-audit`, so 66 are this session's — 17 in
-  `test_parse_audit.py` and 49 in `test_jats_parser.py`
-  (`uv run pytest tests/ -q`). Both measured, not derived. The PostgreSQL half
-  was **not** re-run for either branch and does not need to be: they touch no
-  SQL, and the last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is
-  2435 + 2 on the #105 branch. Of the 63 default skips, 61 are the PostgreSQL
+- **Tests: 2644 passing + 63 skipped on `main`**, **2679 + 63** on
+  `fix/120-140-undivided-author-names`, so 35 are this session's — 7 in
+  `test_fulltext_models.py`, 17 in `test_jats_parser.py`, 2 in
+  `test_parse_audit.py` and 9 in `test_jats_exhibit_sampler.py`
+  (`uv run pytest tests/ -q`). All measured, not derived. The PostgreSQL half
+  was **not** re-run and does not need to be — this branch touches no SQL; the
+  last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the
+  #105 branch. Of the 63 default skips, 61 are the PostgreSQL
   parameterisations, 1 is a PostgreSQL-only schema test, and 1 is
   `test_pymupdf_requires_dependency`, which runs only when PyMuPDF is
   *absent*. **PyMuPDF is installed in the dev venv** (PR #55 did it so the
@@ -182,11 +178,11 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
   export BMLIB_TEST_POSTGRESQL_DSN="host=/tmp/bmlpg/run port=55432 dbname=bmlib_test user=postgres"
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
-  Treat drift as a regression worth fixing, not expected staleness. The
+  Treat drift as a regression, not expected staleness. The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; **43 are outstanding for the next release** — 20 `ROADMAP.md`
-  rows and 23 spots across `docs/manual/publications.md` (13), `fulltext.md`
-  (7) and `templates.md` (3). Grep case-insensitively for `unreleased` rather
+  release time; **49 are outstanding for the next release** — 21 `ROADMAP.md`
+  rows and 28 spots across `docs/manual/publications.md` (13), `fulltext.md`
+  (12) and `templates.md` (3). Grep case-insensitively for `unreleased` rather
   than for `(unreleased)`: three of 0.10.0's thirteen were spelled
   `*(unreleased, #99)*` and `(changed, unreleased — …)`, which the
   parenthesised pattern misses. Write the marker bare, never with a guessed
@@ -213,20 +209,18 @@ implementation detail lives in git history, `CHANGELOG.md` and `docs/plans/`
 
 ### Open GitHub issues
 
-**Sixteen open** as this file is written (verified with `gh issue list`),
-thirteen once this PR closes #121, #129 and #134: #86, #92, #94, #103, #112,
-#119, #120, #124, #128, #132, #137, #138, #140 — #140 filed by this PR's own
-review, for the `<string-name>` contributors #121's detector now reports and
-still cannot extract. Every one was found by review or
-measurement rather than by a failing test, and **none of them loses records**
-— though **#124** loses an exhibit's footnotes, **#128** would lose every
-figure image in a document binding XLink to another prefix, **#120** loses a
-contributor, and **#119** feeds a scan text that is not the article's. Count this against the
-repo before trusting it: the line has been wrong in three consecutive
-sessions, and one further way is an issue **closed as COMPLETED without being
-fixed**, which no count of open issues catches — #137 was closed that way by
-a stray `fixed: #137` inside the sentence saying it was *not* fixed, and is
-reopened. (**#56, #68, #72 and #79** shipped in
+**Thirteen open** as this file is written (verified with `gh issue list`,
+after reopening #137 for the second time), eleven once this PR closes #120 and
+#140: #86, #92, #94, #103, #112, #119, #124, #128, #132, #137, #138. Every one
+was found by review or measurement rather than by a failing test, and **none
+of them loses records** — though **#124** loses an exhibit's footnotes,
+**#128** would lose every figure image in a document binding XLink to another
+prefix, and **#119** feeds a scan text that is not the article's. Count this
+against the repo before trusting it: the line has been wrong in three
+consecutive sessions, and one further way is an issue **closed as COMPLETED
+without being fixed**, which no count of open issues catches — #137 has now
+been closed that way twice, by the mechanism described above. (**#56, #68,
+#72 and #79** shipped in
 0.9.1. **#78, #81, #88–#91, #95, #98 and #99** shipped in 0.10.0 — PRs #85,
 #87, #93, #97, #100. **#73** is on `main` unreleased in PR #102, whose own
 review filed **#103**. **#96** closed with PR #106, as correct rather than as
@@ -236,24 +230,27 @@ and **#121**. **#115, #116, #117 and #131** closed with PR #126, which filed
 **#123**, **#124**, **#127**, **#128**, **#129** and **#130**. **#127**
 closed with PR #133, which filed **#132**, **#134** and **#135**; **#123**,
 **#125**, **#130** and **#135** closed with PR #136, whose review
-filed **#137** and **#138**. **#121**, **#129** and **#134** close with this
-session's PR, whose review filed **#140**.)
+filed **#137** and **#138**. **#121**, **#129** and **#134** closed with PR
+#139, whose review filed **#140**. **#120** and **#140** close with this
+session's PR.)
 
-**#128 is weaker than filed**: every one of the 2,397 `<graphic>` hrefs in the
-two redrawn corpora uses the `xlink` prefix bound to the XLink namespace, so
-the literal-prefix match is safe on measured evidence. Worth downgrading
-rather than closing — no sample proves no publisher does otherwise.
+**#128 is weaker than filed**: all 2,397 `<graphic>` hrefs in the two redrawn
+corpora use the `xlink` prefix bound to the XLink namespace, so the
+literal-prefix match is safe on measured evidence. Worth downgrading rather
+than closing — no sample proves no publisher does otherwise.
 
 **#132 is smaller than it was.** Both corpora were redrawn with every counter
-present, so every figure a comment cites is now re-derivable from the repo and
+present, so every figure a comment cites is re-derivable from the repo and
 `TestTheCitedPopulationsAreWhatTheCorporaHold` keeps it that way. What remains
 is the 276-article draw itself: #115's "0.7%, both eLife" and #117's
-49.9%/49.5% cite a corpus that is not in the repo, and **nesting measures 0 in
-both committed draws**, so that figure has no in-repo evidence at all. Do it
-before the release that ships these rules, while the CHANGELOG is still free
-to edit. #138 wants a redraw too — pair them.
+49.9%/49.5% cite a corpus not in the repo, and **nesting measures 0 in both
+committed draws**, so that figure has no in-repo evidence at all. Do it before
+the release that ships these rules, while the CHANGELOG is still free to edit.
+#138 wants a redraw too, and this session's `_CONTRIB_SIDE_COUNTERS` are in no
+committed draw — three reasons for one redraw. Pair them.
 
-**#137 and #138 came out of PR #136's own review.** #137: a section-level
+**#137 and #138 came out of PR #136's own review**, and #137 has since been
+auto-closed twice without being decided (mechanism above). #137: a section-level
 `<caption>`'s `<p>` children still reach `body_sections` while its `<title>`
 is now dropped, so one caption's two halves go different ways — a decision to
 make (keep, drop both, or model the containers), and the sampler records the
@@ -266,29 +263,19 @@ unre-derivable.
 
 **#124 — table and figure footnote prose is dropped entirely.** Neither
 exhibit model has a `footnotes` field and nothing collects one, so a
-`<table-wrap-foot><fn>`'s text reaches nothing. `<sup>` is flattened into the
-surrounding cell, so the rendered table still reads `12.3a` while the note it
-points at exists nowhere. #116's fix discards the marker, which is right only
-because there is nothing to attach it to; once there is, hold it and prefix it
-(`"a — Adjusted for age."`), since with two footnotes the mapping is otherwise
-unrecoverable. Needs the model decision first, so not a drive-by. The prose
-carries abbreviation expansions and per-table funding notes.
+`<table-wrap-foot><fn>`'s text — abbreviation expansions, per-table funding
+notes — reaches nothing, while `<sup>` is flattened into the surrounding cell,
+so the rendered table reads `12.3a` with the note it points at existing
+nowhere. #116's fix discards the marker, right only because there is nothing
+to attach it to; once there is, hold it and prefix it (`"a — Adjusted for
+age."`), since with two footnotes the mapping is otherwise unrecoverable.
+Needs the model decision first, so not a drive-by.
 
 **#119 — `TransparencyAnalyzer` scans raw JATS XML, so `<sub-article>`
 reviewer prose still reaches its COI, funding and data-availability scans.**
 It regexes `resp.text` directly and never imports `bmlib.fulltext`, so #110's
 suppression does not touch it. Measured on two articles in the PR #118 review:
 6 and 5 reviewer `competing interest` hits against the article's own.
-
-**#120 — `<collab>` consortium authors are silently dropped.**
-`_AuthorBuilder.build()` returns `None` without a `<surname>` and the call
-site has no `else`, so *"the INHERIT Trial Group"* never reaches
-`JATSArticle.authors`. Pre-existing rather than a regression, but #111's fix
-makes it the last thing standing between a correctly-identified contributor
-and the list. Measured on 1,025 open-access articles: 138 newly-admitted
-contribs carry no surname, and **34 articles (3.3%)** lose at least one — none
-loses all of them. Needs a model decision first, since `JATSAuthorInfo` has
-`surname`/`given_names` and a collaboration has neither.
 
 **#112 — stated measurements that do not reproduce against the committed
 corpus**, the same failure as #132 above but one layer deeper.
@@ -297,24 +284,21 @@ funder stem it includes and excludes, and three disagree with
 `tests/data/funder_names.json`: the headline pair reads 0.917 / 0.324 and
 measures 0.909 / 0.333, `pharmaceutic` is claimed to have no false positive
 and has the matcher's *only* one, and `co` is excluded for a collision the
-corpus does not contain. Not drift — the corpus has one commit (be456a2) and
-the matcher is byte-identical since, and the stated figures are self-consistent
-with a corpus holding 34 industry entries where this one holds 30, so they
-were taken against a revision never committed. No behaviour regression: the
-tests pass and both floors hold. Re-derive every figure in one pass rather
-than fixing the three named, and say in each comment which corpus revision it
-came from.
+corpus does not contain. Not drift — the corpus has one commit (be456a2), the
+matcher is byte-identical since, and the figures are self-consistent with a
+corpus holding 34 industry entries where this one holds 30, so they were taken
+against a revision never committed. No behaviour regression. Re-derive every
+figure in one pass rather than fixing the three named, and name the corpus
+revision in each comment.
 
 **#103 — `install_defaults()` reserves no `NAME_MAX` headroom for the
 temporary name.** `atomic_write()` stages through a name 38 characters longer
-than the target's; `fulltext/cache.py` leaves room (`_MAX_PREFIX_CHARS`),
-`templates/engine.py` passes the source filename through verbatim, so a
-template named beyond ~217 characters now fails with `ENAMETOOLONG` where the
-old `write_text` succeeded. Left alone deliberately: those names come from the
-caller's own source tree rather than unbounded input, and the failure is loud
-and immediate rather than silent and permanent. The fix is a docstring line,
-not a cap — capping renames a caller's template and `render("<name>")` then
-does not find it.
+than the target's, and `templates/engine.py` passes the source filename
+through verbatim where `fulltext/cache.py` leaves room, so a template named
+beyond ~217 characters fails with `ENAMETOOLONG`. Left alone deliberately: the
+names come from the caller's own source tree and the failure is loud. The fix
+is a docstring line, not a cap — capping renames a caller's template and
+`render("<name>")` then does not find it.
 
 **#94 — bioRxiv's envelope shapes are unmeasured**, filed for the reason #92
 was: its guard rests on an unmeasured quantity. Full argument in CLAUDE.md
@@ -326,16 +310,11 @@ quiet-day shapes so it cannot come to depend on the unmeasured answer.
 
 **#92 — the shortfall floor is unmeasured**, filed as part of the #88 fix so
 that its one guessed constant is on the record.
-`SHORTFALL_FAILURE_RATIO = 0.5` decides when a page walk that ended naturally
-but came up short is treated as truncated; it asserts only that no benign
-cause plausibly removes half a day's records. Every other threshold in bmlib
-was set from a sampled population, so this is the outlier. Two constraints: a
-`failed` day is re-offered on **every** later run, so a floor tightened past
-the real benign gap re-fetches that day forever; and OpenAlex is expensive to
-sample, at tens of thousands of works per publication date. Follow the
-`scripts/` sampler convention. One input from #96 — efetch cannot produce the
-uniform-half-pages case this floor was worried about: a page is the slice it
-named or it is refused.
+`SHORTFALL_FAILURE_RATIO = 0.5` is the only threshold in bmlib not set from a
+sampled population; full argument in `CLAUDE.md`. Two constraints on measuring
+it: a `failed` day is re-offered on **every** later run, so a floor tightened
+past the real benign gap re-fetches that day forever, and OpenAlex is
+expensive to sample. Follow the `scripts/` sampler convention.
 
 **#86 — `docs/manual/llm.md` documents `LLMClient.generate` and
 `LLMClient.embed` twice each** (found for #81; same defect as #31). Not a
@@ -349,9 +328,9 @@ disagree on the default model (`embed_batch`'s is right).
   `bmlib[ollama]>=0.5.1,<0.6.0` and has missed six releases; a downstream
   change, not a bmlib one. Read the intervening non-comparable behaviour
   changes first: the transparency ones move stored scores, 0.8.0 moves every
-  PubMed title and abstract, and **0.9.1 moves stored full text** (#79).
-  0.9.0 adds none of those but carries three API changes, so the widened pin
-  should clear `FullTextService.cache` being nullable.
+  PubMed title and abstract, and **0.9.1 moves stored full text** (#79). The
+  widened pin should clear `FullTextService.cache` being nullable, one of
+  0.9.0's three API changes.
 - **Wire the segmenter and the rule-based extractors in.** Two halves of one
   roadmap item: the segmenter could give `CochraneAssessor` Methods/Results
   boundaries and `TransparencyAnalyzer` the paper's own Funding/COI/Data
@@ -359,9 +338,9 @@ disagree on the default model (`embed_batch`'s is right).
   conversation.
 - **Feed the stored grants to `transparency/`.** `TransparencyAnalyzer` runs
   its own `efetch` per paper to read `<GrantList>`, which `fetch_pubmed`
-  already stores at sync time. Reading the table would save that request — but
-  it is a scoring change that moves stored values, so it needs its own
-  decision, not a quiet optimisation.
+  already stores at sync time. Reading the table saves that request, but it is
+  a scoring change that moves stored values — its own decision, not a quiet
+  optimisation.
 
 ### bmlibrarian → bmlib porting (Phase 3 is next)
 
@@ -377,12 +356,11 @@ transparency/quality reconciliation, no GRADE engine exists, SSRF guard).
   doc's master table — rows, not GitHub issues; PRs #51, #54, #55, #58, #59).
 - **Phase 3 is next**: discovery (#12), `pubmed_search` (#13), MeSH (#21),
   ClinicalTrials.gov (#14 — **check the caveat first**, the legacy bulk XML
-  the parser targets was deprecated in the 2024 API v2 migration). These are
-  larger subsystems than anything in Phase 2; expect each to need its own
-  design conversation rather than a straight port. Phase 4 (the prompt-driven
-  agent family, paper_weight, review building-blocks) follows, and each of
-  those must be reconciled against the existing `quality/` and
-  `transparency/` rather than forked — see the analysis doc's caveats.
+  the parser targets was deprecated in the 2024 API v2 migration). Each is a
+  larger subsystem than anything in Phase 2 and needs its own design
+  conversation rather than a straight port. Phase 4 (the prompt-driven agent
+  family, paper_weight, review building-blocks) follows, reconciled against
+  the existing `quality/` and `transparency/` rather than forked.
 
 ### The port recipe (repeat it)
 

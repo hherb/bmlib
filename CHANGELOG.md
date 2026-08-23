@@ -201,6 +201,75 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A contributor whose name arrived undivided was dropped** (#120, #140).
+  JATS names a contributor with `(name | string-name | collab | …)` and bmlib
+  read only the first: `_AuthorBuilder.build()` refused anything without a
+  `<surname>` and the call site dropped it without a word. A `<collab>`
+  consortium author — *"the INHERIT Trial Group"*, *"NIH-ManNAc Study Team"* —
+  therefore vanished from **34 of 1,025 open-access articles (3.3%)**, and an
+  article naming every contributor with `<string-name>` parsed to **no authors
+  at all**. Each came back as a well-formed shorter list, which reads as "this
+  article credits nobody" rather than as a parser that looked in the wrong
+  place.
+
+  Both are now collected, verbatim, each in a field of its own —
+  `JATSAuthorInfo.collab` and `JATSAuthorInfo.string_name`. Verbatim because
+  splitting *"Ahmed Al-Rashid"* into a surname and given names is a decision
+  about particles, multi-word surnames and name order, assumed rather than
+  measured and undetectable by the caller once stored; and out of `surname`
+  because that field is sorted and de-duplicated on, where an organisation is
+  indistinguishable from a person. `full_name` prefers a structured name over
+  both, since a `<contrib>` carrying a `<name>` *and* a `<collab>` is *"Smith,
+  on behalf of the Y Group"*.
+
+  **This moves what a corpus holds.** Those authors now appear in
+  `JATSArticle.authors` and in the `<p class="authors">` line of the HTML
+  `FullTextService` caches, so stored full text is not comparable across the
+  upgrade. A `<string-name>` inside a reference's `<person-group>` also now
+  reaches `JATSReferenceInfo.authors`, where a `<collab>` already did.
+
+  Four things the extraction needed beyond the two fields, three of them
+  shapes this module has been caught by before. **`<contrib>` is a stack**,
+  with `in_contrib` and `current_author` derived from it: a `<collab>` may
+  carry a `<contrib-group>` of the collaboration's own members, so a
+  `<contrib>` opens inside another, and held as one slot each member overwrote
+  the consortium's builder while its close cleared the flag — #115 one element
+  family over. A *non-author* `<contrib>` pushes a `None` frame, because
+  skipping the push lets an editor's end tag pop the author's own, and reading
+  the nearest builder instead of the top of the stack writes that editor's
+  surname into the consortium; one fixture kills both, and both were live
+  mutants. **A contributor is listed where its `<contrib>` opened**, the
+  exhibits' reserve-and-fill, or a consortium is listed behind the members it
+  encloses — and the reservation is *given back* where the `<contrib>` names
+  nobody, so an unfilled slot keeps meaning "never closed" and cannot make the
+  audit ERROR on the well-formed `<anonymous/>`. **`<string-name>` accumulates
+  a text buffer and merges it back**: accumulating so its close reads its own
+  text rather than the ancestor's, inline so a `<mixed-citation>` printing a
+  bare one keeps that author in the citation string it renders. Its own text
+  fills the field only when no structured name arrived, since JATS lets
+  `<string-name>` carry `<surname>` and `<given-names>` children and the
+  buffer then holds only the punctuation between them.
+
+  The end-of-parse audit gains `open_contribs` and `unfilled_author_slots`,
+  each naming what its imbalance costs — `TestTheAuditNetIsComplete` demanded
+  both the moment the stack existed, which is #134's mechanism working as
+  intended. A `<contrib>` naming nobody is now reported at DEBUG rather than
+  dropped in silence, which is what kept both spellings invisible for as long
+  as they were.
+
+  **The rule is spec-driven, and the population is not measured here.** JATS
+  says the name is undivided; refusing to split it is the same "measured, not
+  assumed" rule the rest of this module runs on, and no rate changes it.
+  `scripts/sample_jats_exhibits.py` gained the counters that would answer how
+  much of a corpus each spelling reaches (section 11: the spelling vocabulary,
+  nested `<contrib>`, `<collab>` rosters, and articles naming every
+  contributor undivided) but **has not been re-run** — a run redraws both
+  committed windows from today's strata, moving every figure cited elsewhere
+  in this file, and #138's scope defect would be baked into the new draw. That
+  redraw belongs with #132 and #138. The 3.3% above is #120's own figure, from
+  the PR #118 review rather than from a committed corpus; there is no figure
+  for `<string-name>` and none should be quoted.
+
 - **A malformed `colspan` cost the whole article** (#129). `colspan` is CDATA
   in JATS, so `colspan="two"` — or `"1.5"`, or a whitespace-only value — is
   well-formed markup, and `startElement` read it with a bare `int()`. The
