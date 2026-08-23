@@ -1238,6 +1238,63 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.text_stack[-1] += text
         return text
 
+    def _inside_mixed_citation(self) -> bool:
+        """Is the element now closing a *descendant* of a ``<mixed-citation>``?
+
+        ``<mixed-citation>`` is JATS's mixed-content citation: the publisher
+        deposits the reference as they typeset it, with their own punctuation
+        between the marked-up parts. So every descendant's text is *also* the
+        citation's, and a child that took a buffer without merging it back
+        deleted itself from the string — ``<person-group>``,
+        ``<article-title>``, ``<source>``, ``<year>``, ``<volume>``,
+        ``<issue>``, ``<fpage>``, ``<lpage>`` and ``<pub-id>`` all do, which is
+        the whole of a standard NLM deposit, so it rendered as
+        ``'. . . ;():-. doi: .'`` (issue #146).
+
+        **The rule is a property of the context, not of the element**, which is
+        why membership of ``_INLINE_ELEMENTS`` — the instrument #120 and #140
+        reached for, correctly, because ``<collab>`` and ``<string-name>``
+        carry a name wherever they appear — cannot serve here. These elements
+        carry text that must *not* merge outside a citation: an
+        ``<article-title>`` in ``<article-meta>`` is the article's own title
+        and would be appended to whatever buffer is open, and a ``<source>`` or
+        ``<year>`` there is a metadata field, not prose.
+
+        It is an *ancestor* test and not the parent test the module usually
+        makes (``<label>``, ``<caption>``, ``<graphic>``), because mixed content
+        is inherited down the whole subtree: a ``<surname>`` sits inside
+        ``<name>`` inside ``<person-group>``, and each merge composes into the
+        one above it.
+
+        The slice is what excludes the ``<mixed-citation>`` element itself,
+        whose own close *reads* the buffer rather than merging it — and that
+        half is **prospective, so do not read it as load-bearing**. Merging it
+        too would push the whole citation into the enclosing buffer, but at
+        this revision nothing reads that buffer: no handler in ``endElement``
+        takes ``text`` for an element outside ``_TEXT_ACCUMULATING``, so the
+        base buffer is written and never consulted. Dropping the slice
+        survives the full suite, and three document shapes — a ``<ref-list>``
+        in ``<back>`` followed by a ``<floats-group>``, a ``<ref-list>`` inside
+        a body ``<sec>`` whose buffer *is* open, and two refs followed by an
+        ``<fn-group>`` — parse identically with and without it. It is kept
+        because a buffer that escapes is the shape this module has been caught
+        by repeatedly, and because the alternative asserts that the citation's
+        text belongs to an ancestor that has no claim on it.
+
+        ``<element-citation>`` is deliberately *not* included. Its content
+        model is element-only, so whitespace between children is insignificant
+        and there is no authored string to recover — concatenating gives either
+        a run-together word or the depositor's indentation as a separator.
+        Assembling a reference from the structured fields is a citation-style
+        decision, and :attr:`JATSReferenceInfo.formatted_citation` is where
+        this library makes it.
+
+        Returns:
+            ``True`` when a ``<mixed-citation>`` is open strictly above the
+            element being closed.
+        """
+        return "mixed-citation" in self.element_stack[:-1]
+
     # -- Section and caption helpers -----------------------------------------
 
     def _caption_owner(self, parent: str) -> _FigureBuilder | _TableBuilder | None:
@@ -1507,7 +1564,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # and is not merged back; see `_UNDIVIDED_NAME_ELEMENTS`.
             is_owned_name = name in _UNDIVIDED_NAME_ELEMENTS and bool(self.contrib_stack)
             element_text = self._pop_text_buffer(
-                merge_with_parent=is_inline and not is_fig_table_xref and not is_owned_name
+                merge_with_parent=(is_inline or self._inside_mixed_citation())
+                and not is_fig_table_xref
+                and not is_owned_name
             )
         else:
             element_text = self.current_text

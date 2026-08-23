@@ -195,6 +195,19 @@ class JATSReferenceInfo:
 
     id: str
     label: str
+    #: The reference as the publisher typeset it, and only where they typeset
+    #: one. A ``<mixed-citation>`` is mixed content — marked-up parts with the
+    #: depositor's own punctuation between them — so this is that string, in
+    #: document order, including the text of every child (issue #146; before
+    #: it, a child that took a text buffer without merging it back deleted
+    #: itself, leaving the punctuation alone: ``'. . . ;():-.'``).
+    #:
+    #: An ``<element-citation>`` deposit leaves this **empty**, and that is not
+    #: a gap: its content model is element-only, so the depositor authored no
+    #: string and the whitespace between the children is insignificant.
+    #: :attr:`formatted_citation` is where this library assembles one from the
+    #: structured fields, and is what a caller wanting a reference for display
+    #: should read.
     citation: str
     authors: list[str] = field(default_factory=list)
     article_title: str = ""

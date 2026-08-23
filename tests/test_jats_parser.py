@@ -3708,6 +3708,169 @@ class TestACaptionBelongsToTheElementThatOpenedIt:
         assert article.body_sections[0].paragraphs == ["Prose after the table."]
 
 
+class TestACrossReferenceToAnExhibitBecomesALink:
+    """A ``<xref>`` pointing at a figure or table is *replaced*, not merged.
+
+    ``<xref>`` is inline, so its text ordinarily merges back into the
+    paragraph. For ``ref-type="fig"`` and ``ref-type="table"`` the close
+    instead appends ``[text](#rid)`` itself, which :func:`_convert_inline_links`
+    renders as an anchor — so the merge has to be *suppressed* for exactly
+    those, or the label is emitted twice: ``Figure 1[Figure 1](#f1)``.
+
+    Written while generalising the merge rule for issue #146, which made that
+    suppression a condition on a larger expression. Nothing pinned it before:
+    dropping ``not is_fig_table_xref`` altogether passed the whole suite.
+    """
+
+    PROSE_WITH_CROSS_REFERENCES = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>An article that cross-references</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>Results</title>
+    <p>As shown in <xref ref-type="fig" rid="f1">Figure 1</xref> the effect holds.</p>
+    <p>See <xref ref-type="table" rid="t1">Table 2</xref> too.</p>
+    <p>And <xref ref-type="bibr" rid="R1">3</xref> as well.</p>
+  </sec></body>
+</article>"""
+
+    def test_an_exhibit_reference_is_emitted_once(self):
+        """Merged *and* rewritten, the label appears twice in the prose."""
+        article = JATSParser(self.PROSE_WITH_CROSS_REFERENCES).parse()
+
+        assert article.body_sections[0].paragraphs[:2] == [
+            "As shown in [Figure 1](#f1) the effect holds.",
+            "See [Table 2](#t1) too.",
+        ]
+
+    def test_a_reference_of_any_other_type_keeps_its_own_text(self):
+        """Only the two exhibit types are rewritten; a citation marker is prose."""
+        article = JATSParser(self.PROSE_WITH_CROSS_REFERENCES).parse()
+
+        assert article.body_sections[0].paragraphs[2] == "And 3 as well."
+
+    def test_the_link_reaches_the_rendered_html_as_an_anchor(self):
+        """The markdown form is an intermediate; the anchor is what is cached."""
+        html = JATSParser(self.PROSE_WITH_CROSS_REFERENCES).to_html()
+
+        assert '<a href="#f1">Figure 1</a>' in html
+        assert "[Figure 1](#f1)" not in html
+
+
+class TestAMixedCitationKeepsTheTextItPrints:
+    """``<mixed-citation>`` is mixed content, so its descendants' text is its
+    own — issue #146.
+
+    Every child that accumulates a buffer without being inline had its text
+    *taken and not returned*, so the string bmlib rendered from the buffer was
+    whatever direct character data was left: the punctuation between the
+    children. ``<person-group>``, ``<article-title>``, ``<source>``,
+    ``<year>``, ``<volume>``, ``<issue>``, ``<fpage>``, ``<lpage>`` and
+    ``<pub-id>`` are all in that state, which is the whole of a standard NLM
+    deposit — it rendered as ``'. . . ;():-. doi: .'``.
+
+    The structured fields were always right; only the rendered convenience
+    string was wrong. PR #141 fixed exactly this shape for ``<collab>`` and
+    ``<string-name>`` by making them inline, and the two tests that pin it
+    live in :class:`TestAnUndividedContributorName`. Membership of
+    ``_INLINE_ELEMENTS`` is the wrong instrument here: it is a property of the
+    *element*, and these elements carry text that must not merge outside a
+    citation — ``<article-title>`` in ``<article-meta>`` is the article's own
+    title, and merging it would put the title into whatever buffer happened to
+    be open. So the rule is a property of the *context*: inside a
+    ``<mixed-citation>``, every descendant's text belongs to the citation.
+    """
+
+    #: The standard NLM journal deposit — every field marked up, with the
+    #: publisher's own punctuation between the elements.
+    NLM_JOURNAL_DEPOSIT = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>An article that cites</article-title></title-group>
+  </article-meta></front>
+  <back><ref-list>
+    <ref id="R1"><mixed-citation publication-type="journal">\
+<person-group person-group-type="author">\
+<name><surname>Smith</surname>, <given-names>J</given-names></name>, \
+<name><surname>Doe</surname>, <given-names>A</given-names></name>\
+</person-group>. <article-title>An observed effect</article-title>. \
+<source>J Med</source>. <year>2020</year>;<volume>10</volume>(<issue>2</issue>):\
+<fpage>100</fpage>-<lpage>109</lpage>. doi: <pub-id pub-id-type="doi">10.1/xyz</pub-id>.\
+</mixed-citation></ref>
+  </ref-list></back>
+</article>"""
+
+    #: The same reference deposited as ``<element-citation>``, whose content
+    #: model is element-only: there is no publisher-authored punctuation to
+    #: recover, so there is no string to rebuild.
+    ELEMENT_CITATION_DEPOSIT = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>An article that cites</article-title></title-group>
+  </article-meta></front>
+  <back><ref-list>
+    <ref id="R1"><element-citation publication-type="journal">
+      <person-group person-group-type="author">
+        <name><surname>Smith</surname><given-names>J</given-names></name>
+      </person-group>
+      <article-title>An observed effect</article-title>
+      <source>J Med</source>
+      <year>2020</year>
+    </element-citation></ref>
+  </ref-list></back>
+</article>"""
+
+    def test_the_citation_string_is_what_the_publisher_typeset(self):
+        """The whole reference, in document order, punctuation included."""
+        article = JATSParser(self.NLM_JOURNAL_DEPOSIT).parse()
+
+        assert article.references[0].citation == (
+            "Smith, J, Doe, A. An observed effect. J Med. 2020;10(2):100-109. doi: 10.1/xyz."
+        )
+
+    def test_reading_a_child_still_fills_its_own_structured_field(self):
+        """Merging the text back must not disturb what the close reads.
+
+        ``_pop_text_buffer`` returns the element's own text and appends a copy
+        to the parent, so the structured read is unaffected — but it is the
+        half a caller relies on, and the two are one argument apart.
+        """
+        reference = JATSParser(self.NLM_JOURNAL_DEPOSIT).parse().references[0]
+
+        assert reference.authors == ["J Smith", "A Doe"]
+        assert reference.article_title == "An observed effect"
+        assert reference.source == "J Med"
+        assert reference.year == "2020"
+        assert reference.doi == "10.1/xyz"
+
+    def test_a_nested_name_reaches_the_citation_through_its_person_group(self):
+        """The merge has to compose, or only the outermost child comes back.
+
+        ``<surname>`` merges into ``<person-group>`` and ``<person-group>``
+        into ``<mixed-citation>``; a rule applied only to the citation's direct
+        children would keep the comma the ``<name>`` prints and drop the name
+        itself.
+        """
+        citation = JATSParser(self.NLM_JOURNAL_DEPOSIT).parse().references[0].citation
+
+        assert citation.startswith("Smith, J, Doe, A.")
+
+    def test_an_element_citation_is_not_run_together(self):
+        """Element-only content authored no string, so none is invented.
+
+        Whitespace between an ``<element-citation>``'s children is
+        insignificant by the content model, so concatenating them yields
+        either a run-together word or a sequence whose separators are the
+        depositor's indentation. Assembling a reference from the structured
+        fields is a citation-style decision, and ``formatted_citation`` is
+        where it is made.
+        """
+        reference = JATSParser(self.ELEMENT_CITATION_DEPOSIT).parse().references[0]
+
+        assert reference.citation == ""
+        assert reference.article_title == "An observed effect"
+
+
 class TestAnUnparseableSpanCostsOneCellAndNotTheArticle:
     """``colspan`` is CDATA, so a value ``int()`` refuses must not raise — #129.
 
