@@ -35,6 +35,111 @@ class TestJATSAuthorInfo:
         assert author.full_name == "Consortium"
 
 
+class TestAnUndividedContributorName:
+    """What the model holds when the deposit gives one undivided string.
+
+    JATS names a contributor with ``(name | string-name | collab | ...)``.
+    Only the first of those divides into a surname and given names; a
+    ``<collab>`` names a group and a ``<string-name>`` a person the depositor
+    did not split. Issues #120 and #140 are the two spellings, and they share
+    one decision: the undivided form is held verbatim, in a field that says
+    which kind it is, so a consumer sorting or de-duplicating by ``surname``
+    can tell "the INHERIT Trial Group" from a person.
+    """
+
+    def test_a_collaboration_renders_as_its_own_name(self):
+        author = JATSAuthorInfo(collab="the INHERIT Trial Group")
+
+        assert author.full_name == "the INHERIT Trial Group"
+
+    def test_an_undivided_personal_name_renders_verbatim(self):
+        author = JATSAuthorInfo(string_name="Jane Q Smith")
+
+        assert author.full_name == "Jane Q Smith"
+
+    def test_a_structured_name_wins_over_a_collaboration(self):
+        """ "Smith, on behalf of the Y Group" is Smith's paper.
+
+        A ``<contrib>`` may carry both, and the person is the contributor —
+        the collaboration is an attribution attached to them. Both are kept;
+        only the rendering has to choose.
+        """
+        author = JATSAuthorInfo(
+            surname="Smith", given_names="Jane", collab="on behalf of the Y Group"
+        )
+
+        assert author.full_name == "Jane Smith"
+        assert author.collab == "on behalf of the Y Group"
+
+    def test_a_structured_name_wins_over_an_undivided_one(self):
+        author = JATSAuthorInfo(surname="Smith", given_names="Jane", string_name="Smith, Jane Q")
+
+        assert author.full_name == "Jane Smith"
+
+    def test_given_names_alone_render_as_the_full_name(self):
+        """A mononym is a structured name with no ``<surname>``.
+
+        Tested on ``surname`` alone, the branch falls through to the undivided
+        forms and a contributor carrying only given names renders empty — and
+        with neither undivided field set, :attr:`is_named` then calls a named
+        contributor unnamed and the parser drops them.
+        """
+        author = JATSAuthorInfo(given_names="Prince")
+
+        assert author.full_name == "Prince"
+        assert author.is_named
+
+    def test_a_contributor_carrying_no_spelling_at_all_is_not_named(self):
+        """``<anonymous/>``, or a ``<contrib>`` carrying only an ``<xref>``.
+
+        Well-formed JATS, so this is the document's answer rather than an
+        error — which is why the predicate is a question on the type and not a
+        raising ``__post_init__``. The parser is built inside a SAX callback,
+        where a raise escapes into ``FullTextService``'s tier-level handler and
+        costs the whole article (issue #129).
+        """
+        assert not JATSAuthorInfo().is_named
+
+    def test_a_name_that_is_only_whitespace_is_not_a_name(self):
+        """Reachable from a caller, though not from the parser, which strips.
+
+        ``bmlib.citations`` already settled that a blank string is no author;
+        reading the predicate through ``full_name`` keeps the two agreeing.
+        """
+        assert not JATSAuthorInfo(collab="   ").is_named
+
+    def test_a_collaboration_wins_over_an_undivided_personal_name(self):
+        """The documented order between the two undivided forms.
+
+        **Arbitrary, and pinned as arbitrary.** No deposit carrying both has
+        been measured, and the principle that settles the structured case does
+        not reach this one — a ``string_name`` *is* a person, so "the person is
+        the contributor" would argue the other way. Fixed only so the rule is
+        deterministic, and pinned so the code keeps applying whichever rule the
+        docstring states.
+        """
+        author = JATSAuthorInfo(collab="The CONSORT Group", string_name="Jane Q Smith")
+
+        assert author.full_name == "The CONSORT Group"
+
+    def test_a_collaboration_carries_no_surname(self):
+        """The point of the separate field, stated as an assertion.
+
+        Overloading ``surname`` would render identically and silently mix
+        organisations into a key that is sorted and de-duplicated on.
+        """
+        author = JATSAuthorInfo(collab="the INHERIT Trial Group")
+
+        assert author.surname == ""
+        assert author.given_names == ""
+
+    def test_the_undivided_forms_default_to_empty(self):
+        author = JATSAuthorInfo(surname="Smith")
+
+        assert author.collab == ""
+        assert author.string_name == ""
+
+
 class TestJATSReferenceInfo:
     def test_formatted_citation_structured(self):
         ref = JATSReferenceInfo(

@@ -481,6 +481,13 @@ pass.
 > wins, so a bare roster inside an `editor` group stays editors. Held as one
 > value, the roster's close cleared the enclosing group's declaration and its
 > remaining members were collected as this article's authors.
+>
+> The **contributors themselves are a stack for the same reason**
+> *(unreleased, #120)*: that roster means a `<contrib>` opens inside another,
+> so a single builder was overwritten by each member and the collaboration's
+> own end tag found nothing to build. A contributor is listed where its
+> `<contrib>` *opened* rather than where it closed, which is what keeps a
+> consortium ahead of the members it encloses.
 
 > **A `<sub-article>` is a different article, and is skipped entirely**
 > *(unreleased, #110)*. JATS lets one carry a complete `<front>` and `<body>`
@@ -611,12 +618,19 @@ because the parser used to fail in ways that look exactly like success.
 > HTML, and `FullTextService` caches it.
 >
 > **"Named" covers every JATS spelling** — `<surname>`, `<string-name>` and
-> `<collab>` — not just `<surname>`. bmlib extracts authors only from
-> `<name>`, so a `<contrib-group>` built from `<string-name>` loses all of
-> them and one built from `<collab>` loses some; counting surnames alone put
-> both in the quiet branch and reported them as genuinely author-less.
-> Extracting either is separate open work, but the detector no longer
-> certifies an article it did not check.
+> `<collab>` — not just `<surname>`. When the counter was written bmlib
+> extracted authors only from `<name>`, so a `<contrib-group>` built from
+> `<string-name>` lost all of them and one built from `<collab>` lost some;
+> counting surnames alone put both in the quiet branch and reported them as
+> genuinely author-less. Both are extracted now *(unreleased, #120, #140)*,
+> and the counter is deliberately not narrowed to match: it counts the
+> spelling rather than the extraction, so it can still report the next
+> contributor bmlib fails to collect.
+>
+> **A `<contrib>` naming nobody logs at DEBUG** and is dropped — a
+> `<contrib>` carrying only an `<xref>`, or an `<anonymous/>` contributor,
+> which is well-formed JATS with no name to collect. Dropping it in silence
+> is what kept the two spellings above invisible for as long as they were.
 
 > **A `colspan` this parser will not honour logs at WARNING**, once per
 > article, naming how many cells were affected. This is *not* cosmetic: a
@@ -686,14 +700,66 @@ nested article was there at all; each one is also logged at `DEBUG` with its
 ```python
 @dataclass
 class JATSAuthorInfo:
-    surname: str
+    surname: str = ""
     given_names: str = ""
-    affiliations: list[str] = field(default_factory=list)
+    affiliations: list[str] = field(default_factory=list)  # reserved; always empty
+    collab: str = ""       # a collaboration, not a person       (unreleased, #120)
+    string_name: str = ""  # an undivided personal name          (unreleased, #140)
 
     @property
-    def full_name(self) -> str: ...  # "John A Smith", or just the surname when
-                                     # given_names is empty (e.g. "Consortium")
+    def full_name(self) -> str: ...  # "John A Smith"; the collaboration or the
+                                     # undivided name where there is no
+                                     # structured name at all
+    @property
+    def is_named(self) -> bool: ...  # did any spelling of a name arrive?
 ```
+
+> `affiliations` is **reserved and never populated** — bmlib's JATS parser has
+> no `<aff>` handler, so it is always `[]`. Do not read it as *"this
+> contributor declared no affiliation"*.
+
+> **A name that arrives undivided is kept undivided** *(unreleased, #120,
+> #140)*. JATS names a contributor with `(name | string-name | collab | …)`
+> and only the first divides into parts. `<collab>` names a group — *"the
+> INHERIT Trial Group"* — and `<string-name>` a person the depositor did not
+> split. Each has a field of its own rather than being folded into `surname`,
+> because that field is what downstream code sorts and de-duplicates on, and
+> an organisation sitting in it is indistinguishable from a person.
+>
+> Both are held **verbatim and never split**. Deriving a surname from *"Ahmed
+> Al-Rashid"* means deciding about particles, multi-word surnames and name
+> order — a guess the caller cannot detect once it is stored. If you need
+> *"Smith J"*, you have the string and can make that decision knowing you are
+> making one.
+>
+> Emptiness is the predicate: `bool(author.collab)` asks *is this an
+> organisation?* and `bool(author.string_name)` asks *is this name undivided,
+> so must it not be treated as a surname?* `full_name` prefers a structured
+> name over both, because a `<contrib>` carrying a `<name>` **and** a
+> `<collab>` is *"Smith, on behalf of the Y Group"* — the person is the
+> contributor and the collaboration is an attribution attached to them.
+>
+> **This changes what a corpus holds.** Before it, a `<collab>` consortium
+> author was dropped (34 of the 1,025 open-access articles drawn in the PR
+> #118 review lost at least one contributor — a count of `<contrib>` elements
+> carrying no `<surname>`, so not a rate for either spelling alone) and
+> an article naming every contributor with `<string-name>` parsed to *no
+> authors at all*. Both now appear in `JATSArticle.authors` and in the
+> `<p class="authors">` line of the rendered HTML that `FullTextService`
+> caches, so stored full text is not comparable across the upgrade.
+>
+> **A contributor may now carry an empty `surname`.** Before this, a
+> collaboration produced no entry at all, so code reading `surname`
+> unconditionally never saw one: `sorted(authors, key=lambda a: a.surname)`
+> now front-loads consortia and `a.surname[0]` now raises. Read `full_name`,
+> or branch on `collab` / `string_name`.
+>
+> A `<string-name>` cited in a reference now also reaches
+> `JATSReferenceInfo.authors`, where a `<collab>` already did — both gated on
+> the whole citation, so either spelling counts as a direct child of
+> `<mixed-citation>` as well as inside a `<person-group>`. A `<string-name>`
+> that *divides* into `<surname>` and `<given-names>` fills those instead, and
+> the element's own text — the punctuation between them — is not an author.
 
 ### JATSAbstractSection
 

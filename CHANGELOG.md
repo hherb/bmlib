@@ -201,6 +201,121 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A contributor whose name arrived undivided was dropped** (#120, #140).
+  JATS names a contributor with `(name | string-name | collab | …)` and bmlib
+  read only the first: `_AuthorBuilder.build()` refused anything without a
+  `<surname>` and the call site dropped it without a word. A `<collab>`
+  consortium author — *"the INHERIT Trial Group"*, *"NIH-ManNAc Study Team"* —
+  therefore vanished from **34 of the 1,025 open-access articles drawn in the
+  PR #118 review (3.3%)** — a count of `<contrib>` elements carrying no
+  `<surname>`, which is a set both undivided spellings share, so it is a rate
+  for neither of them alone — and an
+  article naming every contributor with `<string-name>` parsed to **no authors
+  at all**. Each came back as a well-formed shorter list, which reads as "this
+  article credits nobody" rather than as a parser that looked in the wrong
+  place.
+
+  Both are now collected, verbatim, each in a field of its own —
+  `JATSAuthorInfo.collab` and `JATSAuthorInfo.string_name`. Verbatim because
+  splitting *"Ahmed Al-Rashid"* into a surname and given names is a decision
+  about particles, multi-word surnames and name order, assumed rather than
+  measured and undetectable by the caller once stored; and out of `surname`
+  because that field is sorted and de-duplicated on, where an organisation is
+  indistinguishable from a person. `full_name` prefers a structured name over
+  both, since a `<contrib>` carrying a `<name>` *and* a `<collab>` is *"Smith,
+  on behalf of the Y Group"*.
+
+  **This moves what a corpus holds.** Those authors now appear in
+  `JATSArticle.authors` and in the `<p class="authors">` line of the HTML
+  `FullTextService` caches, so stored full text is not comparable across the
+  upgrade. Both spellings now also reach `JATSReferenceInfo.authors` when
+  cited, gated on the whole citation rather than on `<person-group>` — JATS
+  admits either as a direct child of `<mixed-citation>`. **A contributor may
+  now carry an empty `surname`**, where before a collaboration produced no
+  entry at all, so code reading it unconditionally should read `full_name` or
+  branch on `collab` / `string_name`.
+
+  Four things the extraction needed beyond the two fields, three of them
+  shapes this module has been caught by before. **`<contrib>` is a stack**,
+  with `in_contrib` and `current_author` derived from it: a `<collab>` may
+  carry a `<contrib-group>` of the collaboration's own members, so a
+  `<contrib>` opens inside another, and held as one slot each member overwrote
+  the consortium's builder while its close cleared the flag — #115 one element
+  family over. A *non-author* `<contrib>` pushes a `None` frame, because
+  skipping the push lets an editor's end tag pop the author's own, and reading
+  the nearest builder instead of the top of the stack writes that editor's
+  surname into the consortium; one fixture kills both, and both were live
+  mutants. **A contributor is listed where its `<contrib>` opened**, the
+  exhibits' reserve-and-fill, or a consortium is listed behind the members it
+  encloses — and the reservation is *given back* where the `<contrib>` names
+  nobody, so an unfilled slot keeps meaning "never closed" and cannot make the
+  audit ERROR on the well-formed `<anonymous/>`. **`<string-name>` accumulates
+  a text buffer and merges it back**: accumulating so its close reads its own
+  text rather than the ancestor's, inline so a `<mixed-citation>` printing a
+  bare one keeps that author in the citation string it renders. Its own text
+  fills the field only when no structured name arrived, since JATS lets
+  `<string-name>` carry `<surname>` and `<given-names>` children and the
+  buffer then holds only the punctuation between them — and testing `surname`
+  alone short-circuits, so the guard reads `given_names` too. The merge is
+  **refused while any `<contrib>` is open**: the nearest accumulating ancestor
+  of a roster member is the enclosing `<collab>`, so an unconditional merge
+  appended every member to the consortium's own name. `<collab>` joined
+  `<string-name>` in `_INLINE_ELEMENTS` at the same time, having had the same
+  defect all along — it was accumulating and not inline, so a consortium-
+  authored reference lost its author from the rendered citation string.
+
+  On the reference side the divided shape needs a **flush** rather than a
+  refusal. Appending the element's own buffer put a bare `","` in
+  `references[].authors` *ahead* of the name it belongs to, and rendered it
+  into the reference list; and since only `</name>` and `</person-group>`
+  finish a pending cited author — neither of which closes between two adjacent
+  `<string-name>` — the first of two divided siblings collapsed onto the
+  second, which was a silent loss of a cited author predating this work.
+
+  The end-of-parse audit gains `open_contribs` and `unfilled_author_slots`,
+  each naming what its imbalance costs — `TestTheAuditNetIsComplete` forced the
+  accounting *decision* the moment the stack existed (its exclusion sets are
+  name lists, so it can demand that someone choose and not that a field
+  appear), which is #134's mechanism working as
+  intended. A `<contrib>` from which no name could be read is counted and
+  reported **once per article at WARNING** from `_audit_parse` rather than
+  dropped in silence, which is what kept both spellings invisible for as long
+  as they were — the level and granularity `rejected_spans` settled for the
+  same reasons (#129), and emitted at end of parse so it can name the article.
+  It reports that *bmlib read no name*, never that the document carried none:
+  `<on-behalf-of>` is a fourth spelling, JATS-legal and still unextracted
+  (#144), and an article naming its only contributor that way reached the
+  **quiet** branch of the zero-author detector until that spelling was added to
+  `front_contributor_name_count`. `JATSAuthorInfo.is_named` now defines "did
+  any spelling arrive?" on the public type — deliberately not a raising
+  `__post_init__`, which would be #129 exactly.
+
+  `JATSAuthorInfo.affiliations` is marked **reserved**: it is public,
+  documented, and has never been populated, since the parser has no `<aff>`
+  handler (#145).
+
+  **The rule is spec-driven, and the population is not measured here.** JATS
+  says the name is undivided; refusing to split it is the same "measured, not
+  assumed" rule the rest of this module runs on, and no rate changes it.
+  `scripts/sample_jats_exhibits.py` gained the counters that would answer how
+  much of a corpus each spelling reaches (section 11: the spelling vocabulary,
+  nested `<contrib>`, `<collab>` rosters, and articles naming every
+  contributor undivided) but **has not been re-run** — a run redraws both
+  committed windows from today's strata, moving every figure cited elsewhere
+  in this file, and #138's scope defect would be baked into the new draw. That
+  redraw belongs with #132 and #138. The 3.3% above is #120's own figure, from
+  the PR #118 review rather than from a committed corpus, and it counted
+  `<contrib>` elements carrying no `<surname>` — a set both spellings share —
+  so it is a rate for neither of them alone and none should be quoted for
+  either. Section 11's spelling vocabulary is deliberately **open**: every
+  non-excluded child of a `<contrib>` is counted under its own name, because
+  against a closed list an unforeseen spelling falls into `(none)` and is
+  reported as a contributor naming nobody — #121's mis-certification inside
+  the instrument built to detect the next #120. Its contributor counters are
+  whole-document, so a peer-review `<sub-article>`'s reviewers inflate them and
+  can suppress `articles_losing_every_author` outright; the module says so, and
+  #138 is the scope-and-redraw.
+
 - **A malformed `colspan` cost the whole article** (#129). `colspan` is CDATA
   in JATS, so `colspan="two"` — or `"1.5"`, or a whitespace-only value — is
   well-formed markup, and `startElement` read it with a bare `int()`. The
