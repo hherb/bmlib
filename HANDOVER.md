@@ -26,9 +26,12 @@ came back with no content now carries its image. #123/#125/#130 route a
 section's `title` and an exhibit's `caption` by their owning element, so
 `body_sections` moves for roughly one recent article in ten. #146 rebuilds
 `JATSReferenceInfo.citation`, which was punctuation for every
-`<mixed-citation>` deposit — though it reaches the cached HTML only through
-the fallback a reference with no structured field at all takes, since
-`_format_ref_html` builds from the structured fields. #120/#140 collect
+`<mixed-citation>` deposit, **and moves `authors` too** — measured against
+`main` over 880 local PMC articles / 20,770 references: `citation` for 4,499
+(21.7%) in 191 articles — 3,541 rebuilt by the merge, 958 in 84 emptied of an
+`<element-citation>` leak — `authors` for 502 in 14 articles, rendered HTML for
+576 in 23.
+#120/#140 collect
 a contributor whose name arrived undivided — 34 of the 1,025 open-access
 articles drawn in the PR #118 review (3.3%) lost at least one, and an article
 deposited with `<string-name>` lost *all* of them. #129 is narrower: an
@@ -80,8 +83,9 @@ issue can be closed as COMPLETED without being fixed — three times, see below.
 And a mutation harness restoring with `git checkout -- <file>` deletes
 whatever is uncommitted in it.
 
-**This session settled #146** — a `<mixed-citation>`'s rendered string. Four
-things are worth carrying forward.
+**This session settled #146** — a `<mixed-citation>`'s rendered string. Seven
+things are worth carrying forward, three of them from the PR's own review,
+which found more than the implementation did.
 
 - **A set keyed on the element cannot express a rule about the context.**
   `_INLINE_ELEMENTS` was exactly right for #120 and #140, whose two elements
@@ -106,6 +110,31 @@ things are worth carrying forward.
   is how #142 was found closed: the closing-keyword parser had eaten an issue
   the same commit filed, so it was born closed and appeared in no count of
   what the session left open.
+- **Suppressing a merge does not empty a buffer — only accumulating children
+  ever withheld anything.** The fix excluded `<element-citation>` from the
+  ancestor test and then documented, in six places, that its `citation` is
+  empty. It was not: `<edition>`, `<publisher-name>`, `<comment>` and the rest
+  are not in `_TEXT_ACCUMULATING`, so their characters were going straight
+  into the citation's buffer and had never been diverted. A routine book
+  deposit gave `'3rd edAmsterdamElsevier'` — *the run-together word the
+  exclusion's own argument gives as the reason for it*. When a fix works by
+  withholding, ask what was never withheld in the first place.
+- **State a blast radius from a diff, not from the call graph.** The PR
+  reasoned that `_format_ref_html` builds from structured fields, that every
+  structured field was already correct, and therefore that only the fallback
+  rendering could move. The reasoning was sound and the premise was false:
+  `<surname>`/`<given-names>` are gated on `in_ref_person_group`, so a cited
+  `<string-name>` outside a `<person-group>` had *no* arm fire and the merge
+  is the only route by which that name is collected — 502 references in 14
+  articles, 61 of them previously holding entries like `[',', ',', ',']`. Two parses and a diff would
+  have said so in minutes; four review agents reasoning from the code did not.
+- **A test whose fixture routes around its own claim is the vacuous kind.**
+  `test_an_element_citation_is_not_run_together` asserted `citation == ""`
+  over a fixture built from accumulating children only, which cannot produce
+  anything else whatever the code does. It named the property it could not
+  exercise. The repo's rule already covers this — *tell a vacuous green from
+  one that asserts silence* — and the cheap check is to ask which line of the
+  fixture the assertion depends on.
 
 **A closing keyword in prose closed an issue nobody decided — three times.**
 A commit body saying *"filed rather than ‹keyword›: ‹number›"* is read
@@ -122,18 +151,24 @@ messages, PR bodies and any quotation of either, which is why this paragraph
 names neither. And after every merge that mentions an issue in prose, diff
 `gh issue list` against the commit's own list of what it filed.
 
-**Next up: #124, #128, #137, #138, #142–#145 and #147 in `fulltext`, #119
-from the #118 review, #132, the older non-JATS ones (#86, #92, #94, #103,
-#112), or Phase 3 of the bmlibrarian port, whose every row needs a design
-conversation.** **#124 and #147 are the two that still lose content**, and
-both are blocked on the same kind of decision — what to attach a footnote
-marker to, and how to delimit LaTeX in prose — so neither is a drive-by.
-#142, #143 and #147 all want a population measured before a rule is picked,
-so they pair with the redraw below; #144 and #145 are extraction, each behind
-a design question the issue states. #132 and #138 both want a corpus redraw
-and should be paired — with four further reasons now: PR #141's sampler
-counters are in no committed draw, and #142, #143 and #147 each want a
-population from them.
+**Next up: #124, #128, #137, #138, #142–#145 and #147, #149, #150 and #151 in
+`fulltext`, #119 from the #118 review, #132, the older non-JATS ones (#86,
+#92, #94, #103, #112), or Phase 3 of the bmlibrarian port, whose every row
+needs a design conversation.** **#124, #144, #147, #149 and #150 all lose
+content the document carries**, and the first four are blocked on the same
+kind of decision — what to attach a footnote marker to, which contributor
+spelling to extract, how to delimit LaTeX in prose, what several citation
+elements in one `<ref>` mean — so none is a drive-by. (An earlier revision of
+this line named only #124 and #147, which was wrong twice: #144 is a
+contributor the document names and bmlib does not collect, and #150 is a
+reference rendered as an empty bullet.) #142, #143, #147, #149 and #150 all
+want a population measured before a rule is picked, so they pair with the
+redraw below; #144 and #145 are extraction, each behind a design question the
+issue states. #151 is the one that needs no draw — it is a prose invariant to
+mechanise, and #142 is the change that will break it. #132 and #138 both want
+a corpus redraw and should be paired — with the further reasons that PR #141's
+sampler counters are in no committed draw, and #142, #143, #147, #149 and
+#150 each want a population from them.
 
 This file briefs the next session on what is done, what is still open, and the
 conventions to keep. Update it whenever a session materially changes the plan;
@@ -214,15 +249,18 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 
 ### Open GitHub issues
 
-**Seventeen open** as this file is written (verified with `gh issue list`,
-after reopening #142 — see the closing-keyword paragraph above — and filing
-#147): #86, #92, #94, #103, #112, #119, #124, #128, #132, #137, #138, #142,
-#143, #144, #145, #146, #147; sixteen once this PR lands #146. Every one
+**Twenty open** as this file is written (verified with `gh issue list`, after
+reopening #142 — see the closing-keyword paragraph above — and filing #147 and
+then #149, #150 and #151 from this PR's own review): #86, #92, #94, #103,
+#112, #119, #124, #128, #132, #137, #138, #142, #143, #144, #145, #146, #147,
+#149, #150, #151; nineteen once this PR lands #146. Every one
 was found by review or measurement rather than by a failing test, and **none
 of them loses records** — though **#124** loses an exhibit's footnotes,
-**#147** loses a formula from the prose that contains it,
-**#128** would lose every figure image in a document binding XLink to another
-prefix, and **#119** feeds a scan text that is not the article's. Count this
+**#147** loses a formula from the prose that contains it, **#149** loses every
+citation string but the last from a multi-part reference and welds their
+authors into one byline, **#150** renders a note-only reference as an empty
+bullet, **#128** would lose every figure image in a document binding XLink to
+another prefix, and **#119** feeds a scan text that is not the article's. Count this
 against the repo before trusting it: the line has been wrong in three
 consecutive sessions, and one further way is an issue **closed as COMPLETED
 without being fixed**, which no count of open issues catches — that has now
@@ -304,7 +342,24 @@ half is worse: buffer popped, no handler, so neither the equation nor the
 drive-by and deliberately not one more member of `_INLINE_ELEMENTS`:
 `<tex-math>` is LaTeX source, so merging it raw leaves a reader nothing to
 tell it was ever markup, and `<alternatives>` may hold both encodings of one
-formula, which merging would emit twice.
+formula, which merging would emit twice. **Scoped to prose outside a
+citation**, since #146's ancestor test merges `<tex-math>` inside one like
+anything else, making both consequences live there — but that path measures 0
+of 10,671 `<mixed-citation>` across 227 articles and 0 in the local corpus, so
+it is unexercised rather than a second live defect.
+
+**#149, #150 and #151 came out of PR #148's own review**, all in the reference
+half. **#149** — a `<ref>` may carry several citation elements, and the two
+halves of the model disagree about them: `citation` is last-wins (134
+references in 17 local articles, 352 strings discarded) while `authors`
+*accumulates*, so one RSC multi-part reference reports 40 authors welded from
+different papers. Wants a modelling decision and a population, so it pairs
+with the redraw. **#150** — a `<ref>` whose only content is a `<note>`
+renders as an empty `<li>`, 4 instances in one publisher. **#151** — the
+prospective half of `_inside_mixed_citation` rests on a whole-`endElement`
+invariant asserted in one docstring and enforced nowhere, and #142 is exactly
+the change that breaks it; the `TestTheAuditNetIsComplete` precedent argues
+for mechanising it.
 
 **#119 — `TransparencyAnalyzer` scans raw JATS XML, so `<sub-article>`
 reviewer prose still reaches its COI, funding and data-availability scans.**

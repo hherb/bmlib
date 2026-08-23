@@ -3722,14 +3722,23 @@ class TestACrossReferenceToAnExhibitBecomesALink:
     dropping ``not is_fig_table_xref`` altogether passed the whole suite.
     """
 
+    #: All four accepted ``ref-type`` spellings, then one that is not. The
+    #: ``<contrib-group>`` is there so the parse does not land in the
+    #: zero-author detector's quiet branch, as every neighbouring reference
+    #: fixture already ensures.
     PROSE_WITH_CROSS_REFERENCES = b"""<?xml version="1.0"?>
 <article>
   <front><article-meta>
     <title-group><article-title>An article that cross-references</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+    </contrib-group>
   </article-meta></front>
   <body><sec><title>Results</title>
     <p>As shown in <xref ref-type="fig" rid="f1">Figure 1</xref> the effect holds.</p>
     <p>See <xref ref-type="table" rid="t1">Table 2</xref> too.</p>
+    <p>Also <xref ref-type="figure" rid="f2">Figure 2</xref> and
+<xref ref-type="table-wrap" rid="t2">Table 3</xref>.</p>
     <p>And <xref ref-type="bibr" rid="R1">3</xref> as well.</p>
   </sec></body>
 </article>"""
@@ -3743,11 +3752,25 @@ class TestACrossReferenceToAnExhibitBecomesALink:
             "See [Table 2](#t1) too.",
         ]
 
-    def test_a_reference_of_any_other_type_keeps_its_own_text(self):
-        """Only the two exhibit types are rewritten; a citation marker is prose."""
+    def test_the_lenient_spellings_are_rewritten_too(self):
+        """``figure`` and ``table-wrap`` are in the tuple; nothing exercised them.
+
+        Neither is in JATS's suggested ``ref-type`` list, so both are
+        lenient-parse defence — but deleting them from
+        ``is_fig_table_xref``'s tuple survived the whole suite, which is the
+        state a defensive member must not be left in.
+        """
         article = JATSParser(self.PROSE_WITH_CROSS_REFERENCES).parse()
 
-        assert article.body_sections[0].paragraphs[2] == "And 3 as well."
+        assert article.body_sections[0].paragraphs[2] == (
+            "Also [Figure 2](#f2) and [Table 3](#t2)."
+        )
+
+    def test_a_reference_of_any_other_type_keeps_its_own_text(self):
+        """Only the exhibit types are rewritten; a citation marker is prose."""
+        article = JATSParser(self.PROSE_WITH_CROSS_REFERENCES).parse()
+
+        assert article.body_sections[0].paragraphs[3] == "And 3 as well."
 
     def test_the_link_reaches_the_rendered_html_as_an_anchor(self):
         """The markdown form is an intermediate; the anchor is what is cached."""
@@ -3769,10 +3792,14 @@ class TestAMixedCitationKeepsTheTextItPrints:
     ``<pub-id>`` are all in that state, which is the whole of a standard NLM
     deposit — it rendered as ``'. . . ;():-. doi: .'``.
 
-    The structured fields were always right; only the rendered convenience
-    string was wrong. PR #141 fixed exactly this shape for ``<collab>`` and
-    ``<string-name>`` by making them inline, and the two tests that pin it
-    live in :class:`TestAnUndividedContributorName`. Membership of
+    The structured fields were *almost* always right, and the exception is
+    :class:`TestACitedNameOutsideAPersonGroupIsStillAName` below — the
+    ``<surname>``/``<given-names>`` arms are gated on ``in_ref_person_group``,
+    so a cited ``<string-name>`` deposited outside one had no arm fire at all
+    and the merge is what recovers it. PR #141 fixed exactly this shape for
+    ``<collab>`` and ``<string-name>`` by making them inline, and the two
+    tests that pin it live in :class:`TestAnUndividedContributorName`.
+    Membership of
     ``_INLINE_ELEMENTS`` is the wrong instrument here: it is a property of the
     *element*, and these elements carry text that must not merge outside a
     citation — ``<article-title>`` in ``<article-meta>`` is the article's own
@@ -3787,6 +3814,9 @@ class TestAMixedCitationKeepsTheTextItPrints:
 <article>
   <front><article-meta>
     <title-group><article-title>An article that cites</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+    </contrib-group>
   </article-meta></front>
   <back><ref-list>
     <ref id="R1"><mixed-citation publication-type="journal">\
@@ -3803,20 +3833,58 @@ class TestAMixedCitationKeepsTheTextItPrints:
     #: The same reference deposited as ``<element-citation>``, whose content
     #: model is element-only: there is no publisher-authored punctuation to
     #: recover, so there is no string to rebuild.
+    #:
+    #: ``<edition>``, ``<publisher-loc>``, ``<publisher-name>`` and
+    #: ``<comment>`` are the point of this fixture and not decoration. None is
+    #: in ``_TEXT_ACCUMULATING``, so none ever took a buffer to withhold —
+    #: their characters go straight to whatever is open, which here is the
+    #: citation's own buffer. Built from accumulating children alone (as the
+    #: first cut of this fixture was), the assertion below passes whatever the
+    #: close arm does, and the run-together word the docstrings all cite as the
+    #: reason for the exclusion was exactly what the parser produced.
     ELEMENT_CITATION_DEPOSIT = b"""<?xml version="1.0"?>
 <article>
   <front><article-meta>
     <title-group><article-title>An article that cites</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+    </contrib-group>
   </article-meta></front>
   <back><ref-list>
-    <ref id="R1"><element-citation publication-type="journal">
+    <ref id="R1"><element-citation publication-type="book">
       <person-group person-group-type="author">
         <name><surname>Smith</surname><given-names>J</given-names></name>
       </person-group>
       <article-title>An observed effect</article-title>
       <source>J Med</source>
+      <edition>3rd ed</edition>
+      <publisher-loc>Amsterdam</publisher-loc>
+      <publisher-name>Elsevier</publisher-name>
       <year>2020</year>
+      <comment>Epub ahead of print</comment>
     </element-citation></ref>
+  </ref-list></back>
+</article>"""
+
+    #: One ``<ref>``, both spellings, ``<mixed-citation>`` first. JATS admits
+    #: this — as bare siblings and inside ``<citation-alternatives>`` — and the
+    #: close arm used to write on both branches, so the second deposit decided
+    #: the answer.
+    BOTH_SPELLINGS_MIXED_FIRST = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>An article that cites</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <back><ref-list>
+    <ref id="R1"><citation-alternatives>\
+<mixed-citation><source>J Med</source>. <year>2020</year>.</mixed-citation>
+      <element-citation><source>J Med</source>
+        <year>2020</year>
+      </element-citation>
+    </citation-alternatives></ref>
   </ref-list></back>
 </article>"""
 
@@ -3864,11 +3932,178 @@ class TestAMixedCitationKeepsTheTextItPrints:
         depositor's indentation. Assembling a reference from the structured
         fields is a citation-style decision, and ``formatted_citation`` is
         where it is made.
+
+        Excluding the element from the merge was necessary and not
+        sufficient: a child bmlib does not accumulate never withheld a buffer
+        to begin with, so ``'3rd ed Amsterdam Elsevier Epub ahead of print'``
+        reached this field until the close arm stopped writing it.
         """
         reference = JATSParser(self.ELEMENT_CITATION_DEPOSIT).parse().references[0]
 
         assert reference.citation == ""
         assert reference.article_title == "An observed effect"
+
+    def test_the_structured_fields_survive_the_empty_citation(self):
+        """Refusing the string must not cost the fields it was built beside."""
+        reference = JATSParser(self.ELEMENT_CITATION_DEPOSIT).parse().references[0]
+
+        assert reference.authors == ["J Smith"]
+        assert reference.source == "J Med"
+        assert reference.year == "2020"
+
+    def test_a_mixed_citation_wins_over_an_element_citation_beside_it(self):
+        """A ``<ref>`` may carry both, and order must not decide the answer.
+
+        Both closes used to assign, so the later element won. With a
+        ``<mixed-citation>`` first — legal, and what
+        ``<citation-alternatives>`` is for — the ``<element-citation>``'s
+        (correctly) empty string wiped the one the publisher did typeset.
+        That cost nothing before #146, when both were punctuation; afterwards
+        it discards the recovered reference, and an empty ``citation`` is now
+        a deliberate value, so nothing distinguishes the loss from the rule.
+        """
+        reference = JATSParser(self.BOTH_SPELLINGS_MIXED_FIRST).parse().references[0]
+
+        assert reference.citation == "J Med. 2020."
+
+
+class TestACitedNameOutsideAPersonGroupIsStillAName:
+    """A cited ``<string-name>`` with no ``<person-group>`` around it — #146.
+
+    The ``<surname>`` and ``<given-names>`` arms are both gated on
+    ``in_ref_person_group``, so in this shape neither fires: nothing sets
+    ``current_author_surname``, the ``<string-name>`` arm takes its
+    ``elif text:`` branch, and before #146 the element's own buffer held only
+    the whitespace between two children whose text had been taken. The result
+    was ``authors == []`` — or, where the deposit put punctuation between the
+    children, entries like ``[',', ',', ',']``.
+
+    Merging the children back is what fills the buffer, so this is a
+    *structured* field the mixed-content rule moves, not only the rendered
+    string. Measured over 880 local PMC articles: 502 references in 14
+    articles, 61 of which previously held punctuation-only entries.
+
+    **And the value has to be normalised, not merely stripped.** ``text`` is
+    end-stripped, so a deposit that puts each child on its own line — Wiley's,
+    which is where this was found — yielded the literal ``'J.\\nTan'``, a line
+    break mid-name, in a public list and in the HTML ``FullTextService``
+    caches. Every other author on that list is built by
+    ``finish_current_author()``, which joins with a single space.
+    """
+
+    WILEY_CITED_NAMES = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>An article that cites</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <back><ref-list>
+    <ref id="R1"><mixed-citation publication-type="journal">
+<string-name name-style="western">
+<given-names>J.</given-names>
+<surname>Tan</surname>
+</string-name>, <string-name name-style="western">
+<given-names>L. M.</given-names>
+<surname>Almeida</surname>
+</string-name>, <article-title>Updating the diagnosis</article-title>.
+</mixed-citation></ref>
+  </ref-list></back>
+</article>"""
+
+    #: The same hazard one element over: a cited ``<collab>`` whose name the
+    #: publisher wrapped across lines.
+    WRAPPED_COLLABORATION = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>An article that cites</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <back><ref-list>
+    <ref id="R1"><mixed-citation><collab>the INHERIT
+      Trial Group</collab>. <article-title>A cited paper</article-title>.
+</mixed-citation></ref>
+  </ref-list></back>
+</article>"""
+
+    def test_the_name_is_collected_at_all(self):
+        """Neither child's arm fires here, so the merge is the only route."""
+        reference = JATSParser(self.WILEY_CITED_NAMES).parse().references[0]
+
+        assert reference.authors == ["J. Tan", "L. M. Almeida"]
+
+    def test_the_name_carries_no_line_break(self):
+        """A raw buffer reaches a public list, so it is normalised on the way."""
+        reference = JATSParser(self.WILEY_CITED_NAMES).parse().references[0]
+
+        assert not any("\n" in author for author in reference.authors)
+
+    def test_a_wrapped_collaboration_is_normalised_too(self):
+        """The ``<collab>`` arm appends a raw buffer for the same reason."""
+        reference = JATSParser(self.WRAPPED_COLLABORATION).parse().references[0]
+
+        assert reference.authors == ["the INHERIT Trial Group"]
+
+    def test_the_normalised_name_is_what_reaches_the_rendered_html(self):
+        """The half that persists: ``FullTextService`` caches this HTML."""
+        html = JATSParser(self.WILEY_CITED_NAMES).to_html()
+
+        assert "J. Tan, L. M. Almeida" in html
+
+
+class TestAnUndividedNameInProseStaysInTheProse:
+    """Why ``<collab>``/``<string-name>`` stay in ``_INLINE_ELEMENTS`` — #146.
+
+    #120 and #140 put them there so a ``<mixed-citation>`` printing either
+    keeps the name in the citation string it renders. #146's ancestor test
+    merges *every* descendant of a citation, which subsumes that reason
+    entirely: after it, deleting both entries passes the whole suite and
+    changes the rendered HTML of none of 880 local PMC articles, where before
+    it failed two tests in :class:`TestAnUndividedContributorName`.
+
+    What the membership still stands for is a name printed anywhere else —
+    a paragraph, a section title — where nothing else merges it back and the
+    name would simply be deleted from the surrounding text. This test pins
+    that, so the entries cannot go quietly vacuous a second time.
+
+    **The population is unmeasured**, and deliberately stated as such: JATS's
+    parent lists for these two elements are contributor and citation
+    contexts, so a publisher may never deposit this shape. The test asserts
+    the *rule* the membership encodes, not a rate.
+    """
+
+    UNDIVIDED_NAME_IN_BODY_PROSE = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>An article naming a group in prose</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <body><sec><title>Methods</title>
+    <p>Recruitment was run by <collab>the INHERIT Trial Group</collab> throughout.</p>
+    <p>Analysis was checked by <string-name>Jane Q Smith</string-name> before release.</p>
+  </sec></body>
+</article>"""
+
+    def test_a_collaboration_named_in_prose_is_not_deleted_from_it(self):
+        """Accumulating without merging removes the name from the paragraph."""
+        article = JATSParser(self.UNDIVIDED_NAME_IN_BODY_PROSE).parse()
+
+        assert article.body_sections[0].paragraphs[0] == (
+            "Recruitment was run by the INHERIT Trial Group throughout."
+        )
+
+    def test_an_undivided_person_named_in_prose_is_not_deleted_either(self):
+        """``<string-name>`` is in the set for the same reason ``<collab>`` is."""
+        article = JATSParser(self.UNDIVIDED_NAME_IN_BODY_PROSE).parse()
+
+        assert article.body_sections[0].paragraphs[1] == (
+            "Analysis was checked by Jane Q Smith before release."
+        )
 
 
 class TestAnUnparseableSpanCostsOneCellAndNotTheArticle:

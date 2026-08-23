@@ -681,11 +681,27 @@ _TEXT_ACCUMULATING = frozenset(
         # The two undivided spellings of a contributor's name. Accumulating so
         # that the close reads its own text rather than whatever the ancestor's
         # buffer happened to hold, and *inline* (below) so that text goes back
-        # to the parent where the name is not a contributor's: a
-        # <mixed-citation> may print either as part of the citation it renders,
-        # and taking the buffer without returning it deletes the name from that
-        # string. See `_UNDIVIDED_NAME_ELEMENTS` for why "where the name is not
-        # a contributor's" is a condition rather than a blanket merge.
+        # to the parent where the name is not a contributor's. See
+        # `_UNDIVIDED_NAME_ELEMENTS` for why "where the name is not a
+        # contributor's" is a condition rather than a blanket merge.
+        #
+        # THE REASON THEY WERE MADE INLINE IS NOW DELIVERED ELSEWHERE, and the
+        # membership is kept knowing that. #120/#140 added them here so that a
+        # <mixed-citation> printing either keeps the name in the citation
+        # string it renders; #146's `_inside_mixed_citation()` merges every
+        # descendant of a citation regardless of membership, which subsumes
+        # that case entirely. Measured: on the commit before #146, deleting
+        # both entries fails two tests in `TestAnUndividedContributorName`;
+        # after it, the identical deletion passes the whole suite and changes
+        # the rendered HTML of none of 880 local PMC articles. What the
+        # membership still stands for is a name printed somewhere *other* than
+        # a citation — body prose, a section title — where nothing else merges
+        # it back and the name would be deleted from the surrounding text. That
+        # population is **unmeasured**: JATS's parent lists for these two
+        # elements are contributor and citation contexts, so the prose case may
+        # not be a shape publishers deposit at all.
+        # `TestAnUndividedNameInProseStaysInTheProse` pins the rule rather than
+        # the population, so the entries cannot go quietly vacuous again.
         "collab",
         "string-name",
     }
@@ -1261,10 +1277,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         ``<year>`` there is a metadata field, not prose.
 
         It is an *ancestor* test and not the parent test the module usually
-        makes (``<label>``, ``<caption>``, ``<graphic>``), because mixed content
-        is inherited down the whole subtree: a ``<surname>`` sits inside
-        ``<name>`` inside ``<person-group>``, and each merge composes into the
-        one above it.
+        makes (``<label>``, ``<caption>``, ``<article-id>``), because mixed
+        content is inherited down the whole subtree: a ``<surname>`` sits
+        inside ``<name>`` inside ``<person-group>``, and each merge composes
+        into the one above it. ``<graphic>`` is deliberately *not* in that
+        list: ``_graphic_owner`` walks up past the transparent wrappers, so it
+        is neither a parent test nor this one, and citing it here put the
+        contrast's own counter-example on the wrong side of it.
 
         The slice is what excludes the ``<mixed-citation>`` element itself,
         whose own close *reads* the buffer rather than merging it — and that
@@ -1288,6 +1307,19 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         Assembling a reference from the structured fields is a citation-style
         decision, and :attr:`JATSReferenceInfo.formatted_citation` is where
         this library makes it.
+
+        **Excluding it here was necessary and not sufficient**, and the review
+        of #146 is what established the difference. Suppressing the merge stops
+        an accumulating child donating its text, but a child this module does
+        *not* accumulate never took a buffer in the first place: its characters
+        go straight to whatever is open, which inside an ``<element-citation>``
+        is the citation's own buffer. A routine book deposit carrying
+        ``<edition>``, ``<publisher-loc>`` and ``<publisher-name>`` therefore
+        produced ``'3rd edAmsterdamElsevier'`` — precisely the run-together
+        word this paragraph gives as the reason for the exclusion, and the
+        opposite of the empty string it was documented to leave. So the close
+        arm writes :attr:`~JATSReferenceInfo.citation` for ``<mixed-citation>``
+        only; see the comment there.
 
         Returns:
             ``True`` when a ``<mixed-citation>`` is open strictly above the
@@ -1943,7 +1975,21 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.current_reference = None
         elif name in ("mixed-citation", "element-citation"):
             if self.in_ref and self.current_reference:
-                self.current_reference.citation = normalized_text
+                # Only <mixed-citation> writes the string, and the asymmetry is
+                # load-bearing twice over. An <element-citation>'s content model
+                # is element-only, so its buffer holds whatever text arrived
+                # from children this module does not accumulate — a book's
+                # <edition>/<publisher-loc>/<publisher-name> gave
+                # "3rd edAmsterdamElsevier", which is the run-together word the
+                # exclusion exists to avoid, not the empty string it was
+                # documented to leave. And a <ref> may carry both spellings —
+                # JATS admits them as siblings and inside <citation-alternatives>
+                # — so an unconditional assignment is last-writer-wins: an
+                # <element-citation> deposited second wiped a <mixed-citation>
+                # the publisher did typeset. Writing on one branch only makes
+                # the documented "empty" true and states the precedence.
+                if name == "mixed-citation":
+                    self.current_reference.citation = normalized_text
                 self.in_ref_citation = False
         elif name == "person-group":
             if self.in_ref_citation and self.current_reference:
@@ -1968,7 +2014,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             if self.in_front:
                 self.front_contributor_name_count += 1
             if self.in_ref_citation and self.current_reference and text:
-                self.current_reference.authors.append(text)
+                # Normalised, not merely stripped; see the <string-name> arm.
+                self.current_reference.authors.append(normalized_text)
             elif self.in_contrib and self.current_author and text:
                 # A collaboration is not a person and gets a field of its own;
                 # see JATSAuthorInfo for why it is not folded into `surname`.
@@ -2008,7 +2055,21 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # closes between two adjacent <string-name>.
                     self.current_reference.finish_current_author()
                 elif text:
-                    self.current_reference.authors.append(text)
+                    # **Normalised, not merely stripped.** `text` is
+                    # end-stripped only, and since #146 this buffer holds the
+                    # merged text of the element's children rather than the
+                    # whitespace between them — so a Wiley deposit spelling a
+                    # cited name `<string-name><given-names>J.</given-names>
+                    # <surname>Tan</surname></string-name>` outside any
+                    # `<person-group>` (where neither child's arm fires, both
+                    # being gated on `in_ref_person_group`) put the literal
+                    # `"J.\nTan"` into `references[].authors` and thence into
+                    # the HTML `FullTextService` caches, as a line break
+                    # mid-name. Every other author reaching this list is built
+                    # by `finish_current_author()`, which joins its parts with
+                    # a single space; this is the one arm that appends a raw
+                    # buffer, so it is the one arm that has to normalise.
+                    self.current_reference.authors.append(normalized_text)
             elif self.in_contrib and self.current_author and text:
                 # Only where no structured name arrived. JATS permits
                 # <string-name> to carry <surname> and <given-names> children,
