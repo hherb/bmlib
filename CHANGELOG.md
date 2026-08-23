@@ -201,6 +201,157 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A `<ref>` carrying several citation elements lost all but the last, and
+  welded their authors into one byline** (#149). JATS admits several citation
+  elements in one `<ref>`, and both close arms assigned
+  `JATSReferenceInfo.citation` unconditionally, so every part but the last was
+  discarded. The structured fields did the opposite — scalars were last-wins
+  while `authors` *accumulated* — so one reference reported 40 authors and
+  rendered `"A. Ricci, J. S. K. Clark, et al."`, two people from two different
+  papers presented as one paper's byline.
+
+  **Measured before the rule was picked**: 216 such references in 21 of 880
+  local PMC articles, and **not one uses `<citation-alternatives>`** — every
+  case is bare siblings, so this is never "the same reference deposited
+  twice". Two shapes, both a single bibliography entry as printed:
+
+  - **149 with each part labelled** — RSC's `(a)`/`(b)`/`(c)`: several distinct
+    works under one bibliography number;
+  - **61 unlabelled** — one reference *split*, its tail (a URL, an
+    `[Online]. Available:` note) deposited as a second element.
+
+  The second shape is what rules out emitting one `JATSReferenceInfo` per
+  part: it would split a single work into a work plus a bare URL. So a `<ref>`
+  remains one reference, `references` keeps its length, and:
+
+  **The parts are joined with nothing between them**, because that is what the
+  deposit holds — the character data between consecutive citation elements is
+  empty in **586 of 586** occurrences. Each part's *raw* text is kept and the
+  whole normalised once at `</ref>`, the module's "strip once, at the outermost
+  call" rule, which preserves the space in front of `(b)` while not inventing
+  one in front of `, [Online]`.
+
+  **The structured fields come from the first part.** Every field arm is gated
+  on `in_ref_citation`, so leaving it unset for the later parts is the whole of
+  first-wins. For a split reference the first part *is* the work; for a
+  multi-part one it is work `(a)`, and `citation` still carries all of them.
+  Nothing is discarded — bmlib simply stops assembling one reference out of
+  several different works. 86 references drew fields from more than one part.
+
+  **And a part's marker is no longer the reference's number.** The `<label>`
+  arm's reference branch was gated on the ambient `in_ref` flag — the very
+  routing #116 established is wrong, missing on this one branch — so RSC's
+  `(a)`/`(b)` overwrote the reference's own label, last one winning. It is a
+  parent test now, like the `<fig>` and `<table-wrap>` branches beside it.
+  Measured: 158 references in 14 articles, and **nought** where a real
+  reference label was overwritten, so the entire population was a number the
+  publisher never wrote on a reference that has none — #116's own symptom,
+  an invented value rather than a blank. The markers are not lost; they sit in
+  `citation`, where the deposit puts them.
+
+  Found in the review of PR #148, and settled with a measurement rather than a
+  preference: `<citation-alternatives>` at 0 of 216 is what killed the
+  one-reference-per-part option, and the empty separator at 586 of 586 is what
+  chose the join.
+
+- **A `<mixed-citation>`'s rendered string lost every non-inline child**
+  (#146). `JATSReferenceInfo.citation` is built from the `<mixed-citation>`
+  text buffer, and a child that accumulates a buffer of its own without
+  merging it back has its text *taken and not returned*. `<person-group>`,
+  `<article-title>`, `<source>`, `<year>`, `<volume>`, `<issue>`, `<fpage>`,
+  `<lpage>` and `<pub-id>` are all in that state — which is the whole of a
+  standard NLM deposit — so the string bmlib rendered was whatever direct
+  character data was left over: the punctuation between the children.
+
+  ```
+  deposit  : Smith, J, Doe, A. An observed effect. J Med. 2020;10(2):100-109. doi: 10.1/xyz.
+  citation : '. . . ;():-. doi: .'      # before
+  citation : 'Smith, J, Doe, A. An observed effect. J Med. 2020;10(2):100-109. doi: 10.1/xyz.'
+  ```
+
+  A `<mixed-citation>` is JATS's *mixed content* citation — the marked-up
+  parts with the depositor's own punctuation between them, deposited as they
+  typeset it — so every descendant's text is the citation's too, and `citation`
+  now holds that whole string in document order.
+
+  **The rule is a property of the context, not of the element.** PR #141 fixed
+  this same shape for `<collab>` and `<string-name>` by adding them to
+  `_INLINE_ELEMENTS`, which was right there because those two carry a name
+  wherever they appear. It cannot serve here: an `<article-title>` in
+  `<article-meta>` is the *article's* own title, and merging it unconditionally
+  would append it to whatever buffer happened to be open. So the merge is
+  conditioned on a `<mixed-citation>` being open above the element — an
+  *ancestor* test rather than the parent test the module usually makes
+  (`<label>`, `<caption>`, `<article-id>`), because mixed content is inherited
+  down the whole subtree: a `<surname>` sits inside `<name>` inside
+  `<person-group>`, and each merge composes into the one above.
+
+  **`<element-citation>` is deliberately excluded, and leaves `citation`
+  empty.** That content model is element-only, so the depositor authored no
+  string and the whitespace between children is insignificant; concatenating
+  them yields a run-together word or the depositor's indentation as a
+  separator. Assembling a reference for display is a citation-style decision,
+  and `formatted_citation` is where this library makes it.
+
+  Excluding it from the *merge* turned out to be necessary and not sufficient,
+  which the review of this PR established. A child bmlib does not accumulate
+  never withheld a buffer to begin with — its characters go straight to
+  whatever is open — so a routine book deposit carrying `<edition>`,
+  `<publisher-loc>` and `<publisher-name>` produced `'3rd edAmsterdamElsevier'`:
+  precisely the run-together word the exclusion exists to avoid, and the
+  opposite of the empty string it was documented to leave. So the close arm
+  writes `citation` for `<mixed-citation>` **only**. That also settles a `<ref>`
+  carrying both spellings — legal as bare siblings and inside
+  `<citation-alternatives>` — where the unconditional write was
+  last-writer-wins and an `<element-citation>` deposited second wiped the
+  string the publisher did typeset. Several `<mixed-citation>` in one `<ref>`
+  is a modelling decision rather than a defect fix, and is #149.
+
+  **What moves for a caller, measured rather than reasoned.** The first
+  account of this was wrong in the direction that matters — it said every
+  structured field was already correct and only the fallback rendering could
+  move. Diffing this branch against `main` over 880 local PMC articles /
+  20,770 references gives:
+
+  | | references | articles |
+  |---|---|---|
+  | `citation` rebuilt from the merge | 3,541 | — |
+  | `citation` emptied (element-only leak removed) | 958 | 84 |
+  | `citation` changed, total | 4,499 (21.7%) | 191 |
+  | `authors` changed | 502 (2.4%) | 14 |
+  | rendered HTML changed | 576 (2.77%) | 23 |
+
+  `authors` is a structured field and it moves, because the `<surname>` and
+  `<given-names>` arms are gated on `in_ref_person_group`: a cited
+  `<string-name>` deposited outside a `<person-group>` — Wiley's house style —
+  had no arm fire at all, so the merge is the only route by which the name is
+  collected. On `main` those references held `[]`, or entries like
+  `[',', ',', ',']` and `[', Jr.']`; they now hold names. So a downstream
+  holding cached full text should re-fetch for `authors` as well as for
+  `citation`.
+
+  That path needed one repair of its own before it was safe: the `<collab>`
+  and `<string-name>` reference arms append the element's buffer directly,
+  end-stripped only, so a name the publisher wrapped across lines arrived as
+  the literal `'J.\nTan'` — a line break mid-name, in a public list and in the
+  cached HTML. Both arms normalise now, as every other author on that list
+  already did via `finish_current_author()`.
+
+  Found in the review of PR #141. Walking the other paths the merge rule
+  reaches turned up two more things. A cross-reference to a figure or table is
+  *replaced* by a `[text](#rid)` link rather than merged, and nothing pinned
+  that: dropping the suppression passed the whole suite while emitting
+  `Figure 1[Figure 1](#f1)` into body prose. It has tests now. And the same
+  taken-and-not-returned shape loses a `<tex-math>` formula from the prose
+  around it and a `<disp-formula>` from the article outright — filed as #147,
+  since delimiting LaTeX in prose is a decision rather than one more member of
+  a set. Note that #147 is now scoped to prose *outside* a citation: inside
+  one the ancestor test merges `<tex-math>` like anything else, so a formula
+  cited in a reference emits raw undelimited LaTeX and an `<alternatives>`
+  pair emits both encodings. That path measures 0 of 10,671 `<mixed-citation>`
+  across 227 articles and 0 in the local corpus, so it is unexercised rather
+  than live.
+
 - **A contributor whose name arrived undivided was dropped** (#120, #140).
   JATS names a contributor with `(name | string-name | collab | …)` and bmlib
   read only the first: `_AuthorBuilder.build()` refused anything without a

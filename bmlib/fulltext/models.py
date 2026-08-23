@@ -195,6 +195,33 @@ class JATSReferenceInfo:
 
     id: str
     label: str
+    #: Every descendant's text of a ``<mixed-citation>``, in document order —
+    #: the marked-up parts with whatever character data the depositor put
+    #: between them (issue #146; before it, a child that took a text buffer
+    #: without merging it back deleted itself, leaving the punctuation alone:
+    #: ``'. . . ;():-. doi: .'``).
+    #:
+    #: Deliberately *not* described as "the reference as the publisher typeset
+    #: it". A separator is often in the publisher's rendering stylesheet rather
+    #: than the deposit, so adjacent elements with nothing between them
+    #: concatenate — ``<surname>``/``<given-names>`` and repeated ``<pub-id>``
+    #: most often, measured at 13.2% of 3,798 citations carrying at least one
+    #: such pair. That is faithful to what the document contains and is a large
+    #: improvement on the punctuation alone, but it is not a typeset string,
+    #: and a caller wanting one should read :attr:`formatted_citation`, which
+    #: assembles from the structured fields with a separator of its own. Prefer
+    #: this field where the publisher's own wording matters, and
+    #: :attr:`formatted_citation` where consistent presentation does.
+    #:
+    #: An ``<element-citation>`` deposit leaves this **empty**, and that is not
+    #: a gap: its content model is element-only, so the depositor authored no
+    #: string and the whitespace between the children is insignificant. The
+    #: parser enforces that rather than inheriting it — an element-only deposit
+    #: still leaks the text of children this module does not accumulate
+    #: (``<edition>``, ``<publisher-name>``, ``<comment>``), which read as a
+    #: run-together word, so only a ``<mixed-citation>`` writes this field.
+    #: Where a ``<ref>`` carries both spellings, the ``<mixed-citation>`` wins
+    #: regardless of deposit order.
     citation: str
     authors: list[str] = field(default_factory=list)
     article_title: str = ""

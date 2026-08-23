@@ -115,7 +115,11 @@ class ParseUnwindState:
             first. Held as names rather than a depth because this stack
             answers parent lookups — ``[-2]`` for a ``<label>``'s owner, the
             walk in ``_graphic_owner`` — so a stale entry mis-routes *by
-            element*, and a depth would not say which.
+            element*, and a depth would not say which. Since #146 it also
+            answers an *ancestor membership* question
+            (``_inside_mixed_citation``), whose failure mode is worse in kind:
+            a stale ``mixed-citation`` entry does not mis-route one element,
+            it makes every later accumulating close merge into its parent.
         stuck_flags: The names of any boolean or single-slot value still set —
             some are builders, some are bare ``str | None`` markers. Grouped
             into one field rather than given one field each: they all fail the
@@ -215,7 +219,8 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
         messages.append(
             "element stack not unwound (" + " > ".join(state.open_elements) + "): "
             "parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) "
-            "after the imbalance read the wrong parent"
+            "after the imbalance read the wrong parent, and a stranded "
+            "<mixed-citation> merged every later element's text into its parent"
         )
     if state.stuck_flags:
         messages.append(

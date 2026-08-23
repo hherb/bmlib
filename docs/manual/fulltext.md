@@ -450,6 +450,7 @@ pass.
 | `table-wrap/thead/tbody/tr/th/td` | Tables (rendered as HTML `<table>`) |
 | `table-wrap/graphic` | A table deposited as an image — see below |
 | `ref-list/ref/element-citation` | Structured references |
+| `ref-list/ref/mixed-citation` | Structured references, plus the deposited string — see below |
 | `bold/italic/sub/sup/monospace` | Inline formatting |
 | `xref` | Cross-reference anchor links |
 | `sub-article`, `response` | **Ignored** — a whole article of its own, see below |
@@ -821,7 +822,7 @@ table twice.
 class JATSReferenceInfo:
     id: str
     label: str
-    citation: str                            # Raw citation text (fallback)
+    citation: str                            # <mixed-citation> text; see below
     authors: list[str] = field(default_factory=list)
     article_title: str = ""
     source: str = ""                         # Journal name
@@ -838,6 +839,64 @@ class JATSReferenceInfo:
 ```
 
 `formatted_citation` joins the populated components with `". "`. More than three authors collapse to `"first, second, et al."`; three or fewer are listed in full. When no structured component is populated at all, it returns the raw `citation` string unchanged.
+
+> **`citation` holds a `<mixed-citation>`'s whole text** *(unreleased, #146)*
+>
+> A `<mixed-citation>` is JATS's *mixed content* citation: the marked-up parts
+> with whatever the depositor put between them. `citation` is now every
+> descendant's text, in document order.
+>
+> Before this it was whatever direct character data was left after the
+> children had been read — the punctuation alone. `<person-group>`,
+> `<article-title>`, `<source>`, `<year>`, `<volume>`, `<issue>`, `<fpage>`,
+> `<lpage>` and `<pub-id>` each took a text buffer and did not merge it back,
+> which is the whole of a standard NLM deposit, so it rendered as
+> `'. . . ;():-. doi: .'`.
+>
+> **It is not "the reference as the publisher typeset it", and the difference
+> matters when you render it.** A separator is often in the publisher's
+> stylesheet rather than the deposit, so adjacent elements with nothing
+> between them concatenate — `<surname>`/`<given-names>` and repeated
+> `<pub-id>` most often, measured at 13.2% of 3,798 citations carrying at
+> least one such pair (`Andersen R, Newman JF.Societal and individual…`).
+> Read `citation` where the publisher's own wording matters, and
+> `formatted_citation` where consistent presentation does.
+>
+> **An `<element-citation>` deposit leaves `citation` empty, deliberately.**
+> That content model is element-only: the depositor authored no string, and
+> the whitespace between the children is insignificant, so concatenating them
+> would yield either a run-together word or the depositor's indentation as a
+> separator. The parser enforces that rather than inheriting it — only a
+> `<mixed-citation>` writes the field — because a child bmlib does not
+> accumulate never withheld a buffer to begin with, and a book's `<edition>`,
+> `<publisher-loc>` and `<publisher-name>` produced exactly the run-together
+> word this paragraph gives as the reason for the exclusion. Where a `<ref>`
+> carries both spellings, the `<mixed-citation>` wins whatever the deposit
+> order.
+>
+> **A `<ref>` may carry several citation elements, and all of them are kept**
+> *(unreleased, #149)*. JATS admits several, and each used to overwrite the
+> last. They are now joined with nothing between them — which is what the
+> deposit holds, the character data between them measuring empty in 586 of 586
+> occurrences — and the **structured fields come from the first part**, since
+> assembling across parts welded a byline out of several different works (one
+> reference reported 40 authors). A `<ref>` is still one `JATSReferenceInfo`:
+> 61 of the 216 measured cases are a single reference whose URL tail was
+> deposited separately, so splitting per part would break a work in two.
+> Relatedly, a part's own `<label>` — RSC deposits `(a)`, `(b)`, `(c)` — is no
+> longer mistaken for the reference's number; it stays in `citation`, where the
+> publisher put it.
+>
+> **What moved, measured.** Against the previous release over 880 local PMC
+> articles / 20,770 references: `citation` for 4,499 (21.7%) in 191 articles
+> — 3,541 rebuilt by the merge, 958 in 84 articles emptied of an
+> `<element-citation>` leak — `authors` for 502 in 14 articles, and rendered
+> `<ol class="references">` HTML for 576 in 23.
+> `authors` moves because `<surname>` and `<given-names>` are only read inside
+> a `<person-group>`, so a cited `<string-name>` deposited outside one — Wiley
+> deposits this way — previously yielded `[]` or punctuation-only entries.
+> **If you hold cached full text, re-fetch for `authors` as well as
+> `citation`.**
 
 ---
 
