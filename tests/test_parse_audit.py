@@ -91,6 +91,20 @@ class TestEachImbalanceIsReportedWithItsCost:
 
         assert "<contrib-group>" in message
 
+    def test_a_contrib_left_open_is_reported(self):
+        messages = unwind_diagnostics(ParseUnwindState(open_contribs=1))
+
+        assert len(messages) == 1
+        assert "<contrib> still open" in messages[0]
+        assert "never built" in messages[0]
+
+    def test_an_unfilled_author_slot_is_reported(self):
+        messages = unwind_diagnostics(ParseUnwindState(unfilled_author_slots=2))
+
+        assert len(messages) == 1
+        assert "author slot(s)" in messages[0]
+        assert "build_authors() dropped the holes" in messages[0]
+
     def test_an_unfilled_figure_slot_is_reported(self):
         """The hole ``build_figures()`` filters out without a word.
 

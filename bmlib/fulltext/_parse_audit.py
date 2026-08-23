@@ -91,6 +91,16 @@ class ParseUnwindState:
         open_contrib_groups: ``<contrib-group>`` role declarations still on
             the stack. A contributor inherits the innermost, so a stale entry
             hands a later ``<contrib>`` a role from a group that had closed.
+        open_contribs: ``<contrib>`` frames still on the stack. A contributor
+            is built at its end tag, so one left open is never built — and
+            every ``<surname>``, ``<collab>`` and ``<string-name>`` read after
+            the imbalance is written into that stranded builder instead of the
+            contributor it belongs to.
+        unfilled_author_slots: Slots reserved by a ``<contrib>`` that never
+            closed. ``build_authors()`` filters these out without a word,
+            which is a silently missing contributor. Counted separately from
+            ``open_contribs`` for the reason the figure pair is: a defect can
+            strand the slot without stranding the frame.
         unfilled_figure_slots: Slots reserved by a ``<fig>`` that never
             closed. ``build_figures()`` filters these out without a word,
             which is a silently missing figure.
@@ -115,6 +125,8 @@ class ParseUnwindState:
     open_tables: int = 0
     open_captions: int = 0
     open_contrib_groups: int = 0
+    open_contribs: int = 0
+    unfilled_author_slots: int = 0
     unfilled_figure_slots: int = 0
     unfilled_table_slots: int = 0
     excess_text_buffers: int = 0
@@ -169,6 +181,17 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
         messages.append(
             f"{state.open_contrib_groups} <contrib-group> still open: a later "
             "<contrib> inherited its role from a group that had already closed"
+        )
+    if state.open_contribs:
+        messages.append(
+            f"{state.open_contribs} <contrib> still open: their contributors were "
+            "never built, and every contributor name read after the imbalance went "
+            "to the stranded builder"
+        )
+    if state.unfilled_author_slots:
+        messages.append(
+            f"{state.unfilled_author_slots} author slot(s) reserved and never filled: "
+            "their contributors were never built, and build_authors() dropped the holes"
         )
     if state.unfilled_figure_slots:
         messages.append(

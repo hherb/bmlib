@@ -35,6 +35,65 @@ class TestJATSAuthorInfo:
         assert author.full_name == "Consortium"
 
 
+class TestAnUndividedContributorName:
+    """What the model holds when the deposit gives one undivided string.
+
+    JATS names a contributor with ``(name | string-name | collab | ...)``.
+    Only the first of those divides into a surname and given names; a
+    ``<collab>`` names a group and a ``<string-name>`` a person the depositor
+    did not split. Issues #120 and #140 are the two spellings, and they share
+    one decision: the undivided form is held verbatim, in a field that says
+    which kind it is, so a consumer sorting or de-duplicating by ``surname``
+    can tell "the INHERIT Trial Group" from a person.
+    """
+
+    def test_a_collaboration_renders_as_its_own_name(self):
+        author = JATSAuthorInfo(collab="the INHERIT Trial Group")
+
+        assert author.full_name == "the INHERIT Trial Group"
+
+    def test_an_undivided_personal_name_renders_verbatim(self):
+        author = JATSAuthorInfo(string_name="Jane Q Smith")
+
+        assert author.full_name == "Jane Q Smith"
+
+    def test_a_structured_name_wins_over_a_collaboration(self):
+        """ "Smith, on behalf of the Y Group" is Smith's paper.
+
+        A ``<contrib>`` may carry both, and the person is the contributor —
+        the collaboration is an attribution attached to them. Both are kept;
+        only the rendering has to choose.
+        """
+        author = JATSAuthorInfo(
+            surname="Smith", given_names="Jane", collab="on behalf of the Y Group"
+        )
+
+        assert author.full_name == "Jane Smith"
+        assert author.collab == "on behalf of the Y Group"
+
+    def test_a_structured_name_wins_over_an_undivided_one(self):
+        author = JATSAuthorInfo(surname="Smith", given_names="Jane", string_name="Smith, Jane Q")
+
+        assert author.full_name == "Jane Smith"
+
+    def test_a_collaboration_carries_no_surname(self):
+        """The point of the separate field, stated as an assertion.
+
+        Overloading ``surname`` would render identically and silently mix
+        organisations into a key that is sorted and de-duplicated on.
+        """
+        author = JATSAuthorInfo(collab="the INHERIT Trial Group")
+
+        assert author.surname == ""
+        assert author.given_names == ""
+
+    def test_the_undivided_forms_default_to_empty(self):
+        author = JATSAuthorInfo(surname="Smith")
+
+        assert author.collab == ""
+        assert author.string_name == ""
+
+
 class TestJATSReferenceInfo:
     def test_formatted_citation_structured(self):
         ref = JATSReferenceInfo(

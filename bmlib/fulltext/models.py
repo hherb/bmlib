@@ -36,17 +36,58 @@ ContentKind = Literal["none", "abstract", "extracted", "fulltext"]
 
 @dataclass
 class JATSAuthorInfo:
-    """Parsed author information from a JATS article."""
+    """Parsed author information from a JATS article.
 
-    surname: str
+    JATS names a contributor with ``(name | string-name | collab | ...)``, and
+    only the first of those divides into parts. The other two give **one
+    undivided string**, so each has a field of its own rather than being
+    folded into ``surname``:
+
+    - ``collab`` — a collaboration, consortium or group (*"the INHERIT Trial
+      Group"*). Not a person at all, and frequently the only contributor a
+      trial paper credits (issue #120).
+    - ``string_name`` — a person whose name the depositor did not split
+      (*"Jane Q Smith"*). A ``<string-name>`` **may** carry ``<surname>`` and
+      ``<given-names>`` children, and where it does those fill the structured
+      fields instead; this one holds the undivided case (issue #140).
+
+    **Both are held verbatim and are never split.** Deriving a surname from
+    *"Ahmed Al-Rashid"* means deciding about particles, multi-word surnames
+    and name order — assumed rather than measured, and wrong in a way the
+    caller cannot detect. A consumer that needs *"Smith J"* has the string and
+    can make that decision itself, knowing that it is making one.
+
+    Keeping them out of ``surname`` is what lets that consumer tell them
+    apart: ``surname`` is sorted and de-duplicated on, and an organisation
+    silently sitting in it is indistinguishable from a person. Emptiness is
+    the predicate — ``bool(collab)`` asks "is this an organisation?" and
+    ``bool(string_name)`` asks "is this name undivided, so must not be treated
+    as a surname?" — so there is no flag that can disagree with the string it
+    describes.
+    """
+
+    surname: str = ""
     given_names: str = ""
     affiliations: list[str] = field(default_factory=list)
+    #: A collaboration's name, where this contributor is one (issue #120).
+    collab: str = ""
+    #: An undivided personal name, exactly as deposited (issue #140).
+    string_name: str = ""
 
     @property
     def full_name(self) -> str:
-        if not self.given_names:
-            return self.surname
-        return f"{self.given_names} {self.surname}"
+        """The name to display, preferring whichever spelling the deposit gave.
+
+        A structured name wins over both undivided forms, because a
+        ``<contrib>`` carrying a ``<name>`` *and* a ``<collab>`` is *"Smith, on
+        behalf of the Y Group"* — the person is the contributor and the
+        collaboration is an attribution attached to them. ``collab`` is
+        preferred over ``string_name`` for the same reason one level down: a
+        group naming itself says more than an unsplit personal name beside it.
+        """
+        if self.surname or self.given_names:
+            return f"{self.given_names} {self.surname}".strip()
+        return self.collab or self.string_name
 
 
 @dataclass

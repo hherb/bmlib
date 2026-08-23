@@ -963,6 +963,243 @@ class TestContributorRoleDeclaredOnTheGroup:
         ]
 
 
+class TestAnUndividedContributorName:
+    """The two spellings of a name bmlib extracted from neither (#120, #140).
+
+    ``_AuthorBuilder.build()`` refused anything without a ``<surname>`` and the
+    call site dropped it without a word, so a ``<collab>`` consortium author
+    vanished (34 of 1,025 open-access articles lost at least one) and a
+    ``<contrib-group>`` built from ``<string-name>`` parsed to *zero* authors —
+    a well-formed empty list, which reads as "this article credits nobody"
+    rather than as a parser that looked in the wrong place.
+
+    Both are held verbatim in a field of their own; see
+    :class:`~bmlib.fulltext.models.JATSAuthorInfo` for why they are not folded
+    into ``surname``.
+    """
+
+    COLLAB_BESIDE_A_PERSON = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>A consortium paper</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+      <contrib><collab>the INHERIT Trial Group</collab></contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
+    COLLAB_WITH_A_MEMBER_ROSTER = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>A consortium and its members</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><collab>the INHERIT Trial Group
+        <contrib-group>
+          <contrib><name><surname>Member</surname><given-names>Bo</given-names></name></contrib>
+          <contrib><name><surname>Other</surname><given-names>Cy</given-names></name></contrib>
+        </contrib-group>
+      </collab></contrib>
+      <contrib><name><surname>After</surname><given-names>Di</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <body><sec><title>Results</title><p>Prose after the roster.</p></sec></body>
+</article>"""
+
+    STRING_NAMES_ONLY = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Undivided names</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><string-name>Jane Q Smith</string-name></contrib>
+      <contrib><string-name>Ahmed Al-Rashid</string-name></contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
+    STRUCTURED_STRING_NAME = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>A divided string-name</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><string-name><surname>Smith</surname>, \
+<given-names>Jane Q</given-names></string-name></contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
+    PERSON_ON_BEHALF_OF_A_GROUP = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>On behalf of</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib>
+        <name><surname>Smith</surname><given-names>Jane</given-names></name>
+        <collab>on behalf of the Y Group</collab>
+      </contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
+    NAMELESS_CONTRIB = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="pmc">PMC9000001</article-id>
+    <title-group><article-title>A contributor with no name at all</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+      <contrib><xref ref-type="aff" rid="aff1"/></contrib>
+    </contrib-group>
+  </article-meta></front>
+</article>"""
+
+    STRING_NAME_IN_A_CITATION = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Citing an undivided name</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <back><ref-list>
+    <ref id="R1"><mixed-citation><string-name>Smith J</string-name>. \
+<article-title>A cited paper</article-title>. <source>J Test</source>. <year>2020</year>.\
+</mixed-citation></ref>
+    <ref id="R2"><mixed-citation>\
+<person-group person-group-type="author"><string-name>Doe A</string-name></person-group>. \
+<article-title>Another cited paper</article-title>.</mixed-citation></ref>
+  </ref-list></back>
+</article>"""
+
+    @staticmethod
+    def _names(data: bytes) -> list[str]:
+        return [a.full_name for a in JATSParser(data).parse().authors]
+
+    def test_a_collaboration_is_collected_beside_a_person(self):
+        assert self._names(self.COLLAB_BESIDE_A_PERSON) == ["A Real", "the INHERIT Trial Group"]
+
+    def test_a_collaboration_lands_in_its_own_field(self):
+        authors = JATSParser(self.COLLAB_BESIDE_A_PERSON).parse().authors
+
+        assert authors[1].collab == "the INHERIT Trial Group"
+        assert authors[1].surname == ""
+        assert authors[1].string_name == ""
+
+    def test_a_collaboration_is_listed_before_the_members_it_encloses(self):
+        """Document order, which append-at-close would invert.
+
+        A ``<collab>`` may carry a ``<contrib-group>`` of its own members, so
+        the enclosing ``<contrib>`` closes *after* every one of them. Appending
+        at the end tag would list the consortium last — behind contributors it
+        contains — so the slot is reserved where the ``<contrib>`` opened and
+        filled where it closed, exactly as an exhibit's is (#115).
+        """
+        assert self._names(self.COLLAB_WITH_A_MEMBER_ROSTER) == [
+            "the INHERIT Trial Group",
+            "Bo Member",
+            "Cy Other",
+            "Di After",
+        ]
+
+    def test_a_contributor_after_a_nested_roster_is_still_collected(self):
+        """The other edge: the nested close must not strand the outer contrib.
+
+        Held as a single slot and a stored flag, the inner ``<contrib>``
+        elements overwrote the outer builder and cleared ``in_contrib`` before
+        ``</collab>`` was reached — so the consortium was lost even with a
+        field to put it in. A fixture that stops at the roster cannot see this;
+        the ``After`` contributor and the body prose below are what pin the
+        stack unwinding to the right depth.
+        """
+        article = JATSParser(self.COLLAB_WITH_A_MEMBER_ROSTER).parse()
+
+        assert article.authors[-1].full_name == "Di After"
+        assert article.body_sections[0].paragraphs == ["Prose after the roster."]
+
+    def test_an_undivided_personal_name_is_collected(self):
+        assert self._names(self.STRING_NAMES_ONLY) == ["Jane Q Smith", "Ahmed Al-Rashid"]
+
+    def test_an_undivided_personal_name_is_not_split(self):
+        """Verbatim, and in the field that says it is undivided.
+
+        Splitting means deciding about particles and name order, which is
+        assumed rather than measured — and a caller cannot tell a guess from a
+        deposit once it is sitting in ``surname``.
+        """
+        authors = JATSParser(self.STRING_NAMES_ONLY).parse().authors
+
+        assert authors[1].string_name == "Ahmed Al-Rashid"
+        assert authors[1].surname == ""
+        assert authors[1].given_names == ""
+
+    def test_a_string_name_with_structured_children_keeps_using_them(self):
+        """JATS permits ``<string-name>`` to divide, and where it does it wins.
+
+        The undivided field is filled only when no ``<surname>`` arrived, or
+        this deposit would put the comma between the two children into it.
+        """
+        author = JATSParser(self.STRUCTURED_STRING_NAME).parse().authors[0]
+
+        assert (author.surname, author.given_names) == ("Smith", "Jane Q")
+        assert author.string_name == ""
+
+    def test_a_person_on_behalf_of_a_group_is_one_contributor(self):
+        article = JATSParser(self.PERSON_ON_BEHALF_OF_A_GROUP).parse()
+
+        assert [a.full_name for a in article.authors] == ["Jane Smith"]
+        assert article.authors[0].collab == "on behalf of the Y Group"
+
+    def test_a_contributor_with_no_name_at_all_is_dropped_and_said_so(self, parser_log):
+        """#120's "no log, no counter" half.
+
+        Nothing can be built from a ``<contrib>`` carrying none of the three
+        spellings, so it is still dropped — but silently dropping it is what
+        made the two spellings above invisible for as long as they were.
+        """
+        article = JATSParser(self.NAMELESS_CONTRIB).parse()
+
+        assert [a.full_name for a in article.authors] == ["A Real"]
+        assert any(
+            "carried no <name>, <collab> or <string-name>" in m
+            for m in parser_log.messages(logging.DEBUG)
+        )
+
+    def test_a_collaboration_reaches_the_rendered_html(self):
+        """The half that persists: ``FullTextService`` caches this HTML.
+
+        ``JATSArticle.authors`` reaches no other bmlib path, so the author line
+        in ``to_html()`` is where a dropped consortium was actually costing a
+        downstream something.
+        """
+        html = JATSParser(self.COLLAB_BESIDE_A_PERSON).to_html()
+
+        assert "the INHERIT Trial Group" in html
+
+    def test_a_cited_string_name_reaches_the_reference_authors(self):
+        """The same spelling one branch over, where ``<collab>`` already worked."""
+        references = JATSParser(self.STRING_NAME_IN_A_CITATION).parse().references
+
+        assert references[1].authors == ["Doe A"]
+
+    def test_a_cited_string_name_stays_in_the_citation_string(self):
+        """Reading the element must not remove its text from the citation.
+
+        The two halves of how ``<string-name>`` is now handled fail different
+        assertions. It **accumulates a buffer of its own**, so
+        ``</string-name>`` reads its own text rather than whatever the
+        ancestor's buffer happened to hold — without that, the test above
+        collects the enclosing ``<person-group>``'s accumulated prose. And it
+        **merges that buffer back into its parent**, because a
+        ``<mixed-citation>`` may print a bare ``<string-name>`` as part of the
+        citation it renders: accumulating without merging silently deletes the
+        author from every such reference, which is a regression this fix would
+        otherwise have introduced while closing #140.
+        """
+        references = JATSParser(self.STRING_NAME_IN_A_CITATION).parse().references
+
+        assert references[0].citation.startswith("Smith J")
+
+
 class TestSubArticlesAreNotTheArticle:
     """A ``<sub-article>`` is a whole article of its own, and not this one.
 
@@ -3569,9 +3806,8 @@ class TestAZeroAuthorParseIsNotSilent:
         """The genuinely author-less article, which is not a defect claim.
 
         This is the distinction the counter exists for. Without it the
-        detector fires on every correction notice and every consortium-only
-        article (#120), and a warning that fires on the correct answer is a
-        warning nobody reads.
+        detector fires on every correction notice, and a warning that fires on
+        the correct answer is a warning nobody reads.
         """
         data = _article_with_front("")
 
@@ -3657,7 +3893,6 @@ class TestTheAuditNetIsComplete:
         {
             "_locator",
             "abstract_sections",
-            "authors",
             "body_paragraph_count",
             "body_sections",
             "doi",
@@ -3681,7 +3916,9 @@ class TestTheAuditNetIsComplete:
     #: than through the grouped ``stuck_flags``.
     _AUDITED_AS_A_STACK = frozenset(
         {
+            "author_slots",
             "caption_stack",
+            "contrib_stack",
             "contrib_group_stack",
             "element_stack",
             "figure_slots",
@@ -3811,6 +4048,52 @@ class TestTheAuditCapturesWhatItReports:
         assert unwind_diagnostics(handler.unwind_state()) == []
         assert handler.suppressed_nested_articles == 1
 
+    def test_a_contrib_left_open_is_captured(self, monkeypatch, parser_log):
+        """The frame half of the contributor pair.
+
+        A stranded frame is not merely one lost contributor: ``current_author``
+        is derived from the top of the stack, so every ``<surname>``,
+        ``<collab>`` and ``<string-name>`` read after the imbalance is written
+        into the stranded builder rather than into the contributor that
+        actually carries it.
+        """
+        parser_log.expect_errors()
+        _drop_end_tag(monkeypatch, "contrib")
+
+        JATSParser(_AUDITED_ARTICLE).parse()
+
+        assert any("<contrib> still open" in m for m in parser_log.messages(logging.ERROR))
+
+    def test_an_unfilled_author_slot_is_captured(self, monkeypatch, parser_log):
+        """``build_authors()`` drops the hole without a word — the audit must not."""
+        parser_log.expect_errors()
+        _drop_end_tag(monkeypatch, "contrib")
+
+        JATSParser(_AUDITED_ARTICLE).parse()
+
+        assert any("author slot(s)" in m for m in parser_log.messages(logging.ERROR))
+
+    def test_a_contributor_naming_nobody_is_not_an_unfilled_slot(self, parser_log):
+        """The false-positive half, and the reason the reservation is given back.
+
+        A ``<contrib>`` carrying no name at all — ``<anonymous/>``, or one
+        holding only an ``<xref>`` — is well-formed JATS that builds no author.
+        Left reserved, its slot would make the audit ERROR on a document bmlib
+        read exactly right, which is the one thing an ERROR here must never
+        mean.
+        """
+        data = _article_with_front(
+            '<contrib-group content-type="author">'
+            "<contrib><name><surname>Real</surname></name></contrib>"
+            "<contrib><anonymous/></contrib>"
+            "</contrib-group>"
+        )
+
+        article = JATSParser(data).parse()
+
+        assert [a.full_name for a in article.authors] == ["Real"]
+        assert not parser_log.messages(logging.ERROR)
+
     def test_an_unfilled_figure_slot_is_captured(self, monkeypatch, parser_log):
         """``build_figures()`` drops the hole without a word — the audit must not.
 
@@ -3904,18 +4187,22 @@ class TestTheZeroAuthorDetectorReadsEverySpelling:
     """ "No ``<surname>``" is not "no contributor" — the quiet branch's claim.
 
     JATS models a ``<contrib>``'s name as
-    ``(name | string-name | collab | anonymous | …)`` and bmlib extracts only
-    ``<name>``. Counting surnames alone, the two spellings it does not extract
-    both reached the DEBUG branch and were reported as *genuinely*
-    author-less, which is a positive claim their evidence never supported —
-    and ``<string-name>`` loses **every** author, not merely some.
+    ``(name | string-name | collab | anonymous | …)``. When this counter was
+    written bmlib extracted only ``<name>``, so counting surnames alone put the
+    other two into the DEBUG branch and reported them as *genuinely*
+    author-less — a positive claim their evidence never supported, and for
+    ``<string-name>`` it meant **every** author of the article.
 
-    Counting is not parsing. Extracting either spelling remains its own issue;
-    what these pin is that the detector no longer certifies an article it did
-    not check.
+    Both are extracted now (#120, #140), so neither reaches the detector by
+    that route any more. The counter is not narrowed to match: it counts the
+    spelling and not the extraction, which is what keeps it able to report the
+    *next* contributor bmlib fails to collect — a role it does not read, a
+    spelling nobody has filed yet, or a routing regression in the arms that now
+    do the collecting.
     """
 
-    def test_a_string_name_contributor_warns_rather_than_certifying(self, parser_log):
+    def test_a_string_name_contributor_is_extracted_rather_than_reported(self, parser_log):
+        """The spelling that lost 100% of an article's authors (#140)."""
         data = _article_with_front(
             '<contrib-group content-type="author">'
             "<contrib><string-name>Jane Q Smith</string-name></contrib>"
@@ -3925,16 +4212,14 @@ class TestTheZeroAuthorDetectorReadsEverySpelling:
 
         article = JATSParser(data).parse()
 
-        assert article.authors == []
-        warnings = parser_log.messages(logging.WARNING)
-        assert any("named 2 contributor(s)" in m for m in warnings)
+        assert [a.full_name for a in article.authors] == ["Jane Q Smith", "Ahmed Al-Rashid"]
+        assert not parser_log.messages(logging.WARNING)
 
-    def test_a_collab_only_article_warns_rather_than_certifying(self, parser_log):
-        """The consortium article, whose extraction is still #120.
+    def test_a_collab_only_article_is_extracted_rather_than_reported(self, parser_log):
+        """The consortium article (#120), which reached the quiet branch too.
 
-        It reached the quiet branch for a different reason — ``<collab>``
-        carries no ``<surname>`` at all — and was equally certified
-        author-less.
+        It got there for a different reason — a ``<collab>`` carries no
+        ``<surname>`` at all — and was equally certified author-less.
         """
         data = _article_with_front(
             '<contrib-group content-type="author">'
@@ -3944,8 +4229,30 @@ class TestTheZeroAuthorDetectorReadsEverySpelling:
 
         article = JATSParser(data).parse()
 
+        assert [a.full_name for a in article.authors] == ["The CONSORT Group"]
+        assert not parser_log.messages(logging.WARNING)
+
+    def test_an_uncollected_contributor_still_counts_in_every_spelling(self, parser_log):
+        """The counter's remaining job, and why it was not narrowed to ``<name>``.
+
+        Extraction closed the two routes that made this counter urgent, but a
+        contributor can still fail to be collected — here because the group
+        declares a role bmlib does not read as authorship. All three spellings
+        have to keep counting, or the detector goes quiet again for exactly the
+        articles whose authors went somewhere unexpected.
+        """
+        data = _article_with_front(
+            '<contrib-group content-type="editor">'
+            "<contrib><name><surname>Okafor</surname></name></contrib>"
+            "<contrib><string-name>Jane Q Smith</string-name></contrib>"
+            "<contrib><collab>The CONSORT Group</collab></contrib>"
+            "</contrib-group>"
+        )
+
+        article = JATSParser(data).parse()
+
         assert article.authors == []
-        assert any("named 1 contributor(s)" in m for m in parser_log.messages(logging.WARNING))
+        assert any("named 3 contributor(s)" in m for m in parser_log.messages(logging.WARNING))
 
     def test_the_quiet_branch_reports_its_evidence_not_a_conclusion(self, parser_log):
         """The DEBUG half of "says which kind it is", which was deletable green.

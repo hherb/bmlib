@@ -56,17 +56,37 @@ MAX_HEADING_LEVEL = 6
 
 @dataclass
 class _AuthorBuilder:
+    """One ``<contrib>`` being read, in whichever spelling it names its contributor.
+
+    JATS models that name as ``(name | string-name | collab | ...)``. All three
+    are collected, because refusing the two undivided ones dropped a
+    ``<collab>`` consortium author from 3.3% of open-access articles (#120) and
+    *every* author from an article deposited with ``<string-name>`` (#140) —
+    each as a well-formed shorter list rather than as an error.
+    """
+
     surname: str = ""
     given_names: str = ""
     affiliations: list[str] = field(default_factory=list)
+    collab: str = ""
+    string_name: str = ""
 
     def build(self) -> JATSAuthorInfo | None:
-        if not self.surname:
+        """The contributor, or ``None`` where the ``<contrib>`` named nobody.
+
+        ``None`` now means what it says — none of the three spellings arrived —
+        rather than "no ``<surname>``", which was true of every collaboration.
+        The call site reports it, since dropping a contributor in silence is
+        what kept both spellings invisible for as long as they were.
+        """
+        if not (self.surname or self.given_names or self.collab or self.string_name):
             return None
         return JATSAuthorInfo(
             surname=self.surname,
             given_names=self.given_names,
             affiliations=list(self.affiliations),
+            collab=self.collab,
+            string_name=self.string_name,
         )
 
 
@@ -454,6 +474,27 @@ class _ExhibitFrame(Generic[_BuilderT]):
 
 
 @dataclass
+class _ContribFrame:
+    """One open ``<contrib>`` bmlib is collecting as an author.
+
+    A stack of these, for the reason :class:`_ExhibitFrame` is one: ``<collab>``
+    may carry a ``<contrib-group>`` of the collaboration's own members, so a
+    ``<contrib>`` can open inside another. Held as a single slot, each member
+    overwrote the consortium's builder and its close cleared the flag, so
+    ``</collab>`` was reached with nothing to write the collaboration's name
+    into and the outer ``</contrib>`` found nothing to build (issue #120).
+
+    ``slot`` is the index reserved in ``author_slots`` when the ``<contrib>``
+    opened. A contributor is *built* at its end tag and has to be *listed* at
+    its start: appending at the close puts a consortium behind the members it
+    encloses, which is not the order the document gave.
+    """
+
+    slot: int
+    builder: _AuthorBuilder
+
+
+@dataclass
 class _ReferenceBuilder:
     id: str = ""
     label: str = ""
@@ -626,6 +667,12 @@ _TEXT_ACCUMULATING = frozenset(
         "person-group",
         "pub-id",
         "collab",
+        # Accumulating so that </string-name> reads its own text rather than
+        # whatever the ancestor's buffer happened to hold, and *inline* (below)
+        # so that text goes back to the parent: a <mixed-citation> may print a
+        # bare <string-name> as part of the citation it renders, and taking the
+        # buffer without returning it deletes the author from that string.
+        "string-name",
     }
 )
 
@@ -700,6 +747,7 @@ _INLINE_ELEMENTS = frozenset(
         "email",
         "named-content",
         "inline-formula",
+        "string-name",
     }
 )
 
@@ -717,7 +765,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
         # Parsed content
         self.title = ""
-        self.authors: list[JATSAuthorInfo] = []
+        # One entry per <contrib> collected as an author, reserved when the
+        # element opened and filled when it closed; `build_authors()` renders
+        # them. See `_ContribFrame` for why the reservation is what keeps a
+        # collaboration ahead of its own member roster.
+        self.author_slots: list[JATSAuthorInfo | None] = []
         self.journal = ""
         self.volume = ""
         self.issue = ""
@@ -759,7 +811,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # the enclosing group's role, so an editor group's own members were
         # then collected as this article's authors.
         self.contrib_group_stack: list[str | None] = []
-        self.in_contrib = False
+        # One entry per open <contrib>, innermost last, holding the builder it
+        # is being read into — or None where `_is_author_contrib` said this
+        # contributor is not one of the article's authors. The None entries are
+        # what keep the pushes and pops paired, so an editor nested inside an
+        # author's <collab> roster cannot pop the author's own frame.
+        #
+        # `in_contrib` and `current_author` are *derived* from this stack
+        # rather than stored beside it: a stored flag cleared by the inner
+        # close is exactly what #115 was, one element family over.
+        self.contrib_stack: list[_ContribFrame | None] = []
         # Contributor names seen anywhere inside <front>, whether or not the
         # contributor carrying one was collected. What tells a genuinely
         # author-less article from a parse that looked in the wrong place
@@ -795,7 +856,6 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # the right headings — see `_read_span`.
         self.rejected_spans = 0
         self.current_article_id_type: str | None = None
-        self.current_author: _AuthorBuilder | None = None
 
         # Abstract state
         self.in_abstract = False
@@ -968,7 +1028,6 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
     _ROUTING_FLAGS: ClassVar[tuple[str, ...]] = (
         "in_front",
         "in_article_meta",
-        "in_contrib",
         "in_abstract",
         "in_body",
         "in_back",
@@ -976,13 +1035,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         "in_ref",
         "in_ref_citation",
         "in_ref_person_group",
-        "current_author",
         "current_reference",
         "current_article_id_type",
         "current_xref_type",
         "current_xref_rid",
-        # Single-slot, exactly like `current_author` beside it: unsectioned
-        # `<body>` prose accumulates here and is flushed at `</body>`. Left
+        # Single-slot: unsectioned `<body>` prose accumulates here and is
+        # flushed at `</body>`. Left
         # stranded, the article loses that prose outright and `has_body` stays
         # True, because `body_paragraph_count` already counted it — a silent
         # loss of a whole body in the shape this audit exists to catch. Covered
@@ -1013,6 +1071,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             open_tables=len(self.table_stack),
             open_captions=len(self.caption_stack),
             open_contrib_groups=len(self.contrib_group_stack),
+            open_contribs=len(self.contrib_stack),
+            unfilled_author_slots=sum(slot is None for slot in self.author_slots),
             unfilled_figure_slots=sum(slot is None for slot in self.figure_slots),
             unfilled_table_slots=sum(slot is None for slot in self.table_slots),
             excess_text_buffers=max(0, len(self.text_stack) - 1),
@@ -1036,6 +1096,35 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         if self.title:
             return f"'{self.title[:60]}'"
         return "an article carrying no identifier or title"
+
+    @property
+    def current_author(self) -> _AuthorBuilder | None:
+        """The builder for the innermost ``<contrib>`` being collected, if any.
+
+        Derived from ``contrib_stack`` rather than stored, so the inner close
+        of a nested ``<contrib>`` restores the enclosing one instead of
+        clearing it. ``None`` while the innermost open ``<contrib>`` is not an
+        author's, which is what stops an editor listed inside a collaboration's
+        roster from writing into the collaboration's builder.
+        """
+        frame = self.contrib_stack[-1] if self.contrib_stack else None
+        return frame.builder if frame is not None else None
+
+    @property
+    def in_contrib(self) -> bool:
+        """Is a ``<contrib>`` bmlib is collecting as an author currently open?"""
+        return self.current_author is not None
+
+    def build_authors(self) -> list[JATSAuthorInfo]:
+        """Build the authors, in the order their ``<contrib>`` elements *opened*.
+
+        A method rather than an attribute for the reason
+        :meth:`build_figures` is one. The filter drops a slot reserved by a
+        ``<contrib>`` that never closed, which ``xml.sax`` cannot deliver; it
+        only keeps the reservation from being able to put a hole in the result,
+        and ``unfilled_author_slots`` reports it if it ever happens.
+        """
+        return [author for author in self.author_slots if author is not None]
 
     def build_figures(self) -> list[JATSFigureInfo]:
         """Build the figures, in the order their ``<fig>`` elements *opened*.
@@ -1227,9 +1316,17 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "contrib-group":
             self.contrib_group_stack.append(attrs.get("content-type"))
         elif name == "contrib":
+            # A frame either way: a non-author <contrib> pushes None so that
+            # its own close pops its own entry rather than the enclosing
+            # author's. Reserving the slot here is what lists a collaboration
+            # ahead of the members its <collab> encloses.
             if self._is_author_contrib(attrs.get("contrib-type")):
-                self.in_contrib = True
-                self.current_author = _AuthorBuilder()
+                self.author_slots.append(None)
+                self.contrib_stack.append(
+                    _ContribFrame(slot=len(self.author_slots) - 1, builder=_AuthorBuilder())
+                )
+            else:
+                self.contrib_stack.append(None)
         elif name == "abstract":
             self.in_abstract = True
             self.current_abstract_title = ""
@@ -1412,12 +1509,41 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             if self.contrib_group_stack:
                 self.contrib_group_stack.pop()
         elif name == "contrib":
-            if self.in_contrib and self.current_author:
-                author = self.current_author.build()
-                if author:
-                    self.authors.append(author)
-            self.in_contrib = False
-            self.current_author = None
+            # Guarded because a close with nothing open would otherwise raise
+            # on malformed input; SAX makes that unreachable today, the way it
+            # does for every other stack here.
+            if self.contrib_stack:
+                contrib_frame = self.contrib_stack.pop()
+                if contrib_frame is not None:
+                    author = contrib_frame.builder.build()
+                    if author is not None:
+                        self.author_slots[contrib_frame.slot] = author
+                    else:
+                        # Give the reservation back, so an unfilled slot keeps
+                        # meaning "a <contrib> that never closed" and the audit
+                        # can report it as the defect it would be. A <contrib>
+                        # naming nobody — `<anonymous/>`, or one carrying only
+                        # an <xref> — is well-formed JATS, so a slot left
+                        # standing here would make the audit ERROR on a
+                        # document bmlib had read correctly.
+                        #
+                        # Safe because the stack is LIFO: every frame with a
+                        # higher slot index opened inside this <contrib> and
+                        # has therefore already been popped and filled, so the
+                        # deletion shifts only entries that are already
+                        # written, and no live frame's index goes stale.
+                        del self.author_slots[contrib_frame.slot]
+                        # #120's other half. The contributor is still dropped —
+                        # nothing can be built from a <contrib> that names
+                        # nobody — but saying so is what stops the next
+                        # unhandled spelling of a name from being invisible for
+                        # as long as <collab> and <string-name> were.
+                        logger.debug(
+                            "JATS parse of %s: a <contrib> collected as an author carried "
+                            "no <name>, <collab> or <string-name>, so nothing could be "
+                            "built from it",
+                            self.describe_article(),
+                        )
 
         elif name == "journal-title":
             if self.in_front:
@@ -1730,15 +1856,27 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.front_contributor_name_count += 1
             if self.in_ref_citation and self.current_reference and text:
                 self.current_reference.authors.append(text)
+            elif self.in_contrib and self.current_author and text:
+                # A collaboration is not a person and gets a field of its own;
+                # see JATSAuthorInfo for why it is not folded into `surname`.
+                self.current_author.collab = text
         elif name == "string-name":
-            # Counted, not parsed. JATS models a <contrib>'s name as
-            # `(name | string-name | collab | anonymous | …)`, and bmlib reads
-            # only <name>, so a <contrib-group> built from <string-name>
-            # yields no authors at all — 100% loss, not the partial loss
-            # <collab> gives. Extraction is #140; what belongs here is that the
-            # detector must not then call the article author-less.
             if self.in_front:
                 self.front_contributor_name_count += 1
+            if self.in_ref_person_group and self.current_reference and text:
+                # The spelling <collab> already had one branch above. A
+                # <person-group> may name a cited author undivided, and reading
+                # only <surname> left that reference's `authors` empty while the
+                # citation string printed the name perfectly.
+                self.current_reference.authors.append(text)
+            elif self.in_contrib and self.current_author and text:
+                # Only where no structured name arrived. JATS permits
+                # <string-name> to carry <surname> and <given-names> children,
+                # and those already routed through the arms above — so this
+                # element's own buffer then holds nothing but the punctuation
+                # between them, which is not a name.
+                if not (self.current_author.surname or self.current_author.given_names):
+                    self.current_author.string_name = text
         elif name == "article-title":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.article_title = normalized_text
@@ -1927,7 +2065,7 @@ def _audit_parse(handler: _JATSHandler) -> None:
             handler.rejected_spans,
         )
 
-    if not handler.authors:
+    if not handler.build_authors():
         _report_zero_authors(handler, article)
 
 
@@ -2018,7 +2156,7 @@ class JATSParser:
         h = self._run_parser()
         return JATSArticle(
             title=h.title,
-            authors=h.authors,
+            authors=h.build_authors(),
             journal=h.journal,
             volume=h.volume,
             issue=h.issue,
