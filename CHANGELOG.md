@@ -199,6 +199,116 @@ All notable changes to bmlib are documented here. The format is based on
   audit's net above depends on. A `<front>` naming no contributor at all logs
   at DEBUG.
 
+- **The prospective half of `_inside_mixed_citation` is mechanised** (#151).
+  That helper keeps its strict-ancestor slice (`element_stack[:-1]`) as
+  prospective and argues it is currently harmless with a whole-method claim:
+  no arm of `endElement` reads `text` for an element outside
+  `_TEXT_ACCUMULATING`, so the base buffer is written and never consulted.
+  The claim was true and nothing tied the two together — it is a property of
+  a 500-line method asserted in one helper's docstring 300 lines away, and
+  the next queued issue is exactly the shape that breaks it, since #142 wants
+  a `<collab>`'s `<institution>`/`<addr-line>` children read and neither
+  accumulates. Adding such an arm would fail no test; it would quietly make a
+  paragraph false while the code around it still relied on the reasoning.
+  `TestTheAuditNetIsComplete` is the precedent — *a rule enforced by prose is
+  not enforced* — and it caught a routing flag shipping missing from the net
+  it belonged in.
+
+  `TestOnlyAnAccumulatingElementReadsTheBuffer` walks `endElement`'s arms with
+  `ast` and reports every read of the buffer together with the element names
+  that can reach it. **The net is keyed on the buffer, not on identifiers.**
+  Five spellings reach it: `text`, `normalized_text` and `element_text` — the
+  latter two being the same buffer a line either side — plus
+  `self.current_text` and `self._pop_text_buffer()`. The first cut watched the
+  three locals alone, and review found that `elif name in ("institution",
+  "addr-line"): self.collab_address = self.current_text.strip()` — #142's own
+  arm, in the spelling an implementer reasoning *"the `<collab>` buffer is
+  already open"* would reach for — passed the whole suite green while making
+  the slice load-bearing: a `<back>` whose `<ref-list>` is followed by an
+  `<institution>` put the citation into the institution's text. Whether the
+  guard fired turned on which of two synonymous forms the author typed.
+
+  **Every outcome fails closed, which is the whole design.** A guard the
+  walker cannot read is a finding in its own right rather than a read passed
+  over; a read no `name` test constrains is reachable for every element and
+  reported unless it is the method's *plumbing*; and the verdict is
+  containment in `_TEXT_ACCUMULATING`, never overlap with it, since the
+  likeliest breakage is an existing arm gaining an element rather than a new
+  arm appearing. The walker raises when it cannot find the class or the
+  method: *no reads* must never be an answer it can give — measured, that
+  answer leaves four of the twenty tests green, one of them the invariant
+  itself, which asserts an empty finding list.
+
+  **Plumbing is recognised by what a statement does, not by what it binds.**
+  A statement is exempt only when it stands under no guard, binds a buffer
+  name, *and* hands the buffer to no method on the handler. Exempting on the
+  binding alone — the first cut — silently allowed `text =
+  self._collab_child(name, text)` wedged beside the preamble: a per-element
+  hook is the natural way to add handling without disturbing a forty-branch
+  `elif` chain, and it reads the buffer for every element there is. It was the
+  one shape inside the method that produced no finding at all.
+
+  Three smaller repairs from the same review. A read in an `and` guard's own
+  test now inherits the operands to its left, which short-circuiting
+  guarantees — crediting only the outer guards reported `elif name ==
+  "journal-title" and text:` as reachable for every element, a false
+  accusation whose message announces a broken invariant and whose only remedy
+  would be to un-refactor correct code. `or` finishes its loop instead of
+  returning at the first unconstraining operand, which used to drop an
+  unreadable guard sitting to its right and, combined with the exemption
+  above, turned a fail-closed reading into a green one. And tuple targets
+  count as binds, so writing the preamble's two statements as one is not
+  reported as two violations.
+
+  Most of the twenty tests exist so that a green means something, a walk that
+  finds nothing being a walk that passes: teeth controls in #142's own shape
+  for each spelling of the buffer, an unreadable-guard control, controls for a
+  read no guard constrains and for one guarded by something other than
+  `name`, the guard-algebra controls, and the two raises. The positive control
+  carries the **whole** inventory of arms that consume the buffer — nineteen
+  elements — read as a floor: it was six while the walk saw nineteen, so
+  thirty-eight of the fifty-three reads it is built from could have left
+  without a word, and a *partial* extraction of one arm into a helper is a likelier
+  refactor than the wholesale kind. It is a floor and not an equality so that
+  #142 adding a legitimate arm stays green without anyone editing an inventory
+  to let it through.
+
+  Verified end to end in both directions against the real parser. Nine
+  mutations of `endElement` are each reported by line and element — #142's arm
+  in all four spellings, an existing arm widened to admit `<institution>`, an
+  arm extracted into a helper, a preamble hook, a guarded rebinding, and an
+  unreadable guard in an `or`'s right-hand branch — while the *permitted*
+  change, that arm plus the matching `_TEXT_ACCUMULATING` membership, leaves
+  all twenty green. Twelve mutants of the walker itself, twelve caught; the
+  last two controls added exist because two of those twelve survived the first
+  time, and the inventory's exclusion of preamble reads is pinned by a
+  witness (`<abstract>` accumulates and no arm consumes it), that exclusion
+  being what stops containment from being satisfied by the preamble alone. The
+  synthetic controls are judged against an accumulating set of their own
+  rather than the parser's: asserting `<institution>` does not accumulate is
+  asserting something #142 is entitled to change, and seven controls would
+  otherwise fail for the opposite of the reason they were written.
+
+  Its sibling is a comment gap at three sites, and measuring it corrected the
+  issue's own account. `element_stack[:-1]` is a *strict*-ancestor slice only
+  because `element_stack.pop()` sits at the end of `endElement`, and nothing
+  said so at either end. Moving the pop reddens 58 tests when placed before
+  the handler arms and 65 when placed above the buffer pop at the top — and
+  **only the second reaches the citation slice**, because
+  `_inside_mixed_citation` is evaluated inside `_pop_text_buffer`'s own
+  argument, so "moving the pop up fails it" is true only of a placement the
+  issue did not name. The slice is pinned by the seven-test difference between
+  those two placements: three of `TestAMixedCitationKeepsTheTextItPrints`'
+  six, and **four in `TestARefCarryingSeveralCitationsKeepsThemAll`** — the
+  majority of the guard, and a class an earlier draft of the comment omitted,
+  which would have told a maintainer rewriting #149's tests that nothing was
+  at stake. Two neighbours turn out not to ride on it at all: the `<caption>`
+  parent test is made in `startElement`, where the push is what places it, and
+  `<article-id>`'s is pinned by nothing, being disjoined as `parent ==
+  "article-meta" or self.in_front`.
+
+  No behaviour change: one test class and three comments.
+
 ### Fixed
 
 - **A `<ref>` carrying several citation elements lost all but the last, and
@@ -305,7 +415,9 @@ All notable changes to bmlib are documented here. The format is based on
   `<citation-alternatives>` — where the unconditional write was
   last-writer-wins and an `<element-citation>` deposited second wiped the
   string the publisher did typeset. Several `<mixed-citation>` in one `<ref>`
-  is a modelling decision rather than a defect fix, and is #149.
+  was left as a modelling decision rather than a defect fix at this point in
+  the work, and is the entry above — settled in the same PR by measuring the
+  population.
 
   **What moves for a caller, measured rather than reasoned.** The first
   account of this was wrong in the direction that matters — it said every

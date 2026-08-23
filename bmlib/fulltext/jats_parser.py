@@ -1340,10 +1340,42 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         arm writes :attr:`~JATSReferenceInfo.citation` for ``<mixed-citation>``
         only; see the comment there.
 
+        The prospective half above is **mechanised**, not left to this
+        paragraph: ``TestOnlyAnAccumulatingElementReadsTheBuffer`` walks every
+        arm of :meth:`endElement` and fails on one that reads the buffer for
+        an element outside ``_TEXT_ACCUMULATING`` (issue #151). The rule was
+        true when it was written and nothing tied the two together, which is
+        the ``TestTheAuditNetIsComplete`` situation one module over.
+
+        Read *"reads the buffer"* as this paragraph means it — consults it at
+        all — and not as three local names. The walk is keyed on
+        ``self.current_text`` and ``self._pop_text_buffer()`` as well as on
+        ``text``/``normalized_text``/``element_text``, because for a
+        non-accumulating element ``element_text = self.current_text`` makes the
+        first two the same value; keyed on the locals alone it passed an arm
+        reading ``self.current_text`` for ``<institution>``, which is #142 in
+        the spelling an implementer is as likely to write.
+
         Returns:
             ``True`` when a ``<mixed-citation>`` is open strictly above the
             element being closed.
         """
+        # A *strict*-ancestor slice only because `element_stack.pop()` sits at
+        # the very end of `endElement`: the element now closing is still on
+        # the stack, so `[:-1]` drops it and leaves its ancestors. Move that
+        # pop above the `_pop_text_buffer()` call at the top of the method —
+        # which is where this predicate is evaluated, so nothing short of that
+        # reaches it — and the slice silently becomes "excludes the parent",
+        # reading a `<mixed-citation>`'s own children as outside it. Pinned by
+        # seven tests across two classes — three in
+        # `TestAMixedCitationKeepsTheTextItPrints` (of its six) and four in
+        # `TestARefCarryingSeveralCitationsKeepsThemAll` — all of which stay
+        # green for a pop moved anywhere below that call. The set is the
+        # measured difference between the two placements below, not a reading
+        # of the test names: the second class holds the majority of the guard
+        # and an earlier draft of this comment omitted it, which would have
+        # told a maintainer rewriting #149's tests that nothing was at stake.
+        # See the comment at the pop itself for what else moves with it.
         return "mixed-citation" in self.element_stack[:-1]
 
     # -- Section and caption helpers -----------------------------------------
@@ -2178,7 +2210,25 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.current_xref_type = None
             self.current_xref_rid = None
 
-        # Pop element stack
+        # Pop element stack. Last, and load-bearingly so: every handler above
+        # that asks what encloses the element now closing reads the stack with
+        # that element still on it. `_inside_mixed_citation`'s
+        # `element_stack[:-1]` is a *strict*-ancestor slice for that reason
+        # alone, and the `element_stack[-2]` parent tests for `<title>` and
+        # `<label>` name the owner for the same one. Moving this up shifts
+        # them one element outwards, and the cost is measured rather than
+        # asserted: 58 tests in `test_jats_parser.py` redden for a pop placed
+        # just before the handler arms, and 65 for one placed above the buffer
+        # pop at the top of the method. Only the second reaches the citation
+        # slice, because `_inside_mixed_citation` is called from inside
+        # `_pop_text_buffer`'s own argument — which is why "move the pop up"
+        # has to name *how far* up to mean anything.
+        #
+        # Two neighbours are deliberately not on that list. The `<caption>`
+        # parent test is made in `startElement`, where the *push* is what
+        # places it. And `<article-id>`'s is pinned by nothing here: it is
+        # disjoined as `parent == "article-meta" or self.in_front`, so the id
+        # is admitted whichever element a shifted index names.
         if self.element_stack:
             self.element_stack.pop()
 
