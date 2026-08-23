@@ -821,7 +821,7 @@ table twice.
 class JATSReferenceInfo:
     id: str
     label: str
-    citation: str                            # Raw citation text (fallback)
+    citation: str                            # As the publisher typeset it
     authors: list[str] = field(default_factory=list)
     article_title: str = ""
     source: str = ""                         # Journal name
@@ -838,6 +838,29 @@ class JATSReferenceInfo:
 ```
 
 `formatted_citation` joins the populated components with `". "`. More than three authors collapse to `"first, second, et al."`; three or fewer are listed in full. When no structured component is populated at all, it returns the raw `citation` string unchanged.
+
+> **`citation` is the publisher's own string, and only where they wrote one** *(unreleased, #146)*
+>
+> A `<mixed-citation>` is JATS's *mixed content* citation: the marked-up parts
+> with the depositor's own punctuation between them, deposited as they
+> typeset it. `citation` is now that whole string, in document order.
+>
+> Before this it was whatever direct character data was left after the
+> children had been read — the punctuation alone. `<person-group>`,
+> `<article-title>`, `<source>`, `<year>`, `<volume>`, `<issue>`, `<fpage>`,
+> `<lpage>` and `<pub-id>` each took a text buffer and did not merge it back,
+> which is the whole of a standard NLM deposit, so it rendered as
+> `'. . . ;():-. doi: .'`. Every structured field was correct throughout, so
+> `formatted_citation` and the `<ol class="references">` block were mostly
+> unaffected — the loss was confined to `citation` itself and to the HTML
+> fallback a reference with no structured field at all takes.
+>
+> **An `<element-citation>` deposit leaves `citation` empty, deliberately.**
+> That content model is element-only: the depositor authored no string, and
+> the whitespace between the children is insignificant, so concatenating them
+> would yield either a run-together word or the depositor's indentation as a
+> separator. Assembling a reference for display is a citation-style decision,
+> and `formatted_citation` is where this library makes it.
 
 ---
 

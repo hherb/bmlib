@@ -201,6 +201,62 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A `<mixed-citation>`'s rendered string lost every non-inline child**
+  (#146). `JATSReferenceInfo.citation` is built from the `<mixed-citation>`
+  text buffer, and a child that accumulates a buffer of its own without
+  merging it back has its text *taken and not returned*. `<person-group>`,
+  `<article-title>`, `<source>`, `<year>`, `<volume>`, `<issue>`, `<fpage>`,
+  `<lpage>` and `<pub-id>` are all in that state — which is the whole of a
+  standard NLM deposit — so the string bmlib rendered was whatever direct
+  character data was left over: the punctuation between the children.
+
+  ```
+  Smith, J, Doe, A. An observed effect. J Med. 2020;10(2):100-109. doi: 10.1/xyz.
+    -> citation == '. . . ;():-. doi: .'
+  ```
+
+  A `<mixed-citation>` is JATS's *mixed content* citation — the marked-up
+  parts with the depositor's own punctuation between them, deposited as they
+  typeset it — so every descendant's text is the citation's too, and `citation`
+  now holds that whole string in document order.
+
+  **The rule is a property of the context, not of the element.** PR #141 fixed
+  this same shape for `<collab>` and `<string-name>` by adding them to
+  `_INLINE_ELEMENTS`, which was right there because those two carry a name
+  wherever they appear. It cannot serve here: an `<article-title>` in
+  `<article-meta>` is the *article's* own title, and merging it unconditionally
+  would append it to whatever buffer happened to be open. So the merge is
+  conditioned on a `<mixed-citation>` being open above the element — an
+  *ancestor* test rather than the parent test the module usually makes
+  (`<label>`, `<caption>`, `<graphic>`), because mixed content is inherited
+  down the whole subtree: a `<surname>` sits inside `<name>` inside
+  `<person-group>`, and each merge composes into the one above.
+
+  **`<element-citation>` is deliberately excluded, and leaves `citation`
+  empty.** That content model is element-only, so the depositor authored no
+  string and the whitespace between children is insignificant; concatenating
+  them yields a run-together word or the depositor's indentation as a
+  separator. Assembling a reference for display is a citation-style decision,
+  and `formatted_citation` is where this library makes it.
+
+  **What moves for a caller is narrower than it looks.** Every structured
+  field on `JATSReferenceInfo` was already correct, and both
+  `formatted_citation` and `_format_ref_html` build from those, falling back
+  to `citation` only for a reference with no structured field at all. So the
+  cached HTML changes for that fallback case alone, while `citation` itself —
+  public, documented, and read directly by downstreams — changes for every
+  `<mixed-citation>` deposit.
+
+  Found in the review of PR #141. Walking the other paths the merge rule
+  reaches turned up two more things. A cross-reference to a figure or table is
+  *replaced* by a `[text](#rid)` link rather than merged, and nothing pinned
+  that: dropping the suppression passed the whole suite while emitting
+  `Figure 1[Figure 1](#f1)` into body prose. It has tests now. And the same
+  taken-and-not-returned shape loses a `<tex-math>` formula from the prose
+  around it and a `<disp-formula>` from the article outright — filed as #147,
+  since delimiting LaTeX in prose is a decision rather than one more member of
+  a set.
+
 - **A contributor whose name arrived undivided was dropped** (#120, #140).
   JATS names a contributor with `(name | string-name | collab | …)` and bmlib
   read only the first: `_AuthorBuilder.build()` refused anything without a
