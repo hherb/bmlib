@@ -506,6 +506,23 @@ class TestTheStatedCountsAreWhatTheCorpusHolds:
             f'the row for "{token}" as a {kind} disagrees with the corpus'
         )
 
+    def test_no_row_at_all_disagrees_with_the_corpus(self):
+        """Including a row for a token ``EXPECTED_CLAIMS`` has never heard of.
+
+        The parametrised test above names the row it fails on, which is what a
+        reader wants, but it can only check rows it was told about — so a row
+        added with an invented count would sit in the table unread, which is
+        the very shape #112 is about. A token cannot enter the table on a
+        number nobody measured any more than it can enter the tuple without
+        one.
+        """
+        wrong = {
+            key: (stated, self._score_token(*key))
+            for key, stated in self._claims().items()
+            if stated != self._score_token(*key)
+        }
+        assert not wrong, f"rows disagreeing with the corpus, stated vs measured: {wrong}"
+
     def test_the_scorer_agrees_with_the_matcher_it_mirrors(self):
         """The instrument's own control: per-token scoring must be the matcher.
 
