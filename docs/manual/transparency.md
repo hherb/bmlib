@@ -392,30 +392,40 @@ _INDUSTRY_STEMS = ("pharmaceutic", "therapeutics", "laboratories")
 
 # Whole words — `\b(?:…)\b`, so "Inc" and "Inc." both match and "Lincoln" does not.
 _INDUSTRY_WORDS = ("pharma", "biotech", "incorporated", "inc", "corp",
-                   "limited", "ltd", "gmbh", "llc")
+                   "limited", "ltd", "gmbh", "llc", "plc", "pty")
 ```
 
 A stem has to match inside a longer word (`"pharmaceutic"` reaching `"Pharmaceuticals"`); a whole word must not, because a bare `"inc"` as a substring matches `"Lincoln"`, `"Vincent"` and `"province"`. Applying word boundaries uniformly — the obvious one-line reading of [issue #36](https://github.com/hherb/bmlib/issues/36) — would lose the stems. Applying substrings uniformly is what made `"Pfizer Inc"` a false negative in the first place, since `"inc."` needed its dot as a crude word-boundary substitute.
 
-**Membership was measured, not chosen.** `industry_funding_detected` feeds a HIGH-risk rule and HIGH applies `tier_downgrade_amount`, so a false positive costs more than a false negative — which is why the change was calibrated against 833 real names sampled from both corpora by `scripts/sample_funder_names.py`, of which 417 are hand-labelled and committed as `tests/data/funder_names.json`:
+**Membership was measured, not chosen.** `industry_funding_detected` feeds a HIGH-risk rule and HIGH applies `tier_downgrade_amount`, so a false positive costs more than a false negative — which is why the change was calibrated against real names sampled from both corpora by `scripts/sample_funder_names.py`: 833 drawn, 816 unique, 417 hand-labelled and committed as `tests/data/funder_names.json`, of which 412 score (the five ambiguous are excluded).
 
 | Matcher | Precision | Recall |
 |---|---|---|
-| Substring (before) | 0.400 | 0.176 |
-| Split (now) | **0.917** | **0.324** |
+| Substring (before) | 0.357 | 0.167 |
+| Split (now) | **0.909** | **0.333** |
+
+> **Every figure on this page is now re-derived by the suite.** [Issue #112](https://github.com/hherb/bmlib/issues/112) found six of them stale — including the four in the table above, which read `0.400 / 0.176` and `0.917 / 0.324` — and not by drift: the corpus has one commit and the matcher was byte-identical, so they were taken against a revision that was never committed. They were internally coherent (`0.917 = 11/12` and `0.324 = 11/34` describe one corpus holding 34 industry names, where the committed one holds 30), which is why nothing looked wrong. `tests/test_funder_matching.py::TestTheStatedCountsAreWhatTheCorpusHolds` now parses the counts out of `analyzer.py` **and this table out of this file**, and re-derives both, so a redrawn corpus fails the suite rather than leaving a stale number here. Entries in `CHANGELOG.md` for 0.4.0 and 0.6.0 keep the old figures as the record of what was believed at the time.
 
 The corpus overturned two intuitive members:
 
-- **`"pharma"` scored 3 true positives against 5 false ones.** It reached `"Faculty of Pharmacy"`, `"Pharmacogenetics and Medicines Optimisation Network"` and `"Clinical Pharmacy"` — all academic. Narrowing it to `"pharmaceutic"` keeps every true positive and drops four of the five false ones; the bare word is retained separately for `"Novartis Pharma AG"`.
-- **`"biotech"` scored 0 true positives against 4 false ones.** Its only hits were `"Department of Biotechnology, Ministry of Science and Technology"` and `"Biotechnology and Biological Sciences Research Council"`. *Biotechnology* names a **field**, not a company type, so public bodies use it freely. Only the bare word survives, which is the company form (`"Acme Biotech"`).
+- **`"pharma"` scored 3 true positives against 5 false ones.** It reached `"Faculty of Pharmacy"`, a hospital `"Pharmacy Department"`, a provincial key laboratory ending in `"Clinical Pharmacy"`, `"Pharmacogenetics and Medicines Optimisation Network"` — and a `"Pharmaceutical Workers"` name that is not academic at all. Narrowing it to `"pharmaceutic"` keeps every true positive and drops four of the five false ones; the bare word is retained separately for `"Novartis Pharma AG"`.
+- **`"biotech"` scored 0 true positives against 4 false ones.** Its only hits were `"Department of Biotechnology, Ministry of Science and Technology"` (in three spellings) and `"Biotechnology and Biological Sciences Research Council"`. *Biotechnology* names a **field**, not a company type, so public bodies use it freely. Only the bare word survives, which is the company form (`"Acme Biotech"`).
 
-`"laboratories"` survived at 1 true positive (`"Dr. Reddy's Laboratories"`) and no false ones. The plural is load-bearing: the singular `"Key Laboratory"` is a Chinese state-lab form that appeared 8 times in the corpus. A residual risk the corpus happened not to contain is `"Sandia National Laboratories"`.
+`"pharmaceutic"` survived at 3 true positives and **1** false one — the matcher's only false positive, and the reason precision stops at 0.909 rather than 1.000. It is `"National Inheritance Studio of Veteran Pharmaceutical Workers of Zhong Lingyun"`, which the narrowing inherited from `"pharma"`.
+
+`"laboratories"` survived at 1 true positive (`"Dr. Reddy's Laboratories"`) and no false ones. The plural is load-bearing: the singular `"Key Laboratory"` is a Chinese state-lab form, appearing twice in the committed corpus and neither time commercial. A residual risk the corpus happened not to contain is `"Sandia National Laboratories"`.
 
 `"llc"`, `"incorporated"` and `"limited"` earned inclusion on 2, 1 and 1 true positives with no false ones. The spelled-out forms need their own entries — `\binc\b` demands a boundary that `"Incorporated"` denies.
 
-Rejected, each for a recorded reason: `"co"` (4 TP / 1 FP — it collides with the English prefix, as in `"project co-sponsored by province and ministry"`); `"corporation"` (1 TP / 1 FP — US non-profits use it, e.g. `"Research Corporation for Science Advancement"`); `"plc"`, `"pty"`, `"ag"`, `"bv"`, `"nv"`, `"sa"` (no true positives in the corpus, so nothing earned). `"ab"` and `"labs"` passed the count but were excluded anyway, because both collide with tokens the corpus happens not to contain — province and country codes in strings that demonstrably carry locations, and national laboratories. That call costs two true positives, `"Roche Sweden AB"` and `"Tempus Labs"`.
+**Three rules govern membership, and each is applied to every token.** Stating one rule and applying another is the other half of what #112 found: `"plc"` and `"pty"` had been excluded for scoring no true positives while `"pharma"`, `"biotech"`, `"corp"` and `"gmbh"` were kept on exactly that score.
 
-> **The recall ceiling is bare brand names.** Most industry funders this misses are names with no legal suffix and no field word — `"Pfizer"`, `"Roche"`, `"AbbVie"`, `"Teva"`, `"Bristol Myers Squibb"`. No keyword list can reach them; that needs a company-name gazetteer, which is a different feature with its own false-positive profile. `tests/test_funder_matching.py` pins those as known misses so the 0.32 figure reads as a ceiling rather than an unnoticed defect.
+1. **Corpus evidence earns a token.** A stem must score at least one true positive, and its false positives are counted rather than assumed.
+2. **A legally reserved incorporation suffix is kept whether or not the corpus holds one** — a public body cannot use the form, so the form is itself the evidence. This is why `"corp"` and `"gmbh"` are members at 0 TP / 0 FP, and it is why `"plc"` and `"pty"` are now members too *(unreleased)*. Both are absent from the corpus entirely, so admitting them moves no figure in the table above.
+3. **A token is refused where it collides with a form the corpus cannot see.** Every two-letter candidate falls here (`"ag"`, `"bv"`, `"nv"`, `"sa"`), and so do `"ab"` and `"labs"`, which pass rule 1 and are refused anyway: these strings demonstrably carry locations, so `"University of Calgary, AB"` is a false positive waiting to happen, and `"Los Alamos National Labs"` is not industry. That call costs two true positives, `"Roche Sweden AB"` and `"Tempus Labs"`.
+
+`"co"` is refused under rule 3 as well, and its entry was the clearest of #112's errors: it scores 4 TP / **0** FP here, not the 4 TP / 1 FP previously recorded, and `"project co-sponsored by province and ministry"` — cited as the collision — appears nowhere in the corpus. The collision is real in the wild (`\bco\b` reaches *co-sponsored*, *co-funded* and *Co-operative*) and simply invisible to this sample, so the token stays out on a **stated** risk rather than a measured one. It costs one true positive that no other token reaches, `"Merck & Co.; Merck Sharp & Dohme"`. `"corporation"` is refused under rule 1 (1 TP / 1 FP — US non-profits use it, e.g. `"Research Corporation for Science Advancement"`), which costs `"Invitae Corporation"`.
+
+> **The recall ceiling is bare brand names.** Most industry funders this misses are names with no legal suffix and no field word — `"Pfizer"`, `"Roche"`, `"AbbVie"`, `"Teva"`, `"Bristol Myers Squibb"`. No keyword list can reach them; that needs a company-name gazetteer, which is a different feature with its own false-positive profile. `tests/test_funder_matching.py` pins those as known misses so the 0.33 recall figure reads as a ceiling rather than an unnoticed defect.
 
 ### Signal 2 — PubMed grant agencies (confidence 0.8)
 

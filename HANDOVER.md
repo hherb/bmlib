@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-23. **0.10.0 is released and on PyPI**; ten changes
+_Last updated: 2026-08-27. **0.10.0 is released and on PyPI**; eleven changes
 sit unreleased on `main` — #73's atomic template install (PR #102), #96/#105's
 partitioning of an over-cap PubMed day (PRs #106 and #114), #109's typed
 article-id (PR #113), #110/#111's JATS sub-article and contributor-group
@@ -8,10 +8,9 @@ fixes (PR #118), #115/#116/#117/#131's exhibit nesting, ranking and
 sampler (PR #126), #127's image-only table (PR #133),
 #123/#125/#130/#135's owner-routed title and caption (PR #136),
 #134/#121/#129's end-of-parse audit (PR #139), #120/#140's undivided
-contributor name (PR #141) and #146/#149's mixed-citation text (PR #148,
-merged 2026-08-23) — plus **this session's #151, on
-`fix/151-endelement-buffer-read-invariant`**, which adds no behaviour. All
-five version places agree at 0.10.0.
+contributor name (PR #141), #146/#149's mixed-citation text (PR #148) and
+#151's mechanised buffer-read invariant (PR #153, merged 2026-08-23, adding
+no behaviour). All five version places agree at 0.10.0.
 Nine of the eleven are `fulltext` JATS fixes filed within
 days of each other; whoever cuts the next release should describe them
 together. Every unreleased ROADMAP row carries an `*(unreleased)*`
@@ -81,7 +80,7 @@ closed as COMPLETED without being fixed — so **diff `gh issue list` against
 the merged commit's own "filed" list**. And a mutation harness restoring with
 `git checkout -- <file>` deletes whatever is uncommitted in it.
 
-**This session settled #151** — the prospective half of
+**PR #153 settled #151** — the prospective half of
 `_inside_mixed_citation`, mechanised. That helper argues its strict-ancestor
 slice is currently harmless with a whole-method claim: no arm of `endElement`
 reads `text` for an element outside `_TEXT_ACCUMULATING`. True when written,
@@ -227,10 +226,9 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
   questions are independent — the version number answers the API question,
   never the data one, and a downstream reading only the number must still read
   this list.
-- **Tests: 2718 passing + 63 skipped on `main`**, **2730 + 63** on
-  `fix/151-endelement-buffer-read-invariant` — 12 in
-  `TestOnlyAnAccumulatingElementReadsTheBuffer` in `test_jats_parser.py`
-  (`uv run pytest tests/ -q`, measured 2026-08-23). The
+- **Tests: 2738 passing + 63 skipped on `main`** (`uv run pytest tests/ -q`,
+  measured 2026-08-27, PR #153 merged) — 20 of them
+  `TestOnlyAnAccumulatingElementReadsTheBuffer` in `test_jats_parser.py`. The
   PostgreSQL half
   has not been re-run since the SQL last moved; the
   last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the
@@ -282,10 +280,10 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 
 ### Open GitHub issues
 
-**Nineteen open** as this file is written (verified with `gh issue list`,
-after filing #152 from this session's own measurement): #86, #92, #94, #103,
+**Eighteen open** as this file is written (verified with `gh issue list`
+2026-08-27, after PR #153 landed #151): #86, #92, #94, #103,
 #112, #119, #124, #128, #132, #137, #138, #142, #143, #144, #145, #147, #150,
-#151, #152; eighteen once this PR lands #151. Every one
+#152. Every one
 was found by review or measurement rather than by a failing test, and **none
 of them loses records** — though **#124** loses an exhibit's footnotes,
 **#147** loses a formula from the prose that contains it, **#150** renders a
@@ -310,12 +308,12 @@ closed with PR #133, which filed **#132**, **#134** and **#135**; **#123**,
 filed **#137** and **#138**. **#121**, **#129** and **#134** closed with PR
 #139, whose review filed **#140**. **#120** and **#140** closed with PR #141,
 whose review filed **#142**–**#146**. **#146** and **#149** closed with PR
-#148, which filed **#147**, **#149**, **#150** and **#151**. **#151** closes
-with this session's PR, which filed **#152**.)
+#148, which filed **#147**, **#149**, **#150** and **#151**. **#151** closed
+with PR #153, which filed **#152**.)
 
 **#151's own filing is the counter-example to the count above.** PR #148 filed
 #149 and fixed it in the same PR, so it never appeared as open work; #152 is
-this session's equivalent. Neither is lost, but neither is visible in a
+PR #153's equivalent. Neither is lost, but neither is visible in a
 "filed minus closed" arithmetic either — read the per-PR list, not the total.
 
 **#128 is weaker than filed**: all 2,397 `<graphic>` hrefs in the two redrawn
@@ -390,12 +388,12 @@ content is a `<note>` renders as an empty `<li>`, 4 instances in one
 publisher. Its sibling #149 was fixed inside that PR (a `<ref>` may carry
 several citation elements; measurement picked the rule — 216 such references
 in 21 of 880 local articles, 0 using `<citation-alternatives>`), and #151
-closes with this session's.
+closed with PR #153.
 
 **#152 — neither half of `<article-id>`'s reachability guard is pinned, and
 they are not equivalent.** `parent == "article-meta" or self.in_front` decides
 whether the identifier is read at all, and each half can be deleted on its own
-with all 2730 tests green. They are not the same rule: for valid markup
+with the whole suite green (measured at 2730 tests on the #151 branch). They are not the same rule: for valid markup
 `<article-meta>` is inside `<front>`, so the parent test can only fire on
 markup JATS does not admit, while `in_front` is the wider of the two and
 admits an `<article-id>` deposited anywhere in `<front>` — in `<notes>`, say —

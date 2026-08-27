@@ -18,6 +18,26 @@ must not be re-done.
   the corpus *removed* intuitive members (`pharma`, `biotech`) on measured
   false positives. Metric test:
   `tests/test_funder_matching.py::TestAgainstTheLabelledCorpus`.
+- **Membership follows three rules, not one, and the counts beside them are
+  under test** (#112). Corpus evidence earns a token; a legally reserved
+  incorporation suffix is kept whether or not the corpus holds one, because
+  no public body may use the form; and a token colliding with something the
+  corpus cannot see is refused even when it passes the count (`ab`, `labs`,
+  `co`). Do not "simplify" this back to *0 TP means excluded* — that reading
+  is what left `plc`/`pty` out while `corp` and `gmbh` stayed in on the same
+  score. Every count in those comments, and the headline table in
+  `docs/manual/transparency.md`, is re-derived by
+  `tests/test_funder_matching.py::TestTheStatedCountsAreWhatTheCorpusHolds`,
+  which parses the rows out of the source files themselves — so a row is an
+  input under test, not a copy of one, and reformatting one without reading
+  that class breaks the net rather than the comment.
+- **`co` stays out on a stated risk, not a measured one** (#112). It scores
+  4 TP / 0 FP against the committed corpus and the collision once recorded
+  against it (`"project co-sponsored by province…"`) is not in that corpus at
+  all. It is refused because `\bco\b` reaches *co-sponsored*, *co-funded*
+  and *Co-operative* in the wild, at the price of one true positive no other
+  token reaches, `"Merck & Co.; Merck Sharp & Dohme"`. Re-deciding it needs a
+  corpus that contains the collision, not a re-reading of this one.
 - **`_is_industry_funder()` is deliberately not applied to COI prose**;
   `_INDUSTRY_COI_KEYWORDS` stays separate — org suffixes match far too
   freely in running text.

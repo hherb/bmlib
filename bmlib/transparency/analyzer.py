@@ -54,20 +54,65 @@ logger = logging.getLogger(__name__)
 # how issue #36 frames the fix — would lose the stems; applying substrings
 # uniformly is what made "Pfizer Inc" a false negative in the first place.
 #
-# Membership of both lists was decided by measuring against 833 real names
-# sampled from CrossRef and PubMed — see `scripts/sample_funder_names.py`,
-# the labelled corpus in `tests/data/funder_names.json`, and the metric test
-# in `tests/test_funder_matching.py`. The counts below are from that corpus.
+# MEMBERSHIP FOLLOWS THREE RULES, AND EACH IS APPLIED TO EVERY TOKEN (#112).
+# Stating one rule and applying another is what the counts below were hiding:
+# "plc" and "pty" were excluded for scoring 0 TP while "pharma", "biotech",
+# "corp" and "gmbh" were kept at exactly the same score.
+#   1. Corpus evidence earns a token. A stem must score at least one true
+#      positive, and its false positives are counted, never assumed.
+#   2. A legally reserved incorporation suffix is kept whether or not this
+#      corpus holds one — a public body cannot use the form, so the form is
+#      itself the evidence. That is why "corp" and "gmbh" are in at 0 TP, and
+#      it is why "plc" and "pty" now are too.
+#   3. A token is refused where it collides with a form this corpus cannot
+#      see — every two-letter token, plus "ab" and "labs", which pass rule 1
+#      and are refused anyway.
+# Ties go to precision throughout, because `industry_funding_detected` feeds a
+# HIGH-risk rule and HIGH downgrades a paper's quality tier.
+#
+# EVERY COUNT BELOW IS MEASURED, AND THE MEASUREMENT IS A TEST.
+# The corpus is `tests/data/funder_names.json`, sampled live from CrossRef and
+# PubMed by `scripts/sample_funder_names.py`: 833 names drawn, 816 unique, 417
+# labelled, 412 scoring (the five ambiguous are excluded).
+# `tests/test_funder_matching.py::TestTheStatedCountsAreWhatTheCorpusHolds`
+# parses the rows below out of *this file* and re-derives every one against
+# that corpus, so a redraw fails the suite rather than leaving a stale number
+# here. Six of these figures were stale before it existed, and not by drift —
+# the corpus has one commit and the matcher was byte-identical, so they were
+# taken against a revision never committed. Do not reformat a row without
+# reading that class: the row is the input under test, not a copy of it.
 
-# Substring stems. Every one scored at least one true positive and no false
-# positives; each is also *narrower* than what it replaced:
-#   "pharmaceutic"  3 TP / 0 FP  — replaces "pharma", which scored 3 TP / 5 FP
-#                                  by reaching "Pharmacy", "Pharmacology" and
-#                                  "Pharmacogenetics", all academic.
-#   "therapeutics"  1 TP / 0 FP
-#   "laboratories"  1 TP / 0 FP  — the plural only. "Key Laboratory" (singular)
-#                                  is a Chinese state-lab form and appeared 8
-#                                  times; it must keep missing them.
+# Substring stems.
+#   "pharmaceutic"  stem  3 TP / 1 FP  — its one false positive is the whole
+#                                        matcher's only one, and it is not
+#                                        academic: "National Inheritance
+#                                        Studio of Veteran Pharmaceutical
+#                                        Workers of Zhong Lingyun". That name
+#                                        is what caps precision below 1.000,
+#                                        so a blanket "the stems have no false
+#                                        positives" is wrong.
+#   "therapeutics"  stem  1 TP / 0 FP
+#   "laboratories"  stem  1 TP / 0 FP  — the plural only. The singular "Key
+#                                        Laboratory" is a Chinese state-lab
+#                                        form, twice here and never
+#                                        commercial; it must keep missing it.
+#   "pharma"        stem  3 TP / 5 FP  — disqualified, and replaced by
+#                                        "pharmaceutic". Its five are
+#                                        "Pharmacy" three times (a university
+#                                        faculty, a hospital department and a
+#                                        provincial key laboratory),
+#                                        "Pharmacogenetics", and the
+#                                        Pharmaceutical-Workers name that
+#                                        "pharmaceutic" inherits. Narrowing
+#                                        kept all three true positives and
+#                                        dropped four of the five.
+#   "biotech"       stem  0 TP / 4 FP  — disqualified. Its only hits are
+#                                        "Department of Biotechnology" (an
+#                                        Indian ministry, in three spellings)
+#                                        and "Biotechnology and Biological
+#                                        Sciences Research Council" (a UK
+#                                        research council). "Biotechnology"
+#                                        names a field, not a company type.
 _INDUSTRY_STEMS = (
     "pharmaceutic",
     "therapeutics",
@@ -77,31 +122,57 @@ _INDUSTRY_STEMS = (
 # Whole words. No trailing "\.?" is needed: `\b` already sits between the last
 # letter and a following ".", so "Inc" and "Inc." both match.
 #
-# The first two are the safe residue of stems the corpus disqualified — see
-# `_INDUSTRY_STEMS` for "pharma", and for "biotech": as a substring it scored
-# 0 TP / 4 FP, reaching only "Department of Biotechnology" (an Indian
-# ministry) and "Biotechnology and Biological Sciences Research Council" (a UK
-# research council). "Biotechnology" names a field, not a company type. As a
-# bare word it is a company name ("Acme Biotech"), so that form is kept.
+# The first two are the safe residue of the two stems the corpus disqualified:
+# as a bare word each names a company ("Novartis Pharma AG", "Acme Biotech"),
+# and neither can match more than the stem it replaced. The rest are the
+# reserved incorporation suffixes of rule 2.
+#   "pharma"        word  0 TP / 0 FP  — residue of the disqualified stem
+#   "biotech"       word  0 TP / 0 FP  — residue of the disqualified stem
+#   "incorporated"  word  1 TP / 0 FP  — "inc" does not reach it: `\binc\b`
+#                                        needs a boundary and "Incorporated"
+#                                        continues with "o"
+#   "inc"           word  2 TP / 0 FP
+#   "corp"          word  0 TP / 0 FP  — rule 2
+#   "limited"       word  1 TP / 0 FP
+#   "ltd"           word  2 TP / 0 FP
+#   "gmbh"          word  0 TP / 0 FP  — rule 2
+#   "llc"           word  2 TP / 0 FP
+#   "plc"           word  0 TP / 0 FP  — rule 2, and added when that rule was
+#                                        written down (#112). It is the form
+#                                        UK-listed pharma reports under; the
+#                                        Swift port already kept it, for this
+#                                        reason and against this corpus.
+#   "pty"           word  0 TP / 0 FP  — rule 2, likewise
 #
-# The rest are legally reserved incorporation suffixes — a public body cannot
-# use one. Deliberately absent, each for a measured or stated reason:
-#   "co"           4 TP / 1 FP — collides with the English prefix in
-#                                "project co-sponsored by province…"
-#   "corporation"  1 TP / 1 FP — US non-profits use it ("Research Corporation
-#                                for Science Advancement")
-#   "plc" "pty"    0 TP        — no corpus evidence, so nothing earned
-#   "ag" "bv" "nv" "sa"  0 TP  — same, and two-letter tokens besides
-#   "ab"           1 TP / 0 FP — passes the count but excluded: it collides
-#                                with province and country codes, and these
-#                                strings carry locations ("…, Hyderabad,
-#                                India"), so "University of Calgary, AB" would
-#                                be a false positive the corpus cannot see.
-#                                Costs one true positive, "Roche Sweden AB".
-#   "labs"         1 TP / 0 FP — same call: "Los Alamos National Labs" is not
-#                                industry. Costs "Tempus Labs".
-# Ties go to precision here, because `industry_funding_detected` feeds a
-# HIGH-risk rule and HIGH downgrades a paper's quality tier.
+# Deliberately absent, each under the rule that refuses it:
+#   "co"            word  4 TP / 0 FP  — rule 3. This corpus holds no
+#                                        collision at all, so the earlier note
+#                                        of one measured false positive was
+#                                        wrong (#112). The risk is real and
+#                                        simply invisible here: `\bco\b`
+#                                        reaches "co-sponsored", "co-funded"
+#                                        and "Co-operative". Refusing it costs
+#                                        one true positive no other token
+#                                        reaches, "Merck & Co.; Merck Sharp &
+#                                        Dohme" — the other three carry "Ltd",
+#                                        "Limited" or "Pharmaceutical" too.
+#   "corporation"   word  1 TP / 1 FP  — rule 1: US non-profits use it
+#                                        ("Research Corporation for Science
+#                                        Advancement"). Costs "Invitae
+#                                        Corporation".
+#   "ag"            word  0 TP / 0 FP  — rule 3, two letters
+#   "bv"            word  0 TP / 0 FP  — rule 3, two letters
+#   "nv"            word  0 TP / 0 FP  — rule 3, two letters
+#   "sa"            word  0 TP / 0 FP  — rule 3, two letters
+#   "ab"            word  1 TP / 0 FP  — rule 3, though it passes rule 1.
+#                                        These strings carry locations ("…,
+#                                        Hyderabad, India"), so "University of
+#                                        Calgary, AB" would be a false
+#                                        positive this corpus cannot see.
+#                                        Costs "Roche Sweden AB".
+#   "labs"          word  1 TP / 0 FP  — rule 3, the same call: "Los Alamos
+#                                        National Labs" is not industry.
+#                                        Costs "Tempus Labs".
 _INDUSTRY_WORDS = (
     "pharma",
     "biotech",
@@ -112,6 +183,8 @@ _INDUSTRY_WORDS = (
     "ltd",
     "gmbh",
     "llc",
+    "plc",
+    "pty",
 )
 
 _INDUSTRY_WORD_RE = re.compile(

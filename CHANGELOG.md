@@ -1262,6 +1262,68 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **`"plc"` and `"pty"` join `_INDUSTRY_WORDS`, and the funder-matching
+  comments now state the rule they are actually applying** (#112). The
+  comments in `bmlib/transparency/analyzer.py` gave a measurement as the
+  reason for each token's inclusion and exclusion — the measurements a future
+  edit gets checked against — and nothing checked *them*. Six were wrong, and
+  not by drift: `tests/data/funder_names.json` has one commit and
+  `_is_industry_funder` was byte-identical between that commit and now, so
+  they were taken against a corpus revision that was never committed. They
+  were internally coherent, which is why they survived: `0.917 = 11/12` and
+  `0.324 = 11/34` describe one corpus holding 34 industry names, where the
+  committed one holds 30, and the same revision explains the two constants
+  recording what the pre-#36 matcher scored. The committed corpus reads
+  **precision 0.909, recall 0.333** for this matcher and **0.357 / 0.167**
+  for the one it replaced.
+
+  Four further figures were wrong beyond the headline. `"pharmaceutic"` is
+  **3 TP / 1 FP**, not 3 TP / 0 FP — it holds the whole matcher's only false
+  positive, which is what caps precision below 1.000, so the blanket claim
+  that no stem has one was wrong at the one place it mattered. `"co"` is
+  **4 TP / 0 FP**, not 4 TP / 1 FP, and the collision recorded against it
+  (`"project co-sponsored by province…"`) is in no corpus entry; it stays
+  excluded, but on a **stated** risk rather than a measured one, and the
+  comment now records the true positive that costs — `"Merck & Co.; Merck
+  Sharp & Dohme"`, which no other token reaches. The `"pharma"` stem's five
+  false positives were enumerated as "Pharmacy, Pharmacology and
+  Pharmacogenetics, all academic": nothing in the corpus contains
+  *Pharmacolog-* at all, and one of the five is the non-academic name
+  `"pharmaceutic"` inherits. And the singular `"Key Laboratory"` appears
+  **twice** in the committed corpus, not the eight times recorded.
+
+  The one behaviour change follows from the other half of the issue. `"plc"`
+  and `"pty"` were excluded for scoring no true positives while `"pharma"`,
+  `"biotech"`, `"corp"` and `"gmbh"` were kept on exactly that score — so the
+  stated rule was not the rule applied, and the next person to add a token
+  could not tell which governed. Three rules are now written down and applied
+  uniformly: corpus evidence earns a token; a legally reserved incorporation
+  suffix is kept whether or not the corpus holds one, because no public body
+  may use the form (which is why `"corp"` and `"gmbh"` are members at 0 TP);
+  and a token is refused where it collides with a form the corpus cannot see
+  (every two-letter candidate, plus `"ab"` and `"labs"`, which pass the count
+  and are refused anyway). Rule 2 admits `"plc"` — the form UK-listed pharma
+  reports under — and `"pty"`. **Neither appears in the corpus at all**, so
+  no measured figure moves; what moves is that a funder named `"GSK plc"` is
+  now flagged where it was not. `industry_funding_detected` feeds a HIGH-risk
+  rule and HIGH downgrades a paper's quality tier, so stored transparency
+  values are not comparable across this change for any paper with such a
+  funder.
+
+  **The correction is mechanised, because a comment cannot compute.**
+  `tests/test_funder_matching.py::TestTheStatedCountsAreWhatTheCorpusHolds`
+  parses the count rows out of `analyzer.py` itself, and the headline table
+  out of `docs/manual/transparency.md`, and re-derives all of them against
+  the corpus — so a redraw fails the suite instead of leaving a stale number
+  behind, and a token cannot enter either tuple without bringing its counts.
+  It fails closed: an unreadable source, a table reformatted out of
+  recognition, or a token claimed twice all raise, because "I found nothing"
+  must not be an answer it can return. The two float constants recording the
+  pre-#36 matcher's score are gone; that list is kept instead and scored
+  live, so both sides of "it must beat what it replaced" move together.
+  Entries in `CHANGELOG.md` for 0.4.0 and 0.6.0 keep the old figures as the
+  record of what was believed then.
+
 - **`register_source()` refuses `resumable=True` over a fetcher that cannot
   accept the resume keywords** (#105, review of PR #114). `sync()` reads the
   descriptor, so the mismatch used to raise `TypeError` inside the per-day
