@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-27. **0.10.0 is released and on PyPI**; eleven changes
+_Last updated: 2026-08-27. **0.10.0 is released and on PyPI**; twelve changes
 sit unreleased on `main` — #73's atomic template install (PR #102), #96/#105's
 partitioning of an over-cap PubMed day (PRs #106 and #114), #109's typed
 article-id (PR #113), #110/#111's JATS sub-article and contributor-group
@@ -8,10 +8,12 @@ fixes (PR #118), #115/#116/#117/#131's exhibit nesting, ranking and
 sampler (PR #126), #127's image-only table (PR #133),
 #123/#125/#130/#135's owner-routed title and caption (PR #136),
 #134/#121/#129's end-of-parse audit (PR #139), #120/#140's undivided
-contributor name (PR #141), #146/#149's mixed-citation text (PR #148) and
+contributor name (PR #141), #146/#149's mixed-citation text (PR #148),
 #151's mechanised buffer-read invariant (PR #153, merged 2026-08-23, adding
-no behaviour). All five version places agree at 0.10.0.
-Nine of the eleven are `fulltext` JATS fixes filed within
+no behaviour) — plus **this session's #112, on
+`fix/112-funder-figures-reproduce`**, the first of the twelve outside
+`fulltext`'s JATS family. All five version places agree at 0.10.0.
+Nine of the twelve are `fulltext` JATS fixes filed within
 days of each other; whoever cuts the next release should describe them
 together. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker.
@@ -30,6 +32,15 @@ measured by diffing a corpus rather than reasoned: over 880 local PMC articles
 / 20,770 references, `citation` moves for 4,499 (21.7%) in 191 articles —
 3,541 rebuilt, 958 emptied of an `<element-citation>` leak — `authors` for 502
 in 14, rendered HTML for 576 in 23.
+
+**#112 owes a data answer of its own, and it is the only one outside
+`fulltext`.** `plc` and `pty` join `_INDUSTRY_WORDS`, so a funder named
+`"GSK plc"` now sets `industry_funding_detected`, which feeds a HIGH-risk rule
+and HIGH downgrades a paper's quality tier — stored transparency values are
+not comparable across the upgrade for any paper with such a funder. Neither
+token appears in the labelled corpus, so **no measured figure moves**, which
+is exactly why the omission could sit unnoticed: it is a rule-2 inclusion, and
+rule 2 is not a measured claim.
 
 **They reach a bmlib path through the cached HTML** — a claim this file had
 backwards twice. `_build_html` renders authors, figures and tables into one
@@ -80,88 +91,81 @@ closed as COMPLETED without being fixed — so **diff `gh issue list` against
 the merged commit's own "filed" list**. And a mutation harness restoring with
 `git checkout -- <file>` deletes whatever is uncommitted in it.
 
-**PR #153 settled #151** — the prospective half of
-`_inside_mixed_citation`, mechanised. That helper argues its strict-ancestor
-slice is currently harmless with a whole-method claim: no arm of `endElement`
-reads `text` for an element outside `_TEXT_ACCUMULATING`. True when written,
-tied to nothing, and #142 is exactly the change that breaks it. No behaviour
-moves; `TestOnlyAnAccumulatingElementReadsTheBuffer` walks the arms with `ast`
-and reports every read of the buffer with the element names reaching it. Eight
-things worth carrying forward, two of them found only in review of the first
-cut.
+**This session settled #112** — the funder-matching figures, corrected and
+then made answerable to the corpus. The comments in
+`bmlib/transparency/analyzer.py` gave a measurement as the reason for each
+token's inclusion and exclusion — the measurements the *next* edit gets
+checked against — and nothing checked them. **Six were wrong**, and the issue
+had found three: `pharmaceutic` recorded at 0 false positives while holding
+the matcher's only one, `co` excluded for a collision no corpus entry
+contains, and the headline pair. Re-deriving turned up three more, two of them
+in the test file and one in the manual — the two constants recording what the
+pre-#36 matcher scored, a `pharma` false positive enumerated as a word
+(*Pharmacolog-*) the corpus does not contain at all, and a singular
+`Key Laboratory` count of eight that measures two. Seven things worth carrying
+forward.
 
-- **Key a net on the thing, not on the names the thing currently has.** The
-  first cut watched three locals — `text`, `normalized_text`, `element_text` —
-  and the claim it stands for is that the base buffer is never *consulted*.
-  `self.current_text` returns that same buffer, and the preamble binds
-  `element_text` from it, so the two are the same value; #142's own arm
-  written as `self.collab_address = self.current_text.strip()` passed the
-  whole suite green while making the slice load-bearing. Whether the guard
-  fired turned on which of two synonymous spellings the author typed. The walk
-  now watches five spellings including `self._pop_text_buffer()`.
-- **An exemption must be defined by what a statement does, not by what it
-  binds.** Reads that merely re-shape the buffer are passed over. Recognising
-  those by their assignment target alone exempted *any* statement assigning to
-  a buffer name, so `text = self._collab_child(name, text)` beside the
-  preamble — a per-element hook, the natural way to add handling without
-  disturbing a forty-branch `elif` — read the buffer for every element in
-  silence. It was the one shape inside the method producing no finding at all.
-  The rule now also requires that the statement hand the buffer to no method
-  on the handler, and that it stand under no guard.
-- **Every outcome of a net must fail closed, including "I could not tell".**
-  A guard the walker cannot read is a finding in its own right, never a read
-  passed over — a walk that reports only what it understands is the vacuous
-  green the issue predicted. The same rule gives the raise: *no reads* must
-  not be an answer the walker can return for a class or method it cannot
-  find, or one restructure turns four tests green at once.
-- **Ask for containment, not overlap.** The likeliest breakage is an existing
-  arm gaining an element, not a new arm appearing — `name in ("collab", ...)`
-  acquiring `"institution"` is #142 almost exactly. An overlap test passes
-  that silently, and it was the one mutation in the class that *lost* a
-  violation rather than inventing one.
-- **A positive control sized as a canary decays.** The inventory of arms the
-  walk must keep seeing was six element names while the walk saw nineteen, so
-  thirty-eight of the fifty-three reads it is built from could leave without a
-  word —
-  and extracting *one* arm into a helper, the likelier refactor, left all six
-  in place. It now carries the whole nineteen, as a floor rather than an
-  equality so that #142 adding a legitimate arm needs no edit to let it
-  through. Reads that only bind the buffer are excluded from it, or the
-  preamble's own `_TEXT_ACCUMULATING`-guarded read satisfies containment by
-  itself however many arms have gone; `<abstract>` is the witness pinning that.
-- **A control must not be judged against production data it does not own.**
-  Seven synthetic controls assert that `<institution>` does not accumulate —
-  which is precisely what #142 is entitled to change, so the day it does they
-  fail for the opposite of their own reason. Found by running the *permitted*
-  change end to end, not by reading them. They now carry their own
-  accumulating set; only the real handler is judged against the real one.
-- **Verify a net in both directions on the real file.** The violating arm
-  added verbatim to `jats_parser.py` is reported by line and element, in each
-  of four spellings, and so are an existing arm widened, an arm extracted into
-  a helper, a preamble hook, a guarded rebinding and an unreadable guard in an
-  `or`'s right branch — nine mutations, nine caught; the arm *plus* its
-  `_TEXT_ACCUMULATING` membership leaves all twenty green. Twenty tests and 12
-  mutants of the walker say the machinery works; only those ten say it decides
-  the right thing. Two of the 12 survived the first round, which is where the
-  last two controls came from.
-- **"Move the pop up" had to name how far.** The issue's own claim — that
-  `test_the_citation_string_is_what_the_publisher_typeset` pins the
-  strict-ancestor slice — is true only for a pop moved *above* the buffer pop
-  at the top of `endElement`, since that is where `_inside_mixed_citation` is
-  evaluated. A pop moved anywhere below it reddens 58 tests and leaves the
-  citation tests green. Measured, not reasoned; the first mutation I ran was
-  in the wrong place and quietly proved nothing. **And the guard is seven
-  tests across two classes, not four in one** — three of
-  `TestAMixedCitationKeepsTheTextItPrints`' six and four in
-  `TestARefCarryingSeveralCitationsKeepsThemAll`, the majority, which the
-  first draft of the comment omitted while naming a test as though it sat
-  outside the class it belongs to. Read the difference set; do not enumerate
-  from test names.
-- **A guard that decides nothing is worth finding.** The same measurement
-  showed `<article-id>`'s reachability guard reddening *nought* tests, and
-  both halves of `parent == "article-meta" or self.in_front` turn out to be
-  individually deletable with the whole suite green — while not being
-  equivalent to each other. Filed as **#152**.
+- **When several figures are wrong together, look for the one cause.** All
+  four headline numbers are self-consistent with a corpus holding 34 industry
+  names against the committed 30 — identical false-positive counts, one extra
+  true positive each. One uncommitted revision, not four slips, and eight of
+  the eleven per-token counts reproduced exactly: the methodology was sound
+  and the corpus moved under it. Knowing that is what let the correction say
+  *why*.
+- **Correct a figure everywhere it is read, not where the issue points.**
+  #112 names `analyzer.py`; every stale figure had been copied into
+  `docs/manual/transparency.md`, which is the copy a downstream consults, and
+  two more into the test file. So the net parses the manual's table too.
+- **A test can take the comment as its input rather than a copy of it.**
+  `TestTheCitedPopulationsAreWhatTheCorporaHold` hard-codes the cited figure,
+  so the comment can still drift from it — which is #112's own shape. Here
+  the rows are parsed out of the source files, so a row is an input under
+  test. The cost is a format contract, written at both ends. And **derive
+  both sides of a comparison**, or the older half goes stale alone: the two
+  constants recording the pre-#36 matcher are replaced by that matcher's own
+  keyword list, scored live.
+- **Mutating the net found the hole reading it did not.** The parametrised
+  check iterates a named inventory — which is what names the failing row, and
+  therefore reads only rows it was told about, so a row added on an invented
+  count sat unread: #112 inside the instrument built to prevent it. Eleven
+  mutations, ten caught; the eleventh is tolerated on purpose, the net keying
+  on a row's shape rather than its column positions.
+- **A stated rule that is not the applied rule is a defect with no behaviour
+  wrong.** `plc`/`pty` were excluded for scoring 0 TP while four kept tokens
+  shared that score. Writing the three real rules down is what admits them —
+  and since rule 2 is not a measured claim, admitting them moves no figure,
+  which is exactly why the asymmetry survived. **A corrected figure can also
+  be uncheckable**: "Key Laboratory appeared 8 times" is unanswerable rather
+  than wrong, the 816-name draw having never been committed (#154), so do not
+  read the committed two as refuting it.
+
+**PR #153 settled #151** (merged 2026-08-23, no behaviour) — the prospective
+half of `_inside_mixed_citation`, mechanised.
+`TestOnlyAnAccumulatingElementReadsTheBuffer` walks `endElement`'s arms with
+`ast` and fails on one reading the popped buffer for an element outside
+`_TEXT_ACCUMULATING`. Full argument at the call site and in `CLAUDE.md`; five
+things it left as rules. **Key a net on the thing, not on the names the thing
+currently has** — three watched locals became five spellings once
+`self.current_text` turned out to be the same value, so which synonym the
+implementer typed had been deciding whether the guard fired. **Define an
+exemption by what a statement does, not by what it binds** — exempting on the
+assignment target alone let a per-element helper read the buffer in silence.
+**Ask for containment, not overlap**, since the likeliest breakage is an
+existing arm gaining an element. **A positive control sized as a canary
+decays** — six names against nineteen arms left thirty-eight of fifty-three
+reads free to go unremarked; it carries the whole inventory now, as a floor.
+And **a control must not be judged against production data it does not own**:
+seven controls asserting `<institution>` does not accumulate would fail the
+day #142 legitimately changes that, found by running the permitted change end
+to end rather than by reading them.
+
+That session also measured two things worth keeping. "Move the pop up" had to
+name how far: only a pop moved *above* the buffer pop at the top of
+`endElement` reaches the slice, and the guard is **seven** tests across two
+classes — read the difference set, do not enumerate from test names. And the
+same measurement found `<article-id>`'s reachability guard deciding *nought*
+tests, both halves individually deletable while not being equivalent, filed as
+**#152**.
 
 **A closing keyword in prose closed an issue nobody decided — three times.**
 A commit body saying *"filed rather than ‹keyword›: ‹number›"* is read
@@ -180,25 +184,24 @@ names neither. And after every merge that mentions an issue in prose, diff
 
 **Next up: #124, #128, #137, #138, #142–#145, #147, #150 and #152 in
 `fulltext`, #119 from the #118 review, #132, the older non-JATS ones (#86,
-#92, #94, #103, #112), or Phase 3 of the bmlibrarian port, whose every row
+#92, #94, #103, #154), or Phase 3 of the bmlibrarian port, whose every row
 needs a design conversation.** **#124, #144, #147 and #150 all lose
 content the document carries**, and all four are blocked on the same kind of
 decision — what to attach a footnote marker to, which contributor spelling to
 extract, how to delimit LaTeX in prose, whether a note-only `<ref>` is a
-reference at all — so none is a drive-by. (An earlier revision of this line
-named only #124 and #147, which was wrong twice: #144 is a contributor the
-document names and bmlib does not collect, and #150 is a reference rendered as
-an empty bullet. #149 was a fifth and is fixed in this PR — its decision came
-from measuring the population, which is the move the other four are still
-waiting on.) #142, #143, #147 and #150 all
+reference at all — so none is a drive-by. #142, #143, #147 and #150 all
 want a population measured before a rule is picked, so they pair with the
 redraw below; #144 and #145 are extraction, each behind a design question the
-issue states. #152 is the one that needs no draw to *start* — both halves of one guard
-are unpinned and the suite cannot tell them apart — though picking between
-them wants a population, so it pairs with the redraw. #132 and #138 both want
-a corpus redraw and should be paired — with the further reasons that PR #141's
-sampler counters are in no committed draw, and #142, #143, #147 and
-#150 each want a population from them.
+issue states. #152 is the one that needs no draw to *start* — both halves of
+one guard are unpinned and the suite cannot tell them apart — though picking
+between them wants a population, so it pairs with the redraw. #132 and #138
+both want a corpus redraw and should be paired — with the further reasons that
+PR #141's sampler counters are in no committed draw, and #142, #143, #147 and
+#150 each want a population from them. **#154 is a redraw too**, of a
+different corpus and with a decision attached, and it is owed by whichever
+session next extends a funder list — `docs/DECISIONS.md` requires the sampler
+be run before either is touched, and there is nothing committed to diff the
+run against.
 
 This file briefs the next session on what is done, what is still open, and the
 conventions to keep. Update it whenever a session materially changes the plan;
@@ -226,10 +229,11 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
   questions are independent — the version number answers the API question,
   never the data one, and a downstream reading only the number must still read
   this list.
-- **Tests: 2738 passing + 63 skipped on `main`** (`uv run pytest tests/ -q`,
-  measured 2026-08-27, PR #153 merged) — 20 of them
-  `TestOnlyAnAccumulatingElementReadsTheBuffer` in `test_jats_parser.py`. The
-  PostgreSQL half
+- **Tests: 2738 passing + 63 skipped on `main`**, **2772 + 63** on
+  `fix/112-funder-figures-reproduce` (`uv run pytest tests/ -q`, measured
+  2026-08-27) — 34 in `test_funder_matching.py`, of which 31 are
+  `TestTheStatedCountsAreWhatTheCorpusHolds` (24 of those one parametrised
+  row each). The PostgreSQL half
   has not been re-run since the SQL last moved; the
   last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the
   #105 branch. Of the 63 default skips, 61 are the PostgreSQL
@@ -253,9 +257,9 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression, not expected staleness. The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; **53 are outstanding for the next release** — 23 `ROADMAP.md`
-  rows and 30 spots across `docs/manual/publications.md` (13), `fulltext.md`
-  (14) and `templates.md` (3). Recounted this session with
+  release time; **55 are outstanding for the next release** — 24 `ROADMAP.md`
+  rows and 31 spots across `docs/manual/publications.md` (13), `fulltext.md`
+  (14), `templates.md` (3) and `transparency.md` (1). Recounted 2026-08-27 with
   `grep -ic unreleased`, which is one more in `fulltext.md` than the previous
   count carried — a reminder that this figure is measured, not maintained. Grep case-insensitively for `unreleased` rather
   than for `(unreleased)`: three of 0.10.0's thirteen were spelled
@@ -280,10 +284,10 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 
 ### Open GitHub issues
 
-**Eighteen open** as this file is written (verified with `gh issue list`
-2026-08-27, after PR #153 landed #151): #86, #92, #94, #103,
-#112, #119, #124, #128, #132, #137, #138, #142, #143, #144, #145, #147, #150,
-#152. Every one
+**Nineteen open** as this file is written (verified with `gh issue list`
+2026-08-27, after PR #153 landed #151 and after this session filed #154):
+#86, #92, #94, #103, #112, #119, #124, #128, #132, #137, #138, #142, #143,
+#144, #145, #147, #150, #152, #154; eighteen once this PR lands #112. Every one
 was found by review or measurement rather than by a failing test, and **none
 of them loses records** — though **#124** loses an exhibit's footnotes,
 **#147** loses a formula from the prose that contains it, **#150** renders a
@@ -294,22 +298,17 @@ against the repo before trusting it: the line has been wrong in three
 consecutive sessions, and one further way is an issue **closed as COMPLETED
 without being fixed**, which no count of open issues catches — that has now
 happened three times by the mechanism described below, and the third victim
-was an issue the same commit *filed*. (**#56, #68,
-#72 and #79** shipped in
-0.9.1. **#78, #81, #88–#91, #95, #98 and #99** shipped in 0.10.0 — PRs #85,
-#87, #93, #97, #100. **#73** is on `main` unreleased in PR #102, whose own
-review filed **#103**. **#96** closed with PR #106, as correct rather than as
-fixed. **#105 and #107** closed with PR #114. **#109** closed with PR #113.
-**#110 and #111** closed with PR #118, whose review filed **#119**, **#120**
-and **#121**. **#115, #116, #117 and #131** closed with PR #126, which filed
-**#123**, **#124**, **#127**, **#128**, **#129** and **#130**. **#127**
-closed with PR #133, which filed **#132**, **#134** and **#135**; **#123**,
-**#125**, **#130** and **#135** closed with PR #136, whose review
-filed **#137** and **#138**. **#121**, **#129** and **#134** closed with PR
-#139, whose review filed **#140**. **#120** and **#140** closed with PR #141,
-whose review filed **#142**–**#146**. **#146** and **#149** closed with PR
-#148, which filed **#147**, **#149**, **#150** and **#151**. **#151** closed
-with PR #153, which filed **#152**.)
+was an issue the same commit *filed*. (The chain of what is unreleased, since every open issue but five came out of
+it — released provenance is in `CHANGELOG.md`. **#73** → PR #102, filing
+**#103**. **#96** → PR #106, closed as correct rather than fixed. **#105**,
+**#107** → PR #114. **#109** → PR #113. **#110**, **#111** → PR #118, filing
+**#119**–**#121**. **#115**–**#117**, **#131** → PR #126, filing **#123**,
+**#124**, **#127**–**#130**. **#127** → PR #133, filing **#132**, **#134**,
+**#135**. **#123**, **#125**, **#130**, **#135** → PR #136, filing **#137**,
+**#138**. **#121**, **#129**, **#134** → PR #139, filing **#140**. **#120**,
+**#140** → PR #141, filing **#142**–**#146**. **#146**, **#149** → PR #148,
+filing **#147**, **#149**–**#151**. **#151** → PR #153, filing **#152**.
+**#112** → this session's PR, filing **#154**.)
 
 **#151's own filing is the counter-example to the count above.** PR #148 filed
 #149 and fixed it in the same PR, so it never appeared as open work; #152 is
@@ -409,18 +408,22 @@ It regexes `resp.text` directly and never imports `bmlib.fulltext`, so #110's
 suppression does not touch it. Measured on two articles in the PR #118 review:
 6 and 5 reviewer `competing interest` hits against the article's own.
 
-**#112 — stated measurements that do not reproduce against the committed
-corpus**, the same failure as #132 but one layer deeper.
-`bmlib/transparency/analyzer.py` gives a measurement as the reason for each
-funder stem it includes and excludes, and three disagree with
-`tests/data/funder_names.json` (headline pair 0.917 / 0.324 claimed against
-0.909 / 0.333 measured; `pharmaceutic` claimed clean and holding the matcher's
-*only* false positive; `co` excluded for a collision the corpus lacks). Not
-drift — one corpus commit, byte-identical matcher, and the figures are
-self-consistent with a 34-entry industry set where this one holds 30, so they
-were taken against a revision never committed. No behaviour regression.
-Re-derive every figure in one pass, and name the corpus revision in each
-comment.
+**#154 — the funder sampler's raw draw was never committed**, filed from
+#112's own re-derivation and the same shape as #132 one module across.
+`scripts/sample_funder_names.py` writes `tests/data/funder_names.raw.json`;
+that file is in no commit and not in the tree, so the repo holds the 417
+labelled names the metrics are computed over and not the 816 they were drawn
+from. Two things are unanswerable in consequence: a count over the
+*unlabelled* remainder cannot be checked — `Key Laboratory` was justified at
+"8 times" and the committed corpus holds two, entirely consistent with eight
+over 816 and unconfirmable either way — and a redraw has nothing to diff
+against, so re-running the sampler (which `docs/DECISIONS.md` requires before
+either list is extended) starts the labelling over. The old draw is not
+recoverable, so the fix is a decision as well as a run: re-label the
+intersection, or commit a fresh draw as the baseline for the *next*
+comparison and say so in the file. `labelling_scope`'s `random.Random(36)`
+60-name sample is inert until one exists. Pair it with whichever session next
+touches the funder lists, since the sampler has to run in any case.
 
 **#103 — `install_defaults()` reserves no `NAME_MAX` headroom for the
 temporary name.** `atomic_write()` stages through a name 38 characters longer
