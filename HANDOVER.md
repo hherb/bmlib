@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-27. **0.10.0 is released and on PyPI**; twelve changes
+_Last updated: 2026-08-29. **0.10.0 is released and on PyPI**; twelve changes
 sit unreleased on `main` — #73's atomic template install (PR #102), #96/#105's
 partitioning of an over-cap PubMed day (PRs #106 and #114), #109's typed
 article-id (PR #113), #110/#111's JATS sub-article and contributor-group
@@ -41,6 +41,24 @@ not comparable across the upgrade for any paper with such a funder. Neither
 token appears in the labelled corpus, so **no measured figure moves**, which
 is exactly why the omission could sit unnoticed: it is a rule-2 inclusion, and
 rule 2 is not a measured claim.
+
+**PR #155's review reshaped the rule block rather than the behaviour**, and
+left two issues behind. Membership is now **four rules with rule 4 as a veto**:
+`ab`, `ag`, `bv`, `nv` and `sa` are as legally reserved as rule 2's members, so
+without a stated precedence the rules contradicted each other on five tokens —
+#112's own shape inside its own fix. Rule 2's premise was false and is now a
+**prior, not proof**: public bodies do use these forms (`Forschungszentrum
+Jülich GmbH`, `Genome Research Limited` are flagged today), and the corpus's
+one GmbH is ambiguous-labelled as academic, so that row's 0 TP / 0 FP means
+*not scored*, never *not present* — **#156**. `plc` is the one member rule 4
+reaches and does not refuse, PLC being *phospholipase C* — **#157**. The net
+gained the three checks the first cut lacked: a row's `in`/`out` and cited
+rule are checked against the tuples (counts alone stayed green while a row was
+moved into the refused block with its token still in use), the corpus's own
+size is asserted (every count is a numerator; cutting it to the names some
+token reaches reproduced all of them), and per-token scoring borrows
+`_compile_word_re` instead of a second hand-written copy in which a dropped
+`\b` moved four counts undetected.
 
 **They reach a bmlib path through the cached HTML** — a claim this file had
 backwards twice. `_build_html` renders authors, figures and tables into one
@@ -83,7 +101,7 @@ A net needs its own false-positive net, and it must be free — the autouse
 *structure*, never on the routing it is checking. **A rule enforced by prose
 is not enforced** (`TestTheAuditNetIsComplete`, and now
 `TestOnlyAnAccumulatingElementReadsTheBuffer`), and it demands a *choice*
-rather than a field. Write the case the rule *decides*. Tell a vacuous green
+rather than a field. Write the case the rule *decides* — and where the defect was a rule stated and not applied, **checking the arithmetic is not checking the rule**: PR #155's first net re-derived every count and stayed green while a row was moved into the refused block with its token still in use. Check the denominator too; every count is a numerator over a corpus that can be cut away underneath it. Tell a vacuous green
 from one asserting silence — ask which line of the fixture the assertion
 depends on. **Mutate the *old* half of a condition you extend**: dropping a
 guard the new condition composes with passed all 2,699 tests. An issue can be
@@ -424,6 +442,18 @@ intersection, or commit a fresh draw as the baseline for the *next*
 comparison and say so in the file. `labelling_scope`'s `random.Random(36)`
 60-name sample is inert until one exists. Pair it with whichever session next
 touches the funder lists, since the sampler has to run in any case.
+
+**#156 and #157 — the two open questions PR #155's review left in the funder
+matcher**, both argued in the #112 paragraph above. #156: rule 2's premise was
+false, so the rule is now a prior; measuring what it costs needs a draw
+stratified for European funders and so depends on #154. If the rate is
+material, `gmbh` re-decides on rule 1 alone, where it scores nothing —
+`ltd`/`limited` carry rule 1 independently either way. #157: `plc` collides
+with *phospholipase C* and wants a targeted `\bplc\b` draw, the general one
+having found none in 816. Both are stated risks pinned by
+`TestTheKnownFalsePositivesAreKnown`, on the #92 precedent: keep the choice,
+file the measurement, do not quote the reasoning as measured.
+
 
 **#103 — `install_defaults()` reserves no `NAME_MAX` headroom for the
 temporary name.** `atomic_write()` stages through a name 38 characters longer
