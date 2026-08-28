@@ -24,17 +24,20 @@ matcher against real CrossRef and PubMed names sampled by
 
 Issue #112 added the second half of that. The matcher's comments state a
 measurement as the reason for each token, and those measurements are what the
-next edit gets checked against — but nothing checked *them*, and six were
-wrong. ``TestTheStatedCountsAreWhatTheCorpusHolds`` parses the rows out of
-``analyzer.py`` and re-derives every one, so the justification is now as
-answerable to the corpus as the behaviour is.
+next edit gets checked against — but nothing checked *them*, and eight claims
+were wrong. ``TestTheStatedCountsAreWhatTheCorpusHolds`` parses the rows out
+of ``analyzer.py`` and re-derives every one — its counts, its ``in``/``out``
+and the rule it cites — so the justification is now as answerable to the
+corpus as the behaviour is.
 """
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -174,7 +177,9 @@ class TestCorpusDrivenNarrowings:
         # "laboratories" is deliberately the plural only. The singular "Key
         # Laboratory" is a Chinese state-lab form, appearing twice in the
         # committed corpus and neither time commercial. The "8 times" this
-        # comment used to claim is not re-derivable from the repo (#112).
+        # comment used to claim is not re-derivable from the repo (#112, and
+        # #154 for why). The figure is no longer stated here: it is a row in
+        # `analyzer.py` ("key laboratory" stem, 0 TP / 2 FP) and so re-derived.
         assert not _is_industry_funder("Guangdong Provincial Key Laboratory of Oral Diseases")
 
     def test_plural_laboratories_is_industry(self):
@@ -215,14 +220,13 @@ class TestReservedSuffixesAreKeptWithoutCorpusEvidence:
     Issue #112: ``plc`` and ``pty`` were excluded for scoring 0 TP while
     ``corp`` and ``gmbh`` were kept on exactly that score, so the stated rule
     ("0 TP, nothing earned") was not the rule being applied. The rule actually
-    applied is that a legally reserved incorporation suffix is evidence in
-    itself — no public body may use the form — and once written down it admits
-    these two as well.
+    applied is that a reserved incorporation suffix is evidence in itself, and
+    once written down it admits these two as well.
     """
 
     def test_plc_is_industry(self):
         # The form UK-listed pharma reports under, and the one the Swift port
-        # already kept for this reason.
+        # already kept for this reason. That deviation covers "plc" alone.
         assert _is_industry_funder("GSK plc")
 
     def test_pty_is_industry(self):
@@ -234,9 +238,71 @@ class TestReservedSuffixesAreKeptWithoutCorpusEvidence:
         Not a restatement of the two rows in the comment — this is the reason
         a measured rule could not have decided them either way, so the tokens
         had to be decided by the rule and not by the corpus.
+
+        Scored over **all 417** entries rather than the 412 that carry a
+        label the metrics use. ``_score_token`` excludes the ambiguous five,
+        and "absent from the corpus" has to mean absent from the file: the
+        one place that distinction bites is the very next class down, where
+        an ambiguous entry is what the ``gmbh`` row's 0 TP / 0 FP conceals.
         """
+        corpus = json.loads(CORPUS_PATH.read_text())
         for token in ("plc", "pty"):
-            assert TestTheStatedCountsAreWhatTheCorpusHolds._score_token(token, "word") == (0, 0)
+            found = [e["name"] for e in corpus["entries"] if token in e["name"].lower()]
+            assert not found, f'"{token}" is in the corpus after all: {found}'
+
+
+class TestTheKnownFalsePositivesAreKnown:
+    """What rules 2 and 4 knowingly cost, asserted rather than left in prose.
+
+    Each test below pins a name the matcher gets **wrong**, in the same spirit
+    as the known-misses list in :class:`TestAgainstTheLabelledCorpus`: a cost
+    that is written down is a decision, and one that is only described is a
+    claim. All three were raised in the review of PR #155, and none of them is
+    reachable from the committed corpus — which is exactly why they need a
+    test rather than a row.
+    """
+
+    def test_a_public_body_incorporated_as_a_gmbh_is_flagged(self):
+        """Rule 2's premise is a prior, not a proof — this is the counterexample.
+
+        German and Austrian public research institutes routinely incorporate
+        as GmbH. Both of these are publicly funded Helmholtz centres, and both
+        are in CrossRef's funder registry. Issue #156 is the redraw that would
+        measure how much this costs.
+        """
+        assert _is_industry_funder("Forschungszentrum Jülich GmbH")
+        assert _is_industry_funder("Helmholtz Zentrum München GmbH")
+
+    def test_a_charity_limited_by_guarantee_is_flagged(self):
+        """The same shape in the UK: "Limited" is not proof of a commercial body."""
+        # The Wellcome Sanger Institute's own legal entity.
+        assert _is_industry_funder("Genome Research Limited")
+
+    def test_the_corpus_holds_a_gmbh_it_declined_to_call_commercial(self):
+        """Why the ``gmbh`` row reads 0 TP / 0 FP: unscored, not absent.
+
+        The corpus's only GmbH is labelled *ambiguous* — "incorporated as a
+        GmbH, but an academic business school rather than a commercial
+        research sponsor" — and the ambiguous five are excluded from every
+        count. So the row cannot be read as "the corpus is silent about this
+        form": the corpus spoke, and rule 2 disagrees with it.
+        """
+        corpus = json.loads(CORPUS_PATH.read_text())
+        gmbh = [e for e in corpus["entries"] if "gmbh" in e["name"].lower()]
+        assert [e["label"] for e in gmbh] == ["ambiguous"]
+        assert _is_industry_funder(gmbh[0]["name"])
+
+    def test_plc_reaches_phospholipase_c(self):
+        """Rule 4 asked of ``plc``, and the answer recorded rather than assumed.
+
+        PLC is the usual abbreviation of *phospholipase C*, so the token that
+        rule 2 admits also collides with a research topic — the condition rule
+        4 refuses ``labs`` on. It is kept because rule 4's other members
+        collide with forms that appear in *organisation* names, while this one
+        does not; but 41 of the corpus's 417 names run to ten words or more,
+        so topic strings do reach this field. Issue #157 measures it.
+        """
+        assert _is_industry_funder("Role of PLC-gamma signalling in tumour invasion")
 
 
 class TestNonIndustryNamesAreNotFlagged:
@@ -355,37 +421,73 @@ class TestAgainstTheLabelledCorpus:
         assert not _is_industry_funder(name)
 
 
+class _Claim(NamedTuple):
+    """One parsed row of the matcher's membership table."""
+
+    tp: int
+    fp: int
+    status: str
+    rule: int
+
+
 class TestTheStatedCountsAreWhatTheCorpusHolds:
-    """Every count the matcher's comments cite has to re-derive from the corpus.
+    """Every claim the matcher's comments cite has to re-derive from the corpus.
 
     Issue #112. The comments in ``bmlib/transparency/analyzer.py`` state a
     measurement as the reason for each token's inclusion and exclusion, and
     those measurements are what the next edit will be checked against — but
-    nothing checked them. Six were wrong, and not by drift: the corpus has one
-    commit and the matcher was byte-identical, so they were taken against a
-    revision that was never committed. They were internally coherent, which is
-    why they survived — ``0.917 = 11/12`` and ``0.324 = 11/34`` describe one
-    corpus holding 34 industry names where the committed one holds 30.
+    nothing checked them. Eight claims were wrong, and not by drift: the
+    corpus has one commit and the matcher was byte-identical, so they were
+    taken against a revision that was never committed. They were internally
+    coherent, which is why they survived — ``0.917 = 11/12`` and
+    ``0.324 = 11/34`` describe one corpus holding 34 industry names where the
+    committed one holds 30.
 
-    So the counts are written in a canonical row and this class re-derives
-    every one of them. A comment cannot compute; the next best thing is a test
-    that fails when the corpus moves under it, and that names the row to fix.
+    So the claims are written in a canonical row and this class re-derives
+    every one. A comment cannot compute; the next best thing is a test that
+    fails when the corpus moves under it, and that names the row to fix.
+
+    Three things the review of PR #155 added, each because the first cut
+    checked something narrower than it claimed:
+
+    * **A row states its own membership** (``in``/``out``) **and the rule that
+      decided it**, and both are checked against the tuples. Arithmetic alone
+      was never the defect — #112 is a rule stated and not applied, and the
+      first cut stayed green while a row was moved into the refused block with
+      its token still in ``_INDUSTRY_WORDS``.
+    * **The corpus's own size is asserted.** Every count here is a numerator;
+      deleting the 372 negatives no documented token reaches left all of them
+      unchanged and the suite green — which is the 34-versus-30 defect exactly.
+    * **Per-token scoring is the matcher's own construction**, via
+      ``analyzer._compile_word_re``. Held as a hand-written second copy, a
+      dropped ``\\b`` moved four counts while the whole-name agreement control
+      below stayed green, because no corpus name disagreed.
 
     The precedent is ``test_jats_exhibit_sampler.py``'s
     ``TestTheCitedPopulationsAreWhatTheCorporaHold``, one step further on: it
     hard-codes the cited figure in the test, so the *comment* can still drift
-    from it. Here the comment itself is the input.
+    from it. Here the rows are the input. Two figures are still hard-coded —
+    the two ``_scored`` readings — because a reading has to be pinned
+    somewhere; the claim is made of the rows, not of the whole class.
     """
 
-    SOURCE = Path(analyzer.__file__)
-    MANUAL = Path(__file__).resolve().parents[1] / "docs" / "manual" / "transparency.md"
+    ROOT = Path(__file__).resolve().parents[1]
+    SOURCE = ROOT / "bmlib" / "transparency" / "analyzer.py"
+    MANUAL = ROOT / "docs" / "manual" / "transparency.md"
 
-    #: ``#   "token"   kind   N TP / M FP   — reason``. The reason wraps onto
-    #: continuation lines, which simply do not match.
+    #: ``#   "token"  kind  in|out  N TP / M FP  rule R``, with any reason on
+    #: indented continuation lines that deliberately match nothing.
     CLAIM_RE = re.compile(
-        r'^#\s+"(?P<token>[a-z]+)"\s+(?P<kind>stem|word)\s+'
-        r"(?P<tp>\d+) TP / (?P<fp>\d+) FP\b"
+        r'^#\s+"(?P<token>[a-z ]+)"\s+(?P<kind>stem|word)\s+(?P<status>in|out)\s+'
+        r"(?P<tp>\d+) TP / (?P<fp>\d+) FP\s+rule (?P<rule>\d)\b"
     )
+
+    #: The rows are scanned only between these markers. Unscoped, deleting the
+    #: whole table and leaving one stray matching line anywhere in the file
+    #: read as a healthy parse of one row — the "table has moved" guard below
+    #: described something the code did not do.
+    BLOCK_START = "# Substring stems."
+    BLOCK_END = "def _compile_word_re("
 
     # Every token the block is expected to account for, as a floor rather than
     # an equality: a later row may be added without editing this list, but a
@@ -400,6 +502,7 @@ class TestTheStatedCountsAreWhatTheCorpusHolds:
             ("laboratories", "stem"),
             ("pharma", "stem"),
             ("biotech", "stem"),
+            ("key laboratory", "stem"),
             ("pharma", "word"),
             ("biotech", "word"),
             ("incorporated", "word"),
@@ -423,25 +526,42 @@ class TestTheStatedCountsAreWhatTheCorpusHolds:
     )
 
     @classmethod
-    def _claims(cls) -> dict[tuple[str, str], tuple[int, int]]:
-        """Return ``{(token, kind): (tp, fp)}`` as the module's comments state it.
+    def _claims(cls) -> dict[tuple[str, str], _Claim]:
+        """Return ``{(token, kind): _Claim}`` as the module's comments state it.
 
-        Fails closed in every direction. An unreadable source, a table that
-        has moved or been reformatted out of recognition, and a token claimed
-        twice for one kind all raise rather than returning a smaller dict —
-        "I found nothing" must never be an answer this can give, or one
-        reformat turns the whole class green at once.
+        Fails closed in every direction. An unreadable source, a block whose
+        delimiters have moved, a table reformatted out of recognition, and a
+        token claimed twice for one kind all raise rather than returning a
+        smaller dict — "I found nothing" must never be an answer this can
+        give, or one reformat turns the whole class green at once.
         """
         text = cls.SOURCE.read_text(encoding="utf-8")
-        claims: dict[tuple[str, str], tuple[int, int]] = {}
-        for line in text.splitlines():
+        lines = text.splitlines()
+        try:
+            start = next(i for i, line in enumerate(lines) if line == cls.BLOCK_START)
+            end = next(i for i, line in enumerate(lines) if line.startswith(cls.BLOCK_END))
+        except StopIteration:  # pragma: no cover - guarded by the assertion below
+            start = end = -1
+        if not 0 <= start < end:
+            raise AssertionError(
+                f"the membership block in {cls.SOURCE.name} is not delimited by "
+                f"{cls.BLOCK_START!r} … {cls.BLOCK_END!r} any more, so nothing below "
+                "is checking anything"
+            )
+        claims: dict[tuple[str, str], _Claim] = {}
+        for line in lines[start:end]:
             match = cls.CLAIM_RE.match(line)
             if match is None:
                 continue
             key = (match["token"], match["kind"])
             if key in claims:
                 raise AssertionError(f"{key} is claimed twice; one of the two is unchecked")
-            claims[key] = (int(match["tp"]), int(match["fp"]))
+            claims[key] = _Claim(
+                tp=int(match["tp"]),
+                fp=int(match["fp"]),
+                status=match["status"],
+                rule=int(match["rule"]),
+            )
         if not claims:
             raise AssertionError(
                 f"no count rows found in {cls.SOURCE.name} — the table has moved or "
@@ -450,25 +570,25 @@ class TestTheStatedCountsAreWhatTheCorpusHolds:
         return claims
 
     @staticmethod
-    def _entries() -> list[dict[str, str]]:
+    @functools.cache
+    def _entries() -> tuple[dict[str, str], ...]:
         """The non-ambiguous corpus entries, the population every count is over."""
         corpus = json.loads(CORPUS_PATH.read_text())
-        return [entry for entry in corpus["entries"] if entry["label"] != "ambiguous"]
+        return tuple(entry for entry in corpus["entries"] if entry["label"] != "ambiguous")
 
     @staticmethod
     def _matches(token: str, kind: str, name: str) -> bool:
         """Report whether one token hits one name, the way its kind is matched.
 
-        Mirrors the module's own two rules — a stem is a lowercased substring,
-        a word is ``\\b…\\b`` case-insensitively — deliberately rather than
-        by importing ``_INDUSTRY_WORD_RE``, which is one union over the whole
-        tuple and so cannot answer for a single token.
-        ``test_the_scorer_agrees_with_the_matcher_it_mirrors`` is what stops
-        this second copy drifting from the first.
+        The word branch borrows ``analyzer._compile_word_re`` rather than
+        rebuilding ``\\b…\\b`` here, because ``_INDUSTRY_WORD_RE`` is one union
+        over the whole tuple and so cannot answer for a single token. Written
+        out a second time, dropping the leading ``\\b`` moved ``co``, ``sa``,
+        ``ab`` and ``ag`` while every test below stayed green.
         """
         if kind == "stem":
             return token in name.lower()
-        return re.search(r"\b(?:" + token + r")\b", name, re.IGNORECASE) is not None
+        return analyzer._compile_word_re((token,)).search(name) is not None
 
     @classmethod
     def _score_token(cls, token: str, kind: str) -> tuple[int, int]:
@@ -481,6 +601,24 @@ class TestTheStatedCountsAreWhatTheCorpusHolds:
                 else:
                     fp += 1
         return tp, fp
+
+    def test_the_corpus_is_the_one_the_comments_describe(self):
+        """The denominator, which every row above is silently a numerator of.
+
+        Without this the corpus can be cut to the names some documented token
+        reaches — 417 entries to 45, the 382 negatives to 10 — and every count
+        in the table still reproduces. That is the #112 defect itself: figures
+        self-consistent with a corpus that is not the committed one.
+        """
+        corpus = json.loads(CORPUS_PATH.read_text())
+        labels = [entry["label"] for entry in corpus["entries"]]
+        assert corpus["sampled"] == {"crossref": 431, "pubmed": 402, "unique_total": 816}
+        assert corpus["sampled"]["crossref"] + corpus["sampled"]["pubmed"] == 833
+        assert len(corpus["entries"]) == 417
+        assert labels.count("industry") == 30
+        assert labels.count("not_industry") == 382
+        assert labels.count("ambiguous") == 5
+        assert len(labels) - labels.count("ambiguous") == 412
 
     def test_the_table_accounts_for_every_token_in_use(self):
         """A token cannot enter either tuple without bringing its counts.
@@ -498,11 +636,48 @@ class TestTheStatedCountsAreWhatTheCorpusHolds:
         """The positive control: a row may be added, but none may quietly go."""
         assert self.EXPECTED_CLAIMS <= set(self._claims())
 
-    @pytest.mark.parametrize("key", sorted(EXPECTED_CLAIMS))
+    def test_every_row_agrees_with_the_tuples_about_membership(self):
+        """The half arithmetic cannot check, and the half #112 was actually about.
+
+        A row saying ``out`` for a token the matcher uses, or ``in`` for one it
+        does not, is a comment asserting the opposite of the code — which is
+        what "stating one rule and applying another" means. Counts alone never
+        see it: the tokens involved score 0 TP / 0 FP either way.
+        """
+        in_use = {(stem, "stem") for stem in analyzer._INDUSTRY_STEMS}
+        in_use |= {(word, "word") for word in analyzer._INDUSTRY_WORDS}
+        wrong = {
+            key: claim.status
+            for key, claim in self._claims().items()
+            if (claim.status == "in") != (key in in_use)
+        }
+        assert not wrong, f"rows whose in/out disagrees with the tuples: {wrong}"
+
+    def test_the_rule_a_row_cites_could_have_decided_it(self):
+        """Rule 4 only ever refuses; rules 2 and 3 only ever admit.
+
+        Rule 1 does both — it earns ``pharmaceutic`` and refuses
+        ``corporation`` — so it constrains nothing here and is deliberately
+        not checked. The counts are what hold rule 1 honest.
+        """
+        wrong = {
+            key: claim
+            for key, claim in self._claims().items()
+            if claim.rule not in {1, 2, 3, 4}
+            or (claim.rule == 4 and claim.status != "out")
+            or (claim.rule in {2, 3} and claim.status != "in")
+        }
+        assert not wrong, f"rows citing a rule that cannot have decided them: {wrong}"
+
+    @pytest.mark.parametrize("key", sorted(EXPECTED_CLAIMS), ids=lambda key: f"{key[0]}-{key[1]}")
     def test_a_stated_count_reproduces(self, key):
         token, kind = key
-        claims = self._claims()
-        assert claims[key] == self._score_token(token, kind), (
+        claim = self._claims().get(key)
+        assert claim is not None, (
+            f'no row for "{token}" as a {kind} — it was deleted or reformatted out of '
+            "the shape CLAIM_RE reads"
+        )
+        assert (claim.tp, claim.fp) == self._score_token(token, kind), (
             f'the row for "{token}" as a {kind} disagrees with the corpus'
         )
 
@@ -516,19 +691,21 @@ class TestTheStatedCountsAreWhatTheCorpusHolds:
         number nobody measured any more than it can enter the tuple without
         one.
         """
-        wrong = {
-            key: (stated, self._score_token(*key))
-            for key, stated in self._claims().items()
-            if stated != self._score_token(*key)
-        }
+        wrong = {}
+        for key, claim in self._claims().items():
+            measured = self._score_token(*key)
+            if (claim.tp, claim.fp) != measured:
+                wrong[key] = ((claim.tp, claim.fp), measured)
         assert not wrong, f"rows disagreeing with the corpus, stated vs measured: {wrong}"
 
     def test_the_scorer_agrees_with_the_matcher_it_mirrors(self):
         """The instrument's own control: per-token scoring must be the matcher.
 
-        Without this the class could reproduce every row of a table that
-        describes some other predicate — the mirror is hand-written, so it is
-        exactly the kind of second copy that drifts.
+        Whole-name agreement over the corpus. Necessary but not sufficient on
+        its own — it can only speak for tokens some corpus name reaches, which
+        is 14 of the 25 rows — so
+        ``test_the_mirror_scores_one_token_as_the_matcher_would`` covers the
+        rest one token at a time.
         """
         in_use = [(stem, "stem") for stem in analyzer._INDUSTRY_STEMS]
         in_use += [(word, "word") for word in analyzer._INDUSTRY_WORDS]
@@ -536,6 +713,32 @@ class TestTheStatedCountsAreWhatTheCorpusHolds:
             name = entry["name"]
             by_parts = any(self._matches(token, kind, name) for token, kind in in_use)
             assert by_parts == _is_industry_funder(name), name
+
+    @pytest.mark.parametrize("key", sorted(EXPECTED_CLAIMS), ids=lambda key: f"{key[0]}-{key[1]}")
+    def test_the_mirror_scores_one_token_as_the_matcher_would(self, key, monkeypatch):
+        """Per-token control, including the ten tokens no corpus name reaches.
+
+        ``_score_token`` returns ``(0, 0)`` both for a token the corpus does
+        not contain and for a scorer that has stopped working, and ten rows
+        claim ``0 TP / 0 FP`` — so 40% of the table was self-confirming. Here
+        the matcher is narrowed to the one token under test and asked the same
+        questions, with synthetic probes so a token absent from the corpus is
+        still exercised. ``x{token}x`` is the one that matters: it separates a
+        stem from a word, which is what a dropped ``\\b`` silently erased.
+        """
+        token, kind = key
+        if kind == "stem":
+            monkeypatch.setattr(analyzer, "_INDUSTRY_STEMS", (token,))
+            monkeypatch.setattr(analyzer, "_INDUSTRY_WORD_RE", re.compile(r"(?!)"))
+        else:
+            monkeypatch.setattr(analyzer, "_INDUSTRY_STEMS", ())
+            monkeypatch.setattr(analyzer, "_INDUSTRY_WORD_RE", analyzer._compile_word_re((token,)))
+        probes = [entry["name"] for entry in self._entries()]
+        probes += [token, token.upper(), token.title(), f"x{token}x", f"Acme {token} Group", ""]
+        for name in probes:
+            assert self._matches(token, kind, name) == analyzer._is_industry_funder(name), (
+                f'"{token}" as a {kind} scores {name!r} differently from the matcher'
+            )
 
     def test_the_headline_figures_reproduce(self):
         """The four numbers that were wrong, derived rather than restated.
@@ -555,7 +758,7 @@ class TestTheStatedCountsAreWhatTheCorpusHolds:
         """
         assert TestAgainstTheLabelledCorpus._scored_with_the_pre_36_matcher() == (5, 9, 25)
 
-    #: ``| Substring (before) | 0.400 | 0.176 |``, bold markers optional.
+    #: ``| Substring (before) | 0.357 | 0.167 |``, bold markers optional.
     MANUAL_ROW_RE = re.compile(
         r"^\|\s*(?P<matcher>Substring \(before\)|Split \(now\))\s*\|"
         r"\s*\**(?P<precision>[01]\.\d+)\**\s*\|\s*\**(?P<recall>[01]\.\d+)\**\s*\|"
@@ -572,8 +775,16 @@ class TestTheStatedCountsAreWhatTheCorpusHolds:
         rows: dict[str, tuple[float, float]] = {}
         for line in self.MANUAL.read_text(encoding="utf-8").splitlines():
             match = self.MANUAL_ROW_RE.match(line)
-            if match is not None:
-                rows[match["matcher"]] = (float(match["precision"]), float(match["recall"]))
+            if match is None:
+                continue
+            # Last-wins would let a stale copy of the table sit above the live
+            # one unread, which is `_claims`' doubled-row hazard one file over.
+            if match["matcher"] in rows:
+                raise AssertionError(
+                    f"{match['matcher']!r} appears twice in the manual's headline "
+                    "table; one of the two is unchecked"
+                )
+            rows[match["matcher"]] = (float(match["precision"]), float(match["recall"]))
         assert set(rows) == {"Substring (before)", "Split (now)"}, (
             f"the manual's headline table has moved or been renamed: found {sorted(rows)}"
         )
