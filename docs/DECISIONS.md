@@ -18,6 +18,47 @@ must not be re-done.
   the corpus *removed* intuitive members (`pharma`, `biotech`) on measured
   false positives. Metric test:
   `tests/test_funder_matching.py::TestAgainstTheLabelledCorpus`.
+- **Membership follows four rules, rule 4 overrides the other three, and the
+  rows beside them are under test** (#112). Corpus evidence earns a token; a
+  reserved incorporation suffix is a **prior, not proof**, so it is kept where
+  the corpus is silent; the residue of a disqualified stem is kept as a bare
+  word where it cannot match more than the stem it replaced (`pharma`,
+  `biotech`, which satisfy neither of the first two); and a token colliding
+  with something the corpus cannot see is refused even when it passes the
+  count, vetoing the other three (`ab`, `labs`, `co`). Do not "simplify" this
+  back to *0 TP means excluded* — that reading is what left `plc`/`pty` out
+  while `corp` and `gmbh` stayed in on the same score. Do not restate rule 2
+  as "a public body cannot use the form" either: that premise is false, it was
+  corrected in the review of PR #155, and the counterexamples are pinned by
+  `tests/test_funder_matching.py::TestTheKnownFalsePositivesAreKnown`
+  (`Forschungszentrum Jülich GmbH`, `Genome Research Limited`, and the
+  corpus's own ambiguous-labelled `Goethe Business School GmbH`). #156 is the
+  redraw that would measure it. Every row in those comments — its counts, its
+  `in`/`out` and the rule it cites — and the headline table in
+  `docs/manual/transparency.md` are re-derived by
+  `tests/test_funder_matching.py::TestTheStatedCountsAreWhatTheCorpusHolds`,
+  which parses them out of the source files themselves, so a row is an input
+  under test and not a copy of one. **Arithmetic was never the defect**: the
+  first cut of that class checked counts alone and stayed green while a row
+  was moved into the refused block with its token still in `_INDUSTRY_WORDS`.
+  It also asserts the corpus's own size, because every count is a numerator
+  and a corpus cut to the names some token reaches reproduces all of them.
+- **`plc` is kept although rule 4 reaches it** (#112, review of PR #155). PLC
+  is the usual abbreviation of *phospholipase C*, so `"Role of PLC-gamma
+  signalling in tumour invasion"` is flagged. It stays because rule 4's other
+  members collide with forms appearing in *organisation* names while this one
+  collides with a research topic — but 41 of the corpus's 417 names run to ten
+  words or more, so topic strings do reach this field. Unmeasured, pinned by
+  `TestTheKnownFalsePositivesAreKnown`, and #157 is what would settle it. Do
+  not quote the distinction as measured, and do not silently drop the token:
+  refusing it is a behaviour change of the same class as admitting it was.
+- **`co` stays out on a stated risk, not a measured one** (#112). It scores
+  4 TP / 0 FP against the committed corpus and the collision once recorded
+  against it (`"project co-sponsored by province…"`) is not in that corpus at
+  all. It is refused because `\bco\b` reaches *co-sponsored*, *co-funded*
+  and *Co-operative* in the wild, at the price of one true positive no other
+  token reaches, `"Merck & Co.; Merck Sharp & Dohme"`. Re-deciding it needs a
+  corpus that contains the collision, not a re-reading of this one.
 - **`_is_industry_funder()` is deliberately not applied to COI prose**;
   `_INDUSTRY_COI_KEYWORDS` stays separate — org suffixes match far too
   freely in running text.

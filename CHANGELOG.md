@@ -1262,6 +1262,103 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **`"plc"` and `"pty"` join `_INDUSTRY_WORDS`, and the funder-matching
+  comments now state the rule they are actually applying** (#112). The
+  comments in `bmlib/transparency/analyzer.py` gave a measurement as the
+  reason for each token's inclusion and exclusion — the measurements a future
+  edit gets checked against — and nothing checked *them*. Eight claims were
+  wrong, and not by drift: `tests/data/funder_names.json` has one commit and
+  `_is_industry_funder` was byte-identical between that commit and now, so
+  they were taken against a corpus revision that was never committed. They
+  were internally coherent, which is why they survived: `0.917 = 11/12` and
+  `0.324 = 11/34` describe one corpus holding 34 industry names, where the
+  committed one holds 30, and the same revision explains the two constants
+  recording what the pre-#36 matcher scored. The committed corpus reads
+  **precision 0.909, recall 0.333** for this matcher and **0.357 / 0.167**
+  for the one it replaced.
+
+  Four further figures and one named example were wrong beyond those four
+  headline readings. `"pharmaceutic"` is **3 TP / 1 FP**, not 3 TP / 0 FP —
+  it holds the whole matcher's only false positive, which is what caps
+  precision below 1.000, so the blanket claim that no stem has one was wrong
+  at the one place it mattered. `"co"` is **4 TP / 0 FP**, not 4 TP / 1 FP,
+  and the collision recorded against it (`"project co-sponsored by
+  province…"`) is in no corpus entry; it stays excluded, but on a **stated**
+  risk rather than a measured one, and the comment now records the true
+  positive that costs — `"Merck & Co.; Merck Sharp & Dohme"`, which no other
+  token reaches. The singular `"Key Laboratory"` appears **twice**, not the
+  eight times recorded. And the `"pharma"` stem's five false positives were
+  enumerated as "Pharmacy, Pharmacology and Pharmacogenetics, all academic":
+  nothing in the corpus contains *Pharmacolog-* at all, and one of the five
+  is the non-academic name `"pharmaceutic"` inherits.
+
+  **Membership now follows four rules, and rule 4 vetoes the other three.**
+  `"plc"` and `"pty"` were excluded for scoring no true positives while
+  `"pharma"`, `"biotech"`, `"corp"` and `"gmbh"` were kept on exactly that
+  score — so the stated rule was not the rule applied, and the next person to
+  add a token could not tell which governed. The rules: corpus evidence earns
+  a token (and refuses `"corporation"` at 1 TP / 1 FP); a reserved
+  incorporation suffix is a **prior, not proof**, so it is kept where the
+  corpus is silent; the residue of a disqualified stem is kept as a bare word
+  where it cannot match more than the stem it replaced, which is what admits
+  `"pharma"` and `"biotech"` — a category that had gone unnamed while the
+  block claimed to cover every token; and a token colliding with a form the
+  corpus cannot see is refused even where it passes the count, overriding the
+  other three, which is what refuses `"ab"`, `"labs"` and the two-character
+  candidates. The veto had to be written as a veto: `"ab"`, `"ag"`, `"bv"`,
+  `"nv"` and `"sa"` are every bit as reserved as rule 2's members, so without
+  a precedence the rules contradict each other on five tokens.
+
+  **Rule 2 is a prior because the premise it was first written with is
+  false.** "A public body cannot use the form" is not true of these suffixes:
+  German and Austrian public research institutes routinely incorporate as
+  GmbH (`"Forschungszentrum Jülich GmbH"`, `"Helmholtz Zentrum München
+  GmbH"`) and UK charities and public bodies as companies limited by
+  guarantee (`"Genome Research Limited"`), and all of them are flagged. The
+  corpus holds such a name itself — `"Goethe Business School GmbH"`, labelled
+  *ambiguous* as "an academic business school rather than a commercial
+  research sponsor" — and because ambiguous entries are excluded from
+  scoring, the `"gmbh"` row's 0 TP / 0 FP means *not scored*, never *not
+  present*. Those costs are now pinned by tests rather than described, and
+  #156 is the redraw that would measure them.
+
+  Rule 2 admits `"plc"` and `"pty"`, **the one behaviour change**. Neither
+  appears in the corpus at all, so no measured figure moves; what moves is
+  that a funder named `"GSK plc"` is now flagged where it was not.
+  `industry_funding_detected` feeds a HIGH-risk rule and HIGH downgrades a
+  paper's quality tier, so stored transparency values are not comparable
+  across this change for any paper with such a funder. `"plc"` is also the
+  one member rule 4 reaches and does not refuse — PLC is the usual
+  abbreviation of *phospholipase C*, so `"Role of PLC-gamma signalling in
+  tumour invasion"` is flagged — kept because rule 4's other members collide
+  with forms appearing in organisation names while this one collides with a
+  research topic, though 41 of the corpus's 417 names run to ten words or
+  more. Unmeasured, said so at the row, and #157 is what would settle it.
+
+  **The correction is mechanised, because a comment cannot compute.**
+  `tests/test_funder_matching.py::TestTheStatedCountsAreWhatTheCorpusHolds`
+  parses the rows out of `analyzer.py` itself, and the headline table out of
+  `docs/manual/transparency.md`, and re-derives all of them against the
+  corpus — so a redraw fails the suite instead of leaving a stale number
+  behind, and a token cannot enter either tuple without bringing its counts.
+  A row now carries its own `in`/`out` and the rule that decided it, both
+  checked against the tuples, because **arithmetic was never the defect**:
+  counts alone stayed green while a row was moved into the refused block with
+  its token still in `_INDUSTRY_WORDS`, which is #112's own shape. The
+  corpus's size is asserted too — 833 drawn, 816 unique, 417 labelled, 412
+  scoring, 30 industry — since every count is a numerator, and cutting the
+  corpus to the names some token reaches reproduced all of them unchanged.
+  Per-token scoring borrows the matcher's own `_compile_word_re` rather than
+  hand-writing `\b…\b` a second time, a copy in which a dropped boundary
+  moved four counts undetected. It fails closed: an unreadable source, a
+  block whose delimiters have moved, a table reformatted out of recognition,
+  or a token claimed twice all raise, because "I found nothing" must not be
+  an answer it can return. The two float constants recording the pre-#36
+  matcher's score are gone; that list is kept instead and scored live, so
+  both sides of "it must beat what it replaced" move together. The
+  `## [0.6.0]` entry below keeps the old figures as the record of what was
+  believed then.
+
 - **`register_source()` refuses `resumable=True` over a fetcher that cannot
   accept the resume keywords** (#105, review of PR #114). `sync()` reads the
   descriptor, so the mismatch used to raise `TypeError` inside the per-day
