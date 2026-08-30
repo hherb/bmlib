@@ -1923,7 +1923,7 @@ class TestNestedFiguresKeepTheirParent:
         prose — reaching ``body_sections``, ``has_body`` and the rendered
         HTML, and so any downstream scan over parser output. (Not
         ``bmlib.transparency``, which regexes the raw XML itself and never
-        sees ``JATSParser`` — that exposure is issue #119.)
+        sees ``JATSParser``; it makes the same rule on the raw string.)
 
         The prose *after* the parent closes is the other end of the same
         flag, and pins it going **off**. Deriving ``in_figure`` from the slot

@@ -327,22 +327,46 @@ All notable changes to bmlib are documented here. The format is based on
   article's.
 
   The two-element set and its completeness argument are `jats_parser`'s — of
-  JATS's ~295 elements exactly three admit `<front>` and `<body>`, the third
-  being `<article>` — **restated rather than imported**, so `bmlib.transparency`
-  depends on nothing in `bmlib.fulltext`. It is a **depth**, not a flag,
+  JATS's ~295 elements exactly three admit `<front>`/`<front-stub>` and
+  `<body>`, the third being `<article>`, and the disjunction is what makes the
+  count three, `<response>` admitting `<front-stub>` only — **restated rather
+  than imported**, so `bmlib.transparency`
+  depends on nothing in `bmlib.fulltext` — a tuple rather than the parser's
+  frozenset, because it is joined into a regex alternation and needs a
+  deterministic order, and `TestTheRestatedSetMatchesTheParsers` is what keeps
+  the two in step, a rule enforced by prose not being enforced. It is a
+  **depth**, not a flag,
   because JATS nests these and an inner end tag would otherwise re-admit the
   rest of the outer round as article prose. And because a literal `<` can only
   open markup in well-formed XML, a comment, a CDATA section, a processing
   instruction and the DOCTYPE internal subset are the *complete* set of places
   the characters `<sub-article` can appear without being a start tag; all four
   are lexed as tokens, which is what makes the scan exact rather than a list of
-  hazards someone thought of. An **unclosed region returns nothing at all** and
-  the analysis falls back to the abstract, with one `WARNING`: scanning the
-  tail is the defect itself, and dropping it silently manufactures "No COI
-  disclosure found in full text", which is the finding that triggers the
-  missing-COI HIGH-risk rule. An unmatched *end* tag is not an imbalance in
-  that sense — no nested prose reaches the scans through one — so it costs the
-  article nothing.
+  hazards someone thought of. (The converse does not hold for `>`, legal
+  unescaped in an attribute value and a system literal, nor for `]` in an
+  entity's replacement text, so the tag and doctype branches step over quoted
+  literals rather than scanning to the first `>`.) An **unclosed region returns
+  nothing at all** and the analysis falls back to the abstract, with one
+  `WARNING`: scanning the tail is the defect itself, and dropping it silently
+  manufactures "No COI disclosure found in full text", which — absent a PubMed
+  `<CoiStatement>` — is the finding that triggers the missing-COI HIGH-risk
+  rule. An unmatched *end* tag **at depth 0** is not an imbalance in that sense
+  — no nested prose reaches the scans through one — so it costs the article
+  nothing; the depth is not matched against the element name, so one *inside* a
+  region does close it, and only a document expat would reject can carry one.
+  A document that is **entirely** nested articles WARNs too, rather than
+  returning the empty string the caller would read as "nothing was served".
+  The element names are matched with a negative lookahead rather than `\b` —
+  `-`, `.` and `:` are all legal in an XML name and all word boundaries, so
+  `<response-note>` and `<sub-article-x>` matched and stripped prose no JATS
+  element owns — and interpolated through `re.escape`. The two groups the loop
+  reads are **named**: positional ones made the "is this a tag?" test a
+  property of the pattern's shape, so a group added to any earlier branch would
+  have made a comment look like a start tag with nothing failing. And the strip
+  runs *outside* the `try` wrapping the HTTP call: it is bmlib's own
+  computation, so anything it raises is a bmlib defect, and inside that handler
+  it would have been logged at DEBUG as "fetch failed" and reported to the
+  caller as "EuropePMC served nothing".
 
   **Stored transparency values are not comparable across this change** for a
   paper whose Europe PMC full text carries a nested article. Measured over
@@ -353,11 +377,17 @@ All notable changes to bmlib are documented here. The format is based on
   at least one scan output move once the regions go: 499 the data-availability
   level, 125 the COI cue phrase (4 of them flipping the stored
   `coi_disclosed`, the tagged section usually still firing), 6 the industry-COI
-  indicator, and 1 the tagged section itself. None of the five `<response>`
+  signal — `industry_funding` and `industry_confidence`, not only the indicator
+  string — and 1 the tagged section itself. None of the five `<response>`
   articles is among the 602, so that element is **rare rather than absent**.
-  The refusal path *does* measure empty — 0 of all 97,909 — while the
-  comment token fires on 3 real deposits, Springer commenting out an
-  `<authorqueries>` block whose `<aq>` children carry `<response>` elements.
+  Nesting is exercised rather than defensive: 98 of the 3,382 carriers nest.
+  Two paths measure empty — none of the 97,909 leaves a region open, and none
+  is emptied by the removal (all 3,389 carriers keep their `<body>`, the least
+  retaining 32.2% of its bytes). The lexer's four skip tokens have no measured
+  population on the module's own input: the comment token fires on 3 *archive*
+  deposits, Springer commenting out an `<authorqueries>` block whose `<aq>`
+  children carry `<response>` elements, but Europe PMC's `fullTextXML` serves
+  those same three with no comments at all.
 
 - **A `<ref>` carrying several citation elements lost all but the last, and
   welded their authors into one byline** (#149). JATS admits several citation
@@ -972,8 +1002,9 @@ All notable changes to bmlib are documented here. The format is based on
   are reviewer correspondence, in exactly the funding, conflict and
   data-availability vocabulary a transparency scan hunts for. (That prose
   does *not* reach `bmlib.transparency`, which fetches and regexes the raw
-  XML itself and never sees `JATSParser` output — the exposure there is real
-  but separate, and is filed as #119.) Uncommon and severe rather than
+  XML itself and never sees `JATSParser` output — the exposure there was
+  real but separate, and is removed on the raw string, above.) Uncommon and
+  severe rather than
   widespread: 4 of 249 random open-access articles (1.6%), but the population
   is not random, since those publishers deposit review histories as policy.
 

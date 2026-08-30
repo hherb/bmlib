@@ -30,16 +30,25 @@ must not be re-done.
   `tests/test_transparency.py::TestANestedArticleIsNotThisArticles`.
 - **An unclosed nested article costs the whole full text, on purpose** (#119).
   `_strip_nested_articles` returns `None` and the analysis falls back to the
-  abstract, so `coi_disclosed` stays `None`. Do not "recover" the tail: keeping
-  it is the defect the fix exists to remove, and dropping it silently
-  manufactures "No COI disclosure found in full text" — the finding that
-  triggers the missing-COI HIGH-risk rule. An unmatched *end* tag is
-  deliberately **not** treated the same way; no nested prose reaches the scans
-  through one. The refusal path measures empty over all 97,909 articles in the
-  `oa_comm` `PMC012xxxxxx` baseline, so it guards a truncated body rather than
-  a shape anyone has seen — unlike the comment token beside it, which fires on
-  3 real deposits, where Springer comments out an `<authorqueries>` block whose
-  `<aq>` children carry `<response>` elements.
+  abstract, so `coi_disclosed` can never be set `False` — it may still be set
+  `True` from the abstract, and it is only the `False` that triggers the
+  downgrade. Do not "recover" the tail: keeping it is the defect the fix exists
+  to remove, and dropping it silently manufactures "No COI disclosure found in
+  full text" — the finding that, absent a PubMed `<CoiStatement>`, triggers the
+  missing-COI HIGH-risk rule. An unmatched *end* tag **at depth 0** is
+  deliberately **not** treated the same way, since no nested prose reaches the
+  scans through one; the depth is not matched against the element name, so one
+  *inside* a region does close it, and only a document expat would reject can
+  carry one. Two paths measure empty over all 97,909 articles in the `oa_comm`
+  `PMC012xxxxxx` baseline — none leaves a region open, and none is emptied by
+  the removal — so both guard a truncated body rather than a shape anyone has
+  seen. **The lexer's four skip tokens have no measured population on this
+  module's input at all**: the comment token fires on 3 *archive* deposits,
+  where Springer comments out an `<authorqueries>` block whose `<aq>` children
+  carry `<response>` elements, but Europe PMC's `fullTextXML` serves those same
+  three with no comments and carries one in 0 of an 880-article draw against
+  25.6% of the archive. Keep all four for the structural argument; do not cite
+  a population for them.
 - **`_INDUSTRY_STEMS` and `_INDUSTRY_WORDS` must not be merged into one
   list**, and neither may be extended without re-running
   `scripts/sample_funder_names.py` against `tests/data/funder_names.json` —

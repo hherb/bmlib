@@ -358,7 +358,10 @@ keep working when it is promoted.
 Four things worth knowing about the rule:
 
 - **The two-element set is complete, structurally.** Of JATS's ~295 elements
-  exactly three admit `<front>` and `<body>`, and the third is `<article>`. It
+  exactly three admit `<front>`/`<front-stub>` and `<body>`, and the third is
+  `<article>` — the disjunction is what makes the count three, since
+  `<response>` is modelled `(front-stub, body?, back?, …)` and admits
+  `<front-stub>` only. It
   is the same rule `bmlib.fulltext.jats_parser` makes — restated there in full —
   and deliberately restated rather than imported, so `bmlib.transparency`
   depends on nothing in `bmlib.fulltext`.
@@ -370,18 +373,34 @@ Four things worth knowing about the rule:
   only open markup, so those four are the *complete* set of places the
   characters `<sub-article` can appear without being a start tag. Lexing them is
   what makes the scan exact rather than a list of hazards someone thought of.
+  The converse does not hold for `>`, which is legal unescaped in an attribute
+  value and in a DOCTYPE's system literal, nor for `]` inside an entity's
+  replacement text — so the tag and doctype branches step over quoted literals
+  and close the internal subset at the `]` before the `>`, rather than at the
+  first one. None of the four has a measured population on this module's own
+  input; see the note under the refusal rule below.
 - **An unclosed region is refused, not guessed at.** The document is treated as
   though no full text was served — one `WARNING`, `full_text_analyzed` stays
-  `False`, and `coi_disclosed` stays `None`. Scanning the tail is the defect
-  itself; dropping it silently would manufacture "No COI disclosure found in
-  full text", which is the finding that triggers the missing-COI HIGH-risk rule.
-  An unmatched *end* tag is not an imbalance in that sense — no nested prose can
-  reach the scans through one — so it costs the article nothing. That path
-  measures **empty**: not one of the 97,909 articles leaves a region open, so it
-  guards against a truncated body rather than against a shape anyone has seen.
-  The comment test is the opposite — it fires on 3 real deposits, where Springer
+  `False`, and `coi_disclosed` cannot be set `False`. (It can still be set
+  `True` from the abstract; what the refusal guarantees is that the *absent*
+  verdict is never reached, and only that verdict triggers the downgrade.)
+  Scanning the tail is the defect itself; dropping it silently would manufacture
+  "No COI disclosure found in full text", which — absent a PubMed
+  `<CoiStatement>` to rescue it — is the finding that triggers the missing-COI
+  HIGH-risk rule. An unmatched *end* tag **at depth 0** is not an imbalance in
+  that sense, so it costs the article nothing; the depth is not matched against
+  the element name, so one *inside* a region does close it, and only a document
+  expat would reject can carry one. That path measures **empty**: not one of the
+  97,909 articles leaves a region open, so it guards against a truncated body
+  rather than against a shape anyone has seen. So does the emptied-article path
+  — all 3,389 carriers keep their `<body>`, the least of them retaining 32.2% of
+  its bytes. **And the four skip tokens have no measured population here
+  either**: the comment token fires on 3 archive deposits, where Springer
   comments out an `<authorqueries>` block whose `<aq>` children carry
-  `<response>` elements.
+  `<response>` elements — but Europe PMC's `fullTextXML`, which is what this
+  step actually reads, serves those same three articles with no comments at all,
+  and carries a comment in 0 of an 880-article draw of it against 25.6% of the
+  archive. They are kept for the structural argument, not for a population.
 
 **What it moves.** Measured over PMC's `oa_comm` baseline package
 `PMC012xxxxxx` (2025-06-26, 97,909 open-access articles), 3,382 (3.45%) carry a
@@ -394,7 +413,7 @@ go:
 |---|---|
 | `data_availability_level` | 499 |
 | COI cue phrase | 125 (4 flipping the stored `coi_disclosed`) |
-| industry ties in the COI statement | 6, all lost |
+| industry ties in the COI statement | 6, all lost (`industry_funding` and `industry_confidence`, not only the indicator) |
 | tagged COI section | 1 |
 
 None of the five `<response>` articles is among the 602, so that element is
@@ -549,7 +568,7 @@ This is the same "strongest evidence wins, regardless of arrival order" rule `in
 
 ### Producer 1 — the full-text prose scan
 
-`_DATA_PATTERNS` is an **ordered** dict scanned against the search text (Europe PMC full text when it was retrieved, the abstract otherwise); the first hit wins and scanning stops. The full text is the article's own — a data statement inside a peer-review round does not set the level, and this is the scan that moved most when that stopped being true *(see [The full text is the article's own](#the-full-text-is-the-articles-own), unreleased)*.
+`_DATA_PATTERNS` is an **ordered** dict scanned against the search text (Europe PMC full text when it was retrieved, the abstract otherwise); the first hit wins and scanning stops. The full text is the article's own — a data statement inside a peer-review round does not set the level, and this is the scan that moved most when the regions were removed *(see [The full text is the article's own](#the-full-text-is-the-articles-own), unreleased)*.
 
 | Pattern | Level |
 |---------|-------|

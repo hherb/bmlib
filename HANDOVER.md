@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-30. **0.10.0 is released and on PyPI**; thirteen changes
+_Last updated: 2026-08-31. **0.10.0 is released and on PyPI**; thirteen changes
 sit unreleased on `main` — #73's atomic template install (PR #102), #96/#105's
 partitioning of an over-cap PubMed day (PRs #106 and #114), #109's typed
 article-id (PR #113), #110/#111's JATS sub-article and contributor-group
@@ -62,7 +62,7 @@ cached full text should re-fetch, not only one calling `JATSParser` itself.
 
 *Evidence.* A rule's population can be large, empty, or both, and only a draw
 says which; one window is not the rate (#127 reads 0 of 662 recent tables and
-11 of 93 in a 1996-1998 draw; #119 reads 0.7% of one corpus and 3.4% of
+11 of 93 in a 1996-1998 draw; #119 reads 0.7% of one corpus and 3.45% of
 another). **Measure the population the code actually reads**, and prefer a
 corpus with a public name over one on your disk. A number in a comment goes
 stale silently and coherently — `TestTheCitedPopulationsAreWhatTheCorporaHold`
@@ -123,14 +123,14 @@ that outlive the fix.
 `fullTextXML` itself and regexes the raw string, so every `<sub-article>` /
 `<response>` region was scanned as the article's own. The regions are now
 removed in `_fetch_europepmc_fulltext`, the one door the full text enters
-through. Full argument in `CLAUDE.md`, the manual and the CHANGELOG; four
+through. Full argument in `CLAUDE.md`, the manual and the CHANGELOG; five
 things worth carrying forward.
 
 - **Measure the population you actually read.** The obvious corpus — the 880
-  Europe PMC articles PR #148 diffed against — puts nested articles at 0.7% and
-  moves *nothing*, which reads as "this defect is theoretical". PMC's `oa_comm`
-  baseline package over 97,909 articles puts carriers at 3.4% and moves a scan
-  output for 602 of them. Same defect, two windows, opposite conclusions.
+  Europe PMC articles PR #148 diffed against — puts nested articles at 6 of 876
+  (0.7%) and moves *nothing*, which reads as "this defect is theoretical".
+  PMC's `oa_comm` baseline package over 97,909 articles puts carriers at 3.45%
+  and moves a scan output for 602 of them. Same defect, two windows, opposite conclusions.
 - **Prefer a corpus with a name over a corpus on your disk.** The figures above
   are re-derivable by anyone from `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`,
   which is the cheap half of what #132 and #154 are asking for. The Europe PMC
@@ -152,7 +152,22 @@ things worth carrying forward.
   ten caught; the survivor was the doctype token, and the fault was the
   fixture — its entity held a *self-closing* `<sub-article/>`, which another
   rule already refuses, so the test passed whether or not the doctype was lexed
-  at all.
+  at all. Review found the same shape twice more: the comment, CDATA and PI
+  fixtures each asserted `"Ours" in stripped`, and each killed its mutant by
+  `TypeError` rather than by content, because the fixture's element was
+  *unbalanced* — on the balanced shape Springer actually deposits, the mutant
+  lives. Exact equality, which one test in the class already used, is the fix.
+- **"Exact" is a claim, and the review is where it gets tested.** The lexer
+  argued its own completeness from "a literal `<` can only open markup". True,
+  and the converse does not hold for `>`, which is legal unescaped in an
+  attribute value and a system literal, nor for `]` in an entity's replacement
+  text — so a well-formed `<sub-article specific-use="a>b"/>` and a subset
+  carrying `]` each cost the article its whole full text. Fail-closed, measured
+  0 in both corpora, and still a refusal on a document the publisher deposited
+  correctly. Both branches now step over quoted literals, and both shapes have
+  a test. Where the argument survived intact it was scoped instead: an
+  unmatched *end* tag is harmless only **at depth 0**, the depth not being
+  matched against the element name.
 
 **PR #153 settled #151** (no behaviour) — the prospective half of
 `_inside_mixed_citation`, mechanised as
@@ -360,14 +375,34 @@ so the parent test can only fire on markup JATS does not admit, while
 redraw. It matters because this is where #109 was: carefully argued rules
 behind an unpinned guard. No behaviour is known to be wrong today.
 
-**#158 — the nested-article rate is cited three times and the figures disagree
+**#160 and #161 came out of PR #159's own review**, and neither is a live data
+loss. #160: `_strip_nested_articles` documents a well-formed-input contract and
+enforces none of it — every lexer branch is quadratic on an unterminated
+construct (a truncated 256 kB body lexes in 22.9s against 4-9 ms for a
+well-formed 3.4 MB one), and the depth is not matched against the element name,
+so an unmatched end tag *inside* a region re-admits the outer round's prose.
+0 of 3,880 sampled deposits are malformed, so it needs input expat would
+reject; the issue names three remedies and prefers the one needing no invented
+constant. #161: a full text that was *served* and then refused is
+indistinguishable, in the stored `TransparencyResult`, from one that was never
+served — both carry `full text unavailable`, which is false for the refusal —
+and the score silently loses up to 30 points on that path, enough to reach HIGH
+against the default threshold. That is `publications/`' `FetchResult.note` ->
+`SyncReport.notes` argument one module over: permanent *and* invisible is the
+pair these rules exist to break up. Both refusal paths measure empty.
+
+**#158 — the nested-article rate is cited four times and the figures disagree
 by 8x**, filed from #119's own measurement and the same shape as #132.
 `jats_parser` says 4 in 249 (1.6%) for peer-review deposits, the manual and the
 CHANGELOG say 288 of 1,022 articles lose body text (28.2%), and #119 measures
-3,382 of 97,909 (3.45%) carrying one at all — with *every* `<sub-article>`
-carrier losing body text, so the third bounds the second. The rate genuinely is a per-publisher
-property, which is why 28.2% could be honest for a draw weighted to
-PLOS/eLife/BMJ/F1000, and why the draw not being in the repo is the problem.
+3,382 of 97,909 (3.45%) carrying one at all — which bounds the second, since an
+article can only lose body text to a region it carries. (Not the converse: a
+`<sub-article>` carrying `<front-stub>` and no `<body>` — Europe PMC's injected
+`associated-data` block among them — costs the article nothing.) A fourth
+citation is the 6 of 876 Europe PMC reading two paragraphs up. The rate
+genuinely is a per-publisher property, which is why 28.2% could be honest for a
+draw weighted to PLOS/eLife/BMJ/F1000, and why the draw not being in the repo
+is the problem.
 
 **#154, #156 and #157 are one job too, and it is the funder corpus.** #154:
 `scripts/sample_funder_names.py` writes `tests/data/funder_names.raw.json`,
