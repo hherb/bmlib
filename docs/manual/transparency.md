@@ -335,7 +335,7 @@ The step-2 search is issued **once** per document: the record is threaded into t
 
 Step 3 is the difference between a real data-availability reading and a guess. COI and data-availability statements live in a paper's full text, never its abstract, so when `inEPMC != "Y"` (no open-access full text at Europe PMC) the analyzer falls back to scanning the abstract, `full_text_analyzed` stays `False`, and industry-COI detection does not run at all. COI *disclosure* and data availability are two exceptions: step 4 can establish either — a COI statement, or a `<DataBankList>` deposition accession — from PubMed's structured metadata whether or not full text was reachable.
 
-#### The full text is the article's own *(unreleased)*
+#### The full text is the article's own
 
 `TransparencyAnalyzer` never consumes `JATSParser` output: it fetches the
 `fullTextXML` body itself and scans the raw string, tags and all, because the
@@ -351,7 +351,9 @@ tie the paper never disclosed (issue #119).
 
 `_fetch_europepmc_fulltext()` therefore removes those regions before returning,
 which is the one door the full text enters through: every reader downstream
-takes a string that has to be the article's.
+takes a string that has to be the article's *(unreleased)*. The marker sits
+here rather than in the heading above so that the two links to this section
+keep working when it is promoted.
 
 Four things worth knowing about the rule:
 
