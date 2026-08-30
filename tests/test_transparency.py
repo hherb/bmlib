@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from bmlib.transparency.analyzer import (
@@ -47,6 +49,7 @@ from bmlib.transparency.analyzer import (
     _parse_pubmed_signals,
     _PubMedSignals,
     _score_data_availability,
+    _strip_nested_articles,
 )
 from bmlib.transparency.models import (
     TransparencyResult,
@@ -583,6 +586,206 @@ class TestIndustryCOIDetection:
         assert result.industry_funding_detected is True
         assert 0.0 < result.industry_funding_confidence < 0.8  # moderate, below CrossRef's
         assert any("COI" in ind for ind in result.risk_indicators)
+
+
+class TestANestedArticleIsNotThisArticles:
+    """Issue #119 — reviewer prose must not answer for the article.
+
+    ``_check_europepmc`` scans the raw ``fullTextXML`` body, and a
+    ``<sub-article>`` holds a complete article of its own: a peer-review round,
+    an author response, a translation, or Europe PMC's injected
+    ``associated-data`` block. Every one of those is written in the exact
+    vocabulary these scans hunt for — a reviewer's "I declare no competing
+    interests" was read as the *article's* disclosure — so the regions are
+    removed before anything reads the string.
+
+    Measured over PMC's ``oa_comm`` baseline package
+    ``PMC012xxxxxx`` (2025-06-26, 97,909 articles): 3,377 (3.4%) carry a
+    ``<sub-article>``, and 602 of those — 0.61% of the corpus — have at least
+    one of the four scan outputs move once the regions go: 499 the
+    data-availability level, 125 the COI cue phrase (4 of them flipping the
+    stored tri-state, the tagged section usually still firing), 6 the
+    industry-COI indicator and 1 the tagged section itself. ``<response>``
+    measures **0** there and 0 in the 880-article Europe PMC draw, which is
+    why it is carried on the structural argument rather than on a count.
+    """
+
+    # ---- the lexer ----
+    #
+    # In well-formed XML a literal "<" can only open markup, so the constructs
+    # below are the *complete* set of places the characters "<sub-article" can
+    # appear without being a start tag. Each has a test, because a scanner over
+    # markup is only as good as the list of things it knows are not markup.
+
+    def test_a_nested_article_is_removed_and_its_neighbours_are_kept(self):
+        stripped = _strip_nested_articles(
+            "<article><body><p>Ours.</p>"
+            '<sub-article article-type="peer-review"><body><p>Theirs.</p></body></sub-article>'
+            "<p>Ours again.</p></body></article>"
+        )
+        assert stripped == "<article><body><p>Ours.</p><p>Ours again.</p></body></article>"
+
+    def test_a_response_is_removed_too(self):
+        stripped = _strip_nested_articles(
+            "<article><p>Ours.</p><response><p>Theirs.</p></response></article>"
+        )
+        assert "Theirs" not in stripped
+        assert "Ours" in stripped
+
+    def test_a_nested_nested_article_does_not_end_the_region_early(self):
+        # JATS nests these — a <response> sits inside the <sub-article> it
+        # answers — so the inner close must not re-admit the outer's prose.
+        # A flag rather than a depth reads "Outer tail" as the article's.
+        stripped = _strip_nested_articles(
+            "<article><p>Ours.</p>"
+            "<sub-article><p>Round one.</p>"
+            "<response><p>Reply.</p></response>"
+            "<p>Outer tail.</p></sub-article>"
+            "<p>Ours again.</p></article>"
+        )
+        assert stripped == "<article><p>Ours.</p><p>Ours again.</p></article>"
+
+    def test_a_self_closing_nested_article_removes_nothing(self):
+        # It opens no region, so treating it as an open would swallow the rest
+        # of the document — and, with nothing to close it, refuse the article.
+        stripped = _strip_nested_articles("<article><sub-article/><p>Ours.</p></article>")
+        assert stripped == "<article><sub-article/><p>Ours.</p></article>"
+
+    def test_a_nested_article_named_in_a_comment_opens_no_region(self):
+        stripped = _strip_nested_articles(
+            "<article><!-- <sub-article> was stripped by the publisher --><p>Ours.</p></article>"
+        )
+        assert "Ours" in stripped
+
+    def test_a_nested_article_named_in_a_cdata_section_opens_no_region(self):
+        stripped = _strip_nested_articles(
+            "<article><p><![CDATA[write <sub-article> to nest one]]></p><p>Ours.</p></article>"
+        )
+        assert "Ours" in stripped
+
+    def test_a_nested_article_named_in_a_processing_instruction_opens_no_region(self):
+        stripped = _strip_nested_articles(
+            '<article><?publisher drop="<sub-article>"?><p>Ours.</p></article>'
+        )
+        assert "Ours" in stripped
+
+    def test_a_nested_article_named_in_the_doctype_internal_subset_opens_no_region(self):
+        stripped = _strip_nested_articles(
+            '<!DOCTYPE article PUBLIC "-//NLM//DTD JATS 1.4//EN" "JATS.dtd"'
+            ' [<!ENTITY review "<sub-article/>">]>'
+            "<article><p>Ours.</p></article>"
+        )
+        assert "Ours" in stripped
+
+    def test_an_unclosed_nested_article_refuses_the_document(self):
+        # The tail cannot be shown to be the article's own text. Keeping it is
+        # the defect; dropping it silently would manufacture "no COI statement
+        # in full text", which is what triggers the missing-COI downgrade. So
+        # the document is refused and the analysis falls back to the abstract.
+        assert (
+            _strip_nested_articles("<article><p>Ours.</p><sub-article><p>Theirs.</p></article>")
+            is None
+        )
+
+    def test_an_unmatched_close_is_not_an_imbalance(self):
+        # Malformed the other way round, and harmless: no nested prose can
+        # reach the scans through it, so refusing the article would cost a
+        # real signal to no purpose.
+        stripped = _strip_nested_articles("<article><p>Ours.</p></sub-article></article>")
+        assert stripped is not None
+        assert "Ours" in stripped
+
+    def test_a_document_carrying_none_is_returned_unchanged(self):
+        xml = "<article><body><p>Ours.</p></body></article>"
+        assert _strip_nested_articles(xml) == xml
+
+    # ---- what the scans then see ----
+
+    def test_a_reviewers_disclosure_is_not_this_articles(self):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>Methods and results.</p></body>"
+            '<sub-article article-type="peer-review"><body>'
+            "<p>The reviewers declare no competing interests.</p>"
+            "</body></sub-article></article>"
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is False
+        assert _INDICATOR_NO_COI_IN_FULLTEXT in analysis.indicators
+
+    def test_the_articles_own_disclosure_is_still_found(self):
+        # The control: the same statement in the article's own back matter,
+        # beside a review round, is still the article's.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>Methods.</p></body>"
+            '<sub-article article-type="peer-review"><body>'
+            "<p>The reviewers declare no competing interests.</p>"
+            "</body></sub-article>"
+            '<back><fn-group><fn fn-type="COI-statement">'
+            "<p>The authors declare no conflict of interest.</p></fn></fn-group></back>"
+            "</article>"
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is True
+
+    def test_a_review_rounds_data_statement_does_not_set_the_level(self):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>Methods.</p></body>"
+            "<sub-article><body><p>The data are available upon request.</p></body>"
+            "</sub-article></article>"
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.data_level == "unknown"
+
+    def test_the_articles_own_data_statement_still_sets_the_level(self):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>The data are available upon request.</p></body>"
+            "<sub-article><body><p>Round one.</p></body></sub-article></article>"
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.data_level == "on_request"
+
+    def test_an_industry_tie_disclosed_in_a_review_round_is_not_this_articles(self):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>Methods.</p></body>"
+            '<sub-article article-type="peer-review"><back>'
+            '<fn-group><fn fn-type="COI-statement">'
+            "<p>Reviewer 2 is an employee of Genentech.</p>"
+            "</fn></fn-group></back></sub-article>"
+            '<back><fn-group><fn fn-type="COI-statement">'
+            "<p>The authors declare no conflict of interest.</p></fn></fn-group></back>"
+            "</article>"
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is True
+        assert analysis.industry_funding is False
+        assert _INDICATOR_INDUSTRY_COI not in analysis.indicators
+
+    def test_a_refused_document_is_not_scanned_as_full_text(self, caplog):
+        # An imbalance leaves the COI status *unknown*, never "absent": only
+        # an explicit False triggers the missing-COI HIGH-risk rule, and no
+        # document was successfully scanned here. WARNING rather than ERROR —
+        # a publisher's deposit can reach this, so it is not a bmlib defect.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>Methods.</p></body><sub-article><p>Round one.</p></article>"
+        )
+        analysis = _Analysis()
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is False
+        assert analysis.coi_disclosed is None
+        assert _INDICATOR_COI_UNKNOWN in analysis.indicators
+        assert any("unclosed nested article" in r.getMessage() for r in caplog.records)
 
 
 class TestCheckTrialResults:
