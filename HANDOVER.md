@@ -139,8 +139,15 @@ things worth carrying forward.
   well-formed XML a literal `<` can only open markup, so comment, CDATA,
   processing instruction and DOCTYPE internal subset are the *complete* set of
   places `<sub-article` is not a start tag — an argument, not a list of hazards
-  someone thought of. Say which population each guard has: the imbalance path
-  measures **empty** over all 3,377 carriers.
+  someone thought of. Say which population each guard has, and *run* it: the
+  imbalance path measures empty over all 97,909 articles, while the comment
+  token fires on 3 real deposits.
+- **A count is of what you grepped for, not of what the code does.** The first
+  cut of this fix said `<response>` measured 0; that was a grep for
+  `<sub-article`. Running the lexer over the *whole* archive rather than over
+  the carriers found 5 more articles changed than any claim accounted for —
+  genuine top-level `<response response-type="reply">` deposits. Rare, not
+  absent, and the difference is the whole argument for keeping it.
 - **Ask which line of the fixture the assertion depends on.** Eleven mutants,
   ten caught; the survivor was the doctype token, and the fault was the
   fixture — its entity held a *self-closing* `<sub-article/>`, which another
@@ -357,8 +364,8 @@ behind an unpinned guard. No behaviour is known to be wrong today.
 by 8x**, filed from #119's own measurement and the same shape as #132.
 `jats_parser` says 4 in 249 (1.6%) for peer-review deposits, the manual and the
 CHANGELOG say 288 of 1,022 articles lose body text (28.2%), and #119 measures
-3,377 of 97,909 (3.45%) carrying one at all — with *every* carrier losing body
-text, so the third bounds the second. The rate genuinely is a per-publisher
+3,382 of 97,909 (3.45%) carrying one at all — with *every* `<sub-article>`
+carrier losing body text, so the third bounds the second. The rate genuinely is a per-publisher
 property, which is why 28.2% could be honest for a draw weighted to
 PLOS/eLife/BMJ/F1000, and why the draw not being in the repo is the problem.
 

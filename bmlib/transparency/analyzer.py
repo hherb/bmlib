@@ -875,16 +875,23 @@ def _score_data_availability(analysis: _Analysis) -> None:
 # vocabularies that disagree, and is deposited in none of them.
 #
 # Measured over PMC's `oa_comm` baseline package PMC012xxxxxx (2025-06-26,
-# 97,909 open-access articles): 3,377 (3.4%) carry a <sub-article>, and for 602
-# of those — 0.61% of the corpus — at least one of the four scan outputs below
-# moves once the regions are removed (499 the data-availability level, 125 the
-# COI cue phrase, of which 4 flip `coi_disclosed`; 6 the industry-COI
-# indicator; 1 the tagged COI section). <response> measures 0 there and 0 in an
-# 880-article Europe PMC draw, so it is carried on the argument above and not
-# on a count. The refusal path below measures empty too: none of the 3,377
-# carriers leaves a region open, which is what a well-formed deposit should
-# look like — it guards against a truncated body, not against a shape anyone
-# has seen.
+# 97,909 open-access articles): 3,382 (3.45%) carry a region this removes —
+# 3,377 a <sub-article>, and 5 more a top-level <response response-type="reply">
+# with no <sub-article> at all — and for 602 of those (0.61% of the corpus) at
+# least one of the four scan outputs below moves once the regions go: 499 the
+# data-availability level, 125 the COI cue phrase (4 of them flipping
+# `coi_disclosed`), 6 the industry-COI indicator, 1 the tagged COI section.
+# None of the five <response> articles is among the 602, so that element is
+# *rare*, not *absent* — the first cut of this comment said it measured zero,
+# which was a grep for the other element.
+#
+# The refusal path does measure empty: 0 of all 97,909 articles leave a region
+# open, which is what a well-formed deposit should look like, so it guards a
+# truncated body rather than a shape anyone has seen. The comment token is the
+# opposite — it fires on 3 articles, where Springer deposits an
+# <authorqueries> block commented out and its <aq> children carry <response>
+# elements. Balanced ones, as it happens, but that is the publisher's choice
+# and not a property of comments.
 _NESTED_ARTICLE_ELEMENTS = ("sub-article", "response")
 
 # One lexer for the whole scan. In well-formed XML a literal "<" can only open

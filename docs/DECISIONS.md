@@ -35,9 +35,11 @@ must not be re-done.
   manufactures "No COI disclosure found in full text" — the finding that
   triggers the missing-COI HIGH-risk rule. An unmatched *end* tag is
   deliberately **not** treated the same way; no nested prose reaches the scans
-  through one. The refusal path measures empty over all 3,377 carriers in the
+  through one. The refusal path measures empty over all 97,909 articles in the
   `oa_comm` `PMC012xxxxxx` baseline, so it guards a truncated body rather than
-  a shape anyone has seen.
+  a shape anyone has seen — unlike the comment token beside it, which fires on
+  3 real deposits, where Springer comments out an `<authorqueries>` block whose
+  `<aq>` children carry `<response>` elements.
 - **`_INDUSTRY_STEMS` and `_INDUSTRY_WORDS` must not be merged into one
   list**, and neither may be extended without re-running
   `scripts/sample_funder_names.py` against `tests/data/funder_names.json` —

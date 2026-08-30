@@ -377,14 +377,18 @@ Four things worth knowing about the rule:
   full text", which is the finding that triggers the missing-COI HIGH-risk rule.
   An unmatched *end* tag is not an imbalance in that sense — no nested prose can
   reach the scans through one — so it costs the article nothing. That path
-  measures **empty**: none of the 3,377 carriers below leaves a region open, so
-  it guards against a truncated body rather than against a shape anyone has
-  seen.
+  measures **empty**: not one of the 97,909 articles leaves a region open, so it
+  guards against a truncated body rather than against a shape anyone has seen.
+  The comment test is the opposite — it fires on 3 real deposits, where Springer
+  comments out an `<authorqueries>` block whose `<aq>` children carry
+  `<response>` elements.
 
 **What it moves.** Measured over PMC's `oa_comm` baseline package
-`PMC012xxxxxx` (2025-06-26, 97,909 open-access articles), 3,377 (3.4%) carry a
-`<sub-article>`, and 602 of those — 0.61% of the corpus — have at least one scan
-output move once the regions go:
+`PMC012xxxxxx` (2025-06-26, 97,909 open-access articles), 3,382 (3.45%) carry a
+region this removes — 3,377 a `<sub-article>`, and 5 more a top-level
+`<response response-type="reply">` with no `<sub-article>` at all — and 602 of
+those, 0.61% of the corpus, have at least one scan output move once the regions
+go:
 
 | Scan output | Articles moved |
 |---|---|
@@ -393,10 +397,11 @@ output move once the regions go:
 | industry ties in the COI statement | 6, all lost |
 | tagged COI section | 1 |
 
-`<response>` measures **0** there and 0 in an 880-article Europe PMC draw, so it
-is carried on the structural argument above rather than on a count. Stored
-transparency values are therefore not comparable across this change for a paper
-whose full text carries a nested article.
+None of the five `<response>` articles is among the 602, so that element is
+**rare rather than absent** — a distinction worth keeping, since the first
+version of this section said it measured zero, and that number was a grep for
+the other element. Stored transparency values are not comparable across this
+change for a paper whose full text carries a nested article.
 
 Step 4's ordering is deliberate. It sits after Europe PMC so a DOI-only analysis can reuse the PMID from the record already fetched, and before ClinicalTrials.gov so a structured registry accession can feed the posted-results check. It costs one request at most, and none at all when no PMID is available. Its four signals — COI, trial registration, data-deposition accessions, and funders — are all publisher-supplied structured metadata, which is why they outrank the text heuristics elsewhere in the module. A PubMed record that is missing, unreachable, or unparsable yields no signals and changes nothing.
 

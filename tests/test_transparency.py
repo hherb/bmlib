@@ -600,14 +600,18 @@ class TestANestedArticleIsNotThisArticles:
     removed before anything reads the string.
 
     Measured over PMC's ``oa_comm`` baseline package
-    ``PMC012xxxxxx`` (2025-06-26, 97,909 articles): 3,377 (3.4%) carry a
-    ``<sub-article>``, and 602 of those — 0.61% of the corpus — have at least
-    one of the four scan outputs move once the regions go: 499 the
-    data-availability level, 125 the COI cue phrase (4 of them flipping the
-    stored tri-state, the tagged section usually still firing), 6 the
-    industry-COI indicator and 1 the tagged section itself. ``<response>``
-    measures **0** there and 0 in the 880-article Europe PMC draw, which is
-    why it is carried on the structural argument rather than on a count.
+    ``PMC012xxxxxx`` (2025-06-26, 97,909 articles): 3,382 (3.45%) carry a
+    region this removes — 3,377 a ``<sub-article>``, 5 more a top-level
+    ``<response response-type="reply">`` and no ``<sub-article>`` — and 602 of
+    those (0.61% of the corpus) have at least one of the four scan outputs move
+    once the regions go: 499 the data-availability level, 125 the COI cue
+    phrase (4 of them flipping the stored tri-state, the tagged section usually
+    still firing), 6 the industry-COI indicator and 1 the tagged section
+    itself. None of the five ``<response>`` articles is among the 602, so that
+    element is rare rather than absent. Three *further* articles carry a
+    ``<response>`` inside a commented-out ``<authorqueries>`` block, which is
+    the comment test below firing on a real deposit rather than on a
+    hypothetical.
     """
 
     # ---- the lexer ----

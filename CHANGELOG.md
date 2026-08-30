@@ -347,13 +347,17 @@ All notable changes to bmlib are documented here. The format is based on
   **Stored transparency values are not comparable across this change** for a
   paper whose Europe PMC full text carries a nested article. Measured over
   PMC's `oa_comm` baseline package `PMC012xxxxxx` (2025-06-26, 97,909
-  open-access articles): 3,377 (3.4%) carry a `<sub-article>`, and 602 of those
-  — 0.61% of the corpus — have at least one scan output move once the regions
-  go: 499 the data-availability level, 125 the COI cue phrase (4 of them
-  flipping the stored `coi_disclosed`, the tagged section usually still
-  firing), 6 the industry-COI indicator, and 1 the tagged section itself.
-  `<response>` measures **0** there and 0 in an 880-article Europe PMC draw, so
-  it is carried on the structural argument rather than on a count.
+  open-access articles): 3,382 (3.45%) carry a region this removes — 3,377 a
+  `<sub-article>`, and 5 more a top-level `<response response-type="reply">`
+  with no `<sub-article>` at all — and 602 of those, 0.61% of the corpus, have
+  at least one scan output move once the regions go: 499 the data-availability
+  level, 125 the COI cue phrase (4 of them flipping the stored
+  `coi_disclosed`, the tagged section usually still firing), 6 the industry-COI
+  indicator, and 1 the tagged section itself. None of the five `<response>`
+  articles is among the 602, so that element is **rare rather than absent**.
+  The refusal path *does* measure empty — 0 of all 97,909 — while the
+  comment token fires on 3 real deposits, Springer commenting out an
+  `<authorqueries>` block whose `<aq>` children carry `<response>` elements.
 
 - **A `<ref>` carrying several citation elements lost all but the last, and
   welded their authors into one byline** (#149). JATS admits several citation
