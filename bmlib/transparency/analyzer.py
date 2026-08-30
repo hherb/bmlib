@@ -855,6 +855,175 @@ def _score_data_availability(analysis: _Analysis) -> None:
         analysis.indicators.append(_INDICATOR_DATA_NOT_AVAILABLE)
 
 
+# ---- nested articles ----
+# A <sub-article> or <response> is a complete article of its own — its own
+# <front>/<front-stub>, its own <body>, its own back matter — nested inside the
+# one that carries it, and nothing in it is this article's. Peer-review rounds,
+# author responses, SciELO's translated full text, meeting abstracts and Europe
+# PMC's own injected "associated-data" block all arrive that way, and reviewers
+# write in exactly the vocabulary the scans below hunt for: a round's "the
+# reviewers declare no competing interests" was read as the *article's*
+# disclosure, and a round's data-availability statement as the article's data
+# level (issue #119).
+#
+# The two-element set is complete, and structurally so: of JATS's ~295 elements
+# exactly three admit <front>/<front-stub> and <body>, and the third is
+# <article> itself. The disjunction is what makes the count three — <response>
+# is modelled (front-stub, body?, back?, …) and admits <front-stub> only, so
+# "admits <front> and <body>" states a rule that puts one of these two elements
+# outside it. `bmlib.fulltext.jats_parser` makes the same rule with the same
+# argument at greater length — read `_NESTED_ARTICLE_ELEMENTS` there before
+# changing this — and it is restated rather than imported so that
+# `bmlib.transparency` needs nothing from `bmlib.fulltext`;
+# `TestTheRestatedSetMatchesTheParsers` is what keeps the two in step, since a
+# rule enforced by prose is not enforced. A tuple rather than the parser's
+# frozenset because it is joined into a regex alternation below and needs a
+# deterministic order. Also structural rather than by @article-type, which is
+# CDATA #IMPLIED, has four published vocabularies that disagree, and is
+# deposited in none of them.
+#
+# Measured over PMC's `oa_comm` baseline package PMC012xxxxxx (2025-06-26,
+# 97,909 open-access articles): 3,382 (3.45%) carry a region this removes —
+# 3,377 a <sub-article>, and 5 more a top-level <response response-type="reply">
+# with no <sub-article> at all — and for 602 of those (0.61% of the corpus) at
+# least one of the four scan outputs below moves once the regions go: 499 the
+# data-availability level, 125 the COI cue phrase (4 of them flipping
+# `coi_disclosed`), 6 the industry-COI signal, 1 the tagged COI section. The
+# industry row moves more than an indicator string: `note_industry_coi()` also
+# sets `industry_funding` and raises `industry_confidence`, both of which reach
+# `calculate_risk_level`. None of the five <response> articles is among the
+# 602, so that element is *rare*, not *absent* — the first cut of this comment
+# said it measured zero, which was a grep for the other element.
+#
+# Nesting is exercised rather than defensive: 98 of the 3,382 carriers nest
+# (96 at depth 2, 2 at depth 3). Two populations beside it measure *empty*, and
+# say so rather than implying a shape someone has seen. No article leaves a
+# region open (0 of 97,909), so the refusal path guards a truncated body. And
+# no article is emptied by the removal: all 3,389 carriers across this corpus
+# and an 880-article Europe PMC draw keep their <body>, the least of them
+# retaining 32.2% of its bytes — so `_check_europepmc`'s truthiness test is not
+# standing in for a size rule.
+_NESTED_ARTICLE_ELEMENTS = ("sub-article", "response")
+
+# One lexer for the whole scan. In well-formed XML a literal "<" can only open
+# markup — a "<" in text or in an attribute value has to be escaped — so a
+# comment, a CDATA section, a processing instruction and the DOCTYPE's internal
+# subset are the *complete* set of places the characters "<sub-article" can
+# appear without being a start tag. Each is matched as a token and skipped,
+# which is what makes this exact rather than merely careful: the alternative is
+# a list of hazards someone thought of, and a publisher's comment naming the
+# element would then cost the article its whole remaining text. Case-sensitive,
+# because XML is, and DOCTYPE/CDATA are spelled by the spec.
+#
+# The converse of that argument does *not* hold for ">", which is legal
+# unescaped in an attribute value and inside a DOCTYPE's system literal, and
+# "]" is legal inside an entity's replacement text. Both the tag branch and the
+# doctype branch therefore step over quoted literals rather than scanning to the
+# first ">", and the internal subset ends at the "]" that precedes the ">"
+# rather than at the first one. Scanning to the first ">" cost a whole article
+# each time — fail-closed, but a refusal is still a full text discarded.
+#
+# Which populations these four have is worth stating, because only one of them
+# has ever been seen to fire. Over the 97,909-article baseline: the comment
+# token fires on 3 articles, where Springer deposits an <authorqueries> block
+# commented out and its <aq> children carry <response> elements — but that is
+# the *archive* rendition, and this function reads Europe PMC's `fullTextXML`,
+# which serves those same three articles with no comments at all and carries a
+# comment in 0 of an 880-article draw against 25.6% of the archive. CDATA
+# sections appear in 159 articles and internal subsets in none, and neither
+# they nor the processing instructions ever hold these element names. So all
+# four are kept for the structural argument and none of them for a measured
+# population on this module's own input.
+_NESTED_ARTICLE_ALTERNATION = "|".join(re.escape(name) for name in _NESTED_ARTICLE_ELEMENTS)
+
+# The two groups are *named*: they are read below to tell a start tag from an
+# end tag and from a self-closing one, and every other branch here must leave
+# both unset. Positional groups made that a property of the pattern's shape —
+# a group added to any earlier branch would have silently made a comment look
+# like a start tag, with nothing failing. `TestOnlyTheTagBranchSetsAGroup`
+# is the guard, for the same reason the set has one.
+_NESTED_ARTICLE_TOKEN_RE = re.compile(
+    r"<!--.*?-->"  # comment
+    r"|<!\[CDATA\[.*?\]\]>"  # CDATA section
+    r"|<\?.*?\?>"  # processing instruction
+    # doctype: quoted literals stepped over, internal subset closed at the "]"
+    # that precedes the ">" rather than at the first one
+    r"|<!DOCTYPE(?:[^>\"'\[]|\"[^\"]*\"|'[^']*')*+(?:\[.*?\]\s*)?>"
+    # a start, end or self-closing tag of one of the two elements. The name is
+    # followed by a negative lookahead rather than \b, because \b is a boundary
+    # at "-", "." and ":" — all legal in an XML name — so <response-note> and
+    # <sub-article-x> matched, and stripped prose no JATS element owns. The
+    # attributes are one possessive run rather than a lazy one: a lazy star
+    # over this alternation backtracks quadratically on a tag that never
+    # closes, and self-closing is then read off the run's last character
+    # instead of from a second group, which a "/" inside a quoted value would
+    # otherwise have to be kept out of.
+    r"|<(?P<closing>/?)(?:" + _NESTED_ARTICLE_ALTERNATION + r")(?![-.:\w])"
+    r"(?P<attributes>(?:[^>\"']|\"[^\"]*\"|'[^']*')*+)>",
+    re.DOTALL,
+)
+
+
+def _strip_nested_articles(xml: str) -> str | None:
+    """Return *xml* with every nested-article region removed.
+
+    A ``<sub-article>`` or ``<response>`` region — the element, its content and
+    its end tag — is cut out, and the text either side of it is kept verbatim,
+    so the JATS-tagged containers the COI scan matches on survive untouched.
+
+    Regions are counted as a **depth**, not tracked as a flag, because JATS
+    nests them: a ``<response>`` sits inside the ``<sub-article>`` it answers,
+    and an inner end tag would otherwise re-admit the rest of the outer round
+    as the article's own prose. Nesting is measured, not hypothetical: 98 of
+    the 3,382 carriers in the baseline corpus nest. A self-closing
+    ``<sub-article/>`` opens nothing.
+
+    Args:
+        xml: A ``fullTextXML`` body as Europe PMC served it. Assumed
+            well-formed, which is what the caller is served and what every one
+            of 3,880 sampled deposits was; the function neither validates it
+            nor bounds its own running time, so a caller handing it something
+            else owns that.
+
+    Returns:
+        The article's own markup, or ``None`` if a region is left open at the
+        end of the document — the caller then has no full text rather than a
+        guess. Both other readings are worse: scanning the tail is the defect
+        itself, and dropping it silently manufactures the
+        ``No COI disclosure found in full text`` finding, which is what
+        triggers the missing-COI downgrade. An unmatched *end* tag **at depth
+        0** is not an imbalance in this sense — no nested prose reaches the
+        scans through one — so it is ignored rather than costing the article a
+        signal it really carries. That is the whole of the claim: the depth is
+        not matched against the element name, so an unmatched end tag *inside*
+        an open region closes it and does re-admit the rest of the outer round.
+        Only a document expat would reject can hold one, which is why it is
+        left as it is rather than guarded.
+    """
+    kept: list[str] = []
+    depth = 0
+    resume_at = 0
+    for token in _NESTED_ARTICLE_TOKEN_RE.finditer(xml):
+        closing = token.group("closing")
+        if closing is None:
+            continue  # a comment, CDATA section, PI or doctype: not markup we route on
+        if closing:
+            if depth:
+                depth -= 1
+                if depth == 0:
+                    resume_at = token.end()
+            continue
+        if token.group("attributes").endswith("/"):
+            continue  # self-closing: opens nothing
+        if depth == 0:
+            kept.append(xml[resume_at : token.start()])
+        depth += 1
+    if depth:
+        return None
+    kept.append(xml[resume_at:])
+    return "".join(kept)
+
+
 def _extract_tagged_coi_text(full_text: str) -> str:
     """Return the text of JATS-tagged COI containers, tag-stripped and lowercased.
 
@@ -1252,19 +1421,66 @@ class TransparencyAnalyzer:
         source: str | None,
         ext_id: str | None,
     ) -> str | None:
-        """Fetch full-text XML for an open-access EuropePMC record."""
+        """Fetch this article's own full-text XML for an open-access EuropePMC record.
+
+        Nested articles are removed here rather than at each scan, so there is
+        one door into the module for a string that has to be the article's:
+        every reader downstream — the tagged-COI match, the cue-phrase scan,
+        the data-availability patterns and the industry-COI extraction — takes
+        it from this return value. ``None`` means "no full text", whether
+        because none was served, because what was served could not be
+        segmented into the article's own text (see
+        :func:`_strip_nested_articles`), or because none of it was the
+        article's; the caller falls back to the abstract in every case, which
+        leaves the COI status *unknown* rather than absent — it can still be
+        set ``True`` from the abstract, but never ``False``, and only ``False``
+        triggers the missing-COI downgrade. The two segmentation outcomes
+        WARN; a non-200 does not, because there is nothing there to report.
+        """
         if not source or not ext_id:
             return None
         self._rate_limit()
+        # Only the request is wrapped. `_strip_nested_articles` is bmlib's own
+        # computation over a string, so anything it raises is a bmlib defect,
+        # and inside this `except` it would be logged at DEBUG as "fetch
+        # failed" and reported to the caller as "EuropePMC served nothing" —
+        # the shape `fulltext/service.py` keeps `_BUG_TYPES` for.
         try:
             resp = client.get(
                 f"https://www.ebi.ac.uk/europepmc/webservices/rest/{source}/{ext_id}/fullTextXML"
             )
-            if resp.status_code == 200:
-                return resp.text
         except Exception as e:
             logger.debug("EuropePMC full-text fetch failed for %s/%s: %s", source, ext_id, e)
-        return None
+            return None
+        if resp.status_code != 200:
+            return None
+        article_xml = _strip_nested_articles(resp.text)
+        if article_xml is None:
+            # A deposit can reach this, so it is not a bmlib defect: WARNING,
+            # and the analysis proceeds on the abstract.
+            logger.warning(
+                "EuropePMC full text for %s/%s leaves an unclosed nested article; "
+                "scanning the abstract instead",
+                source,
+                ext_id,
+            )
+            return None
+        if not article_xml.strip():
+            # Everything served was nested. The caller's `if full_text:` would
+            # read the empty string as "nothing was served" and fall back
+            # silently, so it is reported here instead — the one outcome of
+            # this function that would otherwise reach storage with no signal
+            # at all. Measured empty: all 3,389 carriers across the baseline
+            # corpus and an 880-article EuropePMC draw keep their <body>, the
+            # least of them retaining 32.2% of its bytes.
+            logger.warning(
+                "EuropePMC full text for %s/%s is entirely nested articles; "
+                "scanning the abstract instead",
+                source,
+                ext_id,
+            )
+            return None
+        return article_xml
 
     def _check_pubmed(self, client: Any, pmid: str | None) -> _PubMedSignals:
         """Fetch and parse the PubMed record for *pmid*.

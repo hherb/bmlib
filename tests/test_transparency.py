@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from bmlib.transparency.analyzer import (
@@ -32,6 +34,8 @@ from bmlib.transparency.analyzer import (
     _INDICATOR_NO_COI_IN_FULLTEXT,
     _INDICATOR_NO_POSTED_RESULTS,
     _INDICATOR_RESULTS_NOT_CHECKABLE,
+    _NESTED_ARTICLE_ELEMENTS,
+    _NESTED_ARTICLE_TOKEN_RE,
     _TRIAL_REGISTRY_NAMES,
     DEFAULT_INDUSTRY_CONFIDENCE,
     SCORE_CITED,
@@ -47,6 +51,7 @@ from bmlib.transparency.analyzer import (
     _parse_pubmed_signals,
     _PubMedSignals,
     _score_data_availability,
+    _strip_nested_articles,
 )
 from bmlib.transparency.models import (
     TransparencyResult,
@@ -583,6 +588,424 @@ class TestIndustryCOIDetection:
         assert result.industry_funding_detected is True
         assert 0.0 < result.industry_funding_confidence < 0.8  # moderate, below CrossRef's
         assert any("COI" in ind for ind in result.risk_indicators)
+
+
+class TestANestedArticleIsNotThisArticles:
+    """Issue #119 — reviewer prose must not answer for the article.
+
+    ``_check_europepmc`` scans the raw ``fullTextXML`` body, and a
+    ``<sub-article>`` holds a complete article of its own: a peer-review round,
+    an author response, a translation, or Europe PMC's injected
+    ``associated-data`` block. Every one of those is written in the exact
+    vocabulary these scans hunt for — a reviewer's "I declare no competing
+    interests" was read as the *article's* disclosure — so the regions are
+    removed before anything reads the string.
+
+    Measured over PMC's ``oa_comm`` baseline package
+    ``PMC012xxxxxx`` (2025-06-26, 97,909 articles): 3,382 (3.45%) carry a
+    region this removes — 3,377 a ``<sub-article>``, 5 more a top-level
+    ``<response response-type="reply">`` and no ``<sub-article>`` — and 602 of
+    those (0.61% of the corpus) have at least one of the four scan outputs move
+    once the regions go: 499 the data-availability level, 125 the COI cue
+    phrase (4 of them flipping the stored tri-state, the tagged section usually
+    still firing), 6 the industry-COI signal and 1 the tagged section itself.
+    None of the five ``<response>`` articles is among the 602, so that element
+    is rare rather than absent.
+
+    Two populations here measure **empty** and are tested as guards rather than
+    as shapes anyone has seen: no article leaves a region open, and none is
+    emptied by the removal (all 3,389 carriers across this corpus and an
+    880-article Europe PMC draw keep their ``<body>``, the least of them
+    retaining 32.2% of its bytes). Nesting, by contrast, is exercised — 98 of
+    the 3,382 carriers nest — and so are siblings, 2,855 of them.
+
+    **The lexer's four skip tokens have no measured population on the input
+    this module actually reads.** Three archive articles carry a ``<response>``
+    inside a commented-out Springer ``<authorqueries>`` block, but Europe PMC's
+    ``fullTextXML`` serves those same three with no comments at all, and
+    carries a comment in 0 of the 880-article draw against 25.6% of the
+    archive. They are tested because the argument for them is structural, not
+    because a deposit has been seen to need them.
+    """
+
+    # ---- the lexer ----
+    #
+    # In well-formed XML a literal "<" can only open markup, so the constructs
+    # below are the *complete* set of places the characters "<sub-article" can
+    # appear without being a start tag. Each has a test, because a scanner over
+    # markup is only as good as the list of things it knows are not markup.
+
+    def test_a_nested_article_is_removed_and_its_neighbours_are_kept(self):
+        stripped = _strip_nested_articles(
+            "<article><body><p>Ours.</p>"
+            '<sub-article article-type="peer-review"><body><p>Theirs.</p></body></sub-article>'
+            "<p>Ours again.</p></body></article>"
+        )
+        assert stripped == "<article><body><p>Ours.</p><p>Ours again.</p></body></article>"
+
+    def test_a_response_is_removed_too(self):
+        stripped = _strip_nested_articles(
+            "<article><p>Ours.</p><response><p>Theirs.</p></response></article>"
+        )
+        assert "Theirs" not in stripped
+        assert "Ours" in stripped
+
+    def test_a_nested_nested_article_does_not_end_the_region_early(self):
+        # JATS nests these — a <response> sits inside the <sub-article> it
+        # answers — so the inner close must not re-admit the outer's prose.
+        # A flag rather than a depth reads "Outer tail" as the article's.
+        stripped = _strip_nested_articles(
+            "<article><p>Ours.</p>"
+            "<sub-article><p>Round one.</p>"
+            "<response><p>Reply.</p></response>"
+            "<p>Outer tail.</p></sub-article>"
+            "<p>Ours again.</p></article>"
+        )
+        assert stripped == "<article><p>Ours.</p><p>Ours again.</p></article>"
+
+    def test_a_self_closing_nested_article_removes_nothing(self):
+        # It opens no region, so treating it as an open would swallow the rest
+        # of the document — and, with nothing to close it, refuse the article.
+        stripped = _strip_nested_articles("<article><sub-article/><p>Ours.</p></article>")
+        assert stripped == "<article><sub-article/><p>Ours.</p></article>"
+
+    def test_a_nested_article_named_in_a_comment_opens_no_region(self):
+        # Exact equality, not `"Ours" in stripped`: the fixture's element is
+        # unbalanced, so deleting the comment branch returns None and the
+        # containment check dies by TypeError — a kill that would survive the
+        # branch being deleted if a publisher's comment were balanced, which
+        # is the only shape ever seen. Springer's is.
+        xml = (
+            "<article><!-- <authorqueries><aq><response>Answered</response></aq>"
+            "</authorqueries> --><p>Ours.</p></article>"
+        )
+        assert _strip_nested_articles(xml) == xml
+
+    def test_a_multi_line_comment_is_still_one_token(self):
+        # `re.DOTALL` is what makes "." cross a newline, and every other
+        # fixture here is one line. Real comments are not: the Springer
+        # deposits this rule was measured on span lines. Without the flag the
+        # comment ends at the first newline and its <response> is stripped.
+        xml = (
+            "<article><!-- <authorqueries>\n<aq><response>Answered</response></aq>\n"
+            "</authorqueries> --><p>Ours.</p></article>"
+        )
+        assert _strip_nested_articles(xml) == xml
+
+    def test_a_nested_article_named_in_a_cdata_section_opens_no_region(self):
+        xml = "<article><p><![CDATA[write <sub-article> to nest one]]></p><p>Ours.</p></article>"
+        assert _strip_nested_articles(xml) == xml
+
+    def test_a_multi_line_cdata_section_is_still_one_token(self):
+        # As above: without `re.DOTALL` the section is not matched at all, the
+        # <sub-article> inside it reads as an open, and the whole article is
+        # refused — a silent fallback to the abstract, for a document that was
+        # served in full.
+        xml = "<article><p><![CDATA[write\n<sub-article>\nto nest one]]></p><p>Ours.</p></article>"
+        assert _strip_nested_articles(xml) == xml
+
+    def test_a_nested_article_named_in_a_processing_instruction_opens_no_region(self):
+        xml = '<article><?publisher drop="<sub-article>"?><p>Ours.</p></article>'
+        assert _strip_nested_articles(xml) == xml
+
+    def test_a_multi_line_processing_instruction_is_still_one_token(self):
+        xml = '<article><?publisher drop="\n<sub-article>\n"?><p>Ours.</p></article>'
+        assert _strip_nested_articles(xml) == xml
+
+    def test_a_nested_article_named_in_the_doctype_internal_subset_opens_no_region(self):
+        # The entity's replacement text is an *opening* tag on purpose: a
+        # self-closing one is already refused by the rule above, so a fixture
+        # written that way passes whether or not the doctype is lexed —
+        # measured, as a mutant deleting the doctype token survived it.
+        stripped = _strip_nested_articles(
+            '<!DOCTYPE article PUBLIC "-//NLM//DTD JATS 1.4//EN" "JATS.dtd"'
+            ' [<!ENTITY review "<sub-article>">]>'
+            "<article><p>Ours.</p></article>"
+        )
+        assert stripped is not None
+        assert "Ours" in stripped
+
+    def test_an_unclosed_nested_article_refuses_the_document(self):
+        # The tail cannot be shown to be the article's own text. Keeping it is
+        # the defect; dropping it silently would manufacture "no COI statement
+        # in full text", which is what triggers the missing-COI downgrade. So
+        # the document is refused and the analysis falls back to the abstract.
+        assert (
+            _strip_nested_articles("<article><p>Ours.</p><sub-article><p>Theirs.</p></article>")
+            is None
+        )
+
+    def test_an_unmatched_close_is_not_an_imbalance(self):
+        # Malformed the other way round, and harmless: no nested prose can
+        # reach the scans through it, so refusing the article would cost a
+        # real signal to no purpose.
+        stripped = _strip_nested_articles("<article><p>Ours.</p></sub-article></article>")
+        assert stripped is not None
+        assert "Ours" in stripped
+
+    def test_a_document_carrying_none_is_returned_unchanged(self):
+        xml = "<article><body><p>Ours.</p></body></article>"
+        assert _strip_nested_articles(xml) == xml
+
+    def test_sibling_regions_keep_the_article_prose_between_them(self):
+        # The dominant real shape: 2,855 of the 3,382 carriers hold two or
+        # more top-level regions. None of them has prose between two rounds,
+        # so nothing in a corpus would catch a splice that dropped it.
+        stripped = _strip_nested_articles(
+            "<article><p>One.</p>"
+            "<sub-article><p>Round one.</p></sub-article>"
+            "<p>Two.</p>"
+            "<sub-article><p>Round two.</p></sub-article>"
+            "<p>Three.</p></article>"
+        )
+        assert stripped == "<article><p>One.</p><p>Two.</p><p>Three.</p></article>"
+
+    def test_an_unescaped_gt_in_an_attribute_does_not_truncate_the_tag(self):
+        # ">" is legal unescaped in an XML attribute value; only "<" must be
+        # escaped. Read to the first ">", a self-closing tag loses its "/",
+        # reads as an open, and refuses the whole article — a full text
+        # discarded for a well-formed document.
+        xml = '<article><p>Ours.</p><sub-article specific-use="a>b"/><p>More.</p></article>'
+        assert _strip_nested_articles(xml) == xml
+        stripped = _strip_nested_articles(
+            '<article><p>Ours.</p><sub-article xlink:title="a > b">'
+            "<p>Theirs.</p></sub-article><p>More.</p></article>"
+        )
+        assert stripped == "<article><p>Ours.</p><p>More.</p></article>"
+
+    def test_a_doctype_internal_subset_may_contain_a_closing_bracket(self):
+        # "]" is legal inside an entity's replacement text, so the subset ends
+        # at the "]" before the ">", not at the first one. Closed at the first,
+        # the doctype token does not match and the article is refused.
+        xml = (
+            '<!DOCTYPE article [<!ENTITY range "1]2"><!ENTITY r "<sub-article>">]>'
+            "<article><p>Ours.</p></article>"
+        )
+        assert _strip_nested_articles(xml) == xml
+
+    def test_a_doctype_system_literal_may_contain_a_greater_than(self):
+        xml = (
+            '<!DOCTYPE article SYSTEM "j>ats.dtd" [<!ENTITY r "<sub-article>">]>'
+            "<article><p>Ours.</p></article>"
+        )
+        assert _strip_nested_articles(xml) == xml
+
+    def test_an_element_whose_name_merely_begins_with_one_of_these_is_not_one(self):
+        # "-", "." and ":" are all legal in an XML name and all word
+        # boundaries, so `\b` admitted <response-note> and <sub-article-x>
+        # and stripped prose no JATS element owns. Measured 0 across 98,789
+        # articles, so this is defence-in-depth against a name the set gains
+        # or a vocabulary JATS does not own — not a shape anyone has seen.
+        for xml in (
+            '<article><p>The authors <response-note id="n1">see note</response-note>'
+            " declare nothing.</p></article>",
+            "<article><sub-article-supplement><p>Ours.</p></sub-article-supplement></article>",
+            "<article><response.x>Ours.</response.x></article>",
+            "<article><ns:response>Ours.</ns:response></article>",
+            "<article><responses><p>Ours.</p></responses></article>",
+        ):
+            assert _strip_nested_articles(xml) == xml
+
+    def test_only_the_tag_branch_sets_a_group(self):
+        # The loop tells a start tag from a comment by the groups being unset.
+        # Named groups make that independent of the pattern's shape; with
+        # positional ones, a group added to any earlier branch would have made
+        # a comment look like a start tag, with nothing failing.
+        for token in (
+            "<!-- c -->",
+            "<![CDATA[c]]>",
+            "<?pi c?>",
+            '<!DOCTYPE article PUBLIC "-//NLM//DTD JATS 1.4//EN" "JATS.dtd">',
+        ):
+            match = _NESTED_ARTICLE_TOKEN_RE.match(token)
+            assert match is not None, token
+            assert match.group("closing") is None
+            assert match.group("attributes") is None
+        opening = _NESTED_ARTICLE_TOKEN_RE.match("<sub-article>")
+        assert opening is not None
+        assert opening.group("closing") == ""
+        assert opening.group("attributes") == ""
+
+    # ---- what the scans then see ----
+
+    def test_a_reviewers_disclosure_is_not_this_articles(self):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>Methods and results.</p></body>"
+            '<sub-article article-type="peer-review"><body>'
+            "<p>The reviewers declare no competing interests.</p>"
+            "</body></sub-article></article>"
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is False
+        assert _INDICATOR_NO_COI_IN_FULLTEXT in analysis.indicators
+
+    def test_the_articles_own_disclosure_is_still_found(self):
+        # The control: the same statement in the article's own back matter,
+        # beside a review round, is still the article's.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>Methods.</p></body>"
+            '<sub-article article-type="peer-review"><body>'
+            "<p>The reviewers declare no competing interests.</p>"
+            "</body></sub-article>"
+            '<back><fn-group><fn fn-type="COI-statement">'
+            "<p>The authors declare no conflict of interest.</p></fn></fn-group></back>"
+            "</article>"
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is True
+
+    def test_a_review_rounds_data_statement_does_not_set_the_level(self):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>Methods.</p></body>"
+            "<sub-article><body><p>The data are available upon request.</p></body>"
+            "</sub-article></article>"
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.data_level == "unknown"
+
+    def test_the_articles_own_data_statement_still_sets_the_level(self):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>The data are available upon request.</p></body>"
+            "<sub-article><body><p>Round one.</p></body></sub-article></article>"
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.data_level == "on_request"
+
+    def test_an_industry_tie_disclosed_in_a_review_round_is_not_this_articles(self):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>Methods.</p></body>"
+            '<sub-article article-type="peer-review"><back>'
+            '<fn-group><fn fn-type="COI-statement">'
+            "<p>Reviewer 2 is an employee of Genentech.</p>"
+            "</fn></fn-group></back></sub-article>"
+            '<back><fn-group><fn fn-type="COI-statement">'
+            "<p>The authors declare no conflict of interest.</p></fn></fn-group></back>"
+            "</article>"
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is True
+        assert analysis.industry_funding is False
+        assert _INDICATOR_INDUSTRY_COI not in analysis.indicators
+
+    def test_a_refused_document_is_not_scanned_as_full_text(self, caplog):
+        # An imbalance leaves the COI status *unknown*, never "absent": only
+        # an explicit False triggers the missing-COI HIGH-risk rule, and no
+        # document was successfully scanned here. WARNING rather than ERROR —
+        # a publisher's deposit can reach this, so it is not a bmlib defect.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>Methods.</p></body><sub-article><p>Round one.</p></article>"
+        )
+        analysis = _Analysis()
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is False
+        assert analysis.coi_disclosed is None
+        assert _INDICATOR_COI_UNKNOWN in analysis.indicators
+        # The level is asserted, not just the message: `at_level(WARNING)`
+        # admits ERROR, and ERROR is the level this module reserves for "bmlib
+        # is wrong" — the distinction this test's own comment turns on.
+        matching = [r for r in caplog.records if "unclosed nested article" in r.getMessage()]
+        assert len(matching) == 1
+        assert matching[0].levelno == logging.WARNING
+
+    def test_a_document_that_is_all_nested_articles_is_reported_not_dropped(self, caplog):
+        # `_strip_nested_articles` returns "" here, which the caller's
+        # `if full_text:` reads as "nothing was served" — the one outcome that
+        # would otherwise reach storage with no signal anywhere. Measured
+        # empty: all 3,389 carriers across both corpora keep their <body>.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient("<sub-article><p>Round one.</p></sub-article>")
+        analysis = _Analysis()
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is False
+        assert analysis.coi_disclosed is None
+        matching = [r for r in caplog.records if "entirely nested articles" in r.getMessage()]
+        assert len(matching) == 1
+        assert matching[0].levelno == logging.WARNING
+
+    def test_a_tagged_coi_section_of_a_review_round_is_not_this_articles(self):
+        # The fourth reader, and the only one that can assert a disclosure
+        # with no cue phrase anywhere in the document (issue #13). It is the
+        # "1 the tagged COI section" row of the measurement. The negative
+        # control below is what stops this passing for the wrong reason: the
+        # sibling test plants a container in *both* places, so it holds with
+        # or without the strip and pins the industry reader instead.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>Methods and results, no disclosure wording at all.</p></body>"
+            '<sub-article article-type="peer-review"><back><fn-group>'
+            '<fn fn-type="COI-statement"><p>Reviewer 1 has nothing to declare.</p></fn>'
+            "</fn-group></back></sub-article></article>"
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is False
+        assert _INDICATOR_NO_COI_IN_FULLTEXT in analysis.indicators
+
+    def test_the_articles_own_tagged_coi_section_is_still_found(self):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>Methods and results, no disclosure wording at all.</p></body>"
+            '<sub-article article-type="peer-review"><body><p>Round one.</p></body></sub-article>'
+            '<back><fn-group><fn fn-type="COI-statement">'
+            "<p>Reviewer 1 has nothing to declare.</p></fn></fn-group></back></article>"
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.coi_disclosed is True
+
+    def test_the_articles_own_industry_tie_is_still_found(self):
+        # The positive control for the industry reader: the same disclosure,
+        # in the article's own back matter, beside a review round.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>Methods.</p></body>"
+            '<sub-article article-type="peer-review"><body><p>Round one.</p></body></sub-article>'
+            '<back><fn-group><fn fn-type="COI-statement">'
+            "<p>Dr Smith is an employee of Genentech.</p></fn></fn-group></back></article>"
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.industry_funding is True
+        assert _INDICATOR_INDUSTRY_COI in analysis.indicators
+
+
+class TestTheRestatedSetMatchesTheParsers:
+    """`_NESTED_ARTICLE_ELEMENTS` is stated twice, so something must compare them.
+
+    `bmlib.transparency` deliberately depends on nothing in `bmlib.fulltext`,
+    so the set and its completeness argument are restated rather than imported
+    (``docs/DECISIONS.md``). That leaves a rule enforced by prose — "if the
+    rule changes, change both" — and this repo's own precedent is that a rule
+    enforced by prose is not enforced. A *test* may import both where the
+    module may not, and the drift that matters is undetectable otherwise:
+    adding an element to the parser's set only, which leaves the transparency
+    scan reading a region the parser knows is not this article's.
+    """
+
+    def test_the_two_sets_hold_the_same_elements(self):
+        from bmlib.fulltext import jats_parser
+
+        assert set(_NESTED_ARTICLE_ELEMENTS) == set(jats_parser._NESTED_ARTICLE_ELEMENTS)
+
+    def test_the_transparency_copy_is_ordered(self):
+        # It is joined into a regex alternation, so it needs a deterministic
+        # order; the parser's is a frozenset, whose iteration order is not.
+        # Copying the parser's container across would make the compiled
+        # pattern differ between processes.
+        assert isinstance(_NESTED_ARTICLE_ELEMENTS, tuple)
 
 
 class TestCheckTrialResults:

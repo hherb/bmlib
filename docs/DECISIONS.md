@@ -12,6 +12,43 @@ must not be re-done.
 
 ## Transparency
 
+- **`_NESTED_ARTICLE_ELEMENTS` is restated here, not imported from
+  `bmlib.fulltext.jats_parser`** (#119). Both modules make the same rule —
+  nothing inside a `<sub-article>` or `<response>` is this article's — from the
+  same structural argument, and the parser states it in full. It is duplicated
+  on purpose: `bmlib.transparency` depends on nothing in `bmlib.fulltext`
+  today, and reaching across packages for a module-private name to save two
+  strings would trade that for nothing. Do not "deduplicate" them; if the rule
+  itself changes, change both, and read the parser's comment first — it carries
+  the argument.
+- **The full text is stripped, not parsed** (#119). The obvious tidier fix is
+  to feed `JATSParser` output to the scans, and it is wrong here: the COI scan
+  matches on JATS containers (`<fn fn-type="COI-statement">` is structural
+  proof of a disclosure regardless of wording, issue #13), which a parse throws
+  away. Stripping keeps every calibration and changes only what is in scope.
+  Metric test:
+  `tests/test_transparency.py::TestANestedArticleIsNotThisArticles`.
+- **An unclosed nested article costs the whole full text, on purpose** (#119).
+  `_strip_nested_articles` returns `None` and the analysis falls back to the
+  abstract, so `coi_disclosed` can never be set `False` — it may still be set
+  `True` from the abstract, and it is only the `False` that triggers the
+  downgrade. Do not "recover" the tail: keeping it is the defect the fix exists
+  to remove, and dropping it silently manufactures "No COI disclosure found in
+  full text" — the finding that, absent a PubMed `<CoiStatement>`, triggers the
+  missing-COI HIGH-risk rule. An unmatched *end* tag **at depth 0** is
+  deliberately **not** treated the same way, since no nested prose reaches the
+  scans through one; the depth is not matched against the element name, so one
+  *inside* a region does close it, and only a document expat would reject can
+  carry one. Two paths measure empty over all 97,909 articles in the `oa_comm`
+  `PMC012xxxxxx` baseline — none leaves a region open, and none is emptied by
+  the removal — so both guard a truncated body rather than a shape anyone has
+  seen. **The lexer's four skip tokens have no measured population on this
+  module's input at all**: the comment token fires on 3 *archive* deposits,
+  where Springer comments out an `<authorqueries>` block whose `<aq>` children
+  carry `<response>` elements, but Europe PMC's `fullTextXML` serves those same
+  three with no comments and carries one in 0 of an 880-article draw against
+  25.6% of the archive. Keep all four for the structural argument; do not cite
+  a population for them.
 - **`_INDUSTRY_STEMS` and `_INDUSTRY_WORDS` must not be merged into one
   list**, and neither may be extended without re-running
   `scripts/sample_funder_names.py` against `tests/data/funder_names.json` —

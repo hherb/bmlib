@@ -524,8 +524,10 @@ pass.
 >
 > This does **not** protect [`bmlib.transparency`](transparency.md), which
 > fetches and regexes the raw XML itself and never sees `JATSParser` output.
-> Reviewer correspondence about funding, conflicts and data availability
-> still reaches its scans; that is issue #119.
+> That module makes the same rule for itself, on the raw string — see [The
+> full text is the article's
+> own](transparency.md#the-full-text-is-the-articles-own) *(unreleased)*.
+> Change one and read the other.
 
 > **`<sec>` is optional inside `<body>`.** Prose in bare `<p>` children of
 > `<body>` is collected into a `JATSBodySection` with an empty `title` — no

@@ -326,7 +326,7 @@ All requests go through one `httpx.Client` with a 15-second timeout and the head
 |------|-----|----------|----------|----------|
 | 1 | CrossRef | `https://api.crossref.org/works/{doi}` | `doi` | Funder records; structured industry-funder detection. |
 | 2 | Europe PMC search | `https://www.ebi.ac.uk/europepmc/webservices/rest/search` | `doi` or `pmid` | Record lookup by `DOI:"{doi}"` (preferred) or `EXT_ID:{pmid}`; abstract text; the PMID for step 4. |
-| 3 | Europe PMC full text | `https://www.ebi.ac.uk/europepmc/webservices/rest/{source}/{ext_id}/fullTextXML` | step 2 record with `inEPMC == "Y"` | COI statement, industry-COI detection, data-availability statement. |
+| 3 | Europe PMC full text | `https://www.ebi.ac.uk/europepmc/webservices/rest/{source}/{ext_id}/fullTextXML` | step 2 record with `inEPMC == "Y"` | COI statement, industry-COI detection, data-availability statement. Nested articles are removed first — see [The full text is the article's own](#the-full-text-is-the-articles-own). |
 | 4 | PubMed E-utilities | `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi` (`db=pubmed&retmode=xml`) | `pmid`, or a PMID in the step-2 record | `<CoiStatement>`, `<DataBankList>` trial registrations and data-deposition accessions, `<GrantList>` funders. |
 | 5 | OpenAlex | `https://api.openalex.org/works/doi:{doi}` | `doi` | Open-access status, citation count. |
 | 6 | ClinicalTrials.gov v2 | `https://clinicaltrials.gov/api/v2/studies/{nct_id}` (`fields=hasResults`) | an NCT id from step 4, else one credited in step 2's abstract | Posted-results check. |
@@ -334,6 +334,93 @@ All requests go through one `httpx.Client` with a 15-second timeout and the head
 The step-2 search is issued **once** per document: the record is threaded into the PubMed and trial-registration steps rather than re-queried, halving Europe PMC traffic compared to earlier releases.
 
 Step 3 is the difference between a real data-availability reading and a guess. COI and data-availability statements live in a paper's full text, never its abstract, so when `inEPMC != "Y"` (no open-access full text at Europe PMC) the analyzer falls back to scanning the abstract, `full_text_analyzed` stays `False`, and industry-COI detection does not run at all. COI *disclosure* and data availability are two exceptions: step 4 can establish either — a COI statement, or a `<DataBankList>` deposition accession — from PubMed's structured metadata whether or not full text was reachable.
+
+#### The full text is the article's own
+
+`TransparencyAnalyzer` never consumes `JATSParser` output: it fetches the
+`fullTextXML` body itself and scans the raw string, tags and all, because the
+COI rules below match on JATS containers (`<fn fn-type="COI-statement">` is
+structural proof of a disclosure regardless of wording). A `<sub-article>` or
+`<response>`, though, is a complete article of its own nested inside this one —
+a peer-review round, an author response, a translated full text, a meeting
+abstract, or Europe PMC's injected `associated-data` block. Reviewers write in
+exactly the vocabulary these scans hunt for, so a round's "the reviewers declare
+no competing interests" was read as *this paper's* disclosure, its data
+statement as this paper's data level, and an "employee of" line as an industry
+tie the paper never disclosed (issue #119).
+
+`_fetch_europepmc_fulltext()` therefore removes those regions before returning,
+which is the one door the full text enters through: every reader downstream
+takes a string that has to be the article's *(unreleased)*. The marker sits
+here rather than in the heading above so that the two links to this section
+keep working when it is promoted.
+
+Four things worth knowing about the rule:
+
+- **The two-element set is complete, structurally.** Of JATS's ~295 elements
+  exactly three admit `<front>`/`<front-stub>` and `<body>`, and the third is
+  `<article>` — the disjunction is what makes the count three, since
+  `<response>` is modelled `(front-stub, body?, back?, …)` and admits
+  `<front-stub>` only. It
+  is the same rule `bmlib.fulltext.jats_parser` makes — restated there in full —
+  and deliberately restated rather than imported, so `bmlib.transparency`
+  depends on nothing in `bmlib.fulltext`.
+- **It is a depth, not a flag.** JATS nests these: a `<response>` sits inside
+  the `<sub-article>` it answers, and an inner end tag would otherwise re-admit
+  the rest of the outer round as the article's prose.
+- **A comment, a CDATA section, a processing instruction and the DOCTYPE
+  internal subset are skipped as tokens.** In well-formed XML a literal `<` can
+  only open markup, so those four are the *complete* set of places the
+  characters `<sub-article` can appear without being a start tag. Lexing them is
+  what makes the scan exact rather than a list of hazards someone thought of.
+  The converse does not hold for `>`, which is legal unescaped in an attribute
+  value and in a DOCTYPE's system literal, nor for `]` inside an entity's
+  replacement text — so the tag and doctype branches step over quoted literals
+  and close the internal subset at the `]` before the `>`, rather than at the
+  first one. None of the four has a measured population on this module's own
+  input; see the note under the refusal rule below.
+- **An unclosed region is refused, not guessed at.** The document is treated as
+  though no full text was served — one `WARNING`, `full_text_analyzed` stays
+  `False`, and `coi_disclosed` cannot be set `False`. (It can still be set
+  `True` from the abstract; what the refusal guarantees is that the *absent*
+  verdict is never reached, and only that verdict triggers the downgrade.)
+  Scanning the tail is the defect itself; dropping it silently would manufacture
+  "No COI disclosure found in full text", which — absent a PubMed
+  `<CoiStatement>` to rescue it — is the finding that triggers the missing-COI
+  HIGH-risk rule. An unmatched *end* tag **at depth 0** is not an imbalance in
+  that sense, so it costs the article nothing; the depth is not matched against
+  the element name, so one *inside* a region does close it, and only a document
+  expat would reject can carry one. That path measures **empty**: not one of the
+  97,909 articles leaves a region open, so it guards against a truncated body
+  rather than against a shape anyone has seen. So does the emptied-article path
+  — all 3,389 carriers keep their `<body>`, the least of them retaining 32.2% of
+  its bytes. **And the four skip tokens have no measured population here
+  either**: the comment token fires on 3 archive deposits, where Springer
+  comments out an `<authorqueries>` block whose `<aq>` children carry
+  `<response>` elements — but Europe PMC's `fullTextXML`, which is what this
+  step actually reads, serves those same three articles with no comments at all,
+  and carries a comment in 0 of an 880-article draw of it against 25.6% of the
+  archive. They are kept for the structural argument, not for a population.
+
+**What it moves.** Measured over PMC's `oa_comm` baseline package
+`PMC012xxxxxx` (2025-06-26, 97,909 open-access articles), 3,382 (3.45%) carry a
+region this removes — 3,377 a `<sub-article>`, and 5 more a top-level
+`<response response-type="reply">` with no `<sub-article>` at all — and 602 of
+those, 0.61% of the corpus, have at least one scan output move once the regions
+go:
+
+| Scan output | Articles moved |
+|---|---|
+| `data_availability_level` | 499 |
+| COI cue phrase | 125 (4 flipping the stored `coi_disclosed`) |
+| industry ties in the COI statement | 6, all lost (`industry_funding` and `industry_confidence`, not only the indicator) |
+| tagged COI section | 1 |
+
+None of the five `<response>` articles is among the 602, so that element is
+**rare rather than absent** — a distinction worth keeping, since the first
+version of this section said it measured zero, and that number was a grep for
+the other element. Stored transparency values are not comparable across this
+change for a paper whose full text carries a nested article.
 
 Step 4's ordering is deliberate. It sits after Europe PMC so a DOI-only analysis can reuse the PMID from the record already fetched, and before ClinicalTrials.gov so a structured registry accession can feed the posted-results check. It costs one request at most, and none at all when no PMID is available. Its four signals — COI, trial registration, data-deposition accessions, and funders — are all publisher-supplied structured metadata, which is why they outrank the text heuristics elsewhere in the module. A PubMed record that is missing, unreachable, or unparsable yields no signals and changes nothing.
 
@@ -454,7 +541,7 @@ The lower confidence is the honest label on a text heuristic. Where several sign
 
 Three guards keep the false-positive rate down.
 
-**1. Scope — only the COI region is read.** `_extract_coi_text()` prefers JATS containers that hold the disclosure: `<fn fn-type="COI-statement">`, `<sec sec-type="conflict">`, `<notes notes-type="COI-statement">` (case- and quote-style-insensitive), plus untyped `<sec>` elements whose `<title>` names conflicts, competing interests, or disclosure. Only when that tagged text is blank does it fall back to a 1000-character window after each cue phrase in `_COI_PATTERNS` — a whitespace-only tagged section proves nothing, so an untagged disclosure elsewhere must still be findable. Either way, an author affiliation or a reference list mentioning a company is never read as a disclosure.
+**1. Scope — only the COI region is read.** `_extract_coi_text()` prefers JATS containers that hold the disclosure: `<fn fn-type="COI-statement">`, `<sec sec-type="conflict">`, `<notes notes-type="COI-statement">` (case- and quote-style-insensitive), plus untyped `<sec>` elements whose `<title>` names conflicts, competing interests, or disclosure. Only when that tagged text is blank does it fall back to a 1000-character window after each cue phrase in `_COI_PATTERNS` — a whitespace-only tagged section proves nothing, so an untagged disclosure elsewhere must still be findable. Either way, an author affiliation or a reference list mentioning a company is never read as a disclosure — and neither is a *reviewer's* disclosure, the nested article it sits in having been removed before any of this runs *(unreleased)*.
 
 A known limitation of the fallback: a window is a fixed span, so on a short disclosure it can bleed past the end into whatever follows (acknowledgements, references). That is the accepted trade-off behind the moderate `TEXT_INDUSTRY_CONFIDENCE` given to text-derived signals.
 
@@ -481,7 +568,7 @@ This is the same "strongest evidence wins, regardless of arrival order" rule `in
 
 ### Producer 1 — the full-text prose scan
 
-`_DATA_PATTERNS` is an **ordered** dict scanned against the search text (Europe PMC full text when it was retrieved, the abstract otherwise); the first hit wins and scanning stops.
+`_DATA_PATTERNS` is an **ordered** dict scanned against the search text (Europe PMC full text when it was retrieved, the abstract otherwise); the first hit wins and scanning stops. The full text is the article's own — a data statement inside a peer-review round does not set the level, and this is the scan that moved most when the regions were removed *(see [The full text is the article's own](#the-full-text-is-the-articles-own), unreleased)*.
 
 | Pattern | Level |
 |---------|-------|
