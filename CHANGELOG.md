@@ -311,6 +311,50 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A reviewer's disclosure answered for the article** (#119).
+  `TransparencyAnalyzer` never consumes `JATSParser` output: it fetches
+  `fullTextXML` itself and scans the raw string, so every `<sub-article>` and
+  `<response>` region — a peer-review round, an author response, a translated
+  full text, a meeting abstract, Europe PMC's injected `associated-data` block
+  — was read as the article's own text. Reviewers write in exactly the
+  vocabulary these scans hunt for: a round's "the reviewers declare no
+  competing interests" became *this paper's* COI disclosure, its data statement
+  *this paper's* data-availability level, and an "employee of" line an industry
+  tie the paper never disclosed. `_fetch_europepmc_fulltext()` now removes
+  those regions before returning, which is the one door the full text enters
+  through, so the tagged-COI match, the cue-phrase scan, the data-availability
+  patterns and the industry-COI extraction all read a string that has to be the
+  article's.
+
+  The two-element set and its completeness argument are `jats_parser`'s — of
+  JATS's ~295 elements exactly three admit `<front>` and `<body>`, the third
+  being `<article>` — **restated rather than imported**, so `bmlib.transparency`
+  depends on nothing in `bmlib.fulltext`. It is a **depth**, not a flag,
+  because JATS nests these and an inner end tag would otherwise re-admit the
+  rest of the outer round as article prose. And because a literal `<` can only
+  open markup in well-formed XML, a comment, a CDATA section, a processing
+  instruction and the DOCTYPE internal subset are the *complete* set of places
+  the characters `<sub-article` can appear without being a start tag; all four
+  are lexed as tokens, which is what makes the scan exact rather than a list of
+  hazards someone thought of. An **unclosed region returns nothing at all** and
+  the analysis falls back to the abstract, with one `WARNING`: scanning the
+  tail is the defect itself, and dropping it silently manufactures "No COI
+  disclosure found in full text", which is the finding that triggers the
+  missing-COI HIGH-risk rule. An unmatched *end* tag is not an imbalance in
+  that sense — no nested prose reaches the scans through one — so it costs the
+  article nothing.
+
+  **Stored transparency values are not comparable across this change** for a
+  paper whose Europe PMC full text carries a nested article. Measured over
+  PMC's `oa_comm` baseline package `PMC012xxxxxx` (2025-06-26, 97,909
+  open-access articles): 3,377 (3.4%) carry a `<sub-article>`, and 602 of those
+  — 0.61% of the corpus — have at least one scan output move once the regions
+  go: 499 the data-availability level, 125 the COI cue phrase (4 of them
+  flipping the stored `coi_disclosed`, the tagged section usually still
+  firing), 6 the industry-COI indicator, and 1 the tagged section itself.
+  `<response>` measures **0** there and 0 in an 880-article Europe PMC draw, so
+  it is carried on the structural argument rather than on a count.
+
 - **A `<ref>` carrying several citation elements lost all but the last, and
   welded their authors into one byline** (#149). JATS admits several citation
   elements in one `<ref>`, and both close arms assigned

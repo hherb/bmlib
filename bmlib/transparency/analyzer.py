@@ -881,7 +881,10 @@ def _score_data_availability(analysis: _Analysis) -> None:
 # COI cue phrase, of which 4 flip `coi_disclosed`; 6 the industry-COI
 # indicator; 1 the tagged COI section). <response> measures 0 there and 0 in an
 # 880-article Europe PMC draw, so it is carried on the argument above and not
-# on a count.
+# on a count. The refusal path below measures empty too: none of the 3,377
+# carriers leaves a region open, which is what a well-formed deposit should
+# look like — it guards against a truncated body, not against a shape anyone
+# has seen.
 _NESTED_ARTICLE_ELEMENTS = ("sub-article", "response")
 
 # One lexer for the whole scan. In well-formed XML a literal "<" can only open

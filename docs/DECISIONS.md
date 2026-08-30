@@ -12,6 +12,32 @@ must not be re-done.
 
 ## Transparency
 
+- **`_NESTED_ARTICLE_ELEMENTS` is restated here, not imported from
+  `bmlib.fulltext.jats_parser`** (#119). Both modules make the same rule —
+  nothing inside a `<sub-article>` or `<response>` is this article's — from the
+  same structural argument, and the parser states it in full. It is duplicated
+  on purpose: `bmlib.transparency` depends on nothing in `bmlib.fulltext`
+  today, and reaching across packages for a module-private name to save two
+  strings would trade that for nothing. Do not "deduplicate" them; if the rule
+  itself changes, change both, and read the parser's comment first — it carries
+  the argument.
+- **The full text is stripped, not parsed** (#119). The obvious tidier fix is
+  to feed `JATSParser` output to the scans, and it is wrong here: the COI scan
+  matches on JATS containers (`<fn fn-type="COI-statement">` is structural
+  proof of a disclosure regardless of wording, issue #13), which a parse throws
+  away. Stripping keeps every calibration and changes only what is in scope.
+  Metric test:
+  `tests/test_transparency.py::TestANestedArticleIsNotThisArticles`.
+- **An unclosed nested article costs the whole full text, on purpose** (#119).
+  `_strip_nested_articles` returns `None` and the analysis falls back to the
+  abstract, so `coi_disclosed` stays `None`. Do not "recover" the tail: keeping
+  it is the defect the fix exists to remove, and dropping it silently
+  manufactures "No COI disclosure found in full text" — the finding that
+  triggers the missing-COI HIGH-risk rule. An unmatched *end* tag is
+  deliberately **not** treated the same way; no nested prose reaches the scans
+  through one. The refusal path measures empty over all 3,377 carriers in the
+  `oa_comm` `PMC012xxxxxx` baseline, so it guards a truncated body rather than
+  a shape anyone has seen.
 - **`_INDUSTRY_STEMS` and `_INDUSTRY_WORDS` must not be merged into one
   list**, and neither may be extended without re-running
   `scripts/sample_funder_names.py` against `tests/data/funder_names.json` —
