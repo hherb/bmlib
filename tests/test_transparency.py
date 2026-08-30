@@ -670,11 +670,16 @@ class TestANestedArticleIsNotThisArticles:
         assert "Ours" in stripped
 
     def test_a_nested_article_named_in_the_doctype_internal_subset_opens_no_region(self):
+        # The entity's replacement text is an *opening* tag on purpose: a
+        # self-closing one is already refused by the rule above, so a fixture
+        # written that way passes whether or not the doctype is lexed —
+        # measured, as a mutant deleting the doctype token survived it.
         stripped = _strip_nested_articles(
             '<!DOCTYPE article PUBLIC "-//NLM//DTD JATS 1.4//EN" "JATS.dtd"'
-            ' [<!ENTITY review "<sub-article/>">]>'
+            ' [<!ENTITY review "<sub-article>">]>'
             "<article><p>Ours.</p></article>"
         )
+        assert stripped is not None
         assert "Ours" in stripped
 
     def test_an_unclosed_nested_article_refuses_the_document(self):
