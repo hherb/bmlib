@@ -73,7 +73,7 @@ Probed 2026-08-31/09-01 against `/Users/hherb/pmc_archive/packages/`:
 | Scan throughput, tarball, whole members | 122,576 articles in 16.5 s (**7,447/s**), `PMC002xxxxxx` |
 | Scan throughput, tarball, first 8 KB only | 11,086/s — 49% faster and **wrong**, see below |
 | Recent-window candidates (2023-07 – 2025-06) | ~76,500 in `PMC012xxxxxx` (71,858 published 2025, 4,658 in 2024) |
-| Back-filled candidates (1996 – 1998) | **3,149** — 3,141 in `PMC002xxxxxx`, 8 in `PMC000xxxxxx` |
+| Back-filled candidates (1996 – 1998) | **3,141**, all in `PMC002xxxxxx` — `PMC000xxxxxx` and `PMC001xxxxxx` measure **0** |
 | Overlap, 880-article Europe PMC draw × unpacked package | **4 articles** — which is why the rendition diff cannot be a corpus-to-corpus comparison |
 | Taking the earliest `<pub-date>` year vs excluding deposit/submission dates | **0 of 3,000 differ**, in each window separately |
 | Articles carrying no `<pub-date>` at all | **0 of 2,000**, in each window separately |
@@ -84,10 +84,13 @@ PMC6102553–PMC13327518, almost all of it in packages held as tarballs, so
 pairing those two corpora as they sit would compare two different *samples*
 and report the sample difference as a rendition difference.
 
-The `oa_comm` subset is thin at the back-filled vintage — `PMC000xxxxxx` holds
-8 articles published 1996–1998 out of 3,028 — which is why the back-filled
-window draws from `PMC000`–`PMC002xxxxxx` rather than from the oldest package
-alone.
+The `oa_comm` subset is thin at the back-filled vintage, and **not where the
+accession ranges suggest**: `PMC000xxxxxx` (3,028 articles) and `PMC001xxxxxx`
+(27,515) hold *no* 1996–1998 publications at all, while `PMC002xxxxxx` holds
+3,141. Accession order is deposit order, not publication order. The
+back-filled window therefore draws from `PMC002xxxxxx` alone; the two older
+packages are recorded here as measured-at-zero so a later reader knows they
+were checked rather than overlooked.
 
 **The last row is why the scan reads whole members.** A prefix read is the
 obvious optimisation and it fails silently in the direction that matters: at
@@ -95,11 +98,13 @@ obvious optimisation and it fails silently in the direction that matters: at
 drop from the draw with nothing raised. The miss is not random — it is
 front-matter size, so it tracks author-list length and abstract length, which
 are *publisher* properties, and those are the axis every population here varies
-along. It is also not merely incomplete: over the whole of `PMC002xxxxxx` the
-prefix read yields 3,143 candidates against the full read's 3,141, because
-seeing fewer `<pub-date>` elements can raise the minimum. Reading whole members
-costs 33% more wall time and nothing else — for a tarball the bytes are
-decompressed either way.
+along. **The evidence is the recent window specifically**: on the back-filled
+window a prefix read is harmless — over the whole of `PMC002xxxxxx` an 8 KB
+read and a whole-member read both yield 3,141 candidates and the prefix misses
+none of them — because 1996–1998 front matter is short. A rule drawn from that
+window alone would license exactly the optimisation that costs a fifth of the
+recent one. Reading whole members costs 33% more wall time and nothing else —
+for a tarball the bytes are decompressed either way.
 
 ## Design
 
@@ -135,7 +140,7 @@ source. The two committed draws become:
 | corpus | window | packages |
 |---|---|---|
 | `tests/data/jats_exhibits.json` | 2023-07-01 – 2025-06-30 | `PMC012xxxxxx` |
-| `tests/data/jats_exhibits.backfill.json` | 1996-01-01 – 1998-12-31 | `PMC000`, `PMC001`, `PMC002xxxxxx` |
+| `tests/data/jats_exhibits.backfill.json` | 1996-01-01 – 1998-12-31 | `PMC002xxxxxx` |
 
 The recent window is the two years *before the baseline snapshot* (dated
 2025-06-26 in the package name), not before today — a 2025-06 baseline cannot

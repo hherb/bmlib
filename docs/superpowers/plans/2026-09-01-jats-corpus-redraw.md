@@ -418,10 +418,10 @@ class TestReadingABaselinePackage:
         A prefix read is 49% faster, raises nothing, and finds no date for
         379 of 2,000 recent articles at 8 KB — a miss that tracks front-matter
         size, so it tracks publisher, which is the axis every population here
-        varies along. It is also wrong rather than merely incomplete: over the
-        whole of `PMC002xxxxxx` it yields 3,143 candidates against a full
-        read's 3,141, because seeing fewer `<pub-date>` elements can raise the
-        minimum.
+        varies along. Note the evidence is the *recent* window: on the
+        back-filled one a prefix read misses nothing (3,141 either way over the
+        whole of `PMC002xxxxxx`), so a rule drawn from that window alone would
+        license the optimisation that costs a fifth of the other.
         """
         padding = b"<aff>" + b"x" * 20000 + b"</aff>"
         xml = (
@@ -470,6 +470,11 @@ def article_year(xml: bytes) -> int | None:
     refinement, excluding the deposit and submission kinds (the two that could
     pull a date away from publication), was measured against this rule and
     **changes the earliest year in 0 of 3,000 articles in each window**.
+
+    The ``<year>`` must be read from *inside* a ``<pub-date>``. Matching the
+    open tag lazily to the next ``<year>`` anywhere after it reaches into
+    ``<ref>`` and reports a cited work's year as this article's — the first
+    draw made that mistake and produced articles "published" in 1861.
 
     Args:
         xml: The article's raw bytes, **whole**. A prefix read is measured in
@@ -1447,14 +1452,18 @@ Expected: ~76,500 candidates, 1,000 rows, a full report, `tests/data/jats_exhibi
 
 ```bash
 uv run python scripts/sample_jats_exhibits.py \
-    --package /Users/hherb/pmc_archive/packages/oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.tar.gz \
-    --package /Users/hherb/pmc_archive/packages/oa_comm_xml.PMC001xxxxxx.baseline.2025-06-26.tar.gz \
     --package /Users/hherb/pmc_archive/packages/oa_comm_xml.PMC002xxxxxx.baseline.2025-06-26.tar.gz \
     --from-year 1996 --to-year 1998 --target 1000 --seed 0 \
     -o tests/data/jats_exhibits.backfill.json
 ```
 
-Expected: **3,149 candidates** (8 + 0 + 3,141 — if the count differs, say so in the PR rather than adjusting the plan), 1,000 rows, exit 0. Two sequential passes over three tarballs, roughly 2 minutes.
+Expected: **3,141 candidates**, 1,000 rows, exit 0. Two sequential passes over one 1.6 GB tarball, roughly 35 seconds.
+
+`PMC000xxxxxx` and `PMC001xxxxxx` are deliberately *not* passed: both measure
+**0** articles published 1996–1998, because accession order is deposit order
+rather than publication order. Naming them would put packages in the corpus
+header that contributed nothing. If the candidate count differs from 3,141,
+report it in the PR rather than adjusting the plan.
 
 - [ ] **Step 4: Record the report output**
 
