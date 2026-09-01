@@ -115,8 +115,10 @@ import argparse
 import json
 import re
 import sys
+import tarfile
 import xml.etree.ElementTree as ET
 from collections import Counter
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
@@ -271,6 +273,89 @@ def _extension(href: str) -> str:
     """The lowercased file extension of *href*, or ``""`` if it has none."""
     last = href.split("?", 1)[0].split("#", 1)[0].rsplit("/", 1)[-1]
     return "." + last.rsplit(".", 1)[-1].lower() if "." in last else ""
+
+
+# A publication date, read from the raw bytes rather than from a parsed tree:
+# the scan touches every article in a package and parsing them all to pick two
+# elements costs more than the walk that follows it.
+_PUB_DATE_RE = re.compile(rb"<pub-date[^>]*>(.*?)</pub-date>", re.DOTALL)
+_YEAR_RE = re.compile(rb"<year>\s*(\d{4})\s*</year>")
+
+
+class PackageError(Exception):
+    """A ``--package`` path that is neither a directory nor a tarball."""
+
+
+def article_year(xml: bytes) -> int | None:
+    """The earliest year any ``<pub-date>`` declares, or ``None``.
+
+    The date's declared *kind* is deliberately not consulted. The attribute is
+    not one vocabulary — the back-filled range is dominated by
+    ``pub-type="ppub"`` (2,868 of 3,000 articles), the recent window by
+    ``pub-type="epub"`` (2,704), JATS 1.x spells it
+    ``date-type="pub" publication-format="electronic"``, and ``pmc-release``,
+    ``nihms-submitted`` and ``epreprint`` all appear — so an enumeration would
+    be the kind #130's ``<list>`` is the standing lesson against. The obvious
+    refinement, excluding the deposit and submission kinds (the two that could
+    pull a date away from publication), was measured against this rule and
+    **changes the earliest year in 0 of 3,000 articles in each window**.
+
+    The ``<year>`` must be read from *inside* a ``<pub-date>``. Matching the
+    open tag lazily to the next ``<year>`` anywhere after it reaches into
+    ``<ref>`` and reports a cited work's year as this article's — the first
+    draw made that mistake and produced articles "published" in 1861.
+
+    Args:
+        xml: The article's raw bytes, **whole**. A prefix read is measured in
+            this plan's spec as both lossy and wrong.
+
+    Returns:
+        The year, or ``None`` where the document declares no ``<pub-date>``
+        carrying a ``<year>`` — which makes the article undated and so
+        undrawable, never "published in year zero".
+    """
+    years = [
+        int(year.group(1))
+        for block in _PUB_DATE_RE.finditer(xml)
+        if (year := _YEAR_RE.search(block.group(1)))
+    ]
+    return min(years) if years else None
+
+
+def iter_package_articles(path: Path) -> Iterator[tuple[str, bytes]]:
+    """Yield ``(pmcid, raw_xml)`` for every article in one baseline package.
+
+    A ``.tar.gz`` is streamed member by member and never unpacked; a directory
+    is walked with ``glob``. Members are read **whole** — see
+    :func:`article_year`.
+
+    Args:
+        path: A package directory, or a baseline ``.tar.gz``.
+
+    Yields:
+        The PMC identifier (the member's stem) and its bytes.
+
+    Raises:
+        PackageError: If *path* is neither a directory nor a tarball. Refused
+            rather than skipped: a mistyped ``--package`` that silently
+            contributed nothing would print a rate over a draw nobody asked
+            for, which is what :func:`_validate_args` exists to prevent.
+    """
+    if path.is_dir():
+        for entry in sorted(path.glob("*.xml")):
+            yield entry.stem, entry.read_bytes()
+        return
+    if path.is_file() and tarfile.is_tarfile(path):
+        with tarfile.open(path, "r|gz") as tar:
+            for member in tar:
+                if not member.isfile() or not member.name.endswith(".xml"):
+                    continue
+                handle = tar.extractfile(member)
+                if handle is None:  # pragma: no cover - a tarball oddity
+                    continue
+                yield Path(member.name).stem, handle.read()
+        return
+    raise PackageError(f"{path} is neither a package directory nor a tarball")
 
 
 @dataclass

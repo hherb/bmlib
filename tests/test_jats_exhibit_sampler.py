@@ -41,6 +41,7 @@ exhibit at all. The month windows are what spread it.
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import sys
 from datetime import date
@@ -1275,3 +1276,93 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         assert backfill_maps.get("foreign_owned_graphics", {}) == {}
         assert recent["nested_figures"] + recent["nested_tables"] == 0
         assert backfill["nested_figures"] + backfill["nested_tables"] == 0
+
+
+class TestReadingABaselinePackage:
+    """The offline source's data layer — one article at a time, whole."""
+
+    def _write_tarball(self, tmp_path, members: dict[str, bytes]):
+        import tarfile
+
+        path = tmp_path / "oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.tar.gz"
+        with tarfile.open(path, "w:gz") as tar:
+            for name, data in members.items():
+                info = tarfile.TarInfo(f"PMC000xxxxxx/{name}")
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        return path
+
+    def test_a_directory_yields_every_article(self, tmp_path):
+        (tmp_path / "PMC1.xml").write_bytes(b"<article/>")
+        (tmp_path / "PMC2.xml").write_bytes(b"<article/>")
+        (tmp_path / "notes.txt").write_bytes(b"ignored")
+
+        found = dict(sampler.iter_package_articles(tmp_path))
+
+        assert sorted(found) == ["PMC1", "PMC2"]
+
+    def test_a_tarball_yields_every_article_without_unpacking(self, tmp_path):
+        path = self._write_tarball(tmp_path, {"PMC7.xml": b"<article/>"})
+
+        found = dict(sampler.iter_package_articles(path))
+
+        assert list(found) == ["PMC7"]
+        assert not (tmp_path / "PMC000xxxxxx").exists()
+
+    def test_something_that_is_neither_is_refused(self, tmp_path):
+        stray = tmp_path / "stray.xml"
+        stray.write_bytes(b"<article/>")
+
+        with pytest.raises(sampler.PackageError, match="stray.xml"):
+            list(sampler.iter_package_articles(stray))
+
+    def test_the_year_is_the_earliest_any_pub_date_declares(self):
+        xml = b"""<article><front><article-meta>
+            <pub-date pub-type="epub"><year>2024</year></pub-date>
+            <pub-date pub-type="ppub"><year>2023</year></pub-date>
+            </article-meta></front></article>"""
+
+        assert sampler.article_year(xml) == 2023
+
+    def test_the_kind_of_date_is_not_consulted(self):
+        """Measured, not assumed: excluding deposit and submission kinds
+        changes the earliest year in 0 of 3,000 articles in each window, and
+        the attribute spelling is not one vocabulary — `pub-type="ppub"`
+        dominates the back-filled range, `pub-type="epub"` the recent one, and
+        JATS 1.x writes `date-type="pub" publication-format="electronic"`."""
+        xml = b"""<article><front><article-meta>
+            <pub-date date-type="pub" publication-format="electronic">
+              <year>2019</year></pub-date>
+            </article-meta></front></article>"""
+
+        assert sampler.article_year(xml) == 2019
+
+    def test_an_article_with_no_pub_date_has_no_year(self):
+        assert sampler.article_year(b"<article><front/></article>") is None
+
+    def test_a_year_outside_a_pub_date_is_not_a_publication_year(self):
+        """A `<year>` in a reference is not this article's date."""
+        xml = b"<article><back><ref><year>1999</year></ref></back></article>"
+
+        assert sampler.article_year(xml) is None
+
+    def test_the_whole_member_is_read_not_a_prefix(self):
+        """The guard against the optimisation someone will reach for later.
+
+        A prefix read is 49% faster, raises nothing, and finds no date for
+        379 of 2,000 recent articles at 8 KB — a miss that tracks front-matter
+        size, so it tracks publisher, which is the axis every population here
+        varies along. Note the evidence is the *recent* window: on the
+        back-filled one a prefix read misses nothing (3,141 either way over the
+        whole of `PMC002xxxxxx`), so a rule drawn from that window alone would
+        license the optimisation that costs a fifth of the other.
+        """
+        padding = b"<aff>" + b"x" * 20000 + b"</aff>"
+        xml = (
+            b"<article><front><article-meta>"
+            + padding
+            + b"<pub-date pub-type='epub'><year>2001</year></pub-date>"
+            + b"</article-meta></front></article>"
+        )
+
+        assert sampler.article_year(xml) == 2001
