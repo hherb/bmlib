@@ -113,6 +113,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import re
 import sys
 import tarfile
@@ -154,7 +155,15 @@ DEFAULT_TARGET = 300
 # Monthly strata the sample is drawn from — see `open_access_pmcids`.
 SAMPLE_MONTHS = 24
 DEFAULT_OUTPUT = Path("tests/data/jats_exhibits.json")
+# The default seed for a --package draw. Recorded in the corpus either way, so
+# a non-default seed is still reproducible from the written window.
+DEFAULT_SEED = 0
 _USER_AGENT = f"bmlib-jats-exhibit-sampler/{__version__} (+https://github.com/hherb/bmlib)"
+
+# The first year of the recent window (see `main`'s window table). A draw
+# ending before it is displaced, and the pooling rule `--months-ago` already
+# carries applies to it for the same reason.
+_RECENT_WINDOW_FIRST_YEAR = 2023
 
 # The two elements that are exhibits. Structural, and complete: these are the
 # only JATS elements the parser builds a figure or table from.
@@ -356,6 +365,72 @@ def iter_package_articles(path: Path) -> Iterator[tuple[str, bytes]]:
                 yield Path(member.name).stem, handle.read()
         return
     raise PackageError(f"{path} is neither a package directory nor a tarball")
+
+
+def package_candidates(paths: list[Path], first: int, last: int) -> list[str]:
+    """Every article in *paths* published in ``[first, last]``, sorted.
+
+    Args:
+        paths: Package directories or tarballs.
+        first: Earliest publication year to accept, inclusive.
+        last: Latest publication year to accept, inclusive.
+
+    Returns:
+        The identifiers, sorted — the order a draw is taken against, so it
+        must not depend on a directory's glob order.
+    """
+    found = [
+        pmcid
+        for path in paths
+        for pmcid, xml in iter_package_articles(path)
+        if (year := article_year(xml)) is not None and first <= year <= last
+    ]
+    return sorted(found)
+
+
+def draw(candidates: list[str], target: int, seed: int) -> list[str]:
+    """*target* identifiers from *candidates*, reproducibly.
+
+    Sorted before sampling, because ``random.sample`` is a function of the
+    sequence's order as well as of the seed: an unpacked directory's glob
+    order is not stable across machines, so an unsorted draw would reproduce
+    only where it was made — which is the property this whole change exists
+    to give the corpora.
+
+    Args:
+        candidates: The identifiers to draw from.
+        target: How many to take; taking them all is fine.
+        seed: The recorded seed.
+
+    Returns:
+        The drawn identifiers, sorted.
+    """
+    pool = sorted(candidates)
+    if target >= len(pool):
+        return pool
+    return sorted(random.Random(seed).sample(pool, target))
+
+
+def read_package_articles(paths: list[Path], wanted: set[str]) -> Iterator[tuple[str, bytes]]:
+    """Yield ``(pmcid, raw_xml)`` for the drawn articles, in package order.
+
+    A second pass over the packages, rather than holding the first pass's
+    bytes: the recent window has ~76,500 in-window candidates, which at
+    article sizes reaching 3.4 MB is not a thing to keep in memory. For a
+    tarball the pass costs one more sequential decompression (16.5 s for
+    `PMC002xxxxxx`).
+
+    Args:
+        paths: The same packages the candidates came from.
+        wanted: The drawn identifiers.
+
+    Yields:
+        Each wanted article's identifier and bytes.
+    """
+    for path in paths:
+        for pmcid, xml in iter_package_articles(path):
+            if pmcid in wanted:
+                yield pmcid, xml
 
 
 @dataclass
@@ -1229,6 +1304,32 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--package",
+        type=Path,
+        action="append",
+        default=[],
+        metavar="PATH",
+        help=(
+            "Draw offline from a PMC OA baseline package — a directory of "
+            "articles or a baseline .tar.gz. Repeatable. Requires --from-year "
+            "and --to-year. A package draw is reproducible by any reader from "
+            "(packages, window, target, seed); a live draw is not, which is "
+            "what issue 132 is about."
+        ),
+    )
+    parser.add_argument(
+        "--from-year", type=int, default=None, help="Earliest publication year, inclusive."
+    )
+    parser.add_argument(
+        "--to-year", type=int, default=None, help="Latest publication year, inclusive."
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=DEFAULT_SEED,
+        help="Seed for the package draw; recorded in the corpus either way.",
+    )
+    parser.add_argument(
         "-o", "--output", type=Path, default=DEFAULT_OUTPUT, help="Where to write the corpus."
     )
     parser.add_argument(
@@ -1240,7 +1341,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 def _validate_args(args: argparse.Namespace) -> str | None:
     """Refuse a run that would print a rate over a draw nobody asked for.
 
-    Returns the reason, or ``None`` when the run may proceed. Two rules:
+    Returns the reason, or ``None`` when the run may proceed. Three rules:
 
     *The window arithmetic is not negotiable.* ``--months-ago`` and
     ``--months`` are checked here as well as in :func:`_month_windows`,
@@ -1255,7 +1356,26 @@ def _validate_args(args: argparse.Namespace) -> str | None:
     is that the window decides the answer (0 of 662 recent tables against 11
     of 93 from 1996-1998), so pooling two windows produces a number
     describing neither. Naming an explicit ``-o`` is the whole fix.
+
+    *A package window is all-or-nothing.* ``--from-year``/``--to-year`` only
+    mean anything against ``--package`` — the live draw's strata are months,
+    not years — so either flag without ``--package`` is refused, and
+    ``--package`` without both years is refused the same way. A backwards
+    window is refused rather than silently drawing nothing. And a window
+    ending before the recent one started is a displaced draw by the same
+    argument as ``--months-ago`` above, so it carries the same ``-o`` rule.
+
+    *A `--package` path is checked here, not left to fail inside the draw.*
+    :func:`iter_package_articles` is a generator, so a mistyped path would
+    otherwise raise :class:`PackageError` only once something iterates it —
+    part way through :func:`package_candidates`, after the "N candidates"
+    line has already been decided. Checking eagerly means a bad path is
+    refused with the same up-front, one-line message every other rule here
+    gives, rather than surfacing as a stack trace out of the draw.
     """
+    for path in args.package:
+        if not (path.is_dir() or (path.is_file() and tarfile.is_tarfile(path))):
+            return f"--package {path} is neither a package directory nor a tarball"
     if args.months < 1:
         return f"--months must be at least 1, got {args.months}"
     if args.months_ago < 0:
@@ -1266,6 +1386,19 @@ def _validate_args(args: argparse.Namespace) -> str | None:
             f"be written to {DEFAULT_OUTPUT} — that path is the recent draw, and its "
             "journal would pool the two. Pass an explicit -o, as "
             "tests/data/jats_exhibits.backfill.json was."
+        )
+    window = (args.from_year, args.to_year)
+    if any(v is not None for v in window) and not args.package:
+        return "--from-year/--to-year select from a --package; the live draw strata are months"
+    if args.package and any(v is None for v in window):
+        return "--package needs both --from-year and --to-year"
+    if args.package and args.from_year > args.to_year:
+        return f"--from-year {args.from_year} is after --to-year {args.to_year}"
+    if args.package and args.to_year < _RECENT_WINDOW_FIRST_YEAR and args.output == DEFAULT_OUTPUT:
+        return (
+            f"a window ending {args.to_year} is a displaced draw, which must not be written "
+            f"to {DEFAULT_OUTPUT} — that path is the recent draw, and its journal would pool "
+            "the two. Pass an explicit -o, as tests/data/jats_exhibits.backfill.json was."
         )
     return None
 
@@ -1292,36 +1425,71 @@ def main() -> int:
             seen.add(row.pmcid)
             totals.add(row)
 
-    # Resolved once, before any request, so the corpus can state the window it
-    # was drawn from. Without it "1996-1998" lives only in prose: the windows
-    # are counted back from `date.today()`, so the same command a year from now
-    # draws a different draw, and nothing in the written file would say which
-    # one it is. Issue #132 is the same failure by another route — a cited
-    # measurement whose corpus is not in the repo.
-    windows = _month_windows(args.months, date.today(), skip=args.months_ago)
-    pace = _make_pacer(args.per_host_interval)
-    headers = {"User-Agent": _USER_AGENT}
-    with httpx.Client(headers=headers, timeout=60.0, follow_redirects=True) as client:
-        pmcids = [
-            p
-            for p in open_access_pmcids(
-                client, pace, args.target + 150, args.months, args.months_ago
-            )
-            if p not in seen
-        ]
+    if args.package:
+        # A package draw needs no network at all: `_validate_args` has
+        # already refused every path that is not a real package, so the two
+        # passes below (candidates, then the drawn articles' bytes) are the
+        # whole of it.
+        window = {
+            "source": "package",
+            "packages": sorted(p.name for p in args.package),
+            "first_year": args.from_year,
+            "last_year": args.to_year,
+            "target": args.target,
+            "seed": args.seed,
+        }
+        candidates = package_candidates(args.package, args.from_year, args.to_year)
+        print(f"{len(candidates)} candidates in {args.from_year}-{args.to_year}")
+        wanted = {p for p in draw(candidates, args.target, args.seed) if p not in seen}
         journal.parent.mkdir(parents=True, exist_ok=True)
         with journal.open("a", encoding="utf-8") as handle:
-            for pmcid in pmcids:
-                if totals.articles >= args.target:
-                    break
-                raw = _fetch(client, f"{EUROPE_PMC}/{pmcid}/fullTextXML", pace)
-                row = measure_article(pmcid, raw) if raw else None
+            for pmcid, xml in read_package_articles(args.package, wanted):
+                row = measure_article(pmcid, xml)
                 if row is None:
                     totals.unmeasured += 1
                     continue
                 totals.add(row)
                 handle.write(json.dumps(row.to_dict()) + "\n")
                 handle.flush()
+    else:
+        # Resolved once, before any request, so the corpus can state the
+        # window it was drawn from. Without it "1996-1998" lives only in
+        # prose: the windows are counted back from `date.today()`, so the
+        # same command a year from now draws a different draw, and nothing in
+        # the written file would say which one it is. Issue #132 is the same
+        # failure by another route — a cited measurement whose corpus is not
+        # in the repo.
+        windows = _month_windows(args.months, date.today(), skip=args.months_ago)
+        window = {
+            "source": "europepmc",
+            "months": args.months,
+            "months_ago": args.months_ago,
+            "first": windows[-1][0],
+            "last": windows[0][1],
+        }
+        pace = _make_pacer(args.per_host_interval)
+        headers = {"User-Agent": _USER_AGENT}
+        with httpx.Client(headers=headers, timeout=60.0, follow_redirects=True) as client:
+            pmcids = [
+                p
+                for p in open_access_pmcids(
+                    client, pace, args.target + 150, args.months, args.months_ago
+                )
+                if p not in seen
+            ]
+            journal.parent.mkdir(parents=True, exist_ok=True)
+            with journal.open("a", encoding="utf-8") as handle:
+                for pmcid in pmcids:
+                    if totals.articles >= args.target:
+                        break
+                    raw = _fetch(client, f"{EUROPE_PMC}/{pmcid}/fullTextXML", pace)
+                    row = measure_article(pmcid, raw) if raw else None
+                    if row is None:
+                        totals.unmeasured += 1
+                        continue
+                    totals.add(row)
+                    handle.write(json.dumps(row.to_dict()) + "\n")
+                    handle.flush()
 
     # Summarised *before* the corpus is written, so an unreportable run cannot
     # replace evidence a later reader takes as measured.
@@ -1333,12 +1501,7 @@ def main() -> int:
             {
                 "articles": totals.articles,
                 "unmeasured": totals.unmeasured,
-                "window": {
-                    "months": args.months,
-                    "months_ago": args.months_ago,
-                    "first": windows[-1][0],
-                    "last": windows[0][1],
-                },
+                "window": window,
                 "rows": [r.to_dict() for r in sorted(totals.rows, key=lambda r: r.pmcid)],
             },
             indent=2,

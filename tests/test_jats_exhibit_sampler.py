@@ -40,6 +40,7 @@ exhibit at all. The month windows are what spread it.
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import io
 import json
@@ -1366,3 +1367,117 @@ class TestReadingABaselinePackage:
         )
 
         assert sampler.article_year(xml) == 2001
+
+
+class TestDrawingFromAPackage:
+    """Selection: in-window, deterministic, and reproducible from the header."""
+
+    def _package(self, tmp_path, years: dict[str, int | None]):
+        for pmcid, year in years.items():
+            date = (
+                f"<pub-date pub-type='epub'><year>{year}</year></pub-date>"
+                if year is not None
+                else ""
+            )
+            (tmp_path / f"{pmcid}.xml").write_text(
+                f"<article><front><article-meta>{date}</article-meta></front></article>"
+            )
+        return tmp_path
+
+    def test_only_articles_inside_the_window_are_candidates(self, tmp_path):
+        path = self._package(
+            tmp_path, {"PMC1": 1995, "PMC2": 1996, "PMC3": 1998, "PMC4": 1999, "PMC5": None}
+        )
+
+        found = sampler.package_candidates([path], 1996, 1998)
+
+        assert found == ["PMC2", "PMC3"]
+
+    def test_the_draw_is_reproducible_from_the_seed(self, tmp_path):
+        candidates = [f"PMC{n}" for n in range(100)]
+
+        first = sampler.draw(candidates, 10, seed=0)
+        again = sampler.draw(candidates, 10, seed=0)
+        other = sampler.draw(candidates, 10, seed=1)
+
+        assert first == again
+        assert first != other
+        assert len(first) == 10
+        assert set(first) <= set(candidates)
+
+    def test_the_draw_does_not_depend_on_candidate_order(self, tmp_path):
+        """A directory's glob order is not stable across machines, so the
+        draw sorts before sampling — otherwise the recorded seed reproduces
+        the draw only on the machine that made it."""
+        forwards = [f"PMC{n}" for n in range(100)]
+
+        assert sampler.draw(forwards, 10, seed=0) == sampler.draw(forwards[::-1], 10, seed=0)
+
+    def test_a_target_above_the_candidate_count_takes_them_all(self, tmp_path):
+        assert sorted(sampler.draw(["PMC1", "PMC2"], 50, seed=0)) == ["PMC1", "PMC2"]
+
+    def test_only_the_wanted_articles_are_read_back(self, tmp_path):
+        path = self._package(tmp_path, {"PMC1": 2024, "PMC2": 2024, "PMC3": 2024})
+
+        found = dict(sampler.read_package_articles([path], {"PMC1", "PMC3"}))
+
+        assert sorted(found) == ["PMC1", "PMC3"]
+
+
+class TestThePackageRunIsRefusedWhenItWouldMislead:
+    """`_validate_args`, which exists to stop a rate being printed over a draw
+    nobody asked for."""
+
+    def _args(self, **kwargs):
+        defaults = dict(
+            target=10,
+            months=24,
+            months_ago=0,
+            package=[],
+            from_year=None,
+            to_year=None,
+            seed=0,
+            output=sampler.DEFAULT_OUTPUT,
+            compare_europepmc=0,
+        )
+        return argparse.Namespace(**{**defaults, **kwargs})
+
+    def test_a_package_run_needs_both_ends_of_the_window(self, tmp_path):
+        refusal = sampler._validate_args(self._args(package=[tmp_path], from_year=1996))
+
+        assert refusal is not None
+        assert "--to-year" in refusal
+
+    def test_a_window_that_runs_backwards_is_refused(self, tmp_path):
+        refusal = sampler._validate_args(
+            self._args(package=[tmp_path], from_year=1999, to_year=1996)
+        )
+
+        assert refusal is not None
+        assert "1999" in refusal
+
+    def test_a_window_without_a_package_is_refused(self):
+        """The live path draws by month, not by year; accepting the flags
+        there would silently ignore them."""
+        refusal = sampler._validate_args(self._args(from_year=1996, to_year=1998))
+
+        assert refusal is not None
+        assert "--package" in refusal
+
+    def test_a_displaced_package_window_may_not_land_on_the_default_output(self, tmp_path):
+        """The rule `--months-ago` already carries, for the same reason: the
+        journal is derived from `--output`, so two windows pool into one rate
+        describing neither."""
+        refusal = sampler._validate_args(
+            self._args(package=[tmp_path], from_year=1996, to_year=1998)
+        )
+
+        assert refusal is not None
+        assert "-o" in refusal
+
+    def test_the_recent_window_may_use_the_default_output(self, tmp_path):
+        refusal = sampler._validate_args(
+            self._args(package=[tmp_path], from_year=2023, to_year=2025)
+        )
+
+        assert refusal is None
