@@ -119,11 +119,11 @@ import sys
 import tarfile
 import xml.etree.ElementTree as ET
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 from urllib.parse import quote
 
 try:
@@ -399,6 +399,50 @@ def _is_package_path(path: Path) -> bool:
 _NOT_A_PACKAGE_PATH = "is neither a package directory nor a gzip-compressed tarball"
 
 
+def _package_identity(path: Path) -> str:
+    """The public artifact name behind *path*, for the corpus header.
+
+    A PMC OA baseline tarball's own filename carries the whole identity a
+    reader needs to re-derive the draw — the subset (``oa_comm_xml``), the
+    accession range, and the dated snapshot (``baseline.2025-06-26``) — but
+    that identity lives in the *filename* alone: the tarball's internal
+    top-level entry is the accession range on its own (``PMC012xxxxxx``),
+    which is exactly what a plain extraction leaves on disk, and nothing
+    inside the extracted files restates the rest — no manifest, no embedded
+    date. So a bare directory's own name is missing two-thirds of the
+    identity that makes the draw re-derivable, and nothing *inside* it can
+    recover that loss.
+
+    What can: the tarball itself, if it still sits beside the directory it
+    was extracted into — the ordinary shape for a local mirror kept unpacked
+    for repeated reads, and exactly how the recent corpus's own package was
+    laid out (``PMC012xxxxxx/`` and
+    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`` side by side in
+    the same parent directory).
+
+    Args:
+        path: A package directory or tarball, as passed to ``--package``.
+
+    Returns:
+        *path*'s own name where *path* is a file — a tarball's filename
+        already carries its full identity, unchanged. For a directory: the
+        name of a sibling file, in the same parent directory, whose name
+        contains both *path*'s own name and ``baseline`` and which is itself
+        gzip-compressed — found and unambiguous. Otherwise, the directory's
+        bare name, unchanged: a guessed identity naming the wrong snapshot is
+        worse than an incomplete one naming none, so an absent or ambiguous
+        sibling falls back rather than picks.
+    """
+    if path.is_file():
+        return path.name
+    candidates = [
+        sibling
+        for sibling in path.parent.glob(f"*{path.name}*baseline*")
+        if sibling.is_file() and _is_gzip_file(sibling)
+    ]
+    return candidates[0].name if len(candidates) == 1 else path.name
+
+
 def iter_package_articles(path: Path) -> Iterator[tuple[str, bytes]]:
     """Yield ``(pmcid, raw_xml)`` for every article in one baseline package.
 
@@ -544,6 +588,39 @@ def _hold_for_comparison(
         return []
     ids = set(draw(drawn, n, seed))
     return list(read_package_articles(paths, ids))
+
+
+def _measure_and_journal(
+    handle: IO[str], totals: Totals, articles: Iterable[tuple[str, bytes | None]]
+) -> None:
+    """Measure every article *articles* yields and append the rows to the journal.
+
+    The one place either of ``main``'s package-branch sources — the archive's
+    own bytes, or a live Europe PMC fetch — turns into a measured row, so
+    there is exactly one call site to get the "no fallback" rule right rather
+    than two copies that could drift. *articles* carries the source's whole
+    decision already made: this function has no bytes of its own to fall back
+    to, which is what makes mixing renditions inside one corpus structurally
+    impossible rather than merely a branch that happens to be correct.
+
+    Args:
+        handle: The open journal file, in append mode.
+        totals: Accumulates every measured row and the unmeasured count.
+        articles: ``(pmcid, xml)`` pairs. ``xml`` is ``None`` for a failed
+            live fetch — the archive package's own read never produces
+            ``None``, only bytes, empty or otherwise, which
+            :func:`measure_article` already turns into an unmeasured row on
+            its own via ``ET.ParseError`` — and that article is counted
+            unmeasured with nothing substituted for it.
+    """
+    for pmcid, xml in articles:
+        row = measure_article(pmcid, xml) if xml else None
+        if row is None:
+            totals.unmeasured += 1
+            continue
+        totals.add(row)
+        handle.write(json.dumps(row.to_dict()) + "\n")
+        handle.flush()
 
 
 @dataclass
@@ -1875,6 +1952,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             "fullTextXML."
         ),
     )
+    parser.add_argument(
+        "--measure-europepmc",
+        action="store_true",
+        help=(
+            "Measure a --package draw's own rows from Europe PMC's "
+            "fullTextXML, live, instead of the package's archive bytes — the "
+            "rendition FullTextService actually feeds the parser. The drawn "
+            "identifier list is unchanged; only the bytes measured move. An "
+            "article Europe PMC will not serve is unmeasured, never measured "
+            "from the archive copy instead."
+        ),
+    )
     return parser
 
 
@@ -1941,6 +2030,18 @@ def _validate_args(args: argparse.Namespace) -> str | None:
     The live source's rows are already Europe PMC's own rendition, so
     comparing them against Europe PMC again would compare a document with
     itself; naming a negative count cannot be a request for a rate.
+
+    *`--measure-europepmc` only means anything against a `--package` draw*,
+    for the same reason: the live source's rows already are Europe PMC's
+    rendition, with nothing archival to switch away from.
+
+    *`--measure-europepmc` leaves `--compare-europepmc` nothing to compare.*
+    Once a corpus's own rows are measured from Europe PMC, "does an
+    archive-drawn figure generalise to what the parser is fed" is not a
+    question this run can still ask — the corpus already answers it by
+    construction, and running the comparison anyway would report Europe PMC
+    disagreeing with itself. Refused rather than accepted and left to write
+    a comparison that looks like evidence and is not.
     """
     for path in args.package:
         if not _is_package_path(path):
@@ -1949,6 +2050,13 @@ def _validate_args(args: argparse.Namespace) -> str | None:
         return "--compare-europepmc compares a --package draw against Europe PMC"
     if args.compare_europepmc < 0:
         return f"--compare-europepmc must not be negative, got {args.compare_europepmc}"
+    if args.measure_europepmc and not args.package:
+        return "--measure-europepmc measures a --package draw from Europe PMC; it needs one"
+    if args.measure_europepmc and args.compare_europepmc:
+        return (
+            "--measure-europepmc already measures every row from Europe PMC; "
+            "--compare-europepmc would have nothing archival left to compare it against"
+        )
     if args.months < 1:
         return f"--months must be at least 1, got {args.months}"
     if args.months_ago < 0:
@@ -2015,17 +2123,24 @@ def main() -> int:
     for_comparison: list[tuple[str, bytes]] = []
 
     if args.package:
-        # A package draw needs no network at all: `_validate_args` has
-        # already refused every path that is not a real package, so the two
-        # passes below (candidates, then the drawn articles' bytes) are the
-        # whole of it.
+        # A package draw needs no network at all *unless* --measure-europepmc
+        # is set: `_validate_args` has already refused every path that is not
+        # a real package, so the two passes below (candidates, then the drawn
+        # articles' identifiers) are the whole of it either way.
         window = {
             "source": "package",
-            "packages": sorted(p.name for p in args.package),
+            "packages": sorted(_package_identity(p) for p in args.package),
             "first_year": args.from_year,
             "last_year": args.to_year,
             "target": args.target,
             "seed": args.seed,
+            # Which bytes this corpus's own rows were measured from — the
+            # archive package by default, or Europe PMC's fullTextXML with
+            # --measure-europepmc. Recorded unconditionally, not only when
+            # the flag is set, so a reader of the file never has to consult
+            # the command line that produced it to know which rendition a
+            # figure describes.
+            "rendition": "europepmc" if args.measure_europepmc else "archive",
         }
         candidates = package_candidates(args.package, args.from_year, args.to_year)
         print(f"{len(candidates)} candidates in {args.from_year}-{args.to_year}")
@@ -2038,15 +2153,29 @@ def main() -> int:
         drawn = draw(candidates, args.target, args.seed)
         wanted = {p for p in drawn if p not in seen}
         journal.parent.mkdir(parents=True, exist_ok=True)
-        with journal.open("a", encoding="utf-8") as handle:
-            for pmcid, xml in read_package_articles(args.package, wanted):
-                row = measure_article(pmcid, xml)
-                if row is None:
-                    totals.unmeasured += 1
-                    continue
-                totals.add(row)
-                handle.write(json.dumps(row.to_dict()) + "\n")
-                handle.flush()
+        if args.measure_europepmc:
+            # This branch never reads `read_package_articles` — there is no
+            # archive byte string in scope to fall back to, so an article
+            # Europe PMC will not serve cannot be silently measured from the
+            # package instead. That is what makes "one corpus, one rendition"
+            # structural rather than a check that happens to be right: mixing
+            # would require this branch to also hold the archive bytes, and
+            # it does not. The identifier list (`wanted`, from `drawn`) is
+            # exactly what the archive branch below uses too — only the
+            # bytes' source moves.
+            pace = _make_pacer(args.per_host_interval)
+            with httpx.Client(
+                headers={"User-Agent": _USER_AGENT}, timeout=60.0, follow_redirects=True
+            ) as client:
+                served = (
+                    (pmcid, _fetch(client, f"{EUROPE_PMC}/{pmcid}/fullTextXML", pace))
+                    for pmcid in sorted(wanted)
+                )
+                with journal.open("a", encoding="utf-8") as handle:
+                    _measure_and_journal(handle, totals, served)
+        else:
+            with journal.open("a", encoding="utf-8") as handle:
+                _measure_and_journal(handle, totals, read_package_articles(args.package, wanted))
         for_comparison = _hold_for_comparison(
             args.package, drawn, args.compare_europepmc, args.seed
         )
@@ -2065,6 +2194,11 @@ def main() -> int:
             "months_ago": args.months_ago,
             "first": windows[-1][0],
             "last": windows[0][1],
+            # Always Europe PMC here — this source has no archive rendition
+            # to choose between, unlike the --package branch above. Recorded
+            # for the same reason: a reader should never need the command
+            # line to know which rendition a row came from.
+            "rendition": "europepmc",
         }
         pace = _make_pacer(args.per_host_interval)
         headers = {"User-Agent": _USER_AGENT}

@@ -115,6 +115,7 @@ def _package_run_args(**kwargs: Any) -> argparse.Namespace:
         seed=0,
         output=sampler.DEFAULT_OUTPUT,
         compare_europepmc=0,
+        measure_europepmc=False,
     )
     return argparse.Namespace(**{**defaults, **kwargs})
 
@@ -1453,6 +1454,115 @@ class TestReadingABaselinePackage:
         assert sampler.article_year(xml) == 2001
 
 
+class TestThePackageIdentityIsRecorded:
+    """`_package_identity` — Task 6a Step 4.
+
+    The recent corpus's header used to read ``packages: ['PMC012xxxxxx']``: a
+    directory's own basename, which is what a plain extraction of
+    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`` leaves on disk —
+    losing the subset prefix and the dated snapshot that make the draw
+    re-derivable by another reader. Nothing inside the extracted files can
+    recover that identity (no manifest, no embedded date), so the only place
+    it can still be found is the tarball's own filename, if that tarball
+    still sits beside the directory it was extracted into.
+    """
+
+    def test_a_tarball_reports_its_own_name(self, tmp_path):
+        """A tarball's filename already carries the whole identity; nothing
+        to recover."""
+        path = tmp_path / "oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.tar.gz"
+        path.write_bytes(b"\x1f\x8b" + b"0" * 10)
+
+        assert sampler._package_identity(path) == path.name
+
+    def test_a_directory_recovers_its_sibling_tarballs_identity(self, tmp_path):
+        """The exact shape the recent corpus's own package was laid out in:
+        a directory and the tarball it was extracted from, side by side."""
+        directory = tmp_path / "PMC012xxxxxx"
+        directory.mkdir()
+        sibling = tmp_path / "oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz"
+        sibling.write_bytes(b"\x1f\x8b" + b"0" * 10)
+
+        assert sampler._package_identity(directory) == sibling.name
+
+    def test_a_directory_with_no_sibling_falls_back_to_its_bare_name(self, tmp_path):
+        """No sibling tarball exists — nothing to recover the lost identity
+        from, so the bare name is reported rather than a guess."""
+        directory = tmp_path / "PMC000xxxxxx"
+        directory.mkdir()
+
+        assert sampler._package_identity(directory) == "PMC000xxxxxx"
+
+    def test_an_ambiguous_sibling_match_falls_back_rather_than_guesses(self, tmp_path):
+        """Two candidate tarballs (different subsets, both naming this
+        directory and a baseline snapshot) must not be resolved by picking
+        either one — a wrong guess names the wrong snapshot, which is worse
+        than an incomplete identity that names none."""
+        directory = tmp_path / "PMC001xxxxxx"
+        directory.mkdir()
+        (tmp_path / "oa_comm_xml.PMC001xxxxxx.baseline.2025-06-26.tar.gz").write_bytes(
+            b"\x1f\x8b" + b"0" * 10
+        )
+        (tmp_path / "oa_noncomm_xml.PMC001xxxxxx.baseline.2025-01-01.tar.gz").write_bytes(
+            b"\x1f\x8b" + b"0" * 10
+        )
+
+        assert sampler._package_identity(directory) == "PMC001xxxxxx"
+
+    def test_a_non_gzip_sibling_naming_the_same_baseline_is_not_mistaken_for_the_tarball(
+        self, tmp_path
+    ):
+        """A PMC baseline distribution also ships a plaintext file list beside
+        the tarball (`*.filelist.csv`) that names the same directory and the
+        same word "baseline" — exactly the kind of sibling that must not be
+        picked in the tarball's place. Filtering on the gzip magic bytes,
+        not merely the name pattern, is what tells the two apart."""
+        directory = tmp_path / "PMC000xxxxxx"
+        directory.mkdir()
+        (tmp_path / "oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.filelist.csv").write_text(
+            "not gzip, just a file list"
+        )
+        tarball = tmp_path / "oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.tar.gz"
+        tarball.write_bytes(b"\x1f\x8b" + b"0" * 10)
+
+        assert sampler._package_identity(directory) == tarball.name
+
+    def test_the_recorded_window_uses_the_recovered_identity(self, tmp_path):
+        """Wired into `main()`, not merely a standalone helper: a package
+        draw against a bare directory records the sibling tarball's name in
+        the corpus header, not the directory's own basename."""
+        directory = tmp_path / "package" / "PMC000xxxxxx"
+        directory.mkdir(parents=True)
+        (directory / "PMC1.xml").write_text(
+            "<article><front><article-meta>"
+            "<pub-date pub-type='epub'><year>2024</year></pub-date>"
+            "</article-meta></front></article>"
+        )
+        sibling = tmp_path / "package" / "oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.tar.gz"
+        sibling.write_bytes(b"\x1f\x8b" + b"0" * 10)
+        output = tmp_path / "out" / "jats_exhibits.json"
+        argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(directory),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "1",
+            "-o",
+            str(output),
+        ]
+
+        with mock.patch.object(sys, "argv", argv):
+            code = sampler.main()
+
+        assert code == 0
+        written = json.loads(output.read_text())
+        assert written["window"]["packages"] == [sibling.name]
+
+
 class TestDrawingFromAPackage:
     """Selection: in-window, deterministic, and reproducible from the header."""
 
@@ -2162,6 +2272,64 @@ class TestTheCompareEuropepmcFlag:
         assert sampler._validate_args(_package_run_args()) is None
 
 
+class TestTheMeasureEuropepmcFlag:
+    """`--measure-europepmc` — Task 6a. Only means anything against a
+    `--package` draw (the live source's rows already are Europe PMC's
+    rendition), and leaves `--compare-europepmc` nothing left to compare
+    once the corpus itself is already measured from Europe PMC."""
+
+    def test_the_flag_defaults_to_off(self):
+        args = sampler._build_arg_parser().parse_args([])
+
+        assert args.measure_europepmc is False
+
+    def test_the_flag_is_parsed_from_the_command_line(self):
+        args = sampler._build_arg_parser().parse_args(["--measure-europepmc"])
+
+        assert args.measure_europepmc is True
+
+    def test_it_is_refused_without_a_package_draw(self):
+        refusal = sampler._validate_args(_package_run_args(measure_europepmc=True))
+
+        assert refusal is not None
+        assert "--measure-europepmc" in refusal
+
+    def test_it_is_refused_alongside_compare_europepmc(self, tmp_path):
+        refusal = sampler._validate_args(
+            _package_run_args(
+                package=[tmp_path],
+                from_year=2023,
+                to_year=2025,
+                measure_europepmc=True,
+                compare_europepmc=5,
+            )
+        )
+
+        assert refusal is not None
+        assert "--measure-europepmc" in refusal
+        assert "--compare-europepmc" in refusal
+
+    def test_alone_on_a_package_draw_it_is_not_refused(self, tmp_path):
+        """Negative control: the guard is not refusing every use of the flag."""
+        refusal = sampler._validate_args(
+            _package_run_args(
+                package=[tmp_path], from_year=2023, to_year=2025, measure_europepmc=True
+            )
+        )
+
+        assert refusal is None
+
+    def test_the_default_off_alongside_compare_europepmc_is_not_refused(self, tmp_path):
+        """Negative control: `--compare-europepmc` alone, without
+        `--measure-europepmc`, is the combination Task 5 already exercises
+        and must still be accepted."""
+        refusal = sampler._validate_args(
+            _package_run_args(package=[tmp_path], from_year=2023, to_year=2025, compare_europepmc=5)
+        )
+
+        assert refusal is None
+
+
 class TestTheComparisonUnmeasuredShareIsReportable:
     """Finding 3(c) from a review: the unreportable rule was applied to
     "nothing held" (`TestTheEmptyComparisonNet`) but not to "almost nothing
@@ -2480,3 +2648,202 @@ class TestTheEmptyComparisonNet:
         # the only thing failing this run.
         assert not output.with_suffix(".unreportable.json").exists()
         assert output.with_suffix(".rendition.unreportable.json").exists()
+
+
+class TestTheMeasureEuropepmcFlagMeasuresTheServedRendition:
+    """Task 6a. `--measure-europepmc` moves *which bytes* a `--package`
+    draw's own rows are measured from — Europe PMC's ``fullTextXML`` instead
+    of the package's archive bytes — without moving the drawn identifier
+    list. Mixing renditions inside one corpus is the one outcome that must
+    be impossible: an article Europe PMC will not serve is unmeasured,
+    entering no denominator, and is never silently measured from the
+    archive copy instead. `_fetch` is mocked throughout; no network request
+    is made.
+    """
+
+    def _package(self, path: Path, pmcids: list[str], n_figs: int) -> Path:
+        path.mkdir(parents=True, exist_ok=True)
+        figs = "".join(f"<fig id='f{j}'/>" for j in range(n_figs))
+        for pmcid in pmcids:
+            (path / f"{pmcid}.xml").write_text(
+                '<article xmlns:xlink="http://www.w3.org/1999/xlink">'
+                "<front><article-meta>"
+                "<pub-date pub-type='epub'><year>2024</year></pub-date>"
+                f"</article-meta></front><body>{figs}</body></article>"
+            )
+        return path
+
+    def _argv(
+        self, package: Path, output: Path, *, target: int, extra: list[str] | None = None
+    ) -> list[str]:
+        return [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            str(target),
+            "--seed",
+            "0",
+            "-o",
+            str(output),
+            *(extra or []),
+        ]
+
+    def test_rows_are_measured_from_the_served_bytes_not_the_packages(self, tmp_path):
+        """The fixture where the two renditions differ: the archive carries
+        2 figures per article, the mocked served rendition carries 5. A row
+        measured from the wrong source is caught by the figure count alone."""
+        pmcids = [f"PMC{i:08d}" for i in range(3)]
+        package = self._package(tmp_path / "package", pmcids, n_figs=2)
+        output = tmp_path / "out" / "jats_exhibits.json"
+        served_xml = _article(
+            "<fig id='s1'/><fig id='s2'/><fig id='s3'/><fig id='s4'/><fig id='s5'/>"
+        )
+
+        with mock.patch.object(sampler, "_fetch", return_value=served_xml):
+            argv = self._argv(package, output, target=3, extra=["--measure-europepmc"])
+            with mock.patch.object(sys, "argv", argv):
+                code = sampler.main()
+
+        assert code == 0
+        written = json.loads(output.read_text())
+        assert written["window"]["rendition"] == "europepmc"
+        assert written["articles"] == 3
+        assert written["rows"], "the fixture must actually produce rows to check"
+        for row in written["rows"]:
+            assert row["figures"] == 5, (
+                "a row must be measured from the served bytes (5 figures), never the "
+                "archive's own 2"
+            )
+
+    def test_the_identifier_list_is_unchanged_by_the_flag(self, tmp_path):
+        """The same `(packages, window, target, seed)` draws the same
+        articles whether or not `--measure-europepmc` is set — only the
+        bytes measured move."""
+        pmcids = [f"PMC{i:08d}" for i in range(6)]
+        package = self._package(tmp_path / "package", pmcids, n_figs=2)
+        served_xml = _article("<fig id='s1'/>")
+        archive_output = tmp_path / "archive" / "jats_exhibits.json"
+        served_output = tmp_path / "served" / "jats_exhibits.json"
+
+        with mock.patch.object(sys, "argv", self._argv(package, archive_output, target=3)):
+            archive_code = sampler.main()
+        with mock.patch.object(sampler, "_fetch", return_value=served_xml):
+            argv = self._argv(package, served_output, target=3, extra=["--measure-europepmc"])
+            with mock.patch.object(sys, "argv", argv):
+                served_code = sampler.main()
+
+        assert archive_code == 0
+        assert served_code == 0
+        archive_ids = {row["pmcid"] for row in json.loads(archive_output.read_text())["rows"]}
+        served_ids = {row["pmcid"] for row in json.loads(served_output.read_text())["rows"]}
+        assert archive_ids == served_ids
+        assert len(archive_ids) == 3
+
+    def test_an_article_europe_pmc_will_not_serve_is_unmeasured_never_backfilled(self, tmp_path):
+        """The one outcome that must be impossible: a fetch failure must
+        never fall back to the archive's own bytes for that article. Rigged
+        so a silent fallback would be caught immediately — the refused
+        article's archive copy carries 99 figures, a count nothing else in
+        this test produces, so its presence anywhere in the written rows
+        would prove the fallback happened. 6 articles, 1 refused, keeps the
+        corpus-level unmeasured share (1/6 ≈ 16.7%) under the reportable
+        threshold, so the canonical path is what gets written."""
+        pmcids = [f"PMC{i:08d}" for i in range(6)]
+        refused = pmcids[0]
+        package = tmp_path / "package"
+        package.mkdir()
+        for pmcid in pmcids:
+            n_figs = 99 if pmcid == refused else 2
+            figs = "".join(f"<fig id='f{j}'/>" for j in range(n_figs))
+            (package / f"{pmcid}.xml").write_text(
+                '<article xmlns:xlink="http://www.w3.org/1999/xlink">'
+                "<front><article-meta>"
+                "<pub-date pub-type='epub'><year>2024</year></pub-date>"
+                f"</article-meta></front><body>{figs}</body></article>"
+            )
+        output = tmp_path / "out" / "jats_exhibits.json"
+        served_xml = _article("<fig id='s1'/>")
+
+        def fake_fetch(client, url, pace):
+            if refused in url:
+                return None
+            return served_xml
+
+        with mock.patch.object(sampler, "_fetch", side_effect=fake_fetch):
+            argv = self._argv(package, output, target=6, extra=["--measure-europepmc"])
+            with mock.patch.object(sys, "argv", argv):
+                code = sampler.main()
+
+        assert code == 0
+        written = json.loads(output.read_text())
+        assert written["unmeasured"] == 1
+        written_ids = {row["pmcid"] for row in written["rows"]}
+        assert refused not in written_ids
+        assert all(row["figures"] != 99 for row in written["rows"])
+
+    def test_the_header_records_rendition_on_both_settings(self, tmp_path):
+        pmcids = [f"PMC{i:08d}" for i in range(2)]
+        package = self._package(tmp_path / "package", pmcids, n_figs=1)
+        archive_output = tmp_path / "archive" / "jats_exhibits.json"
+        served_output = tmp_path / "served" / "jats_exhibits.json"
+        served_xml = _article("<fig id='s1'/>")
+
+        with mock.patch.object(sys, "argv", self._argv(package, archive_output, target=2)):
+            sampler.main()
+        with mock.patch.object(sampler, "_fetch", return_value=served_xml):
+            argv = self._argv(package, served_output, target=2, extra=["--measure-europepmc"])
+            with mock.patch.object(sys, "argv", argv):
+                sampler.main()
+
+        assert json.loads(archive_output.read_text())["window"]["rendition"] == "archive"
+        assert json.loads(served_output.read_text())["window"]["rendition"] == "europepmc"
+
+    def test_the_live_source_also_records_its_rendition(self, tmp_path, monkeypatch):
+        """Negative control on the other branch: the live Europe PMC source
+        has no archive rendition to choose between, and always records
+        `"europepmc"` — with no `--package` at all, so this exercises the
+        `else` branch of `main`'s window construction."""
+        monkeypatch.setattr(sampler, "open_access_pmcids", lambda *a, **k: iter(["PMC1"]))
+        served_xml = _article("<fig id='s1'/>")
+        output = tmp_path / "live" / "jats_exhibits.json"
+        argv = ["sample_jats_exhibits.py", "--target", "1", "-o", str(output)]
+
+        with mock.patch.object(sampler, "_fetch", return_value=served_xml):
+            with mock.patch.object(sys, "argv", argv):
+                code = sampler.main()
+
+        assert code == 0
+        assert json.loads(output.read_text())["window"]["rendition"] == "europepmc"
+
+    def test_a_throttled_run_writes_unreportable_rather_than_a_thin_corpus(self, tmp_path):
+        """The unmeasured-share rule applies here exactly as it does to the
+        archive path: 4 of 5 held articles unmeasured is 80%, past
+        `UNMEASURED_SHARE_ERROR_THRESHOLD`, so the run must refuse the
+        canonical name rather than write a corpus a later reader would take
+        as a clean 20%-nesting-rate measurement."""
+        pmcids = [f"PMC{i:08d}" for i in range(5)]
+        package = self._package(tmp_path / "package", pmcids, n_figs=1)
+        served = pmcids[0]
+        output = tmp_path / "out" / "jats_exhibits.json"
+        served_xml = _article("<fig id='s1'/>")
+
+        def fake_fetch(client, url, pace):
+            if served in url:
+                return served_xml
+            return None
+
+        with mock.patch.object(sampler, "_fetch", side_effect=fake_fetch):
+            argv = self._argv(package, output, target=5, extra=["--measure-europepmc"])
+            with mock.patch.object(sys, "argv", argv):
+                code = sampler.main()
+
+        assert code != 0
+        assert not output.exists()
+        unreportable = json.loads(output.with_suffix(".unreportable.json").read_text())
+        assert unreportable["unmeasured"] == 4
+        assert unreportable["articles"] == 1
