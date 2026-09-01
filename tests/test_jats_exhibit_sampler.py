@@ -1538,7 +1538,15 @@ class TestThePackageIdentityIsRecorded:
         )
 
         assert sampler._package_identity(directory) == "PMC001xxxxxx"
-        assert "ambiguous" in capsys.readouterr().err
+        # Not `"ambiguous" in ...`: review round 2 found that bare substring
+        # is also a literal fragment of pytest's own generated `tmp_path`
+        # directory name for *this test's own name*
+        # (`.../test_an_ambiguous_sibling_matc0/...`), so it would pass even
+        # if the code printed the wrong (no-candidate) message here verbatim
+        # — which is exactly the confusion MINOR 4 was about. This phrase is
+        # unique to the ambiguous branch's own message and cannot leak in
+        # from the path.
+        assert "candidate baseline tarballs match" in capsys.readouterr().err
 
     def test_a_non_gzip_sibling_naming_the_same_baseline_is_not_mistaken_for_the_tarball(
         self, tmp_path
@@ -2606,6 +2614,12 @@ class TestCompareEuropepmcSurvivesAJournalResume:
         assert fresh["target"] == 8
         assert fresh["seed"] == 0
         assert fresh["requested"] == 4
+        # Review round 2: `window`'s own "rendition" describes the corpus
+        # draw, not the comparison written beside it (which is always
+        # archive-vs-served) — renamed on the way into this file's
+        # provenance so a reader cannot mistake one for the other.
+        assert fresh["corpus_rendition"] == "archive"
+        assert "rendition" not in fresh
 
         # The held articles are a seeded sample of the corpus's own 8-article
         # draw, never of the wider 12-article candidate pool — pinned by
@@ -2747,25 +2761,35 @@ class TestTheEmptyComparisonNet:
 
 
 class TestTheJournalDoesNotPoolRenditions:
-    """CRITICAL 1 from review round 1, reproduced then fixed.
+    """CRITICAL 1, reproduced in review round 1, then again in round 2.
 
     `main()` reads the journal into `totals`/`seen` *before* branching on
-    `--measure-europepmc`, and a row carries no rendition marker of its
-    own — so a journal shared between the two renditions of one `-o` let a
-    resumed `--measure-europepmc` run silently carry an existing
-    archive-rendition journal's rows into a corpus stamped
-    `"rendition": "europepmc"`, at exit 0, with zero HTTP requests issued.
-    The reviewer's own reproduction: rerunning the exact same
-    `(package, window, target, seed)` with only `--measure-europepmc` added
-    computed `wanted = ∅` against the committed 1,000-row corpus and
-    rewrote it stamped `"europepmc"` over unchanged archive rows — "the
-    opposite of the truth this task exists to prevent."
+    source/rendition, and a row carries no marker of its own — so a journal
+    shared between two different draws let a resumed run silently carry an
+    earlier run's rows into a corpus stamped with the *new* run's own
+    label, at exit 0, with zero HTTP requests issued.
 
-    Fixed by naming each rendition's journal differently
-    (`*.europepmc.journal.jsonl` vs `*.journal.jsonl`), so the two neither
-    read nor write the same file regardless of run order — this is what
-    makes "one corpus, one rendition" hold across resumed runs and not only
-    within one run's own branch.
+    Round 1's fix (a rendition-qualified journal filename,
+    `*.europepmc.journal.jsonl` vs `*.journal.jsonl`) closed the exact
+    sequence it was built from but not the property: round 2's re-review
+    reproduced two more collisions the filename cannot rule out —
+    `Path.with_suffix()` is not injective over `(output, rendition)`
+    (`"jats_exhibits.json".with_suffix(".europepmc.journal.jsonl")` equals
+    `"jats_exhibits.europepmc.json".with_suffix(".journal.jsonl")`), and the
+    live source's journal name is never rendition-qualified at all, so it
+    collides outright with a `--package` archive draw's default journal.
+    Both are pinned below (`test_a_journal_at_a_colliding_output_path_is_
+    refused_not_pooled`, `test_a_live_run_sharing_the_default_journal_
+    with_a_package_draw_is_refused`).
+
+    Fixed for real by giving the journal its own header line naming
+    `(source, rendition)` — data travelling with the file, not a fact
+    inferred from its name — and refusing to resume from a journal whose
+    header disagrees with the current run (`_journal_disagreement`). The
+    rendition-qualified filename is kept (it is a friendlier failure: most
+    `--measure-europepmc` runs get a fresh journal rather than a refusal on
+    their very first invocation), but it is no longer what the guarantee
+    rests on.
     """
 
     def _package(self, path: Path, pmcids: list[str], n_figs: int) -> Path:
@@ -2877,6 +2901,223 @@ class TestTheJournalDoesNotPoolRenditions:
         assert archive_code == 0
         assert archive_corpus["window"]["rendition"] == "archive"
         assert all(row["figures"] == 2 for row in archive_corpus["rows"])
+
+    def test_a_journal_at_a_colliding_output_path_is_refused_not_pooled(self, tmp_path):
+        """Round 2's first reproduction: `with_suffix` is not injective over
+        `(output, rendition)`. An archive run at `-o
+        out/jats_exhibits.europepmc.json` writes to the same journal path
+        (`out/jats_exhibits.europepmc.journal.jsonl`) that a
+        `--measure-europepmc` run at `-o out/jats_exhibits.json` also
+        computes — before the header check, this silently carried the
+        first run's archive rows into the second run's corpus, stamped
+        `"europepmc"`. The header now catches it: refused, exit 2, neither
+        file touched by the second run."""
+        pmcids = [f"PMC{i:08d}" for i in range(4)]
+        package = self._package(tmp_path / "package", pmcids, n_figs=2)
+        out_dir = tmp_path / "out"
+        run1_output = out_dir / "jats_exhibits.europepmc.json"
+        run2_output = out_dir / "jats_exhibits.json"
+        assert run1_output.with_suffix(".journal.jsonl") == run2_output.with_suffix(
+            ".europepmc.journal.jsonl"
+        ), "the fixture must actually exercise the with_suffix collision"
+
+        run1_argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "4",
+            "--seed",
+            "0",
+            "-o",
+            str(run1_output),
+        ]
+        with mock.patch.object(sys, "argv", run1_argv):
+            run1_code = sampler.main()
+
+        run2_argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "4",
+            "--seed",
+            "0",
+            "-o",
+            str(run2_output),
+            "--measure-europepmc",
+        ]
+        served_xml = _article("<fig id='s1'/>")
+        with mock.patch.object(sampler, "_fetch", return_value=served_xml):
+            with mock.patch.object(sys, "argv", run2_argv):
+                run2_code = sampler.main()
+
+        assert run1_code == 0
+        assert run2_code != 0
+        # The property that must hold: run 2 never got to write a corpus at
+        # all, stamped with either label, from the colliding journal.
+        assert not run2_output.exists()
+        assert not run2_output.with_suffix(".unreportable.json").exists()
+
+    def test_a_live_run_sharing_the_default_journal_with_a_package_draw_is_refused(
+        self, tmp_path, monkeypatch
+    ):
+        """Round 2's second reproduction: the live source's journal name is
+        never rendition-qualified, so a `--package` archive draw and a
+        plain live run at the same `-o` collide outright. Before the
+        header check, the live branch's own `totals.articles >=
+        args.target` break fired immediately against the pooled archive
+        rows, issuing zero fetches and writing `"source": "europepmc"`
+        over the package's own pmcids and figure counts — exactly the
+        reviewer's second reproduction, said to be staged on this
+        machine's real journal already."""
+        pmcids = [f"PMC{i:08d}" for i in range(3)]
+        package = self._package(tmp_path / "package", pmcids, n_figs=2)
+        output = tmp_path / "out" / "jats_exhibits.json"
+
+        package_argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "3",
+            "--seed",
+            "0",
+            "-o",
+            str(output),
+        ]
+        with mock.patch.object(sys, "argv", package_argv):
+            package_code = sampler.main()
+
+        monkeypatch.setattr(sampler, "open_access_pmcids", lambda *a, **k: iter(["PMCLIVE1"]))
+        served_xml = _article("<fig id='s1'/>")
+        live_argv = ["sample_jats_exhibits.py", "--target", "3", "-o", str(output)]
+        with mock.patch.object(sampler, "_fetch", return_value=served_xml):
+            with mock.patch.object(sys, "argv", live_argv):
+                live_code = sampler.main()
+
+        assert package_code == 0
+        assert live_code != 0
+        # The corpus the package run wrote is untouched by the refused live
+        # run — never silently relabelled "source": "europepmc".
+        package_corpus = json.loads(output.read_text())
+        assert package_corpus["window"]["source"] == "package"
+        assert {row["pmcid"] for row in package_corpus["rows"]} == set(pmcids)
+
+
+class TestTheJournalHeaderDisagreementCheck:
+    """`_journal_disagreement` and `_ensure_journal_header` in isolation —
+    the pure mechanism `main()` calls, tested directly rather than only
+    through a full `main()` run, so the boundary cases (empty file, legacy
+    header-less file, agreeing header) are each pinned precisely."""
+
+    def test_no_journal_is_not_a_disagreement(self, tmp_path):
+        journal = tmp_path / "does-not-exist.journal.jsonl"
+
+        assert sampler._journal_disagreement(journal, "package", "archive") is None
+
+    def test_an_empty_journal_is_not_a_disagreement(self, tmp_path):
+        """An existing-but-empty file — e.g. created by a prior run that
+        crashed before writing anything — has no header to disagree with."""
+        journal = tmp_path / "empty.journal.jsonl"
+        journal.write_text("")
+
+        assert sampler._journal_disagreement(journal, "package", "archive") is None
+
+    def test_a_matching_header_is_not_a_disagreement(self, tmp_path):
+        journal = tmp_path / "matches.journal.jsonl"
+        journal.write_text(sampler._journal_header_line("package", "europepmc"))
+
+        assert sampler._journal_disagreement(journal, "package", "europepmc") is None
+
+    def test_a_mismatched_rendition_is_a_disagreement(self, tmp_path):
+        journal = tmp_path / "mismatch.journal.jsonl"
+        journal.write_text(sampler._journal_header_line("package", "archive"))
+
+        reason = sampler._journal_disagreement(journal, "package", "europepmc")
+
+        assert reason is not None
+        assert "archive" in reason
+        assert "europepmc" in reason
+
+    def test_a_mismatched_source_is_a_disagreement(self, tmp_path):
+        """Isolated from the rendition check: the header's own rendition
+        (`"europepmc"`) matches what this run is asking for, and only the
+        `source` differs — this is what proves `source` is actually
+        compared and not merely along for the ride with `rendition` (a
+        mutant that dropped the `source` half of the comparison passed
+        `test_a_mismatched_rendition_is_a_disagreement` above and only
+        reddened here)."""
+        journal = tmp_path / "mismatch.journal.jsonl"
+        journal.write_text(sampler._journal_header_line("package", "europepmc"))
+
+        reason = sampler._journal_disagreement(journal, "europepmc", "europepmc")
+
+        assert reason is not None
+        assert "package" in reason
+
+    def test_a_legacy_header_less_journal_is_a_disagreement_not_a_crash(self, tmp_path):
+        """A journal written before this check existed opens with a real
+        `ArticleMeasurement` row, not a header — must be refused explicitly,
+        never trusted blind and never an unhandled exception."""
+        journal = tmp_path / "legacy.journal.jsonl"
+        row = sampler.measure_article("PMC1", _article("<fig id='f1'/>"))
+        journal.write_text(json.dumps(row.to_dict()) + "\n")
+
+        reason = sampler._journal_disagreement(journal, "package", "archive")
+
+        assert reason is not None
+        assert "no rendition header" in reason
+
+    def test_a_line_that_is_not_even_json_is_a_disagreement_not_a_crash(self, tmp_path):
+        journal = tmp_path / "garbage.journal.jsonl"
+        journal.write_text("not json at all\n")
+
+        reason = sampler._journal_disagreement(journal, "package", "archive")
+
+        assert reason is not None
+
+    def test_ensure_journal_header_creates_one_when_absent(self, tmp_path):
+        journal = tmp_path / "nested" / "new.journal.jsonl"
+
+        sampler._ensure_journal_header(journal, "package", "archive")
+
+        header = json.loads(journal.read_text().splitlines()[0])
+        assert header["source"] == "package"
+        assert header["rendition"] == "archive"
+
+    def test_ensure_journal_header_overwrites_an_empty_file(self, tmp_path):
+        journal = tmp_path / "empty.journal.jsonl"
+        journal.write_text("")
+
+        sampler._ensure_journal_header(journal, "europepmc", "europepmc")
+
+        header = json.loads(journal.read_text().splitlines()[0])
+        assert header["source"] == "europepmc"
+
+    def test_ensure_journal_header_leaves_an_agreeing_file_alone(self, tmp_path):
+        journal = tmp_path / "existing.journal.jsonl"
+        row = sampler.measure_article("PMC1", _article("<fig id='f1'/>"))
+        original = (
+            sampler._journal_header_line("package", "archive") + json.dumps(row.to_dict()) + "\n"
+        )
+        journal.write_text(original)
+
+        sampler._ensure_journal_header(journal, "package", "archive")
+
+        assert journal.read_text() == original
 
 
 class TestTheMeasureEuropepmcFlagMeasuresTheServedRendition:

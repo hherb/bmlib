@@ -437,6 +437,18 @@ def _package_identity(path: Path) -> str:
     candidate walk already pays the cost of reading every *wanted* member in
     full where correctness of the draw itself is what is at stake.
 
+    **Scope limit (review round 2): this check is cross-*subset* only.** A
+    same-subset sibling from a *different* baseline snapshot date — e.g. a
+    stale ``oa_comm_xml.PMC012xxxxxx.baseline.2024-01-01.tar.gz`` left beside
+    a directory actually extracted from the ``2025-06-26`` snapshot — shares
+    the same accession range and so, very plausibly, the same first article,
+    which passes this check and records a confidently wrong *date*. Nothing
+    on disk distinguishes two snapshots of the same subset well enough to
+    check cheaply (both name the same articles; only some of those articles'
+    *content* would differ between snapshots, which is exactly the
+    expensive whole-file comparison this function avoids). Unmeasured how
+    often this actually happens.
+
     Every fallback is reported to stderr, naming which of the three reasons
     it was (no candidate, more than one, or a candidate that failed the
     content check) — silently degrading to the bare name would leave "no
@@ -649,6 +661,107 @@ def _hold_for_comparison(
         return []
     ids = set(draw(drawn, n, seed))
     return list(read_package_articles(paths, ids))
+
+
+# The sentinel key on a journal's own first line, naming which (source,
+# rendition) it was drawn as. A rendition-qualified filename narrows most
+# collisions but cannot rule every one out: `Path.with_suffix()` is not
+# injective over `(output, rendition)` — `Path("jats_exhibits.json")
+# .with_suffix(".europepmc.journal.jsonl")` equals
+# `Path("jats_exhibits.europepmc.json").with_suffix(".journal.jsonl")` — and
+# the live source's own default journal name collides outright with a
+# `--package` archive draw's default one, since neither is rendition-
+# qualified. No filename scheme can carry this property against an
+# arbitrary `-o`, so the data has to: this key can never collide with an
+# `ArticleMeasurement` field name (none of that dataclass's fields start
+# with `__`), which is what tells a header line apart from a row.
+_JOURNAL_HEADER_KEY = "__journal_header__"
+
+
+def _journal_header_line(source: str, rendition: str) -> str:
+    """The one line that must open every journal this script writes.
+
+    Args:
+        source: This run's own ``"package"`` or ``"europepmc"``.
+        rendition: This run's own ``"archive"`` or ``"europepmc"``.
+
+    Returns:
+        A single JSON line, newline-terminated, naming both.
+    """
+    return json.dumps({_JOURNAL_HEADER_KEY: True, "source": source, "rendition": rendition}) + "\n"
+
+
+def _journal_disagreement(journal: Path, source: str, rendition: str) -> str | None:
+    """Why *journal* must not be resumed from this run, or ``None`` if it may be.
+
+    Two reproduced sequences (review round 2) are why the filename alone —
+    round 1's fix — is not enough: an `-o` collision (`with_suffix` is not
+    injective, see :data:`_JOURNAL_HEADER_KEY`'s comment) and the live
+    source sharing its default journal name with a `--package` archive draw
+    at the default output, since the live branch is never rendition-
+    qualified. Both let a resumed run read another run's rows as `seen` and
+    stamp them with this run's own `(source, rendition)` — silently, at
+    exit 0, zero fetches issued. The header line is what closes this for
+    good: it is data travelling with the journal's own rows rather than a
+    fact inferred from a filename a caller chose.
+
+    Args:
+        journal: The path this run is about to read from and append to.
+        source: This run's own ``"package"`` or ``"europepmc"``.
+        rendition: This run's own ``"archive"`` or ``"europepmc"``.
+
+    Returns:
+        A reason naming the journal and what disagrees, if its header does
+        not match this run, or if it has content but no header at all (a
+        journal written before this check existed — refused rather than
+        trusted blind, since nothing records what it was drawn as). ``None``
+        if the journal does not exist, is empty, or its header agrees.
+    """
+    if not journal.exists():
+        return None
+    lines = journal.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        return None
+    try:
+        header = json.loads(lines[0])
+    except json.JSONDecodeError:
+        header = None
+    if not isinstance(header, dict) or not header.get(_JOURNAL_HEADER_KEY):
+        return (
+            f"{journal} has content but no rendition header (it was written before "
+            "this check existed, or by something other than this script); refusing "
+            "to resume from it rather than guess what it was drawn as. Delete it (or "
+            "move it aside) to start a fresh draw."
+        )
+    if (header.get("source"), header.get("rendition")) != (source, rendition):
+        return (
+            f"{journal} was drawn as source={header.get('source')!r} "
+            f"rendition={header.get('rendition')!r}, but this run is "
+            f"source={source!r} rendition={rendition!r}; refusing to resume a "
+            "journal that disagrees with this run. Pick a different -o, or delete/"
+            "rename the journal to start fresh."
+        )
+    return None
+
+
+def _ensure_journal_header(journal: Path, source: str, rendition: str) -> None:
+    """Create *journal*, with its header line, if it does not already carry one.
+
+    Call only after :func:`_journal_disagreement` has cleared the run to
+    proceed — so *journal* is either absent, empty, or already carries a
+    header that agrees with *source*/*rendition*. An existing-but-empty file
+    (e.g. a prior run that crashed between creating it and writing a row) is
+    overwritten with just the header line rather than appended to, since
+    there is nothing in it worth preserving.
+
+    Args:
+        journal: Where the journal lives.
+        source: This run's own ``"package"`` or ``"europepmc"``.
+        rendition: This run's own ``"archive"`` or ``"europepmc"``.
+    """
+    journal.parent.mkdir(parents=True, exist_ok=True)
+    if not journal.exists() or not journal.read_text(encoding="utf-8").strip():
+        journal.write_text(_journal_header_line(source, rendition), encoding="utf-8")
 
 
 def _measure_and_journal(
@@ -2096,6 +2209,17 @@ def _validate_args(args: argparse.Namespace) -> str | None:
     for the same reason: the live source's rows already are Europe PMC's
     rendition, with nothing archival to switch away from.
 
+    *`--measure-europepmc` is deliberately not refused against
+    `DEFAULT_OUTPUT`* (review round 2 flagged this as worth a word, not as a
+    defect): a served draw at the default `-o` silently replaces the
+    committed archive corpus, the same shape of hazard the two window-axis
+    rules above both refuse outright ("must not be written to
+    `DEFAULT_OUTPUT`"). Left open here because *replacing* the default
+    archive corpus with a served one is this flag's whole eventual purpose,
+    per the plan this task belongs to — the next task is expected to make
+    that call deliberately, not be blocked from it by a rule written before
+    the flag existed to be used that way.
+
     *`--measure-europepmc` and `--compare-europepmc` are independent and may
     be combined.* It is tempting to read the corpus's own rendition as
     deciding what a comparison could still mean, but it does not:
@@ -2111,6 +2235,15 @@ def _validate_args(args: argparse.Namespace) -> str | None:
     earlier version of this function refused the combination on the
     claim that it would "report Europe PMC disagreeing with itself" — false,
     and caught in review; nothing here still asserts it.
+
+    Left as a known cost rather than optimised (review round 2): the two
+    flags together fetch each held article's ``fullTextXML`` *twice* through
+    two separate paced clients — once for this run's own corpus row, once
+    more inside :func:`compare_renditions` for the comparison — and the
+    combination has no end-to-end test of its own, only the two flags'
+    independent unit coverage. Both are acceptable for a low-frequency live
+    runner and neither changes correctness, but a future reader optimising
+    request count should know the overlap exists before "fixing" it.
     """
     for path in args.package:
         if not _is_package_path(path):
@@ -2172,31 +2305,51 @@ def main() -> int:
     if refusal is not None:
         sys.stderr.write(f"{refusal}\n")
         return 2
-    # Rendition-qualified for --measure-europepmc, never the plain
-    # `--package` journal name: `totals`/`seen` below are populated straight
-    # from whatever this file already holds, with no per-row rendition
-    # marker, so two renditions of the same `-o` sharing one journal is a
-    # corpus that pools them silently (a resumed --measure-europepmc run
-    # would read an existing archive-rendition journal as `seen`, fetch
-    # nothing for those pmcids, and still stamp the corpus
-    # `"rendition": "europepmc"` over the old archive rows). Physically
-    # separate files make that impossible rather than merely checked: the
-    # europepmc branch below can never open the archive journal, and vice
-    # versa, whichever order the two are run in. The archive-rendition name
-    # is unchanged (`.journal.jsonl`, no qualifier) so an existing local
-    # journal from before this flag existed keeps resuming exactly as it did.
+
+    # This run's own identity, decided before any file is touched: which
+    # source measured it, and (for a --package draw) which rendition. Used
+    # three ways below — the journal's filename, the journal's own header
+    # line, and the disagreement check between them — because the filename
+    # alone cannot carry this property (see `_JOURNAL_HEADER_KEY`'s comment)
+    # and review round 2 reproduced two ways a shared journal silently
+    # pooled two runs' rows under the wrong label.
+    if args.package:
+        source = "package"
+        rendition = "europepmc" if args.measure_europepmc else "archive"
+    else:
+        source = "europepmc"
+        rendition = "europepmc"
+
+    # Rendition-qualified for --measure-europepmc: a friendlier failure mode
+    # (a --measure-europepmc run gets its own fresh journal by default,
+    # rather than a name collision with the archive one on the very first
+    # run), but not what makes mixing impossible on its own — `with_suffix`
+    # is not injective over `(output, rendition)`, and the live branch's
+    # journal name is never qualified at all, so it can still collide with a
+    # --package archive draw's default journal. The header check right below
+    # is what actually enforces the property; this filename choice only
+    # narrows how often it has to fire.
     journal = args.output.with_suffix(
         ".europepmc.journal.jsonl" if args.measure_europepmc else ".journal.jsonl"
     )
+    disagreement = _journal_disagreement(journal, source, rendition)
+    if disagreement is not None:
+        sys.stderr.write(f"{disagreement}\n")
+        return 2
+
     totals = Totals()
     seen: set[str] = set()
     if journal.exists():
-        for line in journal.read_text(encoding="utf-8").splitlines():
+        # `lines[0]`, if present, is the header line `_journal_disagreement`
+        # just confirmed agrees with this run (or the file would have been
+        # refused above) — skipped here, never measured as a row.
+        for line in journal.read_text(encoding="utf-8").splitlines()[1:]:
             if not line.strip():
                 continue
             row = ArticleMeasurement.from_dict(json.loads(line))
             seen.add(row.pmcid)
             totals.add(row)
+    _ensure_journal_header(journal, source, rendition)
 
     # Hoisted above the branch it is filled in, rather than left to a
     # refusal 150 lines away (`_validate_args` already refuses
@@ -2211,7 +2364,7 @@ def main() -> int:
         # a real package, so the two passes below (candidates, then the drawn
         # articles' identifiers) are the whole of it either way.
         window = {
-            "source": "package",
+            "source": source,
             "packages": sorted(_package_identity(p) for p in args.package),
             "first_year": args.from_year,
             "last_year": args.to_year,
@@ -2222,8 +2375,10 @@ def main() -> int:
             # --measure-europepmc. Recorded unconditionally, not only when
             # the flag is set, so a reader of the file never has to consult
             # the command line that produced it to know which rendition a
-            # figure describes.
-            "rendition": "europepmc" if args.measure_europepmc else "archive",
+            # figure describes. Reuses the same `rendition` the journal's
+            # own header was just written with, rather than re-deriving the
+            # ternary a second time.
+            "rendition": rendition,
         }
         candidates = package_candidates(args.package, args.from_year, args.to_year)
         print(f"{len(candidates)} candidates in {args.from_year}-{args.to_year}")
@@ -2235,7 +2390,6 @@ def main() -> int:
         # run. See `_hold_for_comparison`.
         drawn = draw(candidates, args.target, args.seed)
         wanted = {p for p in drawn if p not in seen}
-        journal.parent.mkdir(parents=True, exist_ok=True)
         if args.measure_europepmc:
             # This branch never reads `read_package_articles` — there is no
             # archive byte string in scope to fall back to, so an article
@@ -2274,7 +2428,7 @@ def main() -> int:
         # in the repo.
         windows = _month_windows(args.months, date.today(), skip=args.months_ago)
         window = {
-            "source": "europepmc",
+            "source": source,
             "months": args.months,
             "months_ago": args.months_ago,
             "first": windows[-1][0],
@@ -2283,7 +2437,7 @@ def main() -> int:
             # to choose between, unlike the --package branch above. Recorded
             # for the same reason: a reader should never need the command
             # line to know which rendition a row came from.
-            "rendition": "europepmc",
+            "rendition": rendition,
         }
         pace = _make_pacer(args.per_host_interval)
         headers = {"User-Agent": _USER_AGENT}
@@ -2295,7 +2449,6 @@ def main() -> int:
                 )
                 if p not in seen
             ]
-            journal.parent.mkdir(parents=True, exist_ok=True)
             with journal.open("a", encoding="utf-8") as handle:
                 for pmcid in pmcids:
                     if totals.articles >= args.target:
@@ -2344,11 +2497,19 @@ def main() -> int:
         # same reason the corpus records its own header: the same command
         # later draws a different sample, and nothing else would say which
         # one produced this file.
-        provenance = {
-            **window,
-            "requested": args.compare_europepmc,
-            "held": len(for_comparison),
-        }
+        # `window`'s own `"rendition"` describes the *corpus draw* this run
+        # also made (or "archive" if `--measure-europepmc` was not set) —
+        # not the comparison written below it, which is always archive-vs-
+        # served regardless of that setting (review round 2: dropping the
+        # refusal between the two flags made this combination reachable,
+        # and a bare `"rendition"` here would read as describing the
+        # comparison it sits beside). Renamed on the way in, not left for a
+        # reader of `jats_exhibits.rendition.json` to guess which of the two
+        # meanings it has.
+        provenance = {k: v for k, v in window.items() if k != "rendition"}
+        provenance["corpus_rendition"] = window["rendition"]
+        provenance["requested"] = args.compare_europepmc
+        provenance["held"] = len(for_comparison)
         comparison: dict[str, Any] | None = None
         if not for_comparison:
             # The net for whatever empties `for_comparison`, `_hold_for_
