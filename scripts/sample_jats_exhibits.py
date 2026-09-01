@@ -255,12 +255,14 @@ _WAITING_SIDE_COUNTERS = (
     "contribs_multi_collab",
     "contribs_multi_string_name",
     "name_alternatives",
+    "collab_alternatives",
     "disp_formulas",
     "inline_formulas",
     "tex_math",
     "mml_math",
     "formula_alternatives_both",
     "disp_formulas_with_label",
+    "disp_formulas_image_only",
     "refs",
     "refs_note_only",
 )
@@ -557,29 +559,47 @@ class ArticleMeasurement:
     # rather than a silent application of it: #158's four disagreeing rates are
     # exactly the question "how much does the region inflate a count?".
     unscoped: dict[str, Any] = field(default_factory=dict)
-    # Issue #142 — what a `<collab>` carries besides text. `<institution>` and
-    # `<addr-line>` are legal children and are concatenated with no separator,
-    # and which of the two candidate fixes is right is a question about how
-    # publishers actually deposit it.
+    # Issue #142 — what a `<collab>` carries besides text: `<institution>` and
+    # `<addr-line>` are legal children that run together with no separator
+    # when the parser accumulates them. A member roster (`<contrib-group>`,
+    # #120's shape, counted separately below) is deliberately NOT counted
+    # here — it does not exhibit #142's defect at all, since the parser's
+    # `_UNDIVIDED_NAME_ELEMENTS` guard refuses the merge while a `<contrib>`
+    # is open, so folding it in would make this counter's headline number
+    # #142's population plus an unrelated one.
     collab_children: Counter[str] = field(default_factory=Counter)
     collabs_with_element_children: int = 0
     # Issue #143 — multiplicity, which section 11 cannot see: it counts
     # spellings per *article*, so one `<contrib>` carrying two `<collab>` is
     # invisible there. #117 is the precedent that "how many does one element
     # deposit?" decides between first-wins, last-wins and ranking.
+    # `contribs_multi_collab`/`contribs_multi_string_name` are counted through
+    # `_CONTRIB_NAME_WRAPPERS` (a `<collab-alternatives>` or
+    # `<name-alternatives>` holds its members one level deeper than `<contrib>`
+    # itself, and a direct-child-only count reads that shape as zero either
+    # way it could occur). `name_alternatives`/`collab_alternatives` are a
+    # separate signal — how often the wrapper *itself* is used — and each is a
+    # per-contrib flag (0 or 1), not a raw element count, so it stays a valid
+    # binomial numerator against `contribs` the way the two multiplicity
+    # counters already are.
     contribs_multi_collab: int = 0
     contribs_multi_string_name: int = 0
     name_alternatives: int = 0
+    collab_alternatives: int = 0
     # Issue #147 — `<tex-math>` is taken from the prose containing it and
     # `<disp-formula>` dropped outright. `formula_alternatives_both` is the
     # count that rules out "add them to `_INLINE_ELEMENTS`": an `<alternatives>`
     # holding both encodings of one formula would emit it twice.
+    # `disp_formulas_image_only` is the residual no fix for the text-taking
+    # defect can recover: a formula deposited as nothing but a `<graphic>` was
+    # never text to begin with.
     disp_formulas: int = 0
     inline_formulas: int = 0
     tex_math: int = 0
     mml_math: int = 0
     formula_alternatives_both: int = 0
     disp_formulas_with_label: int = 0
+    disp_formulas_image_only: int = 0
     # Issue #150 — a `<ref>` whose only content is a `<note>` renders as an
     # empty `<li>`. The vocabulary is open, so a `<ref>` child nobody has
     # listed prints as itself rather than as evidence of nothing.
@@ -705,6 +725,12 @@ def _measure_tree(pmcid: str, root: ET.Element, *, scoped: bool) -> ArticleMeasu
                 row.disp_formulas += 1
                 if any(_local(c.tag) == "label" for c in child):
                     row.disp_formulas_with_label += 1
+                content = [_local(c.tag) for c in child if _local(c.tag) != "label"]
+                if content and set(content) == {"graphic"}:
+                    # No fix for #147's text-taking defect can recover this
+                    # one: a formula deposited as nothing but an image was
+                    # never text to begin with.
+                    row.disp_formulas_image_only += 1
                 _record_formula_alternatives(child, row)
             elif tag == "inline-formula":
                 row.inline_formulas += 1
@@ -799,6 +825,37 @@ def _row_difference(scoped: ArticleMeasurement, shadow: ArticleMeasurement) -> d
     return out
 
 
+def _flattened_naming_children(el: ET.Element) -> Counter[str]:
+    """*el*'s naming children, with ``_CONTRIB_NAME_WRAPPERS`` flattened away.
+
+    ``descend`` (inside :func:`_record_contrib`) already treats a
+    ``<name-alternatives>`` or ``<collab-alternatives>`` as transparent when
+    collecting *which* spellings a ``<contrib>`` carries. This does the same
+    when counting *how many* of one spelling it carries — issue #143's
+    multiplicity question — because counting only *el*'s direct children (as
+    this counter's first cut did) reads a ``<collab-alternatives>`` holding
+    two ``<collab>`` — one collaboration deposited in two scripts, the
+    canonical multi-deposit shape #143 is about — as zero of either, the
+    wrapped pair sitting one level below where a direct-child count looks.
+
+    Args:
+        el: The ``<contrib>`` element.
+
+    Returns:
+        A counter of local tag names, with any wrapper's own contents
+        substituted for the wrapper itself (recursively, though JATS does not
+        nest these wrappers in practice).
+    """
+    counts: Counter[str] = Counter()
+    for child in el:
+        name = _local(child.tag)
+        if name in _CONTRIB_NAME_WRAPPERS:
+            counts.update(_flattened_naming_children(child))
+        else:
+            counts[name] += 1
+    return counts
+
+
 def _record_contrib(el: ET.Element, chain: list[str], row: ArticleMeasurement) -> None:
     """Count one ``<contrib>``: how it names its contributor, and how it nests.
 
@@ -849,11 +906,17 @@ def _record_contrib(el: ET.Element, chain: list[str], row: ArticleMeasurement) -
                 found += 1
             if name == "collab":
                 # Issue #142 — what the `<collab>` carries besides its own
-                # text. `<institution>` and `<addr-line>` are legal children,
-                # counted only when at least one is present: bare text
-                # (`<collab>The Y Group</collab>`) contributes nothing, which
-                # is the distinction the fix turns on.
-                children = [_local(c.tag) for c in child]
+                # text: `<institution>` and `<addr-line>` are legal children,
+                # counted only when at least one is present (bare text, as in
+                # `<collab>The Y Group</collab>`, contributes nothing — the
+                # distinction the fix turns on). `<contrib-group>` is
+                # excluded here: a member roster is #120's shape, counted on
+                # the next line, and does not exhibit #142's defect at all —
+                # the parser's `_UNDIVIDED_NAME_ELEMENTS` guard already
+                # refuses the merge while a `<contrib>` is open, so folding a
+                # roster into this counter would report #142's population
+                # plus an unrelated one.
+                children = [_local(c.tag) for c in child if _local(c.tag) != "contrib-group"]
                 if children:
                     row.collab_children.update(children)
                     row.collabs_with_element_children += 1
@@ -862,16 +925,32 @@ def _record_contrib(el: ET.Element, chain: list[str], row: ArticleMeasurement) -
 
     descend(el)
     # Issue #143 — several `<collab>` or `<string-name>`, or a
-    # `<name-alternatives>`, deposited on one `<contrib>`. Counted on *el*'s
-    # own direct children, not through `descend`, since `descend` treats
-    # `<name-alternatives>` as a transparent wrapper rather than a spelling —
-    # exactly the cardinality this counts.
-    direct = Counter(_local(child.tag) for child in el)
-    if direct["collab"] > 1:
+    # `<name-alternatives>`/`<collab-alternatives>`, deposited on one
+    # `<contrib>`. The multiplicity counters are taken through
+    # `_CONTRIB_NAME_WRAPPERS` rather than from *el*'s direct children alone:
+    # a `<collab-alternatives>` (one collaboration deposited in two scripts —
+    # the parser has no handling for it at all, so it is last-wins the same
+    # way two bare sibling `<collab>` are) holds its members one level deeper
+    # than `<contrib>` itself, and a direct-child-only count reads that shape
+    # as zero. `<name-alternatives>` wrapping two `<string-name>` is the same
+    # shape, one rung less severe (it was at least flagged, never silent,
+    # by `name_alternatives` below).
+    flattened = _flattened_naming_children(el)
+    if flattened["collab"] > 1:
         row.contribs_multi_collab += 1
-    if direct["string-name"] > 1:
+    if flattened["string-name"] > 1:
         row.contribs_multi_string_name += 1
-    row.name_alternatives += direct["name-alternatives"]
+    # `name_alternatives`/`collab_alternatives` count *contribs* carrying the
+    # wrapper (0 or 1 each), not raw element occurrences: JATS's `(...)*`
+    # content model does not forbid a `<contrib>` from carrying more than one
+    # of the same wrapper, and summing raw occurrences would let such a row
+    # contribute more than 1 to a count that `_pct` then treats as a binomial
+    # numerator over `contribs`.
+    direct = Counter(_local(child.tag) for child in el)
+    if direct["name-alternatives"]:
+        row.name_alternatives += 1
+    if direct["collab-alternatives"]:
+        row.collab_alternatives += 1
     if not found:
         # Its own vocabulary entry rather than a silence: a `<contrib>` naming
         # nobody is what the parser reports at DEBUG and drops, so a draw in
@@ -904,10 +983,15 @@ def _record_ref(el: ET.Element, row: ArticleMeasurement) -> None:
     A ``<ref>`` whose only content is a ``<note>`` — ``<label>`` aside, which
     is the publisher's own number and not content — carries no citation for
     ``_format_ref_html`` to render, so it becomes an empty ``<li>`` (#150).
-    The child vocabulary is open: JATS models ``<ref>`` as
-    ``(label?, (citation | element-citation | mixed-citation | note | p | x)*)``
-    and a spelling counted against a list this script wrote would be reported
-    as absent.
+    The child vocabulary is open and this docstring does not try to enumerate
+    it exactly: JATS's ``<ref>`` admits ``<mixed-citation>``,
+    ``<element-citation>``, ``<note>``, ``<p>``, ``<x>`` and
+    ``<citation-alternatives>`` (several encodings of *one* reference — #149's
+    own population, measured at 0 of 216 in the local corpus), plus the
+    pre-JATS-NLM legacy ``<citation>`` some archives still carry. The point of
+    counting by name rather than against a list is exactly that this
+    enumeration need not be complete: a spelling missing from it still prints
+    under its own name rather than being reported as absent.
 
     Args:
         el: The ``<ref>`` element.
@@ -1493,17 +1577,22 @@ def print_report(totals: Totals) -> bool:
         multi_collab = totals.sum_of("contribs_multi_collab")
         multi_string_name = totals.sum_of("contribs_multi_string_name")
         alternatives = totals.sum_of("name_alternatives")
+        collab_alternatives = totals.sum_of("collab_alternatives")
         print(
-            f"   <contrib> carrying >1 <collab>         : "
+            f"   {'<contrib> carrying >1 <collab>':<42}: "
             f"{multi_collab:>6}  {_pct(multi_collab, contribs)}"
         )
         print(
-            f"   <contrib> carrying >1 <string-name>    : "
+            f"   {'<contrib> carrying >1 <string-name>':<42}: "
             f"{multi_string_name:>6}  {_pct(multi_string_name, contribs)}"
         )
         print(
-            f"   <contrib> carrying a <name-alternatives>: "
+            f"   {'<contrib> carrying a <name-alternatives>':<42}: "
             f"{alternatives:>6}  {_pct(alternatives, contribs)}"
+        )
+        print(
+            f"   {'<contrib> carrying a <collab-alternatives>':<42}: "
+            f"{collab_alternatives:>6}  {_pct(collab_alternatives, contribs)}"
         )
 
     print("\n14. FORMULAS  (issue #147)")
@@ -1513,17 +1602,19 @@ def print_report(totals: Totals) -> bool:
         disp_formulas = totals.sum_of("disp_formulas")
         inline_formulas = totals.sum_of("inline_formulas")
         labelled = totals.sum_of("disp_formulas_with_label")
+        image_only = totals.sum_of("disp_formulas_image_only")
         both = totals.sum_of("formula_alternatives_both")
-        print(f"   <disp-formula>                          : {disp_formulas}")
+        print(f"   {'<disp-formula>':<40}: {disp_formulas}")
+        print(f"   {'...carrying a <label>':<40}: {labelled:>6}  {_pct(labelled, disp_formulas)}")
         print(
-            f"   ...carrying a <label>                   : "
-            f"{labelled:>6}  {_pct(labelled, disp_formulas)}"
+            f"   {'...whose only content is a <graphic>':<40}: "
+            f"{image_only:>6}  {_pct(image_only, disp_formulas)}"
         )
-        print(f"   <inline-formula>                        : {inline_formulas}")
-        print(f"   <tex-math>                               : {totals.sum_of('tex_math')}")
-        print(f"   <math> (MathML)                          : {totals.sum_of('mml_math')}")
+        print(f"   {'<inline-formula>':<40}: {inline_formulas}")
+        print(f"   {'<tex-math>':<40}: {totals.sum_of('tex_math')}")
+        print(f"   {'<math> (MathML)':<40}: {totals.sum_of('mml_math')}")
         print(
-            f"   <alternatives> holding BOTH encodings   : {both:>6}   "
+            f"   {'<alternatives> holding BOTH encodings':<40}: {both:>6}   "
             "(rules out one more _INLINE_ELEMENTS member)"
         )
 

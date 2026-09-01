@@ -679,9 +679,9 @@ class TestHowAContribNamesItsContributorIsCounted:
     def test_the_report_says_so_under_this_section_and_not_another(self, capsys):
         """Asserted against the section's own lines, not against the whole report.
 
-        Four sections can print that phrase, so a bare ``"NOT MEASURED" in
-        out`` passes for a run in which *this* one printed a rate over rows
-        that never carried the counter.
+        Eight sections can print that phrase (5, 9-15), so a bare
+        ``"NOT MEASURED" in out`` passes for a run in which *this* one printed
+        a rate over rows that never carried the counter.
         """
         row = sampler.measure_article(
             "PMC1",
@@ -1796,3 +1796,76 @@ class TestTheFourWaitingPopulations:
         assert row.refs == sampler.NOT_MEASURED
         assert row.disp_formulas == sampler.NOT_MEASURED
         assert row.contribs_multi_collab == sampler.NOT_MEASURED
+
+    def test_a_collab_alternatives_is_counted_as_multiple_collabs(self):
+        """Fix round 1, IMPORTANT 1: one collaboration deposited in two
+        scripts — the canonical multi-`<collab>` deposit, and precisely the
+        last-wins shape #143 is about, since the parser has no
+        `<collab-alternatives>` handling and fires `endElement("collab")`
+        twice into one contrib frame. A direct-child-only count read this as
+        zero of everything; the members sit one level deeper than `<contrib>`
+        itself."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                "<contrib-group><contrib><collab-alternatives>"
+                "<collab>The Y Group</collab><collab>Y集団</collab>"
+                "</collab-alternatives></contrib></contrib-group>"
+            ),
+        )
+
+        assert row.contribs_multi_collab == 1
+        assert row.collab_alternatives == 1
+        assert row.contrib_name_spellings == {"collab": 2}
+
+    def test_a_name_alternatives_wrapping_two_string_names_is_counted_as_multiple(self):
+        """The less severe sibling of the case above: `name_alternatives`
+        already flagged this row (it is a direct child of `<contrib>`), but
+        `contribs_multi_string_name` still read zero before this fix, since
+        the two `<string-name>` sit inside the wrapper rather than directly
+        on `<contrib>`."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                "<contrib-group><contrib><name-alternatives>"
+                "<string-name>Jane Q Smith</string-name>"
+                "<string-name>スミス ジェーン</string-name>"
+                "</name-alternatives></contrib></contrib-group>"
+            ),
+        )
+
+        assert row.contribs_multi_string_name == 1
+        assert row.name_alternatives == 1
+
+    def test_a_collabs_roster_does_not_count_as_an_element_child(self):
+        """Fix round 1, IMPORTANT 2: a member roster is issue #120's shape,
+        already counted by `collabs_with_a_roster` — it does not exhibit
+        #142's defect at all, since the parser's `_UNDIVIDED_NAME_ELEMENTS`
+        guard refuses the merge while a `<contrib>` is open. Before this fix,
+        `collab_children`/`collabs_with_element_children` counted a roster
+        too, mixing #142's population with #120's unrelated one."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <contrib-group><contrib><collab>The Y Group
+              <contrib-group><contrib><name><surname>Member</surname></name></contrib></contrib-group>
+            </collab></contrib></contrib-group>"""),
+        )
+
+        assert row.collab_children == {}
+        assert row.collabs_with_element_children == 0
+        assert row.collabs_with_a_roster == 1
+
+    def test_a_disp_formula_deposited_as_only_an_image_is_counted_apart(self):
+        """The reviewer's ruling on issue #147's residual: a `<disp-formula>`
+        whose only content is a `<graphic>` was deposited as an image, which
+        no fix for the text-taking defect can recover as text under any of
+        its candidate rules."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article('<disp-formula><graphic xlink:href="eq1.png"/></disp-formula>'),
+        )
+
+        assert row.disp_formulas == 1
+        assert row.disp_formulas_image_only == 1
+        assert row.disp_formulas_with_label == 0
