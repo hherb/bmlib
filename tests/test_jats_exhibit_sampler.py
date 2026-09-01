@@ -165,6 +165,28 @@ class TestCountingAgainstHandBuiltMarkup:
 
         assert (row.figures, row.nested_figures) == (2, 1)
 
+    def test_a_nested_table_wrap_is_counted_too(self):
+        """`nested_tables` had never been shown able to count.
+
+        Its only assertion anywhere was the corpus's own `== 0`, which is
+        tautological for a counter that cannot fire — so the cited "0 nested
+        `<table-wrap>` across 1,994 articles" rested on nothing. JATS admits
+        a `<table-wrap>` inside another's `<table-wrap-foot>`, which is
+        exactly the shape `jats_parser` cites as the reason a table's frame
+        has to be a stack. The zero is real; this is what makes it evidence.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1"><label>Table 1</label>
+              <table-wrap-foot>
+                <table-wrap id="t1s1"><label>Table 1—supplement</label></table-wrap>
+              </table-wrap-foot>
+            </table-wrap>"""),
+        )
+
+        assert (row.tables, row.nested_tables) == (2, 1)
+
     def test_alternatives_members_are_counted_with_their_declarations(self):
         row = sampler.measure_article(
             "PMC1",
@@ -426,6 +448,41 @@ class TestTheTableSideCountsWhatTheParserWouldRoute:
 class TestAnArticleThatCouldNotBeMeasuredIsNeverAFinding:
     def test_unparseable_xml_is_unmeasured_rather_than_empty(self):
         assert sampler.measure_article("PMC1", b"<article><body>") is None
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            b"<html><body>Service temporarily unavailable</body></html>",
+            b"<error><message>rate limited</message></error>",
+            b"<responseWrapper><resultList/></responseWrapper>",
+        ],
+        ids=["html-error-page", "xml-error-envelope", "wrong-endpoint"],
+    )
+    def test_well_formed_non_jats_is_unmeasured_rather_than_all_zero(self, body):
+        """The envelope check (issue #166).
+
+        Each of these parses perfectly, so `ET.ParseError` never fires and
+        every counter reads zero. Without a root-element test that row is
+        added, journalled, and enters every denominator as a measured
+        article — and on `--compare-europepmc` an outage is counted as a
+        *rendition disagreement*. The corpora legitimately contain all-zero
+        rows, so nothing downstream can tell the two apart afterwards.
+        """
+        assert sampler.measure_article("PMC1", body) is None
+
+    def test_a_real_article_is_still_measured(self):
+        """The negative control: the envelope check must not refuse everything.
+
+        A root test that rejected every document would turn every population
+        in both corpora to zero while passing the three cases above, so this
+        is what stops the guard going vacuous in the useful direction. The
+        namespaced spelling is here because JATS is routinely served with a
+        default namespace, and a check on the raw `root.tag` rather than on
+        its local name would refuse every real article.
+        """
+        assert sampler.measure_article("PMC1", _article('<fig id="f1"/>')) is not None
+        namespaced = b'<article xmlns="http://jats.nlm.nih.gov"><body/></article>'
+        assert sampler.measure_article("PMC1", namespaced) is not None
 
     def test_an_unmeasured_article_enters_no_denominator(self):
         totals = sampler.Totals()
@@ -723,7 +780,10 @@ class TestHowAContribNamesItsContributorIsCounted:
         totals = sampler.Totals()
         totals.add(sampler.ArticleMeasurement.from_dict(stale))
 
-        assert sampler.print_report(totals) is True
+        # `is False`: a sample short of a counter generation is not fully
+        # reportable, so the corpus goes to `*.unreportable.json` rather than
+        # to the canonical name with `-1` inline (issue #168).
+        assert sampler.print_report(totals) is False
         section = _section(capsys.readouterr().out, "11. HOW A <contrib>")
         assert any("NOT MEASURED" in line for line in section)
 
@@ -855,6 +915,212 @@ class TestTheWalkStopsWhereTheParserStops:
         }
 
 
+class TestAnEmptyMemberIsNotAFailedFetch:
+    """`_measure_and_journal`'s `is None`, which nothing exercised.
+
+    The comment at that call site calls the distinction load-bearing at
+    length — only a failed live fetch is `None`, while an archive member
+    that is present and *empty* is `b""`, falsy but retrieved — and yet
+    `if xml is None:` → `if not xml:` survived the whole suite. An empty
+    member is a truncated extraction or a zero-byte deposit: a corpus
+    defect, reported as a live-source failure on an archive run that made no
+    request at all.
+    """
+
+    def test_an_empty_member_is_unparseable_not_unavailable(self, tmp_path):
+        journal = tmp_path / "j.jsonl"
+        totals = sampler.Totals()
+
+        with journal.open("w", encoding="utf-8") as handle:
+            sampler._measure_and_journal(handle, totals, [("PMC1", b"")])
+
+        assert totals.unmeasured == 1
+        assert totals.unmeasured_causes == {"unparseable": 1}
+
+    def test_a_missing_fetch_is_still_unavailable(self, tmp_path):
+        """The negative control, and the other side of the same branch."""
+        journal = tmp_path / "j.jsonl"
+        totals = sampler.Totals()
+
+        with journal.open("w", encoding="utf-8") as handle:
+            sampler._measure_and_journal(handle, totals, [("PMC1", None)])
+
+        assert totals.unmeasured_causes == {"europepmc_unavailable": 1}
+
+
+class TestAFetchThatCouldNotBeMadeIsNeverAFinding:
+    """`_fetch` was 100% unexercised — every test mocked it.
+
+    This is the rule `tests/test_free_pdf_sampler.py` and
+    `tests/test_databank_sampler.py` enforce for their own samplers, and it
+    is sharper here: an HTTP error body that happens to parse used to become
+    a measured all-zero row (issue #166 closes that half), and one that does
+    not parse would be filed under the wrong cause.
+    """
+
+    class _Response:
+        def __init__(self, status_code: int, content: bytes = b"body") -> None:
+            self.status_code = status_code
+            self.content = content
+            self.headers: dict[str, str] = {}
+
+    class _Client:
+        def __init__(self, *responses):
+            self._responses = list(responses)
+            self.calls: list[str] = []
+
+        def get(self, url):
+            self.calls.append(url)
+            return self._responses.pop(0)
+
+    def test_a_non_200_is_unmeasured_rather_than_its_body(self):
+        """Deleting this guard hands an error page's bytes back as content."""
+        for status in (404, 500, 403):
+            client = self._Client(self._Response(status, b"<html>nope</html>"))
+
+            url = "https://example.org/PMC1/fullTextXML"
+
+            assert sampler._fetch(client, url, lambda u: None) is None
+
+    def test_a_200_returns_its_content(self):
+        """The negative control: a guard that refused every response would
+        empty every corpus while passing the test above."""
+        client = self._Client(self._Response(200, b"<article/>"))
+
+        assert (
+            sampler._fetch(client, "https://example.org/PMC1/fullTextXML", lambda u: None)
+            == b"<article/>"
+        )
+
+    def test_a_transport_error_is_unmeasured_not_an_exception(self):
+        """An `httpx.HTTPError` out of `_fetch` would abort a whole run at
+        whatever article the network happened to drop."""
+        import httpx
+
+        class _Failing:
+            def get(self, url):
+                raise httpx.ConnectError("no route")
+
+        assert (
+            sampler._fetch(_Failing(), "https://example.org/PMC1/fullTextXML", lambda u: None)
+            is None
+        )
+
+    def test_an_unprobeable_url_is_refused_without_a_request(self):
+        client = self._Client()
+
+        assert sampler._fetch(client, "not-a-url", lambda u: None) is None
+        assert client.calls == []
+
+
+class TestTheServedRenditionIsAskedForByName:
+    """The endpoint itself, unpinned at all three call sites.
+
+    `fullTextXML` is what `FullTextService` feeds the parser, and it is the
+    whole reason the corpora are measured from the served rendition rather
+    than the archive one. Swapping it for another Europe PMC resource that
+    still returns well-formed XML produced a full corpus of all-zero rows at
+    exit 0; the fakes asserted only that the *pmcid* appeared in the URL.
+    """
+
+    def _package(self, tmp_path: Path) -> Path:
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        (tmp_path / "PMC1.xml").write_text(
+            "<article><front><article-meta>"
+            "<pub-date pub-type='epub'><year>2024</year></pub-date>"
+            "</article-meta></front></article>"
+        )
+        return tmp_path
+
+    def test_measure_europepmc_asks_for_full_text_xml(self, tmp_path):
+        package = self._package(tmp_path / "package")
+        output = tmp_path / "out" / "jats_exhibits.json"
+        urls: list[str] = []
+
+        def fake_fetch(client, url, pace):
+            urls.append(url)
+            return _article("<fig id='f1'/>")
+
+        argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "1",
+            "-o",
+            str(output),
+            "--measure-europepmc",
+        ]
+        with mock.patch.object(sys, "argv", argv):
+            with mock.patch.object(sampler, "_fetch", side_effect=fake_fetch):
+                assert sampler.main() == 0
+
+        assert urls
+        for url in urls:
+            assert url.endswith("/PMC1/fullTextXML"), url
+
+    def test_the_comparison_asks_for_full_text_xml_too(self):
+        urls: list[str] = []
+
+        def fake_fetch(client, url, pace):
+            urls.append(url)
+            return _article("<fig id='f1'/>")
+
+        with mock.patch.object(sampler, "_fetch", side_effect=fake_fetch):
+            sampler.compare_renditions(
+                object(), lambda url: None, [("PMC1", _article("<fig id='f1'/>"))]
+            )
+
+        assert urls == [f"{sampler.EUROPE_PMC}/PMC1/fullTextXML"]
+
+
+class TestARefusalStopsTheRun:
+    """~25 refusal assertions all call `_validate_args` directly.
+
+    None asserted that `main()` acts on what it returns, so
+    `if refusal is not None:` → `if False:` survived the whole suite. Every
+    one of those refusals exists to stop a rate being printed over a draw
+    nobody asked for; the wiring that makes that happen was unpinned.
+    """
+
+    def test_a_refused_argument_exits_non_zero_and_writes_nothing(self, tmp_path, capsys):
+        output = tmp_path / "out" / "jats_exhibits.json"
+        argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(tmp_path / "does-not-exist"),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "-o",
+            str(output),
+        ]
+
+        with mock.patch.object(sys, "argv", argv):
+            code = sampler.main()
+
+        assert code == 2
+        assert not output.exists()
+        assert not output.parent.exists()
+        assert "--package" in capsys.readouterr().err
+
+    def test_a_window_count_below_one_is_refused_through_main(self, tmp_path):
+        """`--months 0`'s `_validate_args` branch was uncovered: the existing
+        test drives `_month_windows`, not the flag."""
+        output = tmp_path / "out" / "jats_exhibits.json"
+        argv = ["sample_jats_exhibits.py", "--months", "0", "-o", str(output)]
+
+        with mock.patch.object(sys, "argv", argv):
+            assert sampler.main() == 2
+
+        assert not output.exists()
+
+
 class TestTheSamplerDoesNotShareTheParsersPredicates:
     """A corpus labelled by the rule under test can only confirm that rule."""
 
@@ -873,6 +1139,27 @@ class TestTheSamplerDoesNotShareTheParsersPredicates:
             "PMC1",
             _article(
                 '<fig id="f1"><alternatives><graphic xlink:href="f1.svg"/></alternatives></fig>'
+            ),
+        )
+
+        assert row.alternatives_archival == 1
+
+    def test_a_declared_archival_mime_subtype_is_classified_without_the_extension(self):
+        """The other half of "archival by either test", which was unexercised.
+
+        Every `mime-subtype` fixture in this file declares `jpeg`, which is
+        deliberately *not* archival, so both halves of the claim were driven
+        through the extension alone — and a broken `mime-subtype` branch
+        manufactures exactly the "none is archival by either test" zero that
+        `CLAUDE.md` cites over 7,055 deposits. The href here is a plain
+        `.jpg`, so only the declaration can classify it.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                '<fig id="f1"><alternatives>'
+                '<graphic mime-subtype="tiff" xlink:href="f1.jpg"/>'
+                "</alternatives></fig>"
             ),
         )
 
@@ -1119,7 +1406,10 @@ class TestTheTableSideOfTheRankingIsCounted:
         totals = sampler.Totals()
         totals.add(sampler.ArticleMeasurement.from_dict(stale))
 
-        assert sampler.print_report(totals) is True
+        # `is False`: a sample short of a counter generation is not fully
+        # reportable, so the corpus goes to `*.unreportable.json` rather than
+        # to the canonical name with `-1` inline (issue #168).
+        assert sampler.print_report(totals) is False
         assert "NOT MEASURED" in capsys.readouterr().out
 
     def test_a_freshly_measured_corpus_prints_the_rates(self, capsys):
@@ -1152,7 +1442,10 @@ class TestTheTableSideOfTheRankingIsCounted:
         totals = sampler.Totals()
         totals.add(sampler.ArticleMeasurement.from_dict(stale))
 
-        assert sampler.print_report(totals) is True
+        # `is False`: a sample short of a counter generation is not fully
+        # reportable, so the corpus goes to `*.unreportable.json` rather than
+        # to the canonical name with `-1` inline (issue #168).
+        assert sampler.print_report(totals) is False
         line = next(ln for ln in capsys.readouterr().out.splitlines() if "AND a <table>" in ln)
         assert "NOT MEASURED" in line, line
 
@@ -1192,9 +1485,128 @@ class TestTheTableSideOfTheRankingIsCounted:
 
         for name in sampler._TABLE_SIDE_COUNTERS:
             assert totals.sum_of(name) > 0, f"{name} must stay positive for this to bite"
-        assert sampler.print_report(totals) is True
+        # `is False`: a sample short of a counter generation is not fully
+        # reportable, so the corpus goes to `*.unreportable.json` rather than
+        # to the canonical name with `-1` inline (issue #168).
+        assert sampler.print_report(totals) is False
         section = _section(capsys.readouterr().out, "5. SEVERAL <graphic> PER TABLE")
         assert any("NOT MEASURED" in line for line in section), section
+
+
+class TestEveryCounterIsInAGeneration:
+    """The `TestTheAuditNetIsComplete` precedent, applied to the sentinel.
+
+    `_COUNTER_GENERATIONS` is a hand-maintained map from a generation's name
+    to the field names added with it, and until this test existed nothing
+    kept it in step with `ArticleMeasurement` — the rule lived in prose, and
+    this repo's standing finding is that a rule enforced by prose is not
+    enforced. Both directions fail, for different reasons.
+    """
+
+    def _fields(self):
+        import dataclasses
+
+        return {
+            f.name: f
+            for f in dataclasses.fields(sampler.ArticleMeasurement)
+            if f.name not in {"pmcid", "unscoped"}
+        }
+
+    def test_every_counter_reaches_a_generation_or_a_named_exclusion(self):
+        """A field added and forgotten defaults to 0 on a stale row.
+
+        That reads as measured-empty, which is exactly the collapse the
+        sentinel exists to prevent — and it is silent, permanent, and lands
+        in the committed corpus.
+        """
+        covered = set(sampler._FIRST_GENERATION_COUNTERS)
+        for names in sampler._COUNTER_GENERATIONS.values():
+            covered |= set(names)
+
+        orphans = sorted(
+            name
+            for name, field in self._fields().items()
+            if "Counter" not in str(field.type) and name not in covered
+        )
+
+        assert orphans == [], (
+            f"{orphans} reach no counter generation and no named exclusion. "
+            "Add each to `_COUNTER_GENERATIONS` (a new generation, if it ships "
+            "in its own commit) or to `_FIRST_GENERATION_COUNTERS`."
+        )
+
+    def test_no_generation_names_something_that_is_not_a_field(self):
+        """The other direction, and the sharper one.
+
+        `from_dict` sets the sentinel with `setattr`, and a non-slots
+        dataclass accepts any attribute — so a rename or a typo in a tuple
+        creates a phantom `-1` on a **fresh** row. That row is written into
+        the corpus, `sum_of` subtracts it, and the section it gates prints
+        NOT MEASURED forever over a perfectly good draw.
+        """
+        fields = set(self._fields())
+        named = set(sampler._FIRST_GENERATION_COUNTERS)
+        for names in sampler._COUNTER_GENERATIONS.values():
+            named |= set(names)
+
+        assert sorted(named - fields) == []
+
+    def test_the_generations_do_not_overlap(self):
+        """A field in two generations is a field whose provenance is unclear.
+
+        Harmless today — `measured` is an `all()` either way — but it means
+        two commits both claim to have introduced it, and the report would
+        gate two sections on one absence.
+        """
+        seen: dict[str, str] = {}
+        clashes = []
+        for label, names in sampler._COUNTER_GENERATIONS.items():
+            for name in names:
+                if name in seen:
+                    clashes.append((name, seen[name], label))
+                seen[name] = label
+
+        assert clashes == []
+
+    def test_a_sentinel_row_is_not_counted_as_an_article_that_carries_it(self):
+        """`> 0`, never truthiness (issue #168).
+
+        `NOT_MEASURED` is `-1`, which is truthy, so a row that measured
+        *nothing* counted as an article that carries the thing — inflating
+        the article-level denominators the comments cite beside a counter
+        total ("387 titles in 94 articles" is two populations, and this is
+        the second). It moves the two numbers in *opposite* directions:
+        `sum_of` subtracts the sentinel while `articles_where` added one, so
+        neither error is self-cancelling and neither looks like a sentinel.
+        """
+        fresh = sampler.measure_article("PMC1", _article('<fig id="f1"/>'))
+        stale_dict = fresh.to_dict()
+        for name in sampler._WAITING_SIDE_COUNTERS:
+            del stale_dict[name]
+        stale = sampler.ArticleMeasurement.from_dict(stale_dict)
+        assert stale.refs == sampler.NOT_MEASURED
+
+        totals = sampler.Totals()
+        totals.add(stale)
+
+        assert totals.articles_where("refs") == 0
+        assert totals.measured("refs") is False
+
+    def test_a_counter_field_is_never_treated_as_a_count(self):
+        """`measured` used to raise `TypeError` on all eleven `Counter` fields.
+
+        A `Counter` carries no sentinel — there is no negative dict — so an
+        empty one is genuinely measured-and-empty. Comparing it against an
+        `int` made the accessor unusable rather than answering, which is why
+        no generation could contain one.
+        """
+        totals = sampler.Totals()
+        totals.add(sampler.measure_article("PMC1", _article('<fig id="f1"/>')))
+
+        for name, field in self._fields().items():
+            if "Counter" in str(field.type):
+                assert totals.measured(name) is True
+                assert totals.articles_where(name) == 0
 
 
 class TestTheCitedPopulationsAreWhatTheCorporaHold:
@@ -1799,21 +2211,127 @@ class TestReadingABaselinePackage:
         with pytest.raises(sampler.PackageError, match="gzip-compressed but not a tarball"):
             list(sampler.iter_package_articles(path))
 
-    def test_iter_package_articles_routes_through_is_package_path(self, tmp_path, monkeypatch):
-        """Proof, not inference, that the draw's own guard calls the shared
-        predicate rather than a re-inlined copy of it (issue 138, fix round
-        3): patch `_is_package_path` to refuse everything and a path that
-        would otherwise succeed must fail too. A guard that silently
-        re-derives the same disjunction instead of calling this function —
-        exactly the shape round 2 left in place — would ignore the patch
-        and keep succeeding, which is what would make this test catch it."""
+    def test_both_callers_route_through_the_shared_predicate(self, tmp_path, monkeypatch):
+        """Proof, not inference, that the draw's own guard and `_validate_args`
+        both call the shared predicate rather than a re-inlined copy of it
+        (issue 138, fix round 3): patch `_package_path_refusal` to refuse
+        everything and a path that would otherwise succeed must fail in both
+        places. A guard that silently re-derives the same disjunction instead
+        of calling this function — exactly the shape round 2 left in place —
+        would ignore the patch and keep succeeding, which is what would make
+        this test catch it.
+
+        Both callers, not just the draw: `_validate_args` is the one that
+        turns the condition into a one-line refusal, and the two disagreeing
+        is what let a gzipped non-tar past validation and into an uncaught
+        `PackageError` (issue #165).
+        """
         (tmp_path / "PMC1.xml").write_bytes(b"<article/>")
         assert list(sampler.iter_package_articles(tmp_path)) == [("PMC1", b"<article/>")]
+        assert (
+            sampler._validate_args(
+                _package_run_args(package=[tmp_path], from_year=2023, to_year=2025)
+            )
+            is None
+        )
 
-        monkeypatch.setattr(sampler, "_is_package_path", lambda path: False)
+        monkeypatch.setattr(sampler, "_package_path_refusal", lambda path: f"{path} refused")
 
         with pytest.raises(sampler.PackageError):
             list(sampler.iter_package_articles(tmp_path))
+        assert (
+            sampler._validate_args(
+                _package_run_args(package=[tmp_path], from_year=2023, to_year=2025)
+            )
+            is not None
+        )
+
+    def test_an_undated_article_is_named_rather_than_silently_dropped(self, capsys, tmp_path):
+        """The accounting the `_YEAR_RE` fix did not add.
+
+        An undated article is *undrawable* — a draw is by year — so dropping
+        it is the only option; saying nothing about it is not. That silence
+        is the exact shape the last cause took: absent from the pool, never
+        counted as unmeasured, exit 0, and publisher-clustered rather than
+        noise. `<pub-date>` may legally carry a `<string-date>` and no
+        `<year>` at all, so the input is not hypothetical even though the
+        population measures 0 of 220,485 today.
+        """
+        package = tmp_path / "pkg"
+        package.mkdir()
+        (package / "PMC1.xml").write_bytes(
+            b"<article><front><article-meta>"
+            b"<pub-date pub-type='epub'><year>2024</year></pub-date>"
+            b"</article-meta></front></article>"
+        )
+        (package / "PMC2.xml").write_bytes(
+            b"<article><front><article-meta>"
+            b"<pub-date pub-type='epub'><string-date>Spring 2024</string-date></pub-date>"
+            b"</article-meta></front></article>"
+        )
+
+        assert sampler.package_candidates([package], 2023, 2025) == ["PMC1"]
+
+        err = capsys.readouterr().err
+        assert "PMC2" in err
+        assert "undrawable" in err
+
+    def test_a_fully_dated_package_says_nothing(self, capsys, tmp_path):
+        """The negative control: the report must not fire on every run.
+
+        A warning printed by an ordinary draw is one a reader learns to skip,
+        which would cost exactly the signal this exists to give.
+        """
+        package = tmp_path / "pkg"
+        package.mkdir()
+        (package / "PMC1.xml").write_bytes(
+            b"<article><front><article-meta>"
+            b"<pub-date pub-type='epub'><year>2024</year></pub-date>"
+            b"</article-meta></front></article>"
+        )
+
+        assert sampler.package_candidates([package], 2023, 2025) == ["PMC1"]
+        assert capsys.readouterr().err == ""
+
+    def test_a_package_read_as_a_directory_and_as_a_tarball_names_one_corpus(self, tmp_path):
+        """One artifact, two spellings, and they must draw the same corpus.
+
+        The directory branch globbed non-recursively while the tar branch
+        walks members at any depth, so the same package unpacked and packed
+        yielded different candidate sets — and therefore a different
+        `draw()`, under the same `(packages, window, target, seed)`. That is
+        the reproducibility claim #138 and #132 are built on: a reader
+        re-deriving the committed corpora downloads the *tarball* while the
+        corpora were drawn from an unpacked *directory*.
+
+        The local mirror happens to be flat, so nothing in the committed
+        evidence moves — which is exactly why this needed a test rather than
+        an inspection.
+        """
+        import tarfile
+
+        package = tmp_path / "pkg"
+        (package / "sub").mkdir(parents=True)
+        dated = (
+            b"<article><front><article-meta>"
+            b"<pub-date pub-type='epub'><year>2024</year></pub-date>"
+            b"</article-meta></front></article>"
+        )
+        (package / "PMC1.xml").write_bytes(dated)
+        (package / "sub" / "PMC2.xml").write_bytes(dated)
+
+        tarball = tmp_path / "pkg.tar.gz"
+        with tarfile.open(tarball, "w:gz") as tar:
+            tar.add(package / "PMC1.xml", arcname="pkg/PMC1.xml")
+            tar.add(package / "sub" / "PMC2.xml", arcname="pkg/sub/PMC2.xml")
+
+        assert sorted(i for i, _ in sampler.iter_package_articles(package)) == ["PMC1", "PMC2"]
+        assert sampler.package_candidates([package], 2023, 2025) == sampler.package_candidates(
+            [tarball], 2023, 2025
+        )
+        assert sampler.draw(
+            sampler.package_candidates([package], 2023, 2025), 1, 0
+        ) == sampler.draw(sampler.package_candidates([tarball], 2023, 2025), 1, 0)
 
     def test_is_gzip_file_treats_an_unreadable_path_as_not_gzip(self, tmp_path):
         """The `except OSError: return False` branch, exercised rather than
@@ -1891,6 +2409,42 @@ class TestReadingABaselinePackage:
         xml = b"<article><back><ref><year>1999</year></ref></back></article>"
 
         assert sampler.article_year(xml) is None
+
+    def test_a_pub_date_does_not_reach_forward_into_a_reference(self):
+        """The defect that produced the first draw's articles "published" in 1861.
+
+        The test above cannot catch it: with no `<pub-date>` in the document
+        at all, a lazy `<pub-date[^>]*>(.*?)` matching forward to the next
+        `<year>` anywhere finds no match either and returns `None` for the
+        wrong reason. The fixture that distinguishes the two needs a
+        `<pub-date>` that carries **no** `<year>` — JATS models the element
+        as `((day?, month?, year, era?) | (season, year) | string-date)`, so
+        the `<string-date>` arm is an ordinary deposit, not a contrivance —
+        followed by a `<ref>` that has one.
+        """
+        xml = (
+            b"<article><front><article-meta>"
+            b"<pub-date pub-type='epub'><string-date>March 2024</string-date></pub-date>"
+            b"</article-meta></front>"
+            b"<back><ref><year>1861</year></ref></back></article>"
+        )
+
+        assert sampler.article_year(xml) is None
+
+    def test_a_real_pub_date_is_still_read_when_a_reference_follows_it(self):
+        """The negative control for the test above.
+
+        A regex anchored so tightly that it stopped matching real dates would
+        pass that test by finding nothing anywhere, and empty both corpora.
+        """
+        xml = (
+            b"<article><front><article-meta>"
+            b"<pub-date pub-type='epub'><year>2024</year></pub-date>"
+            b"</article-meta></front>"
+            b"<back><ref><year>1861</year></ref></back></article>"
+        )
+
+        assert sampler.article_year(xml) == 2024
 
     def test_the_whole_member_is_read_not_a_prefix(self):
         """The guard against the optimisation someone will reach for later.
@@ -2523,6 +3077,91 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
 
             assert validated == iterated, path
 
+    def test_a_gzipped_non_tarball_is_refused_before_the_draw_begins(self, tmp_path):
+        """The one input for which the two predicates used to disagree.
+
+        `_is_package_path` accepts *any* gzip file, so a `.tar.gz` that is a
+        gzipped non-tar passed validation and raised `PackageError` out of
+        `package_candidates` — uncaught, after the journal header had already
+        been written, leaving a header with no rows. The predicate now opens
+        the stream far enough to know, so the refusal is the one-line message
+        `_validate_args` exists to give.
+        """
+        import gzip
+
+        bad = tmp_path / "notatar.tar.gz"
+        bad.write_bytes(gzip.compress(b"this is not a tar archive"))
+
+        refusal = sampler._validate_args(
+            _package_run_args(package=[bad], from_year=2023, to_year=2025)
+        )
+
+        assert refusal is not None
+        assert "gzip-compressed but not a tarball" in refusal
+        with pytest.raises(sampler.PackageError):
+            list(sampler.iter_package_articles(bad))
+
+    @pytest.mark.parametrize(
+        "spelling",
+        [
+            lambda p: p,
+            lambda p: Path(".") / p,
+            lambda p: p.resolve(),
+            lambda p: p.parent / ".." / p.parent.name / p.name,
+        ],
+        ids=["bare", "dot-prefixed", "absolute", "dot-dot"],
+    )
+    def test_every_spelling_of_the_default_corpus_is_refused(self, spelling, tmp_path, monkeypatch):
+        """The guard must be about the *file*, not about how it was typed.
+
+        Raw `PurePath` equality matched only the two spellings the committed
+        command line happens to use, so `-o "$PWD/tests/data/jats_exhibits.json"`
+        with the back-filled package overwrote the *recent* corpus at exit 0.
+        No journal is committed, so on a fresh clone `_journal_disagreement`
+        cannot catch it either — this guard is the only protection. Resolved
+        on both sides, the rule `_package_location` already applies for
+        exactly this reason.
+        """
+        package = tmp_path / "pkg"
+        package.mkdir()
+        (package / "PMC1.xml").write_bytes(b"<article/>")
+        monkeypatch.chdir(Path(__file__).resolve().parent.parent)
+
+        refusal = sampler._validate_args(
+            _package_run_args(
+                package=[package],
+                from_year=1996,
+                to_year=1998,
+                output=spelling(sampler.DEFAULT_OUTPUT),
+            )
+        )
+
+        assert refusal is not None
+        assert "must not" in refusal
+
+    def test_a_genuinely_different_output_is_still_allowed(self, tmp_path, monkeypatch):
+        """The negative control: resolving must not refuse every path.
+
+        A guard that refused everything would pass the four cases above while
+        making the displaced draw — which is how
+        `tests/data/jats_exhibits.backfill.json` was produced — impossible.
+        """
+        package = tmp_path / "pkg"
+        package.mkdir()
+        (package / "PMC1.xml").write_bytes(b"<article/>")
+        monkeypatch.chdir(Path(__file__).resolve().parent.parent)
+
+        refusal = sampler._validate_args(
+            _package_run_args(
+                package=[package],
+                from_year=1996,
+                to_year=1998,
+                output=tmp_path / "elsewhere.json",
+            )
+        )
+
+        assert refusal is None
+
 
 class TestTheFourWaitingPopulations:
     """Issues 142, 143, 147 and 150 — measured here, decided in their own PRs."""
@@ -2872,6 +3511,35 @@ class TestTheRenditionGapIsMeasured:
             "europepmc_unavailable": 1,
         }
 
+    def test_a_served_body_that_will_not_parse_is_not_called_unavailable(self):
+        """Issue #167: the third cause, which used to be folded into the second.
+
+        `_measure_and_journal` draws exactly this distinction with a nine-line
+        comment arguing `is None` over falsiness, and this function collapsed
+        it — so a body that arrived whole and would not parse was recorded as
+        `europepmc_unavailable`, i.e. transient, in the artifact this branch
+        commits as evidence. A re-run recovers a failed fetch and never
+        recovers an unparseable document, so the two call for different
+        actions from the reader.
+
+        The empty body is the case falsiness got wrong outright: `b""` is not
+        `None` — the source served *something* — and it must not be reported
+        as a fetch that never happened.
+        """
+        served = {"PMC1": b"<html>error page</html>", "PMC2": b""}
+        with mock.patch.object(
+            sampler, "_fetch", side_effect=lambda client, url, pace: served[url.split("/")[-2]]
+        ):
+            report = sampler.compare_renditions(
+                object(),
+                lambda url: None,
+                [("PMC1", _article("<fig id='f1'/>")), ("PMC2", _article("<fig id='f2'/>"))],
+            )
+
+        assert report["compared"] == 0
+        assert report["unmeasured"] == 2
+        assert report["unmeasured_causes"] == {"served_unparseable": 2}
+
 
 class TestTheCompareEuropepmcFlag:
     """`--compare-europepmc` only means anything against a `--package` draw,
@@ -3203,6 +3871,101 @@ class TestCompareEuropepmcSurvivesAJournalResume:
         assert first_corpus == second_corpus
 
 
+class TestTheCorpusHoldsOnlyTheRowsItsHeaderExplains:
+    """Issue #169. The journal outlives one draw; the corpus must not.
+
+    `_journal_disagreement` deliberately excludes `target` from the draw
+    identity, so a top-up resumes rather than being refused — and every
+    journalled row was then written into the corpus under *this* run's
+    `window`, which records `target`. A reader following this module's own
+    re-derivation recipe got one identifier list against a file holding
+    another.
+    """
+
+    def _package(self, tmp_path: Path, n: int) -> Path:
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        for i in range(n):
+            (tmp_path / f"PMC{i:08d}.xml").write_text(
+                "<article><front><article-meta>"
+                "<pub-date pub-type='epub'><year>2024</year></pub-date>"
+                "</article-meta></front></article>"
+            )
+        return tmp_path
+
+    def _run(self, package: Path, output: Path, target: int) -> int:
+        argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            str(target),
+            "-o",
+            str(output),
+        ]
+        with mock.patch.object(sys, "argv", argv):
+            return sampler.main()
+
+    def test_a_shrunk_target_does_not_leave_the_earlier_rows_in_the_corpus(self, tmp_path):
+        """The failure the issue names, at the shape a real re-run takes.
+
+        Draw 8, then re-run the same command at `--target 3`. The header
+        agrees (target is not part of the draw identity), so the run resumes
+        and used to write `"target": 3` above 8 rows.
+        """
+        package = self._package(tmp_path / "package", n=20)
+        output = tmp_path / "out" / "jats_exhibits.json"
+
+        assert self._run(package, output, 8) == 0
+        assert json.loads(output.read_text())["articles"] == 8
+
+        assert self._run(package, output, 3) == 0
+        written = json.loads(output.read_text())
+
+        assert written["window"]["target"] == 3
+        assert written["articles"] == 3
+        assert len(written["rows"]) == 3
+        # And they are the draw's own rows, not the first three of the eight.
+        candidates = sampler.package_candidates([package], 2024, 2024)
+        assert sorted(r["pmcid"] for r in written["rows"]) == sorted(sampler.draw(candidates, 3, 0))
+
+    def test_nothing_measured_is_lost_the_journal_still_holds_it(self, tmp_path):
+        """The rows are dropped from the *corpus*, never from the journal.
+
+        Otherwise the fix would trade a wrong corpus for a re-fetch of work
+        already done, which for a live `--measure-europepmc` draw is the
+        expensive half of the run.
+        """
+        package = self._package(tmp_path / "package", n=20)
+        output = tmp_path / "out" / "jats_exhibits.json"
+
+        self._run(package, output, 8)
+        self._run(package, output, 3)
+        journal = output.with_suffix(".journal.jsonl")
+        rows = [ln for ln in journal.read_text().splitlines()[1:] if ln.strip()]
+
+        assert len(rows) == 8
+
+        # And a run back at the larger target picks them all up again,
+        # without re-measuring: the top-up workflow is undisturbed.
+        assert self._run(package, output, 8) == 0
+        assert json.loads(output.read_text())["articles"] == 8
+
+    def test_a_full_draw_drops_nothing(self, tmp_path):
+        """The negative control: a reconcile that dropped rows from an
+        ordinary run would empty every corpus this script writes."""
+        package = self._package(tmp_path / "package", n=20)
+        output = tmp_path / "out" / "jats_exhibits.json"
+
+        assert self._run(package, output, 8) == 0
+        assert self._run(package, output, 8) == 0
+
+        assert json.loads(output.read_text())["articles"] == 8
+
+
 class TestTheEmptyComparisonNet:
     """The second half of the Critical fix: even with the resumed-journal
     cause closed, `main()` refuses to write a comparison result at the
@@ -3250,6 +4013,83 @@ class TestTheEmptyComparisonNet:
         assert unreportable["held"] == 0
         assert unreportable["comparison"] is None
 
+    def test_a_hold_short_of_what_was_asked_for_refuses_the_canonical_name(self, tmp_path):
+        """Issue #170: `held` was never compared against `requested`.
+
+        `_comparison_reportable` guards the served side against `held`, so a
+        run that held 12 of 300 and served all 12 was "reportable" and
+        overwrote the canonical artifact with `compared: 12` at exit 0 — the
+        headline this repo quotes off that file silently becoming a
+        12-article claim under the same filename. `_hold_for_comparison`
+        returns `min(n, len(drawn))` by design, and nothing relates
+        `--compare-europepmc` to `--target`.
+        """
+        package = self._package(tmp_path / "package", n=3)
+        output = tmp_path / "out" / "jats_exhibits.json"
+        argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "2",
+            "-o",
+            str(output),
+            "--compare-europepmc",
+            "300",
+        ]
+        served = _article("<fig id='f1'/>")
+        with mock.patch.object(sys, "argv", argv):
+            with mock.patch.object(sampler, "_fetch", return_value=served):
+                code = sampler.main()
+
+        rendition = output.with_name("jats_exhibits.rendition.json")
+        assert code != 0
+        assert not rendition.exists()
+        # The comparison is still computed and kept — refusing the canonical
+        # name must not throw away work that was actually done.
+        unreportable = rendition.with_suffix(".unreportable.json")
+        assert unreportable.exists()
+        held = json.loads(unreportable.read_text())
+        assert (held["requested"], held["held"]) == (300, 2)
+        assert held["comparison"]["compared"] == 2
+
+    def test_a_hold_that_matches_the_request_still_writes_the_canonical_name(self, tmp_path):
+        """The negative control: the guard must not refuse an honest run.
+
+        A guard comparing the wrong way round would refuse every comparison
+        this script has ever written, including the committed one.
+        """
+        package = self._package(tmp_path / "package", n=3)
+        output = tmp_path / "out" / "jats_exhibits.json"
+        argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "3",
+            "-o",
+            str(output),
+            "--compare-europepmc",
+            "2",
+        ]
+        served = _article("<fig id='f1'/>")
+        with mock.patch.object(sys, "argv", argv):
+            with mock.patch.object(sampler, "_fetch", return_value=served):
+                code = sampler.main()
+
+        rendition = output.with_name("jats_exhibits.rendition.json")
+        assert code == 0
+        assert rendition.exists()
+        assert json.loads(rendition.read_text())["comparison"]["compared"] == 2
+
     def test_the_net_fails_the_exit_code_even_when_the_corpus_is_reportable(self, tmp_path):
         """Mutant F, from a review: `return 0 if ok else 1`, dropping
         `rendition_ok`, left every existing test green, because
@@ -3260,8 +4100,16 @@ class TestTheEmptyComparisonNet:
         mutant was invisible.
 
         This gives the net a run where the corpus is independently
-        reportable — a journal populated by a prior real draw — so `ok` is
-        `True` and only `rendition_ok` can account for a non-zero exit."""
+        reportable — the same full draw again, so every journalled row is
+        inside it and `ok` is `True` — leaving only `rendition_ok` to account
+        for a non-zero exit.
+
+        It reaches `rendition_ok` through the *unmeasured share* rather than
+        through the empty net, because the two can no longer be separated:
+        `--target 0` draws nothing, and since issue #169 a corpus holds only
+        the rows its own draw explains, so an empty draw now correctly
+        empties the corpus and makes `ok` False on its own — which is the
+        blindness this test exists to avoid."""
         package = self._package(tmp_path / "package", n=3)
         output = tmp_path / "out" / "jats_exhibits.json"
 
@@ -3293,19 +4141,24 @@ class TestTheEmptyComparisonNet:
             "--to-year",
             "2024",
             "--target",
-            "0",
+            "3",
             "-o",
             str(output),
             "--compare-europepmc",
             "2",
         ]
+        # Every held article comes back unserved, so the comparison's
+        # unmeasured share is 1.0 and `rendition_ok` is False while the
+        # corpus is untouched and fully reportable.
         with mock.patch.object(sys, "argv", net_argv):
-            second_code = sampler.main()
+            with mock.patch.object(sampler, "_fetch", return_value=None):
+                second_code = sampler.main()
 
         assert second_code != 0
-        # The corpus itself is untouched and still reportable — the net is
-        # the only thing failing this run.
+        # The corpus itself is untouched and still reportable — the
+        # comparison is the only thing failing this run.
         assert not output.with_suffix(".unreportable.json").exists()
+        assert json.loads(output.read_text())["articles"] == 3
         assert output.with_suffix(".rendition.unreportable.json").exists()
 
 

@@ -1487,6 +1487,15 @@ of a named baseline package. The rendition comparison says that will not do:
 288 of 294 compared articles differ, and they differ on precisely the
 populations this repo cites.
 
+> **SUPERSEDED — every number in this section is from the artifact as it stood
+> before the `_YEAR_RE` fix.** That commit redrew the recent window and
+> regenerated `tests/data/jats_exhibits.rendition.json`, which now holds
+> **289 differing of 300 compared** (`unmeasured` 0) and `last_is_thumb`
+> **156 / 0 / 781**. Every row of the table below moved with it. The committed
+> artifact is the evidence; this section is kept as the record of what the
+> instrument found at the time it forced the design reversal. Quote
+> `tests/data/jats_exhibits.rendition.json`, never this table.
+
 **The column below is "where they differ", and mislabelling it "archive
 total" is a live error this plan made in its own first draft.**
 `rendition_delta` records a field *only* where the two renditions disagree, so

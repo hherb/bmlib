@@ -6,6 +6,103 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Six ways the exhibit sampler reported more than it measured** (#165-#170,
+  from the review of PR #163). Each is a case of the instrument being trusted
+  past what it had established, which is the class this whole branch exists to
+  remove; each is pinned by a test that was mutation-verified to fail without
+  the fix. No committed figure moves — every one of these was reachable rather
+  than triggered, and the two corpora carry **0** sentinels between them.
+
+  *Three path guards failed open* (#165). `_is_package_path` tested the gzip
+  magic bytes alone, so a `.tar.gz` that is a gzipped non-tar passed
+  `_validate_args`, reached `package_candidates`, and raised `PackageError`
+  there — uncaught anywhere in the module, and after the journal header had
+  been written. `iter_package_articles` globbed `*.xml` one level deep for a
+  directory while walking tar members at any depth, so one artifact unpacked
+  and packed yields different candidate sets and so a different `draw()` under
+  the same `(packages, window, target, seed)` — the reproducibility claim
+  itself, resting on an unstated premise that the real packages are flat. And
+  both `DEFAULT_OUTPUT` guards used raw `PurePath` equality, so
+  `-o "$PWD/tests/data/jats_exhibits.json"` with the back-filled package
+  **overwrote the committed recent corpus at exit 0**; no journal is committed,
+  so on a fresh clone `_journal_disagreement` cannot catch that either.
+  `_names_default_corpus` resolves both sides, the rule `_package_location`
+  already applies for exactly this reason.
+
+  *A well-formed non-JATS body was measured as an article* (#166).
+  `measure_article` read `ET.fromstring` succeeding as "this is the article",
+  so an HTML error page served at HTTP 200 by a proxy or CDN produced a valid
+  row with every counter at zero — added, journalled, and entering every
+  denominator. On `--compare-europepmc` an outage was counted as a *rendition
+  disagreement*, which is the population `jats_exhibits.rendition.json` is
+  committed as evidence for. The corpora legitimately hold all-zero rows, so
+  nothing downstream can tell the two apart afterwards. A root-element test on
+  the local name, so a namespaced deposit is still accepted.
+
+  *A permanent failure was filed as a transient one* (#167).
+  `compare_renditions` used falsiness where `_measure_and_journal` uses
+  `is None` — with a nine-line comment arguing why — so a served body that
+  arrived whole and would not parse was recorded as `europepmc_unavailable`,
+  telling a reader to re-run for an article no re-run recovers. A third cause,
+  `served_unparseable`, and the same falsiness corrected in `main`'s live
+  branch.
+
+  *The `NOT_MEASURED` sentinel escaped into the canonical corpus* (#168).
+  `print_report` printed `NOT MEASURED` for a counter generation the rows
+  predate and returned `True` regardless, so that corpus reached the canonical
+  `-o` path — not `*.unreportable.json` — at exit 0, with `-1` inline and no
+  header marker. Beside it, `articles_where` used truthiness, and `-1` is
+  truthy, so a row that measured *nothing* counted as an article that carries
+  the thing, while `sum_of` subtracted it: two cited numbers moving in
+  opposite directions, neither self-cancelling and neither looking like a
+  sentinel. `measured` also raised `TypeError` on all eleven `Counter` fields.
+  Now `_unmeasured_generations` makes the return value mean what the docstring
+  says and names the gap in the corpus header, `_as_count` makes both
+  accessors total, and `TestEveryCounterIsInAGeneration` walks the dataclass in
+  both directions — the `TestTheAuditNetIsComplete` precedent, applied where
+  the rule had lived in prose.
+
+  *The corpus held rows its own header did not explain* (#169). Every
+  journalled row was written under this run's `window`, and `target` is
+  deliberately outside the draw identity so a top-up resumes — so `--target
+  300` over a journal of 1,000 wrote `"target": 300` above 1,000 rows, and a
+  reader following this module's own recipe got 300 identifiers against a file
+  holding 1,000. Growing was safe only by accident: `random.sample` is
+  prefix-nested at the committed pool size and not at 2,000. Rows outside the
+  draw now leave the corpus and stay in the journal, so nothing measured is
+  lost and the top-up workflow is undisturbed. `Totals.articles` is derived
+  from `len(rows)`, the reconcile being exactly the operation that moved one
+  and not the other.
+
+  *A short hold overwrote the rendition artifact* (#170).
+  `_comparison_reportable` guards the served side against `held` and nothing
+  guarded `held` against `requested`, so a run holding 12 of 300 wrote
+  `compared: 12` to the canonical name at exit 0 — the headline this repo
+  quotes off that file silently becoming a 12-article claim. The comparison is
+  still computed and kept; only the name is refused.
+
+  Two more, neither a defect today. An **undated article** is now named on
+  stderr rather than dropped from the candidate pool in silence — the shape the
+  `_YEAR_RE` fix took, whose population measures **0 of 220,485** across both
+  packages, so this is a net for the next cause rather than a live one. And
+  `article_year`'s **whole-document scope** — the one thing in this branch not
+  scoped to what the parser routes, so a `<sub-article>`'s own `<pub-date>`
+  decides the parent's window under `min` — is now stated rather than
+  accidental, and measured at 0 of 3,385 region-carrying articles.
+
+  Test gaps closed alongside them, each mutation-verified: the lazy
+  `<pub-date>` regex that produced the first draw's articles "published in
+  1861" had a regression test whose fixture could not distinguish the defect;
+  `_fetch` was 100% unexercised, including its non-200 guard; `fullTextXML`
+  was unpinned at all three call sites, so the wrong Europe PMC resource would
+  have produced a full corpus of all-zero rows; no test drove a refusal through
+  `main`, so `if refusal is not None:` → `if False:` survived; `nested_tables`
+  had never been shown able to fire, making the cited "0 nested `<table-wrap>`"
+  tautological; and `_looks_archival`'s `mime-subtype` branch never returned
+  `True` in any test, so half of "archival by either test" was unexercised.
+
 ### Added
 
 - **Both JATS corpora are redrawn from a named public artifact, and the walk
@@ -180,13 +277,20 @@ All notable changes to bmlib are documented here. The format is based on
   `<td>` cell images of two articles. Scoped to what the parser would route
   (`_owned`), no table in either draw carries a second deposit at all. The
   figure counters keep the subtree walk on purpose, their percentages being
-  cited; both draws record zero nested exhibits, so no exhibit's subtree
-  contains another's and the two walks agree on the figure side in this
-  evidence anyway. (The foreign owners are no longer all `<td>`: the redrawn
-  recent corpus finds five — `<td>` 48, `<inline-formula>` 42,
-  `<chem-struct>` 9, `<disp-formula>` 2, `<th>` 1 — none of which can hold a
-  `<fig>`, so the argument is unchanged and only the enumeration was too
-  narrow.)
+  cited. **The argument that used to justify that is refuted by this branch's
+  own corpora, and the scoping is left open rather than restated** (#164): it
+  read "both draws record zero nested exhibits and every foreign owner is a
+  `<td>`, which can only sit under a `<table-wrap>`", and the redrawn recent
+  corpus holds **7 nested `<fig>`** (all `PMC12143881`) and **three** foreign
+  owners — `<td>` 82, `<inline-formula>` 69, `<disp-formula>` 2, 153 graphics
+  in 12 of 997 articles. An `<inline-formula>` is not confined to a
+  `<table-wrap>`, so the premise that the two walks agree on the figure side
+  no longer holds. What that costs is **not** measured on the rendition the
+  percentages are of: a spot measurement over the same drawn articles'
+  *archive* bytes moves the multi-graphic figure count 77 → 58, which is the
+  right order of magnitude to matter and the wrong rendition to cite. Do not
+  read the cited 58.1% / 57.3% as confirmed against a scoped walk — they are
+  what the subtree walk measured.
 
 - **`scripts/sample_jats_exhibits.py`** (#131), the live runner behind the
   JATS exhibit rules below — the fifth in `scripts/`, and the one to re-run
@@ -766,7 +870,8 @@ All notable changes to bmlib are documented here. The format is based on
   contributor undivided), and **the #138 redraw has now run them**, scoped so
   a peer-review `<sub-article>`'s reviewers no longer inflate a count the
   parser never sees. Across 12,650 `<contrib>` in the two committed corpora:
-  `<collab>` names 14 contributors (0.18% [0.11-0.30], recent window only)
+  `<collab>` names 14 contributors (all in the recent window:
+  0.18% [0.11-0.30] of *that* window's 7,798)
   and **`<string-name>` none at all** — 0 of 12,650, upper
   bound 0.03%, which is a measured absence rather than an omission, the
   vocabulary being open. **No** `<contrib>` nests inside another, **no**
@@ -983,10 +1088,13 @@ All notable changes to bmlib are documented here. The format is based on
   #138 redraw:** the original survey put nesting at 19.6% of 225 open-access
   Europe PMC articles and a later 276-article draw at **0.7%** (2 articles,
   both eLife, losing 6 of 12 and 5 of 11 figures); neither draw is in the
-  repo, and the two committed corpora record **0 nested `<fig>` and 0 nested
-  `<table-wrap>` across 1,994 articles**. So the shape is what survives — one
-  publisher's house style costing about half of *its* figures, not a general
-  convention — and the rate is unreproducible here.
+  repo. The two committed corpora reproduce the **shape** for the first time
+  and refute both rates: **7 nested `<fig>` and 0 nested `<table-wrap>` across
+  1,994 articles**, every one of the seven in a single eLife article
+  (`PMC12143881`, 7 of its 19 figures). One article in 1,994 is a fact about
+  which publishers a draw catches rather than a rate, so neither 19.6% nor
+  0.7% is re-derivable here — but the house style they describe is, and this
+  is the first committed evidence that exercises the stack at all.
   Separately, PMC8754430 carries 12 and
   the parser returned 9, the three missing ones being exactly those with
   supplements. `in_figure` was cleared by the inner close too, so whatever the

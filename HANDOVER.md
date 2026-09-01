@@ -216,7 +216,18 @@ what found #160 reopened here, one session late.
 **Next up: #162 and #147 are the two now carrying a measured population and
 nothing else in the way** — #162 is the `<label>` premise the redraw
 overturned, #147's `<alternatives>` objection measures 1,087 formulas carrying
-both encodings, 57% of every `<disp-formula>`. Then **#124, #128, #137,
+both encodings. That numerator counts **both** formula kinds —
+`_record_formula_alternatives` is called from the `<disp-formula>` arm and the
+`<inline-formula>` arm alike — so it is 9.8% of the 11,136 formulas the counter
+actually walks (1,915 `<disp-formula>` + 9,221 `<inline-formula>`), and **no
+per-`<disp-formula>` share is derivable**: the corpus does not record the
+split. It was written here as "57% of every `<disp-formula>`", which is 1,087
+over the narrow denominator alone. Then **#164 — the one thing the review of
+PR #163 left open, and the only new issue that is not already fixed on that
+branch: the figure-side graphic walk is still unscoped, and the argument that
+this costs nothing is refuted by the branch's own corpora (7 nested `<fig>`,
+three foreign owners). Fixing it re-measures #117 and moves every cited
+share.** Then **#124, #128, #137,
 #142–#145, #150 and #152 in
 `fulltext`, #160 and #161 in `transparency`, the older non-JATS
 ones (#86, #92, #94, #103), the
@@ -284,9 +295,9 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression, not expected staleness. The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; **60 are outstanding for the next release** — 25 `ROADMAP.md`
+  release time; **62 are outstanding for the next release** — 27 `ROADMAP.md`
   rows and 35 spots across `docs/manual/publications.md` (13), `fulltext.md`
-  (15), `templates.md` (3) and `transparency.md` (4). Recounted 2026-08-31 with
+  (15), `templates.md` (3) and `transparency.md` (4). Recounted 2026-09-02 with
   `grep -ic unreleased`; the figure is measured, not maintained, so recount it
   rather than adjusting it. Grep case-insensitively for `unreleased` rather
   than for `(unreleased)`: three of 0.10.0's thirteen were spelled
@@ -311,14 +322,23 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 
 ### Open GitHub issues
 
-**Twenty open** as this file is written (verified with `gh issue list`
-2026-09-02, after the corpus redraw closed #132, #138 and #158 and filed
-#162): #86, #92, #94, #103, #124, #128, #137, #142, #143, #144, #145, #147,
-#150, #152, #154, #156, #157, #160, #161, #162. Every one was found by review or measurement rather than by a
+**Twenty-seven open** as this file is written (verified with `gh issue list`
+2026-09-02, after the corpus redraw settled 132, 138 and 158 and filed
+#162, and after the review of PR #163 filed #164-#170): #86, #92, #94, #103,
+#124, #128, #137, #142, #143, #144, #145, #147, #150, #152, #154, #156, #157,
+#160, #161, #162, #164, #165, #166, #167, #168, #169, #170. Every one was
+found by review or measurement rather than by a
 failing test, and **none of them loses records** — though **#124** loses an
 exhibit's footnotes, **#147** loses a formula from the prose that contains it,
 **#150** renders a note-only reference as an empty bullet, and **#128** would
-lose every figure image in a document binding XLink to another prefix. Count
+lose every figure image in a document binding XLink to another prefix.
+
+**#165-#170 are already fixed on the PR #163 branch** and are filed as the
+permanent handle for why that code looks the way it does — the shape every
+`(issue #N)` comment in this repo takes. **#164 is the one that is not
+fixed**: scoping the figure-side graphic walk means re-measuring #117 and
+moving every cited share, which is a redraw rather than a code edit, so PR
+#163 corrects the refuted premise in prose and leaves the scoping open. Count
 this against the repo before trusting it: the line has been wrong in three
 consecutive sessions, and one further way is an issue **closed as COMPLETED
 without being fixed**, which no count of open issues catches — that has now

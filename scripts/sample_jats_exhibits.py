@@ -327,6 +327,48 @@ _WAITING_SIDE_COUNTERS = (
     "refs",
     "refs_note_only",
 )
+# Every counter generation, by the name the report and the corpus header use
+# for it. A generation is a set of fields added in one commit, so a row written
+# before that commit carries `NOT_MEASURED` for all of them together — which is
+# what makes "which generations is this sample short of?" a well-formed
+# question and a per-field answer redundant.
+#
+# `TestEveryCounterIsInAGeneration` walks the dataclass and fails on a field
+# reaching neither this registry nor a *named* exclusion, because
+# `TestTheAuditNetIsComplete` is the standing precedent that a rule enforced by
+# prose is not enforced: a field added to `ArticleMeasurement` and forgotten
+# here defaults to 0 on a stale row and reads as measured-empty, which is
+# exactly the collapse the sentinel exists to prevent.
+# The counters present since the first draw. Every row ever written carries
+# them, so they need no sentinel and belong to no generation — which is a
+# claim about this module's history, and the *only* reason a field may be
+# absent from `_COUNTER_GENERATIONS`. Named rather than inferred, so that
+# `TestEveryCounterIsInAGeneration` fails on a *new* field someone forgot
+# instead of quietly widening to admit it.
+_FIRST_GENERATION_COUNTERS = (
+    "figures",
+    "tables",
+    "nested_figures",
+    "nested_tables",
+    "exhibits_with_direct_label",
+    "exhibits_with_descendant_label",
+    "figures_with_graphic",
+    "figures_multi_graphic",
+    "last_is_thumb",
+    "first_is_thumb",
+    "alternatives_members",
+    "alternatives_declaring_mime",
+    "alternatives_archival",
+    "graphics",
+    "tables_image_only",
+)
+_COUNTER_GENERATIONS: dict[str, tuple[str, ...]] = {
+    "the table side (#135)": _TABLE_SIDE_COUNTERS,
+    "caption and title owners (#123, #125, #130)": _OWNER_SIDE_COUNTERS,
+    "contributor spellings (#120, #140)": _CONTRIB_SIDE_COUNTERS,
+    "nested-article scoping (#138, #158)": _SCOPE_SIDE_COUNTERS,
+    "the four waiting populations (#142, #143, #147, #150)": _WAITING_SIDE_COUNTERS,
+}
 # How a `<contrib>` names its contributor. JATS models it as
 # `(name | string-name | collab | anonymous | ...)`, and the tail of that model
 # is the point: `<on-behalf-of>` is in it too, and #130's `<list>` is the
@@ -416,6 +458,19 @@ def article_year(xml: bytes) -> int | None:
     ``<ref>`` and reports a cited work's year as this article's — the first
     draw made that mistake and produced articles "published" in 1861.
 
+    **Deliberately whole-document, and so the one thing here that is not
+    scoped to what the parser routes.** ``measure_article`` stops at a
+    ``<sub-article>``/``<response>``; this does not, so a nested article's
+    own ``<pub-date>`` is read and — ``min`` being the rule — an earlier one
+    wins. That is a real difference on live input, 29 of 997 recent articles
+    carrying such a region, and it is kept for two reasons: the window is a
+    property of the *deposit*, which is what a reader re-deriving the draw
+    downloads, and scoping it would mean parsing every article in a
+    122,576-member package to decide whether to draw it. Measured at **0 of
+    3,385** region-carrying articles moving their year, so the choice costs
+    nothing today; it is stated because a silent divergence from the scoping
+    rule the rest of this module follows is worse than a costly one.
+
     A ``<year>``'s **attributes are not read, and their presence is not a
     reason to skip it** — see `_YEAR_RE`, where requiring a bare open tag cost
     17 recent articles, 14 of them one journal block.
@@ -459,11 +514,39 @@ def _is_gzip_file(path: Path) -> bool:
         return False
 
 
-def _is_package_path(path: Path) -> bool:
-    """Whether *path* is something :func:`iter_package_articles` can read.
+def _opens_as_tarball(path: Path) -> bool:
+    """Whether *path* opens as a gzip tarball and yields a member header.
 
-    A directory, or a file beginning with the gzip magic bytes. Both
-    :func:`_validate_args` and :func:`iter_package_articles` call this
+    The gzip magic bytes alone are **not** enough, and treating them as
+    enough was a live hole (issue #165): a ``.tar.gz`` that is a gzipped
+    *non*-tar passed :func:`_validate_args`, reached
+    :func:`package_candidates`, and raised `PackageError` there — uncaught
+    anywhere in this module, and *after* the journal header had been
+    written, so the run died on a traceback leaving a header with no rows.
+
+    One member header is read rather than the whole archive: it is what
+    tells a tar from a gzipped anything-else, and it costs a few kilobytes
+    of a package that may be a gigabyte. An archive that opens and holds no
+    members is a package with no articles, not a malformed one, so
+    ``tar.next()`` returning ``None`` is accepted.
+    """
+    try:
+        with tarfile.open(path, "r|gz") as tar:
+            tar.next()
+    except (tarfile.TarError, OSError, EOFError):
+        return False
+    return True
+
+
+def _package_path_refusal(path: Path) -> str | None:
+    """Why *path* is not something :func:`iter_package_articles` can read.
+
+    ``None`` when it is. The two conditions are told apart because they call
+    for different actions: a mistyped path is a typo, while a gzipped
+    non-tar is a truncated or wrong download, and one message covering both
+    sends the reader to check the wrong thing.
+
+    Both :func:`_validate_args` and :func:`iter_package_articles` call this
     function directly — neither re-derives the disjunction — so the two
     cannot silently drift apart the way ``tarfile.is_tarfile()`` (true for
     an uncompressed ``.tar``) and this module's ``"r|gz"`` open mode (false
@@ -472,13 +555,25 @@ def _is_package_path(path: Path) -> bool:
     its own inline copy of the same condition, which is exactly the
     two-tests-that-happen-to-agree shape this function exists to close off.
     """
-    return path.is_dir() or (path.is_file() and _is_gzip_file(path))
+    if path.is_dir():
+        return None
+    if not (path.is_file() and _is_gzip_file(path)):
+        return f"{path} {_NOT_A_PACKAGE_PATH}"
+    if not _opens_as_tarball(path):
+        return f"{path} {_NOT_A_TARBALL}"
+    return None
 
 
-# The one place this sentence is written. `_validate_args` and
-# `iter_package_articles` both build their refusal from it, so a wording
+def _is_package_path(path: Path) -> bool:
+    """Whether *path* is something :func:`iter_package_articles` can read."""
+    return _package_path_refusal(path) is None
+
+
+# The one place these sentences are written. `_validate_args` and
+# `iter_package_articles` both build their refusal from them, so a wording
 # change is made once rather than kept in sync by hand across two literals.
 _NOT_A_PACKAGE_PATH = "is neither a package directory nor a gzip-compressed tarball"
+_NOT_A_TARBALL = "is gzip-compressed but not a tarball"
 
 
 def _package_identity(path: Path) -> str:
@@ -658,8 +753,18 @@ def iter_package_articles(path: Path) -> Iterator[tuple[str, bytes]]:
     """Yield ``(pmcid, raw_xml)`` for every article in one baseline package.
 
     A ``.tar.gz`` is streamed member by member and never unpacked; a directory
-    is walked with ``glob``. Members are read **whole** — see
+    is walked with ``rglob``. Members are read **whole** — see
     :func:`article_year`.
+
+    **Both walks reach the same depth on purpose** (issue #165). The tar walk
+    has always taken members at any depth, and the directory walk globbed one
+    level, so one artifact unpacked and packed yielded different candidate
+    sets — and so a different :func:`draw` under the same
+    ``(packages, window, target, seed)``. That is the whole reproducibility
+    claim: a reader re-deriving a committed corpus downloads the tarball,
+    while the corpora were drawn from an unpacked directory. The local mirror
+    is flat, so no committed figure moves; the equivalence is pinned by a
+    test rather than left resting on that.
 
     Args:
         path: A package directory, or a baseline ``.tar.gz``.
@@ -678,10 +783,11 @@ def iter_package_articles(path: Path) -> Iterator[tuple[str, bytes]]:
             the same predicate this function does, so nothing that reaches
             here was not already refused there.
     """
-    if not _is_package_path(path):
-        raise PackageError(f"{path} {_NOT_A_PACKAGE_PATH}")
+    refusal = _package_path_refusal(path)
+    if refusal is not None:
+        raise PackageError(refusal)
     if path.is_dir():
-        for entry in sorted(path.glob("*.xml")):
+        for entry in sorted(path.rglob("*.xml")):
             yield entry.stem, entry.read_bytes()
         return
     try:
@@ -694,7 +800,7 @@ def iter_package_articles(path: Path) -> Iterator[tuple[str, bytes]]:
                     continue
                 yield Path(member.name).stem, handle.read()
     except tarfile.ReadError as exc:
-        raise PackageError(f"{path} is gzip-compressed but not a tarball: {exc}") from exc
+        raise PackageError(f"{path} {_NOT_A_TARBALL}: {exc}") from exc
 
 
 def package_candidates(paths: list[Path], first: int, last: int) -> list[str]:
@@ -718,16 +824,41 @@ def package_candidates(paths: list[Path], first: int, last: int) -> list[str]:
         first: Earliest publication year to accept, inclusive.
         last: Latest publication year to accept, inclusive.
 
+    **An undated article is reported, never merely skipped.** It is dropped
+    from the pool — nothing else is possible, a draw being by year — but a
+    drop that says nothing is the shape the `_YEAR_RE` fix was: absent from
+    the candidate pool, never counted as unmeasured, exit 0, and 14 of the 17
+    it cost were one contiguous journal block, so publisher-clustered rather
+    than noise. The population measures **0 of 220,485** across both baseline
+    packages at this revision, so this is a net for the next cause rather
+    than a live one; that is exactly when it has to be built, since the
+    symptom of the last one was that there was no symptom.
+
+    Args:
+        paths: Package directories or tarballs. May overlap.
+        first: Earliest publication year to accept, inclusive.
+        last: Latest publication year to accept, inclusive.
+
     Returns:
         The identifiers, sorted and distinct — the order a draw is taken
         against, so it must not depend on a directory's glob order.
     """
-    found = {
-        pmcid
-        for path in paths
-        for pmcid, xml in iter_package_articles(path)
-        if (year := article_year(xml)) is not None and first <= year <= last
-    }
+    found: set[str] = set()
+    undated: set[str] = set()
+    for path in paths:
+        for pmcid, xml in iter_package_articles(path):
+            year = article_year(xml)
+            if year is None:
+                undated.add(pmcid)
+            elif first <= year <= last:
+                found.add(pmcid)
+    if undated:
+        shown = ", ".join(sorted(undated)[:5])
+        sys.stderr.write(
+            f"{len(undated)} article(s) declare no readable <pub-date> year and are "
+            f"undrawable, so they are in no window's pool: {shown}"
+            f"{', ...' if len(undated) > 5 else ''}\n"
+        )
     return sorted(found)
 
 
@@ -1340,12 +1471,26 @@ def measure_article(pmcid: str, xml: bytes) -> ArticleMeasurement | None:
         xml: The raw JATS body.
 
     Returns:
-        The measurement, or ``None`` if the document would not parse — which
-        makes the article *unmeasured* rather than empty.
+        The measurement, or ``None`` if the document would not parse **or is
+        not a JATS ``<article>``** — either way the article is *unmeasured*
+        rather than empty.
+
+    The root-element test is the envelope check this module's own doctrine
+    asks for, and it is not theoretical (issue #166): a proxy, CDN or captive
+    portal serving an HTML error page at HTTP 200 produces perfectly
+    well-formed XML, so ``ET.fromstring`` succeeds and every counter reads
+    zero. That row is then ``totals.add()``-ed, journalled, and enters every
+    denominator as a measured article — and on ``--compare-europepmc`` an
+    outage is counted as a *rendition disagreement*, which is the population
+    ``tests/data/jats_exhibits.rendition.json`` is committed as evidence for.
+    The corpora legitimately contain all-zero rows, so nothing downstream can
+    tell the two apart after the fact; this is the only place that can.
     """
     try:
         root = ET.fromstring(xml)
     except ET.ParseError:
+        return None
+    if _local(root.tag) != "article":
         return None
 
     row = _measure_tree(pmcid, root, scoped=True)
@@ -1573,16 +1718,29 @@ def _owned(el: ET.Element, wanted: str) -> list[ET.Element]:
     transparent wrapper. A whole-subtree ``el.iter()`` counts a ``<td>``'s
     inline image and a nested exhibit's deposit as the outer exhibit's, which
     is not what the parser routes — issue #135's stated residual, and not a
-    theoretical one: of the ten recent-window tables carrying a ``<graphic>``
-    anywhere, the four holding more than one are the two articles depositing
-    35 of the draw's 36 ``<td>``-owned images.
+    theoretical one: unscoped, four of ten recent-window tables read as
+    carrying several deposits, every one a ``<td>`` cell image from two
+    articles. That measurement is from the pre-#138 draw and is not
+    re-derivable from either committed corpus, which record
+    ``tables_with_graphic`` 92 and ``tables_multi_graphic`` 0 — scoped, and
+    with no unscoped table counter to compare against.
 
     The **figure** counters deliberately keep the subtree walk: their
     percentages are cited at ``offer_graphic`` and in CLAUDE.md, and
-    re-scoping them silently would invalidate every one. Both committed draws
-    record zero nested exhibits and every foreign owner is a ``<td>``, which
-    can only sit under a ``<table-wrap>``, so the two walks agree on the
-    figure side in this evidence anyway.
+    re-scoping them silently would invalidate every one.
+
+    **The argument that this costs nothing is refused rather than restated**
+    (issue #164). It used to read "both committed draws record zero nested
+    exhibits and every foreign owner is a ``<td>``, which can only sit under a
+    ``<table-wrap>``" — and the redraw refutes both halves: the recent corpus
+    holds 7 nested ``<fig>`` (all ``PMC12143881``) and three foreign owners,
+    ``<td>`` 82, ``<inline-formula>`` 69, ``<disp-formula>`` 2. An
+    ``<inline-formula>`` is not confined to a ``<table-wrap>``. What the
+    unscoped walk costs on the **served** rendition the percentages are of is
+    unmeasured; a spot check over the same articles' *archive* bytes moves the
+    multi-graphic figure count 77 → 58, which is large enough to matter and
+    the wrong rendition to cite. Scoping the figure side means re-measuring
+    #117 — that is #164, not a docstring edit.
 
     Args:
         el: The exhibit element.
@@ -1819,10 +1977,20 @@ def compare_renditions(
             unmeasured_causes["archive_unparseable"] += 1
             continue
         served_xml = _fetch(client, f"{EUROPE_PMC}/{pmcid}/fullTextXML", pace)
-        served = measure_article(pmcid, served_xml) if served_xml else None
-        if served is None:
+        # `is None`, not falsiness, and the two causes are kept apart — the
+        # rule `_measure_and_journal` states at length and this function used
+        # to collapse (issue #167). A body that arrives whole and will not
+        # parse is permanent; a fetch that failed is transient, and a re-run
+        # recovers only the second. Reporting the first as the second tells
+        # the reader to re-run for an article no re-run will ever recover.
+        if served_xml is None:
             unmeasured += 1
             unmeasured_causes["europepmc_unavailable"] += 1
+            continue
+        served = measure_article(pmcid, served_xml)
+        if served is None:
+            unmeasured += 1
+            unmeasured_causes["served_unparseable"] += 1
             continue
         compared += 1
         delta = rendition_delta(archive, served)
@@ -1994,7 +2162,6 @@ def open_access_pmcids(
 class Totals:
     """The populations, aggregated across every measured article."""
 
-    articles: int = 0
     unmeasured: int = 0
     # Why each unmeasured article was unmeasured, in the same two-value
     # vocabulary `compare_renditions` already reports its own by. The corpora
@@ -2008,8 +2175,18 @@ class Totals:
     rows: list[ArticleMeasurement] = field(default_factory=list)
 
     def add(self, row: ArticleMeasurement) -> None:
-        self.articles += 1
         self.rows.append(row)
+
+    @property
+    def articles(self) -> int:
+        """How many rows this sample holds.
+
+        Derived rather than counted alongside `rows`, so the two cannot
+        drift: they are one fact, and issue #169's reconcile — which drops
+        journalled rows outside this run's draw — is exactly the operation
+        that moved one and not the other.
+        """
+        return len(self.rows)
 
     def count_unmeasured(self, cause: str) -> None:
         """Record one unmeasured article, and why.
@@ -2033,7 +2210,14 @@ class Totals:
         return merged
 
     def articles_where(self, attribute: str) -> int:
-        return sum(1 for r in self.rows if getattr(r, attribute))
+        """How many rows carry a non-zero *attribute*.
+
+        ``> 0``, never truthiness: `NOT_MEASURED` is ``-1``, which is truthy,
+        so a row that measured *nothing* used to count as an article that
+        carries the thing — inflating exactly the article-level denominators
+        the comments cite beside a counter total (issue #168).
+        """
+        return sum(1 for r in self.rows if _as_count(getattr(r, attribute)) > 0)
 
     def measured(self, attribute: str) -> bool:
         """Did **every** row actually carry *attribute*?
@@ -2044,7 +2228,7 @@ class Totals:
         rate that quietly omits it. A journal is topped up across runs, so a
         mixed one is the ordinary case rather than a corner.
         """
-        return all(getattr(r, attribute) >= 0 for r in self.rows)
+        return all(_as_count(getattr(r, attribute)) >= 0 for r in self.rows)
 
     @property
     def attempts(self) -> int:
@@ -2065,6 +2249,36 @@ class Totals:
         return bool(self.rows) and self.unmeasured_share <= UNMEASURED_SHARE_ERROR_THRESHOLD
 
 
+def _as_count(value: object) -> int:
+    """*value* as a count, for the two accessors that must not mis-read one.
+
+    A ``Counter`` field carries no sentinel — it cannot, there being no
+    negative dict — so an empty one is genuinely "measured, and empty" and a
+    populated one is measured too. Reading it as ``0`` therefore says the
+    right thing to both callers, where comparing the ``Counter`` itself
+    against an ``int`` raised `TypeError` and made
+    :meth:`Totals.measured` unusable on eleven of this row's fields.
+    """
+    return value if isinstance(value, int) else 0
+
+
+def _unmeasured_generations(totals: Totals) -> list[str]:
+    """The counter generations no row in this sample carries, named.
+
+    `print_report` prints ``NOT MEASURED`` per section and used to return
+    ``True`` anyway, so a run whose journal predated a generation wrote its
+    corpus to the **canonical** path at exit 0, with ``-1`` inline and no
+    marker in the header (issue #168). A population that was not measured at
+    all is strictly worse than one that tripped the unmeasured-share
+    threshold, and it was getting the better filename.
+    """
+    return sorted(
+        label
+        for label, names in _COUNTER_GENERATIONS.items()
+        if not all(totals.measured(name) for name in names)
+    )
+
+
 def _pct(part: int, whole: int) -> str:
     if not whole:
         return "n/a"
@@ -2073,7 +2287,13 @@ def _pct(part: int, whole: int) -> str:
 
 
 def print_report(totals: Totals) -> bool:
-    """Print every population. Returns ``True`` if all of them were reportable."""
+    """Print every population.
+
+    Returns ``True`` only if every one of them was reportable — both that the
+    sample itself is worth a rate over (:attr:`Totals.reportable`) and that no
+    counter generation is missing from the rows (issue #168). The second half
+    used to print ``NOT MEASURED`` and return ``True`` regardless.
+    """
     print(f"\nArticles measured: {totals.articles}   unmeasured: {totals.unmeasured}")
     if not totals.reportable:
         print(
@@ -2367,7 +2587,15 @@ def print_report(totals: Totals) -> bool:
             print(f"      {name:<26} {count:>6}  {_pct(count, total_kinds)}")
         if not kinds:
             print("      (no <ref> in this draw)")
-    return True
+
+    missing = _unmeasured_generations(totals)
+    if missing:
+        print(
+            "\nERROR: these counter generations are not measured in this sample — "
+            + "; ".join(missing)
+            + ".\n   Re-run to fill them. The rows carrying the sentinel are kept."
+        )
+    return not missing
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -2445,6 +2673,24 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     return parser
+
+
+def _names_default_corpus(output: Path) -> bool:
+    """Whether *output* names the committed recent corpus, however spelled.
+
+    Resolved on both sides, the rule :func:`_package_location` already
+    applies: a symlink and its target, an absolute path, and ``a/../a`` are
+    one location. Raw ``PurePath`` equality matched only the two spellings
+    the committed command line happens to use, so
+    ``-o "$PWD/tests/data/jats_exhibits.json"`` with the back-filled package
+    overwrote the *recent* corpus at exit 0 (issue #165). No journal is
+    committed, so on a fresh clone :func:`_journal_disagreement` cannot catch
+    that either — these two guards are the only protection there is.
+
+    ``strict=False`` throughout: the output usually does **not** exist yet,
+    which is the ordinary case rather than an error.
+    """
+    return output.resolve(strict=False) == DEFAULT_OUTPUT.resolve(strict=False)
 
 
 def _validate_args(args: argparse.Namespace) -> str | None:
@@ -2574,8 +2820,9 @@ def _validate_args(args: argparse.Namespace) -> str | None:
     request count should know the overlap exists before "fixing" it.
     """
     for path in args.package:
-        if not _is_package_path(path):
-            return f"--package {path} {_NOT_A_PACKAGE_PATH}"
+        refusal = _package_path_refusal(path)
+        if refusal is not None:
+            return f"--package {refusal}"
     if args.compare_europepmc and not args.package:
         return "--compare-europepmc compares a --package draw against Europe PMC"
     if args.compare_europepmc < 0:
@@ -2592,7 +2839,7 @@ def _validate_args(args: argparse.Namespace) -> str | None:
         return "--months/--months-ago select the live source's strata; --package draws by year"
     if not args.package and args.seed != DEFAULT_SEED:
         return "--seed only applies to a --package draw; the live draw is not seeded"
-    if args.months_ago and args.output == DEFAULT_OUTPUT:
+    if args.months_ago and _names_default_corpus(args.output):
         return (
             f"--months-ago {args.months_ago} draws a displaced window, which must not "
             f"be written to {DEFAULT_OUTPUT} — that path is the recent draw, and its "
@@ -2609,7 +2856,7 @@ def _validate_args(args: argparse.Namespace) -> str | None:
     displaced = args.package and (
         args.from_year < _RECENT_WINDOW_FIRST_YEAR or args.to_year > _RECENT_WINDOW_LAST_YEAR
     )
-    if displaced and args.output == DEFAULT_OUTPUT:
+    if displaced and _names_default_corpus(args.output):
         return (
             f"a window of {args.from_year}-{args.to_year} is not contained in the recent "
             f"draw's {_RECENT_WINDOW_FIRST_YEAR}-{_RECENT_WINDOW_LAST_YEAR}, so it must not "
@@ -2739,6 +2986,10 @@ def main() -> int:
     # only accidentally avoid.
     for_comparison: list[tuple[str, bytes]] = []
 
+    # This run's own draw, for the reconcile below. `None` on the live branch,
+    # which has no enumerable draw to reconcile against.
+    expected: set[str] | None = None
+
     if args.package:
         # A package draw needs no network at all *unless* --measure-europepmc
         # is set: `_validate_args` has already refused every path that is not
@@ -2770,6 +3021,7 @@ def main() -> int:
         # to compare, and `wanted` would otherwise be empty for exactly that
         # run. See `_hold_for_comparison`.
         drawn = draw(candidates, args.target, args.seed)
+        expected = set(drawn)
         wanted = {p for p in drawn if p not in seen}
         if args.measure_europepmc:
             # This branch never reads `read_package_articles` — there is no
@@ -2838,7 +3090,7 @@ def main() -> int:
                     if totals.articles >= args.target:
                         break
                     raw = _fetch(client, f"{EUROPE_PMC}/{pmcid}/fullTextXML", pace)
-                    if not raw:
+                    if raw is None:
                         totals.count_unmeasured("europepmc_unavailable")
                         continue
                     row = measure_article(pmcid, raw)
@@ -2849,9 +3101,35 @@ def main() -> int:
                     handle.write(json.dumps(row.to_dict()) + "\n")
                     handle.flush()
 
+    # The corpus must hold exactly the rows its own header explains (issue
+    # #169). The journal is deliberately allowed to outlive one draw — that is
+    # what makes a run resumable, and `_journal_disagreement` excludes
+    # `target` from the draw identity so a top-up resumes rather than being
+    # refused — but every row it holds used to be written into the corpus
+    # regardless, under *this* run's `window`. So `--target 300` over a
+    # journal of 1,000 wrote `"target": 300` above 1,000 rows, and a reader
+    # following this module's own re-derivation recipe got 300 identifiers
+    # against a file holding 1,000. Rows outside the draw are dropped from the
+    # corpus and kept in the journal, so nothing measured is lost and the next
+    # run at the larger target picks them straight back up.
+    if expected is not None:
+        outside = [r for r in totals.rows if r.pmcid not in expected]
+        if outside:
+            totals.rows = [r for r in totals.rows if r.pmcid in expected]
+            print(
+                f"\n{len(outside)} journalled row(s) are outside this draw of "
+                f"{len(expected)} and are not written to the corpus. They stay in "
+                f"{journal.name}; re-run at the larger --target to include them."
+            )
+
     # Summarised *before* the corpus is written, so an unreportable run cannot
     # replace evidence a later reader takes as measured.
     ok = print_report(totals)
+    # Named in the artifact, not only on the terminal it was printed to
+    # (issue #168). A reader otherwise has to *notice* a `-1` inline to know
+    # a generation is missing, and the sentinel's whole purpose is that the
+    # absence not be inferred from a value.
+    missing_generations = _unmeasured_generations(totals)
     destination = args.output if ok else args.output.with_suffix(".unreportable.json")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(
@@ -2865,6 +3143,7 @@ def main() -> int:
                 # for different actions from a reader asking whether the draw
                 # is finished.
                 "unmeasured_causes": dict(totals.unmeasured_causes),
+                "not_measured_generations": missing_generations,
                 "window": window,
                 "rows": [r.to_dict() for r in sorted(totals.rows, key=lambda r: r.pmcid)],
             },
@@ -2904,6 +3183,23 @@ def main() -> int:
         provenance["requested"] = args.compare_europepmc
         provenance["held"] = len(for_comparison)
         comparison: dict[str, Any] | None = None
+        if for_comparison and len(for_comparison) < args.compare_europepmc:
+            # `_comparison_reportable` guards the *served* side against
+            # `held`, and nothing guarded `held` against `requested` (issue
+            # #170). `_hold_for_comparison` returns `min(n, len(drawn))` by
+            # design, and `_validate_args` does not relate
+            # `--compare-europepmc` to `--target`, so a re-run at a smaller
+            # target — or a package whose in-window pool shrank — held 12 of
+            # 300 and overwrote the canonical artifact with `compared: 12` at
+            # exit 0. The headline this repo quotes off that file would have
+            # silently become a 12-article claim under the same filename.
+            rendition_ok = False
+            print(
+                f"\nERROR: --compare-europepmc {args.compare_europepmc} requested but only "
+                f"{len(for_comparison)} could be held (the draw is {args.target}); refusing "
+                "to write a comparison at the canonical name over a smaller sample than "
+                "the one asked for."
+            )
         if not for_comparison:
             # The net for whatever empties `for_comparison`, `_hold_for_
             # comparison`'s own fix included: a comparison over nothing

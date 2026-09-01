@@ -1945,7 +1945,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # in neither of the last two, and it also reproduces on eLife's
             # PMC8754430, which loses its *Additional information* heading
             # twice over. The rate is still a floor rather than a rate for
-            # that shape: 3 titles in 1 article is the whole of it here.
+            # that shape: 12 titles in 3 articles is the whole of it here.
             #
             # Both shapes were checked against the real deposits, old parser
             # against new: PMC8754430's section reads "Author contributions"
