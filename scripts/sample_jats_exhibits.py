@@ -155,6 +155,8 @@ DEFAULT_TARGET = 300
 # Monthly strata the sample is drawn from — see `open_access_pmcids`.
 SAMPLE_MONTHS = 24
 DEFAULT_OUTPUT = Path("tests/data/jats_exhibits.json")
+# Written only by a --compare-europepmc run, alongside the package corpus.
+RENDITION_OUTPUT = Path("tests/data/jats_exhibits.rendition.json")
 # The default seed for a --package draw. Recorded in the corpus either way, so
 # a non-default seed is still reproducible from the written window.
 DEFAULT_SEED = 0
@@ -1165,6 +1167,81 @@ def _fetch(client: httpx.Client, url: str, pace: Any) -> bytes | None:
     return None
 
 
+def rendition_delta(archive: ArticleMeasurement, served: ArticleMeasurement) -> dict[str, Any]:
+    """The fields where two renditions of one article disagree.
+
+    Args:
+        archive: The row measured from the baseline package's bytes.
+        served: The row measured from Europe PMC's ``fullTextXML``.
+
+    Returns:
+        A mapping from field name to both values, empty where they agree.
+        ``unscoped`` is skipped — it is itself a diff, so a difference in it
+        is already reported by the fields it is a diff of.
+    """
+    out: dict[str, Any] = {}
+    for name, value in archive.__dict__.items():
+        if name in ("pmcid", "unscoped"):
+            continue
+        other = getattr(served, name)
+        if value != other:
+            out[name] = {
+                "archive": dict(value) if isinstance(value, Counter) else value,
+                "europepmc": dict(other) if isinstance(other, Counter) else other,
+            }
+    return out
+
+
+def compare_renditions(client: Any, pace: Any, articles: list[tuple[str, bytes]]) -> dict[str, Any]:
+    """Measure each article in both renditions and report where they disagree.
+
+    The citable corpus is the *archive* rendition; ``FullTextService`` feeds
+    the parser Europe PMC's ``fullTextXML``. #119 measured that these differ
+    in a way that reaches a scan — Springer's commented-out ``<authorqueries>``
+    block is in the archive copy of three articles and absent from Europe
+    PMC's copy of the same three — so citing an archive figure for a parser
+    fed by Europe PMC is a claim, and this is what tests it.
+
+    Args:
+        client: An ``httpx.Client``.
+        pace: The per-host pacer.
+        articles: ``(pmcid, archive_bytes)`` pairs drawn from the corpus.
+
+    Returns:
+        The comparison: how many were compared, how many could not be
+        (unmeasured, entering no denominator), how many differ at all, which
+        fields differ and how often, and the per-article deltas.
+    """
+    compared = unmeasured = 0
+    fields: Counter[str] = Counter()
+    deltas: dict[str, dict[str, Any]] = {}
+    for pmcid, archive_xml in articles:
+        served_xml = _fetch(client, f"{EUROPE_PMC}/{pmcid}/fullTextXML", pace)
+        archive = measure_article(pmcid, archive_xml)
+        served = measure_article(pmcid, served_xml) if served_xml else None
+        if archive is None or served is None:
+            unmeasured += 1
+            continue
+        compared += 1
+        delta = rendition_delta(archive, served)
+        if delta:
+            deltas[pmcid] = delta
+            # `.keys()`, not `delta` itself: `Counter.update()` on a mapping
+            # *adds* the mapping's values into the count, and a delta's
+            # values are `{"archive": ..., "europepmc": ...}` payloads, not
+            # numbers — two articles disagreeing on the same field would
+            # otherwise try to add one such payload to another and raise
+            # `TypeError`. Counting the keys is what "how often" means.
+            fields.update(delta.keys())
+    return {
+        "compared": compared,
+        "unmeasured": unmeasured,
+        "articles_differing": len(deltas),
+        "fields_differing": dict(fields),
+        "deltas": deltas,
+    }
+
+
 def _month_windows(months: int, today: date, skip: int = 0) -> list[tuple[str, str]]:
     """*months* whole calendar months, most recent first, after skipping *skip*.
 
@@ -1688,6 +1765,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--per-host-interval", type=float, default=0.7, help="Minimum seconds between requests."
     )
+    parser.add_argument(
+        "--compare-europepmc",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "After a --package draw, re-fetch N of the drawn articles from "
+            "Europe PMC and report where the two renditions disagree. This is "
+            "what licenses citing an archive-drawn figure for a parser fed by "
+            "fullTextXML."
+        ),
+    )
     return parser
 
 
@@ -1749,10 +1838,19 @@ def _validate_args(args: argparse.Namespace) -> str | None:
     here, eagerly, means a bad path is refused with the same up-front,
     one-line message every other rule here gives, rather than surfacing as
     a stack trace out of the draw.
+
+    *`--compare-europepmc` only means anything against a `--package` draw.*
+    The live source's rows are already Europe PMC's own rendition, so
+    comparing them against Europe PMC again would compare a document with
+    itself; naming a negative count cannot be a request for a rate.
     """
     for path in args.package:
         if not _is_package_path(path):
             return f"--package {path} {_NOT_A_PACKAGE_PATH}"
+    if args.compare_europepmc and not args.package:
+        return "--compare-europepmc compares a --package draw against Europe PMC"
+    if args.compare_europepmc < 0:
+        return f"--compare-europepmc must not be negative, got {args.compare_europepmc}"
     if args.months < 1:
         return f"--months must be at least 1, got {args.months}"
     if args.months_ago < 0:
@@ -1828,8 +1926,13 @@ def main() -> int:
         print(f"{len(candidates)} candidates in {args.from_year}-{args.to_year}")
         wanted = {p for p in draw(candidates, args.target, args.seed) if p not in seen}
         journal.parent.mkdir(parents=True, exist_ok=True)
+        # Held for a --compare-europepmc run, below — the first N articles
+        # this draw actually reads, whether or not they went on to parse.
+        for_comparison: list[tuple[str, bytes]] = []
         with journal.open("a", encoding="utf-8") as handle:
             for pmcid, xml in read_package_articles(args.package, wanted):
+                if len(for_comparison) < args.compare_europepmc:
+                    for_comparison.append((pmcid, xml))
                 row = measure_article(pmcid, xml)
                 if row is None:
                     totals.unmeasured += 1
@@ -1899,6 +2002,22 @@ def main() -> int:
     print(f"\nWrote {destination}")
     if not ok:
         print("At least one population is unreportable; the journal keeps every row.")
+
+    if args.compare_europepmc:
+        pace = _make_pacer(args.per_host_interval)
+        with httpx.Client(
+            headers={"User-Agent": _USER_AGENT}, timeout=60.0, follow_redirects=True
+        ) as client:
+            comparison = compare_renditions(client, pace, for_comparison)
+        RENDITION_OUTPUT.write_text(
+            json.dumps(comparison, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        print(
+            f"\nRendition: {comparison['compared']} compared, "
+            f"{comparison['unmeasured']} unmeasured, "
+            f"{comparison['articles_differing']} differing"
+        )
+
     return 0 if ok else 1
 
 

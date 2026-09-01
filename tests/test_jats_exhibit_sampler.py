@@ -1869,3 +1869,177 @@ class TestTheFourWaitingPopulations:
         assert row.disp_formulas == 1
         assert row.disp_formulas_image_only == 1
         assert row.disp_formulas_with_label == 0
+
+
+class TestTheRenditionGapIsMeasured:
+    """The archive rendition is not what bmlib parses, so the gap is measured.
+
+    #119 found the difference is real: Springer's commented-out
+    `<authorqueries>` block is in the archive copy of three articles and
+    absent from Europe PMC's copy of the same three.
+    """
+
+    def test_identical_renditions_produce_no_delta(self):
+        xml = _article("<fig id='f1'><label>Figure 1</label></fig>")
+        archive = sampler.measure_article("PMC1", xml)
+        served = sampler.measure_article("PMC1", xml)
+
+        assert sampler.rendition_delta(archive, served) == {}
+
+    def test_a_differing_field_is_named_with_both_values(self):
+        archive = sampler.measure_article("PMC1", _article("<fig id='f1'/><fig id='f2'/>"))
+        served = sampler.measure_article("PMC1", _article("<fig id='f1'/>"))
+
+        delta = sampler.rendition_delta(archive, served)
+
+        assert delta["figures"] == {"archive": 2, "europepmc": 1}
+
+    def test_a_counter_field_is_compared_as_a_mapping(self):
+        archive = sampler.measure_article("PMC1", _article("<fig id='f1'><label>F</label></fig>"))
+        served = sampler.measure_article("PMC1", _article("<fig id='f1'/>"))
+
+        delta = sampler.rendition_delta(archive, served)
+
+        assert delta["label_parents"] == {"archive": {"fig": 1}, "europepmc": {}}
+
+    def test_unscoped_is_skipped_even_when_it_differs_on_its_own(self):
+        """`unscoped` is itself a diff (the scoped-vs-unscoped walk *within*
+        one rendition), so a difference in it is already reported by the
+        named field it is a diff of. Two rows can disagree in `unscoped`
+        while every named field still agrees — one rendition suppressed a
+        nested-article region without moving its own top-level count, the
+        other carries no region at all — and that disagreement must not be
+        reported a second time as a field of its own."""
+        archive = sampler.measure_article("PMC1", _article("<fig id='f1'/>"))
+        served = sampler.measure_article("PMC1", _article("<fig id='f1'/>"))
+        archive.unscoped = {"contribs": {"scoped": 5, "unscoped": 8}}
+        served.unscoped = {}
+
+        assert sampler.rendition_delta(archive, served) == {}
+
+    def test_an_article_europe_pmc_will_not_serve_is_unmeasured(self):
+        """Not "the renditions agree" — the distinction every population here
+        is accounted by."""
+        with mock.patch.object(sampler, "_fetch", return_value=None):
+            report = sampler.compare_renditions(
+                object(), lambda url: None, [("PMC1", _article("<fig id='f1'/>"))]
+            )
+
+        assert report["compared"] == 0
+        assert report["unmeasured"] == 1
+        assert report["articles_differing"] == 0
+
+    def test_agreement_is_reported_as_a_population_not_as_silence(self):
+        xml = _article("<fig id='f1'><label>F</label></fig>")
+        with mock.patch.object(sampler, "_fetch", return_value=xml):
+            report = sampler.compare_renditions(
+                object(), lambda url: None, [("PMC1", xml), ("PMC2", xml)]
+            )
+
+        assert report["compared"] == 2
+        assert report["unmeasured"] == 0
+        assert report["articles_differing"] == 0
+        assert report["fields_differing"] == {}
+        assert report["deltas"] == {}
+
+    def test_a_disagreeing_article_is_named_in_the_deltas_and_tallied_by_field(self):
+        """`fields_differing` and `deltas` are two views of the same
+        disagreement — a mismatch in one against the other would mean the
+        headline count and the per-article evidence disagree."""
+        archive_xml = _article("<fig id='f1'/><fig id='f2'/>")
+        served_xml = _article("<fig id='f1'/>")
+        with mock.patch.object(sampler, "_fetch", return_value=served_xml):
+            report = sampler.compare_renditions(object(), lambda url: None, [("PMC1", archive_xml)])
+
+        assert report["compared"] == 1
+        assert report["articles_differing"] == 1
+        assert report["fields_differing"] == {"figures": 1}
+        assert report["deltas"]["PMC1"]["figures"] == {"archive": 2, "europepmc": 1}
+
+    def test_two_articles_disagreeing_on_the_same_field_are_both_tallied(self):
+        """`fields_differing` counts articles, not payloads: a `Counter`
+        updated with a mapping *adds* the mapping's values rather than
+        counting its keys, and a delta's values are
+        ``{"archive": ..., "europepmc": ...}`` dicts — not numbers. Two
+        articles disagreeing on the same field would try to add one such
+        dict to another and raise ``TypeError`` if the tally were built from
+        `delta` itself rather than from `delta.keys()`."""
+        archive_xml = _article("<fig id='f1'/><fig id='f2'/>")
+        served_xml = _article("<fig id='f1'/>")
+        with mock.patch.object(sampler, "_fetch", return_value=served_xml):
+            report = sampler.compare_renditions(
+                object(),
+                lambda url: None,
+                [("PMC1", archive_xml), ("PMC2", archive_xml)],
+            )
+
+        assert report["compared"] == 2
+        assert report["articles_differing"] == 2
+        assert report["fields_differing"] == {"figures": 2}
+
+    def test_the_archive_side_is_measured_from_the_bytes_passed_in_not_refetched(self):
+        """`_fetch` is called only for the served side — the archive bytes
+        were already read from the package, so re-fetching them would be a
+        second, needless network path and would silently substitute Europe
+        PMC's copy for the archive's on both sides."""
+        xml = _article("<fig id='f1'/>")
+        with mock.patch.object(sampler, "_fetch", return_value=xml) as fetch:
+            sampler.compare_renditions(object(), lambda url: None, [("PMC1", xml)])
+
+        assert fetch.call_count == 1
+
+
+class TestTheCompareEuropepmcFlag:
+    """`--compare-europepmc` only means anything against a `--package` draw,
+    and a negative count cannot be a request for a rate — the same shape of
+    guard `_validate_args` already applies to `--seed` and the year window."""
+
+    def _args(self, **kwargs):
+        defaults = dict(
+            target=10,
+            months=24,
+            months_ago=0,
+            package=[],
+            from_year=None,
+            to_year=None,
+            seed=0,
+            output=sampler.DEFAULT_OUTPUT,
+            compare_europepmc=0,
+        )
+        return argparse.Namespace(**{**defaults, **kwargs})
+
+    def test_the_flag_defaults_to_off(self):
+        args = sampler._build_arg_parser().parse_args([])
+
+        assert args.compare_europepmc == 0
+
+    def test_the_flag_is_parsed_from_the_command_line(self):
+        args = sampler._build_arg_parser().parse_args(["--compare-europepmc", "5"])
+
+        assert args.compare_europepmc == 5
+
+    def test_it_is_refused_without_a_package_draw(self):
+        refusal = sampler._validate_args(self._args(compare_europepmc=5))
+
+        assert refusal is not None
+        assert "--compare-europepmc" in refusal
+
+    def test_a_negative_count_is_refused(self, tmp_path):
+        refusal = sampler._validate_args(
+            self._args(package=[tmp_path], from_year=2023, to_year=2025, compare_europepmc=-1)
+        )
+
+        assert refusal is not None
+        assert "--compare-europepmc" in refusal
+
+    def test_a_positive_count_on_a_package_draw_is_not_refused(self, tmp_path):
+        """Negative control: the guard is not refusing every use of the flag."""
+        refusal = sampler._validate_args(
+            self._args(package=[tmp_path], from_year=2023, to_year=2025, compare_europepmc=5)
+        )
+
+        assert refusal is None
+
+    def test_the_default_off_on_a_live_run_is_not_refused(self):
+        """Negative control: an untouched default must not trip the guard."""
+        assert sampler._validate_args(self._args()) is None
