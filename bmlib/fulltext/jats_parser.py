@@ -163,12 +163,15 @@ _ARCHIVAL_EXTENSIONS = frozenset({".tif", ".tiff", ".eps", ".ps"})
 # derivable from either corpus. At that wider scope, across all 13,008:
 # .jpg and .gif in both windows and .png in the back-filled one, with **no
 # deposit in either window whose href carries no extension**. That is a
-# property of the *served* rendition and not of publishers: where the archive
-# deposits a bare `…-g001`, Europe PMC synthesises an image/thumb pair with
-# real `.jpg`/`.gif` suffixes — one of the disagreements
-# `tests/data/jats_exhibits.rendition.json` records. So on the bytes this
-# parser is actually handed, _ARCHIVAL_EXTENSIONS always has something to
-# read, where on archive bytes it often would not.
+# property of the *served* rendition and not of publishers, and
+# `tests/data/jats_exhibits.rendition.json` is where the difference is
+# recorded: `graphic_extensions` disagrees in 270 of 294 compared articles,
+# and on the archive side of those 270 it records 1,161 extensionless hrefs
+# of 1,733 deposits, in 241 articles. Scope it there and no further — the
+# artifact records a field only where the renditions disagree, so it says
+# nothing about the 24 that agree. So on the bytes this parser is handed
+# _ARCHIVAL_EXTENSIONS always has something to read, where on archive bytes
+# it frequently would not.
 #
 # They are kept rather than deleted because the failure they prevent is silent
 # and permanent: an undeclared master deposited first ranks FULL, wins under
@@ -260,10 +263,11 @@ class _GraphicHolder:
     docstring did.
 
     The back-filled window contributes **no denominator at all** — 0
-    ``<table-wrap>`` in 997 articles, ``oa_comm``'s 1996-1998 material being
-    scanned page images with no tabular markup. So the answer above rests
-    entirely on the recent window, and the redrawn back-filled one can no
-    longer corroborate or contradict it.
+    ``<table-wrap>`` in 997 articles. So the answer above rests entirely on
+    the recent window, and the redrawn back-filled one can no longer
+    corroborate or contradict it. (*That the 1996-1998 ``oa_comm`` material is
+    scanned page images with no tabular markup is an inference*, from 0 tables
+    beside 627 figures and 3,873 ``.png`` deposits; no counter measures it.)
 
     The instrument had to be corrected before that number meant anything. The
     sampler counted a table's deposits with a whole-subtree walk while the
@@ -315,13 +319,26 @@ class _GraphicHolder:
         the part that reproduces across every draw taken.
 
         **This population is rendition-dependent, which is what #138 found.**
-        Measured on the same identifiers' *archive* bytes, ``last_is_thumb``
-        is **0**: the archive deposits one bare ``<graphic xlink:href="…-g001">``
-        per figure where Europe PMC synthesises an image/thumb pair. So these
-        percentages describe the bytes ``FullTextService`` hands this parser,
-        and a draw taken from a baseline package would put the whole ranking
-        rule out of reach. ``tests/data/jats_exhibits.rendition.json`` is that
-        comparison.
+        Measured on the same identifiers' *archive* bytes,
+        ``last_is_thumb`` **differs in 153 of 294 compared articles, and where
+        it differs the archive measures 0 against 641 served**. Scope it that
+        way and no further: ``tests/data/jats_exhibits.rendition.json``
+        records a field only where the two renditions disagree, so an
+        agreeing article contributes to neither side and the archive's total
+        over all 294 is not derivable from it. That is this module's own rule
+        about a count being of what was looked for, applied to the artifact
+        that establishes the rule.
+
+        **Do not attach a mechanism to it.** An early draft said the archive
+        deposits one bare ``<graphic xlink:href="…-g001">`` per figure where
+        Europe PMC synthesises an image/thumb pair; that is true of a
+        spot-checked article and false in general — ``PMC12169732`` deposits
+        its own four thumbnails as ``specific-use="thumbnail"`` where Europe
+        PMC re-labels them ``content-type="thumb"``, and both renditions
+        measure four. The finding survives either way, and it is decisive:
+        these percentages describe the bytes ``FullTextService`` hands this
+        parser, and a draw measured from a baseline package would read the
+        whole ranking rule as unreached.
 
         *Strictly* better is what makes the first deposit win among equals.
 
@@ -769,16 +786,26 @@ _TEXT_ACCUMULATING = frozenset(
 # re-derivable from this repo and is the *bound* on how often one loses
 # content to it (#158): **25 of 997 recent committed-corpus articles, 2.5%
 # [1.7-3.7], 141 regions in all**, and 0 of 997 in the back-filled window
-# (`scripts/sample_jats_exhibits.py`). That agrees with `bmlib.transparency`'s
-# independent count over PMC's `oa_comm` baseline package PMC012xxxxxx —
-# 3,382 of 97,909, 3.45% — which is the same source and a far larger draw.
+# (`scripts/sample_jats_exhibits.py`). `bmlib.transparency` counts the same
+# population over the same PMC `oa_comm` baseline package PMC012xxxxxx at
+# 3,382 of 97,909 (3.45%) — a far larger draw whose interval overlaps this
+# one — but **the two read different renditions**, transparency the archive
+# bytes and this the `fullTextXML` the parser is fed, and the renditions do
+# not agree here: `tests/data/jats_exhibits.rendition.json` records Europe
+# PMC *adding* regions in 5 of 294 articles (21 archive against 26 served),
+# the injected `associated-data` block named below among them. So the two
+# corroborate each other across a known difference, which is worth stating
+# rather than calling them one source.
+#
 # Two older figures are cited elsewhere and are **not** of this population:
 # 4 of 249 (1.6%) counted peer-review deposits specifically, and 288 of 1,022
 # (28.2%) counted articles that *lose body text*, on a draw that is in no
-# commit. An article can only lose content to a region it carries, so the
-# second cannot exceed the first on the same draw; that it does is a fact
-# about two unrelated samples, not a contradiction to reconcile
-# arithmetically.
+# commit. An article can only lose content to a region it **carries**, so on
+# one draw the losing count cannot exceed the carrying count — a bound
+# against the carrier figure only, never against the peer-review one, since
+# a translation <sub-article> costs an article its prose while depositing no
+# review round at all. That the 28.2% exceeds the 3.45% is a fact about two
+# unrelated samples, not a contradiction to reconcile arithmetically.
 #
 # Peer review is not the only use: <sub-article> also carries the
 # alternative-language full text (SciELO's article-type="translation"),
@@ -1060,7 +1087,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # inside another** — 0 of 7,820 recent — and every <caption> inside an
         # exhibit is owned by that exhibit, with no third owner appearing at
         # all. The back-filled window contributes nothing either way: it holds
-        # **0 <caption>**, that material being scanned page images, so its
+        # **0 <caption>** — inferred, not counted, to be scanned page
+        # images — so its
         # zeroes are an absent denominator and not a second measurement. The
         # same holds of the seven-article corpus
         # in the sibling Swift repository, eLife's PMC8754430 included, which

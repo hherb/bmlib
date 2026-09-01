@@ -700,8 +700,12 @@ and `has_body` flips on none of them. **That 28.2% is a rate of articles
 *losing body text*, on a draw that is in no commit** — the population it
 bounds, and the one this repo can re-derive, is how often an article *carries*
 a region at all: 25 of 997 (2.5%) in `tests/data/jats_exhibits.json` and 0 of
-997 in the back-filled corpus, against 3,382 of 97,909 (3.45%) counted by
-`bmlib.transparency` over the same PMC `oa_comm` baseline package. The rate is
+997 in the back-filled corpus. That interval overlaps the 3,382 of 97,909
+(3.45%) counted by `bmlib.transparency` over the same PMC `oa_comm` baseline
+package — but the two read *different renditions*, transparency the archive
+bytes and the sampler the `fullTextXML` this parser is fed, and Europe PMC
+adds regions in 5 of 294 compared articles, so they corroborate each other
+across a known difference rather than being one measurement. The rate is
 a per-publisher property, so a draw weighted to publishers that deposit review
 histories as policy can honestly be an order of magnitude higher (#158). This
 is the one field that says a nested article was there at all; each one is also

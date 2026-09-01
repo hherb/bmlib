@@ -1487,23 +1487,37 @@ of a named baseline package. The rendition comparison says that will not do:
 288 of 294 compared articles differ, and they differ on precisely the
 populations this repo cites.
 
-| population | archive total | Europe PMC total |
-|---|---|---|
-| `last_is_thumb` | **0** | 641 |
-| `figures_multi_graphic` | 8 | 636 |
-| `alternatives_members` | 190 | 1,288 |
-| `graphics` | 862 | 1,388 |
-| `sections` | 3,355 | 5,070 |
+**The column below is "where they differ", and mislabelling it "archive
+total" is a live error this plan made in its own first draft.**
+`rendition_delta` records a field *only* where the two renditions disagree, so
+an agreeing article appears nowhere in the artifact and these sums are sums
+over the disagreements — not corpus totals. Summed over every recorded article
+the numbers are larger (`figures_multi_graphic` 21, `graphics` 1,733,
+`alternatives_members` 410, `sections` 5,606), and the true archive totals over
+all 294 are not derivable from the file at all.
+
+| population | articles differing (of 294) | archive, where they differ | Europe PMC, where they differ |
+|---|---|---|---|
+| `last_is_thumb` | 153 | **0** | 641 |
+| `figures_multi_graphic` | 152 | 8 | 636 |
+| `alternatives_members` | 151 | 190 | 1,288 |
+| `graphics` | 152 | 862 | 1,388 |
+| `sections` | 174 | 3,355 | 5,070 |
 
 Spot-checked directly on `PMC12000032`: the archive deposits
 `<graphic xlink:href="fpsyg-16-1522092-g001" position="float"/>` — no
-extension, no `content-type` — while Europe PMC **synthesises** an
-`image`/`thumb` pair with `.jpg`/`.gif`. So issue #117's whole population
-(the ranking rule, "carries several graphics", "ends on a thumbnail") is a
-property of the served rendition alone and measures ~0 in the archive.
-`FullTextService` feeds the parser `fullTextXML`, so archive figures would
-state the opposite of the truth for what bmlib parses — a fresh instance of
-the defect #132 and #158 exist to remove.
+extension, no `content-type` — while Europe PMC emits an `image`/`thumb` pair
+with `.jpg`/`.gif`. **That is one article's shape and not a general
+mechanism**: `PMC12169732`, in the same artifact, deposits its own four
+thumbnails as `specific-use="thumbnail"` where Europe PMC re-labels them
+`content-type="thumb"`, and records no `last_is_thumb` delta at all because
+both renditions measure four.
+
+The conclusion survives the correction intact: issue #117's population (the
+ranking rule, "carries several graphics", "ends on a thumbnail") is a property
+of the served rendition, and `FullTextService` feeds the parser `fullTextXML`,
+so archive figures would state the opposite of the truth for what bmlib parses
+— a fresh instance of the defect #132 and #158 exist to remove.
 
 **What changes, and what does not.** The *sample* stays package-defined and
 deterministic: any reader re-derives the identifier list from

@@ -1204,6 +1204,7 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
 
     RECENT = Path(__file__).resolve().parent / "data" / "jats_exhibits.json"
     BACKFILL = Path(__file__).resolve().parent / "data" / "jats_exhibits.backfill.json"
+    RENDITION = Path(__file__).resolve().parent / "data" / "jats_exhibits.rendition.json"
 
     def _totals(self, path: Path) -> tuple[dict[str, int], dict[str, dict[str, int]], int]:
         """Sum one corpus the way :func:`print_report` does.
@@ -1294,8 +1295,10 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         assert backfill_articles == 0
         assert backfill_maps.get("section_renaming_titles", {}) == {}
         assert recent["captions"] == 7820
-        # Not "no exhibit is captioned" but "this window deposits no <caption>
-        # at all": 1996-1998 `oa_comm` material is scanned page images.
+        # Not "no exhibit is captioned" but "this window deposits no
+        # <caption> at all". Why is inferred rather than counted: 0 tables
+        # beside 627 figures and 3,873 `.png` deposits reads as scanned page
+        # images, and no counter measures that.
         assert backfill["captions"] == 0
 
     def test_the_caption_premise_and_its_empty_populations_hold(self):
@@ -1370,9 +1373,14 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         assert recent["alternatives_archival"] + backfill["alternatives_archival"] == 0
         # Every deposit in both windows names an extension, so the
         # `_ARCHIVAL_EXTENSIONS` fallback always has something to read. That
-        # is a property of the *served* rendition — Europe PMC synthesises an
-        # image/thumb pair with `.jpg`/`.gif` where the archive deposits a
-        # bare `…-g001` — so it must not be restated as a publisher habit.
+        # is a property of the *served* rendition and not a publisher habit:
+        # `graphic_extensions` disagrees in 270 of 294 compared articles, and
+        # on the archive side of those it records 1,161 extensionless hrefs of
+        # 1,733 — pinned in
+        # `test_the_rendition_gap_is_what_its_own_evidence_file_holds`. Read
+        # that at that scope: the delta file records only disagreements, so it
+        # says nothing about the 24 articles that agree, and no single
+        # mechanism accounts for the gap.
         assert set(recent_maps["graphic_extensions"]) == {".jpg", ".gif"}
         assert set(backfill_maps["graphic_extensions"]) == {".png", ".jpg", ".gif"}
 
@@ -1482,9 +1490,20 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         is a set *both* spellings share and so a rate for neither. These are
         the per-spelling counts, scoped the way the parser routes: `<collab>`
         names 14 contributors in the recent window and `<string-name>` names
-        none at all, so `<string-name>` is still unmeasured here rather than
-        measured at zero — the vocabulary is open, so a spelling that is
-        absent simply does not appear as a key.
+        none at all.
+
+        **The `<string-name>` zero is measured, not missing**, and the
+        distinction is the load-bearing one in this repo. Section 11's
+        vocabulary is *open*: every child of a `<contrib>` is counted under
+        its own name unless it is in `_CONTRIB_NON_NAME_CHILDREN` (skipped) or
+        `_CONTRIB_NAME_WRAPPERS` (descended through), and `string-name` is in
+        neither — so one occurrence anywhere in either window would have
+        printed under its own key. An absent key is therefore 0 of 12,445
+        `<contrib>`, upper bound 0.03%, which is what `CLAUDE.md`,
+        `CHANGELOG.md` and `ROADMAP.md` all say. That openness is exactly what
+        #121 argued for: against a closed list the unforeseen spelling falls
+        into `(none)` and reads as a contributor naming nobody, which is a
+        missing measurement wearing a measurement's clothes.
         """
         recent, recent_maps, _ = self._totals(self.RECENT)
         backfill, backfill_maps, _ = self._totals(self.BACKFILL)
@@ -1506,6 +1525,81 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             recent["articles_losing_every_author"],
             backfill["articles_losing_every_author"],
         ) == (2, 0)
+
+    def test_the_rendition_gap_is_what_its_own_evidence_file_holds(self):
+        """The claim licensing the whole redraw, answerable to its artifact.
+
+        The corpora above are drawn from a package and measured from Europe
+        PMC, and the reason is that the two renditions disagree. That reason
+        is cited in seven files and, until this test, was pinned by nothing —
+        `jats_exhibits.rendition.json` was committed as evidence and never
+        read back. It went wrong immediately: the first account of it summed
+        the deltas and reported the sum as an *archive total*, which the file
+        cannot support.
+
+        **A delta file is not a corpus.** `rendition_delta` records a field
+        only where the two renditions disagree, so an agreeing article
+        contributes to neither side and never appears; a sum over
+        `deltas` is a sum over disagreements. The only honest form of the
+        headline number is "differs in N of 294, and where it differs archive
+        A against served B", and that is what this asserts.
+        """
+        report = json.loads(self.RENDITION.read_text())
+        comparison = report["comparison"]
+
+        assert (report["source"], report["first_year"], report["last_year"]) == (
+            "package",
+            2023,
+            2025,
+        )
+        assert comparison["compared"] == 294
+        assert comparison["unmeasured"] == 6
+        assert comparison["articles_differing"] == 288
+
+        deltas = comparison["deltas"]
+        differing = comparison["fields_differing"]
+
+        def where_they_differ(field: str) -> tuple[int, int, int]:
+            """``(articles differing, archive sum, served sum)`` — over those alone."""
+            rows = [row[field] for row in deltas.values() if field in row]
+            return (
+                len(rows),
+                sum(side["archive"] for side in rows),
+                sum(side["europepmc"] for side in rows),
+            )
+
+        # The headline: #117's ranking rule is unreachable on archive bytes.
+        assert where_they_differ("last_is_thumb") == (153, 0, 641)
+        assert differing["last_is_thumb"] == 153
+
+        # The counter-example that retired the mechanism sentence. This
+        # article's thumbnails are the *archive's* own, spelled
+        # `specific-use="thumbnail"` where Europe PMC re-labels to
+        # `content-type="thumb"` — and it records no `last_is_thumb` or
+        # `graphics` delta at all, so both renditions measure 4 thumbnails.
+        # "The archive deposits one bare `…-g001` per figure" was true of a
+        # spot-check and false in general, and this row is why.
+        spot = deltas["PMC12169732"]
+        assert spot["specific_use_values"] == {"archive": {"thumbnail": 4}, "europepmc": {}}
+        assert spot["content_type_values"] == {
+            "archive": {},
+            "europepmc": {"image": 4, "thumb": 4},
+        }
+        assert "last_is_thumb" not in spot
+        assert "graphics" not in spot
+
+        # #158: the served rendition *adds* nested-article regions, so the
+        # sampler's 2.5% and transparency's 3.45% are not one measurement.
+        assert where_they_differ("nested_article_regions") == (5, 21, 26)
+
+        # The extension population `_ARCHIVAL_EXTENSIONS` reads.
+        extensionless = sum(
+            row["graphic_extensions"]["archive"].get("(none)", 0)
+            for row in deltas.values()
+            if "graphic_extensions" in row
+        )
+        assert differing["graphic_extensions"] == 270
+        assert extensionless == 1161
 
 
 class TestReadingABaselinePackage:

@@ -11,9 +11,11 @@ All notable changes to bmlib are documented here. The format is based on
 - **Both JATS corpora are redrawn from a named public artifact, and the walk
   is scoped the way the parser is** (#138, closing over #132 and #158). Every
   exhibit figure in this file, in `CLAUDE.md`, in `docs/manual/fulltext.md`
-  and in `jats_parser.py`'s comments has moved, and each moved for **two**
-  reasons at once — the sample is different and so are the bytes — so no
-  movement below may be attributed to the scoping alone.
+  and in `jats_parser.py`'s comments has moved, and each moved for **three**
+  reasons at once — a different sample, a different rendition, and a scoped
+  walk — so no movement below may be attributed to any one of them, the
+  scoping least of all, since it is the only one whose effect the corpus
+  records (`unscoped`).
 
   *The sample is now re-derivable.* `scripts/sample_jats_exhibits.py --package`
   draws deterministically from a PMC OA baseline package, so a reader
@@ -28,12 +30,26 @@ All notable changes to bmlib are documented here. The format is based on
   *The bytes are not the package's, and that was the plan's own premise
   disproved midway.* A baseline package holds an **archive** rendition;
   `FullTextService` feeds the parser Europe PMC's `fullTextXML`; and the two
-  differ on exactly the cited populations. Over 294 shared identifiers
-  `last_is_thumb` measures **0** on archive bytes against **641** on served
-  ones — the archive deposits one bare `<graphic xlink:href="…-g001">` per
-  figure where Europe PMC synthesises an `.jpg`/`.gif` image-and-thumb pair —
-  so a corpus drawn *and* measured from a package would have read #117's whole
-  ranking rule as dead code. `--measure-europepmc` therefore measures the
+  differ on exactly the cited populations: `last_is_thumb` **differs in 153
+  of 294 compared articles, and where it differs the archive measures 0
+  against 641 served** — so a corpus drawn *and* measured from a package would
+  have read #117's whole ranking rule as dead code.
+
+  **That number is scoped, and the first draft of this entry was not.**
+  `rendition_delta` records a field only where the two renditions disagree, so
+  an agreeing article appears nowhere in the file and summing the deltas gives
+  a sum over disagreements, never a corpus total; the archive's `last_is_thumb`
+  over all 294 is simply not derivable from the artifact. Nor is there a single
+  mechanism to name. An earlier draft said the archive deposits one bare
+  `<graphic xlink:href="…-g001">` per figure where Europe PMC synthesises an
+  `.jpg`/`.gif` image-and-thumb pair; that holds for a spot-checked article and
+  fails in general, `PMC12169732` depositing its own four thumbnails as
+  `specific-use="thumbnail"` where Europe PMC re-labels them
+  `content-type="thumb"`, both renditions measuring four. The finding is
+  decisive either way — it was the statement that overreached, in the same
+  release whose whole point is that a count is of what you looked for.
+
+  `--measure-europepmc` therefore measures the
   package-drawn identifiers from the served rendition, the corpus records
   which under `window["rendition"]`, and `--compare-europepmc N` writes
   `tests/data/jats_exhibits.rendition.json`, which is the committed evidence
@@ -98,8 +114,10 @@ All notable changes to bmlib are documented here. The format is based on
   article had (6 of 6, 5 of 5) — PMC3437083 and PMC3437093, both clinical
   papers whose data is entirely in those tables. The #138 redraw replaced both
   windows, and the new back-filled one contributes **0 `<table-wrap>` in 997
-  articles**: `oa_comm`'s 1996-1998 material is scanned page images with no
-  tabular markup at all. That 0 is an absent denominator, not a measurement of
+  articles**. (*That `oa_comm`'s 1996-1998 material is scanned page images
+  with no tabular markup is an inference* from 0 tables beside 627 figures and
+  3,873 `.png` deposits — no counter measures it.) That 0 is an absent
+  denominator, not a measurement of
   the population, and must not be quoted as one. The recent window measures
   6 of 2,363 (0.3%), so the shape is present but rare there. The rule stands
   on the older evidence; re-taking it needs a window that actually holds
@@ -1106,12 +1124,22 @@ All notable changes to bmlib are documented here. The format is based on
   severe rather than widespread — and **which population a rate is of decides
   what it means** (#158). Peer-review deposits specifically measured 4 of 249
   random open-access articles (1.6%), on a draw that is in no commit. The
-  bound on that, and the figure this repo can re-derive, is how often an
-  article *carries* a nested-article region at all: **25 of 997 (2.5%
+  figure this repo can re-derive is a different one — how often an article
+  *carries* a nested-article region at all, of any kind: **25 of 997 (2.5%
   [1.7-3.7]) in `tests/data/jats_exhibits.json`** and 0 of 997 in the
-  back-filled corpus, agreeing with the 3,382 of 97,909 (3.45%)
-  `bmlib.transparency` counts over the same PMC `oa_comm` baseline package.
-  None of these is a rate *inside* the publishers that deposit review
+  back-filled corpus. That is the quantity bounding "loses body text", since
+  an article can only lose content to a region it carries; it bounds nothing
+  about peer review, a translation `<sub-article>` costing an article its
+  prose while depositing no review round.
+
+  Its interval overlaps the 3,382 of 97,909 (3.45%) `bmlib.transparency`
+  counts over the same PMC `oa_comm` baseline package — **but the two read
+  different renditions**, transparency the archive bytes and the sampler the
+  `fullTextXML` the parser is fed, and `jats_exhibits.rendition.json` records
+  Europe PMC *adding* regions in 5 of 294 articles (21 archive against 26
+  served), the injected `associated-data` block named above among them. So
+  they corroborate each other across a known difference rather than being one
+  source. None of these is a rate *inside* the publishers that deposit review
   histories as policy, where it is far higher — the population is not random,
   which is why one number cannot serve for all four questions.
 

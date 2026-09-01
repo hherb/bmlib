@@ -349,19 +349,33 @@ draw both windows from a PMC OA baseline package so a reader could re-derive
 the identifier list from `(packages, window, target, seed)`. Midway the plan's
 own instrument disproved its premise: a package holds an **archive** rendition
 while `FullTextService` feeds the parser Europe PMC's `fullTextXML`, and the
-two differ on exactly the populations being cited — `last_is_thumb` measures
-**0** on archive bytes against 641 served over 294 shared identifiers, the
-archive depositing one bare `<graphic xlink:href="…-g001">` per figure where
-Europe PMC synthesises an `.jpg`/`.gif` image-and-thumb pair. A corpus drawn
-*and* measured from the package would have read #117's whole ranking rule as
-dead code. So the sample is package-defined and deterministic and the bytes are
-Europe PMC's (`--measure-europepmc`), with
-`tests/data/jats_exhibits.rendition.json` as the committed evidence. **Check
-the rendition before trusting an offline corpus** is the transferable lesson,
-and it generalises past JATS.
+two differ on exactly the populations being cited — `last_is_thumb` **differs
+in 153 of 294 compared articles, and where it differs the archive measures 0
+against 641 served**. A corpus drawn *and* measured from the package would
+have read #117's whole ranking rule as dead code. So the sample is
+package-defined and deterministic and the bytes are Europe PMC's
+(`--measure-europepmc`), with `tests/data/jats_exhibits.rendition.json` as the
+committed evidence. **Check the rendition before trusting an offline corpus**
+is the transferable lesson, and it generalises past JATS.
 
-*Every figure moved for two reasons at once* — a different sample and a
-different rendition — so no movement may be attributed to the scoping alone.
+*And the second lesson is the first one's own rule, which this branch broke
+while writing it down.* The first account of that finding said "archive 0
+against 641 over 294 identifiers" and attached a mechanism: the archive
+deposits one bare `<graphic xlink:href="…-g001">` per figure where Europe PMC
+synthesises an `.jpg`/`.gif` pair. Both halves overreach.
+`rendition_delta` records a field **only where the renditions disagree**, so
+summing deltas gives a sum over disagreements and the archive's total over all
+294 is not in the artifact at all; and `PMC12169732`, in that same file,
+deposits its own four thumbnails as `specific-use="thumbnail"` where Europe
+PMC re-labels them `content-type="thumb"`, both measuring four — so there is
+no one mechanism to name. **A count is of what you looked for, not of what
+exists**, and it was the person writing that rule down who got it wrong. The
+finding is decisive either way; only the statement was too big.
+
+*Every figure moved for three reasons at once* — a different sample, a
+different rendition and a scoped walk — so no movement may be attributed to
+any one of them, the scoping least of all, since it is the only one whose
+effect the corpus records (`unscoped`).
 Both corpora are 997 measured articles of 1,000 at `seed 0`, recent from
 `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` (2023-2025) and
 back-filled from `…PMC002xxxxxx…` (1996-1998).
@@ -374,7 +388,9 @@ it full and none is re-derivable, so this is real and not an archive artifact;
 it has a ROADMAP row and wants a decision about a fallback, not a prose repair.
 #127's image-only-table population cannot be re-measured — the redrawn
 back-filled window holds **0 `<table-wrap>` in 997 articles**, `oa_comm`'s
-1996-98 material being scanned page images — so its evidence (11 of 93) is
+1996-98 material being, by inference from 0 tables beside 627 figures and
+3,873 `.png` deposits rather than by any counter, scanned page images — so its
+evidence (11 of 93) is
 historical, and quoting the 0 as a measurement would be the exact defect this
 work removed. And the abstract-branch guard's "44 exhibits, none titled" was an
 ad-hoc walk over the replaced draws with no counter in the sampler, so it is
@@ -461,8 +477,11 @@ can only lose body text to a region it carries. (Not the converse: a
 `associated-data` block among them — costs the article nothing.) A fourth was 6
 of 876 from the Europe PMC draw above. Each site now says which claim it makes,
 and the carrier rate is re-derivable from the repo at **25 of 997 (2.5%)** in
-the recent corpus and 0 of 997 back-filled — consistent with #119's 3.45% over
-the same `oa_comm` source. The rate genuinely is a per-publisher property,
+the recent corpus and 0 of 997 back-filled — an interval overlapping #119's
+3.45% over the same `oa_comm` package, though across a rendition difference
+rather than as one measurement: #119 counts archive bytes, the sampler the
+served `fullTextXML`, which *adds* regions in 5 of 294 compared articles. The
+carrier rate bounds "loses body text" and says nothing about peer review. The rate genuinely is a per-publisher property,
 which is why 28.2% could be honest for a draw weighted to PLOS/eLife/BMJ/F1000;
 what made it a defect was that three of the four draws are in no commit.
 

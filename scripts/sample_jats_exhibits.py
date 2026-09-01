@@ -114,11 +114,25 @@ the draw is reproducible; ``--measure-europepmc`` then measures each drawn
 article from Europe PMC's ``fullTextXML``, which is the rendition
 ``FullTextService`` feeds the parser. Both committed corpora are taken that
 way, and the corpus records which under ``window["rendition"]``. The two
-renditions disagree on cited populations rather than on details: an archive
-deposit is one bare ``<graphic xlink:href="…-g001">`` per figure where Europe
-PMC synthesises an image/thumb pair, so ``last_is_thumb`` measures **0** on
-archive bytes against 641 on served ones over the same 294 identifiers.
-``--compare-europepmc N`` is what produced that number and writes
+renditions disagree on cited populations rather than on details:
+``last_is_thumb`` **differs in 153 of 294 compared articles, and where it
+differs the archive measures 0 against 641 served**.
+
+**Read that number only at that scope**, which is a rule this module's own
+report exists to enforce and which its author got wrong first time.
+``rendition_delta`` records a field only where the two renditions disagree,
+so an agreeing article is absent from the file entirely and the archive's
+total over all 294 cannot be recovered from it — summing the deltas gives a
+sum over the disagreements, not a corpus total. Nor is there one mechanism to
+name: an early draft said the archive deposits one bare ``<graphic
+xlink:href="…-g001">`` per figure where Europe PMC synthesises an image/thumb
+pair, which holds for a spot-checked article and not in general, since
+``PMC12169732`` deposits its own four thumbnails as
+``specific-use="thumbnail"`` where Europe PMC re-labels them
+``content-type="thumb"`` and both renditions measure four. The finding is
+decisive either way; it was the statement that overreached.
+
+``--compare-europepmc N`` produces that comparison and writes
 ``*.rendition.json``; run it before treating an archive-drawn figure as one
 about the parser.
 
@@ -128,9 +142,13 @@ and the live path is kept for the rendition it measures — it fetches
 step, at the cost of a draw nobody else can repeat (#132). Its window is
 counted back from *today*. The default is the last two years, born-digital
 XML, and at least one population is not in it at all: #127's image-only tables
-measured 0 of 662 tables there and 11 of 93 in a draw ending 28 years back. A
-displaced run must name its own ``-o``; writing one to the default path would
-replace the recent corpus, or pool the two windows through the shared journal.
+measured 0 of 662 tables in a recent draw and 11 of 93 in one ending 28 years
+back. **Neither of those draws is in the repo** — both were replaced by the
+#138 redraw, whose back-filled window carries no ``<table-wrap>`` at all — so
+they are the historical evidence for the rule and not a figure a reader can
+re-derive. A displaced run must name its own ``-o``; writing one to the
+default path would replace the recent corpus, or pool the two windows through
+the shared journal.
 
 Usage — the two committed corpora, as taken::
 
