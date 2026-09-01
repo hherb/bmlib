@@ -360,17 +360,23 @@ def _is_gzip_file(path: Path) -> bool:
 def _is_package_path(path: Path) -> bool:
     """Whether *path* is something :func:`iter_package_articles` can read.
 
-    A directory, or a file beginning with the gzip magic bytes. This is the
-    *same* predicate :func:`iter_package_articles` tests, shared rather than
-    reimplemented so the two cannot silently drift apart the way
-    ``tarfile.is_tarfile()`` (true for an uncompressed ``.tar``) and this
-    module's ``"r|gz"`` open mode (false for one) once did (issue #138):
-    :func:`_validate_args` used the former as an eager check while the
-    latter decided what the draw actually accepted, so a mistyped
-    ``--package`` in that one gap passed validation and still failed deep
-    inside the draw.
+    A directory, or a file beginning with the gzip magic bytes. Both
+    :func:`_validate_args` and :func:`iter_package_articles` call this
+    function directly — neither re-derives the disjunction — so the two
+    cannot silently drift apart the way ``tarfile.is_tarfile()`` (true for
+    an uncompressed ``.tar``) and this module's ``"r|gz"`` open mode (false
+    for one) once did (issue #138): a first fix left ``_validate_args``
+    calling this predicate while :func:`iter_package_articles` still tested
+    its own inline copy of the same condition, which is exactly the
+    two-tests-that-happen-to-agree shape this function exists to close off.
     """
     return path.is_dir() or (path.is_file() and _is_gzip_file(path))
+
+
+# The one place this sentence is written. `_validate_args` and
+# `iter_package_articles` both build their refusal from it, so a wording
+# change is made once rather than kept in sync by hand across two literals.
+_NOT_A_PACKAGE_PATH = "is neither a package directory nor a gzip-compressed tarball"
 
 
 def iter_package_articles(path: Path) -> Iterator[tuple[str, bytes]]:
@@ -387,33 +393,33 @@ def iter_package_articles(path: Path) -> Iterator[tuple[str, bytes]]:
         The PMC identifier (the member's stem) and its bytes.
 
     Raises:
-        PackageError: If *path* is neither a directory nor a gzip-compressed
-            file (:func:`_is_package_path` is false), or is gzip-compressed
-            but not a tarball once opened. Refused rather than skipped: a
-            mistyped ``--package`` that silently contributed nothing would
-            print a rate over a draw nobody asked for, which is what
-            :func:`_validate_args` exists to prevent — and it tests the same
-            predicate this function does, so nothing that reaches here was
-            not already refused there.
+        PackageError: If :func:`_is_package_path` is false for *path* — this
+            function's first statement, so the dispatch below never runs on
+            anything that predicate has not already accepted — or *path* is
+            gzip-compressed but not a tarball once opened. Refused rather
+            than skipped: a mistyped ``--package`` that silently contributed
+            nothing would print a rate over a draw nobody asked for, which
+            is what :func:`_validate_args` exists to prevent — and it tests
+            the same predicate this function does, so nothing that reaches
+            here was not already refused there.
     """
+    if not _is_package_path(path):
+        raise PackageError(f"{path} {_NOT_A_PACKAGE_PATH}")
     if path.is_dir():
         for entry in sorted(path.glob("*.xml")):
             yield entry.stem, entry.read_bytes()
         return
-    if path.is_file() and _is_gzip_file(path):
-        try:
-            with tarfile.open(path, "r|gz") as tar:
-                for member in tar:
-                    if not member.isfile() or not member.name.endswith(".xml"):
-                        continue
-                    handle = tar.extractfile(member)
-                    if handle is None:  # pragma: no cover - a tarball oddity
-                        continue
-                    yield Path(member.name).stem, handle.read()
-        except tarfile.ReadError as exc:
-            raise PackageError(f"{path} is gzip-compressed but not a tarball: {exc}") from exc
-        return
-    raise PackageError(f"{path} is neither a package directory nor a gzip-compressed tarball")
+    try:
+        with tarfile.open(path, "r|gz") as tar:
+            for member in tar:
+                if not member.isfile() or not member.name.endswith(".xml"):
+                    continue
+                handle = tar.extractfile(member)
+                if handle is None:  # pragma: no cover - a tarball oddity
+                    continue
+                yield Path(member.name).stem, handle.read()
+    except tarfile.ReadError as exc:
+        raise PackageError(f"{path} is gzip-compressed but not a tarball: {exc}") from exc
 
 
 def package_candidates(paths: list[Path], first: int, last: int) -> list[str]:
@@ -1436,22 +1442,18 @@ def _validate_args(args: argparse.Namespace) -> str | None:
     2023-2025 itself) may use the default output.
 
     *A `--package` path is checked here, not left to fail inside the draw.*
-    :func:`iter_package_articles` is a generator, so a mistyped path would
-    otherwise raise :class:`PackageError` only once something iterates it —
-    part way through :func:`package_candidates`, after the "N candidates"
-    line has already been decided. Checking eagerly means a bad path is
-    refused with the same up-front, one-line message every other rule here
-    gives, rather than surfacing as a stack trace out of the draw. This uses
-    :func:`_is_package_path`, the *same* predicate
-    :func:`iter_package_articles` tests — not a lookalike copy — so the two
-    cannot silently drift the way ``tarfile.is_tarfile()`` (true for an
-    uncompressed ``.tar``) and the ``"r|gz"`` open mode (false for one) once
-    did: that gap is what let a ``.tar`` pass this check and still fail deep
-    inside the draw.
+    :func:`iter_package_articles` calls :func:`_is_package_path` as its own
+    first statement and raises immediately when it is false, but it is a
+    generator — nothing runs until something iterates it, which for
+    ``package_candidates`` is part way through the draw, after the "N
+    candidates" line has already been decided. Calling the same predicate
+    here, eagerly, means a bad path is refused with the same up-front,
+    one-line message every other rule here gives, rather than surfacing as
+    a stack trace out of the draw.
     """
     for path in args.package:
         if not _is_package_path(path):
-            return f"--package {path} is neither a package directory nor a gzip-compressed tarball"
+            return f"--package {path} {_NOT_A_PACKAGE_PATH}"
     if args.months < 1:
         return f"--months must be at least 1, got {args.months}"
     if args.months_ago < 0:

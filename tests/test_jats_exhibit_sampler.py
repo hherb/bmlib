@@ -1320,11 +1320,11 @@ class TestReadingABaselinePackage:
     def test_an_uncompressed_tar_is_refused_like_any_other_non_package(self, tmp_path):
         """`tarfile.is_tarfile()` accepts an uncompressed `.tar` — it really
         is a tarball — but the `"r|gz"` open mode this module always uses
-        cannot read one. `_is_gzip_file` is what this function's own guard
-        tests, and it is false here (no gzip magic bytes), so an
-        uncompressed `.tar` never reaches the `tarfile.open` call at all —
-        it is refused by the same final branch as any other non-package
-        path, with the same message."""
+        cannot read one. `_is_package_path` is this function's very first
+        check, and it is false here (no gzip magic bytes), so an
+        uncompressed `.tar` never reaches `tarfile.open` at all — it is
+        refused up front, with the same message as any other non-package
+        path."""
         import tarfile
 
         path = tmp_path / "oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.tar"
@@ -1349,6 +1349,32 @@ class TestReadingABaselinePackage:
 
         with pytest.raises(sampler.PackageError, match="gzip-compressed but not a tarball"):
             list(sampler.iter_package_articles(path))
+
+    def test_iter_package_articles_routes_through_is_package_path(self, tmp_path, monkeypatch):
+        """Proof, not inference, that the draw's own guard calls the shared
+        predicate rather than a re-inlined copy of it (issue 138, fix round
+        3): patch `_is_package_path` to refuse everything and a path that
+        would otherwise succeed must fail too. A guard that silently
+        re-derives the same disjunction instead of calling this function —
+        exactly the shape round 2 left in place — would ignore the patch
+        and keep succeeding, which is what would make this test catch it."""
+        (tmp_path / "PMC1.xml").write_bytes(b"<article/>")
+        assert list(sampler.iter_package_articles(tmp_path)) == [("PMC1", b"<article/>")]
+
+        monkeypatch.setattr(sampler, "_is_package_path", lambda path: False)
+
+        with pytest.raises(sampler.PackageError):
+            list(sampler.iter_package_articles(tmp_path))
+
+    def test_is_gzip_file_treats_an_unreadable_path_as_not_gzip(self, tmp_path):
+        """The `except OSError: return False` branch, exercised rather than
+        only reasoned about: a path that does not exist raises
+        `FileNotFoundError` (an `OSError`) on `.open()`, and that must read
+        as "not gzip," not propagate — the caller's own attempt to read the
+        path is what should report a vanished or unreadable file."""
+        missing = tmp_path / "does-not-exist"
+
+        assert sampler._is_gzip_file(missing) is False
 
     def test_the_year_is_the_earliest_any_pub_date_declares(self):
         xml = b"""<article><front><article-meta>
