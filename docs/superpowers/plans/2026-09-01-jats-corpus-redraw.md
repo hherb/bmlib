@@ -1479,6 +1479,122 @@ git commit -m "test(data): redraw both corpora from the named baseline packages"
 
 ---
 
+### Task 6a: Measure the rendition the parser is actually fed
+
+**Found by Task 5's instrument during Task 6's draw, and it invalidates the
+plan's original premise.** The citable corpus was to be the archive rendition
+of a named baseline package. The rendition comparison says that will not do:
+288 of 294 compared articles differ, and they differ on precisely the
+populations this repo cites.
+
+| population | archive total | Europe PMC total |
+|---|---|---|
+| `last_is_thumb` | **0** | 641 |
+| `figures_multi_graphic` | 8 | 636 |
+| `alternatives_members` | 190 | 1,288 |
+| `graphics` | 862 | 1,388 |
+| `sections` | 3,355 | 5,070 |
+
+Spot-checked directly on `PMC12000032`: the archive deposits
+`<graphic xlink:href="fpsyg-16-1522092-g001" position="float"/>` — no
+extension, no `content-type` — while Europe PMC **synthesises** an
+`image`/`thumb` pair with `.jpg`/`.gif`. So issue #117's whole population
+(the ranking rule, "carries several graphics", "ends on a thumbnail") is a
+property of the served rendition alone and measures ~0 in the archive.
+`FullTextService` feeds the parser `fullTextXML`, so archive figures would
+state the opposite of the truth for what bmlib parses — a fresh instance of
+the defect #132 and #158 exist to remove.
+
+**What changes, and what does not.** The *sample* stays package-defined and
+deterministic: any reader re-derives the identifier list from
+`(packages, window, target, seed)`. Only the *bytes measured* move to
+`fullTextXML`. Re-derivability survives intact; the rendition mismatch does
+not.
+
+**Files:**
+- Modify: `scripts/sample_jats_exhibits.py`
+- Test: `tests/test_jats_exhibit_sampler.py`
+
+**Interfaces:**
+- Consumes: `package_candidates`, `draw`, `_hold_for_comparison`, `_fetch`,
+  `_make_pacer`, `measure_article` (Tasks 2, 3, 5).
+- Produces: CLI `--measure-europepmc` (flag, default off); the corpus header
+  gains `rendition: "europepmc" | "archive"`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Cover, with `_fetch` mocked and no network:
+- with the flag, rows are measured from the *served* bytes, not the package's
+  — a fixture where the two renditions differ must produce the served row;
+- the identifier list is unchanged by the flag, so the same
+  `(packages, window, target, seed)` draws the same articles either way;
+- an article Europe PMC will not serve is **unmeasured**, entering no
+  denominator — never silently measured from the archive copy instead, which
+  would mix renditions inside one corpus;
+- the header records `rendition`, and records it on both settings;
+- the unmeasured-share rule applies, so a throttled run writes
+  `*.unreportable.json` rather than a thin corpus.
+
+- [ ] **Step 2: Run them and watch them fail**
+
+`uv run pytest tests/test_jats_exhibit_sampler.py -k rendition -v`
+
+- [ ] **Step 3: Implement**
+
+Reuse the comparison path's plumbing rather than adding a second HTTP route.
+The package branch of `main` already draws identifiers; with the flag set,
+fetch each drawn identifier's `fullTextXML` through the existing paced client
+and measure *that*. Mixing renditions within one corpus is the one outcome
+that must be impossible — an article whose fetch fails is unmeasured, never
+back-filled from the package.
+
+- [ ] **Step 4: Record the artifact identity properly**
+
+The recent corpus's header reads `packages: ['PMC012xxxxxx']`, which is a
+directory name on one machine, not the public artifact — it loses the
+`baseline.2025-06-26` that makes the draw re-derivable, which is the whole
+point. Record the baseline package identity whether the source given is the
+tarball or a directory extracted from it.
+
+- [ ] **Step 5: Verify, lint, commit**
+
+---
+
+### Task 6b: Redraw both windows on the served rendition
+
+**Files:** replaces `tests/data/jats_exhibits.json` and
+`tests/data/jats_exhibits.backfill.json`. The archive-drawn corpora and
+`jats_exhibits.rendition.json` stay in git history as the evidence for why
+this task exists.
+
+- [ ] **Step 1: Clear both journals** — they hold archive-rendition rows, and
+  the journal tops a sample up rather than starting over.
+
+- [ ] **Step 2: Recent window**, `--measure-europepmc`, target 1,000. Roughly
+  12 minutes of paced fetches.
+
+- [ ] **Step 3: Back-filled window**, same. Europe PMC's coverage of 1996-1998
+  `oa_comm` articles is **unmeasured** — if it is poor, the unmeasured-share
+  rule refuses the draw, and that refusal is a finding to report rather than a
+  failure to work around.
+
+- [ ] **Step 4: Re-check the three flags Task 6 raised**, each of which may
+  have been an archive artifact:
+  - the `<label>` direct-child premise measured **violated** (6,701 of 6,708),
+    the first violation ever recorded — CLAUDE.md says it measures full
+    (2,033/2,033, 1,446/1,446, 365/365). If it still fails on the served
+    rendition, that is a real finding about the parent rule and wants an issue,
+    not a prose edit.
+  - the back-filled window held **0** `<table-wrap>` and 13 `<ref>` across
+    1,000 articles, against 93 tables in 300 in the old draw — so #127's
+    image-only-table population may not be in this window at all.
+  - whether the `<sub-article>` scoping correction still moves what Task 1
+    measured, now that the bytes are different.
+
+- [ ] **Step 5: Commit the corpora.**
+
+---
+
 ### Task 7: Reconcile every figure cited from the corpora
 
 `TestTheCitedPopulationsAreWhatTheCorporaHold` has been failing since Task 1. Its failures are the checklist, and its docstring says so: *"A redraw is meant to break it — that is the signal to reconcile the comments, and the failure names the file to reconcile."*
