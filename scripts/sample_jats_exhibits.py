@@ -246,6 +246,24 @@ _CONTRIB_SIDE_COUNTERS = (
 # carrying no nested article genuinely measures zero here, so zero cannot
 # mean "absent".
 _SCOPE_SIDE_COUNTERS = ("nested_article_regions",)
+# The fifth counter generation (issues #142, #143, #147, #150), and the same
+# sentinel rule as the four before it: an article citing nothing and printing
+# no formula genuinely measures zero here, so zero cannot also mean "this row
+# predates the counter".
+_WAITING_SIDE_COUNTERS = (
+    "collabs_with_element_children",
+    "contribs_multi_collab",
+    "contribs_multi_string_name",
+    "name_alternatives",
+    "disp_formulas",
+    "inline_formulas",
+    "tex_math",
+    "mml_math",
+    "formula_alternatives_both",
+    "disp_formulas_with_label",
+    "refs",
+    "refs_note_only",
+)
 # How a `<contrib>` names its contributor. JATS models it as
 # `(name | string-name | collab | anonymous | ...)`, and the tail of that model
 # is the point: `<on-behalf-of>` is in it too, and #130's `<list>` is the
@@ -539,6 +557,35 @@ class ArticleMeasurement:
     # rather than a silent application of it: #158's four disagreeing rates are
     # exactly the question "how much does the region inflate a count?".
     unscoped: dict[str, Any] = field(default_factory=dict)
+    # Issue #142 — what a `<collab>` carries besides text. `<institution>` and
+    # `<addr-line>` are legal children and are concatenated with no separator,
+    # and which of the two candidate fixes is right is a question about how
+    # publishers actually deposit it.
+    collab_children: Counter[str] = field(default_factory=Counter)
+    collabs_with_element_children: int = 0
+    # Issue #143 — multiplicity, which section 11 cannot see: it counts
+    # spellings per *article*, so one `<contrib>` carrying two `<collab>` is
+    # invisible there. #117 is the precedent that "how many does one element
+    # deposit?" decides between first-wins, last-wins and ranking.
+    contribs_multi_collab: int = 0
+    contribs_multi_string_name: int = 0
+    name_alternatives: int = 0
+    # Issue #147 — `<tex-math>` is taken from the prose containing it and
+    # `<disp-formula>` dropped outright. `formula_alternatives_both` is the
+    # count that rules out "add them to `_INLINE_ELEMENTS`": an `<alternatives>`
+    # holding both encodings of one formula would emit it twice.
+    disp_formulas: int = 0
+    inline_formulas: int = 0
+    tex_math: int = 0
+    mml_math: int = 0
+    formula_alternatives_both: int = 0
+    disp_formulas_with_label: int = 0
+    # Issue #150 — a `<ref>` whose only content is a `<note>` renders as an
+    # empty `<li>`. The vocabulary is open, so a `<ref>` child nobody has
+    # listed prints as itself rather than as evidence of nothing.
+    refs: int = 0
+    refs_note_only: int = 0
+    ref_child_kinds: Counter[str] = field(default_factory=Counter)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise for the journal and the corpus file."""
@@ -552,10 +599,11 @@ class ArticleMeasurement:
         """Rebuild a row written by :meth:`to_dict`.
 
         A counter the row does not carry is set to ``NOT_MEASURED`` rather
-        than left at its zero default. These arrived in four generations —
+        than left at its zero default. These arrived in five generations —
         ``_TABLE_SIDE_COUNTERS`` with issue #135, ``_OWNER_SIDE_COUNTERS`` with
-        #123/#125/#130, ``_CONTRIB_SIDE_COUNTERS`` with #120/#140, and
-        ``_SCOPE_SIDE_COUNTERS`` with #138 — so a corpus or journal older than
+        #123/#125/#130, ``_CONTRIB_SIDE_COUNTERS`` with #120/#140,
+        ``_SCOPE_SIDE_COUNTERS`` with #138, and ``_WAITING_SIDE_COUNTERS`` with
+        #142/#143/#147/#150 — so a corpus or journal older than
         a generation carries none of it, and
         each would otherwise sum to zero, which is exactly what a genuine "no
         table deposits an image", "no caption nests" or "no contributor is
@@ -569,6 +617,7 @@ class ArticleMeasurement:
             *_OWNER_SIDE_COUNTERS,
             *_CONTRIB_SIDE_COUNTERS,
             *_SCOPE_SIDE_COUNTERS,
+            *_WAITING_SIDE_COUNTERS,
         ):
             if name not in data:
                 setattr(row, name, NOT_MEASURED)
@@ -652,6 +701,20 @@ def _measure_tree(pmcid: str, root: ET.Element, *, scoped: bool) -> ArticleMeasu
                     row.sections_with_direct_title += 1
             elif tag == "contrib":
                 _record_contrib(child, chain, row)
+            elif tag == "disp-formula":
+                row.disp_formulas += 1
+                if any(_local(c.tag) == "label" for c in child):
+                    row.disp_formulas_with_label += 1
+                _record_formula_alternatives(child, row)
+            elif tag == "inline-formula":
+                row.inline_formulas += 1
+                _record_formula_alternatives(child, row)
+            elif tag == "tex-math":
+                row.tex_math += 1
+            elif tag == "math":
+                row.mml_math += 1
+            elif tag == "ref":
+                _record_ref(child, row)
             elif tag == "title" and exhibit is None and "sec" in chain and chain[-1] != "sec":
                 # The population issues #125 and #130 are about, and only it:
                 # a <title> that a section was open for, owned by something
@@ -784,15 +847,78 @@ def _record_contrib(el: ET.Element, chain: list[str], row: ArticleMeasurement) -
             row.contrib_name_spellings[name] += 1
             if name in _CONTRIB_NAMING_ELEMENTS:
                 found += 1
-            if name == "collab" and any(_local(c.tag) == "contrib-group" for c in child):
-                row.collabs_with_a_roster += 1
+            if name == "collab":
+                # Issue #142 — what the `<collab>` carries besides its own
+                # text. `<institution>` and `<addr-line>` are legal children,
+                # counted only when at least one is present: bare text
+                # (`<collab>The Y Group</collab>`) contributes nothing, which
+                # is the distinction the fix turns on.
+                children = [_local(c.tag) for c in child]
+                if children:
+                    row.collab_children.update(children)
+                    row.collabs_with_element_children += 1
+                if any(_local(c.tag) == "contrib-group" for c in child):
+                    row.collabs_with_a_roster += 1
 
     descend(el)
+    # Issue #143 — several `<collab>` or `<string-name>`, or a
+    # `<name-alternatives>`, deposited on one `<contrib>`. Counted on *el*'s
+    # own direct children, not through `descend`, since `descend` treats
+    # `<name-alternatives>` as a transparent wrapper rather than a spelling —
+    # exactly the cardinality this counts.
+    direct = Counter(_local(child.tag) for child in el)
+    if direct["collab"] > 1:
+        row.contribs_multi_collab += 1
+    if direct["string-name"] > 1:
+        row.contribs_multi_string_name += 1
+    row.name_alternatives += direct["name-alternatives"]
     if not found:
         # Its own vocabulary entry rather than a silence: a `<contrib>` naming
         # nobody is what the parser reports at DEBUG and drops, so a draw in
         # which that is common is worth seeing.
         row.contrib_name_spellings["(none)"] += 1
+
+
+def _record_formula_alternatives(el: ET.Element, row: ArticleMeasurement) -> None:
+    """Count a formula whose ``<alternatives>`` holds two encodings of itself.
+
+    This is the count that decides #147's shape: where one formula is
+    deposited as both LaTeX and MathML, merging every accumulating child would
+    emit it twice, so the fix cannot be one more ``_INLINE_ELEMENTS`` member.
+
+    Args:
+        el: The ``<disp-formula>`` or ``<inline-formula>``.
+        row: The measurement to count into.
+    """
+    for child in el:
+        if _local(child.tag) != "alternatives":
+            continue
+        kinds = {_local(g.tag) for g in child}
+        if "tex-math" in kinds and "math" in kinds:
+            row.formula_alternatives_both += 1
+
+
+def _record_ref(el: ET.Element, row: ArticleMeasurement) -> None:
+    """Count one ``<ref>`` and the kinds of child it carries.
+
+    A ``<ref>`` whose only content is a ``<note>`` — ``<label>`` aside, which
+    is the publisher's own number and not content — carries no citation for
+    ``_format_ref_html`` to render, so it becomes an empty ``<li>`` (#150).
+    The child vocabulary is open: JATS models ``<ref>`` as
+    ``(label?, (citation | element-citation | mixed-citation | note | p | x)*)``
+    and a spelling counted against a list this script wrote would be reported
+    as absent.
+
+    Args:
+        el: The ``<ref>`` element.
+        row: The measurement to count into.
+    """
+    row.refs += 1
+    kinds = [_local(child.tag) for child in el]
+    row.ref_child_kinds.update(kinds)
+    content = [k for k in kinds if k != "label"]
+    if content and set(content) == {"note"}:
+        row.refs_note_only += 1
 
 
 def _owned(el: ET.Element, wanted: str) -> list[ET.Element]:
@@ -1336,6 +1462,88 @@ def print_report(totals: Totals) -> bool:
             f"   articles naming every contributor undivided: "
             f"{losing:>6}   of {totals.articles}  {_pct(losing, totals.articles)}"
         )
+
+    # Issues #142, #143, #147 and #150 — four populations each waiting on a
+    # measurement before its fix can be chosen. One walk answers all four.
+    print("\n12. A <collab>'s ELEMENT CHILDREN  (issue #142)")
+    if not all(totals.measured(name) for name in _WAITING_SIDE_COUNTERS):
+        print("   NOT MEASURED — these rows predate the counter. Re-run to fill it.")
+    else:
+        with_children = totals.sum_of("collabs_with_element_children")
+        print(f"   <collab> carrying an element child     : {with_children}")
+        children = totals.counter_of("collab_children")
+        total_children = sum(children.values())
+        for name, count in children.most_common(12):
+            print(f"      {name:<26} {count:>6}  {_pct(count, total_children)}")
+        if not children:
+            print("      (no <collab> in this draw carries an element child)")
+
+    print("\n13. CONTRIBUTOR MULTIPLICITY PER <contrib>  (issue #143)")
+    # Gated on `_CONTRIB_SIDE_COUNTERS` as well as `_WAITING_SIDE_COUNTERS`:
+    # the denominator below is `contribs`, itself a member of the third
+    # generation, so a row carrying the fifth generation's counters but not
+    # the third's (an old journal topped up unevenly) must still read as
+    # NOT MEASURED rather than divide by that row's sentinel.
+    if not all(
+        totals.measured(name) for name in (*_WAITING_SIDE_COUNTERS, *_CONTRIB_SIDE_COUNTERS)
+    ):
+        print("   NOT MEASURED — these rows predate the counter. Re-run to fill it.")
+    else:
+        contribs = totals.sum_of("contribs")
+        multi_collab = totals.sum_of("contribs_multi_collab")
+        multi_string_name = totals.sum_of("contribs_multi_string_name")
+        alternatives = totals.sum_of("name_alternatives")
+        print(
+            f"   <contrib> carrying >1 <collab>         : "
+            f"{multi_collab:>6}  {_pct(multi_collab, contribs)}"
+        )
+        print(
+            f"   <contrib> carrying >1 <string-name>    : "
+            f"{multi_string_name:>6}  {_pct(multi_string_name, contribs)}"
+        )
+        print(
+            f"   <contrib> carrying a <name-alternatives>: "
+            f"{alternatives:>6}  {_pct(alternatives, contribs)}"
+        )
+
+    print("\n14. FORMULAS  (issue #147)")
+    if not all(totals.measured(name) for name in _WAITING_SIDE_COUNTERS):
+        print("   NOT MEASURED — these rows predate the counter. Re-run to fill it.")
+    else:
+        disp_formulas = totals.sum_of("disp_formulas")
+        inline_formulas = totals.sum_of("inline_formulas")
+        labelled = totals.sum_of("disp_formulas_with_label")
+        both = totals.sum_of("formula_alternatives_both")
+        print(f"   <disp-formula>                          : {disp_formulas}")
+        print(
+            f"   ...carrying a <label>                   : "
+            f"{labelled:>6}  {_pct(labelled, disp_formulas)}"
+        )
+        print(f"   <inline-formula>                        : {inline_formulas}")
+        print(f"   <tex-math>                               : {totals.sum_of('tex_math')}")
+        print(f"   <math> (MathML)                          : {totals.sum_of('mml_math')}")
+        print(
+            f"   <alternatives> holding BOTH encodings   : {both:>6}   "
+            "(rules out one more _INLINE_ELEMENTS member)"
+        )
+
+    print("\n15. REFERENCES CARRYING ONLY A <note>  (issue #150)")
+    if not all(totals.measured(name) for name in _WAITING_SIDE_COUNTERS):
+        print("   NOT MEASURED — these rows predate the counter. Re-run to fill it.")
+    else:
+        refs = totals.sum_of("refs")
+        note_only = totals.sum_of("refs_note_only")
+        print(f"   <ref> elements                           : {refs}")
+        print(
+            f"   ...whose only content is a <note>        : {note_only:>6}  {_pct(note_only, refs)}"
+        )
+        kinds = totals.counter_of("ref_child_kinds")
+        total_kinds = sum(kinds.values())
+        print("   what a <ref> carries:")
+        for name, count in kinds.most_common(12):
+            print(f"      {name:<26} {count:>6}  {_pct(count, total_kinds)}")
+        if not kinds:
+            print("      (no <ref> in this draw)")
     return True
 
 

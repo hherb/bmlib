@@ -1691,3 +1691,108 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
                 iterated = False
 
             assert validated == iterated, path
+
+
+class TestTheFourWaitingPopulations:
+    """Issues 142, 143, 147 and 150 — measured here, decided in their own PRs."""
+
+    def test_a_collab_records_the_children_it_carries(self):
+        """142: `<institution>` and `<addr-line>` are legal inside `<collab>`
+        and run together in `JATSAuthorInfo.collab` with no separator. Which
+        of the two candidate fixes is right is a question about how they are
+        actually deposited."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <contrib-group><contrib contrib-type="author"><collab>
+              <institution>The Y Consortium</institution><addr-line>Boston MA</addr-line>
+            </collab></contrib></contrib-group>"""),
+        )
+
+        assert row.collab_children == {"institution": 1, "addr-line": 1}
+        assert row.collabs_with_element_children == 1
+
+    def test_a_collab_of_bare_text_carries_no_children(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                "<contrib-group><contrib><collab>The Y Group</collab></contrib></contrib-group>"
+            ),
+        )
+
+        assert row.collab_children == {}
+        assert row.collabs_with_element_children == 0
+
+    def test_multiplicity_is_counted_per_contrib(self):
+        """143: section 11 counts spellings per *article*, so a contributor
+        carrying two `<collab>` is invisible in it."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <contrib-group>
+              <contrib><collab>First Group</collab><collab>Second Group</collab></contrib>
+              <contrib><name-alternatives><name><surname>Latin</surname></name>
+                <name><surname>Japanese</surname></name></name-alternatives></contrib>
+            </contrib-group>"""),
+        )
+
+        assert row.contribs_multi_collab == 1
+        assert row.contribs_multi_string_name == 0
+        assert row.name_alternatives == 1
+
+    def test_formulas_are_counted_by_kind(self):
+        """147: a `<tex-math>` is dropped from the prose containing it and a
+        `<disp-formula>` from the article outright. `<alternatives>` holding
+        both encodings is why the fix is not one more inline element."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <sec><p>The model is <inline-formula><tex-math>y = mx</tex-math></inline-formula>.</p>
+            <disp-formula id="e1"><label>(1)</label>
+              <alternatives><tex-math>E = mc^2</tex-math>
+                <mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mi>E</mml:mi></mml:math>
+              </alternatives></disp-formula></sec>"""),
+        )
+
+        assert (row.disp_formulas, row.inline_formulas) == (1, 1)
+        assert (row.tex_math, row.mml_math) == (2, 1)
+        assert row.formula_alternatives_both == 1
+        assert row.disp_formulas_with_label == 1
+
+    def test_a_note_only_reference_is_counted_apart(self):
+        """150: it renders as an empty `<li>`, renumbering every entry after
+        it relative to the publisher's own numbering."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <back><ref-list>
+              <ref id="c1"><mixed-citation>Smith 2020.</mixed-citation></ref>
+              <ref id="c2"><note><p>Deposited at the CCDC.</p></note></ref>
+              <ref id="c3"><label>3</label><note><p>Also a note.</p></note></ref>
+            </ref-list></back>"""),
+        )
+
+        assert row.refs == 3
+        assert row.refs_note_only == 2
+        assert row.ref_child_kinds == {"mixed-citation": 1, "note": 2, "label": 1}
+
+    def test_a_nested_article_contributes_none_of_them(self):
+        """Task 1's scoping has to reach the new counters too — a peer-review
+        round is full of references and formulas."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <sub-article><body><disp-formula><tex-math>x</tex-math></disp-formula>
+              <back><ref-list><ref><note><p>n</p></note></ref></ref-list></back>
+            </body></sub-article>"""),
+        )
+
+        assert (row.disp_formulas, row.tex_math, row.refs, row.refs_note_only) == (0, 0, 0, 0)
+        assert row.unscoped["refs_note_only"] == 1
+
+    def test_a_row_written_before_these_counters_reads_as_not_measured(self):
+        row = sampler.ArticleMeasurement.from_dict({"pmcid": "PMC1"})
+
+        assert row.refs == sampler.NOT_MEASURED
+        assert row.disp_formulas == sampler.NOT_MEASURED
+        assert row.contribs_multi_collab == sampler.NOT_MEASURED
