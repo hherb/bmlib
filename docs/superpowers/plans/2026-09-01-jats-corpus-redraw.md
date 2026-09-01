@@ -733,7 +733,7 @@ def read_package_articles(paths: list[Path], wanted: set[str]) -> Iterator[tuple
     """Yield ``(pmcid, raw_xml)`` for the drawn articles, in package order.
 
     A second pass over the packages, rather than holding the first pass's
-    bytes: the recent window has ~76,500 in-window candidates, which at
+    bytes: the recent window has 97,651 in-window candidates, which at
     article sizes reaching 3.4 MB is not a thing to keep in memory. For a
     tarball the pass costs one more sequential decompression (16.5 s for
     `PMC002xxxxxx`).
@@ -873,7 +873,7 @@ uv run python scripts/sample_jats_exhibits.py \
     -o /tmp/smoke.json
 ```
 
-Expected: a candidate count near 76,500, 25 rows, a printed report, `/tmp/smoke.json` written with a `window` recording `source`, `packages`, `seed`. Delete `/tmp/smoke.json` and `/tmp/smoke.journal.jsonl` afterwards.
+Expected: a candidate count of 97,651, 25 rows, a printed report, `/tmp/smoke.json` written with a `window` recording `source`, `packages`, `seed`. Delete `/tmp/smoke.json` and `/tmp/smoke.journal.jsonl` afterwards.
 
 - [ ] **Step 9: Commit**
 
@@ -1446,7 +1446,7 @@ uv run python scripts/sample_jats_exhibits.py \
     --compare-europepmc 300
 ```
 
-Expected: ~76,500 candidates, 1,000 rows, a full report, `tests/data/jats_exhibits.json` and `tests/data/jats_exhibits.rendition.json` written, exit 0. **A non-zero exit means a population was unreportable** and the corpus went to `*.unreportable.json`; read the report, fix the cause, re-run. Do not commit an unreportable draw.
+Expected: **97,651 candidates**, 1,000 rows, a full report, `tests/data/jats_exhibits.json` and `tests/data/jats_exhibits.rendition.json` written, exit 0. **A non-zero exit means a population was unreportable** and the corpus went to `*.unreportable.json`; read the report, fix the cause, re-run. Do not commit an unreportable draw.
 
 - [ ] **Step 3: Draw the back-filled window**
 
