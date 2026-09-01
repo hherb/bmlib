@@ -455,6 +455,13 @@ def _package_identity(path: Path) -> str:
     sibling was found" and "a sibling was found and rejected" looking
     identical to a reader of the corpus alone.
 
+    **This is the corpus header's field, not the journal's.** What it
+    returns is a name a reader anywhere can re-download; it is deliberately
+    not unique on this machine, and two different directories sharing an
+    accession range share it. The journal's draw identity uses
+    :func:`_package_location` beside it for exactly that reason — see there
+    before merging the two.
+
     Args:
         path: A package directory or tarball, as passed to ``--package``.
 
@@ -514,6 +521,56 @@ def _package_identity(path: Path) -> str:
         )
         return path.name
     return sibling.name
+
+
+def _package_location(path: Path) -> str:
+    """Where *path* actually is on this machine, for the journal's draw identity.
+
+    Deliberately **not** :func:`_package_identity`, and the two must not be
+    collapsed into one field: they look like duplicates and answer different
+    questions for different readers.
+
+    The corpus header's ``packages`` names the *public artifact* — the whole
+    point of the name recovery in :func:`_package_identity` — so that a
+    reader anywhere can re-download
+    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`` and re-derive the
+    draw. A machine path there would say nothing to them, and putting one
+    there would undo that recovery.
+
+    The journal's draw identity asks something narrower and entirely local:
+    *are the rows already in this journal drawn from the same bytes this run
+    is about to read?* The artifact name cannot answer it, because PMC's own
+    baseline extraction names a directory by accession range alone —
+    independent of subset and of snapshot date, which is the layout this
+    repo's packages already use. Two genuinely different packages under
+    different parents therefore share a basename; where neither has its
+    tarball beside it, :func:`_package_identity` falls back to that shared
+    basename for both, the header's ``packages`` matches, and the two draws
+    pool in silence. Reproduced in review at exit 0: four articles carrying
+    two figures each, pooled with four carrying seven, under one
+    ``"packages": ["PMC012xxxxxx"]``.
+
+    Neither field subsumes the other, which is why both are compared. The
+    path catches two different directories sharing a basename; the artifact
+    name catches a *different snapshot's* tarball swapped in beside a
+    directory that has not moved, which no path can see.
+
+    Resolved rather than merely made absolute, so a symlink and its target,
+    or two spellings of one directory (``a/../a``), are one location and
+    resume normally — resuming the same draw is the journal's entire
+    purpose, and a check that refuses it trades one defect for another. The
+    converse, a package directory that has *moved* since the journal was
+    written, is refused: that costs a re-draw and is the direction to fail
+    in, since accepting two different packages is the defect and refusing
+    one package twice is an inconvenience.
+
+    Args:
+        path: A package directory or tarball, as passed to ``--package``.
+
+    Returns:
+        *path*'s resolved absolute path, as a string.
+    """
+    return str(path.resolve())
 
 
 def iter_package_articles(path: Path) -> Iterator[tuple[str, bytes]]:
@@ -741,12 +798,26 @@ def _journal_disagreement(
     with the *second* run's `packages`/`first_year` over a mix of both
     runs' rows; a different `--seed` at one `-o` pooled the same way. Same
     `(source, rendition)`, different draw. `draw` is therefore part of what
-    is checked here too — for a `--package` run, its packages (by
-    :func:`_package_identity`, not a raw path), year window and seed; for
-    the live source, its month window — everything that decides *which*
-    identifiers this run is drawing, deliberately excluding `target` (a
-    resumed run growing its target is the ordinary top-up workflow this
-    whole journal mechanism exists for, not a disagreement).
+    is checked here too — for a `--package` run, its packages, its year
+    window and its seed; for the live source, its month window —
+    everything that decides *which* identifiers this run is drawing,
+    deliberately excluding `target` (a resumed run growing its target is
+    the ordinary top-up workflow this whole journal mechanism exists for,
+    not a disagreement).
+
+    *A package is identified twice over, on purpose* (review round 4,
+    reproduced at exit 0). `draw["packages"]` carries the public artifact
+    name (:func:`_package_identity`) and `draw["package_paths"]` the
+    resolved location it was read from (:func:`_package_location`). They
+    look like one field written twice and are not: PMC's baseline
+    extraction names a directory by accession range alone, so two
+    genuinely different packages under different parents share a basename
+    and — with no tarball beside either to recover the rest of the name
+    from — share an artifact name too, which let four articles carrying
+    two figures pool with four carrying seven under one
+    `"packages": ["PMC012xxxxxx"]`. The path closes that; the name closes
+    what a path cannot see, a different snapshot's tarball swapped in
+    beside a directory that has not moved. See :func:`_package_location`.
 
     Args:
         journal: The path this run is about to read from and append to.
@@ -2404,6 +2475,19 @@ def main() -> int:
         packages_identity = sorted(_package_identity(p) for p in args.package)
         draw_identity: dict[str, Any] = {
             "packages": packages_identity,
+            # Where those packages actually are, which the artifact name
+            # above cannot say and must not be replaced by — see
+            # `_package_location`, which argues the separation in full. Both
+            # are kept because neither subsumes the other: the name catches a
+            # different snapshot's tarball swapped in beside an unmoved
+            # directory, the path catches two different directories sharing a
+            # basename (review round 4, reproduced at exit 0 — PMC's own
+            # extraction names a directory by accession range alone, so the
+            # collision is the ordinary layout rather than a contrived one).
+            # This field is the journal's alone; the corpus header keeps
+            # naming the public artifact, so a reader can still re-derive the
+            # draw from it.
+            "package_paths": sorted(_package_location(p) for p in args.package),
             "first_year": args.from_year,
             "last_year": args.to_year,
             "seed": args.seed,

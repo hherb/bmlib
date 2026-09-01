@@ -3156,6 +3156,133 @@ class TestTheJournalDoesNotPoolRenditions:
         second_corpus = json.loads(output.read_text())
         assert second_corpus["articles"] == 10
 
+    def _argv(self, package: Path, output: Path) -> list[str]:
+        """One `--package` command line, so only the package path varies below."""
+        return [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "4",
+            "--seed",
+            "0",
+            "-o",
+            str(output),
+        ]
+
+    def test_two_packages_sharing_a_basename_at_different_paths_is_refused(self, tmp_path):
+        """Review round 4, reproduced live: `_package_identity` returns a bare
+        *name* on every branch, so two genuinely different package
+        directories sharing a basename under different parents produce one
+        identity string, `draw["packages"]` matches, and the journal pools
+        them. Not contrived — PMC's own baseline extraction names a directory
+        by accession range alone, independent of subset and snapshot date,
+        which is the layout this repo's packages already use. Before the fix
+        run 2 exited 0 and the corpus held all 8 rows (figure counts 2 and 7
+        side by side) under `"packages": ["PMC012xxxxxx"]`."""
+        package_a = self._package(
+            tmp_path / "locationA" / "PMC012xxxxxx", [f"A{i:08d}" for i in range(4)], n_figs=2
+        )
+        package_b = self._package(
+            tmp_path / "locationB" / "PMC012xxxxxx", [f"B{i:08d}" for i in range(4)], n_figs=7
+        )
+        output = tmp_path / "out" / "jats_exhibits.json"
+        # The axis under test, isolated: every other field of the draw
+        # identity is identical between the two runs by construction, and
+        # the artifact-name field agrees too — so a refusal below can only
+        # come from the resolved path.
+        assert sampler._package_identity(package_a) == sampler._package_identity(package_b)
+
+        with mock.patch.object(sys, "argv", self._argv(package_a, output)):
+            run1_code = sampler.main()
+        with mock.patch.object(sys, "argv", self._argv(package_b, output)):
+            run2_code = sampler.main()
+
+        assert run1_code == 0
+        assert run2_code != 0
+        # Package A's corpus is untouched: never grown by package B's rows,
+        # never restamped.
+        corpus = json.loads(output.read_text())
+        assert {row["pmcid"] for row in corpus["rows"]} == {f"A{i:08d}" for i in range(4)}
+        assert sorted(row["figures"] for row in corpus["rows"]) == [2, 2, 2, 2]
+
+    def test_the_same_package_at_the_same_path_still_resumes(self, tmp_path):
+        """The negative control the path check must not break: resuming the
+        identical draw from the identical directory is the journal's entire
+        purpose, so a check strict enough to refuse it would trade one defect
+        for another. Run 2 re-reads run 1's rows and completes."""
+        package = self._package(
+            tmp_path / "locationA" / "PMC012xxxxxx", [f"A{i:08d}" for i in range(4)], n_figs=2
+        )
+        output = tmp_path / "out" / "jats_exhibits.json"
+
+        with mock.patch.object(sys, "argv", self._argv(package, output)):
+            run1_code = sampler.main()
+        with mock.patch.object(sys, "argv", self._argv(package, output)):
+            run2_code = sampler.main()
+
+        assert run1_code == 0
+        assert run2_code == 0
+        corpus = json.loads(output.read_text())
+        assert corpus["articles"] == 4
+        assert {row["pmcid"] for row in corpus["rows"]} == {f"A{i:08d}" for i in range(4)}
+
+    def test_the_same_package_reached_by_another_spelling_still_resumes(self, tmp_path):
+        """Resolved, not merely stringified: one directory reached by two
+        spellings of its path is one location, so an un-normalised `a/../a`
+        resumes rather than being refused as a second package. A raw
+        `str(path)` in the draw identity would refuse this, which is a
+        false refusal on the ordinary shell shape of the same argument."""
+        package = self._package(
+            tmp_path / "locationA" / "PMC012xxxxxx", [f"A{i:08d}" for i in range(4)], n_figs=2
+        )
+        detoured = tmp_path / "locationA" / ".." / "locationA" / "PMC012xxxxxx"
+        assert str(detoured) != str(package)
+        assert detoured.resolve() == package.resolve()
+        output = tmp_path / "out" / "jats_exhibits.json"
+
+        with mock.patch.object(sys, "argv", self._argv(package, output)):
+            run1_code = sampler.main()
+        with mock.patch.object(sys, "argv", self._argv(detoured, output)):
+            run2_code = sampler.main()
+
+        assert run1_code == 0
+        assert run2_code == 0
+        assert json.loads(output.read_text())["articles"] == 4
+
+    def test_the_journal_records_the_path_and_the_corpus_records_the_artifact(self, tmp_path):
+        """The two identities are separate on purpose and must stay separate.
+
+        The journal's draw identity is a question about *this machine* — did
+        these rows come from the bytes this run is about to read — so it
+        carries the resolved path. The corpus header's `packages` is the
+        *public artifact name*, whose job is to let a reader re-download it
+        and re-derive the draw; a machine path there would defeat that. This
+        pins both halves, so "deduplicating" the two fields into one breaks a
+        test whichever direction it is done in."""
+        package = self._package(
+            tmp_path / "locationA" / "PMC012xxxxxx", [f"A{i:08d}" for i in range(4)], n_figs=2
+        )
+        output = tmp_path / "out" / "jats_exhibits.json"
+        with mock.patch.object(sys, "argv", self._argv(package, output)):
+            assert sampler.main() == 0
+
+        journal = output.with_suffix(".journal.jsonl")
+        header = json.loads(journal.read_text().splitlines()[0])
+        assert header[sampler._JOURNAL_HEADER_KEY] is True
+        assert header["draw"]["package_paths"] == [str(package.resolve())]
+        assert header["draw"]["packages"] == ["PMC012xxxxxx"]
+
+        window = json.loads(output.read_text())["window"]
+        assert window["packages"] == ["PMC012xxxxxx"]
+        # No machine path anywhere in the public header — the whole reason
+        # the two identities are not one field.
+        assert str(tmp_path) not in json.dumps(window)
+
 
 class TestTheJournalHeaderDisagreementCheck:
     """`_journal_disagreement` and `_ensure_journal_header` in isolation —
