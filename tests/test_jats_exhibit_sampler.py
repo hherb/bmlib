@@ -1317,12 +1317,14 @@ class TestReadingABaselinePackage:
         with pytest.raises(sampler.PackageError, match="stray.xml"):
             list(sampler.iter_package_articles(stray))
 
-    def test_an_uncompressed_tar_is_a_package_error_not_a_raw_read_error(self, tmp_path):
+    def test_an_uncompressed_tar_is_refused_like_any_other_non_package(self, tmp_path):
         """`tarfile.is_tarfile()` accepts an uncompressed `.tar` — it really
         is a tarball — but the `"r|gz"` open mode this module always uses
-        then refuses it with `tarfile.ReadError`, not `PackageError`. Left
-        unguarded, that is a second exception type a caller has to know to
-        catch on top of this function's own documented one."""
+        cannot read one. `_is_gzip_file` is what this function's own guard
+        tests, and it is false here (no gzip magic bytes), so an
+        uncompressed `.tar` never reaches the `tarfile.open` call at all —
+        it is refused by the same final branch as any other non-package
+        path, with the same message."""
         import tarfile
 
         path = tmp_path / "oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.tar"
@@ -1332,7 +1334,20 @@ class TestReadingABaselinePackage:
             info.size = len(data)
             tar.addfile(info, io.BytesIO(data))
 
-        with pytest.raises(sampler.PackageError, match="not gzip-compressed"):
+        with pytest.raises(sampler.PackageError, match="gzip-compressed tarball"):
+            list(sampler.iter_package_articles(path))
+
+    def test_gzip_compressed_content_that_is_not_a_tarball_is_a_package_error(self, tmp_path):
+        """The complementary case `_is_gzip_file` cannot catch: real gzip
+        magic bytes, but the decompressed stream is not a tar archive. This
+        is the one shape that still reaches `tarfile.open` and has to be
+        converted from `tarfile.ReadError` to `PackageError` there."""
+        import gzip
+
+        path = tmp_path / "oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.tar.gz"
+        path.write_bytes(gzip.compress(b"not a tar file at all, just some bytes"))
+
+        with pytest.raises(sampler.PackageError, match="gzip-compressed but not a tarball"):
             list(sampler.iter_package_articles(path))
 
     def test_the_year_is_the_earliest_any_pub_date_declares(self):
@@ -1579,3 +1594,74 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
         assert refusal is not None
         assert "--months" in refusal
         assert "displaced window" not in refusal
+
+    def test_an_uncompressed_tar_is_refused_up_front(self, tmp_path):
+        """The eager check must accept exactly what the draw accepts — a
+        directory, or a gzip-compressed tarball — not merely a real
+        tarball. `tarfile.is_tarfile()` alone would let an uncompressed
+        `.tar` slip past here and fail deep inside `package_candidates`
+        instead; this is the gap issue 138's fix round 2 closes."""
+        import tarfile
+
+        path = tmp_path / "oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.tar"
+        with tarfile.open(path, "w") as tar:
+            data = b"<article/>"
+            info = tarfile.TarInfo("PMC000xxxxxx/PMC1.xml")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+
+        refusal = sampler._validate_args(self._args(package=[path], from_year=2023, to_year=2025))
+
+        assert refusal is not None
+        assert "gzip-compressed tarball" in refusal
+
+    def test_a_real_gzip_tarball_still_passes_validation(self, tmp_path):
+        """The negative control for the check above: a genuine `.tar.gz`
+        must not be caught by it."""
+        import tarfile
+
+        path = tmp_path / "oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.tar.gz"
+        with tarfile.open(path, "w:gz") as tar:
+            data = b"<article/>"
+            info = tarfile.TarInfo("PMC000xxxxxx/PMC1.xml")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+
+        refusal = sampler._validate_args(self._args(package=[path], from_year=2023, to_year=2025))
+
+        assert refusal is None
+
+    def test_validate_args_and_iter_package_articles_agree_on_every_path(self, tmp_path):
+        """`_validate_args`'s eager check and `iter_package_articles`'s own
+        guard are meant to test the same predicate (`_is_package_path`) —
+        this builds one accepted path and one refused path and checks both
+        functions reach the same verdict on each, so a future edit to one
+        cannot silently stop matching the other."""
+        import tarfile
+
+        accepted = tmp_path / "accepted.tar.gz"
+        with tarfile.open(accepted, "w:gz") as tar:
+            data = b"<article/>"
+            info = tarfile.TarInfo("PMC1.xml")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+
+        refused = tmp_path / "refused.tar"
+        with tarfile.open(refused, "w") as tar:
+            data = b"<article/>"
+            info = tarfile.TarInfo("PMC1.xml")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+
+        for path in (accepted, refused):
+            validated = (
+                sampler._validate_args(self._args(package=[path], from_year=2023, to_year=2025))
+                is None
+            )
+            try:
+                list(sampler.iter_package_articles(path))
+                iterated = True
+            except sampler.PackageError:
+                iterated = False
+
+            assert validated == iterated, path

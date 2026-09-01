@@ -339,6 +339,40 @@ def article_year(xml: bytes) -> int | None:
     return min(years) if years else None
 
 
+def _is_gzip_file(path: Path) -> bool:
+    """Whether *path* starts with the two-byte gzip magic number.
+
+    Cheaper than ``tarfile.is_tarfile()``, which opens the file and parses a
+    tar header — and, unlike it, false for an uncompressed ``.tar``:
+    :func:`iter_package_articles` always opens with ``"r|gz"``, so a real
+    tarball that is not gzip-compressed is not a package this module can
+    read. Any read failure (permissions, a path that vanished between the
+    caller's check and this one) reads as "not gzip", not as an error here —
+    the caller's own open call is what should report it.
+    """
+    try:
+        with path.open("rb") as handle:
+            return handle.read(2) == b"\x1f\x8b"
+    except OSError:
+        return False
+
+
+def _is_package_path(path: Path) -> bool:
+    """Whether *path* is something :func:`iter_package_articles` can read.
+
+    A directory, or a file beginning with the gzip magic bytes. This is the
+    *same* predicate :func:`iter_package_articles` tests, shared rather than
+    reimplemented so the two cannot silently drift apart the way
+    ``tarfile.is_tarfile()`` (true for an uncompressed ``.tar``) and this
+    module's ``"r|gz"`` open mode (false for one) once did (issue #138):
+    :func:`_validate_args` used the former as an eager check while the
+    latter decided what the draw actually accepted, so a mistyped
+    ``--package`` in that one gap passed validation and still failed deep
+    inside the draw.
+    """
+    return path.is_dir() or (path.is_file() and _is_gzip_file(path))
+
+
 def iter_package_articles(path: Path) -> Iterator[tuple[str, bytes]]:
     """Yield ``(pmcid, raw_xml)`` for every article in one baseline package.
 
@@ -353,22 +387,20 @@ def iter_package_articles(path: Path) -> Iterator[tuple[str, bytes]]:
         The PMC identifier (the member's stem) and its bytes.
 
     Raises:
-        PackageError: If *path* is neither a directory nor a tarball, or is a
-            tarball ``tarfile.is_tarfile()`` accepts but the ``"r|gz"`` open
-            mode below refuses — an uncompressed ``.tar`` passes that check
-            (it is a real tarball) and then fails as ``tarfile.ReadError``
-            when streaming assumes gzip. Both are refused rather than
-            skipped: a mistyped ``--package`` that silently contributed
-            nothing would print a rate over a draw nobody asked for, which is
-            what :func:`_validate_args` exists to prevent — and a caller
-            catching this function's own documented exception should not
-            also have to catch ``tarfile``'s.
+        PackageError: If *path* is neither a directory nor a gzip-compressed
+            file (:func:`_is_package_path` is false), or is gzip-compressed
+            but not a tarball once opened. Refused rather than skipped: a
+            mistyped ``--package`` that silently contributed nothing would
+            print a rate over a draw nobody asked for, which is what
+            :func:`_validate_args` exists to prevent — and it tests the same
+            predicate this function does, so nothing that reaches here was
+            not already refused there.
     """
     if path.is_dir():
         for entry in sorted(path.glob("*.xml")):
             yield entry.stem, entry.read_bytes()
         return
-    if path.is_file() and tarfile.is_tarfile(path):
+    if path.is_file() and _is_gzip_file(path):
         try:
             with tarfile.open(path, "r|gz") as tar:
                 for member in tar:
@@ -379,9 +411,9 @@ def iter_package_articles(path: Path) -> Iterator[tuple[str, bytes]]:
                         continue
                     yield Path(member.name).stem, handle.read()
         except tarfile.ReadError as exc:
-            raise PackageError(f"{path} is a tarball but not gzip-compressed: {exc}") from exc
+            raise PackageError(f"{path} is gzip-compressed but not a tarball: {exc}") from exc
         return
-    raise PackageError(f"{path} is neither a package directory nor a tarball")
+    raise PackageError(f"{path} is neither a package directory nor a gzip-compressed tarball")
 
 
 def package_candidates(paths: list[Path], first: int, last: int) -> list[str]:
@@ -1409,11 +1441,17 @@ def _validate_args(args: argparse.Namespace) -> str | None:
     part way through :func:`package_candidates`, after the "N candidates"
     line has already been decided. Checking eagerly means a bad path is
     refused with the same up-front, one-line message every other rule here
-    gives, rather than surfacing as a stack trace out of the draw.
+    gives, rather than surfacing as a stack trace out of the draw. This uses
+    :func:`_is_package_path`, the *same* predicate
+    :func:`iter_package_articles` tests — not a lookalike copy — so the two
+    cannot silently drift the way ``tarfile.is_tarfile()`` (true for an
+    uncompressed ``.tar``) and the ``"r|gz"`` open mode (false for one) once
+    did: that gap is what let a ``.tar`` pass this check and still fail deep
+    inside the draw.
     """
     for path in args.package:
-        if not (path.is_dir() or (path.is_file() and tarfile.is_tarfile(path))):
-            return f"--package {path} is neither a package directory nor a tarball"
+        if not _is_package_path(path):
+            return f"--package {path} is neither a package directory nor a gzip-compressed tarball"
     if args.months < 1:
         return f"--months must be at least 1, got {args.months}"
     if args.months_ago < 0:
