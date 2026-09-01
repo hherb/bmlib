@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-08-31. **0.10.0 is released and on PyPI**; thirteen changes
+_Last updated: 2026-09-02. **0.10.0 is released and on PyPI**; thirteen changes
 sit unreleased on `main` — #73's atomic template install (PR #102), #96/#105's
 partitioning of an over-cap PubMed day (PRs #106 and #114), #109's typed
 article-id (PR #113), #110/#111's JATS sub-article and contributor-group
@@ -11,8 +11,12 @@ sampler (PR #126), #127's image-only table (PR #133),
 contributor name (PR #141), #146/#149's mixed-citation text (PR #148),
 #151's mechanised buffer-read invariant (PR #153, adding no behaviour),
 #112's funder-matching figures (PR #155), and #119's article-only full-text
-scan (PR #159, merged 2026-08-30). All thirteen are on `main` and the working
-tree is clean. All five version places agree at
+scan (PR #159, merged 2026-08-30). All thirteen are on `main`, and a
+fourteenth — the JATS corpus redraw answering #132, #138 and #158 — is open as
+**PR #163** on `fix/138-jats-corpus-redraw`. That one changes **no library
+behaviour**: `jats_parser.py` is AST-identical to `main` with docstrings
+stripped, and what moves is the sampler, the two committed corpora and the
+figures cited from them. All five version places agree at
 0.10.0. Nine of the thirteen are `fulltext` JATS fixes filed within days of
 each other; whoever cuts the next release should describe them together. Every
 unreleased ROADMAP row carries an `*(unreleased)*` marker.
