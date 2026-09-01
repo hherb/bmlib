@@ -719,6 +719,81 @@ class TestHowAContribNamesItsContributorIsCounted:
         assert any("collab" in line for line in section)
 
 
+class TestTheWalkStopsWhereTheParserStops:
+    """Issue #138 — the sampler must count what `jats_parser` routes.
+
+    `<sub-article>` and `<response>` open a region in which the parser fires
+    no handler at all (#110), so a whole-document count is a count of a
+    different thing. The pair of tests below are the two halves: nothing
+    inside a region contributes, and the row still says what the old walk
+    would have said.
+    """
+
+    NESTED = """
+        <fig id="f1"><label>Figure 1</label><caption><p>Ours.</p></caption>
+          <graphic xlink:href="ours.jpg"/></fig>
+        <sub-article article-type="peer-review">
+          <front-stub><contrib-group><contrib contrib-type="author">
+            <name><surname>Reviewer</surname></name></contrib></contrib-group></front-stub>
+          <body>
+            <fig id="rf1"><label>Figure R1</label><caption><p>Theirs.</p></caption>
+              <graphic xlink:href="theirs.jpg"/></fig>
+            <sec><title>Review</title><p>Prose.</p></sec>
+          </body>
+        </sub-article>"""
+
+    def test_nothing_inside_a_nested_article_is_counted(self):
+        row = sampler.measure_article("PMC1", _article(self.NESTED))
+
+        assert row.figures == 1
+        assert row.graphics == 1
+        assert row.captions == 1
+        assert row.contribs == 0
+        assert row.sections == 0
+        assert row.nested_article_regions == 1
+        assert row.label_parents == {"fig": 1}
+
+    def test_the_row_records_what_the_unscoped_walk_would_have_said(self):
+        """The measurement #158 wants, not merely the correction #138 asks for."""
+        row = sampler.measure_article("PMC1", _article(self.NESTED))
+
+        assert row.unscoped["figures"] == 2
+        assert row.unscoped["graphics"] == 2
+        assert row.unscoped["contribs"] == 1
+        assert row.unscoped["label_parents"] == {"fig": 2}
+        # A field the region cannot move is absent, not zero-valued.
+        assert "tables" not in row.unscoped
+
+    def test_an_article_with_no_nested_article_records_no_difference(self):
+        row = sampler.measure_article(
+            "PMC1", _article("<fig id='f1'><label>Figure 1</label></fig>")
+        )
+
+        assert row.nested_article_regions == 0
+        assert row.unscoped == {}
+
+    def test_a_response_is_a_region_too_and_nesting_is_visible(self):
+        """`<response>` is the other half of the two-element set, and JATS nests them."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <sub-article><body><p>Round one.</p>
+              <response><body><fig id="rf"><label>F</label></fig></body></response>
+            </body></sub-article>"""),
+        )
+
+        assert row.figures == 0
+        assert row.nested_article_regions == 1
+        assert row.unscoped["nested_article_regions"] == 2
+
+    def test_a_row_written_before_this_counter_reads_as_not_measured(self):
+        """The `NOT_MEASURED` rule — a zero here is also a genuine empty draw."""
+        row = sampler.ArticleMeasurement.from_dict({"pmcid": "PMC1", "figures": 3})
+
+        assert row.nested_article_regions == sampler.NOT_MEASURED
+        assert row.unscoped == {}
+
+
 class TestTheSamplerDoesNotShareTheParsersPredicates:
     """A corpus labelled by the rule under test can only confirm that rule."""
 
@@ -1061,6 +1136,12 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         maps: dict[str, dict[str, int]] = {}
         for row in rows:
             for key, value in row.items():
+                if key == "unscoped":
+                    # Not a population: it is what the *pre-#138* walk would
+                    # have said, kept so the correction is measurable. Summing
+                    # it into the counters would restore exactly the inflation
+                    # the scoping removed.
+                    continue
                 if isinstance(value, int):
                     ints[key] = ints.get(key, 0) + value
                 elif isinstance(value, dict):

@@ -173,6 +173,18 @@ _THUMB_PATTERN = re.compile(r"thumb", re.IGNORECASE)
 # parser's `_GRAPHIC_TRANSPARENT_WRAPPERS`.
 _TRANSPARENT_WRAPPERS = frozenset({"alternatives", "p"})
 
+# The two elements the parser suppresses entirely (#110), restated here rather
+# than imported for the same reason every other predicate in this file is: a
+# corpus labelled by the rule under test can only confirm that rule. The set is
+# complete for a structural reason — exactly three JATS elements admit
+# `<front>`/`<front-stub>` and `<body>`, and the third is `<article>` itself.
+_NESTED_ARTICLE_ELEMENTS = frozenset({"sub-article", "response"})
+
+# The fourth counter generation (issue #138), and the sentinel a row written
+# before it is loaded with — same rule as the three above: an article carrying
+# no nested article genuinely measures zero here, so zero cannot mean "absent".
+_SCOPE_SIDE_COUNTERS = ("nested_article_regions",)
+
 # The counters that arrived with issue #135, and the sentinel a row written
 # before them is loaded with. Zero is not usable as "absent" here: it is also
 # what a draw in which no table deposits an image genuinely measures, and #127
@@ -301,6 +313,14 @@ class ArticleMeasurement:
     nested_contribs: int = 0
     collabs_with_a_roster: int = 0
     articles_losing_every_author: int = 0
+    nested_article_regions: int = 0
+    # What the pre-#138 whole-document walk would have said, for the fields
+    # where that differs — and *only* those, so an article carrying no nested
+    # article contributes an empty mapping rather than a second copy of itself.
+    # Recording it is what makes the redraw a measurement of the correction
+    # rather than a silent application of it: #158's four disagreeing rates are
+    # exactly the question "how much does the region inflate a count?".
+    unscoped: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise for the journal and the corpus file."""
@@ -325,7 +345,12 @@ class ArticleMeasurement:
         :meth:`Totals.measured` is what tests it.
         """
         row = cls(pmcid=str(data["pmcid"]))
-        for name in (*_TABLE_SIDE_COUNTERS, *_OWNER_SIDE_COUNTERS, *_CONTRIB_SIDE_COUNTERS):
+        for name in (
+            *_TABLE_SIDE_COUNTERS,
+            *_OWNER_SIDE_COUNTERS,
+            *_CONTRIB_SIDE_COUNTERS,
+            *_SCOPE_SIDE_COUNTERS,
+        ):
             if name not in data:
                 setattr(row, name, NOT_MEASURED)
         for key, value in data.items():
@@ -355,28 +380,34 @@ def _looks_archival(el: ET.Element) -> bool:
     return _extension(_href(el)).lstrip(".") in _ARCHIVAL_HINTS
 
 
-def measure_article(pmcid: str, xml: bytes) -> ArticleMeasurement | None:
-    """Walk one article's JATS and record every population it contributes to.
+def _measure_tree(pmcid: str, root: ET.Element, *, scoped: bool) -> ArticleMeasurement:
+    """Walk one parsed article and record every population it contributes to.
 
     Args:
         pmcid: The article's PMC identifier, used only to label the row.
-        xml: The raw ``fullTextXML`` body.
+        root: The parsed document.
+        scoped: Whether to stop at a nested-article region, the way the parser
+            does. ``False`` reproduces the pre-#138 whole-document walk, which
+            is what the ``unscoped`` diff is taken against.
 
     Returns:
-        The measurement, or ``None`` if the document would not parse — which
-        makes the article *unmeasured* rather than empty.
+        The measurement.
     """
-    try:
-        root = ET.fromstring(xml)
-    except ET.ParseError:
-        return None
-
     row = ArticleMeasurement(pmcid=pmcid)
     transparent = set(_TRANSPARENT_WRAPPERS)
 
     def walk(el: ET.Element, exhibit: str | None, chain: list[str], exhibit_depth: int) -> None:
         for child in el:
             tag = _local(child.tag)
+            if tag in _NESTED_ARTICLE_ELEMENTS:
+                # Counted either way — the count is #158's population — but
+                # descended into only when reproducing the old walk. Scoped,
+                # a region nested inside another is never reached, so the
+                # scoped count is of top-level regions and the unscoped one
+                # of all of them; the difference is the nesting rate.
+                row.nested_article_regions += 1
+                if scoped:
+                    continue
             if tag in _EXHIBITS:
                 _record_exhibit(child, tag, exhibit_depth, row)
                 walk(child, tag, [tag], exhibit_depth + 1)
@@ -411,27 +442,65 @@ def measure_article(pmcid: str, xml: bytes) -> ArticleMeasurement | None:
             walk(child, exhibit, chain + [tag], exhibit_depth)
 
     walk(root, None, [], 0)
-    # A per-article question, so it is answered once the walk is over: an
-    # article naming no contributor with `<name>` loses *every* author to the
-    # two undivided spellings, which is the difference between #140 and #120 —
-    # 100% of an article's authors against 34 of 1,025 articles losing at least
-    # one contributor. That draw counted `<contrib>` elements carrying no
-    # `<surname>`, a set both spellings share, so it is a rate for neither
-    # alone. Asked of the spellings actually deposited rather than of bmlib's
-    # output, so it stays answerable after the fix that makes the loss stop.
-    #
-    # **Whole-document, and this counter is the one that suffers for it.** The
-    # walk descends into `<sub-article>`, which the parser suppresses, and a
-    # peer-review deposit names its reviewers with `<contrib><name>` — the
-    # densest `<contrib>` construct JATS has. One such reviewer sets `name` and
-    # silently clears this flag on an article whose own contributors are all
-    # `<collab>`, which is the counter failing in the direction it exists to
-    # detect. Issue #138 is the scope-and-redraw; until it runs, read a zero
-    # here as a floor and not as a measurement.
     undivided = row.contrib_name_spellings["string-name"] + row.contrib_name_spellings["collab"]
     if undivided and not row.contrib_name_spellings["name"]:
         row.articles_losing_every_author = 1
     return row
+
+
+def measure_article(pmcid: str, xml: bytes) -> ArticleMeasurement | None:
+    """Walk one article's JATS and record every population it contributes to.
+
+    The walk is scoped to what ``jats_parser`` routes: it stops at a
+    ``<sub-article>`` or ``<response>``, in which the parser fires no handler
+    (#110). It is then run a second time *unscoped*, and the fields that
+    differ are recorded on the row — so the corpus says how much the old
+    whole-document walk overstated each population, which is the measurement
+    issue #158's four disagreeing rates are asking for.
+
+    Args:
+        pmcid: The article's PMC identifier, used only to label the row.
+        xml: The raw JATS body.
+
+    Returns:
+        The measurement, or ``None`` if the document would not parse — which
+        makes the article *unmeasured* rather than empty.
+    """
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        return None
+
+    row = _measure_tree(pmcid, root, scoped=True)
+    if not row.nested_article_regions:
+        # No region, so nothing can differ. Skipping the second walk here is
+        # not only an optimisation: it keeps `unscoped` empty for the ~96% of
+        # articles that carry no region, which is what stops the corpus
+        # doubling in size.
+        return row
+    shadow = _measure_tree(pmcid, root, scoped=False)
+    row.unscoped = _row_difference(row, shadow)
+    return row
+
+
+def _row_difference(scoped: ArticleMeasurement, shadow: ArticleMeasurement) -> dict[str, Any]:
+    """The fields where the unscoped walk disagrees, and only those.
+
+    Args:
+        scoped: The row as the parser would see the document.
+        shadow: The row the pre-#138 whole-document walk produces.
+
+    Returns:
+        A mapping from field name to the unscoped value, ``Counter`` fields
+        rendered as plain dicts so the row serialises without special cases.
+    """
+    out: dict[str, Any] = {}
+    for name, value in shadow.__dict__.items():
+        if name in ("pmcid", "unscoped"):
+            continue
+        if value != getattr(scoped, name):
+            out[name] = dict(value) if isinstance(value, Counter) else value
+    return out
 
 
 def _record_contrib(el: ET.Element, chain: list[str], row: ArticleMeasurement) -> None:
