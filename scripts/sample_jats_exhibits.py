@@ -1315,6 +1315,31 @@ def compare_renditions(
     }
 
 
+def _comparison_reportable(comparison: dict[str, Any], held: int) -> bool:
+    """Is a `--compare-europepmc` comparison worth reporting as evidence?
+
+    The same rule `Totals.reportable` applies to the corpus draw — an
+    unmeasured share past `UNMEASURED_SHARE_ERROR_THRESHOLD` is not a random
+    sample of the population — applied here to what was *held* for
+    comparison rather than to what was drawn. A throttled Europe PMC serving
+    only a small minority of the held articles must not write a rate a
+    later reader takes as measured, any more than an empty `for_comparison`
+    may (that case is refused in `main` before this function is called).
+
+    Args:
+        comparison: A :func:`compare_renditions` result.
+        held: How many articles were held for the comparison — the
+            denominator `comparison["unmeasured"]` is a share of. Assumed
+            never zero: every held article resolves to either `compared` or
+            `unmeasured`, and the zero case is `main`'s empty-net refusal.
+
+    Returns:
+        Whether the unmeasured share is at or below
+        `UNMEASURED_SHARE_ERROR_THRESHOLD`.
+    """
+    return comparison["unmeasured"] / held <= UNMEASURED_SHARE_ERROR_THRESHOLD
+
+
 def _month_windows(months: int, today: date, skip: int = 0) -> list[tuple[str, str]]:
     """*months* whole calendar months, most recent first, after skipping *skip*.
 
@@ -2129,6 +2154,14 @@ def main() -> int:
                 f"{comparison['unmeasured']} unmeasured, "
                 f"{comparison['articles_differing']} differing"
             )
+            if not _comparison_reportable(comparison, len(for_comparison)):
+                rendition_ok = False
+                share = comparison["unmeasured"] / len(for_comparison)
+                print(
+                    f"ERROR: {share:.0%} of held articles were unmeasured "
+                    f"(threshold {UNMEASURED_SHARE_ERROR_THRESHOLD:.0%}). This comparison "
+                    "is not evidence."
+                )
         rendition_destination = (
             rendition_path if rendition_ok else rendition_path.with_suffix(".unreportable.json")
         )

@@ -2162,6 +2162,90 @@ class TestTheCompareEuropepmcFlag:
         assert sampler._validate_args(_package_run_args()) is None
 
 
+class TestTheComparisonUnmeasuredShareIsReportable:
+    """Finding 3(c) from a review: the unreportable rule was applied to
+    "nothing held" (`TestTheEmptyComparisonNet`) but not to "almost nothing
+    served". A run where Europe PMC serves only a small minority of the held
+    articles must not write the canonical artifact at exit 0 — the same
+    `UNMEASURED_SHARE_ERROR_THRESHOLD` rule `Totals.reportable` applies to
+    the corpus draw, applied here to what was held for comparison. The
+    review's own live repro: `_fetch` serving 1 of 8 held wrote
+    `tests/data/jats_exhibits.rendition.json` at exit 0 with `{"compared": 1,
+    "unmeasured": 7, ...}` — 87.5% unmeasured against a 20% threshold.
+    """
+
+    def test_a_share_just_past_the_threshold_is_not_reportable(self):
+        """21 of 100 held unmeasured is 21% — just past the 20% threshold,
+        not the review's own 87.5% example. The boundary is what a
+        threshold check can get wrong; the middle of the range is not."""
+        assert sampler._comparison_reportable({"unmeasured": 21}, held=100) is False
+
+    def test_a_share_exactly_at_the_threshold_is_still_reportable(self):
+        """20 of 100 is exactly 20% — `Totals.reportable` uses `<=`, so the
+        threshold itself is inside the reportable range, not outside it."""
+        assert sampler._comparison_reportable({"unmeasured": 20}, held=100) is True
+
+    def test_zero_unmeasured_is_reportable(self):
+        """Negative control at the other end: every held article measured
+        is unambiguously reportable."""
+        assert sampler._comparison_reportable({"unmeasured": 0}, held=8) is True
+
+    def _package(self, tmp_path: Path, n: int, n_figs: int) -> Path:
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        for i in range(n):
+            figs = "".join(f"<fig id='f{j}'/>" for j in range(n_figs))
+            (tmp_path / f"PMC{i:08d}.xml").write_text(
+                '<article xmlns:xlink="http://www.w3.org/1999/xlink">'
+                "<front><article-meta>"
+                "<pub-date pub-type='epub'><year>2024</year></pub-date>"
+                f"</article-meta></front><body>{figs}</body></article>"
+            )
+        return tmp_path
+
+    def test_a_throttled_live_run_refuses_the_canonical_name(self, tmp_path):
+        """The review's own reproduction, end to end through `main()`: 8
+        held, only 1 served — 87.5% unmeasured. This is the wiring check
+        (`main` actually routes `_comparison_reportable`'s verdict to
+        `rendition_ok`, the exit code and the file name); the two tests
+        above pin the boundary precisely, which this scenario does not."""
+        package = self._package(tmp_path / "package", n=8, n_figs=2)
+        output = tmp_path / "out" / "jats_exhibits.json"
+        served_xml = _article("<fig id='f1'/>")
+        # Only PMC00000000 is served; the other 7 are refused by Europe PMC.
+        responses = {"PMC00000000": served_xml}
+
+        def fake_fetch(client, url, pace):
+            for pmcid, xml in responses.items():
+                if pmcid in url:
+                    return xml
+            return None
+
+        argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "8",
+            "-o",
+            str(output),
+            "--compare-europepmc",
+            "8",
+        ]
+        with mock.patch.object(sampler, "_fetch", side_effect=fake_fetch):
+            with mock.patch.object(sys, "argv", argv):
+                code = sampler.main()
+
+        assert code != 0
+        assert not output.with_suffix(".rendition.json").exists()
+        unreportable = json.loads(output.with_suffix(".rendition.unreportable.json").read_text())
+        assert unreportable["comparison"]["compared"] == 1
+        assert unreportable["comparison"]["unmeasured"] == 7
+
+
 class TestCompareEuropepmcSurvivesAJournalResume:
     """The Critical a review caught: `main()`'s `--compare-europepmc` must
     not silently measure nothing on the ordinary workflow of drawing a
@@ -2219,7 +2303,12 @@ class TestCompareEuropepmcSurvivesAJournalResume:
             return sampler.main()
 
     def test_a_resumed_run_compares_the_same_articles_as_a_fresh_one(self, tmp_path):
-        package = self._package(tmp_path / "package", n=8, n_figs=2)
+        # 12 articles, target 8: `drawn` (8 ids) and `candidates` (12 ids)
+        # genuinely differ. At `target == len(package)` the two pools are
+        # identical and no assertion here could tell a `candidates`-for-
+        # `drawn` mix-up in `_hold_for_comparison`'s call site apart from
+        # the fix — a review-caught gap.
+        package = self._package(tmp_path / "package", n=12, n_figs=2)
         output = tmp_path / "out" / "jats_exhibits.json"
         # Every archive article carries 2 figures; the served rendition
         # (every fetch, mocked) carries 1 — so every compared article
@@ -2242,6 +2331,27 @@ class TestCompareEuropepmcSurvivesAJournalResume:
         assert fresh["comparison"]["unmeasured"] == 0
         assert fresh["comparison"]["articles_differing"] == 4
 
+        # The artifact is re-derivable, not just a set of counts: it must
+        # carry the same provenance the corpus itself records. A review
+        # caught this assertion missing (dropping `**window` from
+        # `provenance` left every existing test green).
+        assert fresh["source"] == "package"
+        assert fresh["packages"] == [package.name]
+        assert fresh["first_year"] == 2024
+        assert fresh["last_year"] == 2024
+        assert fresh["target"] == 8
+        assert fresh["seed"] == 0
+        assert fresh["requested"] == 4
+
+        # The held articles are a seeded sample of the corpus's own 8-article
+        # draw, never of the wider 12-article candidate pool — pinned by
+        # identity, not merely by count, since a `candidates`-for-`drawn`
+        # mix-up would still hold exactly 4 articles.
+        candidate_ids = [f"PMC{i:08d}" for i in range(12)]
+        expected_drawn = sampler.draw(candidate_ids, 8, seed=0)
+        expected_held = set(sampler.draw(expected_drawn, 4, seed=0))
+        assert set(fresh["comparison"]["deltas"]) == expected_held
+
         # The regression: not merely "non-zero", but identical to the fresh
         # run — the same 4 articles, sampled the same way, from a draw that
         # does not depend on the journal at all.
@@ -2252,7 +2362,7 @@ class TestCompareEuropepmcSurvivesAJournalResume:
         """Verified-good property this fix must not disturb: the comparison
         runs after the corpus is written and must not move it to the
         unreportable path or change its content between the two runs."""
-        package = self._package(tmp_path / "package", n=8, n_figs=2)
+        package = self._package(tmp_path / "package", n=12, n_figs=2)
         output = tmp_path / "out" / "jats_exhibits.json"
         served_xml = _article("<fig id='f1'/>")
 
@@ -2312,3 +2422,61 @@ class TestTheEmptyComparisonNet:
         unreportable = json.loads(output.with_suffix(".rendition.unreportable.json").read_text())
         assert unreportable["held"] == 0
         assert unreportable["comparison"] is None
+
+    def test_the_net_fails_the_exit_code_even_when_the_corpus_is_reportable(self, tmp_path):
+        """Mutant F, from a review: `return 0 if ok else 1`, dropping
+        `rendition_ok`, left every existing test green, because
+        `test_a_target_of_zero_refuses_the_canonical_rendition_name` above
+        reaches the net through a *fresh* `--target 0` run, which also
+        empties `totals.rows` and makes the corpus's own `ok` False on its
+        own — so `ok` alone already produced the right exit code, and the
+        mutant was invisible.
+
+        This gives the net a run where the corpus is independently
+        reportable — a journal populated by a prior real draw — so `ok` is
+        `True` and only `rendition_ok` can account for a non-zero exit."""
+        package = self._package(tmp_path / "package", n=3)
+        output = tmp_path / "out" / "jats_exhibits.json"
+
+        draw_argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "3",
+            "-o",
+            str(output),
+        ]
+        with mock.patch.object(sys, "argv", draw_argv):
+            first_code = sampler.main()
+
+        assert first_code == 0
+        assert not output.with_suffix(".unreportable.json").exists()
+
+        net_argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "0",
+            "-o",
+            str(output),
+            "--compare-europepmc",
+            "2",
+        ]
+        with mock.patch.object(sys, "argv", net_argv):
+            second_code = sampler.main()
+
+        assert second_code != 0
+        # The corpus itself is untouched and still reportable — the net is
+        # the only thing failing this run.
+        assert not output.with_suffix(".unreportable.json").exists()
+        assert output.with_suffix(".rendition.unreportable.json").exists()
