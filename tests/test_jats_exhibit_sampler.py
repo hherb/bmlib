@@ -1317,6 +1317,24 @@ class TestReadingABaselinePackage:
         with pytest.raises(sampler.PackageError, match="stray.xml"):
             list(sampler.iter_package_articles(stray))
 
+    def test_an_uncompressed_tar_is_a_package_error_not_a_raw_read_error(self, tmp_path):
+        """`tarfile.is_tarfile()` accepts an uncompressed `.tar` — it really
+        is a tarball — but the `"r|gz"` open mode this module always uses
+        then refuses it with `tarfile.ReadError`, not `PackageError`. Left
+        unguarded, that is a second exception type a caller has to know to
+        catch on top of this function's own documented one."""
+        import tarfile
+
+        path = tmp_path / "oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.tar"
+        with tarfile.open(path, "w") as tar:
+            data = b"<article/>"
+            info = tarfile.TarInfo("PMC000xxxxxx/PMC1.xml")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+
+        with pytest.raises(sampler.PackageError, match="not gzip-compressed"):
+            list(sampler.iter_package_articles(path))
+
     def test_the_year_is_the_earliest_any_pub_date_declares(self):
         xml = b"""<article><front><article-meta>
             <pub-date pub-type="epub"><year>2024</year></pub-date>
@@ -1423,6 +1441,23 @@ class TestDrawingFromAPackage:
 
         assert sorted(found) == ["PMC1", "PMC3"]
 
+    def test_a_multi_package_merge_is_sorted_regardless_of_package_order(self, tmp_path):
+        """`iter_package_articles` already sorts one directory's own glob, so
+        a single-package fixture can't tell `package_candidates`'s own
+        trailing `sorted(found)` apart from a no-op. Two packages can: merged
+        in package order the two interleave, and only the sort restores one
+        global order — the same order however the two paths are given."""
+        first = tmp_path / "first"
+        second = tmp_path / "second"
+        first.mkdir()
+        second.mkdir()
+        self._package(first, {"PMC3": 2024, "PMC1": 2024})
+        self._package(second, {"PMC4": 2024, "PMC2": 2024})
+
+        expected = ["PMC1", "PMC2", "PMC3", "PMC4"]
+        assert sampler.package_candidates([first, second], 2024, 2024) == expected
+        assert sampler.package_candidates([second, first], 2024, 2024) == expected
+
 
 class TestThePackageRunIsRefusedWhenItWouldMislead:
     """`_validate_args`, which exists to stop a rate being printed over a draw
@@ -1481,3 +1516,66 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
         )
 
         assert refusal is None
+
+    def test_a_nonexistent_package_path_is_refused(self, tmp_path):
+        missing = tmp_path / "does-not-exist"
+
+        refusal = sampler._validate_args(
+            self._args(package=[missing], from_year=2023, to_year=2025)
+        )
+
+        assert refusal is not None
+        assert str(missing) in refusal
+
+    def test_a_window_only_partly_overlapping_the_recent_one_is_still_displaced(self, tmp_path):
+        """Containment, not merely `to_year >= _RECENT_WINDOW_FIRST_YEAR`: a
+        `--from-year` that reaches decades below the recent window still
+        pools that whole span into the recent draw's journal under the
+        recent draw's name, even though the window's tail end looks recent.
+        The old `to_year < _RECENT_WINDOW_FIRST_YEAR` test would have let
+        exactly this window through onto the default output."""
+        refusal = sampler._validate_args(
+            self._args(package=[tmp_path], from_year=1996, to_year=2025)
+        )
+
+        assert refusal is not None
+        assert "-o" in refusal
+
+    def test_a_window_reaching_past_the_recent_one_is_also_displaced(self, tmp_path):
+        refusal = sampler._validate_args(
+            self._args(package=[tmp_path], from_year=2024, to_year=2030)
+        )
+
+        assert refusal is not None
+        assert "-o" in refusal
+
+    def test_seed_on_a_live_run_is_refused_rather_than_ignored(self):
+        refusal = sampler._validate_args(self._args(seed=7))
+
+        assert refusal is not None
+        assert "--seed" in refusal
+
+    def test_the_default_seed_on_a_live_run_is_not_refused(self):
+        """Negative control: an untouched default must not trip the guard,
+        since there is no way to tell it apart from an explicit default."""
+        assert sampler._validate_args(self._args()) is None
+
+    def test_months_on_a_package_run_is_refused(self, tmp_path):
+        refusal = sampler._validate_args(
+            self._args(package=[tmp_path], from_year=2023, to_year=2025, months=12)
+        )
+
+        assert refusal is not None
+        assert "--months" in refusal
+
+    def test_months_ago_on_a_package_run_is_refused_for_the_right_reason(self, tmp_path):
+        """This is the bug: the pre-existing `--months-ago`/default-output
+        check knows nothing about `--package` and used to fire here with a
+        message about a displaced *live* window this run is not drawing."""
+        refusal = sampler._validate_args(
+            self._args(package=[tmp_path], from_year=2023, to_year=2025, months_ago=3)
+        )
+
+        assert refusal is not None
+        assert "--months" in refusal
+        assert "displaced window" not in refusal

@@ -160,10 +160,18 @@ DEFAULT_OUTPUT = Path("tests/data/jats_exhibits.json")
 DEFAULT_SEED = 0
 _USER_AGENT = f"bmlib-jats-exhibit-sampler/{__version__} (+https://github.com/hherb/bmlib)"
 
-# The first year of the recent window (see `main`'s window table). A draw
-# ending before it is displaced, and the pooling rule `--months-ago` already
-# carries applies to it for the same reason.
+# The calendar-year span of the default *package* corpus
+# (`tests/data/jats_exhibits.json`, drawn from `PMC012xxxxxx` against the
+# 2025-06-26 baseline snapshot — see
+# docs/superpowers/specs/2026-09-01-jats-corpus-redraw-design.md). This is
+# NOT the live source's window: `_month_windows(SAMPLE_MONTHS, date.today())`
+# slides one month per month and can never be pinned to a calendar year, so
+# it cannot be re-derived from that function. A `--package` window not
+# wholly contained in [_RECENT_WINDOW_FIRST_YEAR, _RECENT_WINDOW_LAST_YEAR]
+# is a displaced draw, and the pooling rule `--months-ago` already carries
+# applies to it for the same reason.
 _RECENT_WINDOW_FIRST_YEAR = 2023
+_RECENT_WINDOW_LAST_YEAR = 2025
 
 # The two elements that are exhibits. Structural, and complete: these are the
 # only JATS elements the parser builds a figure or table from.
@@ -345,24 +353,33 @@ def iter_package_articles(path: Path) -> Iterator[tuple[str, bytes]]:
         The PMC identifier (the member's stem) and its bytes.
 
     Raises:
-        PackageError: If *path* is neither a directory nor a tarball. Refused
-            rather than skipped: a mistyped ``--package`` that silently
-            contributed nothing would print a rate over a draw nobody asked
-            for, which is what :func:`_validate_args` exists to prevent.
+        PackageError: If *path* is neither a directory nor a tarball, or is a
+            tarball ``tarfile.is_tarfile()`` accepts but the ``"r|gz"`` open
+            mode below refuses — an uncompressed ``.tar`` passes that check
+            (it is a real tarball) and then fails as ``tarfile.ReadError``
+            when streaming assumes gzip. Both are refused rather than
+            skipped: a mistyped ``--package`` that silently contributed
+            nothing would print a rate over a draw nobody asked for, which is
+            what :func:`_validate_args` exists to prevent — and a caller
+            catching this function's own documented exception should not
+            also have to catch ``tarfile``'s.
     """
     if path.is_dir():
         for entry in sorted(path.glob("*.xml")):
             yield entry.stem, entry.read_bytes()
         return
     if path.is_file() and tarfile.is_tarfile(path):
-        with tarfile.open(path, "r|gz") as tar:
-            for member in tar:
-                if not member.isfile() or not member.name.endswith(".xml"):
-                    continue
-                handle = tar.extractfile(member)
-                if handle is None:  # pragma: no cover - a tarball oddity
-                    continue
-                yield Path(member.name).stem, handle.read()
+        try:
+            with tarfile.open(path, "r|gz") as tar:
+                for member in tar:
+                    if not member.isfile() or not member.name.endswith(".xml"):
+                        continue
+                    handle = tar.extractfile(member)
+                    if handle is None:  # pragma: no cover - a tarball oddity
+                        continue
+                    yield Path(member.name).stem, handle.read()
+        except tarfile.ReadError as exc:
+            raise PackageError(f"{path} is a tarball but not gzip-compressed: {exc}") from exc
         return
     raise PackageError(f"{path} is neither a package directory nor a tarball")
 
@@ -415,10 +432,9 @@ def read_package_articles(paths: list[Path], wanted: set[str]) -> Iterator[tuple
     """Yield ``(pmcid, raw_xml)`` for the drawn articles, in package order.
 
     A second pass over the packages, rather than holding the first pass's
-    bytes: the recent window has ~76,500 in-window candidates, which at
-    article sizes reaching 3.4 MB is not a thing to keep in memory. For a
-    tarball the pass costs one more sequential decompression (16.5 s for
-    `PMC002xxxxxx`).
+    bytes: the recent window has 97,651 in-window candidates, which is too
+    many whole articles to hold in memory between passes. For a tarball the
+    pass costs one more sequential decompression (16.5 s for `PMC002xxxxxx`).
 
     Args:
         paths: The same packages the candidates came from.
@@ -1341,29 +1357,51 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 def _validate_args(args: argparse.Namespace) -> str | None:
     """Refuse a run that would print a rate over a draw nobody asked for.
 
-    Returns the reason, or ``None`` when the run may proceed. Three rules:
+    Returns the reason, or ``None`` when the run may proceed.
 
     *The window arithmetic is not negotiable.* ``--months-ago`` and
     ``--months`` are checked here as well as in :func:`_month_windows`,
     because argparse's ``type=int`` accepts a minus sign happily and the
     degradation is silent — see that function's ``Raises``.
 
-    *A displaced draw may not land on the default output.* The journal is
-    derived from ``--output``, so a run with ``--months-ago`` and no ``-o``
-    either overwrites the recent corpus with an older window under the recent
-    corpus's name, or — journal present — tops one window's rows up with
-    another's and prints the pooled result as one rate. This PR's whole claim
-    is that the window decides the answer (0 of 662 recent tables against 11
-    of 93 from 1996-1998), so pooling two windows produces a number
-    describing neither. Naming an explicit ``-o`` is the whole fix.
+    *A displaced live draw may not land on the default output.* The journal
+    is derived from ``--output``, so a run with ``--months-ago`` and no
+    ``-o`` either overwrites the recent corpus with an older window under the
+    recent corpus's name, or — journal present — tops one window's rows up
+    with another's and prints the pooled result as one rate. This PR's whole
+    claim is that the window decides the answer (0 of 662 recent tables
+    against 11 of 93 from 1996-1998), so pooling two windows produces a
+    number describing neither. Naming an explicit ``-o`` is the whole fix.
+
+    *A live-only or package-only flag used on the other source is refused,
+    not silently ignored.* ``--months``/``--months-ago`` are the live
+    source's strata and do nothing against ``--package``; ``--seed`` is
+    recorded and consumed only by the package draw and does nothing against
+    the live source. Accepting either combination in silence would let a
+    run's flags describe a draw the run is not actually making. This check
+    runs before the ``--months-ago``/default-output check above, which is
+    what keeps that check about the *live* window: without this ordering, a
+    non-default ``--months-ago`` on an otherwise valid ``--package`` run
+    would trip that check and refuse for a reason belonging to a window it
+    is not drawing.
 
     *A package window is all-or-nothing.* ``--from-year``/``--to-year`` only
     mean anything against ``--package`` — the live draw's strata are months,
     not years — so either flag without ``--package`` is refused, and
     ``--package`` without both years is refused the same way. A backwards
-    window is refused rather than silently drawing nothing. And a window
-    ending before the recent one started is a displaced draw by the same
-    argument as ``--months-ago`` above, so it carries the same ``-o`` rule.
+    window is refused rather than silently drawing nothing.
+
+    *A package window not wholly contained in the recent corpus's window may
+    not land on the default output.* The default output is
+    ``tests/data/jats_exhibits.json``, drawn from ``[_RECENT_WINDOW_FIRST_YEAR,
+    _RECENT_WINDOW_LAST_YEAR]``. Checking only ``to_year`` against the lower
+    bound would accept ``--from-year 1996 --to-year 2025`` — a 29-year window
+    whose tail happens to reach the recent one — and pool decades of a
+    differently-shaped corpus into the recent draw's journal under the
+    recent draw's name, which is exactly what this rule and the
+    ``--months-ago`` one above both exist to prevent. Containment in both
+    directions is the correct test; a fully-contained window (e.g.
+    2023-2025 itself) may use the default output.
 
     *A `--package` path is checked here, not left to fail inside the draw.*
     :func:`iter_package_articles` is a generator, so a mistyped path would
@@ -1380,6 +1418,10 @@ def _validate_args(args: argparse.Namespace) -> str | None:
         return f"--months must be at least 1, got {args.months}"
     if args.months_ago < 0:
         return f"--months-ago must not be negative, got {args.months_ago}"
+    if args.package and (args.months != SAMPLE_MONTHS or args.months_ago != 0):
+        return "--months/--months-ago select the live source's strata; --package draws by year"
+    if not args.package and args.seed != DEFAULT_SEED:
+        return "--seed only applies to a --package draw; the live draw is not seeded"
     if args.months_ago and args.output == DEFAULT_OUTPUT:
         return (
             f"--months-ago {args.months_ago} draws a displaced window, which must not "
@@ -1394,11 +1436,16 @@ def _validate_args(args: argparse.Namespace) -> str | None:
         return "--package needs both --from-year and --to-year"
     if args.package and args.from_year > args.to_year:
         return f"--from-year {args.from_year} is after --to-year {args.to_year}"
-    if args.package and args.to_year < _RECENT_WINDOW_FIRST_YEAR and args.output == DEFAULT_OUTPUT:
+    displaced = args.package and (
+        args.from_year < _RECENT_WINDOW_FIRST_YEAR or args.to_year > _RECENT_WINDOW_LAST_YEAR
+    )
+    if displaced and args.output == DEFAULT_OUTPUT:
         return (
-            f"a window ending {args.to_year} is a displaced draw, which must not be written "
-            f"to {DEFAULT_OUTPUT} — that path is the recent draw, and its journal would pool "
-            "the two. Pass an explicit -o, as tests/data/jats_exhibits.backfill.json was."
+            f"a window of {args.from_year}-{args.to_year} is not contained in the recent "
+            f"draw's {_RECENT_WINDOW_FIRST_YEAR}-{_RECENT_WINDOW_LAST_YEAR}, so it must not "
+            f"be written to {DEFAULT_OUTPUT} — that path is the recent draw, and its journal "
+            "would pool the two. Pass an explicit -o, as "
+            "tests/data/jats_exhibits.backfill.json was."
         )
     return None
 
