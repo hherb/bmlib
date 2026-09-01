@@ -1163,19 +1163,38 @@ class TestTheTableSideOfTheRankingIsCounted:
         ones contribute real counts, so the total stays positive and the
         population would print as a rate that silently omits the stale row. A
         journal is topped up across runs, so a mixed one is the ordinary case.
+
+        Asserted through `_section`, and with a fixture that makes **all five**
+        `_TABLE_SIDE_COUNTERS` positive, because neither half is optional. This
+        test used to assert `"NOT MEASURED" in out` over the whole report,
+        against a fixture whose fresh rows moved one counter — so mutating
+        `Totals.measured` to ask the *sum* rather than each row (the exact rule
+        this test names) left it green twice over: four of the five counters
+        still summed to -1 and fired the sentinel in section 5 anyway, and
+        section 6's `tables_with_both` line prints the same string. A
+        whole-report substring cannot say which section answered, which is what
+        `_section` exists for and what the sibling test above already uses.
         """
-        image_only = _article('<table-wrap id="t1"><graphic xlink:href="scan.png"/></table-wrap>')
-        stale = sampler.measure_article("PMC1", image_only).to_dict()
+        both = _article(
+            '<table-wrap id="t1">'
+            "<table><tbody><tr><td>1</td></tr></tbody></table>"
+            '<graphic content-type="thumb" xlink:href="a.gif"/>'
+            '<graphic content-type="thumb" xlink:href="b.gif"/>'
+            "</table-wrap>"
+        )
+        stale = sampler.measure_article("PMC1", both).to_dict()
         for key in sampler._TABLE_SIDE_COUNTERS:
             del stale[key]
         totals = sampler.Totals()
         totals.add(sampler.ArticleMeasurement.from_dict(stale))
         for n in range(2, 30):
-            totals.add(sampler.measure_article(f"PMC{n}", image_only))
+            totals.add(sampler.measure_article(f"PMC{n}", both))
 
-        assert totals.sum_of("tables_with_graphic") > 0, "the sum must stay positive"
+        for name in sampler._TABLE_SIDE_COUNTERS:
+            assert totals.sum_of(name) > 0, f"{name} must stay positive for this to bite"
         assert sampler.print_report(totals) is True
-        assert "NOT MEASURED" in capsys.readouterr().out
+        section = _section(capsys.readouterr().out, "5. SEVERAL <graphic> PER TABLE")
+        assert any("NOT MEASURED" in line for line in section), section
 
 
 class TestTheCitedPopulationsAreWhatTheCorporaHold:
@@ -1237,7 +1256,7 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         """How many rows carry a non-zero, non-empty ``field``.
 
         The article-level denominator several comments cite alongside the
-        counter total — "391 titles in 87 articles" is two populations, and
+        counter total — "387 titles in 94 articles" is two populations, and
         summing the counter answers only the first.
         """
         rows = json.loads(path.read_text())["rows"]
@@ -1269,32 +1288,45 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             # The bytes measured, not the bytes drawn from.
             assert window["rendition"] == "europepmc"
             assert (corpus["articles"], corpus["unmeasured"]) == (997, 3)
+        # Why the three were unmeasured, in the vocabulary the rendition
+        # artifact already used — a bare count cannot be read as permanent
+        # (an article Europe PMC does not serve) or transient (a throttled
+        # fetch), and those call for different actions. The back-filled
+        # corpus predates the field and is asserted as *absent* rather than
+        # as `{}`: filling it means re-drawing that window, which would move
+        # every back-filled figure for a provenance key, so it is left as
+        # the older format deliberately.
+        assert json.loads(self.RECENT.read_text())["unmeasured_causes"] == {
+            "europepmc_unavailable": 3
+        }
+        assert "unmeasured_causes" not in json.loads(self.BACKFILL.read_text())
 
     def test_the_title_owner_population_is_what_the_comments_cite(self):
         """The #125/#130 population, cited in five files.
 
-        The redraw both grew it and widened it. `<caption>` is still the bulk,
-        but `<def-list>` and `<fn-group>` appear beside it — two owners no
-        enumeration written from #125 and #130 would have held, which is the
-        parent test's whole argument restated on new evidence. The back-filled
-        window's `<list>`, which used to be that argument's only example, is
-        gone with the draw that held it: this window carries no renaming title
-        at all, so the argument now rests on the recent one.
+        The redraw both grew it and widened it. `<caption>` is still the bulk
+        (387 of 411), but `<def-list>` and `<fn-group>` appear beside it at 12
+        each — two owners no enumeration written from #125 and #130 would have
+        held, which is the parent test's whole argument restated on new
+        evidence. The back-filled window's `<list>`, which used to be that
+        argument's only example, is gone with the draw that held it: this
+        window carries no renaming title at all, so the argument now rests on
+        the recent one.
         """
         recent, recent_maps, recent_articles = self._totals(self.RECENT)
         backfill, backfill_maps, backfill_articles = self._totals(self.BACKFILL)
 
-        assert sum(recent_maps["section_renaming_titles"].values()) == 409
-        assert recent_articles == 100
+        assert sum(recent_maps["section_renaming_titles"].values()) == 411
+        assert recent_articles == 104
         assert recent_maps["section_renaming_titles"] == {
-            "caption": 391,
-            "def-list": 15,
-            "fn-group": 3,
+            "caption": 387,
+            "def-list": 12,
+            "fn-group": 12,
         }
         assert sum(backfill_maps.get("section_renaming_titles", {}).values()) == 0
         assert backfill_articles == 0
         assert backfill_maps.get("section_renaming_titles", {}) == {}
-        assert recent["captions"] == 7820
+        assert recent["captions"] == 8111
         # Not "no exhibit is captioned" but "this window deposits no
         # <caption> at all". Why is inferred rather than counted: 0 tables
         # beside 627 figures and 3,873 `.png` deposits reads as scanned page
@@ -1302,18 +1334,36 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         assert backfill["captions"] == 0
 
     def test_the_caption_premise_and_its_empty_populations_hold(self):
-        """#123's premise measures full and both its own populations empty."""
+        """#123's premise measures full; one of its two populations no longer
+        measures empty.
+
+        Every draw before this one found **0** nested `<caption>` and every
+        `<caption>` inside an exhibit owned by that exhibit. This one finds
+        **6** of 8,111 nesting, and 6 owned by a `<supplementary-material>`
+        rather than by the exhibit enclosing it — all of them one eLife
+        article, `PMC12143881`, which also carries every nested `<fig>` in the
+        window. That is #115's and #123's shared premise reproduced from a
+        committed corpus for the first time, and it is the house style both
+        comments predicted rather than a new one: a figure supplement is a
+        `<supplementary-material>` inside the `<fig>` it belongs to, carrying
+        its own `<label>` and `<caption>`. The stacks and the owner test are
+        what keep those 6 off the enclosing figure.
+        """
         recent, recent_maps, _ = self._totals(self.RECENT)
         backfill, backfill_maps, _ = self._totals(self.BACKFILL)
 
-        assert recent["exhibits_with_direct_caption"] == 6709
-        assert recent["exhibits_with_descendant_caption"] == 6709
+        assert recent["exhibits_with_direct_caption"] == 6938
+        assert recent["exhibits_with_descendant_caption"] == 6938
         # Vacuous in this window rather than confirming: 0 of 0.
         assert backfill["exhibits_with_direct_caption"] == 0
         assert backfill["exhibits_with_descendant_caption"] == 0
-        assert recent["nested_captions"] == 0
+        assert recent["nested_captions"] == 6
         assert backfill["nested_captions"] == 0
-        assert set(recent_maps["exhibit_caption_owners"]) == {"fig", "table-wrap"}
+        assert recent_maps["exhibit_caption_owners"] == {
+            "fig": 4591,
+            "table-wrap": 2347,
+            "supplementary-material": 6,
+        }
         assert backfill_maps.get("exhibit_caption_owners", {}) == {}
 
     def test_the_label_premise_is_violated_on_the_recent_window(self):
@@ -1322,39 +1372,51 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         This assertion is why the class exists. Every draw before #138 found
         the premise **full** — 2,033/2,033, 1,446/1,446, 365/365 — and the
         comment in `jats_parser.py` said the parent rule "cannot lose a
-        label". On the rendition the parser is actually fed, 7 exhibits in 4
+        label". On the rendition the parser is actually fed, 7 exhibits in 7
         articles carry a `<label>` only indirectly, and for each of those the
         parent rule finds nothing and the renderer substitutes
         `Figure {i + 1}` / `Table {i + 1}` — an invented number, which is
         #116's own symptom arrived at from the other direction. The rule is
-        still better than the depth counter it replaced (607 labels in 101 of
+        still better than the depth counter it replaced (561 labels in 95 of
         these articles would be *mis-assigned* by a depth rule, against 7
         omitted by this one), but "cannot lose one" was a claim, and it is
         false.
+
+        The violating count is 7 in both draws taken on this rendition and
+        the *articles* moved from 4 to 7, so it is a small, real population
+        rather than a fixed one — do not read either number as stable.
         """
         recent, recent_maps, _ = self._totals(self.RECENT)
         backfill, backfill_maps, _ = self._totals(self.BACKFILL)
 
-        assert recent["exhibits_with_direct_label"] == 6692
-        assert recent["exhibits_with_descendant_label"] == 6699
+        assert recent["exhibits_with_direct_label"] == 6937
+        assert recent["exhibits_with_descendant_label"] == 6944
         rows = json.loads(self.RECENT.read_text())["rows"]
         violating = [
             row["pmcid"]
             for row in rows
             if row["exhibits_with_descendant_label"] > row["exhibits_with_direct_label"]
         ]
-        assert violating == ["PMC12011025", "PMC12092211", "PMC12120668", "PMC12174859"]
+        assert violating == [
+            "PMC12011025",
+            "PMC12111618",
+            "PMC12115352",
+            "PMC12149983",
+            "PMC12154067",
+            "PMC12159547",
+            "PMC12177175",
+        ]
         # The back-filled window is where the premise still measures full.
         assert backfill["exhibits_with_direct_label"] == 627
         assert backfill["exhibits_with_descendant_label"] == 627
-        # 6,699 of the *labelled* exhibits, not of all 6,831 — 132 carry none.
-        assert recent["figures"] + recent["tables"] == 6831
+        # 6,944 of the *labelled* exhibits, not of all 7,058 — 114 carry none.
+        assert recent["figures"] + recent["tables"] == 7058
         assert recent_maps["label_parents"] == {
-            "fig": 4443,
-            "table-wrap": 2249,
-            "fn": 367,
-            "list-item": 222,
-            "disp-formula": 18,
+            "fig": 4593,
+            "table-wrap": 2344,
+            "fn": 330,
+            "list-item": 225,
+            "supplementary-material": 6,
         }
         assert backfill_maps["label_parents"] == {"fig": 627}
 
@@ -1363,26 +1425,31 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         recent, recent_maps, _ = self._totals(self.RECENT)
         backfill, backfill_maps, _ = self._totals(self.BACKFILL)
 
-        assert (recent["figures_with_graphic"], backfill["figures_with_graphic"]) == (4466, 627)
-        assert (recent["figures_multi_graphic"], backfill["figures_multi_graphic"]) == (2530, 276)
-        assert (recent["last_is_thumb"], backfill["last_is_thumb"]) == (2498, 276)
+        assert (recent["figures_with_graphic"], backfill["figures_with_graphic"]) == (4602, 627)
+        assert (recent["figures_multi_graphic"], backfill["figures_multi_graphic"]) == (2676, 276)
+        assert (recent["last_is_thumb"], backfill["last_is_thumb"]) == (2639, 276)
         assert (recent["first_is_thumb"], backfill["first_is_thumb"]) == (0, 0)
-        assert recent["graphics"] + backfill["graphics"] == 13008
-        assert recent["alternatives_members"] + backfill["alternatives_members"] == 6385
+        assert recent["graphics"] + backfill["graphics"] == 13617
+        assert recent["alternatives_members"] + backfill["alternatives_members"] == 7055
         assert recent["alternatives_declaring_mime"] + backfill["alternatives_declaring_mime"] == 0
         assert recent["alternatives_archival"] + backfill["alternatives_archival"] == 0
         # Every deposit in both windows names an extension, so the
         # `_ARCHIVAL_EXTENSIONS` fallback always has something to read. That
         # is a property of the *served* rendition and not a publisher habit:
-        # `graphic_extensions` disagrees in 270 of 294 compared articles, and
-        # on the archive side of those it records 1,161 extensionless hrefs of
-        # 1,733 — pinned in
+        # `graphic_extensions` disagrees in 272 of 300 compared articles, and
+        # on the archive side of those it records 1,262 extensionless hrefs of
+        # 2,046 deposits in 241 articles — all four pinned in
         # `test_the_rendition_gap_is_what_its_own_evidence_file_holds`. Read
         # that at that scope: the delta file records only disagreements, so it
         # says nothing about the 24 articles that agree, and no single
         # mechanism accounts for the gap.
         assert set(recent_maps["graphic_extensions"]) == {".jpg", ".gif"}
         assert set(backfill_maps["graphic_extensions"]) == {".png", ".jpg", ".gif"}
+        # The `.png` count `jats_parser.py` and CLAUDE.md both read as
+        # "scanned page images". It is an *inference* from a count, so the
+        # count at least has to be the corpus's — it was cited in four files
+        # and asserted in none.
+        assert backfill_maps["graphic_extensions"][".png"] == 3873
 
     def test_the_table_side_answers_135_as_an_empty_population(self):
         """#135, and the #127 window neither corpus can reproduce any more.
@@ -1393,35 +1460,39 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         page images with no tabular markup. That 0 is the absence of a
         denominator, not a measurement of the population, and #127's evidence
         is historical from here on.
+
+        #115's nesting population, empty in every draw before this one, is
+        **not** empty here: 7 nested `<fig>` and 0 nested `<table-wrap>`, all
+        7 in one eLife article (`PMC12143881`). So the stack that #115
+        installed is exercised by a committed corpus rather than only argued
+        for — and by exactly the publisher the comment names.
         """
         recent, recent_maps, _ = self._totals(self.RECENT)
         backfill, backfill_maps, _ = self._totals(self.BACKFILL)
 
-        assert recent["tables"] + backfill["tables"] == 2363
-        assert recent["tables_with_graphic"] + backfill["tables_with_graphic"] == 95
+        assert recent["tables"] + backfill["tables"] == 2448
+        assert recent["tables_with_graphic"] + backfill["tables_with_graphic"] == 92
         assert recent["tables_multi_graphic"] + backfill["tables_multi_graphic"] == 0
-        assert (recent["tables"], recent["tables_image_only"]) == (2363, 6)
+        assert (recent["tables"], recent["tables_image_only"]) == (2448, 8)
         assert (backfill["tables"], backfill["tables_image_only"]) == (0, 0)
-        assert (recent["tables_with_both"], backfill["tables_with_both"]) == (89, 0)
-        assert sum(recent_maps["foreign_owned_graphics"].values()) == 102
+        assert (recent["tables_with_both"], backfill["tables_with_both"]) == (84, 0)
+        assert sum(recent_maps["foreign_owned_graphics"].values()) == 153
         assert recent_maps["foreign_owned_graphics"] == {
-            "td": 48,
-            "inline-formula": 42,
-            "chem-struct": 9,
+            "td": 82,
+            "inline-formula": 69,
             "disp-formula": 2,
-            "th": 1,
         }
         assert self._articles_with(self.RECENT, "foreign_owned_graphics") == 12
         assert backfill_maps.get("foreign_owned_graphics", {}) == {}
-        assert recent["nested_figures"] + recent["nested_tables"] == 0
+        assert (recent["nested_figures"], recent["nested_tables"]) == (7, 0)
         assert backfill["nested_figures"] + backfill["nested_tables"] == 0
 
     def test_the_nested_article_scoping_is_what_the_corpora_record(self):
         """#138's own population, and the one #158 cites four ways.
 
         "Carries a region" and "loses body text to one" are different claims,
-        the first bounding the second: 141 regions in 25 of 997 recent
-        articles is what the *walk* now excludes, and every one of those 25
+        the first bounding the second: 145 regions in 29 of 997 recent
+        articles is what the *walk* now excludes, and every one of those 29
         rows carries an `unscoped` entry, so the scoping moved a counter for
         all of them. The back-filled window has none, peer review not having
         been deposited that way in 1996-1998.
@@ -1429,9 +1500,9 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         recent, _, _ = self._totals(self.RECENT)
         backfill, _, _ = self._totals(self.BACKFILL)
 
-        assert recent["nested_article_regions"] == 141
-        assert self._articles_with(self.RECENT, "nested_article_regions") == 25
-        assert self._articles_with(self.RECENT, "unscoped") == 25
+        assert recent["nested_article_regions"] == 145
+        assert self._articles_with(self.RECENT, "nested_article_regions") == 29
+        assert self._articles_with(self.RECENT, "unscoped") == 29
         assert backfill["nested_article_regions"] == 0
         assert self._articles_with(self.BACKFILL, "unscoped") == 0
 
@@ -1442,8 +1513,15 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         would be *decidable*; the measurement does not decide it, which is why
         all four issues stay open. Three measure empty on both windows and one
         does not: `<tex-math>` and `<disp-formula>` are a live population, and
-        803 `<alternatives>` holding both a MathML and a TeX encoding is what
-        rules out adding `<tex-math>` to `_INLINE_ELEMENTS` (#147).
+        1,087 `<alternatives>` holding both a MathML and a TeX encoding is
+        what rules out adding `<tex-math>` to `_INLINE_ELEMENTS` (#147).
+
+        **#150's own population is empty in this draw and was not in the
+        last** — 0 `<ref>` carrying only a `<note>`, against 2 before, while
+        one `<ref>` still carries a `<note>` beside other children. So the
+        issue is unreached by this corpus rather than answered by it, and the
+        `note` key is asserted so its presence stays distinguishable from a
+        counter that never fired.
         """
         recent, recent_maps, _ = self._totals(self.RECENT)
         backfill, backfill_maps, _ = self._totals(self.BACKFILL)
@@ -1460,26 +1538,27 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             assert totals["name_alternatives"] == 0
             assert totals["collab_alternatives"] == 0
         # #147 — formulas. The one non-empty population of the four.
-        assert (recent["disp_formulas"], backfill["disp_formulas"]) == (1851, 0)
+        assert (recent["disp_formulas"], backfill["disp_formulas"]) == (1915, 0)
         assert (recent["disp_formulas_with_label"], backfill["disp_formulas_with_label"]) == (
-            1524,
+            1459,
             0,
         )
         assert (recent["disp_formulas_image_only"], backfill["disp_formulas_image_only"]) == (
-            211,
+            140,
             0,
         )
-        assert (recent["inline_formulas"], backfill["inline_formulas"]) == (6730, 0)
-        assert (recent["tex_math"], backfill["tex_math"]) == (1154, 0)
-        assert (recent["mml_math"], backfill["mml_math"]) == (7413, 0)
+        assert (recent["inline_formulas"], backfill["inline_formulas"]) == (9221, 0)
+        assert (recent["tex_math"], backfill["tex_math"]) == (1398, 0)
+        assert (recent["mml_math"], backfill["mml_math"]) == (10202, 0)
         assert (recent["formula_alternatives_both"], backfill["formula_alternatives_both"]) == (
-            803,
+            1087,
             0,
         )
         # #150 — a <ref> carrying only a <note>.
-        assert (recent["refs"], backfill["refs"]) == (54328, 19447)
-        assert (recent["refs_note_only"], backfill["refs_note_only"]) == (2, 0)
-        assert recent_maps["ref_child_kinds"]["citation-alternatives"] == 3549
+        assert (recent["refs"], backfill["refs"]) == (52969, 19447)
+        assert (recent["refs_note_only"], backfill["refs_note_only"]) == (0, 0)
+        assert recent_maps["ref_child_kinds"]["note"] == 1
+        assert recent_maps["ref_child_kinds"]["citation-alternatives"] == 2709
         assert "citation-alternatives" not in backfill_maps["ref_child_kinds"]
 
     def test_the_contributor_counters_are_what_120_and_140_wait_on(self):
@@ -1492,13 +1571,20 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         names 14 contributors in the recent window and `<string-name>` names
         none at all.
 
+        `<collab>` **carrying a roster** — the `<contrib-group>` of a
+        consortium's own members that #120 argues the `<contrib>` stack for —
+        measures **0** in both windows here, where the previous draw held 1.
+        It is a population this corpus does not reach, not one it refutes;
+        the same goes for `<contrib>` nested inside another, 20 then and 0
+        now.
+
         **The `<string-name>` zero is measured, not missing**, and the
         distinction is the load-bearing one in this repo. Section 11's
         vocabulary is *open*: every child of a `<contrib>` is counted under
         its own name unless it is in `_CONTRIB_NON_NAME_CHILDREN` (skipped) or
         `_CONTRIB_NAME_WRAPPERS` (descended through), and `string-name` is in
         neither — so one occurrence anywhere in either window would have
-        printed under its own key. An absent key is therefore 0 of 12,445
+        printed under its own key. An absent key is therefore 0 of 12,650
         `<contrib>`, upper bound 0.03%, which is what `CLAUDE.md`,
         `CHANGELOG.md` and `ROADMAP.md` all say. That openness is exactly what
         #121 argued for: against a closed list the unforeseen spelling falls
@@ -1508,19 +1594,18 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         recent, recent_maps, _ = self._totals(self.RECENT)
         backfill, backfill_maps, _ = self._totals(self.BACKFILL)
 
-        assert (recent["contribs"], backfill["contribs"]) == (7593, 4852)
+        assert (recent["contribs"], backfill["contribs"]) == (7798, 4852)
         assert recent_maps["contrib_name_spellings"] == {
-            "name": 7579,
-            "contrib-id": 867,
-            "degrees": 259,
+            "name": 7784,
+            "contrib-id": 823,
+            "degrees": 276,
             "collab": 14,
             "ext-link": 1,
-            "on-behalf-of": 1,
         }
         assert backfill_maps["contrib_name_spellings"] == {"name": 4852}
         assert "string-name" not in recent_maps["contrib_name_spellings"]
-        assert (recent["nested_contribs"], backfill["nested_contribs"]) == (20, 0)
-        assert (recent["collabs_with_a_roster"], backfill["collabs_with_a_roster"]) == (1, 0)
+        assert (recent["nested_contribs"], backfill["nested_contribs"]) == (0, 0)
+        assert (recent["collabs_with_a_roster"], backfill["collabs_with_a_roster"]) == (0, 0)
         assert (
             recent["articles_losing_every_author"],
             backfill["articles_losing_every_author"],
@@ -1541,8 +1626,18 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         only where the two renditions disagree, so an agreeing article
         contributes to neither side and never appears; a sum over
         `deltas` is a sum over disagreements. The only honest form of the
-        headline number is "differs in N of 294, and where it differs archive
+        headline number is "differs in N of 300, and where it differs archive
         A against served B", and that is what this asserts.
+
+        **The provenance is asserted at the width it can move.** This used to
+        check `source`, `first_year` and `last_year` alone — the three fields
+        that did *not* move when `_package_identity` and `corpus_rendition`
+        were added — so the artifact went stale under it: it kept recording
+        `"packages": ["PMC012xxxxxx"]`, the bare directory basename
+        `_package_identity` exists to stop recording, and carried no
+        `corpus_rendition` at all, leaving a reader unable to tell which
+        rendition the corpus beside it had been measured in. The payload was
+        sound the whole time, which is exactly why nothing caught it.
         """
         report = json.loads(self.RENDITION.read_text())
         comparison = report["comparison"]
@@ -1552,9 +1647,19 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             2023,
             2025,
         )
-        assert comparison["compared"] == 294
-        assert comparison["unmeasured"] == 6
-        assert comparison["articles_differing"] == 288
+        # The public artifact name, not a directory basename — the same
+        # identity the corpora themselves record, and what makes this
+        # comparison's own sample re-derivable.
+        assert report["packages"] == ["oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz"]
+        assert (report["target"], report["seed"]) == (1000, 0)
+        assert (report["requested"], report["held"]) == (300, 300)
+        # Which rendition the *corpus* this run also drew was measured from —
+        # deliberately renamed on the way in, because the comparison beside it
+        # is always archive-against-served whatever the corpus was.
+        assert report["corpus_rendition"] == "europepmc"
+        assert comparison["compared"] == 300
+        assert comparison["unmeasured"] == 0
+        assert comparison["articles_differing"] == 289
 
         deltas = comparison["deltas"]
         differing = comparison["fields_differing"]
@@ -1569,37 +1674,58 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             )
 
         # The headline: #117's ranking rule is unreachable on archive bytes.
-        assert where_they_differ("last_is_thumb") == (153, 0, 641)
-        assert differing["last_is_thumb"] == 153
+        assert where_they_differ("last_is_thumb") == (156, 0, 781)
+        assert differing["last_is_thumb"] == 156
 
-        # The counter-example that retired the mechanism sentence. This
-        # article's thumbnails are the *archive's* own, spelled
+        # The counter-example that retired the mechanism sentence —
+        # `PMC12169732`, whose thumbnails are the *archive's* own, spelled
         # `specific-use="thumbnail"` where Europe PMC re-labels to
-        # `content-type="thumb"` — and it records no `last_is_thumb` or
-        # `graphics` delta at all, so both renditions measure 4 thumbnails.
-        # "The archive deposits one bare `…-g001` per figure" was true of a
-        # spot-check and false in general, and this row is why.
-        spot = deltas["PMC12169732"]
-        assert spot["specific_use_values"] == {"archive": {"thumbnail": 4}, "europepmc": {}}
-        assert spot["content_type_values"] == {
-            "archive": {},
-            "europepmc": {"image": 4, "thumb": 4},
-        }
-        assert "last_is_thumb" not in spot
-        assert "graphics" not in spot
+        # `content-type="thumb"`, so both renditions measure 4 and only the
+        # spelling moves — **is not in this artifact and is not asserted
+        # here.** It was drawn into the previous held sample and out of this
+        # one, so it is now a live spot-check (reproduced 2026-09-02: archive
+        # `{'thumbnail': 4}` against served `{'image': 4, 'thumb': 4}`, with
+        # `last_is_thumb` 4 on both sides), cited as one wherever it appears.
+        #
+        # What this file *can* say is that the archive-side spelling appears
+        # nowhere in these 300 — which is the weaker claim, and the one to
+        # make. It does not license "the archive deposits one bare `…-g001`
+        # per figure": `rendition_delta` records only disagreements, so the
+        # 11 agreeing articles contribute nothing either way, and an archive
+        # thumbnail spelled the same as the served one would also be absent
+        # from this map. Absence here is absence *of a recorded
+        # disagreement*, never absence from the corpus.
+        archive_thumbs = sum(
+            row["specific_use_values"]["archive"].get("thumbnail", 0)
+            + row["content_type_values"]["archive"].get("thumb", 0)
+            for row in deltas.values()
+            if "specific_use_values" in row and "content_type_values" in row
+        )
+        assert archive_thumbs == 0
+        assert all(
+            row["last_is_thumb"]["archive"] == 0
+            for row in deltas.values()
+            if "last_is_thumb" in row
+        )
 
         # #158: the served rendition *adds* nested-article regions, so the
         # sampler's 2.5% and transparency's 3.45% are not one measurement.
-        assert where_they_differ("nested_article_regions") == (5, 21, 26)
+        assert where_they_differ("nested_article_regions") == (5, 27, 32)
 
-        # The extension population `_ARCHIVAL_EXTENSIONS` reads.
-        extensionless = sum(
-            row["graphic_extensions"]["archive"].get("(none)", 0)
-            for row in deltas.values()
-            if "graphic_extensions" in row
-        )
-        assert differing["graphic_extensions"] == 270
-        assert extensionless == 1161
+        # The extension population `_ARCHIVAL_EXTENSIONS` reads. All four
+        # numbers `jats_parser.py` cites from this file are derived here —
+        # "1,161 extensionless of 1,733 deposits, in 241 articles" used to
+        # have only its first term pinned, and 241 appeared in no assertion
+        # anywhere in the repo. A comment claiming a net exists is worse than
+        # no comment.
+        extension_rows = [
+            row["graphic_extensions"] for row in deltas.values() if "graphic_extensions" in row
+        ]
+        extensionless = sum(row["archive"].get("(none)", 0) for row in extension_rows)
+        deposits = sum(sum(row["archive"].values()) for row in extension_rows)
+        articles_with_one = sum(1 for row in extension_rows if row["archive"].get("(none)", 0))
+        assert differing["graphic_extensions"] == 272
+        assert (extensionless, deposits, articles_with_one) == (1262, 2046, 241)
 
 
 class TestReadingABaselinePackage:
@@ -1719,6 +1845,43 @@ class TestReadingABaselinePackage:
             </article-meta></front></article>"""
 
         assert sampler.article_year(xml) == 2019
+
+    def test_a_year_carrying_attributes_is_still_a_year(self):
+        """The regression the final whole-branch review found.
+
+        `<year>` legally carries `@iso-8601-date`, `@calendar` and
+        `@content-type`, and the pattern used to require a bare open tag — so
+        an attributed one made the article *undated*, which makes it
+        undrawable: absent from the candidate pool, never counted as
+        unmeasured, exit 0. Measured over `PMC012xxxxxx`: 17 of 97,909, every
+        one of them `<year iso-8601-date="2025">2025</year>`, every one inside
+        the recent window, and **14 of the 17 one contiguous journal block**
+        (PMC12085917-PMC12085930) — publisher-clustered, so bias rather than
+        noise, which is exactly what the whole-member read is required for one
+        function up.
+        """
+        xml = b"""<article><front><article-meta>
+            <pub-date pub-type="epub" date-type="pub">
+              <year iso-8601-date="2025">2025</year></pub-date>
+            </article-meta></front></article>"""
+
+        assert sampler.article_year(xml) == 2025
+
+    def test_the_element_name_has_to_be_the_whole_name(self):
+        """`<year[^>]*>` is the obvious widening and it is too wide: it accepts
+        any element whose name merely *starts* with `year`. The open tag has to
+        end at a `>` or continue with whitespace."""
+        xml = b"<article><front><pub-date><yearly>2024</yearly></pub-date></front></article>"
+
+        assert sampler.article_year(xml) is None
+
+    def test_a_malformed_five_digit_year_is_not_read_as_four(self):
+        """What the dropped `</year>` anchor used to buy, kept explicitly: a
+        `(?!\\d)` boundary, so `20255` is refused rather than reported as
+        2025."""
+        xml = b"<article><front><pub-date><year>20255</year></pub-date></front></article>"
+
+        assert sampler.article_year(xml) is None
 
     def test_an_article_with_no_pub_date_has_no_year(self):
         assert sampler.article_year(b"<article><front/></article>") is None
@@ -2027,6 +2190,45 @@ class TestDrawingFromAPackage:
         assert sampler.package_candidates([first, second], 2024, 2024) == expected
         assert sampler.package_candidates([second, first], 2024, 2024) == expected
 
+    def test_an_article_in_two_given_packages_is_one_candidate(self, tmp_path):
+        """`--package <dir> --package <its own tarball>` is the layout
+        `_package_identity` documents as the ordinary local-mirror shape, so
+        the overlap is a plausible command line. Undeduplicated, every article
+        enters the pool twice: `draw` can then select one identifier twice, so
+        `wanted` is smaller than `--target` with nothing said, and
+        `_comparison_reportable`'s denominator inflates the same way. Exit 0,
+        plausible numbers, nothing raised.
+        """
+        first = tmp_path / "first"
+        second = tmp_path / "second"
+        first.mkdir()
+        second.mkdir()
+        self._package(first, {"PMC1": 2024, "PMC2": 2024})
+        self._package(second, {"PMC2": 2024, "PMC3": 2024})
+
+        found = sampler.package_candidates([first, second], 2024, 2024)
+
+        assert found == ["PMC1", "PMC2", "PMC3"]
+
+    def test_an_article_in_two_given_packages_is_read_back_once(self, tmp_path):
+        """The other half, and the half that costs a doubled *measurement*:
+        `Totals.add` counts every row it is handed, and `_measure_and_journal`
+        writes every one to the journal, so a duplicated read-back doubles
+        every population and leaves a journal with two rows for one PMCID.
+        Deduplicating the candidate pool alone would not stop it — the pool is
+        a set of identifiers and this walk is over packages.
+        """
+        first = tmp_path / "first"
+        second = tmp_path / "second"
+        first.mkdir()
+        second.mkdir()
+        self._package(first, {"PMC1": 2024, "PMC2": 2024})
+        self._package(second, {"PMC2": 2024, "PMC3": 2024})
+
+        read = [pmcid for pmcid, _ in sampler.read_package_articles([first, second], {"PMC2"})]
+
+        assert read == ["PMC2"]
+
 
 class TestHoldingArticlesForComparison:
     """`_hold_for_comparison` is the fix for a review-caught Critical: the
@@ -2098,12 +2300,62 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
         assert "--to-year" in refusal
 
     def test_a_window_that_runs_backwards_is_refused(self, tmp_path):
+        """Asserted on the refusal's own words, at a non-default `-o`.
+
+        At `DEFAULT_OUTPUT` the *displaced-window* rule below answers first for
+        `1999-1996` — it interpolates both years too — so `"1999" in refusal`
+        passed whichever rule fired, and would have kept passing with the
+        backwards check deleted outright. `-o` moves the displaced rule out of
+        the way, and `"is after"` belongs to this refusal alone.
+        """
         refusal = sampler._validate_args(
-            _package_run_args(package=[tmp_path], from_year=1999, to_year=1996)
+            _package_run_args(
+                package=[tmp_path], from_year=1999, to_year=1996, output=tmp_path / "out.json"
+            )
         )
 
         assert refusal is not None
-        assert "1999" in refusal
+        assert "is after" in refusal, refusal
+        assert "1999" in refusal and "1996" in refusal
+
+    def test_a_negative_target_is_refused(self, tmp_path):
+        """The one argument `_validate_args` did not check, and it degrades
+        differently on each source.
+
+        On the package branch `--target -5` reaches `random.sample` and raises
+        `ValueError` out of the middle of the draw — loud, but a stack trace
+        where every other bad argument here gets a one-line refusal before
+        anything is touched. On the live branch it raises nothing at all: it
+        asks `open_access_pmcids` for 145 identifiers rather than 150, spends
+        the search requests for them, and then breaks out of the measuring
+        loop before the first fetch.
+        """
+        refusal = sampler._validate_args(
+            _package_run_args(package=[tmp_path], from_year=2023, to_year=2025, target=-5)
+        )
+
+        assert refusal is not None
+        assert "--target" in refusal and "-5" in refusal, refusal
+
+    def test_a_negative_target_is_refused_on_the_live_source_too(self):
+        """The branch where nothing else raises, so nothing else can catch it."""
+        refusal = sampler._validate_args(_package_run_args(target=-5))
+
+        assert refusal is not None
+        assert "--target" in refusal
+
+    def test_a_target_of_zero_is_not_refused(self, tmp_path):
+        """The negative control, and a deliberate exclusion rather than an
+        oversight: a fresh zero-target draw is already unreportable
+        (`Totals.reportable` is `bool(self.rows) and …`), so it exits non-zero
+        and writes `*.unreportable.json` without this rule — and
+        `TestTheEmptyComparisonNet` uses it as its only unmocked way to hold
+        nothing for comparison."""
+        refusal = sampler._validate_args(
+            _package_run_args(package=[tmp_path], from_year=2023, to_year=2025, target=0)
+        )
+
+        assert refusal is None
 
     def test_a_window_without_a_package_is_refused(self):
         """The live path draws by month, not by year; accepting the flags
@@ -3100,14 +3352,14 @@ class TestTheJournalDoesNotPoolRenditions:
     (`test_a_larger_target_on_resume_is_not_a_disagreement`).
     """
 
-    def _package(self, path: Path, pmcids: list[str], n_figs: int) -> Path:
+    def _package(self, path: Path, pmcids: list[str], n_figs: int, year: int = 2024) -> Path:
         path.mkdir(parents=True, exist_ok=True)
         figs = "".join(f"<fig id='f{j}'/>" for j in range(n_figs))
         for pmcid in pmcids:
             (path / f"{pmcid}.xml").write_text(
                 '<article xmlns:xlink="http://www.w3.org/1999/xlink">'
                 "<front><article-meta>"
-                "<pub-date pub-type='epub'><year>2024</year></pub-date>"
+                f"<pub-date pub-type='epub'><year>{year}</year></pub-date>"
                 f"</article-meta></front><body>{figs}</body></article>"
             )
         return path
@@ -3379,6 +3631,88 @@ class TestTheJournalDoesNotPoolRenditions:
         first_corpus = json.loads(output.read_text())
         assert first_corpus["window"]["packages"] == [package_a.name]
         assert {row["pmcid"] for row in first_corpus["rows"]} == {f"A{i:08d}" for i in range(4)}
+
+    def test_only_the_year_window_differing_is_refused(self, tmp_path):
+        """The probe that isolates the year fields.
+
+        The test above varies the package, its path *and* the year window all
+        at once, so any one of the three answers for the other two: deleting
+        `first_year`/`last_year` from the package branch's `draw_identity`
+        left the whole suite green. Here the package and its path are
+        identical and only the window moves — and it moves onto a genuinely
+        different candidate pool, since the package holds a 2023 article the
+        first window excludes.
+        """
+        package = tmp_path / "package"
+        self._package(package, [f"PMC{i:08d}" for i in range(4)], n_figs=2, year=2024)
+        self._package(package, [f"PMC1{i:07d}" for i in range(4)], n_figs=7, year=2023)
+        output = tmp_path / "out" / "jats_exhibits.json"
+
+        def argv_for(first: str) -> list[str]:
+            return [
+                "sample_jats_exhibits.py",
+                "--package",
+                str(package),
+                "--from-year",
+                first,
+                "--to-year",
+                "2024",
+                "--target",
+                "4",
+                "--seed",
+                "0",
+                "-o",
+                str(output),
+            ]
+
+        with mock.patch.object(sys, "argv", argv_for("2024")):
+            run1_code = sampler.main()
+        with mock.patch.object(sys, "argv", argv_for("2023")):
+            run2_code = sampler.main()
+
+        assert run1_code == 0
+        assert run2_code != 0
+        corpus = json.loads(output.read_text())
+        assert corpus["window"]["first_year"] == 2024
+        assert {row["pmcid"] for row in corpus["rows"]} == {f"PMC{i:08d}" for i in range(4)}
+
+    def test_a_live_draw_whose_window_has_moved_on_is_refused(self, tmp_path, monkeypatch):
+        """The live source's identity, which was pinned by nothing at all:
+        setting `draw_identity = {}` for this branch left all 201 tests green.
+
+        Neither `months` nor `months_ago` was asserted, and — the half that
+        matters — neither *is* the draw. The boundaries come from
+        `date.today()`, so the identical command names a different window each
+        month: a journal written on the last day of a month resumes cleanly
+        the day after, under a window shifted by a whole month, and the corpus
+        is stamped with the second run's `first`/`last` over a mix of both
+        runs' rows. Same argv both times here; only the calendar moves.
+        """
+        output = tmp_path / "out" / "jats_exhibits.json"
+        argv = ["sample_jats_exhibits.py", "--target", "1", "-o", str(output)]
+
+        class _FrozenDate(date):
+            frozen = date(2026, 8, 31)
+
+            @classmethod
+            def today(cls):
+                return cls.frozen
+
+        monkeypatch.setattr(sampler, "date", _FrozenDate)
+        monkeypatch.setattr(sampler, "open_access_pmcids", lambda *a, **k: iter(["PMCLIVE1"]))
+        with mock.patch.object(sampler, "_fetch", return_value=_article("<fig id='s1'/>")):
+            with mock.patch.object(sys, "argv", argv):
+                run1_code = sampler.main()
+            _FrozenDate.frozen = date(2026, 9, 2)
+            with mock.patch.object(sys, "argv", argv):
+                run2_code = sampler.main()
+
+        assert run1_code == 0
+        assert run2_code != 0
+        corpus = json.loads(output.read_text())
+        # August's window is the second run's; the corpus must still carry the
+        # first run's own, undisturbed.
+        assert corpus["window"]["last"] == "2026-07-31"
 
     def test_a_different_seed_at_one_output_is_refused(self, tmp_path):
         """Review round 3's second live reproduction: same package, same
@@ -3778,14 +4112,14 @@ class TestTheMeasureEuropepmcFlagMeasuresTheServedRendition:
     is made.
     """
 
-    def _package(self, path: Path, pmcids: list[str], n_figs: int) -> Path:
+    def _package(self, path: Path, pmcids: list[str], n_figs: int, year: int = 2024) -> Path:
         path.mkdir(parents=True, exist_ok=True)
         figs = "".join(f"<fig id='f{j}'/>" for j in range(n_figs))
         for pmcid in pmcids:
             (path / f"{pmcid}.xml").write_text(
                 '<article xmlns:xlink="http://www.w3.org/1999/xlink">'
                 "<front><article-meta>"
-                "<pub-date pub-type='epub'><year>2024</year></pub-date>"
+                f"<pub-date pub-type='epub'><year>{year}</year></pub-date>"
                 f"</article-meta></front><body>{figs}</body></article>"
             )
         return path

@@ -72,14 +72,28 @@ Probed 2026-08-31/09-01 against `/Users/hherb/pmc_archive/packages/`:
 |---|---|
 | Scan throughput, tarball, whole members | 122,576 articles in 16.5 s (**7,447/s**), `PMC002xxxxxx` |
 | Scan throughput, tarball, first 8 KB only | 11,086/s — 49% faster and **wrong**, see below |
-| Recent-window candidates (2023 – 2025) | **97,651** of 97,909 in `PMC012xxxxxx` (92,997 published 2025, 4,013 in 2024, 641 in 2023; only 17 undated and 26 older) |
+| Recent-window candidates (2023 – 2025) | **97,668** of 97,909 in `PMC012xxxxxx` (93,014 published 2025, 4,013 in 2024, 641 in 2023; **241 older, 0 undated**) |
 | Back-filled candidates (1996 – 1998) | **3,141**, all in `PMC002xxxxxx` — `PMC000xxxxxx` and `PMC001xxxxxx` measure **0** |
 | Overlap, 880-article Europe PMC draw × unpacked package | **4 articles** — which is why the rendition diff cannot be a corpus-to-corpus comparison |
 | Taking the earliest `<pub-date>` year vs excluding deposit/submission dates | **0 of 3,000 differ**, in each window separately |
 | Articles carrying no `<pub-date>` at all | **0 of 2,000**, in each window separately |
 | Articles whose `<pub-date>` is missed by a prefix read | 4 KB: **1,385** of 2,000; 8 KB: **379**; 16 KB: 49; 32 KB: 8; 64 KB: **1** (recent window) |
 
-The last row is the one that shaped section 5. The Europe PMC draw spans
+The recent-candidates row was wrong twice over as first written — "only 17
+undated and 26 older", which contradicted the "0 of 2,000 carrying no
+`<pub-date>`" row three lines below it and summed to 97,694 against the
+package's 97,909. Both halves came from the same defect: `_YEAR_RE` required a
+*bare* `<year>` open tag, so an attributed one made the article undated and
+undrawable — 17 of 97,909, every one `<year iso-8601-date="2025">`, every one
+inside the window, and 14 of them one contiguous journal block
+(PMC12085917–PMC12085930), so publisher-clustered. The pattern is anchored on
+the element name now, the undated population measures **0**, and the older
+count is the 241 it always was. It is the same silent, publisher-correlated
+loss the prefix read is rejected for below, arriving by a different route —
+which is why it was fixed and the recent window redrawn rather than
+documented as a limitation.
+
+The prefix-read row is the one that shaped section 5. The Europe PMC draw spans
 PMC6102553–PMC13327518, almost all of it in packages held as tarballs, so
 pairing those two corpora as they sit would compare two different *samples*
 and report the sample difference as a rendition difference.

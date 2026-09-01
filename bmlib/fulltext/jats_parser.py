@@ -147,7 +147,7 @@ _ARCHIVAL_EXTENSIONS = frozenset({".tif", ".tiff", ".eps", ".ps"})
 # draws — 997 articles each, drawn deterministically from a named PMC OA
 # baseline package and measured on the rendition FullTextService feeds this
 # parser, Europe PMC's `fullTextXML` rather than the package's own archive
-# bytes: **6,385 <graphic> sit inside an <alternatives>** (5,833 recent, 552
+# bytes: **7,055 <graphic> sit inside an <alternatives>** (6,503 recent, 552
 # back-filled) and of those **zero declare a mime-subtype at all** and **zero
 # are archival by either test**. So neither tier fires, and the ARCHIVAL rank
 # is unreached.
@@ -160,16 +160,16 @@ _ARCHIVAL_EXTENSIONS = frozenset({".tif", ".tiff", ".eps", ".ps"})
 # Extensions are counted over every deposit rather than over <alternatives>
 # members alone — the sampler holds the two in separate counters and never
 # cross-tabulates them, so no extension figure scoped to the members is
-# derivable from either corpus. At that wider scope, across all 13,008:
+# derivable from either corpus. At that wider scope, across all 13,617:
 # .jpg and .gif in both windows and .png in the back-filled one, with **no
 # deposit in either window whose href carries no extension**. That is a
 # property of the *served* rendition and not of publishers, and
 # `tests/data/jats_exhibits.rendition.json` is where the difference is
-# recorded: `graphic_extensions` disagrees in 270 of 294 compared articles,
-# and on the archive side of those 270 it records 1,161 extensionless hrefs
-# of 1,733 deposits, in 241 articles. Scope it there and no further — the
+# recorded: `graphic_extensions` disagrees in 272 of 300 compared articles,
+# and on the archive side of those 272 it records 1,262 extensionless hrefs
+# of 2,046 deposits, in 241 articles. Scope it there and no further — the
 # artifact records a field only where the renditions disagree, so it says
-# nothing about the 24 that agree. So on the bytes this parser is handed
+# nothing about the 28 that agree. So on the bytes this parser is handed
 # _ARCHIVAL_EXTENSIONS always has something to read, where on archive bytes
 # it frequently would not.
 #
@@ -254,7 +254,7 @@ class _GraphicHolder:
 
     **THE TABLE SIDE MEASURES EMPTY, and this says so rather than implying a
     population** (issue #135, now answered). Across the two committed draws —
-    2,363 ``<table-wrap>``, all of them in the recent window — **95 carry a
+    2,448 ``<table-wrap>``, all of them in the recent window — **92 carry a
     ``<graphic>`` of their own and not one carries two**. So the ranking below
     is *unexercised* on tables rather than confirmed there: with a single
     deposit it and plain first-wins agree, and nothing is contradicted.
@@ -302,9 +302,9 @@ class _GraphicHolder:
         **The two committed draws are the evidence, and they are what a
         reader can re-derive** (``scripts/sample_jats_exhibits.py``, issue
         #138 — 997 articles per window, drawn from a named PMC OA baseline
-        package and measured on Europe PMC's ``fullTextXML``): of **4,466**
-        recent figures carrying a ``<graphic>``, **56.7%** [55.2-58.1] carry
-        more than one and **55.9%** [54.5-57.4] end on a thumbnail; of **627**
+        package and measured on Europe PMC's ``fullTextXML``): of **4,602**
+        recent figures carrying a ``<graphic>``, **58.1%** [56.7-59.6] carry
+        more than one and **57.3%** [55.9-58.8] end on a thumbnail; of **627**
         back-filled ones, **44.0%** [40.2-47.9] on both counts. **0%** deposit
         a thumbnail *first* in either — so the convention that motivates
         ranking over plain first-wins appears in neither window, and ranking
@@ -320,12 +320,12 @@ class _GraphicHolder:
 
         **This population is rendition-dependent, which is what #138 found.**
         Measured on the same identifiers' *archive* bytes,
-        ``last_is_thumb`` **differs in 153 of 294 compared articles, and where
-        it differs the archive measures 0 against 641 served**. Scope it that
+        ``last_is_thumb`` **differs in 156 of 300 compared articles, and where
+        it differs the archive measures 0 against 781 served**. Scope it that
         way and no further: ``tests/data/jats_exhibits.rendition.json``
         records a field only where the two renditions disagree, so an
         agreeing article contributes to neither side and the archive's total
-        over all 294 is not derivable from it. That is this module's own rule
+        over all 300 is not derivable from it. That is this module's own rule
         about a count being of what was looked for, applied to the artifact
         that establishes the rule.
 
@@ -335,7 +335,13 @@ class _GraphicHolder:
         spot-checked article and false in general — ``PMC12169732`` deposits
         its own four thumbnails as ``specific-use="thumbnail"`` where Europe
         PMC re-labels them ``content-type="thumb"``, and both renditions
-        measure four. The finding survives either way, and it is decisive:
+        measure four. That article was drawn *out* of the held sample by the
+        redraw, so it is now a **live spot-check** (re-run 2026-09-02) and not
+        a row of the committed artifact — which is exactly why the caveat
+        above is structural rather than resting on it: the artifact records
+        disagreements alone, so no archive total can be read off it whatever
+        one article does. The finding survives either way, and it is
+        decisive:
         these percentages describe the bytes ``FullTextService`` hands this
         parser, and a draw measured from a baseline package would read the
         whole ranking rule as unreached.
@@ -784,18 +790,22 @@ _TEXT_ACCUMULATING = frozenset(
 #
 # HOW OFTEN AN ARTICLE **CARRIES** A REGION, which is the only population
 # re-derivable from this repo and is the *bound* on how often one loses
-# content to it (#158): **25 of 997 recent committed-corpus articles, 2.5%
-# [1.7-3.7], 141 regions in all**, and 0 of 997 in the back-filled window
+# content to it (#158): **29 of 997 recent committed-corpus articles, 2.9%
+# [2.0-4.1], 145 regions in all**, and 0 of 997 in the back-filled window
 # (`scripts/sample_jats_exhibits.py`). `bmlib.transparency` counts the same
 # population over the same PMC `oa_comm` baseline package PMC012xxxxxx at
 # 3,382 of 97,909 (3.45%) — a far larger draw whose interval overlaps this
 # one — but **the two read different renditions**, transparency the archive
 # bytes and this the `fullTextXML` the parser is fed, and the renditions do
 # not agree here: `tests/data/jats_exhibits.rendition.json` records Europe
-# PMC *adding* regions in 5 of 294 articles (21 archive against 26 served),
-# the injected `associated-data` block named below among them. So the two
-# corroborate each other across a known difference, which is worth stating
-# rather than calling them one source.
+# PMC *adding* regions in 5 of 300 articles (27 archive against 32 served).
+# The added element is the injected `associated-data` block named below —
+# **spot-checked live in three of those five, not read off the artifact**,
+# which records counts alone and no `article-type`: each of the three gains
+# exactly one `<sub-article article-type="associated-data">` between the
+# archive copy and the served one. So the two corroborate each other across a
+# known difference, which is worth stating rather than calling them one
+# source.
 #
 # Two older figures are cited elsewhere and are **not** of this population:
 # 4 of 249 (1.6%) counted peer-review deposits specifically, and 288 of 1,022
@@ -833,17 +843,19 @@ _NESTED_ARTICLE_ELEMENTS = frozenset({"sub-article", "response"})
 # THIS ONE IS NOT DEFENSIVE, AND THE FIGURE MOVED TWICE. The vanished
 # 276-article draw found exactly one <graphic> owned by a non-exhibit inside
 # an exhibit, which read as a population of one. The two committed draws find
-# **102, in 12 of 997 recent articles** — and 0 of 997 back-filled — spread
-# over five owners, none of which this comment could have enumerated in
-# advance: <td> 48 (7 articles), <inline-formula> 42 (3), <chem-struct> 9 (1),
-# <disp-formula> 2 (1), <th> 1 (1). The cell images are what make it
+# **153, in 12 of 997 recent articles** — and 0 of 997 back-filled — spread
+# over three owners, none of which this comment could have enumerated in
+# advance: <td> 82 (8 articles), <inline-formula> 69 (3),
+# <disp-formula> 2 (1). The cell images are what make it
 # consequential rather than merely more numerous: since #127 gave
-# JATSTableInfo a `graphic_url`, relaxing ownership lands a <td>'s or <th>'s
+# JATSTableInfo a `graphic_url`, relaxing ownership lands a <td>'s
 # decoration in it as though it were the table's own rendition, and the
 # strictly-better rule then makes that permanent. So this rule is measured as
-# load-bearing on 102 deposits, not carried against a hypothetical — and the
-# five-owner spread is the argument for keeping the *listed* side short and
-# everything else opaque, rather than trying to enumerate the owners.
+# load-bearing on 153 deposits, not carried against a hypothetical — and the
+# owner spread is the argument for keeping the *listed* side short and
+# everything else opaque, rather than trying to enumerate the owners: the
+# previous draw of this same window found <chem-struct> and <th> too, which
+# this one does not, so the set of owners is drawn from rather than fixed.
 #
 # The rest is still what the archival tiers are: what it prevents is silent. A
 # nested <table-wrap>/<fn>/<supplementary-material> inside a <fig> hands over
@@ -1032,13 +1044,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # inside the figure it belongs to. The original survey put this at
         # 19.6% of articles; a later 276-article draw re-measured it at 0.7%
         # (2 articles, both eLife, losing 6 of 12 and 5 of 11 figures).
-        # **Neither draw is in the repo, and the two committed ones measure
-        # this at zero**: 0 nested <fig> and 0 nested <table-wrap> across
-        # 1,994 articles (`scripts/sample_jats_exhibits.py`, issue #138). So
-        # the rate is unreproducible here and only the shape survives — one
-        # publisher's house style costing about half of *its* figures, not a
-        # general convention — while eLife's PMC8754430, which is where the
-        # issue came from, still exhibits it outside any committed corpus. And
+        # **Neither draw is in the repo, and the committed corpora put the
+        # rate lower still**: 7 nested <fig> and 0 nested <table-wrap> across
+        # 1,994 articles, all seven in **one** article — eLife's PMC12143881,
+        # 7 of its 19 figures (`scripts/sample_jats_exhibits.py`, issue #138).
+        # So one article in 1,994 is the whole population, and it is the
+        # publisher the shape was always attributed to: a house style costing
+        # about a third of *its* figures, not a general convention. eLife's
+        # PMC8754430, where the issue came from, is the same shape outside any
+        # committed corpus. Read the 1-in-1,994 as a property of which
+        # publishers a draw happens to catch, never as a rate. And
         # JATS lets a <table-wrap> open inside another's <table-wrap-foot>. As
         # one slot, the inner open overwrote the parent's builder, the inner
         # close emitted the child and cleared the slot, and the parent's own
@@ -1081,27 +1096,29 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # Both paragraphs are in the subjunctive on purpose: they describe
         # what the retired boolean would do, not what a draw caught it doing.
         #
-        # BOTH OF THOSE POPULATIONS MEASURE EMPTY, AND THIS SAYS SO RATHER
-        # THAN IMPLYING ONE. Over the two committed draws (1,994 articles,
-        # `scripts/sample_jats_exhibits.py`, issue #138): **no <caption> nests
-        # inside another** — 0 of 7,820 recent — and every <caption> inside an
-        # exhibit is owned by that exhibit, with no third owner appearing at
-        # all. The back-filled window contributes nothing either way: it holds
+        # NEITHER POPULATION MEASURES EMPTY ANY LONGER, AND THIS SAYS SO.
+        # Over the two committed draws (1,994 articles,
+        # `scripts/sample_jats_exhibits.py`, issue #138): **6 <caption> of
+        # 8,111 recent nest inside another**, and **6 <caption> inside an
+        # exhibit are owned by a <supplementary-material>** rather than by the
+        # exhibit enclosing them. Both counts are one article — eLife's
+        # PMC12143881, which also carries every nested <fig> in the window —
+        # so this is a per-publisher deposit property in the way #115's
+        # nesting is, not a general rate. It is also the exact shape earlier
+        # drafts of this comment *asserted* and the two previous draws could
+        # not find: a figure supplement deposited as a captioned
+        # <supplementary-material> inside its <fig>. The stack and the owner
+        # test are what keep those six legends off the enclosing figure.
+        # The back-filled window contributes nothing either way: it holds
         # **0 <caption>** — inferred, not counted, to be scanned page
         # images — so its
         # zeroes are an absent denominator and not a second measurement. The
-        # same holds of the seven-article corpus
-        # in the sibling Swift repository, eLife's PMC8754430 included, which
-        # deposits its figure supplements as nested <fig> rather than as
-        # captioned <supplementary-material>. So this half is prospective, in
-        # the sense the <alternatives> archival tiers are: kept because what
-        # it prevents is silent and permanent, not because a draw found it.
-        # An earlier draft of this comment asserted the eLife shape as
-        # observed; the measurement retired that, and issue #135 is the
-        # standing reminder of what that mistake costs.
+        # seven-article corpus in the sibling Swift repository, eLife's
+        # PMC8754430 included, deposits its figure supplements as nested <fig>
+        # instead, so one publisher uses both shapes.
         #
         # THE PREMISE IT RESTS ON MEASURES FULL, which is the half that could
-        # have lost content: 6,709 / 6,709 recent exhibits carry a direct-child
+        # have lost content: 6,938 / 6,938 recent exhibits carry a direct-child
         # <caption> and carry one anywhere, so no exhibit is captioned only
         # indirectly and the parent can never come up empty where the old rule
         # found something. Unlike the <label> premise one handler down, which
@@ -1638,7 +1655,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # attribute to spaces rather than collapsing it, so a wrapped
             # href would take the ranking slot, block the real deposit that
             # follows, and render as a broken src. No instance in either
-            # committed corpus (13,008 deposits, every extension unpadded) —
+            # committed corpus (13,617 deposits, every extension unpadded) —
             # this guards a population measured empty, not an observed one.
             href = (
                 attrs.get("xlink:href") or attrs.get("href") or attrs.get("xlink-href") or ""
@@ -1915,9 +1932,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # 997 articles per window, drawn from a named PMC OA baseline
             # package and measured on Europe PMC's fullTextXML), counting only
             # a <title> that a <sec> was open for and that no exhibit already
-            # excluded: **409 titles in 100 of 997 recent articles (10.0%
-            # [8.3-12.1])**, owned by a <caption> (391, in 87 articles), a
-            # <def-list> (15, in 15) and an <fn-group> (3, in 1). What owns
+            # excluded: **411 titles in 104 of 997 recent articles (10.4%
+            # [8.7-12.5])**, owned by a <caption> (387), a <def-list> (12) and
+            # an <fn-group> (12). What owns
             # that <caption> is *not* recorded — the sampler counts the
             # <title>'s immediate parent alone — so a <boxed-text> or <media>
             # legend at section level is the likely reading rather than a
@@ -2069,9 +2086,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # IT IS VIOLATED (`scripts/sample_jats_exhibits.py`, issue #138).
             # Over the recent committed draw — 997 articles from a named PMC
             # OA baseline package, measured on Europe PMC's fullTextXML —
-            # 6,692 exhibits carry a <label> as a direct child while **6,699
-            # carry one anywhere**. Seven exhibits, in four articles
-            # (PMC12011025, PMC12092211, PMC12120668, PMC12174859), carry
+            # 6,937 exhibits carry a <label> as a direct child while **6,944
+            # carry one anywhere**. Seven exhibits, in seven articles
+            # (PMC12011025, PMC12111618, PMC12115352, PMC12149983,
+            # PMC12154067, PMC12159547, PMC12177175), carry
             # their label only indirectly, and for each of those this rule
             # finds nothing: `to_html` then substitutes `Figure {i + 1}` or
             # `Table {i + 1}`, which is #116's own symptom — an invented
@@ -2083,10 +2101,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # what a direct-child test should fall back to, if anything.
             #
             # The rule is still the better of the two. A depth counter would
-            # *mis-assign* 607 labels in 101 of these 997 articles — <fn>
-            # (367), <list-item> (222) and <disp-formula> (18), the last a
-            # container no enumeration written for #116 named — against 7 this
-            # one omits. A corruption is worse than a blank, and the parent
+            # *mis-assign* 561 labels in 95 of these 997 articles — <fn>
+            # (330), <list-item> (225) and <supplementary-material> (6), the
+            # last a container no enumeration written for #116 named —
+            # against 7 this one omits. A corruption is worse than a blank, and the parent
             # test needs no list to avoid it.
             #
             # The back-filled window is where the premise still measures full:
@@ -2094,11 +2112,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # <table-wrap> at all, so it corroborates only the figure half.
             #
             # Both figures count *labelled* exhibits, not every exhibit: the
-            # recent draw holds 6,831, so 132 carry no <label> either way and
+            # recent draw holds 7,058, so 114 carry no <label> either way and
             # the premise is about where a label sits, never about how many
-            # exhibits have one. Of the 7,299 labels inside a recent exhibit,
-            # 91.7% are the exhibit's own. No <supplementary-material> label
-            # appears in either window, that publisher being absent from both.
+            # exhibits have one. Of the 7,498 labels inside a recent exhibit,
+            # 92.5% are the exhibit's own. The six that a
+            # <supplementary-material> owns are one eLife article's figure
+            # supplements, the same article the caption stack above is
+            # exercised by — so that container is now measured rather than
+            # named as absent, and a single deposit convention is what put it
+            # in both windows' worth of evidence at once.
             parent = self.element_stack[-2] if len(self.element_stack) >= 2 else ""
             if parent == "fig" and self.current_figure is not None:
                 self.current_figure.label = text

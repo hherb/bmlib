@@ -64,7 +64,7 @@ cached full text should re-fetch, not only one calling `JATSParser` itself.
 *Evidence.* A rule's population can be large, empty, or both, and only a draw
 says which; one window is not the rate (#127 read 0 of 662 recent tables and
 11 of 93 in a 1996-1998 draw; #119 reads 0.7% of one corpus and 3.45% of
-another; the redrawn corpora hold 2,363 `<table-wrap>` and 0). **Measure the
+another; the redrawn corpora hold 2,448 `<table-wrap>` and 0). **Measure the
 population the code actually reads**, prefer a corpus with a public name over
 one on your disk — and check that the *rendition* of the named corpus is the
 one the code is fed, which is the half #138 had to learn the hard way. A number in a comment goes
@@ -350,8 +350,8 @@ the identifier list from `(packages, window, target, seed)`. Midway the plan's
 own instrument disproved its premise: a package holds an **archive** rendition
 while `FullTextService` feeds the parser Europe PMC's `fullTextXML`, and the
 two differ on exactly the populations being cited — `last_is_thumb` **differs
-in 153 of 294 compared articles, and where it differs the archive measures 0
-against 641 served**. A corpus drawn *and* measured from the package would
+in 156 of 300 compared articles, and where it differs the archive measures 0
+against 781 served**. A corpus drawn *and* measured from the package would
 have read #117's whole ranking rule as dead code. So the sample is
 package-defined and deterministic and the bytes are Europe PMC's
 (`--measure-europepmc`), with `tests/data/jats_exhibits.rendition.json` as the
@@ -365,10 +365,14 @@ deposits one bare `<graphic xlink:href="…-g001">` per figure where Europe PMC
 synthesises an `.jpg`/`.gif` pair. Both halves overreach.
 `rendition_delta` records a field **only where the renditions disagree**, so
 summing deltas gives a sum over disagreements and the archive's total over all
-294 is not in the artifact at all; and `PMC12169732`, in that same file,
-deposits its own four thumbnails as `specific-use="thumbnail"` where Europe
-PMC re-labels them `content-type="thumb"`, both measuring four — so there is
-no one mechanism to name. **A count is of what you looked for, not of what
+300 is not in the artifact at all; and `PMC12169732` deposits its own four
+thumbnails as `specific-use="thumbnail"` where Europe PMC re-labels them
+`content-type="thumb"`, both measuring four — so there is no one mechanism to
+name. That article was in the *first* redraw's held sample and is in neither
+the corpus nor the artifact now, so it is cited as a **live spot-check**
+(re-run 2026-09-02) — which is the caveat's own point: the artifact carries
+disagreements alone, so no archive total can be read off it whatever one
+article does. **A count is of what you looked for, not of what
 exists**, and it was the person writing that rule down who got it wrong. The
 finding is decisive either way; only the statement was too big.
 
@@ -381,8 +385,8 @@ Both corpora are 997 measured articles of 1,000 at `seed 0`, recent from
 back-filled from `…PMC002xxxxxx…` (1996-1998).
 
 *Three claims did not survive, and one of them is a defect.* The `<label>`
-direct-child premise is **violated** on the served rendition — 6,692 of 6,699,
-so 7 exhibits in 4 articles lose their label to an invented `Figure {i + 1}`,
+direct-child premise is **violated** on the served rendition — 6,937 of 6,944,
+so 7 exhibits in 7 articles lose their label to an invented `Figure {i + 1}`,
 which is #116's own symptom from the other side. Three earlier draws measured
 it full and none is re-derivable, so this is real and not an archive artifact;
 it has a ROADMAP row and wants a decision about a fallback, not a prose repair.
@@ -398,14 +402,14 @@ withdrawn as unre-derivable rather than restated.
 
 *#158 is answered by naming the population.* "Carries a region" and "loses body
 text to one" are different claims, the first bounding the second. The
-re-derivable figure is the first: **25 of 997 (2.5%)** recent articles carry a
-nested-article region (141 regions), 0 of 997 back-filled, agreeing with
+re-derivable figure is the first: **29 of 997 (2.9%)** recent articles carry a
+nested-article region (145 regions), 0 of 997 back-filled, agreeing with
 `transparency`'s 3,382 of 97,909 (3.45%) over the same `oa_comm` package. The 4
 of 249 (1.6%) counted peer-review deposits and the 288 of 1,022 (28.2%) counted
 articles losing body text, both on draws that are in no commit. All four sites
 now say which population they are of.
 
-**#128 is weaker than filed**: all 13,008 `<graphic>` hrefs in the two redrawn
+**#128 is weaker than filed**: all 13,617 `<graphic>` hrefs in the two redrawn
 corpora use the `xlink` prefix bound to the XLink namespace, so the
 literal-prefix match is safe on measured evidence. Worth downgrading rather
 than closing — no sample proves no publisher does otherwise.
@@ -476,11 +480,11 @@ can only lose body text to a region it carries. (Not the converse: a
 `<sub-article>` carrying `<front-stub>` and no `<body>` — Europe PMC's injected
 `associated-data` block among them — costs the article nothing.) A fourth was 6
 of 876 from the Europe PMC draw above. Each site now says which claim it makes,
-and the carrier rate is re-derivable from the repo at **25 of 997 (2.5%)** in
+and the carrier rate is re-derivable from the repo at **29 of 997 (2.9%)** in
 the recent corpus and 0 of 997 back-filled — an interval overlapping #119's
 3.45% over the same `oa_comm` package, though across a rendition difference
 rather than as one measurement: #119 counts archive bytes, the sampler the
-served `fullTextXML`, which *adds* regions in 5 of 294 compared articles. The
+served `fullTextXML`, which *adds* regions in 5 of 300 compared articles. The
 carrier rate bounds "loses body text" and says nothing about peer review. The rate genuinely is a per-publisher property,
 which is why 28.2% could be honest for a draw weighted to PLOS/eLife/BMJ/F1000;
 what made it a defect was that three of the four draws are in no commit.

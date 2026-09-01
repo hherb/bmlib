@@ -33,7 +33,7 @@ Eight questions, each answering a decision the parser makes:
    premise of the parent-based routing that replaced #116's footnote-depth
    counter. If an exhibit anywhere carries its label *only* indirectly, the
    rule loses that label and the premise is wrong — and on the redrawn recent
-   corpus it **is** wrong, for 7 exhibits of 6,699 in 4 of 997 articles. The
+   corpus it **is** wrong, for 7 exhibits of 6,944 in 7 of 997 articles. The
    report says ``PREMISE VIOLATED`` rather than printing a rate, because a
    premise is not a population.
 2. **What else carries a ``<label>`` inside an exhibit?** The depth rule
@@ -48,7 +48,7 @@ Eight questions, each answering a decision the parser makes:
    #127 routes a table's deposits through #117's ranking, which was measured
    on figures alone; until a draw finds a table carrying more than one, that
    rule is reasoned onto tables rather than observed on them. Answered, and
-   the answer is empty: of the 95 tables in the redrawn recent corpus that
+   the answer is empty: of the 92 tables in the redrawn recent corpus that
    carry a ``<graphic>``, none carries two.
 6. **Is a ``<graphic>`` ever owned by something other than its exhibit**, and
    does a ``<table-wrap>`` carry one with no ``<table>`` (#127) — or with
@@ -85,8 +85,8 @@ row whose regions are absent carries an empty mapping, which is the right
 reading both for "no nested article" and for "written before this existed" —
 there is no difference to report either way, so ``unscoped`` deliberately has
 no NOT-MEASURED sentinel where the other counter generations do. In the
-committed recent draw 25 of 997 articles carry a region (141 regions in all)
-and ``unscoped`` is non-empty for exactly those 25; the back-filled window
+committed recent draw 29 of 997 articles carry a region (145 regions in all)
+and ``unscoped`` is non-empty for exactly those 29; the back-filled window
 carries none.
 
 **It does not import the parser's predicates**, and a future refactor must not
@@ -115,21 +115,25 @@ article from Europe PMC's ``fullTextXML``, which is the rendition
 ``FullTextService`` feeds the parser. Both committed corpora are taken that
 way, and the corpus records which under ``window["rendition"]``. The two
 renditions disagree on cited populations rather than on details:
-``last_is_thumb`` **differs in 153 of 294 compared articles, and where it
-differs the archive measures 0 against 641 served**.
+``last_is_thumb`` **differs in 156 of 300 compared articles, and where it
+differs the archive measures 0 against 781 served**.
 
 **Read that number only at that scope**, which is a rule this module's own
 report exists to enforce and which its author got wrong first time.
 ``rendition_delta`` records a field only where the two renditions disagree,
 so an agreeing article is absent from the file entirely and the archive's
-total over all 294 cannot be recovered from it — summing the deltas gives a
+total over all 300 cannot be recovered from it — summing the deltas gives a
 sum over the disagreements, not a corpus total. Nor is there one mechanism to
 name: an early draft said the archive deposits one bare ``<graphic
 xlink:href="…-g001">`` per figure where Europe PMC synthesises an image/thumb
 pair, which holds for a spot-checked article and not in general, since
 ``PMC12169732`` deposits its own four thumbnails as
 ``specific-use="thumbnail"`` where Europe PMC re-labels them
-``content-type="thumb"`` and both renditions measure four. The finding is
+``content-type="thumb"`` and both renditions measure four — a **live
+spot-check** (re-run 2026-09-02), that article having been drawn out of the
+held sample, which is itself the caveat's point: the artifact carries
+disagreements alone, so no archive total can be read off it whatever one
+article does. The finding is
 decisive either way; it was the statement that overreached.
 
 ``--compare-europepmc N`` produces that comparison and writes
@@ -150,12 +154,15 @@ re-derive. A displaced run must name its own ``-o``; writing one to the
 default path would replace the recent corpus, or pool the two windows through
 the shared journal.
 
-Usage — the two committed corpora, as taken::
+Usage — the two committed corpora, as taken. The recent one carries
+``--compare-europepmc 300``, which is also what writes
+``tests/data/jats_exhibits.rendition.json``, so its provenance describes this
+same draw rather than an earlier one::
 
     uv run python scripts/sample_jats_exhibits.py \
         --package /path/to/oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz \
         --from-year 2023 --to-year 2025 --target 1000 --seed 0 \
-        --measure-europepmc
+        --measure-europepmc --compare-europepmc 300
     uv run python scripts/sample_jats_exhibits.py \
         --package /path/to/oa_comm_xml.PMC002xxxxxx.baseline.2025-06-26.tar.gz \
         --from-year 1996 --to-year 1998 --target 1000 --seed 0 \
@@ -370,7 +377,20 @@ def _extension(href: str) -> str:
 # the scan touches every article in a package and parsing them all to pick two
 # elements costs more than the walk that follows it.
 _PUB_DATE_RE = re.compile(rb"<pub-date[^>]*>(.*?)</pub-date>", re.DOTALL)
-_YEAR_RE = re.compile(rb"<year>\s*(\d{4})\s*</year>")
+# The open tag is matched as `<year` followed by a `>` or by whitespace, never
+# as `<year` followed by anything: `[^>]*` would accept `<yearly>`, and the
+# element name has to be the whole name. The attributes themselves are not read
+# — a `<year>` legally carries `@iso-8601-date`, `@calendar` and
+# `@content-type`, and requiring a bare open tag made every attributed one
+# undated and so *undrawable*, silently and along a publisher-correlated axis
+# (measured: 17 of 97,909 in `PMC012xxxxxx`, all `<year iso-8601-date="...">`,
+# all inside the recent window, and 14 of them one contiguous journal block,
+# PMC12085917-PMC12085930 — bias, not noise; `PMC002xxxxxx` is unaffected,
+# 0 of 122,576). That is the same silent publisher-correlated loss the prefix
+# read is refused for in `article_year`'s own docstring, reached by another
+# route. `(?!\d)` keeps a malformed five-digit year from reading as a
+# four-digit one, which is what the old `</year>` anchor bought.
+_YEAR_RE = re.compile(rb"<year(?:\s[^>]*)?>\s*(\d{4})(?!\d)")
 
 
 class PackageError(Exception):
@@ -396,14 +416,22 @@ def article_year(xml: bytes) -> int | None:
     ``<ref>`` and reports a cited work's year as this article's — the first
     draw made that mistake and produced articles "published" in 1861.
 
+    A ``<year>``'s **attributes are not read, and their presence is not a
+    reason to skip it** — see `_YEAR_RE`, where requiring a bare open tag cost
+    17 recent articles, 14 of them one journal block.
+
     Args:
         xml: The article's raw bytes, **whole**. A prefix read is measured in
             this plan's spec as both lossy and wrong.
 
     Returns:
-        The year, or ``None`` where the document declares no ``<pub-date>``
-        carrying a ``<year>`` — which makes the article undated and so
-        undrawable, never "published in year zero".
+        The year, or ``None`` — which makes the article undated and so
+        undrawable, never "published in year zero". After the `_YEAR_RE` fix
+        that outcome has **no measured population**: 0 of 97,909 in
+        `PMC012xxxxxx` and 0 of 122,576 in `PMC002xxxxxx`. Do not restate it
+        as "the document declares no `<pub-date>` carrying a `<year>`" — that
+        was the old wording and it was false for 100% of the articles it
+        actually fired on, every one of which carried both elements.
     """
     years = [
         int(year.group(1))
@@ -670,23 +698,36 @@ def iter_package_articles(path: Path) -> Iterator[tuple[str, bytes]]:
 
 
 def package_candidates(paths: list[Path], first: int, last: int) -> list[str]:
-    """Every article in *paths* published in ``[first, last]``, sorted.
+    """Every article in *paths* published in ``[first, last]``, sorted, once each.
+
+    **Deduplicated, because two `--package` paths may hold the same article.**
+    `--package <dir> --package <its own tarball>` is the layout
+    `_package_identity` documents as the ordinary local-mirror shape — an
+    extracted directory sitting beside the tarball it came out of — so the
+    overlap is a plausible command line rather than a contrived one, and every
+    consequence of not deduplicating is silent: each article enters the pool
+    twice, so `draw` can select one identifier twice and hand `main` a
+    `wanted` set smaller than `--target` with nothing said; it is then
+    measured twice and journalled twice, doubling every population; and
+    `_comparison_reportable`'s denominator inflates the same way. Exit 0
+    throughout, with plausible-looking numbers.
+    :func:`read_package_articles` carries the same rule on the other side.
 
     Args:
-        paths: Package directories or tarballs.
+        paths: Package directories or tarballs. May overlap.
         first: Earliest publication year to accept, inclusive.
         last: Latest publication year to accept, inclusive.
 
     Returns:
-        The identifiers, sorted — the order a draw is taken against, so it
-        must not depend on a directory's glob order.
+        The identifiers, sorted and distinct — the order a draw is taken
+        against, so it must not depend on a directory's glob order.
     """
-    found = [
+    found = {
         pmcid
         for path in paths
         for pmcid, xml in iter_package_articles(path)
         if (year := article_year(xml)) is not None and first <= year <= last
-    ]
+    }
     return sorted(found)
 
 
@@ -717,20 +758,30 @@ def read_package_articles(paths: list[Path], wanted: set[str]) -> Iterator[tuple
     """Yield ``(pmcid, raw_xml)`` for the drawn articles, in package order.
 
     A second pass over the packages, rather than holding the first pass's
-    bytes: the recent window has 97,651 in-window candidates, which is too
+    bytes: the recent window has 97,668 in-window candidates, which is too
     many whole articles to hold in memory between passes. For a tarball the
     pass costs one more sequential decompression (16.5 s for `PMC002xxxxxx`).
 
+    **Each identifier is yielded once, however many packages hold it.** The
+    other half of :func:`package_candidates`' deduplication rule, and the half
+    that costs a doubled measurement rather than a doubled pool: an article
+    present in both an extracted directory and the tarball beside it would
+    otherwise be measured and journalled twice, and `Totals` adds every row it
+    is handed. First package wins, which is arbitrary and does not matter —
+    the members are the same bytes.
+
     Args:
-        paths: The same packages the candidates came from.
+        paths: The same packages the candidates came from. May overlap.
         wanted: The drawn identifiers.
 
     Yields:
-        Each wanted article's identifier and bytes.
+        Each wanted article's identifier and bytes, once per identifier.
     """
+    yielded: set[str] = set()
     for path in paths:
         for pmcid, xml in iter_package_articles(path):
-            if pmcid in wanted:
+            if pmcid in wanted and pmcid not in yielded:
+                yielded.add(pmcid)
                 yield pmcid, xml
 
 
@@ -852,11 +903,20 @@ def _journal_disagreement(
     runs' rows; a different `--seed` at one `-o` pooled the same way. Same
     `(source, rendition)`, different draw. `draw` is therefore part of what
     is checked here too — for a `--package` run, its packages, its year
-    window and its seed; for the live source, its month window —
-    everything that decides *which* identifiers this run is drawing,
-    deliberately excluding `target` (a resumed run growing its target is
-    the ordinary top-up workflow this whole journal mechanism exists for,
-    not a disagreement).
+    window and its seed; for the live source, its month flags **and the
+    boundaries those flags resolved to** — everything that decides *which*
+    identifiers this run is drawing, deliberately excluding `target` (a
+    resumed run growing its target is the ordinary top-up workflow this
+    whole journal mechanism exists for, not a disagreement).
+
+    *The live source's flags do not identify its draw; its resolved dates
+    do.* `--months`/`--months-ago` are counted back from `date.today()`, so
+    the identical command names a different window each month. Carrying only
+    the flags, a journal written on the last day of a month resumes cleanly
+    the next day under a window shifted by a whole month, and the corpus is
+    stamped with the second run's `first`/`last` over a mix of both runs'
+    rows — the package branch's round-3 pooling, one axis over and reachable
+    without changing a single argument.
 
     *A package is identified twice over, on purpose* (review round 4,
     reproduced at exit 0). `draw["packages"]` carries the public artifact
@@ -976,18 +1036,31 @@ def _measure_and_journal(
 
     Args:
         handle: The open journal file, in append mode.
-        totals: Accumulates every measured row and the unmeasured count.
+        totals: Accumulates every measured row, the unmeasured count and why
+            each unmeasured article was unmeasured.
         articles: ``(pmcid, xml)`` pairs. ``xml`` is ``None`` for a failed
             live fetch — the archive package's own read never produces
             ``None``, only bytes, empty or otherwise, which
             :func:`measure_article` already turns into an unmeasured row on
             its own via ``ET.ParseError`` — and that article is counted
-            unmeasured with nothing substituted for it.
+            unmeasured with nothing substituted for it. That asymmetry is
+            what the two causes are keyed on: ``None`` is
+            ``europepmc_unavailable``, everything else that fails is
+            ``unparseable``.
     """
     for pmcid, xml in articles:
-        row = measure_article(pmcid, xml) if xml else None
+        # `is None`, not falsiness: only a failed live fetch is ``None``,
+        # while an archive member that is present and *empty* is ``b""`` —
+        # falsy, but a document that would not parse rather than one that
+        # could not be retrieved, and the two are exactly the distinction the
+        # causes exist to record. `measure_article` turns the empty case into
+        # ``None`` itself, through `ET.ParseError`.
+        if xml is None:
+            totals.count_unmeasured("europepmc_unavailable")
+            continue
+        row = measure_article(pmcid, xml)
         if row is None:
-            totals.unmeasured += 1
+            totals.count_unmeasured("unparseable")
             continue
         totals.add(row)
         handle.write(json.dumps(row.to_dict()) + "\n")
@@ -1690,8 +1763,23 @@ def compare_renditions(
 ) -> dict[str, Any]:
     """Measure each article in both renditions and report where they disagree.
 
-    The citable corpus is the *archive* rendition; ``FullTextService`` feeds
-    the parser Europe PMC's ``fullTextXML``. #119 found the two differ in a
+    **This function's own answer is why the citable corpora are drawn from
+    the *served* rendition.** It was written while they were drawn from the
+    archive one, to test whether citing an archive figure for a parser fed by
+    Europe PMC was safe. It found the overwhelming majority of compared
+    articles differing, on exactly the populations this repo cites, and both
+    corpora were redrawn on ``fullTextXML`` in response — the counts are in
+    ``tests/data/jats_exhibits.rendition.json``, which this writes, rather
+    than restated here where they would drift from it. The archive-side
+    premise below is the question this asked, not a description of what the
+    corpora are.
+
+    The *sample* stays package-defined either way — a reader re-derives the
+    identifier list from ``(packages, window, target, seed)`` — and only the
+    bytes measured moved.
+
+    ``FullTextService`` feeds the parser Europe PMC's ``fullTextXML``. #119
+    found the two differ in a
     construct the scan's lexer reads: Springer's commented-out
     ``<authorqueries>`` block is in the archive copy of three articles and
     absent from Europe PMC's copy of the same three. (CLAUDE.md's own
@@ -1908,11 +1996,32 @@ class Totals:
 
     articles: int = 0
     unmeasured: int = 0
+    # Why each unmeasured article was unmeasured, in the same two-value
+    # vocabulary `compare_renditions` already reports its own by. The corpora
+    # recorded a bare *count*, so "3 unmeasured" could not be read as
+    # permanent (an article Europe PMC does not serve, which no re-run
+    # recovers) or transient (a throttled or flaky fetch, which a re-run
+    # does) — and those call for different actions from a reader deciding
+    # whether the draw is finished. Not journalled, like `unmeasured` itself,
+    # so it describes the attempts *this* run made.
+    unmeasured_causes: Counter[str] = field(default_factory=Counter)
     rows: list[ArticleMeasurement] = field(default_factory=list)
 
     def add(self, row: ArticleMeasurement) -> None:
         self.articles += 1
         self.rows.append(row)
+
+    def count_unmeasured(self, cause: str) -> None:
+        """Record one unmeasured article, and why.
+
+        The count and the cause move together — incremented in one place
+        rather than at each call site — so a new unmeasured path cannot
+        contribute to the total while leaving the causes silently short of
+        it, which would read as "the rest had no cause" rather than as a
+        missing branch.
+        """
+        self.unmeasured += 1
+        self.unmeasured_causes[cause] += 1
 
     def sum_of(self, attribute: str) -> int:
         return sum(int(getattr(r, attribute)) for r in self.rows)
@@ -2348,13 +2457,34 @@ def _validate_args(args: argparse.Namespace) -> str | None:
     because argparse's ``type=int`` accepts a minus sign happily and the
     degradation is silent — see that function's ``Raises``.
 
+    *``--target`` is checked for the same reason, and it degrades two
+    different ways.* On the package branch a negative target reaches
+    ``random.sample`` and raises `ValueError` out of the draw — loud, but as
+    a stack trace out of the middle of a run, where every other bad argument
+    here gets a one-line refusal before anything is touched. On the live
+    branch it raises nothing at all: ``--target -5`` asks
+    :func:`open_access_pmcids` for 145 rather than 150 identifiers and spends
+    the search requests for them, and then ``totals.articles >= args.target``
+    is true before the first article is fetched, so the walk measures nothing
+    — a quietly narrower draw on one side of the same flag that crashes on
+    the other.
+
+    *Zero is deliberately **not** refused with the negatives.* It already
+    fails closed on its own: ``Totals.reportable`` is ``bool(self.rows) and
+    …``, so a fresh ``--target 0`` draw is unreportable, exits non-zero and
+    writes to ``*.unreportable.json``. And it is a *used* value —
+    ``TestTheEmptyComparisonNet`` reaches the empty-comparison net through
+    it, which is the only way to hold nothing for comparison without
+    monkeypatching the holder. Refusing it would remove a working lever to
+    re-refuse a case that is already refused.
+
     *A displaced live draw may not land on the default output.* The journal
     is derived from ``--output``, so a run with ``--months-ago`` and no
     ``-o`` either overwrites the recent corpus with an older window under the
     recent corpus's name, or — journal present — tops one window's rows up
     with another's and prints the pooled result as one rate. The window
-    decides the answer — the two committed corpora hold 2,363
-    ``<table-wrap>`` and 0, and 56.7% against 44.0% of figures carrying
+    decides the answer — the two committed corpora hold 2,448
+    ``<table-wrap>`` and 0, and 58.1% against 44.0% of figures carrying
     several ``<graphic>`` — so pooling two windows produces a number
     describing neither. Naming an explicit ``-o`` is the whole fix.
 
@@ -2450,6 +2580,8 @@ def _validate_args(args: argparse.Namespace) -> str | None:
         return "--compare-europepmc compares a --package draw against Europe PMC"
     if args.compare_europepmc < 0:
         return f"--compare-europepmc must not be negative, got {args.compare_europepmc}"
+    if args.target < 0:
+        return f"--target must not be negative, got {args.target}"
     if args.measure_europepmc and not args.package:
         return "--measure-europepmc measures a --package draw from Europe PMC; it needs one"
     if args.months < 1:
@@ -2549,7 +2681,24 @@ def main() -> int:
     else:
         source = "europepmc"
         rendition = "europepmc"
-        draw_identity = {"months": args.months, "months_ago": args.months_ago}
+        # Resolved here rather than inside the live branch 150 lines below,
+        # because the *resolved boundaries* are part of this run's draw
+        # identity and the flags alone are not. The windows are counted back
+        # from `date.today()`, so `--months 24` names one draw today and a
+        # different one next month: a journal written on the last day of a
+        # month resumes cleanly the day after under a window shifted by a
+        # whole month, and the corpus is then stamped with the *second* run's
+        # boundaries over a mix of both runs' rows — the pooling
+        # `_journal_disagreement` exists to refuse, arriving on the one axis
+        # the live identity did not cover. Reused verbatim for `window` below,
+        # so the identity and the corpus header cannot disagree.
+        windows = _month_windows(args.months, date.today(), skip=args.months_ago)
+        draw_identity = {
+            "months": args.months,
+            "months_ago": args.months_ago,
+            "first": windows[-1][0],
+            "last": windows[0][1],
+        }
 
     # Rendition-qualified for --measure-europepmc: a friendlier failure mode
     # (a --measure-europepmc run gets its own fresh journal by default,
@@ -2653,14 +2802,15 @@ def main() -> int:
             args.package, drawn, args.compare_europepmc, args.seed
         )
     else:
-        # Resolved once, before any request, so the corpus can state the
-        # window it was drawn from. Without it "1996-1998" lives only in
+        # `windows` was resolved once, up in the identity block, before any
+        # file was touched or any request made — so the corpus can state the
+        # window it was drawn from and the journal's header can refuse a
+        # resume under a *different* one. Without it "1996-1998" lives only in
         # prose: the windows are counted back from `date.today()`, so the
         # same command a year from now draws a different draw, and nothing in
         # the written file would say which one it is. Issue #132 is the same
         # failure by another route — a cited measurement whose corpus is not
         # in the repo.
-        windows = _month_windows(args.months, date.today(), skip=args.months_ago)
         window = {
             "source": source,
             "months": args.months,
@@ -2688,9 +2838,12 @@ def main() -> int:
                     if totals.articles >= args.target:
                         break
                     raw = _fetch(client, f"{EUROPE_PMC}/{pmcid}/fullTextXML", pace)
-                    row = measure_article(pmcid, raw) if raw else None
+                    if not raw:
+                        totals.count_unmeasured("europepmc_unavailable")
+                        continue
+                    row = measure_article(pmcid, raw)
                     if row is None:
-                        totals.unmeasured += 1
+                        totals.count_unmeasured("unparseable")
                         continue
                     totals.add(row)
                     handle.write(json.dumps(row.to_dict()) + "\n")
@@ -2706,6 +2859,12 @@ def main() -> int:
             {
                 "articles": totals.articles,
                 "unmeasured": totals.unmeasured,
+                # What kind of unmeasured, in the vocabulary
+                # `jats_exhibits.rendition.json` already uses. A bare count
+                # cannot be read as permanent or transient, and the two call
+                # for different actions from a reader asking whether the draw
+                # is finished.
+                "unmeasured_causes": dict(totals.unmeasured_causes),
                 "window": window,
                 "rows": [r.to_dict() for r in sorted(totals.rows, key=lambda r: r.pmcid)],
             },
