@@ -10,8 +10,9 @@ sampler (PR #126), #127's image-only table (PR #133),
 #134/#121/#129's end-of-parse audit (PR #139), #120/#140's undivided
 contributor name (PR #141), #146/#149's mixed-citation text (PR #148),
 #151's mechanised buffer-read invariant (PR #153, adding no behaviour),
-#112's funder-matching figures (PR #155) — plus **this session's #119, on
-`fix/119-transparency-nested-articles`**. All five version places agree at
+#112's funder-matching figures (PR #155), and #119's article-only full-text
+scan (PR #159, merged 2026-08-30). All thirteen are on `main` and the working
+tree is clean. All five version places agree at
 0.10.0. Nine of the thirteen are `fulltext` JATS fixes filed within days of
 each other; whoever cuts the next release should describe them together. Every
 unreleased ROADMAP row carries an `*(unreleased)*` marker.
@@ -118,7 +119,7 @@ that outlive the fix.
   wrong** — and a corrected figure can be *uncheckable* rather than wrong,
   which is #154.
 
-**This session settled #119** — a reviewer's prose answered for the article.
+**PR #159 settled #119** — a reviewer's prose answered for the article.
 `TransparencyAnalyzer` never consumes `JATSParser` output: it fetches
 `fullTextXML` itself and regexes the raw string, so every `<sub-article>` /
 `<response>` region was scanned as the article's own. The regions are now
@@ -179,27 +180,38 @@ carries the whole inventory as a floor; and a control must not be judged
 against production data it does not own. That session also measured
 `<article-id>`'s reachability guard deciding *nought* tests, filed as **#152**.
 
-**A closing keyword in prose closed an issue nobody decided — three times.**
-A commit body saying *"filed rather than ‹keyword›: ‹number›"* is read
+**A closing keyword in prose closed an issue nobody decided — four times, and
+the fourth was the commit warning about the other three.** A commit body saying
+*"filed rather than ‹keyword›: ‹number›"* is read
 literally by GitHub, which closes the issue seconds after the merge and does
 not care that the sentence says the opposite, nor that the substring sits in a
 quotation, a blockquote, a code span or bold markers. #137 went that way twice
 — the second time in a PR body *quoting the first in order to warn about it* —
 and #142 the third, closed by the commit that *filed* it, so it was born
-closed and appeared in no count of what that session left open.
+closed and appeared in no count of what that session left open. The fourth is
+**#160**, closed as COMPLETED by `d362271`, whose body announces *two findings
+filed rather than ‹keyword›* and then names them — the very phrasing this
+paragraph had already been written to warn against. It was reopened at the
+start of the following session; nothing in the merged branch touches it.
 
 So the rule is not "phrase it carefully" but **never reproduce the substring
 at all** — describe it, or write the number without its `#`, in commit
 messages, PR bodies and any quotation of either, which is why this paragraph
-names neither. And after every merge that mentions an issue in prose, diff
-`gh issue list` against the commit's own list of what it filed.
+names neither. **The rule is not enough on its own** — it was written, read and
+then broken by the same session — so the check is the one that catches it after
+the fact: after every merge that mentions an issue in prose, diff
+`gh issue list` against the commit's own list of what it filed. That check is
+what found #160 reopened here, one session late.
 
 **Next up: #124, #128, #137, #138, #142–#145, #147, #150 and #152 in
-`fulltext`, #132 and #158, the older non-JATS ones (#86, #92, #94, #103), the
+`fulltext`, #160 and #161 in `transparency`, #132 and #158, the older non-JATS
+ones (#86, #92, #94, #103), the
 funder corpus (#154, #156, #157), or Phase 3 of the bmlibrarian port, whose
 every row needs a design conversation.** Two of those are *one job each* and
 worth taking as such — the JATS corpus redraw answers six issues, and the
-funder redraw three. See "Open GitHub issues" below for which is blocked on
+funder redraw three. #160 is the cheapest self-contained fix on the list: the
+remedy it prefers — match the element name when the depth closes — needs no
+invented constant and no corpus. See "Open GitHub issues" below for which is blocked on
 what; almost none is a drive-by, and the ones that lose content are blocked on
 a modelling decision rather than on effort.
 
@@ -229,11 +241,10 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
   questions are independent — the version number answers the API question,
   never the data one, and a downstream reading only the number must still read
   this list.
-- **Tests: 2805 passing + 63 skipped on `main`**, **2822 + 63** on
-  `fix/119-transparency-nested-articles` (`uv run pytest tests/ -q`, measured
-  2026-08-30) — the 17 new ones are `TestANestedArticleIsNotThisArticles` in
-  `test_transparency.py`, 11 of them on the lexer and 6 on what the scans then
-  see. The PostgreSQL half
+- **Tests: 2837 passing + 63 skipped on `main`** (`uv run pytest tests/ -q`,
+  measured 2026-08-31, after PR #159) — 32 of them are
+  `TestANestedArticleIsNotThisArticles` in `test_transparency.py`, on the lexer
+  and on what the scans then see. The PostgreSQL half
   has not been re-run since the SQL last moved; the
   last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the
   #105 branch. Of the 63 default skips, 61 are the PostgreSQL
@@ -257,9 +268,9 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression, not expected staleness. The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; **59 are outstanding for the next release** — 25 `ROADMAP.md`
-  rows and 34 spots across `docs/manual/publications.md` (13), `fulltext.md`
-  (14), `templates.md` (3) and `transparency.md` (4). Recounted 2026-08-30 with
+  release time; **60 are outstanding for the next release** — 25 `ROADMAP.md`
+  rows and 35 spots across `docs/manual/publications.md` (13), `fulltext.md`
+  (15), `templates.md` (3) and `transparency.md` (4). Recounted 2026-08-31 with
   `grep -ic unreleased`; the figure is measured, not maintained, so recount it
   rather than adjusting it. Grep case-insensitively for `unreleased` rather
   than for `(unreleased)`: three of 0.10.0's thirteen were spelled
@@ -284,11 +295,12 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 
 ### Open GitHub issues
 
-**Twenty-one open** as this file is written (verified with `gh issue list`
-2026-08-30, after #112 was closed on PR #155's merge and after this session
-filed #158): #86, #92, #94, #103, #119, #124, #128, #132, #137, #138, #142,
-#143, #144, #145, #147, #150, #152, #154, #156, #157, #158; twenty once this
-PR lands #119. Every one was found by review or measurement rather than by a
+**Twenty-two open** as this file is written (verified with `gh issue list`
+2026-08-31, after PR #159 merged, after #119 was closed by hand — the PR
+carried no closing keyword, deliberately — and after #160 was reopened, having
+been closed as COMPLETED without being fixed): #86, #92, #94, #103, #124, #128,
+#132, #137, #138, #142, #143, #144, #145, #147, #150, #152, #154, #156, #157,
+#158, #160, #161. Every one was found by review or measurement rather than by a
 failing test, and **none of them loses records** — though **#124** loses an
 exhibit's footnotes, **#147** loses a formula from the prose that contains it,
 **#150** renders a note-only reference as an empty bullet, and **#128** would
@@ -296,8 +308,9 @@ lose every figure image in a document binding XLink to another prefix. Count
 this against the repo before trusting it: the line has been wrong in three
 consecutive sessions, and one further way is an issue **closed as COMPLETED
 without being fixed**, which no count of open issues catches — that has now
-happened three times by the mechanism described below, and the third victim
-was an issue the same commit *filed*. (The chain of what is unreleased, since
+happened four times by the mechanism described below, the third victim being
+an issue the same commit *filed* and the fourth being #160, closed by the very
+commit that documented the mechanism. (The chain of what is unreleased, since
 every open issue but five came out of it — released provenance is in
 `CHANGELOG.md`. **#73** → PR #102, filing **#103**. **#96** → PR #106, closed
 as correct rather than fixed. **#105**, **#107** → PR #114. **#109** → PR
@@ -308,8 +321,8 @@ PR #133, filing **#132**, **#134**, **#135**. **#123**, **#125**, **#130**,
 PR #139, filing **#140**. **#120**, **#140** → PR #141, filing
 **#142**–**#146**. **#146**, **#149** → PR #148, filing **#147**,
 **#149**–**#151**. **#151** → PR #153, filing **#152**. **#112** → PR #155,
-filing **#154**, **#156** and **#157**. **#119** → this session's PR, filing
-**#158**.)
+filing **#154**, **#156** and **#157**. **#119** → PR #159, filing **#158**,
+**#160** and **#161**.)
 
 **#151's own filing is the counter-example to the count above.** PR #148 filed
 #149 and fixed it in the same PR, so it never appeared as open work; #152 is
@@ -376,7 +389,8 @@ redraw. It matters because this is where #109 was: carefully argued rules
 behind an unpinned guard. No behaviour is known to be wrong today.
 
 **#160 and #161 came out of PR #159's own review**, and neither is a live data
-loss. #160: `_strip_nested_articles` documents a well-formed-input contract and
+loss. **#160 was closed as COMPLETED by that PR's last commit without being
+fixed** and is reopened — see the closing-keyword paragraph above. #160: `_strip_nested_articles` documents a well-formed-input contract and
 enforces none of it — every lexer branch is quadratic on an unterminated
 construct (a truncated 256 kB body lexes in 22.9s against 4-9 ms for a
 well-formed 3.4 MB one), and the depth is not matched against the element name,
@@ -422,9 +436,6 @@ found none in 816. Both risks are pinned by
 file the measurement, do not quote the reasoning as measured. `docs/DECISIONS.md`
 requires the sampler be run before either list is touched, so any session
 extending a funder list owes #154 first.
-
-**#119's own residue is none** — it closes with this session's PR, and #158 is
-what it left.
 
 **#103 — `install_defaults()` reserves no `NAME_MAX` headroom for the
 temporary name.** `atomic_write()` stages through a name 38 characters longer
