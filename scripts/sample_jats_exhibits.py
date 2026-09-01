@@ -173,17 +173,16 @@ _THUMB_PATTERN = re.compile(r"thumb", re.IGNORECASE)
 # parser's `_GRAPHIC_TRANSPARENT_WRAPPERS`.
 _TRANSPARENT_WRAPPERS = frozenset({"alternatives", "p"})
 
-# The two elements the parser suppresses entirely (#110), restated here rather
-# than imported for the same reason every other predicate in this file is: a
-# corpus labelled by the rule under test can only confirm that rule. The set is
-# complete for a structural reason — exactly three JATS elements admit
-# `<front>`/`<front-stub>` and `<body>`, and the third is `<article>` itself.
+# The two elements the parser suppresses entirely (#110). Restated here
+# rather than imported so this module needs nothing from
+# `bmlib.fulltext.jats_parser` — unlike `_ARCHIVAL_HINTS` / `_THUMB_PATTERN` /
+# `_TRANSPARENT_WRAPPERS` above, which must deliberately *differ* from the
+# parser's own sets, this one must be identical to it: it defines the scope
+# the walk is measuring, not a judgement the walk is free to disagree with.
+# The set is complete for a structural reason — exactly three JATS elements
+# admit `<front>`/`<front-stub>` and `<body>`, and the third is `<article>`
+# itself.
 _NESTED_ARTICLE_ELEMENTS = frozenset({"sub-article", "response"})
-
-# The fourth counter generation (issue #138), and the sentinel a row written
-# before it is loaded with — same rule as the three above: an article carrying
-# no nested article genuinely measures zero here, so zero cannot mean "absent".
-_SCOPE_SIDE_COUNTERS = ("nested_article_regions",)
 
 # The counters that arrived with issue #135, and the sentinel a row written
 # before them is loaded with. Zero is not usable as "absent" here: it is also
@@ -223,6 +222,11 @@ _CONTRIB_SIDE_COUNTERS = (
     "collabs_with_a_roster",
     "articles_losing_every_author",
 )
+# The fourth such generation, arriving with issue #138 — the scoped-walk
+# correction. Same sentinel and same reason as the three above: an article
+# carrying no nested article genuinely measures zero here, so zero cannot
+# mean "absent".
+_SCOPE_SIDE_COUNTERS = ("nested_article_regions",)
 # How a `<contrib>` names its contributor. JATS models it as
 # `(name | string-name | collab | anonymous | ...)`, and the tail of that model
 # is the point: `<on-behalf-of>` is in it too, and #130's `<list>` is the
@@ -334,10 +338,11 @@ class ArticleMeasurement:
         """Rebuild a row written by :meth:`to_dict`.
 
         A counter the row does not carry is set to ``NOT_MEASURED`` rather
-        than left at its zero default. These arrived in three generations —
-        ``_TABLE_SIDE_COUNTERS`` with issue #135, ``_OWNER_SIDE_COUNTERS``
-        with #123/#125/#130, ``_CONTRIB_SIDE_COUNTERS`` with #120/#140 — so a
-        corpus or journal older than a generation carries none of it, and
+        than left at its zero default. These arrived in four generations —
+        ``_TABLE_SIDE_COUNTERS`` with issue #135, ``_OWNER_SIDE_COUNTERS`` with
+        #123/#125/#130, ``_CONTRIB_SIDE_COUNTERS`` with #120/#140, and
+        ``_SCOPE_SIDE_COUNTERS`` with #138 — so a corpus or journal older than
+        a generation carries none of it, and
         each would otherwise sum to zero, which is exactly what a genuine "no
         table deposits an image", "no caption nests" or "no contributor is
         named undivided" draw looks like; reading one as the other is the
@@ -404,7 +409,8 @@ def _measure_tree(pmcid: str, root: ET.Element, *, scoped: bool) -> ArticleMeasu
                 # descended into only when reproducing the old walk. Scoped,
                 # a region nested inside another is never reached, so the
                 # scoped count is of top-level regions and the unscoped one
-                # of all of them; the difference is the nesting rate.
+                # of all of them; the difference is a count of how many are
+                # nested, not a rate.
                 row.nested_article_regions += 1
                 if scoped:
                     continue
@@ -442,6 +448,14 @@ def _measure_tree(pmcid: str, root: ET.Element, *, scoped: bool) -> ArticleMeasu
             walk(child, exhibit, chain + [tag], exhibit_depth)
 
     walk(root, None, [], 0)
+    # A per-article question, so it is answered once the walk is over: an
+    # article naming no contributor with `<name>` loses *every* author to the
+    # two undivided spellings, which is the difference between #140 and #120 —
+    # 100% of an article's authors against 34 of 1,025 articles losing at least
+    # one contributor. That draw counted `<contrib>` elements carrying no
+    # `<surname>`, a set both spellings share, so it is a rate for neither
+    # alone. Asked of the spellings actually deposited rather than of bmlib's
+    # output, so it stays answerable after the fix that makes the loss stop.
     undivided = row.contrib_name_spellings["string-name"] + row.contrib_name_spellings["collab"]
     if undivided and not row.contrib_name_spellings["name"]:
         row.articles_losing_every_author = 1
@@ -473,10 +487,15 @@ def measure_article(pmcid: str, xml: bytes) -> ArticleMeasurement | None:
 
     row = _measure_tree(pmcid, root, scoped=True)
     if not row.nested_article_regions:
-        # No region, so nothing can differ. Skipping the second walk here is
-        # not only an optimisation: it keeps `unscoped` empty for the ~96% of
-        # articles that carry no region, which is what stops the corpus
-        # doubling in size.
+        # No region, so nothing can differ — true only because the walk's
+        # only two skips that stop short of full descent are a <graphic> and
+        # an exhibit's <label>, and JATS admits neither as a container for
+        # <sub-article>/<response>, so no region can be hiding where this
+        # count would miss it. A later `continue` added for some other
+        # container element would need re-checking against that assumption.
+        # Skipping the second walk here is not only an optimisation: it keeps
+        # `unscoped` empty for articles that carry no region at all, which is
+        # what stops the corpus doubling in size.
         return row
     shadow = _measure_tree(pmcid, root, scoped=False)
     row.unscoped = _row_difference(row, shadow)

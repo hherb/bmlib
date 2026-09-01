@@ -793,6 +793,39 @@ class TestTheWalkStopsWhereTheParserStops:
         assert row.nested_article_regions == sampler.NOT_MEASURED
         assert row.unscoped == {}
 
+    def test_articles_losing_every_author_is_no_longer_silenced_by_a_reviewer(self):
+        """The strongest case #138 has: the #140-vs-#120 flag, not merely a
+        count, used to go silent on an article the old whole-document walk
+        happened to reach a reviewer's `<name>` from.
+
+        An article naming its own authors only as an undivided `<collab>`
+        should set `articles_losing_every_author`. Before this fix, a
+        peer-review `<sub-article>` naming its reviewer with `<name>` (the
+        commonest reviewer construct) reached the same counter and cleared
+        the flag — on the exact article the flag exists to catch.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                '<contrib-group content-type="author">'
+                "<contrib><collab>the INHERIT Trial Group</collab></contrib>"
+                "</contrib-group>"
+                '<sub-article article-type="peer-review">'
+                '<front-stub><contrib-group><contrib contrib-type="author">'
+                "<name><surname>Reviewer</surname></name>"
+                "</contrib></contrib-group></front-stub>"
+                "<body><p>Round one.</p></body>"
+                "</sub-article>"
+            ),
+        )
+
+        assert row.articles_losing_every_author == 1
+        assert row.unscoped == {
+            "contribs": 2,
+            "contrib_name_spellings": {"collab": 1, "name": 1},
+            "articles_losing_every_author": 0,
+        }
+
 
 class TestTheSamplerDoesNotShareTheParsersPredicates:
     """A corpus labelled by the rule under test can only confirm that rule."""
@@ -912,6 +945,26 @@ class TestRowsSurviveTheJournal:
 
         assert restored.to_dict() == row.to_dict()
         assert restored.label_parents == row.label_parents
+
+    def test_unscoped_survives_the_round_trip(self):
+        """`unscoped` is a plain ``dict``, not a ``Counter`` — `from_dict`
+        must not special-case it away. It currently survives only because an
+        empty dict is not ``None``, which is coincidental rather than
+        asserted anywhere else."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                '<fig id="f1"><graphic xlink:href="ours.jpg"/></fig>'
+                "<sub-article><body>"
+                '<fig id="rf"><graphic xlink:href="theirs.jpg"/></fig>'
+                "</body></sub-article>"
+            ),
+        )
+
+        restored = sampler.ArticleMeasurement.from_dict(row.to_dict())
+
+        assert row.unscoped, "the fixture must actually exercise a non-empty diff"
+        assert restored.unscoped == row.unscoped
 
     def test_wilson_refuses_an_empty_denominator(self):
         """Borrowed from ``_sampling``; a zero-attempt interval would print as
