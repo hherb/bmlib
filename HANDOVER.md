@@ -62,10 +62,12 @@ cached full text should re-fetch, not only one calling `JATSParser` itself.
 `CLAUDE.md` and at its call site, so only the shortest form is kept here.
 
 *Evidence.* A rule's population can be large, empty, or both, and only a draw
-says which; one window is not the rate (#127 reads 0 of 662 recent tables and
+says which; one window is not the rate (#127 read 0 of 662 recent tables and
 11 of 93 in a 1996-1998 draw; #119 reads 0.7% of one corpus and 3.45% of
-another). **Measure the population the code actually reads**, and prefer a
-corpus with a public name over one on your disk. A number in a comment goes
+another; the redrawn corpora hold 2,363 `<table-wrap>` and 0). **Measure the
+population the code actually reads**, prefer a corpus with a public name over
+one on your disk — and check that the *rendition* of the named corpus is the
+one the code is fed, which is the half #138 had to learn the hard way. A number in a comment goes
 stale silently and coherently — `TestTheCitedPopulationsAreWhatTheCorporaHold`
 and `TestTheStatedCountsAreWhatTheCorpusHolds` are the answer. A rule can be
 spec-driven and still owe an instrument, and an instrument's vocabulary has to
@@ -134,8 +136,12 @@ things worth carrying forward.
   and moves a scan output for 602 of them. Same defect, two windows, opposite conclusions.
 - **Prefer a corpus with a name over a corpus on your disk.** The figures above
   are re-derivable by anyone from `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`,
-  which is the cheap half of what #132 and #154 are asking for. The Europe PMC
-  draw is not, and the discrepancy it exposed is **#158**.
+  which is the cheap half of what #132 and #154 were asking for. The Europe PMC
+  draw is not, and the discrepancy it exposed is **#158** — both of which the
+  JATS corpus redraw on this branch has since done, drawing the identifiers
+  from that same package. It also found the half this lesson does not cover:
+  the package's *bytes* are an archive rendition and not what the parser is
+  fed, so naming the artifact is necessary and not sufficient.
 - **A text scan over markup can be exact, if the argument is closed.** In
   well-formed XML a literal `<` can only open markup, so comment, CDATA,
   processing instruction and DOCTYPE internal subset are the *complete* set of
@@ -207,9 +213,11 @@ what found #160 reopened here, one session late.
 `fulltext`, #160 and #161 in `transparency`, #132 and #158, the older non-JATS
 ones (#86, #92, #94, #103), the
 funder corpus (#154, #156, #157), or Phase 3 of the bmlibrarian port, whose
-every row needs a design conversation.** Two of those are *one job each* and
-worth taking as such — the JATS corpus redraw answers six issues, and the
-funder redraw three. #160 is the cheapest self-contained fix on the list: the
+every row needs a design conversation.** The JATS corpus redraw is **done on
+this branch** — #132, #138 and #158 are answered and #142, #143, #147 and #150
+have their populations — so what is left of that group is the rules those
+populations were for, plus the new `<label>`-premise finding below. The funder
+redraw is still one job answering three. #160 is the cheapest self-contained fix on the list: the
 remedy it prefers — match the element name when the depth closes — needs no
 invented constant and no corpus. See "Open GitHub issues" below for which is blocked on
 what; almost none is a drive-by, and the ones that lose content are blocked on
@@ -332,19 +340,56 @@ PR #153's equivalent. Neither is lost, but neither is visible in a
 Each issue carries its own argument on GitHub; what follows is only what a
 session needs to *choose* between them.
 
-**One corpus redraw answers six issues** — #132, #138, #158, and the
-populations #142, #143, #147 and #150 each want before a rule can be picked.
-#132: #115's "0.7%, both eLife" and #117's 49.9%/49.5% cite a 276-article draw
-that is not in the repo, and nesting measures 0 in both committed draws, so
-that figure has no in-repo evidence at all. #138: the sampler walks into
-`<sub-article>`, which the parser suppresses, so every counter is a
-whole-document count — measured harmless for the cited population (69 outside,
-0 inside), but the fix is scope *and* redraw, since scoping alone leaves the
-committed corpora unre-derivable. PR #141's `_CONTRIB_SIDE_COUNTERS` are in no
-committed draw either. **Do it before the release that ships these rules**,
-while the CHANGELOG is still free to edit.
+**That corpus redraw is done** — #132, #138 and #158 are answered, and #142,
+#143, #147 and #150 each have the population they were waiting for. What it
+cost and what it found is worth carrying forward.
 
-**#128 is weaker than filed**: all 2,397 `<graphic>` hrefs in the two redrawn
+*The sample and the bytes had to come from different places.* The plan was to
+draw both windows from a PMC OA baseline package so a reader could re-derive
+the identifier list from `(packages, window, target, seed)`. Midway the plan's
+own instrument disproved its premise: a package holds an **archive** rendition
+while `FullTextService` feeds the parser Europe PMC's `fullTextXML`, and the
+two differ on exactly the populations being cited — `last_is_thumb` measures
+**0** on archive bytes against 641 served over 294 shared identifiers, the
+archive depositing one bare `<graphic xlink:href="…-g001">` per figure where
+Europe PMC synthesises an `.jpg`/`.gif` image-and-thumb pair. A corpus drawn
+*and* measured from the package would have read #117's whole ranking rule as
+dead code. So the sample is package-defined and deterministic and the bytes are
+Europe PMC's (`--measure-europepmc`), with
+`tests/data/jats_exhibits.rendition.json` as the committed evidence. **Check
+the rendition before trusting an offline corpus** is the transferable lesson,
+and it generalises past JATS.
+
+*Every figure moved for two reasons at once* — a different sample and a
+different rendition — so no movement may be attributed to the scoping alone.
+Both corpora are 997 measured articles of 1,000 at `seed 0`, recent from
+`oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` (2023-2025) and
+back-filled from `…PMC002xxxxxx…` (1996-1998).
+
+*Three claims did not survive, and one of them is a defect.* The `<label>`
+direct-child premise is **violated** on the served rendition — 6,692 of 6,699,
+so 7 exhibits in 4 articles lose their label to an invented `Figure {i + 1}`,
+which is #116's own symptom from the other side. Three earlier draws measured
+it full and none is re-derivable, so this is real and not an archive artifact;
+it has a ROADMAP row and wants a decision about a fallback, not a prose repair.
+#127's image-only-table population cannot be re-measured — the redrawn
+back-filled window holds **0 `<table-wrap>` in 997 articles**, `oa_comm`'s
+1996-98 material being scanned page images — so its evidence (11 of 93) is
+historical, and quoting the 0 as a measurement would be the exact defect this
+work removed. And the abstract-branch guard's "44 exhibits, none titled" was an
+ad-hoc walk over the replaced draws with no counter in the sampler, so it is
+withdrawn as unre-derivable rather than restated.
+
+*#158 is answered by naming the population.* "Carries a region" and "loses body
+text to one" are different claims, the first bounding the second. The
+re-derivable figure is the first: **25 of 997 (2.5%)** recent articles carry a
+nested-article region (141 regions), 0 of 997 back-filled, agreeing with
+`transparency`'s 3,382 of 97,909 (3.45%) over the same `oa_comm` package. The 4
+of 249 (1.6%) counted peer-review deposits and the 288 of 1,022 (28.2%) counted
+articles losing body text, both on draws that are in no commit. All four sites
+now say which population they are of.
+
+**#128 is weaker than filed**: all 13,008 `<graphic>` hrefs in the two redrawn
 corpora use the `xlink` prefix bound to the XLink namespace, so the
 literal-prefix match is safe on measured evidence. Worth downgrading rather
 than closing — no sample proves no publisher does otherwise.
@@ -405,18 +450,21 @@ against the default threshold. That is `publications/`' `FetchResult.note` ->
 `SyncReport.notes` argument one module over: permanent *and* invisible is the
 pair these rules exist to break up. Both refusal paths measure empty.
 
-**#158 — the nested-article rate is cited four times and the figures disagree
-by 8x**, filed from #119's own measurement and the same shape as #132.
-`jats_parser` says 4 in 249 (1.6%) for peer-review deposits, the manual and the
-CHANGELOG say 288 of 1,022 articles lose body text (28.2%), and #119 measures
-3,382 of 97,909 (3.45%) carrying one at all — which bounds the second, since an
-article can only lose body text to a region it carries. (Not the converse: a
+**#158 — answered by naming the population, not by picking a number.** The
+nested-article rate was cited four times and the figures disagreed by 8x, and
+the reason is that they were rates of different things. `jats_parser` said 4 in
+249 (1.6%) for *peer-review deposits*; the manual and the CHANGELOG said 288 of
+1,022 (28.2%) for articles *losing body text*; #119 measured 3,382 of 97,909
+(3.45%) *carrying a region at all*, which bounds the second, since an article
+can only lose body text to a region it carries. (Not the converse: a
 `<sub-article>` carrying `<front-stub>` and no `<body>` — Europe PMC's injected
-`associated-data` block among them — costs the article nothing.) A fourth
-citation is the 6 of 876 Europe PMC reading two paragraphs up. The rate
-genuinely is a per-publisher property, which is why 28.2% could be honest for a
-draw weighted to PLOS/eLife/BMJ/F1000, and why the draw not being in the repo
-is the problem.
+`associated-data` block among them — costs the article nothing.) A fourth was 6
+of 876 from the Europe PMC draw above. Each site now says which claim it makes,
+and the carrier rate is re-derivable from the repo at **25 of 997 (2.5%)** in
+the recent corpus and 0 of 997 back-filled — consistent with #119's 3.45% over
+the same `oa_comm` source. The rate genuinely is a per-publisher property,
+which is why 28.2% could be honest for a draw weighted to PLOS/eLife/BMJ/F1000;
+what made it a defect was that three of the four draws are in no commit.
 
 **#154, #156 and #157 are one job too, and it is the funder corpus.** #154:
 `scripts/sample_funder_names.py` writes `tests/data/funder_names.raw.json`,

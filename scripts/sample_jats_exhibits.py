@@ -32,7 +32,10 @@ Eight questions, each answering a decision the parser makes:
 1. **Is a ``<label>`` a direct child of the exhibit it numbers?** This is the
    premise of the parent-based routing that replaced #116's footnote-depth
    counter. If an exhibit anywhere carries its label *only* indirectly, the
-   rule loses that label and the premise is wrong.
+   rule loses that label and the premise is wrong — and on the redrawn recent
+   corpus it **is** wrong, for 7 exhibits of 6,699 in 4 of 997 articles. The
+   report says ``PREMISE VIOLATED`` rather than printing a rate, because a
+   premise is not a population.
 2. **What else carries a ``<label>`` inside an exhibit?** The depth rule
    needed this enumerated; the parent rule does not. Measuring it says how
    much the enumeration was missing.
@@ -44,7 +47,9 @@ Eight questions, each answering a decision the parser makes:
 5. **The same question for a ``<table-wrap>``**, counted separately (#135).
    #127 routes a table's deposits through #117's ranking, which was measured
    on figures alone; until a draw finds a table carrying more than one, that
-   rule is reasoned onto tables rather than observed on them.
+   rule is reasoned onto tables rather than observed on them. Answered, and
+   the answer is empty: of the 95 tables in the redrawn recent corpus that
+   carry a ``<graphic>``, none carries two.
 6. **Is a ``<graphic>`` ever owned by something other than its exhibit**, and
    does a ``<table-wrap>`` carry one with no ``<table>`` (#127) — or with
    both, which is the rendition ``to_html()`` drops? Plus the XLink prefix
@@ -60,22 +65,29 @@ Eight questions, each answering a decision the parser makes:
    enclosing section, leaving not a blank but a heading the publisher never
    wrote.
 
-**One scope the walk does not share with the parser.** ``<sub-article>`` and
-``<response>`` open a region in which the parser fires no handler at all
-(issue #110), and this walk descends into them, so every counter here is a
-whole-document count where the parser's is a suppressed-region-excluding one.
-Measured for **one** population, and only that one: of the 69
-``section_renaming_titles`` in the recent draw, **69 sit outside any nested
-article and 0 inside**, so no figure quoted from these corpora is inflated.
-That measurement predates the contributor counters below and does not cover
-them — a peer-review ``<sub-article>`` names its reviewers with ``<contrib>``
-elements, which is the densest such construct JATS has, so ``contribs``,
-``contrib_name_spellings`` and ``nested_contribs`` are all inflated by a
-region the parser reads as no part of this article, and
-``articles_losing_every_author`` is suppressed outright by a single reviewer's
-``<name>``. Issue #138 is the standing item to scope the walk and redraw;
-scoping it without a redraw would leave the committed corpora unre-derivable,
-which is the property they exist for.
+**The walk shares the parser's scope, and records what that costs.**
+``<sub-article>`` and ``<response>`` open a region in which the parser fires
+no handler at all (issue #110); this walk skips the same regions, so every
+counter here is a suppressed-region-excluding count like the parser's. It used
+to descend into them, which mattered most where JATS is densest: a peer-review
+``<sub-article>`` names its reviewers with ``<contrib>`` elements, so
+``contribs``, ``contrib_name_spellings`` and ``nested_contribs`` were all
+inflated by a region the parser reads as no part of this article, and
+``articles_losing_every_author`` could be suppressed outright by a single
+reviewer's ``<name>``.
+
+Scoping alone would have made the committed corpora unre-derivable, so issue
+#138 was scope *and* redraw. What the scoping removed is kept rather than
+discarded: each row carries an ``unscoped`` mapping naming every counter the
+old whole-document walk would have reported differently, and its value there,
+so the correction is measurable from the corpus instead of being asserted. A
+row whose regions are absent carries an empty mapping, which is the right
+reading both for "no nested article" and for "written before this existed" —
+there is no difference to report either way, so ``unscoped`` deliberately has
+no NOT-MEASURED sentinel where the other counter generations do. In the
+committed recent draw 25 of 997 articles carry a region (141 regions in all)
+and ``unscoped`` is non-empty for exactly those 25; the back-filled window
+carries none.
 
 **It does not import the parser's predicates**, and a future refactor must not
 "deduplicate" the two. A corpus labelled by the rule under test can only
@@ -92,21 +104,44 @@ Writes ``tests/data/jats_exhibits.json``, or ``*.unreportable.json`` when any
 population trips that threshold — so a throttled run cannot replace evidence a
 later reader takes as measured. The journal keeps every row, so refusing costs
 a re-run and nothing else. The written corpus records the ``window`` it was
-drawn from, because the strata are counted back from *today* and the same
-command run later draws a different sample.
+drawn from, which for a package draw is ``(packages, first_year, last_year,
+target, seed)`` and is the whole of what a reader needs to re-derive the
+identifier list.
 
-``--months-ago`` displaces the whole stratified draw backwards by whole
-months. The default window is the last two years — born-digital XML — and at
-least one population is not in it at all: #127's image-only tables measure 0
-of 662 tables there and 11 of 93 in a draw ending 28 years back. A displaced
-run must name its own ``-o``; writing one to the default path would replace
-the recent corpus, or pool the two windows through the shared journal.
+**The sample and the bytes come from different places, on purpose** (#138).
+``--package`` draws deterministically from a named PMC OA baseline package, so
+the draw is reproducible; ``--measure-europepmc`` then measures each drawn
+article from Europe PMC's ``fullTextXML``, which is the rendition
+``FullTextService`` feeds the parser. Both committed corpora are taken that
+way, and the corpus records which under ``window["rendition"]``. The two
+renditions disagree on cited populations rather than on details: an archive
+deposit is one bare ``<graphic xlink:href="…-g001">`` per figure where Europe
+PMC synthesises an image/thumb pair, so ``last_is_thumb`` measures **0** on
+archive bytes against 641 on served ones over the same 294 identifiers.
+``--compare-europepmc N`` is what produced that number and writes
+``*.rendition.json``; run it before treating an archive-drawn figure as one
+about the parser.
 
-Usage::
+``--months-ago`` displaces the live stratified draw backwards by whole months,
+and the live path is kept for the rendition it measures — it fetches
+``fullTextXML`` directly, so it is the served rendition without the package
+step, at the cost of a draw nobody else can repeat (#132). Its window is
+counted back from *today*. The default is the last two years, born-digital
+XML, and at least one population is not in it at all: #127's image-only tables
+measured 0 of 662 tables there and 11 of 93 in a draw ending 28 years back. A
+displaced run must name its own ``-o``; writing one to the default path would
+replace the recent corpus, or pool the two windows through the shared journal.
 
-    uv run python scripts/sample_jats_exhibits.py --target 300
-    uv run python scripts/sample_jats_exhibits.py --target 300 --months-ago 336 \
-        -o tests/data/jats_exhibits.backfill.json
+Usage — the two committed corpora, as taken::
+
+    uv run python scripts/sample_jats_exhibits.py \
+        --package /path/to/oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz \
+        --from-year 2023 --to-year 2025 --target 1000 --seed 0 \
+        --measure-europepmc
+    uv run python scripts/sample_jats_exhibits.py \
+        --package /path/to/oa_comm_xml.PMC002xxxxxx.baseline.2025-06-26.tar.gz \
+        --from-year 1996 --to-year 1998 --target 1000 --seed 0 \
+        --measure-europepmc -o tests/data/jats_exhibits.backfill.json
 """
 
 from __future__ import annotations
@@ -2299,10 +2334,11 @@ def _validate_args(args: argparse.Namespace) -> str | None:
     is derived from ``--output``, so a run with ``--months-ago`` and no
     ``-o`` either overwrites the recent corpus with an older window under the
     recent corpus's name, or — journal present — tops one window's rows up
-    with another's and prints the pooled result as one rate. This PR's whole
-    claim is that the window decides the answer (0 of 662 recent tables
-    against 11 of 93 from 1996-1998), so pooling two windows produces a
-    number describing neither. Naming an explicit ``-o`` is the whole fix.
+    with another's and prints the pooled result as one rate. The window
+    decides the answer — the two committed corpora hold 2,363
+    ``<table-wrap>`` and 0, and 56.7% against 44.0% of figures carrying
+    several ``<graphic>`` — so pooling two windows produces a number
+    describing neither. Naming an explicit ``-o`` is the whole fix.
 
     *A live-only or package-only flag used on the other source is refused,
     not silently ignored.* ``--months``/``--months-ago`` are the live

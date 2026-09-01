@@ -1232,77 +1232,280 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         renaming_articles = sum(1 for row in rows if row.get("section_renaming_titles"))
         return ints, maps, renaming_articles
 
+    def _articles_with(self, path: Path, field: str) -> int:
+        """How many rows carry a non-zero, non-empty ``field``.
+
+        The article-level denominator several comments cite alongside the
+        counter total — "391 titles in 87 articles" is two populations, and
+        summing the counter answers only the first.
+        """
+        rows = json.loads(path.read_text())["rows"]
+        return sum(1 for row in rows if row.get(field))
+
+    def test_the_corpora_say_which_artifact_they_were_drawn_from(self):
+        """The whole point of the redraw: a reader can re-derive these.
+
+        Before #138 the two corpora were live stratified draws counted back
+        from *today*, so "the recent window" named a sample nobody else could
+        take. The draw is now `(packages, window, target, seed)` and every one
+        of those is in the file. The rendition is here too because it is the
+        other half of re-derivability: the identifier list comes from the
+        package, the *bytes* come from Europe PMC's `fullTextXML`, and the two
+        disagree on exactly the populations cited below — see
+        `tests/data/jats_exhibits.rendition.json`.
+        """
+        for path, first, last, package in (
+            (self.RECENT, 2023, 2025, "oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz"),
+            (self.BACKFILL, 1996, 1998, "oa_comm_xml.PMC002xxxxxx.baseline.2025-06-26.tar.gz"),
+        ):
+            corpus = json.loads(path.read_text())
+            window = corpus["window"]
+            assert window["source"] == "package"
+            assert window["packages"] == [package]
+            assert (window["first_year"], window["last_year"]) == (first, last)
+            assert window["target"] == 1000
+            assert window["seed"] == 0
+            # The bytes measured, not the bytes drawn from.
+            assert window["rendition"] == "europepmc"
+            assert (corpus["articles"], corpus["unmeasured"]) == (997, 3)
+
     def test_the_title_owner_population_is_what_the_comments_cite(self):
-        """The #125/#130 population, cited in five files and wrong in one."""
+        """The #125/#130 population, cited in five files.
+
+        The redraw both grew it and widened it. `<caption>` is still the bulk,
+        but `<def-list>` and `<fn-group>` appear beside it — two owners no
+        enumeration written from #125 and #130 would have held, which is the
+        parent test's whole argument restated on new evidence. The back-filled
+        window's `<list>`, which used to be that argument's only example, is
+        gone with the draw that held it: this window carries no renaming title
+        at all, so the argument now rests on the recent one.
+        """
         recent, recent_maps, recent_articles = self._totals(self.RECENT)
         backfill, backfill_maps, backfill_articles = self._totals(self.BACKFILL)
 
-        assert sum(recent_maps["section_renaming_titles"].values()) == 69
-        assert recent_articles == 31
-        assert set(recent_maps["section_renaming_titles"]) == {"caption"}
-        assert sum(backfill_maps["section_renaming_titles"].values()) == 13
-        assert backfill_articles == 1
-        assert set(backfill_maps["section_renaming_titles"]) == {"list"}
-        assert recent["captions"] == 1550
-        assert backfill["captions"] == 288
+        assert sum(recent_maps["section_renaming_titles"].values()) == 409
+        assert recent_articles == 100
+        assert recent_maps["section_renaming_titles"] == {
+            "caption": 391,
+            "def-list": 15,
+            "fn-group": 3,
+        }
+        assert sum(backfill_maps.get("section_renaming_titles", {}).values()) == 0
+        assert backfill_articles == 0
+        assert backfill_maps.get("section_renaming_titles", {}) == {}
+        assert recent["captions"] == 7820
+        # Not "no exhibit is captioned" but "this window deposits no <caption>
+        # at all": 1996-1998 `oa_comm` material is scanned page images.
+        assert backfill["captions"] == 0
 
     def test_the_caption_premise_and_its_empty_populations_hold(self):
         """#123's premise measures full and both its own populations empty."""
         recent, recent_maps, _ = self._totals(self.RECENT)
         backfill, backfill_maps, _ = self._totals(self.BACKFILL)
 
-        assert recent["exhibits_with_direct_caption"] == 1413
-        assert recent["exhibits_with_descendant_caption"] == 1413
-        assert backfill["exhibits_with_direct_caption"] == 288
-        assert backfill["exhibits_with_descendant_caption"] == 288
+        assert recent["exhibits_with_direct_caption"] == 6709
+        assert recent["exhibits_with_descendant_caption"] == 6709
+        # Vacuous in this window rather than confirming: 0 of 0.
+        assert backfill["exhibits_with_direct_caption"] == 0
+        assert backfill["exhibits_with_descendant_caption"] == 0
         assert recent["nested_captions"] == 0
         assert backfill["nested_captions"] == 0
         assert set(recent_maps["exhibit_caption_owners"]) == {"fig", "table-wrap"}
-        assert set(backfill_maps["exhibit_caption_owners"]) == {"fig", "table-wrap"}
+        assert backfill_maps.get("exhibit_caption_owners", {}) == {}
 
-    def test_the_label_premise_holds_on_both_windows(self):
-        """#116's premise, and the denominator the comment must not overstate."""
+    def test_the_label_premise_is_violated_on_the_recent_window(self):
+        """#116's premise, and the denominator the comment must not overstate.
+
+        This assertion is why the class exists. Every draw before #138 found
+        the premise **full** — 2,033/2,033, 1,446/1,446, 365/365 — and the
+        comment in `jats_parser.py` said the parent rule "cannot lose a
+        label". On the rendition the parser is actually fed, 7 exhibits in 4
+        articles carry a `<label>` only indirectly, and for each of those the
+        parent rule finds nothing and the renderer substitutes
+        `Figure {i + 1}` / `Table {i + 1}` — an invented number, which is
+        #116's own symptom arrived at from the other direction. The rule is
+        still better than the depth counter it replaced (607 labels in 101 of
+        these articles would be *mis-assigned* by a depth rule, against 7
+        omitted by this one), but "cannot lose one" was a claim, and it is
+        false.
+        """
         recent, recent_maps, _ = self._totals(self.RECENT)
         backfill, backfill_maps, _ = self._totals(self.BACKFILL)
 
-        assert recent["exhibits_with_direct_label"] == 1446
-        assert recent["exhibits_with_descendant_label"] == 1446
-        assert backfill["exhibits_with_direct_label"] == 365
-        assert backfill["exhibits_with_descendant_label"] == 365
-        # 1,446 of the *labelled* exhibits, not of all 1,500 — 54 carry none.
-        assert recent["figures"] + recent["tables"] == 1500
-        assert set(recent_maps["label_parents"]) == {"fig", "table-wrap", "fn", "list-item"}
+        assert recent["exhibits_with_direct_label"] == 6692
+        assert recent["exhibits_with_descendant_label"] == 6699
+        rows = json.loads(self.RECENT.read_text())["rows"]
+        violating = [
+            row["pmcid"]
+            for row in rows
+            if row["exhibits_with_descendant_label"] > row["exhibits_with_direct_label"]
+        ]
+        assert violating == ["PMC12011025", "PMC12092211", "PMC12120668", "PMC12174859"]
+        # The back-filled window is where the premise still measures full.
+        assert backfill["exhibits_with_direct_label"] == 627
+        assert backfill["exhibits_with_descendant_label"] == 627
+        # 6,699 of the *labelled* exhibits, not of all 6,831 — 132 carry none.
+        assert recent["figures"] + recent["tables"] == 6831
+        assert recent_maps["label_parents"] == {
+            "fig": 4443,
+            "table-wrap": 2249,
+            "fn": 367,
+            "list-item": 222,
+            "disp-formula": 18,
+        }
+        assert backfill_maps["label_parents"] == {"fig": 627}
 
     def test_the_graphic_populations_are_what_offer_graphic_cites(self):
         """#117's shares and #127's two renditions, both cited as percentages."""
-        recent, _, _ = self._totals(self.RECENT)
-        backfill, _, _ = self._totals(self.BACKFILL)
-
-        assert (recent["figures_with_graphic"], backfill["figures_with_graphic"]) == (828, 276)
-        assert (recent["figures_multi_graphic"], backfill["figures_multi_graphic"]) == (437, 168)
-        assert (recent["last_is_thumb"], backfill["last_is_thumb"]) == (434, 165)
-        assert (recent["first_is_thumb"], backfill["first_is_thumb"]) == (0, 0)
-        assert recent["graphics"] + backfill["graphics"] == 2397
-        assert recent["alternatives_members"] + backfill["alternatives_members"] == 1329
-        assert recent["alternatives_declaring_mime"] + backfill["alternatives_declaring_mime"] == 0
-        assert recent["alternatives_archival"] + backfill["alternatives_archival"] == 0
-
-    def test_the_table_side_answers_135_as_an_empty_population(self):
-        """#135, and the #127 windows the ROADMAP and the sampler both cite."""
         recent, recent_maps, _ = self._totals(self.RECENT)
         backfill, backfill_maps, _ = self._totals(self.BACKFILL)
 
-        assert recent["tables"] + backfill["tables"] == 755
-        assert recent["tables_with_graphic"] + backfill["tables_with_graphic"] == 16
+        assert (recent["figures_with_graphic"], backfill["figures_with_graphic"]) == (4466, 627)
+        assert (recent["figures_multi_graphic"], backfill["figures_multi_graphic"]) == (2530, 276)
+        assert (recent["last_is_thumb"], backfill["last_is_thumb"]) == (2498, 276)
+        assert (recent["first_is_thumb"], backfill["first_is_thumb"]) == (0, 0)
+        assert recent["graphics"] + backfill["graphics"] == 13008
+        assert recent["alternatives_members"] + backfill["alternatives_members"] == 6385
+        assert recent["alternatives_declaring_mime"] + backfill["alternatives_declaring_mime"] == 0
+        assert recent["alternatives_archival"] + backfill["alternatives_archival"] == 0
+        # Every deposit in both windows names an extension, so the
+        # `_ARCHIVAL_EXTENSIONS` fallback always has something to read. That
+        # is a property of the *served* rendition — Europe PMC synthesises an
+        # image/thumb pair with `.jpg`/`.gif` where the archive deposits a
+        # bare `…-g001` — so it must not be restated as a publisher habit.
+        assert set(recent_maps["graphic_extensions"]) == {".jpg", ".gif"}
+        assert set(backfill_maps["graphic_extensions"]) == {".png", ".jpg", ".gif"}
+
+    def test_the_table_side_answers_135_as_an_empty_population(self):
+        """#135, and the #127 window neither corpus can reproduce any more.
+
+        The back-filled window used to hold #127's whole image-only-table
+        population — 11 of 93 tables in 2 articles. It holds **no
+        `<table-wrap>` at all** now: `oa_comm`'s 1996-1998 material is scanned
+        page images with no tabular markup. That 0 is the absence of a
+        denominator, not a measurement of the population, and #127's evidence
+        is historical from here on.
+        """
+        recent, recent_maps, _ = self._totals(self.RECENT)
+        backfill, backfill_maps, _ = self._totals(self.BACKFILL)
+
+        assert recent["tables"] + backfill["tables"] == 2363
+        assert recent["tables_with_graphic"] + backfill["tables_with_graphic"] == 95
         assert recent["tables_multi_graphic"] + backfill["tables_multi_graphic"] == 0
-        assert (recent["tables"], recent["tables_image_only"]) == (662, 0)
-        assert (backfill["tables"], backfill["tables_image_only"]) == (93, 11)
-        assert (recent["tables_with_both"], backfill["tables_with_both"]) == (5, 0)
-        assert sum(recent_maps["foreign_owned_graphics"].values()) == 36
-        assert set(recent_maps["foreign_owned_graphics"]) == {"td"}
+        assert (recent["tables"], recent["tables_image_only"]) == (2363, 6)
+        assert (backfill["tables"], backfill["tables_image_only"]) == (0, 0)
+        assert (recent["tables_with_both"], backfill["tables_with_both"]) == (89, 0)
+        assert sum(recent_maps["foreign_owned_graphics"].values()) == 102
+        assert recent_maps["foreign_owned_graphics"] == {
+            "td": 48,
+            "inline-formula": 42,
+            "chem-struct": 9,
+            "disp-formula": 2,
+            "th": 1,
+        }
+        assert self._articles_with(self.RECENT, "foreign_owned_graphics") == 12
         assert backfill_maps.get("foreign_owned_graphics", {}) == {}
         assert recent["nested_figures"] + recent["nested_tables"] == 0
         assert backfill["nested_figures"] + backfill["nested_tables"] == 0
+
+    def test_the_nested_article_scoping_is_what_the_corpora_record(self):
+        """#138's own population, and the one #158 cites four ways.
+
+        "Carries a region" and "loses body text to one" are different claims,
+        the first bounding the second: 141 regions in 25 of 997 recent
+        articles is what the *walk* now excludes, and every one of those 25
+        rows carries an `unscoped` entry, so the scoping moved a counter for
+        all of them. The back-filled window has none, peer review not having
+        been deposited that way in 1996-1998.
+        """
+        recent, _, _ = self._totals(self.RECENT)
+        backfill, _, _ = self._totals(self.BACKFILL)
+
+        assert recent["nested_article_regions"] == 141
+        assert self._articles_with(self.RECENT, "nested_article_regions") == 25
+        assert self._articles_with(self.RECENT, "unscoped") == 25
+        assert backfill["nested_article_regions"] == 0
+        assert self._articles_with(self.BACKFILL, "unscoped") == 0
+
+    def test_the_four_waiting_issues_now_have_a_population(self):
+        """#142, #143, #147 and #150 — measured, and three of them empty.
+
+        Each counter was added ahead of the redraw so the rule it belongs to
+        would be *decidable*; the measurement does not decide it, which is why
+        all four issues stay open. Three measure empty on both windows and one
+        does not: `<tex-math>` and `<disp-formula>` are a live population, and
+        803 `<alternatives>` holding both a MathML and a TeX encoding is what
+        rules out adding `<tex-math>` to `_INLINE_ELEMENTS` (#147).
+        """
+        recent, recent_maps, _ = self._totals(self.RECENT)
+        backfill, backfill_maps, _ = self._totals(self.BACKFILL)
+
+        # #142 — a <collab>'s element children.
+        assert recent["collabs_with_element_children"] == 0
+        assert backfill["collabs_with_element_children"] == 0
+        assert recent_maps.get("collab_children", {}) == {}
+        assert backfill_maps.get("collab_children", {}) == {}
+        # #143 — contributor multiplicity per <contrib>.
+        for totals in (recent, backfill):
+            assert totals["contribs_multi_collab"] == 0
+            assert totals["contribs_multi_string_name"] == 0
+            assert totals["name_alternatives"] == 0
+            assert totals["collab_alternatives"] == 0
+        # #147 — formulas. The one non-empty population of the four.
+        assert (recent["disp_formulas"], backfill["disp_formulas"]) == (1851, 0)
+        assert (recent["disp_formulas_with_label"], backfill["disp_formulas_with_label"]) == (
+            1524,
+            0,
+        )
+        assert (recent["disp_formulas_image_only"], backfill["disp_formulas_image_only"]) == (
+            211,
+            0,
+        )
+        assert (recent["inline_formulas"], backfill["inline_formulas"]) == (6730, 0)
+        assert (recent["tex_math"], backfill["tex_math"]) == (1154, 0)
+        assert (recent["mml_math"], backfill["mml_math"]) == (7413, 0)
+        assert (recent["formula_alternatives_both"], backfill["formula_alternatives_both"]) == (
+            803,
+            0,
+        )
+        # #150 — a <ref> carrying only a <note>.
+        assert (recent["refs"], backfill["refs"]) == (54328, 19447)
+        assert (recent["refs_note_only"], backfill["refs_note_only"]) == (2, 0)
+        assert recent_maps["ref_child_kinds"]["citation-alternatives"] == 3549
+        assert "citation-alternatives" not in backfill_maps["ref_child_kinds"]
+
+    def test_the_contributor_counters_are_what_120_and_140_wait_on(self):
+        """#120/#140's spellings, sized for the first time (section 11).
+
+        The rate quoted for both issues has always been #120's own 34 of
+        1,025 — a count of `<contrib>` elements carrying no `<surname>`, which
+        is a set *both* spellings share and so a rate for neither. These are
+        the per-spelling counts, scoped the way the parser routes: `<collab>`
+        names 14 contributors in the recent window and `<string-name>` names
+        none at all, so `<string-name>` is still unmeasured here rather than
+        measured at zero — the vocabulary is open, so a spelling that is
+        absent simply does not appear as a key.
+        """
+        recent, recent_maps, _ = self._totals(self.RECENT)
+        backfill, backfill_maps, _ = self._totals(self.BACKFILL)
+
+        assert (recent["contribs"], backfill["contribs"]) == (7593, 4852)
+        assert recent_maps["contrib_name_spellings"] == {
+            "name": 7579,
+            "contrib-id": 867,
+            "degrees": 259,
+            "collab": 14,
+            "ext-link": 1,
+            "on-behalf-of": 1,
+        }
+        assert backfill_maps["contrib_name_spellings"] == {"name": 4852}
+        assert "string-name" not in recent_maps["contrib_name_spellings"]
+        assert (recent["nested_contribs"], backfill["nested_contribs"]) == (20, 0)
+        assert (recent["collabs_with_a_roster"], backfill["collabs_with_a_roster"]) == (1, 0)
+        assert (
+            recent["articles_losing_every_author"],
+            backfill["articles_losing_every_author"],
+        ) == (2, 0)
 
 
 class TestReadingABaselinePackage:
