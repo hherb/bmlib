@@ -72,7 +72,7 @@ Probed 2026-08-31/09-01 against `/Users/hherb/pmc_archive/packages/`:
 |---|---|
 | Scan throughput, tarball, whole members | 122,576 articles in 16.5 s (**7,447/s**), `PMC002xxxxxx` |
 | Scan throughput, tarball, first 8 KB only | 11,086/s — 49% faster and **wrong**, see below |
-| Recent-window candidates (2023-07 – 2025-06) | ~76,500 in `PMC012xxxxxx` (71,858 published 2025, 4,658 in 2024) |
+| Recent-window candidates (2023 – 2025) | **97,651** of 97,909 in `PMC012xxxxxx` (92,997 published 2025, 4,013 in 2024, 641 in 2023; only 17 undated and 26 older) |
 | Back-filled candidates (1996 – 1998) | **3,141**, all in `PMC002xxxxxx` — `PMC000xxxxxx` and `PMC001xxxxxx` measure **0** |
 | Overlap, 880-article Europe PMC draw × unpacked package | **4 articles** — which is why the rendition diff cannot be a corpus-to-corpus comparison |
 | Taking the earliest `<pub-date>` year vs excluding deposit/submission dates | **0 of 3,000 differ**, in each window separately |
@@ -134,18 +134,20 @@ journal, the unmeasured accounting) is untouched. The two sources meet at
 
 ### 2. Absolute windows
 
-`--from YYYY-MM-DD --to YYYY-MM-DD` replaces `--months-ago` for the package
-source. The two committed draws become:
+`--from-year YYYY --to-year YYYY` replaces `--months-ago` for the package
+source. Year precision, not day: `article_year` reads a `<year>`, and a
+`<pub-date>` need carry no month — so a day-precision window would silently
+drop every article dated to the year alone. The two committed draws become:
 
 | corpus | window | packages |
 |---|---|---|
-| `tests/data/jats_exhibits.json` | 2023-07-01 – 2025-06-30 | `PMC012xxxxxx` |
+| `tests/data/jats_exhibits.json` | 2023 – 2025 (calendar years) | `PMC012xxxxxx` |
 | `tests/data/jats_exhibits.backfill.json` | 1996-01-01 – 1998-12-31 | `PMC002xxxxxx` |
 
-The recent window is the two years *before the baseline snapshot* (dated
-2025-06-26 in the package name), not before today — a 2025-06 baseline cannot
-contain anything published after it, and pinning the window to the artifact is
-what makes the draw reproducible.
+The recent window is bounded by the baseline snapshot itself (dated 2025-06-26
+in the package name) rather than by today: the package cannot contain anything
+published after it, so `2023 – 2025` is in practice 2023-01-01 to 2025-06-26.
+Pinning the window to the artifact is what makes the draw reproducible.
 
 Selection is `sorted(candidates)` then a seeded `random.Random(seed).sample`,
 so the same four inputs yield the same 1,000 PMCIDs on any machine. `--seed`
