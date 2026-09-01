@@ -1455,7 +1455,7 @@ class TestReadingABaselinePackage:
 
 
 class TestThePackageIdentityIsRecorded:
-    """`_package_identity` — Task 6a Step 4.
+    """`_package_identity` — Task 6a Step 4, hardened in review round 1.
 
     The recent corpus's header used to read ``packages: ['PMC012xxxxxx']``: a
     directory's own basename, which is what a plain extraction of
@@ -1464,8 +1464,31 @@ class TestThePackageIdentityIsRecorded:
     re-derivable by another reader. Nothing inside the extracted files can
     recover that identity (no manifest, no embedded date), so the only place
     it can still be found is the tarball's own filename, if that tarball
-    still sits beside the directory it was extracted into.
+    still sits beside the directory it was extracted into — and even then,
+    only after confirming the two actually correspond (a name match alone
+    is not proof: two OA subsets partition one accession range into
+    disjoint articles, so an unrelated tarball can still match by name).
     """
+
+    def _write_tarball(self, path: Path, members: dict[str, bytes]) -> Path:
+        """A real, minimal, valid gzip tarball — never a magic-bytes stub.
+
+        `_package_identity`'s content check opens a candidate sibling with
+        `iter_package_articles`, which really parses it as a tar stream; a
+        fixture that is only the two gzip magic bytes plus filler used to
+        pass when the identity check was name-only, but now raises
+        `tarfile.CompressionError` (a real, if malformed, gzip file that
+        `_package_identity` must survive, not crash on) rather than
+        confirming anything.
+        """
+        import tarfile as _tarfile
+
+        with _tarfile.open(path, "w:gz") as tar:
+            for name, data in members.items():
+                info = _tarfile.TarInfo(name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        return path
 
     def test_a_tarball_reports_its_own_name(self, tmp_path):
         """A tarball's filename already carries the whole identity; nothing
@@ -1477,27 +1500,34 @@ class TestThePackageIdentityIsRecorded:
 
     def test_a_directory_recovers_its_sibling_tarballs_identity(self, tmp_path):
         """The exact shape the recent corpus's own package was laid out in:
-        a directory and the tarball it was extracted from, side by side."""
+        a directory and the tarball it was extracted from, side by side —
+        and the directory holds the tarball's own first article, which is
+        what the content check confirms."""
         directory = tmp_path / "PMC012xxxxxx"
         directory.mkdir()
+        (directory / "PMC12000001.xml").write_bytes(b"<article/>")
         sibling = tmp_path / "oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz"
-        sibling.write_bytes(b"\x1f\x8b" + b"0" * 10)
+        self._write_tarball(sibling, {"PMC12000001.xml": b"<article/>"})
 
         assert sampler._package_identity(directory) == sibling.name
 
-    def test_a_directory_with_no_sibling_falls_back_to_its_bare_name(self, tmp_path):
+    def test_a_directory_with_no_sibling_falls_back_to_its_bare_name(self, tmp_path, capsys):
         """No sibling tarball exists — nothing to recover the lost identity
-        from, so the bare name is reported rather than a guess."""
+        from, so the bare name is reported rather than a guess, and the
+        fallback is reported rather than silent."""
         directory = tmp_path / "PMC000xxxxxx"
         directory.mkdir()
 
         assert sampler._package_identity(directory) == "PMC000xxxxxx"
+        assert "no sibling" in capsys.readouterr().err
 
-    def test_an_ambiguous_sibling_match_falls_back_rather_than_guesses(self, tmp_path):
+    def test_an_ambiguous_sibling_match_falls_back_rather_than_guesses(self, tmp_path, capsys):
         """Two candidate tarballs (different subsets, both naming this
         directory and a baseline snapshot) must not be resolved by picking
         either one — a wrong guess names the wrong snapshot, which is worse
-        than an incomplete identity that names none."""
+        than an incomplete identity that names none. Fake bytes are enough
+        here: the ambiguity is caught by the name-match count alone, before
+        either candidate's content is ever read."""
         directory = tmp_path / "PMC001xxxxxx"
         directory.mkdir()
         (tmp_path / "oa_comm_xml.PMC001xxxxxx.baseline.2025-06-26.tar.gz").write_bytes(
@@ -1508,6 +1538,7 @@ class TestThePackageIdentityIsRecorded:
         )
 
         assert sampler._package_identity(directory) == "PMC001xxxxxx"
+        assert "ambiguous" in capsys.readouterr().err
 
     def test_a_non_gzip_sibling_naming_the_same_baseline_is_not_mistaken_for_the_tarball(
         self, tmp_path
@@ -1519,13 +1550,70 @@ class TestThePackageIdentityIsRecorded:
         not merely the name pattern, is what tells the two apart."""
         directory = tmp_path / "PMC000xxxxxx"
         directory.mkdir()
+        (directory / "PMC1.xml").write_bytes(b"<article/>")
         (tmp_path / "oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.filelist.csv").write_text(
             "not gzip, just a file list"
         )
         tarball = tmp_path / "oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.tar.gz"
-        tarball.write_bytes(b"\x1f\x8b" + b"0" * 10)
+        self._write_tarball(tarball, {"PMC1.xml": b"<article/>"})
 
         assert sampler._package_identity(directory) == tarball.name
+
+    def test_a_sibling_that_is_the_wrong_subset_is_not_mistaken_for_the_real_one(
+        self, tmp_path, capsys
+    ):
+        """MINOR 3 from review round 1: a lone, unambiguous, gzip-compressed
+        sibling can still be the *wrong* tarball — two OA subsets
+        (`oa_comm_xml`, `oa_noncomm_xml`) partition one accession range into
+        disjoint articles, so a directory genuinely extracted from one
+        subset can still have exactly one gzip sibling from the *other*,
+        with no comm tarball present at all. The name match alone would
+        have recorded that wrong identity; the content check (does the
+        sibling's first article exist in this directory?) catches it,
+        because the two subsets never share an article."""
+        directory = tmp_path / "PMC001xxxxxx"
+        directory.mkdir()
+        # This directory's own articles — genuinely from a noncomm draw.
+        (directory / "PMC10000002.xml").write_bytes(b"<article/>")
+        # The only sibling on disk is the *comm* tarball for the same
+        # accession range, naming different articles entirely.
+        wrong_sibling = tmp_path / "oa_comm_xml.PMC001xxxxxx.baseline.2025-06-26.tar.gz"
+        self._write_tarball(wrong_sibling, {"PMC10000001.xml": b"<article/>"})
+
+        assert sampler._package_identity(directory) == "PMC001xxxxxx"
+        err = capsys.readouterr().err
+        assert "does not look like" in err
+
+    def test_an_unreadable_sibling_is_not_mistaken_for_the_real_one(self, tmp_path, capsys):
+        """A sibling that passes the gzip-magic-bytes filter but is not
+        actually a readable tar stream (truncated, corrupted) must not
+        crash `_package_identity` — the broad `tarfile.TarError` catch is
+        what turns a real download's corruption into a safe fallback rather
+        than an unhandled exception out of `main()`."""
+        directory = tmp_path / "PMC000xxxxxx"
+        directory.mkdir()
+        (directory / "PMC1.xml").write_bytes(b"<article/>")
+        corrupt = tmp_path / "oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.tar.gz"
+        corrupt.write_bytes(b"\x1f\x8b" + b"0" * 10)  # gzip magic, garbage after
+
+        assert sampler._package_identity(directory) == "PMC000xxxxxx"
+        assert "does not look like" in capsys.readouterr().err
+
+    def test_a_glob_metacharacter_in_the_directory_name_is_matched_literally(self, tmp_path):
+        """MINOR 5 from review round 1: `path.name` is interpolated into a
+        glob pattern. Unescaped, a directory named with bracket characters
+        would have them read as a glob character class instead of literal
+        text, so a real, correctly-named sibling would go unmatched. PMC's
+        own accession-range names never contain these characters — this is
+        a synthetic worst case, not a realistic package name — but the
+        escaping code path still has to be exercised and correct."""
+        directory = tmp_path / "PMC[0]xxxxxx"
+        directory.mkdir()
+        (directory / "PMC1.xml").write_bytes(b"<article/>")
+        sibling = tmp_path / "oa_comm_xml.PMC[0]xxxxxx.baseline.2025-06-26.tar.gz"
+        self._write_tarball(sibling, {"PMC1.xml": b"<article/>"})
+
+        assert sampler._package_identity(directory) == sibling.name
 
     def test_the_recorded_window_uses_the_recovered_identity(self, tmp_path):
         """Wired into `main()`, not merely a standalone helper: a package
@@ -1539,7 +1627,7 @@ class TestThePackageIdentityIsRecorded:
             "</article-meta></front></article>"
         )
         sibling = tmp_path / "package" / "oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.tar.gz"
-        sibling.write_bytes(b"\x1f\x8b" + b"0" * 10)
+        self._write_tarball(sibling, {"PMC1.xml": b"<article/>"})
         output = tmp_path / "out" / "jats_exhibits.json"
         argv = [
             "sample_jats_exhibits.py",
@@ -2275,8 +2363,14 @@ class TestTheCompareEuropepmcFlag:
 class TestTheMeasureEuropepmcFlag:
     """`--measure-europepmc` — Task 6a. Only means anything against a
     `--package` draw (the live source's rows already are Europe PMC's
-    rendition), and leaves `--compare-europepmc` nothing left to compare
-    once the corpus itself is already measured from Europe PMC."""
+    rendition). Deliberately *not* refused alongside `--compare-europepmc`:
+    an earlier version of this guard claimed the combination would "report
+    Europe PMC disagreeing with itself," which review round 1 found false —
+    `_hold_for_comparison` reads the archive bytes back from the package
+    directly and `compare_renditions` fetches the served side itself,
+    neither consulting which rendition this run's own corpus rows came
+    from, so the comparison means exactly what it always means either way.
+    """
 
     def test_the_flag_defaults_to_off(self):
         args = sampler._build_arg_parser().parse_args([])
@@ -2294,7 +2388,11 @@ class TestTheMeasureEuropepmcFlag:
         assert refusal is not None
         assert "--measure-europepmc" in refusal
 
-    def test_it_is_refused_alongside_compare_europepmc(self, tmp_path):
+    def test_it_is_not_refused_alongside_compare_europepmc(self, tmp_path):
+        """The combination this module refused until review round 1 caught
+        the refusal's own justification as false. Both are independent and
+        meaningful together: a corpus measured from Europe PMC, plus an
+        independent archive-vs-served comparison over a subsample."""
         refusal = sampler._validate_args(
             _package_run_args(
                 package=[tmp_path],
@@ -2305,9 +2403,7 @@ class TestTheMeasureEuropepmcFlag:
             )
         )
 
-        assert refusal is not None
-        assert "--measure-europepmc" in refusal
-        assert "--compare-europepmc" in refusal
+        assert refusal is None
 
     def test_alone_on_a_package_draw_it_is_not_refused(self, tmp_path):
         """Negative control: the guard is not refusing every use of the flag."""
@@ -2648,6 +2744,139 @@ class TestTheEmptyComparisonNet:
         # the only thing failing this run.
         assert not output.with_suffix(".unreportable.json").exists()
         assert output.with_suffix(".rendition.unreportable.json").exists()
+
+
+class TestTheJournalDoesNotPoolRenditions:
+    """CRITICAL 1 from review round 1, reproduced then fixed.
+
+    `main()` reads the journal into `totals`/`seen` *before* branching on
+    `--measure-europepmc`, and a row carries no rendition marker of its
+    own — so a journal shared between the two renditions of one `-o` let a
+    resumed `--measure-europepmc` run silently carry an existing
+    archive-rendition journal's rows into a corpus stamped
+    `"rendition": "europepmc"`, at exit 0, with zero HTTP requests issued.
+    The reviewer's own reproduction: rerunning the exact same
+    `(package, window, target, seed)` with only `--measure-europepmc` added
+    computed `wanted = ∅` against the committed 1,000-row corpus and
+    rewrote it stamped `"europepmc"` over unchanged archive rows — "the
+    opposite of the truth this task exists to prevent."
+
+    Fixed by naming each rendition's journal differently
+    (`*.europepmc.journal.jsonl` vs `*.journal.jsonl`), so the two neither
+    read nor write the same file regardless of run order — this is what
+    makes "one corpus, one rendition" hold across resumed runs and not only
+    within one run's own branch.
+    """
+
+    def _package(self, path: Path, pmcids: list[str], n_figs: int) -> Path:
+        path.mkdir(parents=True, exist_ok=True)
+        figs = "".join(f"<fig id='f{j}'/>" for j in range(n_figs))
+        for pmcid in pmcids:
+            (path / f"{pmcid}.xml").write_text(
+                '<article xmlns:xlink="http://www.w3.org/1999/xlink">'
+                "<front><article-meta>"
+                "<pub-date pub-type='epub'><year>2024</year></pub-date>"
+                f"</article-meta></front><body>{figs}</body></article>"
+            )
+        return path
+
+    def test_a_resumed_measure_europepmc_run_does_not_pool_the_archive_journal(self, tmp_path):
+        """The reviewer's exact scenario: draw a corpus at the archive
+        rendition, then re-run the identical command plus
+        `--measure-europepmc` against the same `-o`. Before the fix this
+        computed `wanted = ∅` (every id already `seen` in the shared
+        journal) and rewrote the corpus `"rendition": "europepmc"` over the
+        unchanged archive rows, with `_fetch` never called. After the fix,
+        `--measure-europepmc` has its own, initially-empty journal, so
+        every id is `wanted` again and genuinely re-measured from served
+        bytes."""
+        pmcids = [f"PMC{i:08d}" for i in range(6)]
+        package = self._package(tmp_path / "package", pmcids, n_figs=2)
+        output = tmp_path / "out" / "jats_exhibits.json"
+        served_xml = _article(
+            "<fig id='s1'/><fig id='s2'/><fig id='s3'/><fig id='s4'/><fig id='s5'/>"
+        )
+        base_argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "6",
+            "--seed",
+            "0",
+            "-o",
+            str(output),
+        ]
+
+        with mock.patch.object(sys, "argv", base_argv):
+            run1_code = sampler.main()
+        run1_corpus = json.loads(output.read_text())
+
+        fetch_calls: list[str] = []
+
+        def counting_fetch(client, url, pace):
+            fetch_calls.append(url)
+            return served_xml
+
+        with mock.patch.object(sampler, "_fetch", side_effect=counting_fetch):
+            with mock.patch.object(sys, "argv", [*base_argv, "--measure-europepmc"]):
+                run2_code = sampler.main()
+        run2_corpus = json.loads(output.read_text())
+
+        assert run1_code == 0
+        assert run1_corpus["window"]["rendition"] == "archive"
+        assert run1_corpus["articles"] == 6
+        assert [row["figures"] for row in run1_corpus["rows"]] == [2] * 6
+
+        assert run2_code == 0
+        assert run2_corpus["window"]["rendition"] == "europepmc"
+        assert run2_corpus["articles"] == 6
+        # The property that must hold: every row in a corpus stamped
+        # "europepmc" is genuinely measured from served bytes, not carried
+        # over from the archive journal. Before the fix this was
+        # `[2, 2, 2, 2, 2, 2]` with `fetch_calls == []`.
+        assert all(row["figures"] == 5 for row in run2_corpus["rows"])
+        assert len(fetch_calls) == 6, "every article must be genuinely re-fetched, not pooled"
+
+    def test_an_archive_run_after_a_served_one_is_also_not_pooled(self, tmp_path):
+        """The reverse order: `--measure-europepmc` first, then an
+        ordinary archive run at the same `-o`. The archive run must read
+        its own journal, not the one `--measure-europepmc` just wrote."""
+        pmcids = [f"PMC{i:08d}" for i in range(4)]
+        package = self._package(tmp_path / "package", pmcids, n_figs=2)
+        output = tmp_path / "out" / "jats_exhibits.json"
+        served_xml = _article("<fig id='s1'/>")
+        base_argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "4",
+            "--seed",
+            "0",
+            "-o",
+            str(output),
+        ]
+
+        with mock.patch.object(sampler, "_fetch", return_value=served_xml):
+            with mock.patch.object(sys, "argv", [*base_argv, "--measure-europepmc"]):
+                served_code = sampler.main()
+        with mock.patch.object(sys, "argv", base_argv):
+            archive_code = sampler.main()
+        archive_corpus = json.loads(output.read_text())
+
+        assert served_code == 0
+        assert archive_code == 0
+        assert archive_corpus["window"]["rendition"] == "archive"
+        assert all(row["figures"] == 2 for row in archive_corpus["rows"])
 
 
 class TestTheMeasureEuropepmcFlagMeasuresTheServedRendition:

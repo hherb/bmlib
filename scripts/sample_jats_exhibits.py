@@ -112,6 +112,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import random
 import re
@@ -420,6 +421,28 @@ def _package_identity(path: Path) -> str:
     ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`` side by side in
     the same parent directory).
 
+    A name match alone is not proof: two OA subsets (``oa_comm_xml``,
+    ``oa_noncomm_xml``) partition the *same* accession range into disjoint
+    articles, so a lone, unambiguous, gzip-compressed sibling can still be
+    the *wrong* subset's tarball — one that happens to sit beside a directory
+    it was never extracted from. A single cheap check catches this without
+    reading the candidate whole (some of these tarballs are multi-gigabyte):
+    the *first* article the candidate tarball yields must be one of this
+    directory's own files. Since a PMCID belongs to at most one subset, a
+    mismatched candidate's first article is not one this directory has, with
+    the same probability as any other cross-subset collision — vanishing in
+    practice. A single sample rather than a full comparison, because
+    reading every member just to confirm a filename is disproportionate to
+    what the filename is used for (a header string), and the corpus's own
+    candidate walk already pays the cost of reading every *wanted* member in
+    full where correctness of the draw itself is what is at stake.
+
+    Every fallback is reported to stderr, naming which of the three reasons
+    it was (no candidate, more than one, or a candidate that failed the
+    content check) — silently degrading to the bare name would leave "no
+    sibling was found" and "a sibling was found and rejected" looking
+    identical to a reader of the corpus alone.
+
     Args:
         path: A package directory or tarball, as passed to ``--package``.
 
@@ -428,19 +451,57 @@ def _package_identity(path: Path) -> str:
         already carries its full identity, unchanged. For a directory: the
         name of a sibling file, in the same parent directory, whose name
         contains both *path*'s own name and ``baseline`` and which is itself
-        gzip-compressed — found and unambiguous. Otherwise, the directory's
-        bare name, unchanged: a guessed identity naming the wrong snapshot is
-        worse than an incomplete one naming none, so an absent or ambiguous
-        sibling falls back rather than picks.
+        gzip-compressed, confirmed by content — found and unambiguous.
+        Otherwise, the directory's bare name, unchanged: a guessed identity
+        naming the wrong snapshot is worse than an incomplete one naming
+        none, so an absent, ambiguous, or unconfirmed sibling falls back
+        rather than picks.
     """
     if path.is_file():
         return path.name
+    # `path.name` is interpolated into the pattern, not written as one
+    # ourselves, so any glob metacharacter it happens to contain (`[`, `]`,
+    # `*`, `?`) must be escaped — otherwise a bracketed accession range would
+    # be read as a character class instead of literal text, and either miss
+    # its real sibling or match one it should not.
+    pattern = f"*{glob.escape(path.name)}*baseline*"
     candidates = [
         sibling
-        for sibling in path.parent.glob(f"*{path.name}*baseline*")
+        for sibling in path.parent.glob(pattern)
         if sibling.is_file() and _is_gzip_file(sibling)
     ]
-    return candidates[0].name if len(candidates) == 1 else path.name
+    if not candidates:
+        sys.stderr.write(
+            f"{path}: no sibling baseline tarball found; recording the bare "
+            "directory name, which loses the dated snapshot.\n"
+        )
+        return path.name
+    if len(candidates) > 1:
+        sys.stderr.write(
+            f"{path}: {len(candidates)} candidate baseline tarballs match "
+            "(ambiguous); recording the bare directory name rather than "
+            "guessing which one.\n"
+        )
+        return path.name
+    sibling = candidates[0]
+    try:
+        first = next(iter_package_articles(sibling), None)
+    except (PackageError, tarfile.TarError):
+        # A sibling that passed the gzip-magic-bytes filter above can still
+        # be truncated, corrupted, or otherwise not a readable tar stream —
+        # `tarfile` raises from several `TarError` subclasses depending on
+        # exactly how it is broken, not only the `ReadError`
+        # `iter_package_articles` converts to `PackageError`. Any of them
+        # means "cannot confirm," not "crash the whole run."
+        first = None
+    if first is None or not (path / f"{first[0]}.xml").exists():
+        sys.stderr.write(
+            f"{path}: {sibling.name} does not look like this directory's own "
+            "tarball (its first article is not one of this directory's "
+            "files); recording the bare directory name instead.\n"
+        )
+        return path.name
+    return sibling.name
 
 
 def iter_package_articles(path: Path) -> Iterator[tuple[str, bytes]]:
@@ -2035,13 +2096,21 @@ def _validate_args(args: argparse.Namespace) -> str | None:
     for the same reason: the live source's rows already are Europe PMC's
     rendition, with nothing archival to switch away from.
 
-    *`--measure-europepmc` leaves `--compare-europepmc` nothing to compare.*
-    Once a corpus's own rows are measured from Europe PMC, "does an
-    archive-drawn figure generalise to what the parser is fed" is not a
-    question this run can still ask — the corpus already answers it by
-    construction, and running the comparison anyway would report Europe PMC
-    disagreeing with itself. Refused rather than accepted and left to write
-    a comparison that looks like evidence and is not.
+    *`--measure-europepmc` and `--compare-europepmc` are independent and may
+    be combined.* It is tempting to read the corpus's own rendition as
+    deciding what a comparison could still mean, but it does not:
+    `_hold_for_comparison` reads the *archive* bytes back from the package
+    directly, and `compare_renditions` fetches the *served* side itself —
+    neither consults which rendition `main` measured this run's own corpus
+    rows from. So the comparison is exactly the archive-vs-served check it
+    always is, whether or not `--measure-europepmc` is also set, and a
+    corpus already measured from Europe PMC is not evidence the comparison
+    would find nothing: the two questions ("what is this corpus's own
+    rendition" and "how far would the archive one have diverged") are
+    answered independently and both may be worth asking in one run. An
+    earlier version of this function refused the combination on the
+    claim that it would "report Europe PMC disagreeing with itself" — false,
+    and caught in review; nothing here still asserts it.
     """
     for path in args.package:
         if not _is_package_path(path):
@@ -2052,11 +2121,6 @@ def _validate_args(args: argparse.Namespace) -> str | None:
         return f"--compare-europepmc must not be negative, got {args.compare_europepmc}"
     if args.measure_europepmc and not args.package:
         return "--measure-europepmc measures a --package draw from Europe PMC; it needs one"
-    if args.measure_europepmc and args.compare_europepmc:
-        return (
-            "--measure-europepmc already measures every row from Europe PMC; "
-            "--compare-europepmc would have nothing archival left to compare it against"
-        )
     if args.months < 1:
         return f"--months must be at least 1, got {args.months}"
     if args.months_ago < 0:
@@ -2097,14 +2161,33 @@ def main() -> int:
     """Measure every population, print the tables, write the corpus.
 
     Resumable: rows land in a JSONL journal beside the output, and a later run
-    tops the sample up rather than starting over.
+    tops the sample up rather than starting over. A `--package` draw's
+    journal is named for the rendition it was measured from
+    (`*.europepmc.journal.jsonl` under `--measure-europepmc`, `*.journal.jsonl`
+    otherwise), so resuming never pools one rendition's rows into a corpus
+    stamped with the other.
     """
     args = _build_arg_parser().parse_args()
     refusal = _validate_args(args)
     if refusal is not None:
         sys.stderr.write(f"{refusal}\n")
         return 2
-    journal = args.output.with_suffix(".journal.jsonl")
+    # Rendition-qualified for --measure-europepmc, never the plain
+    # `--package` journal name: `totals`/`seen` below are populated straight
+    # from whatever this file already holds, with no per-row rendition
+    # marker, so two renditions of the same `-o` sharing one journal is a
+    # corpus that pools them silently (a resumed --measure-europepmc run
+    # would read an existing archive-rendition journal as `seen`, fetch
+    # nothing for those pmcids, and still stamp the corpus
+    # `"rendition": "europepmc"` over the old archive rows). Physically
+    # separate files make that impossible rather than merely checked: the
+    # europepmc branch below can never open the archive journal, and vice
+    # versa, whichever order the two are run in. The archive-rendition name
+    # is unchanged (`.journal.jsonl`, no qualifier) so an existing local
+    # journal from before this flag existed keeps resuming exactly as it did.
+    journal = args.output.with_suffix(
+        ".europepmc.journal.jsonl" if args.measure_europepmc else ".journal.jsonl"
+    )
     totals = Totals()
     seen: set[str] = set()
     if journal.exists():
@@ -2157,12 +2240,14 @@ def main() -> int:
             # This branch never reads `read_package_articles` — there is no
             # archive byte string in scope to fall back to, so an article
             # Europe PMC will not serve cannot be silently measured from the
-            # package instead. That is what makes "one corpus, one rendition"
-            # structural rather than a check that happens to be right: mixing
-            # would require this branch to also hold the archive bytes, and
-            # it does not. The identifier list (`wanted`, from `drawn`) is
-            # exactly what the archive branch below uses too — only the
-            # bytes' source moves.
+            # package instead within this run. That is one half of "one
+            # corpus, one rendition"; the other half is the journal name
+            # chosen above, which is what stops a *resumed* run from pooling
+            # this run's rows with an earlier run's archive-rendition ones —
+            # the two are structurally different files, not merely different
+            # branches of one run. The identifier list (`wanted`, from
+            # `drawn`) is exactly what the archive branch below uses too —
+            # only the bytes' source moves.
             pace = _make_pacer(args.per_host_interval)
             with httpx.Client(
                 headers={"User-Agent": _USER_AGENT}, timeout=60.0, follow_redirects=True
