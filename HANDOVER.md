@@ -209,14 +209,18 @@ the fact: after every merge that mentions an issue in prose, diff
 `gh issue list` against the commit's own list of what it filed. That check is
 what found #160 reopened here, one session late.
 
-**Next up: #124, #128, #137, #138, #142–#145, #147, #150 and #152 in
-`fulltext`, #160 and #161 in `transparency`, #132 and #158, the older non-JATS
+**Next up: #162 and #147 are the two now carrying a measured population and
+nothing else in the way** — #162 is the `<label>` premise the redraw
+overturned, #147's `<alternatives>` objection measures 1,087 formulas carrying
+both encodings, 57% of every `<disp-formula>`. Then **#124, #128, #137,
+#142–#145, #150 and #152 in
+`fulltext`, #160 and #161 in `transparency`, the older non-JATS
 ones (#86, #92, #94, #103), the
 funder corpus (#154, #156, #157), or Phase 3 of the bmlibrarian port, whose
 every row needs a design conversation.** The JATS corpus redraw is **done on
-this branch** — #132, #138 and #158 are answered and #142, #143, #147 and #150
-have their populations — so what is left of that group is the rules those
-populations were for, plus the new `<label>`-premise finding below. The funder
+this branch** — #132, #138 and #158 are closed and #142, #143, #147 and #150
+have their populations, of which **#142, #143 and #150 measure empty**, so
+those three are blocked on a stratified draw rather than on effort. The funder
 redraw is still one job answering three. #160 is the cheapest self-contained fix on the list: the
 remedy it prefers — match the element name when the depth closes — needs no
 invented constant and no corpus. See "Open GitHub issues" below for which is blocked on
@@ -303,12 +307,10 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 
 ### Open GitHub issues
 
-**Twenty-two open** as this file is written (verified with `gh issue list`
-2026-08-31, after PR #159 merged, after #119 was closed by hand — the PR
-carried no closing keyword, deliberately — and after #160 was reopened, having
-been closed as COMPLETED without being fixed): #86, #92, #94, #103, #124, #128,
-#132, #137, #138, #142, #143, #144, #145, #147, #150, #152, #154, #156, #157,
-#158, #160, #161. Every one was found by review or measurement rather than by a
+**Twenty open** as this file is written (verified with `gh issue list`
+2026-09-02, after the corpus redraw closed #132, #138 and #158 and filed
+#162): #86, #92, #94, #103, #124, #128, #137, #142, #143, #144, #145, #147,
+#150, #152, #154, #156, #157, #160, #161, #162. Every one was found by review or measurement rather than by a
 failing test, and **none of them loses records** — though **#124** loses an
 exhibit's footnotes, **#147** loses a formula from the prose that contains it,
 **#150** renders a note-only reference as an empty bullet, and **#128** would
