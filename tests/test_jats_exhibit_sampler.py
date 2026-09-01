@@ -2790,6 +2790,17 @@ class TestTheJournalDoesNotPoolRenditions:
     `--measure-europepmc` runs get a fresh journal rather than a refusal on
     their very first invocation), but it is no longer what the guarantee
     rests on.
+
+    Round 3 closed the same defect one axis over: an agreeing
+    `(source, rendition)` said nothing about *which draw* — two archive
+    runs at one `-o` over different packages/year windows, or over
+    different seeds, both pooled silently the same way, live-reproduced
+    against this exact code. The header now also carries a `draw` identity
+    (packages, year window and seed for a `--package` run; month window for
+    the live source) and is compared alongside `(source, rendition)`.
+    `target` is deliberately excluded — a resumed run growing its target is
+    the ordinary top-up workflow, pinned as a negative control below
+    (`test_a_larger_target_on_resume_is_not_a_disagreement`).
     """
 
     def _package(self, path: Path, pmcids: list[str], n_figs: int) -> Path:
@@ -3016,17 +3027,151 @@ class TestTheJournalDoesNotPoolRenditions:
         assert package_corpus["window"]["source"] == "package"
         assert {row["pmcid"] for row in package_corpus["rows"]} == set(pmcids)
 
+    def test_two_archive_runs_over_different_packages_and_windows_is_refused(self, tmp_path):
+        """Review round 3, finding 2: an agreeing `(source, rendition)` is
+        not enough — two archive runs at one `-o` over genuinely different
+        packages and year windows both used to exit 0 and produce a corpus
+        stamped with the *second* run's own `packages`/`first_year` sitting
+        over a mix of both runs' rows. Reproduced with two distinct
+        packages (different pmcids, different figure counts) and different
+        year windows, same `-o`."""
+        package_a = self._package(tmp_path / "pkgA", [f"A{i:08d}" for i in range(4)], n_figs=2)
+        package_b = self._package(tmp_path / "pkgB", [f"B{i:08d}" for i in range(4)], n_figs=7)
+        output = tmp_path / "out" / "jats_exhibits.json"
+
+        run1_argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package_a),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "4",
+            "--seed",
+            "0",
+            "-o",
+            str(output),
+        ]
+        with mock.patch.object(sys, "argv", run1_argv):
+            run1_code = sampler.main()
+
+        run2_argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package_b),
+            "--from-year",
+            "1996",
+            "--to-year",
+            "1997",
+            "--target",
+            "4",
+            "--seed",
+            "0",
+            "-o",
+            str(output),
+        ]
+        with mock.patch.object(sys, "argv", run2_argv):
+            run2_code = sampler.main()
+
+        assert run1_code == 0
+        assert run2_code != 0
+        # The property that must hold: run 2 never got to write a corpus
+        # pooling package A's rows under package B's own header.
+        first_corpus = json.loads(output.read_text())
+        assert first_corpus["window"]["packages"] == [package_a.name]
+        assert {row["pmcid"] for row in first_corpus["rows"]} == {f"A{i:08d}" for i in range(4)}
+
+    def test_a_different_seed_at_one_output_is_refused(self, tmp_path):
+        """Review round 3's second live reproduction: same package, same
+        year window, only `--seed` differs — a different seed draws a
+        different sample, so pooling the two under one seed's label is the
+        same defect as the packages/window case above, one field over."""
+        pmcids = [f"PMC{i:08d}" for i in range(20)]
+        package = self._package(tmp_path / "package", pmcids, n_figs=2)
+        output = tmp_path / "out" / "jats_exhibits.json"
+
+        def argv_for(seed: str) -> list[str]:
+            return [
+                "sample_jats_exhibits.py",
+                "--package",
+                str(package),
+                "--from-year",
+                "2024",
+                "--to-year",
+                "2024",
+                "--target",
+                "5",
+                "--seed",
+                seed,
+                "-o",
+                str(output),
+            ]
+
+        with mock.patch.object(sys, "argv", argv_for("0")):
+            run1_code = sampler.main()
+        with mock.patch.object(sys, "argv", argv_for("99")):
+            run2_code = sampler.main()
+
+        assert run1_code == 0
+        assert run2_code != 0
+        first_corpus = json.loads(output.read_text())
+        assert first_corpus["window"]["seed"] == 0
+        assert len(first_corpus["rows"]) == 5
+
+    def test_a_larger_target_on_resume_is_not_a_disagreement(self, tmp_path):
+        """Negative control the draw-identity check must not break: growing
+        `--target` on an otherwise-identical resume is the ordinary top-up
+        workflow this whole journal mechanism exists for, not a
+        disagreement — `target` is deliberately excluded from `draw`."""
+        pmcids = [f"PMC{i:08d}" for i in range(10)]
+        package = self._package(tmp_path / "package", pmcids, n_figs=2)
+        output = tmp_path / "out" / "jats_exhibits.json"
+
+        def argv_for(target: str) -> list[str]:
+            return [
+                "sample_jats_exhibits.py",
+                "--package",
+                str(package),
+                "--from-year",
+                "2024",
+                "--to-year",
+                "2024",
+                "--target",
+                target,
+                "--seed",
+                "0",
+                "-o",
+                str(output),
+            ]
+
+        with mock.patch.object(sys, "argv", argv_for("5")):
+            run1_code = sampler.main()
+        with mock.patch.object(sys, "argv", argv_for("10")):
+            run2_code = sampler.main()
+
+        assert run1_code == 0
+        assert run2_code == 0
+        second_corpus = json.loads(output.read_text())
+        assert second_corpus["articles"] == 10
+
 
 class TestTheJournalHeaderDisagreementCheck:
     """`_journal_disagreement` and `_ensure_journal_header` in isolation —
     the pure mechanism `main()` calls, tested directly rather than only
     through a full `main()` run, so the boundary cases (empty file, legacy
-    header-less file, agreeing header) are each pinned precisely."""
+    header-less file, agreeing header, undecodable file) are each pinned
+    precisely. `_DRAW` is a fixed, arbitrary draw identity used wherever a
+    test is not itself about the `draw` comparison, so those tests are not
+    accidentally exercising it."""
+
+    _DRAW = {"packages": ["pkg"], "first_year": 2024, "last_year": 2024, "seed": 0}
 
     def test_no_journal_is_not_a_disagreement(self, tmp_path):
         journal = tmp_path / "does-not-exist.journal.jsonl"
 
-        assert sampler._journal_disagreement(journal, "package", "archive") is None
+        assert sampler._journal_disagreement(journal, "package", "archive", self._DRAW) is None
 
     def test_an_empty_journal_is_not_a_disagreement(self, tmp_path):
         """An existing-but-empty file — e.g. created by a prior run that
@@ -3034,19 +3179,31 @@ class TestTheJournalHeaderDisagreementCheck:
         journal = tmp_path / "empty.journal.jsonl"
         journal.write_text("")
 
-        assert sampler._journal_disagreement(journal, "package", "archive") is None
+        assert sampler._journal_disagreement(journal, "package", "archive", self._DRAW) is None
+
+    def test_a_whitespace_only_journal_is_not_a_disagreement(self, tmp_path):
+        """Review round 3: `_journal_disagreement` and
+        `_ensure_journal_header` must agree on what "empty" means. A
+        newline-only file is one line by `splitlines()` (`['']`, not `[]`),
+        so treating "empty" as "no lines" would try to parse `''` as JSON
+        and refuse it as a legacy journal — this pins the fix (both
+        functions test `not text.strip()` instead)."""
+        journal = tmp_path / "whitespace.journal.jsonl"
+        journal.write_text("\n")
+
+        assert sampler._journal_disagreement(journal, "package", "archive", self._DRAW) is None
 
     def test_a_matching_header_is_not_a_disagreement(self, tmp_path):
         journal = tmp_path / "matches.journal.jsonl"
-        journal.write_text(sampler._journal_header_line("package", "europepmc"))
+        journal.write_text(sampler._journal_header_line("package", "europepmc", self._DRAW))
 
-        assert sampler._journal_disagreement(journal, "package", "europepmc") is None
+        assert sampler._journal_disagreement(journal, "package", "europepmc", self._DRAW) is None
 
     def test_a_mismatched_rendition_is_a_disagreement(self, tmp_path):
         journal = tmp_path / "mismatch.journal.jsonl"
-        journal.write_text(sampler._journal_header_line("package", "archive"))
+        journal.write_text(sampler._journal_header_line("package", "archive", self._DRAW))
 
-        reason = sampler._journal_disagreement(journal, "package", "europepmc")
+        reason = sampler._journal_disagreement(journal, "package", "europepmc", self._DRAW)
 
         assert reason is not None
         assert "archive" in reason
@@ -3061,12 +3218,27 @@ class TestTheJournalHeaderDisagreementCheck:
         `test_a_mismatched_rendition_is_a_disagreement` above and only
         reddened here)."""
         journal = tmp_path / "mismatch.journal.jsonl"
-        journal.write_text(sampler._journal_header_line("package", "europepmc"))
+        journal.write_text(sampler._journal_header_line("package", "europepmc", self._DRAW))
 
-        reason = sampler._journal_disagreement(journal, "europepmc", "europepmc")
+        reason = sampler._journal_disagreement(journal, "europepmc", "europepmc", self._DRAW)
 
         assert reason is not None
         assert "package" in reason
+
+    def test_a_mismatched_draw_is_a_disagreement(self, tmp_path):
+        """Review round 3, finding 2: the header-agreeing `(source,
+        rendition)` pair is not enough on its own — two archive runs at one
+        `-o` over different packages/years (or seeds) pooled silently
+        before this. Isolated from both other checks: `source` and
+        `rendition` both agree, only `draw` differs."""
+        journal = tmp_path / "mismatch.journal.jsonl"
+        journal.write_text(sampler._journal_header_line("package", "archive", self._DRAW))
+        other_draw = {**self._DRAW, "seed": 99}
+
+        reason = sampler._journal_disagreement(journal, "package", "archive", other_draw)
+
+        assert reason is not None
+        assert "draw" in reason
 
     def test_a_legacy_header_less_journal_is_a_disagreement_not_a_crash(self, tmp_path):
         """A journal written before this check existed opens with a real
@@ -3076,7 +3248,7 @@ class TestTheJournalHeaderDisagreementCheck:
         row = sampler.measure_article("PMC1", _article("<fig id='f1'/>"))
         journal.write_text(json.dumps(row.to_dict()) + "\n")
 
-        reason = sampler._journal_disagreement(journal, "package", "archive")
+        reason = sampler._journal_disagreement(journal, "package", "archive", self._DRAW)
 
         assert reason is not None
         assert "no rendition header" in reason
@@ -3085,39 +3257,90 @@ class TestTheJournalHeaderDisagreementCheck:
         journal = tmp_path / "garbage.journal.jsonl"
         journal.write_text("not json at all\n")
 
-        reason = sampler._journal_disagreement(journal, "package", "archive")
+        reason = sampler._journal_disagreement(journal, "package", "archive", self._DRAW)
 
         assert reason is not None
+
+    def test_a_journal_truncated_mid_multibyte_character_is_a_disagreement_not_a_crash(
+        self, tmp_path
+    ):
+        """Review round 3, finding 3, reproduced: a journal cut off exactly
+        inside a multibyte UTF-8 character (the header's own JSON can
+        legitimately contain one — an em dash, say) raised
+        `UnicodeDecodeError` straight out of `_journal_disagreement`
+        (`Path.read_text` decodes eagerly) rather than refusing like every
+        other unreadable-journal shape above."""
+        journal = tmp_path / "truncated.journal.jsonl"
+        valid_header = sampler._journal_header_line("package", "archive", self._DRAW)
+        broken_tail = "\u2014".encode("utf-8")[:-1]  # 2 of an em dash's 3 UTF-8 bytes
+        with pytest.raises(UnicodeDecodeError):
+            broken_tail.decode("utf-8")  # the fixture must actually be broken UTF-8
+        journal.write_bytes(valid_header.encode("utf-8") + broken_tail)
+
+        reason = sampler._journal_disagreement(journal, "package", "archive", self._DRAW)
+
+        assert reason is not None
+        assert "cannot be read as UTF-8" in reason
 
     def test_ensure_journal_header_creates_one_when_absent(self, tmp_path):
         journal = tmp_path / "nested" / "new.journal.jsonl"
 
-        sampler._ensure_journal_header(journal, "package", "archive")
+        sampler._ensure_journal_header(journal, "package", "archive", self._DRAW)
 
         header = json.loads(journal.read_text().splitlines()[0])
         assert header["source"] == "package"
         assert header["rendition"] == "archive"
+        assert header["draw"] == self._DRAW
 
     def test_ensure_journal_header_overwrites_an_empty_file(self, tmp_path):
         journal = tmp_path / "empty.journal.jsonl"
         journal.write_text("")
 
-        sampler._ensure_journal_header(journal, "europepmc", "europepmc")
+        sampler._ensure_journal_header(journal, "europepmc", "europepmc", self._DRAW)
 
         header = json.loads(journal.read_text().splitlines()[0])
         assert header["source"] == "europepmc"
+
+    def test_ensure_journal_header_overwrites_a_whitespace_only_file(self, tmp_path):
+        """The other half of agreeing on "empty" (see the disagreement-check
+        test above): a newline-only file is also safe for this function to
+        claim, not merely for the disagreement check to pass over."""
+        journal = tmp_path / "whitespace.journal.jsonl"
+        journal.write_text("\n\n")
+
+        sampler._ensure_journal_header(journal, "package", "archive", self._DRAW)
+
+        header = json.loads(journal.read_text().splitlines()[0])
+        assert header["source"] == "package"
 
     def test_ensure_journal_header_leaves_an_agreeing_file_alone(self, tmp_path):
         journal = tmp_path / "existing.journal.jsonl"
         row = sampler.measure_article("PMC1", _article("<fig id='f1'/>"))
         original = (
-            sampler._journal_header_line("package", "archive") + json.dumps(row.to_dict()) + "\n"
+            sampler._journal_header_line("package", "archive", self._DRAW)
+            + json.dumps(row.to_dict())
+            + "\n"
         )
         journal.write_text(original)
 
-        sampler._ensure_journal_header(journal, "package", "archive")
+        sampler._ensure_journal_header(journal, "package", "archive", self._DRAW)
 
         assert journal.read_text() == original
+
+    def test_ensure_journal_header_leaves_an_undecodable_file_alone(self, tmp_path):
+        """Not "empty" and not decodable — `_journal_disagreement` would
+        already have refused a run over this file, so reaching this
+        function with one at all means it was called directly. Destroying
+        unreadable content on a guess is worse than doing nothing."""
+        journal = tmp_path / "truncated.journal.jsonl"
+        valid_header = sampler._journal_header_line("package", "archive", self._DRAW)
+        broken_tail = "\u2014".encode("utf-8")[:-1]
+        broken = valid_header.encode("utf-8") + broken_tail
+        journal.write_bytes(broken)
+
+        sampler._ensure_journal_header(journal, "package", "archive", self._DRAW)
+
+        assert journal.read_bytes() == broken
 
 
 class TestTheMeasureEuropepmcFlagMeasuresTheServedRendition:

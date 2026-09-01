@@ -678,20 +678,50 @@ def _hold_for_comparison(
 _JOURNAL_HEADER_KEY = "__journal_header__"
 
 
-def _journal_header_line(source: str, rendition: str) -> str:
+def _read_journal_text(journal: Path) -> str | None:
+    """*journal*'s raw text, or ``None`` if its bytes cannot be decoded as UTF-8.
+
+    A journal is written by this script alone, in UTF-8, one JSON object per
+    line, so a decode failure (review round 3: reproduced with a journal
+    truncated mid multibyte character) means the file is corrupt rather
+    than a shape this module ever produces itself — the same "cannot trust
+    it, cannot crash on it" territory as a header-less legacy journal, and
+    handled the same way by both of this module's callers of this function
+    (:func:`_journal_disagreement` refuses; :func:`_ensure_journal_header`
+    leaves the file untouched rather than guessing it is safe to overwrite).
+
+    Returns:
+        The decoded text, or ``None`` if it will not decode.
+    """
+    try:
+        return journal.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def _journal_header_line(source: str, rendition: str, draw: dict[str, Any]) -> str:
     """The one line that must open every journal this script writes.
 
     Args:
         source: This run's own ``"package"`` or ``"europepmc"``.
         rendition: This run's own ``"archive"`` or ``"europepmc"``.
+        draw: This run's own draw identity — see :func:`_journal_disagreement`.
 
     Returns:
-        A single JSON line, newline-terminated, naming both.
+        A single JSON line, newline-terminated, naming all three.
     """
-    return json.dumps({_JOURNAL_HEADER_KEY: True, "source": source, "rendition": rendition}) + "\n"
+    header = {
+        _JOURNAL_HEADER_KEY: True,
+        "source": source,
+        "rendition": rendition,
+        "draw": draw,
+    }
+    return json.dumps(header) + "\n"
 
 
-def _journal_disagreement(journal: Path, source: str, rendition: str) -> str | None:
+def _journal_disagreement(
+    journal: Path, source: str, rendition: str, draw: dict[str, Any]
+) -> str | None:
     """Why *journal* must not be resumed from this run, or ``None`` if it may be.
 
     Two reproduced sequences (review round 2) are why the filename alone —
@@ -705,25 +735,50 @@ def _journal_disagreement(journal: Path, source: str, rendition: str) -> str | N
     good: it is data travelling with the journal's own rows rather than a
     fact inferred from a filename a caller chose.
 
+    *A rendition-agreeing journal can still pool the wrong draw* (review
+    round 3, reproduced live): two archive runs at one `-o` over different
+    packages and year windows both exited 0 and produced a corpus stamped
+    with the *second* run's `packages`/`first_year` over a mix of both
+    runs' rows; a different `--seed` at one `-o` pooled the same way. Same
+    `(source, rendition)`, different draw. `draw` is therefore part of what
+    is checked here too — for a `--package` run, its packages (by
+    :func:`_package_identity`, not a raw path), year window and seed; for
+    the live source, its month window — everything that decides *which*
+    identifiers this run is drawing, deliberately excluding `target` (a
+    resumed run growing its target is the ordinary top-up workflow this
+    whole journal mechanism exists for, not a disagreement).
+
     Args:
         journal: The path this run is about to read from and append to.
         source: This run's own ``"package"`` or ``"europepmc"``.
         rendition: This run's own ``"archive"`` or ``"europepmc"``.
+        draw: This run's own draw identity, compared for equality against
+            the journal's own recorded ``draw``.
 
     Returns:
         A reason naming the journal and what disagrees, if its header does
-        not match this run, or if it has content but no header at all (a
-        journal written before this check existed — refused rather than
-        trusted blind, since nothing records what it was drawn as). ``None``
-        if the journal does not exist, is empty, or its header agrees.
+        not match this run; if it has content but no header at all (a
+        journal written before this check existed, or a journal this
+        script did not write); or if its bytes cannot be decoded as UTF-8
+        at all (:func:`_read_journal_text`) — refused rather than trusted
+        blind or silently ignored in every case. ``None`` if the journal
+        does not exist, is empty (or whitespace-only — the same test
+        :func:`_ensure_journal_header` uses, so the two agree on what
+        "empty" means), or its header agrees on every count.
     """
     if not journal.exists():
         return None
-    lines = journal.read_text(encoding="utf-8").splitlines()
-    if not lines:
+    text = _read_journal_text(journal)
+    if text is None:
+        return (
+            f"{journal} cannot be read as UTF-8 (corrupt or truncated, e.g. mid a "
+            "multibyte character); refusing to resume from it. Delete it (or move it "
+            "aside) to start a fresh draw."
+        )
+    if not text.strip():
         return None
     try:
-        header = json.loads(lines[0])
+        header = json.loads(text.splitlines()[0])
     except json.JSONDecodeError:
         header = None
     if not isinstance(header, dict) or not header.get(_JOURNAL_HEADER_KEY):
@@ -733,35 +788,53 @@ def _journal_disagreement(journal: Path, source: str, rendition: str) -> str | N
             "to resume from it rather than guess what it was drawn as. Delete it (or "
             "move it aside) to start a fresh draw."
         )
-    if (header.get("source"), header.get("rendition")) != (source, rendition):
+    mismatches = [
+        f"{name} {header.get(name)!r} != {value!r}"
+        for name, value in (("source", source), ("rendition", rendition), ("draw", draw))
+        if header.get(name) != value
+    ]
+    if mismatches:
         return (
-            f"{journal} was drawn as source={header.get('source')!r} "
-            f"rendition={header.get('rendition')!r}, but this run is "
-            f"source={source!r} rendition={rendition!r}; refusing to resume a "
-            "journal that disagrees with this run. Pick a different -o, or delete/"
-            "rename the journal to start fresh."
+            f"{journal} disagrees with this run ({'; '.join(mismatches)}); refusing "
+            "to resume a journal that disagrees with this run. Pick a different -o, "
+            "or delete/rename the journal to start fresh."
         )
     return None
 
 
-def _ensure_journal_header(journal: Path, source: str, rendition: str) -> None:
+def _ensure_journal_header(
+    journal: Path, source: str, rendition: str, draw: dict[str, Any]
+) -> None:
     """Create *journal*, with its header line, if it does not already carry one.
 
     Call only after :func:`_journal_disagreement` has cleared the run to
     proceed — so *journal* is either absent, empty, or already carries a
-    header that agrees with *source*/*rendition*. An existing-but-empty file
-    (e.g. a prior run that crashed between creating it and writing a row) is
-    overwritten with just the header line rather than appended to, since
-    there is nothing in it worth preserving.
+    header that agrees with *source*/*rendition*/*draw*. An existing-but-
+    empty file (e.g. a prior run that crashed between creating it and
+    writing a row) is overwritten with just the header line rather than
+    appended to, since there is nothing in it worth preserving — "empty"
+    tested the same way :func:`_journal_disagreement` tests it
+    (whitespace-only, via :func:`_read_journal_text`), so the two cannot
+    disagree about the same file (review round 3). A file that exists and
+    is *not* empty but cannot be decoded is left untouched rather than
+    overwritten: :func:`_journal_disagreement` would already have refused
+    the run over it, so reaching this function with such a file at all
+    means it was called directly, and destroying unreadable content on a
+    guess is worse than doing nothing.
 
     Args:
         journal: Where the journal lives.
         source: This run's own ``"package"`` or ``"europepmc"``.
         rendition: This run's own ``"archive"`` or ``"europepmc"``.
+        draw: This run's own draw identity — see :func:`_journal_disagreement`.
     """
     journal.parent.mkdir(parents=True, exist_ok=True)
-    if not journal.exists() or not journal.read_text(encoding="utf-8").strip():
-        journal.write_text(_journal_header_line(source, rendition), encoding="utf-8")
+    if not journal.exists():
+        journal.write_text(_journal_header_line(source, rendition, draw), encoding="utf-8")
+        return
+    text = _read_journal_text(journal)
+    if text is not None and not text.strip():
+        journal.write_text(_journal_header_line(source, rendition, draw), encoding="utf-8")
 
 
 def _measure_and_journal(
@@ -2294,11 +2367,15 @@ def main() -> int:
     """Measure every population, print the tables, write the corpus.
 
     Resumable: rows land in a JSONL journal beside the output, and a later run
-    tops the sample up rather than starting over. A `--package` draw's
-    journal is named for the rendition it was measured from
-    (`*.europepmc.journal.jsonl` under `--measure-europepmc`, `*.journal.jsonl`
-    otherwise), so resuming never pools one rendition's rows into a corpus
-    stamped with the other.
+    tops the sample up rather than starting over. Never pooled across two
+    different draws or renditions at the same `-o`, in either direction: the
+    journal's own first line is a header naming `(source, rendition, draw)`
+    for whatever wrote it, and a run whose own identity disagrees is refused
+    rather than silently resumed — see `_journal_disagreement`. The
+    rendition-qualified journal filename
+    (`*.europepmc.journal.jsonl` under `--measure-europepmc`,
+    `*.journal.jsonl` otherwise) only narrows how often that refusal has to
+    fire; it is the header, not the name, that makes the property hold.
     """
     args = _build_arg_parser().parse_args()
     refusal = _validate_args(args)
@@ -2307,18 +2384,34 @@ def main() -> int:
         return 2
 
     # This run's own identity, decided before any file is touched: which
-    # source measured it, and (for a --package draw) which rendition. Used
+    # source measured it, which rendition (for a --package draw), and which
+    # draw — everything that decides *which identifiers* this run asks for,
+    # deliberately excluding `target` (see `_journal_disagreement`). Used
     # three ways below — the journal's filename, the journal's own header
     # line, and the disagreement check between them — because the filename
-    # alone cannot carry this property (see `_JOURNAL_HEADER_KEY`'s comment)
-    # and review round 2 reproduced two ways a shared journal silently
-    # pooled two runs' rows under the wrong label.
+    # alone cannot carry this property (see `_JOURNAL_HEADER_KEY`'s comment):
+    # review round 2 reproduced two ways a shared journal silently pooled two
+    # renditions under the wrong label, and round 3 reproduced the same
+    # shape one axis over — two archive runs at one `-o` over different
+    # packages/years, or different seeds, both pooling silently at exit 0.
     if args.package:
         source = "package"
         rendition = "europepmc" if args.measure_europepmc else "archive"
+        # Computed once, here, and reused for `window["packages"]` below —
+        # not recomputed a second time, which would run `_package_identity`'s
+        # sibling lookup (and its stderr notices on a fallback) twice per
+        # package for no reason.
+        packages_identity = sorted(_package_identity(p) for p in args.package)
+        draw_identity: dict[str, Any] = {
+            "packages": packages_identity,
+            "first_year": args.from_year,
+            "last_year": args.to_year,
+            "seed": args.seed,
+        }
     else:
         source = "europepmc"
         rendition = "europepmc"
+        draw_identity = {"months": args.months, "months_ago": args.months_ago}
 
     # Rendition-qualified for --measure-europepmc: a friendlier failure mode
     # (a --measure-europepmc run gets its own fresh journal by default,
@@ -2332,7 +2425,7 @@ def main() -> int:
     journal = args.output.with_suffix(
         ".europepmc.journal.jsonl" if args.measure_europepmc else ".journal.jsonl"
     )
-    disagreement = _journal_disagreement(journal, source, rendition)
+    disagreement = _journal_disagreement(journal, source, rendition, draw_identity)
     if disagreement is not None:
         sys.stderr.write(f"{disagreement}\n")
         return 2
@@ -2340,16 +2433,17 @@ def main() -> int:
     totals = Totals()
     seen: set[str] = set()
     if journal.exists():
-        # `lines[0]`, if present, is the header line `_journal_disagreement`
-        # just confirmed agrees with this run (or the file would have been
-        # refused above) — skipped here, never measured as a row.
-        for line in journal.read_text(encoding="utf-8").splitlines()[1:]:
+        # `_journal_disagreement` already confirmed this file decodes and
+        # its header (line one, if any) agrees with this run — line one,
+        # where present, is skipped here, never measured as a row.
+        journal_text = _read_journal_text(journal) or ""
+        for line in journal_text.splitlines()[1:]:
             if not line.strip():
                 continue
             row = ArticleMeasurement.from_dict(json.loads(line))
             seen.add(row.pmcid)
             totals.add(row)
-    _ensure_journal_header(journal, source, rendition)
+    _ensure_journal_header(journal, source, rendition, draw_identity)
 
     # Hoisted above the branch it is filled in, rather than left to a
     # refusal 150 lines away (`_validate_args` already refuses
@@ -2365,7 +2459,7 @@ def main() -> int:
         # articles' identifiers) are the whole of it either way.
         window = {
             "source": source,
-            "packages": sorted(_package_identity(p) for p in args.package),
+            "packages": packages_identity,
             "first_year": args.from_year,
             "last_year": args.to_year,
             "target": args.target,
@@ -2394,14 +2488,16 @@ def main() -> int:
             # This branch never reads `read_package_articles` — there is no
             # archive byte string in scope to fall back to, so an article
             # Europe PMC will not serve cannot be silently measured from the
-            # package instead within this run. That is one half of "one
-            # corpus, one rendition"; the other half is the journal name
-            # chosen above, which is what stops a *resumed* run from pooling
-            # this run's rows with an earlier run's archive-rendition ones —
-            # the two are structurally different files, not merely different
-            # branches of one run. The identifier list (`wanted`, from
-            # `drawn`) is exactly what the archive branch below uses too —
-            # only the bytes' source moves.
+            # package instead *within this run*. That is only half of "one
+            # corpus, one rendition": the other half is a *resumed* run not
+            # pooling this run's rows with an earlier run's differently-
+            # rendered (or differently-drawn) ones, and the rendition-
+            # qualified journal filename chosen above does not carry that on
+            # its own (review round 2 reproduced two collisions it cannot
+            # rule out). What actually stops it is `_journal_disagreement`'s
+            # header check above, before this branch ever runs. The
+            # identifier list (`wanted`, from `drawn`) is exactly what the
+            # archive branch below uses too — only the bytes' source moves.
             pace = _make_pacer(args.per_host_interval)
             with httpx.Client(
                 headers={"User-Agent": _USER_AGENT}, timeout=60.0, follow_redirects=True
