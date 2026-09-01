@@ -155,8 +155,6 @@ DEFAULT_TARGET = 300
 # Monthly strata the sample is drawn from — see `open_access_pmcids`.
 SAMPLE_MONTHS = 24
 DEFAULT_OUTPUT = Path("tests/data/jats_exhibits.json")
-# Written only by a --compare-europepmc run, alongside the package corpus.
-RENDITION_OUTPUT = Path("tests/data/jats_exhibits.rendition.json")
 # The default seed for a --package draw. Recorded in the corpus either way, so
 # a non-default seed is still reproducible from the written window.
 DEFAULT_SEED = 0
@@ -507,6 +505,45 @@ def read_package_articles(paths: list[Path], wanted: set[str]) -> Iterator[tuple
         for pmcid, xml in iter_package_articles(path):
             if pmcid in wanted:
                 yield pmcid, xml
+
+
+def _hold_for_comparison(
+    paths: list[Path], drawn: list[str], n: int, seed: int
+) -> list[tuple[str, bytes]]:
+    """A seeded sample of *n* of the corpus's own drawn articles, read back.
+
+    Held from *drawn* — the corpus draw's full result — never from whatever a
+    resumed run still has left to measure. A journal that already carries
+    every drawn article is the ordinary case for a second invocation adding
+    ``--compare-europepmc``, and that must not decide this: reading from the
+    unmeasured remainder would silently hold nothing, and a comparison run
+    over nothing writes a result — "0 compared, 0 differing" — that is
+    indistinguishable from a genuine null finding.
+
+    Sampled with :func:`draw`, the same seeded mechanism the corpus itself
+    is drawn with, rather than by taking the first *n* pairs
+    :func:`read_package_articles` happens to yield. That generator walks in
+    package order, so "first n" is a contiguous accession block, and the
+    rendition gap is a per-publisher deposit property — publishers cluster in
+    accession ranges, which is the same reason the corpus draw is stratified
+    by month in the first place rather than taken as one contiguous walk.
+
+    Args:
+        paths: The same packages the corpus was drawn from.
+        drawn: The corpus's own full drawn set of identifiers, before any
+            journal/``seen`` filtering.
+        n: How many to hold; ``0`` holds none and reads nothing back.
+        seed: The corpus draw's own seed, reused so this sample is
+            reproducible from the same recorded header.
+
+    Returns:
+        ``(pmcid, xml)`` pairs for the sampled identifiers, selected by
+        membership rather than by the position they arrive in.
+    """
+    if not n:
+        return []
+    ids = set(draw(drawn, n, seed))
+    return list(read_package_articles(paths, ids))
 
 
 @dataclass
@@ -1176,8 +1213,16 @@ def rendition_delta(archive: ArticleMeasurement, served: ArticleMeasurement) -> 
 
     Returns:
         A mapping from field name to both values, empty where they agree.
-        ``unscoped`` is skipped — it is itself a diff, so a difference in it
-        is already reported by the fields it is a diff of.
+        ``unscoped`` is skipped: it is a *within-rendition* property (the
+        scoped-vs-unscoped walk of one document), while this function reports
+        *between-rendition* facts, so it is out of scope here rather than
+        redundant with what it reports — two renditions can each carry a
+        nested-article region, agree on every named field including
+        ``nested_article_regions`` itself, and still disagree on ``unscoped``
+        (archive's region holds three figures, served's holds none), which
+        this function then reports nowhere at all. Closing that gap is a
+        separate change; this skip is only ever a scope decision, not a claim
+        that nothing is lost by it.
     """
     out: dict[str, Any] = {}
     for name, value in archive.__dict__.items():
@@ -1192,50 +1237,78 @@ def rendition_delta(archive: ArticleMeasurement, served: ArticleMeasurement) -> 
     return out
 
 
-def compare_renditions(client: Any, pace: Any, articles: list[tuple[str, bytes]]) -> dict[str, Any]:
+def compare_renditions(
+    client: httpx.Client, pace: Any, articles: list[tuple[str, bytes]]
+) -> dict[str, Any]:
     """Measure each article in both renditions and report where they disagree.
 
     The citable corpus is the *archive* rendition; ``FullTextService`` feeds
-    the parser Europe PMC's ``fullTextXML``. #119 measured that these differ
-    in a way that reaches a scan — Springer's commented-out ``<authorqueries>``
-    block is in the archive copy of three articles and absent from Europe
-    PMC's copy of the same three — so citing an archive figure for a parser
-    fed by Europe PMC is a claim, and this is what tests it.
+    the parser Europe PMC's ``fullTextXML``. #119 found the two differ in a
+    construct the scan's lexer reads: Springer's commented-out
+    ``<authorqueries>`` block is in the archive copy of three articles and
+    absent from Europe PMC's copy of the same three. (CLAUDE.md's own
+    measurement is the other half of that fact — the lexer's comment token
+    has *no* measured population on Europe PMC's own ``fullTextXML``, 0 of an
+    880-article draw against 25.6% of the archive — so "differs" is
+    established; "reaches a scan on this module's live input" is not, and
+    this function is what would measure that rather than assume it.) So
+    citing an archive figure for a parser fed by Europe PMC is a claim, and
+    this is what tests it.
 
     Args:
         client: An ``httpx.Client``.
         pace: The per-host pacer.
-        articles: ``(pmcid, archive_bytes)`` pairs drawn from the corpus.
+        articles: ``(pmcid, archive_bytes)`` pairs drawn from the corpus —
+            see :func:`_hold_for_comparison` for how these are selected.
 
     Returns:
         The comparison: how many were compared, how many could not be
-        (unmeasured, entering no denominator), how many differ at all, which
-        fields differ and how often, and the per-article deltas.
+        (unmeasured, entering no denominator, split by which side was
+        unreadable), how many differ at all, which fields differ and how
+        often, and the per-article deltas.
     """
     compared = unmeasured = 0
+    unmeasured_causes: Counter[str] = Counter()
     fields: Counter[str] = Counter()
     deltas: dict[str, dict[str, Any]] = {}
     for pmcid, archive_xml in articles:
-        served_xml = _fetch(client, f"{EUROPE_PMC}/{pmcid}/fullTextXML", pace)
+        # The archive side costs no request — its bytes are already in hand
+        # — so it is checked first: an archive article that will not parse is
+        # a corpus property `main` already counts elsewhere, not a fact about
+        # what Europe PMC will serve, and this order spends no paced request
+        # finding that out.
         archive = measure_article(pmcid, archive_xml)
-        served = measure_article(pmcid, served_xml) if served_xml else None
-        if archive is None or served is None:
+        if archive is None:
             unmeasured += 1
+            unmeasured_causes["archive_unparseable"] += 1
+            continue
+        served_xml = _fetch(client, f"{EUROPE_PMC}/{pmcid}/fullTextXML", pace)
+        served = measure_article(pmcid, served_xml) if served_xml else None
+        if served is None:
+            unmeasured += 1
+            unmeasured_causes["europepmc_unavailable"] += 1
             continue
         compared += 1
         delta = rendition_delta(archive, served)
         if delta:
             deltas[pmcid] = delta
             # `.keys()`, not `delta` itself: `Counter.update()` on a mapping
-            # *adds* the mapping's values into the count, and a delta's
-            # values are `{"archive": ..., "europepmc": ...}` payloads, not
-            # numbers — two articles disagreeing on the same field would
-            # otherwise try to add one such payload to another and raise
-            # `TypeError`. Counting the keys is what "how often" means.
+            # *adds* the mapping's values into the count rather than
+            # counting its keys, and a delta's values are
+            # `{"archive": ..., "europepmc": ...}` payload dicts, not
+            # numbers. Under `fields.update(delta)`, the *first* article to
+            # disagree on a field already writes that raw payload dict into
+            # `fields_differing` in place of `1` (`Counter.update()` takes a
+            # plain-`dict.update()` fast path while it is still empty); a
+            # *second* article disagreeing on the same field then tries to
+            # add its own payload dict to the first — `dict + dict` — and
+            # raises `TypeError`. Counting the keys is what "how often"
+            # means, and is what stops both.
             fields.update(delta.keys())
     return {
         "compared": compared,
         "unmeasured": unmeasured,
+        "unmeasured_causes": dict(unmeasured_causes),
         "articles_differing": len(deltas),
         "fields_differing": dict(fields),
         "deltas": deltas,
@@ -1909,6 +1982,13 @@ def main() -> int:
             seen.add(row.pmcid)
             totals.add(row)
 
+    # Hoisted above the branch it is filled in, rather than left to a
+    # refusal 150 lines away (`_validate_args` already refuses
+    # `--compare-europepmc` without `--package`) to keep the block below from
+    # depending on that refusal for an `UnboundLocalError` it would otherwise
+    # only accidentally avoid.
+    for_comparison: list[tuple[str, bytes]] = []
+
     if args.package:
         # A package draw needs no network at all: `_validate_args` has
         # already refused every path that is not a real package, so the two
@@ -1924,15 +2004,17 @@ def main() -> int:
         }
         candidates = package_candidates(args.package, args.from_year, args.to_year)
         print(f"{len(candidates)} candidates in {args.from_year}-{args.to_year}")
-        wanted = {p for p in draw(candidates, args.target, args.seed) if p not in seen}
+        # The corpus's own full draw — kept apart from `wanted` below, which
+        # a resumed run narrows to what the journal does not already hold.
+        # `for_comparison` is held from this, never from `wanted`: a run
+        # whose journal already holds every drawn article must still be able
+        # to compare, and `wanted` would otherwise be empty for exactly that
+        # run. See `_hold_for_comparison`.
+        drawn = draw(candidates, args.target, args.seed)
+        wanted = {p for p in drawn if p not in seen}
         journal.parent.mkdir(parents=True, exist_ok=True)
-        # Held for a --compare-europepmc run, below — the first N articles
-        # this draw actually reads, whether or not they went on to parse.
-        for_comparison: list[tuple[str, bytes]] = []
         with journal.open("a", encoding="utf-8") as handle:
             for pmcid, xml in read_package_articles(args.package, wanted):
-                if len(for_comparison) < args.compare_europepmc:
-                    for_comparison.append((pmcid, xml))
                 row = measure_article(pmcid, xml)
                 if row is None:
                     totals.unmeasured += 1
@@ -1940,6 +2022,9 @@ def main() -> int:
                 totals.add(row)
                 handle.write(json.dumps(row.to_dict()) + "\n")
                 handle.flush()
+        for_comparison = _hold_for_comparison(
+            args.package, drawn, args.compare_europepmc, args.seed
+        )
     else:
         # Resolved once, before any request, so the corpus can state the
         # window it was drawn from. Without it "1996-1998" lives only in
@@ -2003,22 +2088,58 @@ def main() -> int:
     if not ok:
         print("At least one population is unreportable; the journal keeps every row.")
 
+    # Derived from `-o`, the way `journal` and the `.unreportable.json` corpus
+    # path both are, rather than a fixed literal: `--package X -o other.json
+    # --compare-europepmc 50` must not overwrite the canonical rendition
+    # artifact with a different draw's numbers.
+    rendition_ok = True
     if args.compare_europepmc:
-        pace = _make_pacer(args.per_host_interval)
-        with httpx.Client(
-            headers={"User-Agent": _USER_AGENT}, timeout=60.0, follow_redirects=True
-        ) as client:
-            comparison = compare_renditions(client, pace, for_comparison)
-        RENDITION_OUTPUT.write_text(
-            json.dumps(comparison, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        rendition_path = args.output.with_suffix(".rendition.json")
+        # `window` is the package-branch provenance built above — recorded
+        # here too, plus how many were requested and actually held, for the
+        # same reason the corpus records its own header: the same command
+        # later draws a different sample, and nothing else would say which
+        # one produced this file.
+        provenance = {
+            **window,
+            "requested": args.compare_europepmc,
+            "held": len(for_comparison),
+        }
+        comparison: dict[str, Any] | None = None
+        if not for_comparison:
+            # The net for whatever empties `for_comparison`, `_hold_for_
+            # comparison`'s own fix included: a comparison over nothing
+            # would write "0 compared, 0 differing", indistinguishable from
+            # a genuine null result, at the exact canonical name the next
+            # two tasks cite as what licenses every archive-drawn figure.
+            rendition_ok = False
+            print(
+                "\nERROR: --compare-europepmc requested but no articles were held for "
+                "comparison; refusing to write a result indistinguishable from a "
+                "genuine null finding."
+            )
+        else:
+            pace = _make_pacer(args.per_host_interval)
+            with httpx.Client(
+                headers={"User-Agent": _USER_AGENT}, timeout=60.0, follow_redirects=True
+            ) as client:
+                comparison = compare_renditions(client, pace, for_comparison)
+            print(
+                f"\nRendition: {comparison['compared']} compared, "
+                f"{comparison['unmeasured']} unmeasured, "
+                f"{comparison['articles_differing']} differing"
+            )
+        rendition_destination = (
+            rendition_path if rendition_ok else rendition_path.with_suffix(".unreportable.json")
         )
-        print(
-            f"\nRendition: {comparison['compared']} compared, "
-            f"{comparison['unmeasured']} unmeasured, "
-            f"{comparison['articles_differing']} differing"
+        rendition_destination.parent.mkdir(parents=True, exist_ok=True)
+        rendition_destination.write_text(
+            json.dumps({**provenance, "comparison": comparison}, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
         )
+        print(f"Wrote {rendition_destination}")
 
-    return 0 if ok else 1
+    return 0 if (ok and rendition_ok) else 1
 
 
 if __name__ == "__main__":

@@ -47,6 +47,7 @@ import json
 import sys
 from datetime import date
 from pathlib import Path
+from typing import Any
 from unittest import mock
 from urllib.parse import unquote
 
@@ -92,6 +93,30 @@ def _article(body: str) -> bytes:
     return (
         f'<article xmlns:xlink="http://www.w3.org/1999/xlink"><body>{body}</body></article>'
     ).encode()
+
+
+def _package_run_args(**kwargs: Any) -> argparse.Namespace:
+    """A `_validate_args` namespace for a `--package` run, defaults overridable.
+
+    Shared by ``TestThePackageRunIsRefusedWhenItWouldMislead`` and
+    ``TestTheCompareEuropepmcFlag`` — both build the same shape of namespace
+    to drive the same function, and two copies of the default dict meant a
+    new `_validate_args` argument had to be added in both places, with the
+    missed copy failing every test that omitted it with `AttributeError`
+    rather than with a meaningful assertion.
+    """
+    defaults = dict(
+        target=10,
+        months=24,
+        months_ago=0,
+        package=[],
+        from_year=None,
+        to_year=None,
+        seed=0,
+        output=sampler.DEFAULT_OUTPUT,
+        compare_europepmc=0,
+    )
+    return argparse.Namespace(**{**defaults, **kwargs})
 
 
 class TestCountingAgainstHandBuiltMarkup:
@@ -1500,33 +1525,78 @@ class TestDrawingFromAPackage:
         assert sampler.package_candidates([second, first], 2024, 2024) == expected
 
 
+class TestHoldingArticlesForComparison:
+    """`_hold_for_comparison` is the fix for a review-caught Critical: the
+    articles a `--compare-europepmc` run reads must be a genuine sample of
+    the corpus draw, selected by membership, and independent of which of
+    them a resumed run has already measured (that half is pinned at the
+    `main()` level, in `TestCompareEuropepmcSurvivesAJournalResume`, since it
+    is a fact about how `main` calls this function rather than about the
+    function itself)."""
+
+    def _package(self, tmp_path, pmcids):
+        for pmcid in pmcids:
+            (tmp_path / f"{pmcid}.xml").write_text(
+                "<article><front><article-meta>"
+                "<pub-date pub-type='epub'><year>2024</year></pub-date>"
+                "</article-meta></front></article>"
+            )
+        return tmp_path
+
+    def test_zero_holds_nothing(self, tmp_path):
+        path = self._package(tmp_path, ["PMC1", "PMC2"])
+
+        assert sampler._hold_for_comparison([path], ["PMC1", "PMC2"], 0, seed=0) == []
+
+    def test_the_held_set_is_drawn_not_positional(self, tmp_path):
+        """`read_package_articles` yields in package order, so taking its
+        first N pairs would return a contiguous accession block — the exact
+        defect a review caught (a synthetic run held `PMC12000001-4` of 8).
+        That is systematically unrepresentative, since the rendition gap is
+        a per-publisher deposit property and publishers cluster in accession
+        ranges — the same reason the corpus draw itself is stratified by
+        month rather than taken as one contiguous walk. Membership must
+        instead come from the same seeded `draw()` the corpus uses."""
+        drawn = [f"PMC{n:02d}" for n in range(20)]
+        path = self._package(tmp_path, drawn)
+
+        held = sampler._hold_for_comparison([path], drawn, 5, seed=3)
+        held_ids = {pmcid for pmcid, _ in held}
+
+        assert held_ids == set(sampler.draw(drawn, 5, seed=3))
+        assert held_ids != set(drawn[:5])
+
+    def test_the_held_set_is_reproducible_from_the_seed(self, tmp_path):
+        drawn = [f"PMC{n:02d}" for n in range(20)]
+        path = self._package(tmp_path, drawn)
+
+        first = {p for p, _ in sampler._hold_for_comparison([path], drawn, 5, seed=1)}
+        again = {p for p, _ in sampler._hold_for_comparison([path], drawn, 5, seed=1)}
+
+        assert first == again
+
+    def test_asking_for_more_than_the_draw_holds_every_drawn_article(self, tmp_path):
+        drawn = ["PMC1", "PMC2", "PMC3"]
+        path = self._package(tmp_path, drawn)
+
+        held = sampler._hold_for_comparison([path], drawn, 50, seed=0)
+
+        assert {p for p, _ in held} == set(drawn)
+
+
 class TestThePackageRunIsRefusedWhenItWouldMislead:
     """`_validate_args`, which exists to stop a rate being printed over a draw
     nobody asked for."""
 
-    def _args(self, **kwargs):
-        defaults = dict(
-            target=10,
-            months=24,
-            months_ago=0,
-            package=[],
-            from_year=None,
-            to_year=None,
-            seed=0,
-            output=sampler.DEFAULT_OUTPUT,
-            compare_europepmc=0,
-        )
-        return argparse.Namespace(**{**defaults, **kwargs})
-
     def test_a_package_run_needs_both_ends_of_the_window(self, tmp_path):
-        refusal = sampler._validate_args(self._args(package=[tmp_path], from_year=1996))
+        refusal = sampler._validate_args(_package_run_args(package=[tmp_path], from_year=1996))
 
         assert refusal is not None
         assert "--to-year" in refusal
 
     def test_a_window_that_runs_backwards_is_refused(self, tmp_path):
         refusal = sampler._validate_args(
-            self._args(package=[tmp_path], from_year=1999, to_year=1996)
+            _package_run_args(package=[tmp_path], from_year=1999, to_year=1996)
         )
 
         assert refusal is not None
@@ -1535,7 +1605,7 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
     def test_a_window_without_a_package_is_refused(self):
         """The live path draws by month, not by year; accepting the flags
         there would silently ignore them."""
-        refusal = sampler._validate_args(self._args(from_year=1996, to_year=1998))
+        refusal = sampler._validate_args(_package_run_args(from_year=1996, to_year=1998))
 
         assert refusal is not None
         assert "--package" in refusal
@@ -1545,7 +1615,7 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
         journal is derived from `--output`, so two windows pool into one rate
         describing neither."""
         refusal = sampler._validate_args(
-            self._args(package=[tmp_path], from_year=1996, to_year=1998)
+            _package_run_args(package=[tmp_path], from_year=1996, to_year=1998)
         )
 
         assert refusal is not None
@@ -1553,7 +1623,7 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
 
     def test_the_recent_window_may_use_the_default_output(self, tmp_path):
         refusal = sampler._validate_args(
-            self._args(package=[tmp_path], from_year=2023, to_year=2025)
+            _package_run_args(package=[tmp_path], from_year=2023, to_year=2025)
         )
 
         assert refusal is None
@@ -1562,7 +1632,7 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
         missing = tmp_path / "does-not-exist"
 
         refusal = sampler._validate_args(
-            self._args(package=[missing], from_year=2023, to_year=2025)
+            _package_run_args(package=[missing], from_year=2023, to_year=2025)
         )
 
         assert refusal is not None
@@ -1576,7 +1646,7 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
         The old `to_year < _RECENT_WINDOW_FIRST_YEAR` test would have let
         exactly this window through onto the default output."""
         refusal = sampler._validate_args(
-            self._args(package=[tmp_path], from_year=1996, to_year=2025)
+            _package_run_args(package=[tmp_path], from_year=1996, to_year=2025)
         )
 
         assert refusal is not None
@@ -1584,14 +1654,14 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
 
     def test_a_window_reaching_past_the_recent_one_is_also_displaced(self, tmp_path):
         refusal = sampler._validate_args(
-            self._args(package=[tmp_path], from_year=2024, to_year=2030)
+            _package_run_args(package=[tmp_path], from_year=2024, to_year=2030)
         )
 
         assert refusal is not None
         assert "-o" in refusal
 
     def test_seed_on_a_live_run_is_refused_rather_than_ignored(self):
-        refusal = sampler._validate_args(self._args(seed=7))
+        refusal = sampler._validate_args(_package_run_args(seed=7))
 
         assert refusal is not None
         assert "--seed" in refusal
@@ -1599,11 +1669,11 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
     def test_the_default_seed_on_a_live_run_is_not_refused(self):
         """Negative control: an untouched default must not trip the guard,
         since there is no way to tell it apart from an explicit default."""
-        assert sampler._validate_args(self._args()) is None
+        assert sampler._validate_args(_package_run_args()) is None
 
     def test_months_on_a_package_run_is_refused(self, tmp_path):
         refusal = sampler._validate_args(
-            self._args(package=[tmp_path], from_year=2023, to_year=2025, months=12)
+            _package_run_args(package=[tmp_path], from_year=2023, to_year=2025, months=12)
         )
 
         assert refusal is not None
@@ -1614,7 +1684,7 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
         check knows nothing about `--package` and used to fire here with a
         message about a displaced *live* window this run is not drawing."""
         refusal = sampler._validate_args(
-            self._args(package=[tmp_path], from_year=2023, to_year=2025, months_ago=3)
+            _package_run_args(package=[tmp_path], from_year=2023, to_year=2025, months_ago=3)
         )
 
         assert refusal is not None
@@ -1636,7 +1706,9 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
             info.size = len(data)
             tar.addfile(info, io.BytesIO(data))
 
-        refusal = sampler._validate_args(self._args(package=[path], from_year=2023, to_year=2025))
+        refusal = sampler._validate_args(
+            _package_run_args(package=[path], from_year=2023, to_year=2025)
+        )
 
         assert refusal is not None
         assert "gzip-compressed tarball" in refusal
@@ -1653,7 +1725,9 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
             info.size = len(data)
             tar.addfile(info, io.BytesIO(data))
 
-        refusal = sampler._validate_args(self._args(package=[path], from_year=2023, to_year=2025))
+        refusal = sampler._validate_args(
+            _package_run_args(package=[path], from_year=2023, to_year=2025)
+        )
 
         assert refusal is None
 
@@ -1681,7 +1755,9 @@ class TestThePackageRunIsRefusedWhenItWouldMislead:
 
         for path in (accepted, refused):
             validated = (
-                sampler._validate_args(self._args(package=[path], from_year=2023, to_year=2025))
+                sampler._validate_args(
+                    _package_run_args(package=[path], from_year=2023, to_year=2025)
+                )
                 is None
             )
             try:
@@ -1895,21 +1971,34 @@ class TestTheRenditionGapIsMeasured:
         assert delta["figures"] == {"archive": 2, "europepmc": 1}
 
     def test_a_counter_field_is_compared_as_a_mapping(self):
+        """The conversion has to earn its name: `Counter({"fig": 1}) ==
+        {"fig": 1}` and `json.dumps` serialises a `Counter` natively, so an
+        equality check alone passes whether or not `dict(value) if
+        isinstance(value, Counter) else value` runs at all. Asserting the
+        type is what actually pins the conversion."""
         archive = sampler.measure_article("PMC1", _article("<fig id='f1'><label>F</label></fig>"))
         served = sampler.measure_article("PMC1", _article("<fig id='f1'/>"))
 
         delta = sampler.rendition_delta(archive, served)
 
         assert delta["label_parents"] == {"archive": {"fig": 1}, "europepmc": {}}
+        assert type(delta["label_parents"]["archive"]) is dict
+        assert type(delta["label_parents"]["europepmc"]) is dict
 
     def test_unscoped_is_skipped_even_when_it_differs_on_its_own(self):
-        """`unscoped` is itself a diff (the scoped-vs-unscoped walk *within*
-        one rendition), so a difference in it is already reported by the
-        named field it is a diff of. Two rows can disagree in `unscoped`
-        while every named field still agrees — one rendition suppressed a
-        nested-article region without moving its own top-level count, the
-        other carries no region at all — and that disagreement must not be
-        reported a second time as a field of its own."""
+        """`unscoped` is a *within-rendition* property — the scoped-vs-
+        unscoped walk of one document — while `rendition_delta` reports
+        *between-rendition* facts, so it is out of scope here rather than
+        redundant with what it reports. It is not true in general that a
+        difference in `unscoped` is "already reported by the named field it
+        is a diff of": two rows can disagree in `unscoped` while every named
+        field, including `nested_article_regions`, still agrees — one
+        rendition's region holds three figures, the other's holds none, with
+        neither renditon's own *count* moving — and then this function
+        reports it nowhere at all. That gap is real and is not what this
+        test is about; this test only pins that the skip does not turn a
+        within-rendition-only disagreement into a spurious `unscoped` field
+        of its own."""
         archive = sampler.measure_article("PMC1", _article("<fig id='f1'/>"))
         served = sampler.measure_article("PMC1", _article("<fig id='f1'/>"))
         archive.unscoped = {"contribs": {"scoped": 5, "unscoped": 8}}
@@ -1945,7 +2034,17 @@ class TestTheRenditionGapIsMeasured:
     def test_a_disagreeing_article_is_named_in_the_deltas_and_tallied_by_field(self):
         """`fields_differing` and `deltas` are two views of the same
         disagreement — a mismatch in one against the other would mean the
-        headline count and the per-article evidence disagree."""
+        headline count and the per-article evidence disagree.
+
+        This single article already pins the worse half of the defect
+        `fields.update(delta.keys())` fixes: under the naive
+        `fields.update(delta)`, `Counter.update()` on a mapping takes a
+        plain-`dict.update()` fast path while it is still empty, so even one
+        differing article would have written the raw
+        `{"archive": 2, "europepmc": 1}` payload into `fields_differing` in
+        place of `1` — a reader would see something that looks like evidence
+        and conclude differing *fields* were being counted, when they were
+        not."""
         archive_xml = _article("<fig id='f1'/><fig id='f2'/>")
         served_xml = _article("<fig id='f1'/>")
         with mock.patch.object(sampler, "_fetch", return_value=served_xml):
@@ -1957,13 +2056,12 @@ class TestTheRenditionGapIsMeasured:
         assert report["deltas"]["PMC1"]["figures"] == {"archive": 2, "europepmc": 1}
 
     def test_two_articles_disagreeing_on_the_same_field_are_both_tallied(self):
-        """`fields_differing` counts articles, not payloads: a `Counter`
-        updated with a mapping *adds* the mapping's values rather than
-        counting its keys, and a delta's values are
-        ``{"archive": ..., "europepmc": ...}`` dicts — not numbers. Two
-        articles disagreeing on the same field would try to add one such
-        dict to another and raise ``TypeError`` if the tally were built from
-        `delta` itself rather than from `delta.keys()`."""
+        """The other half of the same defect: once `fields_differing` holds
+        a raw payload dict for a field (see the test above), a *second*
+        article disagreeing on that same field tries to add its own payload
+        dict to the first — `dict + dict` — and `Counter.update()` raises
+        `TypeError`, not merely mis-reports. `fields.update(delta.keys())`
+        counts articles, never payloads, and cannot raise either way."""
         archive_xml = _article("<fig id='f1'/><fig id='f2'/>")
         served_xml = _article("<fig id='f1'/>")
         with mock.patch.object(sampler, "_fetch", return_value=served_xml):
@@ -1988,25 +2086,42 @@ class TestTheRenditionGapIsMeasured:
 
         assert fetch.call_count == 1
 
+    def test_an_unparseable_archive_article_costs_no_europepmc_request(self):
+        """The archive side costs nothing to check — its bytes are already
+        in hand — so it is checked before `_fetch` runs. An archive article
+        that will not parse is a corpus property, not a fact about what
+        Europe PMC will serve, so paying a paced request to find that out
+        would waste it and blur the two causes together."""
+        with mock.patch.object(sampler, "_fetch") as fetch:
+            report = sampler.compare_renditions(object(), lambda url: None, [("PMC1", b"<not-xml")])
+
+        assert fetch.call_count == 0
+        assert report["compared"] == 0
+        assert report["unmeasured"] == 1
+
+    def test_unmeasured_causes_are_told_apart(self):
+        """`unmeasured` is one number, but a corpus property (the archive
+        would not parse) and a fact about the live source (Europe PMC would
+        not serve it) are different causes, and only the second is what this
+        instrument sizes."""
+        with mock.patch.object(sampler, "_fetch", return_value=None):
+            report = sampler.compare_renditions(
+                object(),
+                lambda url: None,
+                [("PMC1", b"<not-xml"), ("PMC2", _article("<fig id='f1'/>"))],
+            )
+
+        assert report["unmeasured"] == 2
+        assert report["unmeasured_causes"] == {
+            "archive_unparseable": 1,
+            "europepmc_unavailable": 1,
+        }
+
 
 class TestTheCompareEuropepmcFlag:
     """`--compare-europepmc` only means anything against a `--package` draw,
     and a negative count cannot be a request for a rate — the same shape of
     guard `_validate_args` already applies to `--seed` and the year window."""
-
-    def _args(self, **kwargs):
-        defaults = dict(
-            target=10,
-            months=24,
-            months_ago=0,
-            package=[],
-            from_year=None,
-            to_year=None,
-            seed=0,
-            output=sampler.DEFAULT_OUTPUT,
-            compare_europepmc=0,
-        )
-        return argparse.Namespace(**{**defaults, **kwargs})
 
     def test_the_flag_defaults_to_off(self):
         args = sampler._build_arg_parser().parse_args([])
@@ -2019,14 +2134,16 @@ class TestTheCompareEuropepmcFlag:
         assert args.compare_europepmc == 5
 
     def test_it_is_refused_without_a_package_draw(self):
-        refusal = sampler._validate_args(self._args(compare_europepmc=5))
+        refusal = sampler._validate_args(_package_run_args(compare_europepmc=5))
 
         assert refusal is not None
         assert "--compare-europepmc" in refusal
 
     def test_a_negative_count_is_refused(self, tmp_path):
         refusal = sampler._validate_args(
-            self._args(package=[tmp_path], from_year=2023, to_year=2025, compare_europepmc=-1)
+            _package_run_args(
+                package=[tmp_path], from_year=2023, to_year=2025, compare_europepmc=-1
+            )
         )
 
         assert refusal is not None
@@ -2035,11 +2152,163 @@ class TestTheCompareEuropepmcFlag:
     def test_a_positive_count_on_a_package_draw_is_not_refused(self, tmp_path):
         """Negative control: the guard is not refusing every use of the flag."""
         refusal = sampler._validate_args(
-            self._args(package=[tmp_path], from_year=2023, to_year=2025, compare_europepmc=5)
+            _package_run_args(package=[tmp_path], from_year=2023, to_year=2025, compare_europepmc=5)
         )
 
         assert refusal is None
 
     def test_the_default_off_on_a_live_run_is_not_refused(self):
         """Negative control: an untouched default must not trip the guard."""
-        assert sampler._validate_args(self._args()) is None
+        assert sampler._validate_args(_package_run_args()) is None
+
+
+class TestCompareEuropepmcSurvivesAJournalResume:
+    """The Critical a review caught: `main()`'s `--compare-europepmc` must
+    not silently measure nothing on the ordinary workflow of drawing a
+    corpus and then, in a later invocation, adding `--compare-europepmc`.
+
+    A review reproduced this on a synthetic 8-article package where every
+    served rendition differs from its archive one::
+
+        FRESH   --compare-europepmc 4 -> "4 compared, 0 unmeasured, 4 differing"
+        RESUMED --compare-europepmc 4 -> "0 compared, 0 unmeasured, 0 differing"   exit 0
+
+    because ``for_comparison`` was filled from ``read_package_articles(args.package,
+    wanted)``, and ``wanted`` is the corpus draw *minus* whatever the journal
+    already holds — empty on the second invocation, since the first one
+    measured every drawn article. The written file was "0 compared, 0
+    differing", indistinguishable from a genuine null result, at exit 0.
+
+    This runs `main()` itself — the only test in this module to do so —
+    because the defect is in how `main` threads state between two
+    invocations via the journal, which no pure function's unit tests can
+    observe. `_fetch` is mocked throughout, so no network request is made.
+    """
+
+    def _package(self, tmp_path: Path, n: int, n_figs: int) -> Path:
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        for i in range(n):
+            figs = "".join(f"<fig id='f{j}'/>" for j in range(n_figs))
+            (tmp_path / f"PMC{i:08d}.xml").write_text(
+                '<article xmlns:xlink="http://www.w3.org/1999/xlink">'
+                "<front><article-meta>"
+                "<pub-date pub-type='epub'><year>2024</year></pub-date>"
+                f"</article-meta></front><body>{figs}</body></article>"
+            )
+        return tmp_path
+
+    def _run(self, package: Path, output: Path) -> int:
+        argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "8",
+            "--seed",
+            "0",
+            "-o",
+            str(output),
+            "--compare-europepmc",
+            "4",
+        ]
+        with mock.patch.object(sys, "argv", argv):
+            return sampler.main()
+
+    def test_a_resumed_run_compares_the_same_articles_as_a_fresh_one(self, tmp_path):
+        package = self._package(tmp_path / "package", n=8, n_figs=2)
+        output = tmp_path / "out" / "jats_exhibits.json"
+        # Every archive article carries 2 figures; the served rendition
+        # (every fetch, mocked) carries 1 — so every compared article
+        # differs, the same shape the review's synthetic repro used.
+        served_xml = _article("<fig id='f1'/>")
+
+        with mock.patch.object(sampler, "_fetch", return_value=served_xml):
+            fresh_code = self._run(package, output)
+            fresh = json.loads(output.with_suffix(".rendition.json").read_text())
+
+            # No files are removed between runs — the journal and corpus
+            # from the "fresh" run above are exactly what makes this
+            # invocation the "resumed" one.
+            resumed_code = self._run(package, output)
+            resumed = json.loads(output.with_suffix(".rendition.json").read_text())
+
+        assert fresh_code == 0
+        assert fresh["held"] == 4
+        assert fresh["comparison"]["compared"] == 4
+        assert fresh["comparison"]["unmeasured"] == 0
+        assert fresh["comparison"]["articles_differing"] == 4
+
+        # The regression: not merely "non-zero", but identical to the fresh
+        # run — the same 4 articles, sampled the same way, from a draw that
+        # does not depend on the journal at all.
+        assert resumed_code == 0
+        assert resumed == fresh
+
+    def test_a_resumed_run_still_leaves_the_corpus_at_the_reportable_name(self, tmp_path):
+        """Verified-good property this fix must not disturb: the comparison
+        runs after the corpus is written and must not move it to the
+        unreportable path or change its content between the two runs."""
+        package = self._package(tmp_path / "package", n=8, n_figs=2)
+        output = tmp_path / "out" / "jats_exhibits.json"
+        served_xml = _article("<fig id='f1'/>")
+
+        with mock.patch.object(sampler, "_fetch", return_value=served_xml):
+            self._run(package, output)
+            first_corpus = output.read_text()
+            self._run(package, output)
+            second_corpus = output.read_text()
+
+        assert not output.with_suffix(".unreportable.json").exists()
+        assert first_corpus == second_corpus
+
+
+class TestTheEmptyComparisonNet:
+    """The second half of the Critical fix: even with the resumed-journal
+    cause closed, `main()` refuses to write a comparison result at the
+    canonical name when `for_comparison` is empty for *any* reason — "the
+    net for whatever else empties it later." `--target 0` is an independent
+    way to empty it (nothing is drawn, so nothing can be held), unrelated to
+    the journal/`seen` cause the rest of this file's `--compare-europepmc`
+    tests are about."""
+
+    def _package(self, tmp_path: Path, n: int) -> Path:
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        for i in range(n):
+            (tmp_path / f"PMC{i:08d}.xml").write_text(
+                "<article><front><article-meta>"
+                "<pub-date pub-type='epub'><year>2024</year></pub-date>"
+                "</article-meta></front></article>"
+            )
+        return tmp_path
+
+    def test_a_target_of_zero_refuses_the_canonical_rendition_name(self, tmp_path):
+        package = self._package(tmp_path / "package", n=3)
+        output = tmp_path / "out" / "jats_exhibits.json"
+        argv = [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "0",
+            "-o",
+            str(output),
+            "--compare-europepmc",
+            "2",
+        ]
+
+        with mock.patch.object(sys, "argv", argv):
+            code = sampler.main()
+
+        assert code != 0
+        assert not output.with_suffix(".rendition.json").exists()
+        unreportable = json.loads(output.with_suffix(".rendition.unreportable.json").read_text())
+        assert unreportable["held"] == 0
+        assert unreportable["comparison"] is None
