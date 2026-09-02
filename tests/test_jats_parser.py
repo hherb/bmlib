@@ -3066,6 +3066,210 @@ class TestAnExhibitsLabelComesFromItsOwnElement:
         assert [(f.id, f.label) for f in article.figures] == [("f1", "Figure 1.")]
 
 
+class TestAnUnlabelledExhibitIsNotGivenANumber:
+    """``to_html`` invented ``Figure {i + 1}`` / ``Table {i + 1}`` for an
+    exhibit the publisher deposited without a ``<label>``.
+
+    That is #116's own symptom reached from the other side — a number the
+    document does not carry, which any cross-reference in the prose then
+    contradicts — and it is the *majority* reading of what #162 filed as a
+    violated premise.
+
+    **Measured on the committed recent corpus, and derivable from two
+    first-generation counters**: 7,058 exhibits carry 6,937 direct-child
+    ``<label>`` elements, so **121 exhibits in 83 of 997 articles (1.7% and
+    8.3%) carry none** and were given one. The redrawn back-filled window
+    measures 0 of 627. Both kinds are reached: at least 7 of the 121 are a
+    ``<fig>`` and at least 11 a ``<table-wrap>``, taken from the articles whose
+    rows hold none of the other kind.
+
+    The seven articles #162 names are the subset of those 121 that *contain*
+    some other element's ``<label>`` — the difference between the two counters,
+    6,944 - 6,937 — which is exactly the set a descendant-search fallback would
+    fire on. Fetched from Europe PMC (2026-09-02), all seven are a
+    ``<table-wrap>`` carrying no ``<label>`` and no ``<caption>``, and every
+    label below them is a ``<table-wrap-foot><fn>`` marker (``*``, ``**``, and
+    the empty string) or a ``<list-item>`` bullet inside a table cell (``1.``,
+    ``-``, ``•``). Four are deposited under ids their publisher reserves for an
+    unnumbered table — ``array1``, ``array2``, ``utbl0001``. So the shapes
+    below are that live spot-check written down: a descendant search would have
+    corrupted 7 of 7, which is #116 verbatim, and the parent rule loses nothing
+    on any of them.
+    """
+
+    def test_a_table_without_a_label_gets_no_invented_number(self):
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="utbl0001">
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+      </table-wrap>
+    </sec>""")
+        ).to_html()
+
+        assert "Table 1" not in html
+        assert 'id="utbl0001"' in html
+
+    def test_a_figure_without_a_label_gets_no_invented_number(self):
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="f1">
+        <caption><p>A caption the publisher did write.</p></caption>
+        <graphic xlink:href="f1.jpg"/>
+      </fig>
+    </sec>""")
+        ).to_html()
+
+        assert "Figure 1" not in html
+        assert "A caption the publisher did write." in html
+
+    def test_a_labelled_exhibit_still_renders_its_own_number(self):
+        """The old half of the condition, so dropping the label is not the fix."""
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="f1"><label>Fig. 3</label>
+        <caption><p>A caption.</p></caption></fig>
+      <table-wrap id="t1"><label>Table IV</label>
+        <table><tbody><tr><td>1</td></tr></tbody></table></table-wrap>
+    </sec>""")
+        ).to_html()
+
+        assert "Fig. 3" in html
+        assert "Table IV" in html
+
+    def test_a_footnote_marker_below_it_does_not_become_the_tables_number(self):
+        """PMC12011025's shape: ``*`` and ``**`` in a ``<table-wrap-foot>``.
+
+        A descendant-search fallback fires here and reads ``*`` as the number.
+        """
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="t0005A">
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot>
+          <fn><label>*</label><p>Adjusted for age.</p></fn>
+          <fn><label>**</label><p>Adjusted for sex.</p></fn>
+        </table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).to_html()
+
+        assert "Table 1" not in html
+        assert "<h3>*</h3>" not in html
+        assert "<h3>**</h3>" not in html
+
+    def test_a_list_bullet_in_a_cell_does_not_become_the_tables_number(self):
+        """PMC12154067's shape: ``<list-item>`` bullets inside a ``<td>``."""
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="array1">
+        <table><tbody><tr><td>
+          <list><list-item><label>-</label><p>First point.</p></list-item>
+                <list-item><label>-</label><p>Second point.</p></list-item></list>
+        </td></tr></tbody></table>
+      </table-wrap>
+    </sec>""")
+        ).to_html()
+
+        assert "Table 1" not in html
+        assert "<h3>-</h3>" not in html
+
+    def test_an_unlabelled_exhibit_does_not_shift_a_labelled_siblings_number(self):
+        """The invented number was the *index*, so it collided with a real one.
+
+        Two figures, the first unlabelled: it was rendered ``Figure 1`` and so
+        was the second, which is what the publisher actually calls that one. A
+        reader following a cross-reference to "Figure 1" found two of them.
+        """
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="unnumbered"><caption><p>A schematic.</p></caption></fig>
+      <fig id="f1"><label>Figure 1</label><caption><p>The real one.</p></caption></fig>
+    </sec>""")
+        ).to_html()
+
+        assert html.count("<strong>Figure 1</strong>") == 1
+
+    def test_an_unlabelled_figures_image_is_not_described_by_an_invented_number(self):
+        """``alt`` carried the same invented number, read out as authoritative.
+
+        It falls back to the caption, which is text the document does carry.
+        """
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="f1">
+        <caption><p>Study flow diagram.</p></caption>
+        <graphic xlink:href="f1.jpg"/>
+      </fig>
+    </sec>""")
+        ).to_html()
+
+        assert 'alt="Study flow diagram."' in html
+        assert "Figure 1" not in html
+
+    def test_an_unlabelled_uncaptioned_figures_image_has_an_empty_alt(self):
+        """Nothing in the document describes it, so nothing is asserted."""
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="f1"><graphic xlink:href="f1.jpg"/></fig>
+    </sec>""")
+        ).to_html()
+
+        assert 'alt=""' in html
+        assert "Figure 1" not in html
+
+    def test_a_figure_with_nothing_to_say_emits_no_empty_figcaption(self):
+        """The element was unconditional only because the number always filled it."""
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="f1"><graphic xlink:href="f1.jpg"/></fig>
+    </sec>""")
+        ).to_html()
+
+        assert "<figcaption>" not in html
+        assert 'id="f1"' in html
+
+    def test_an_image_only_tables_alt_is_not_an_invented_number_either(self):
+        """#127's shape without a label: the <img> is the whole table."""
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="array1">
+        <caption><p>Baseline characteristics.</p></caption>
+        <graphic xlink:href="t1.jpg"/>
+      </table-wrap>
+    </sec>""")
+        ).to_html()
+
+        assert 'alt="Baseline characteristics."' in html
+        assert "Table 1" not in html
+
+    def test_an_image_only_table_with_no_caption_asserts_nothing_in_its_alt(self):
+        """The branch the test above cannot reach: neither label nor caption.
+
+        This is where an invented number would still have been read out, and it
+        is the shape #127 measured — a ``<table-wrap>`` whose only content is
+        the image, so the ``alt`` is the only text a screen reader is given.
+        """
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="array1"><graphic xlink:href="t1.jpg"/></table-wrap>
+    </sec>""")
+        ).to_html()
+
+        assert 'alt=""' in html
+        assert "Table 1" not in html
+
+
 class TestFurtherExhibitNestingShapes:
     """Combinations the stacks must already handle, pinned so they stay so."""
 

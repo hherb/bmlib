@@ -515,13 +515,22 @@ class TestAnArticleThatCouldNotBeMeasuredIsNeverAFinding:
         assert "ERROR" in capsys.readouterr().out
 
     def test_a_reportable_sample_prints_its_populations(self, capsys):
+        """Asserted on the counts, not on a verdict word.
+
+        It used to assert ``PREMISE HOLDS``, a line ``print_report`` no longer
+        prints because the two counters behind it never decided that premise
+        (issue #162). The counts are what a reader acts on, and unlike a verdict
+        they cannot be right for the wrong reason.
+        """
         totals = sampler.Totals()
         totals.add(
             sampler.measure_article("PMC1", _article('<fig id="f1"><label>Figure 1</label></fig>'))
         )
 
         assert sampler.print_report(totals) is True
-        assert "PREMISE HOLDS" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "exhibits with a direct-child <label>      : 1" in out
+        assert "exhibits with no <label> of their own     : 0" in out
 
     def test_image_only_tables_are_reported_as_a_share_of_tables(self, capsys):
         """A bare count cannot be compared across two draws of different sizes.
@@ -1778,38 +1787,60 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         }
         assert backfill_maps.get("exhibit_caption_owners", {}) == {}
 
-    def test_the_label_premise_is_violated_on_the_recent_window(self):
-        """#116's premise, and the denominator the comment must not overstate.
+    def test_an_exhibit_with_no_label_of_its_own_is_a_measured_population(self):
+        """What this pair of counters supports, and what it does not.
 
-        This assertion is why the class exists. Every draw before #138 found
-        the premise **full** — 2,033/2,033, 1,446/1,446, 365/365 — and the
-        comment in `jats_parser.py` said the parent rule "cannot lose a
-        label". On the rendition the parser is actually fed, 7 exhibits in 7
-        articles carry a `<label>` only indirectly, and for each of those the
-        parent rule finds nothing and the renderer substitutes
-        `Figure {i + 1}` / `Table {i + 1}` — an invented number, which is
-        #116's own symptom arrived at from the other direction. The rule is
-        still better than the depth counter it replaced (561 labels in 95 of
-        these articles would be *mis-assigned* by a depth rule, against 7
-        omitted by this one), but "cannot lose one" was a claim, and it is
-        false.
+        It used to be asserted as "the premise is violated": 6,937 direct
+        against 6,944 carrying one anywhere, read as seven exhibits whose own
+        label sits indirectly. `exhibits_with_descendant_label` counts an
+        exhibit holding **any** `<label>` in its subtree, so the difference is
+        the set a descendant-search fallback would *fire* on, and nothing
+        about where an exhibit's own label sits (issue #162). Fetched from
+        Europe PMC on 2026-09-02, all seven are a `<table-wrap>` carrying no
+        `<label>` and no `<caption>`, and every label below them is a
+        `<table-wrap-foot><fn>` marker (`*`, `**`, the empty string) or a
+        `<list-item>` bullet inside a cell (`1.`, `-`, `•`) — the two
+        containers #116 was about. A descendant search would have corrupted 7
+        of 7. Four are deposited under ids their publisher reserves for an
+        unnumbered table (`array1`, `array2`, `utbl0001`).
 
-        The violating count is 7 in both draws taken on this rendition and
-        the *articles* moved from 4 to 7, so it is a small, real population
-        rather than a fixed one — do not read either number as stable.
+        So the premise is not refuted by this corpus, and it is not confirmed
+        by it either: deciding it needs a rule for which descendant label
+        would have been "the exhibit's own", which is the rule under test.
+        What *is* measured, from `figures + tables` against the direct count,
+        is the population a reader feels — 121 exhibits in 83 articles
+        carrying no label at all, which until #162 were rendered with an
+        invented number.
+
+        The seven are asserted by name because they are the fixture set for
+        the live spot-check above, not because seven is stable: the count was
+        7 in both draws on this rendition while the *articles* moved from 4 to
+        7.
         """
         recent, recent_maps, _ = self._totals(self.RECENT)
         backfill, backfill_maps, _ = self._totals(self.BACKFILL)
 
         assert recent["exhibits_with_direct_label"] == 6937
         assert recent["exhibits_with_descendant_label"] == 6944
+        # The population #162 acts on: every exhibit the deposit did not number.
+        assert recent["figures"] + recent["tables"] == 7058
+        assert recent["figures"] + recent["tables"] - recent["exhibits_with_direct_label"] == 121
         rows = json.loads(self.RECENT.read_text())["rows"]
-        violating = [
+        unlabelled_articles = [
+            row["pmcid"]
+            for row in rows
+            if row["figures"] + row["tables"] > row["exhibits_with_direct_label"]
+        ]
+        assert len(unlabelled_articles) == 83
+        # The seven a descendant-search fallback would fire on — a subset of
+        # those 83, and the fixture set for the spot-check in the docstring.
+        would_fire = [
             row["pmcid"]
             for row in rows
             if row["exhibits_with_descendant_label"] > row["exhibits_with_direct_label"]
         ]
-        assert violating == [
+        assert set(would_fire) <= set(unlabelled_articles)
+        assert would_fire == [
             "PMC12011025",
             "PMC12111618",
             "PMC12115352",
@@ -1818,11 +1849,11 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             "PMC12159547",
             "PMC12177175",
         ]
-        # The back-filled window is where the premise still measures full.
+        # The back-filled window numbers every exhibit it deposits, so it
+        # contributes nothing to #162's population.
         assert backfill["exhibits_with_direct_label"] == 627
         assert backfill["exhibits_with_descendant_label"] == 627
-        # 6,944 of the *labelled* exhibits, not of all 7,058 — 114 carry none.
-        assert recent["figures"] + recent["tables"] == 7058
+        assert backfill["figures"] + backfill["tables"] == 627
         assert recent_maps["label_parents"] == {
             "fig": 4593,
             "table-wrap": 2344,

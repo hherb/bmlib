@@ -29,13 +29,16 @@ repository.
 
 Eight questions, each answering a decision the parser makes:
 
-1. **Is a ``<label>`` a direct child of the exhibit it numbers?** This is the
-   premise of the parent-based routing that replaced #116's footnote-depth
-   counter. If an exhibit anywhere carries its label *only* indirectly, the
-   rule loses that label and the premise is wrong — and on the redrawn recent
-   corpus it **is** wrong, for 7 exhibits of 6,944 in 7 of 997 articles. The
-   report says ``PREMISE VIOLATED`` rather than printing a rate, because a
-   premise is not a population.
+1. **Where does an exhibit's ``<label>`` sit?** This is the premise of the
+   parent-based routing that replaced #116's footnote-depth counter. The walk
+   counts an exhibit's own label and, separately, an exhibit holding *any*
+   ``<label>`` below it — and **those two do not decide the premise**, which
+   is issue #162: their difference was printed as ``PREMISE VIOLATED`` and
+   read as seven exhibits losing a label, where all seven hold a footnote
+   marker or a list bullet and no label of their own. What the pair does
+   support is the population a reader feels: on the redrawn recent corpus
+   **121 exhibits of 7,058, in 83 of 997 articles, carry no ``<label>`` at
+   all**, and until #162 those were rendered with an invented number.
 2. **What else carries a ``<label>`` inside an exhibit?** The depth rule
    needed this enumerated; the parent rule does not. Measuring it says how
    much the enumeration was missing.
@@ -1774,6 +1777,16 @@ def _record_exhibit(el: ET.Element, tag: str, depth: int, row: ArticleMeasuremen
         if depth:
             row.nested_tables += 1
 
+    # WHAT THESE TWO MEAN, BECAUSE THE PAIR WAS MISREAD ONCE (issue #162).
+    # `direct` is the exhibit's own label. `descendant` is an exhibit holding
+    # **any** <label> anywhere below it — a <table-wrap-foot><fn>'s "*", a
+    # <list-item>'s bullet, a nested <supplementary-material>'s title — and NOT
+    # "an exhibit whose own label sits indirectly". The two are not the same
+    # question and their difference is not the premise: it is the set a
+    # descendant-search fallback would fire on, which is why `print_report`
+    # reports it under that name. Deciding the premise itself would need a rule
+    # for which descendant label is "the exhibit's own", and that rule is the
+    # one under test, so this walk deliberately does not have one.
     direct = [c for c in el if _local(c.tag) == "label"]
     descendant = [c for c in el.iter() if _local(c.tag) == "label" and c is not el]
     if direct:
@@ -2307,15 +2320,35 @@ def print_report(totals: Totals) -> bool:
     exhibits = figures + tables
     print(f"Exhibits: {figures} <fig> + {tables} <table-wrap> = {exhibits}\n")
 
-    print("1. IS A <label> A DIRECT CHILD OF ITS EXHIBIT?  (the parent rule's premise)")
+    print("1. WHERE AN EXHIBIT'S <label> SITS  (the parent rule's premise)")
     direct = totals.sum_of("exhibits_with_direct_label")
     descendant = totals.sum_of("exhibits_with_descendant_label")
-    print(f"   exhibits with a direct-child <label>   : {direct}")
-    print(f"   exhibits with a descendant <label>     : {descendant}")
+    unlabelled = exhibits - direct
+    holding_one_below = descendant - direct
+    print(f"   exhibits with a direct-child <label>      : {direct}")
     print(
-        "   PREMISE HOLDS: no exhibit carries its label only indirectly"
-        if direct >= descendant
-        else "   PREMISE VIOLATED: an exhibit carries a label only indirectly"
+        f"   exhibits with no <label> of their own     : {unlabelled}  {_pct(unlabelled, exhibits)}"
+    )
+    print(f"   ...of those, ones holding a <label> below : {holding_one_below}")
+    # THESE COUNTERS DO NOT DECIDE THE PREMISE, AND SAYING THEY DID WAS #162.
+    # `exhibits_with_descendant_label` counts an exhibit holding *any* <label>
+    # anywhere in its subtree, so `descendant - direct` is the set a
+    # descendant-search fallback would fire on — never the set carrying its own
+    # label indirectly. Printed as `PREMISE VIOLATED`, that difference read as
+    # seven exhibits losing a label they had; fetched, all seven hold a
+    # <table-wrap-foot><fn> marker or a <list-item> bullet and no label of their
+    # own, so a descendant search would have corrupted 7 of 7 — #116 verbatim.
+    # Deciding the premise needs an instrument this walk does not have: a rule
+    # for which of an exhibit's descendant labels would have been "its own",
+    # which is the rule under test. So the report states the two populations it
+    # can support and sends the reader to section 2 for the owners.
+    print(
+        "   These counters do not decide the premise: the second counts any\n"
+        "   <label> in the subtree, so the difference above is the set a\n"
+        "   descendant-search fallback would fire on, not the set carrying its\n"
+        "   own label indirectly. Section 2 says what those labels belong to.\n"
+        "   The first line is the population that matters to a reader: an\n"
+        "   exhibit with no <label> is rendered with no number (issue #162)."
     )
 
     print("\n2. WHAT CARRIES A <label> INSIDE AN EXHIBIT")
@@ -2425,12 +2458,23 @@ def print_report(totals: Totals) -> bool:
     else:
         direct_caption = totals.sum_of("exhibits_with_direct_caption")
         descendant_caption = totals.sum_of("exhibits_with_descendant_caption")
-        print(f"   exhibits with a direct-child <caption> : {direct_caption}")
-        print(f"   exhibits with a descendant <caption>   : {descendant_caption}")
+        uncaptioned = exhibits - direct_caption
+        holding_one_below_caption = descendant_caption - direct_caption
+        print(f"   exhibits with a direct-child <caption>    : {direct_caption}")
         print(
-            "   PREMISE HOLDS: no exhibit carries its caption only indirectly"
-            if direct_caption >= descendant_caption
-            else "   PREMISE VIOLATED: an exhibit carries a caption only indirectly"
+            f"   exhibits with no <caption> of their own   : "
+            f"{uncaptioned}  {_pct(uncaptioned, exhibits)}"
+        )
+        print(f"   ...of those, ones holding one below       : {holding_one_below_caption}")
+        # Read this pair the way section 1 says to read its own. The counter is
+        # the identical shape — any <caption> in the subtree — so the same
+        # `PREMISE VIOLATED` line stood here, and it would have been wrong here
+        # for the same reason. It never fired only because the two counts have
+        # been equal in every draw, which is luck rather than a difference.
+        print(
+            "   As in section 1, these do not decide the premise; a <caption>\n"
+            "   below an exhibit may belong to a <supplementary-material>\n"
+            "   inside it, which is the shape #123's owner test exists for."
         )
         captions = totals.sum_of("captions")
         nested = totals.sum_of("nested_captions")
