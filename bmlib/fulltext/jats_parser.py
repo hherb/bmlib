@@ -2071,9 +2071,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # the 225 surveyed articles (issue #116), and a <fn-group>'s
             # "Notes", a <disp-formula>'s "(1)" and eLife's
             # <supplementary-material> "Figure 1—source data 1" all did the
-            # same. A swallowed label is not a blank either — the renderer
-            # substitutes `Table {i + 1}` or `Figure {i + 1}`, so the symptom
-            # is an invented number.
+            # same. A swallowed label is not a blank either: the marker that
+            # overwrote it is rendered as the exhibit's own number, so the
+            # symptom is a *wrong* number rather than a missing one. That is
+            # what still makes this routing load-bearing now that an exhibit
+            # carrying no label of its own is rendered without one (#162) —
+            # the renderer no longer substitutes anything, so a mis-routed
+            # marker is the only way an invented number can still appear.
             #
             # Asking the parent needs no enumeration of the containers that
             # may carry a <label>, which is what a depth counter needed and
@@ -2082,39 +2086,52 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # footnote still gets its own label, since its <label>'s parent is
             # the exhibit either way.
             #
-            # THE PREMISE IS MEASURED, AND ON THE RENDITION THIS PARSER IS FED
-            # IT IS VIOLATED (`scripts/sample_jats_exhibits.py`, issue #138).
-            # Over the recent committed draw — 997 articles from a named PMC
-            # OA baseline package, measured on Europe PMC's fullTextXML —
-            # 6,937 exhibits carry a <label> as a direct child while **6,944
-            # carry one anywhere**. Seven exhibits, in seven articles
-            # (PMC12011025, PMC12111618, PMC12115352, PMC12149983,
-            # PMC12154067, PMC12159547, PMC12177175), carry
-            # their label only indirectly, and for each of those this rule
-            # finds nothing: `to_html` then substitutes `Figure {i + 1}` or
-            # `Table {i + 1}`, which is #116's own symptom — an invented
-            # number — reached from the other direction. **Do not restate this
-            # as "the rule cannot lose a label."** Every draw before the
-            # redraw measured the premise full (2,033 / 2,033, 1,446 / 1,446,
-            # 365 / 365) and none of those draws is re-derivable from the
-            # repo; this one is, and it says otherwise. Filed for decision:
-            # what a direct-child test should fall back to, if anything.
+            # THE PREMISE IS NOT REFUTED BY THE COMMITTED CORPUS, AND IT IS
+            # NOT CONFIRMED BY IT EITHER (issue #162). This comment used to
+            # say it was VIOLATED, on 6,937 exhibits carrying a direct-child
+            # <label> against 6,944 "carrying one anywhere". The second figure
+            # is `exhibits_with_descendant_label`, which counts an exhibit
+            # holding **any** <label> in its subtree — so the difference is
+            # the set a descendant-search fallback would *fire* on, and says
+            # nothing about where an exhibit's own label sits. It was read as
+            # the premise, which is this repo's standing lesson (a count is of
+            # what you looked for) inside the instrument built to check it.
             #
-            # The rule is still the better of the two. A depth counter would
+            # Fetched from Europe PMC on 2026-09-02, all seven of those
+            # articles' exhibits (PMC12011025, PMC12111618, PMC12115352,
+            # PMC12149983, PMC12154067, PMC12159547, PMC12177175) are a
+            # <table-wrap> carrying no <label> and no <caption>, and every
+            # label below them is a <table-wrap-foot><fn> marker (`*`, `**`,
+            # the empty string) or a <list-item> bullet inside a cell (`1.`,
+            # `-`, `•`). Those are the two containers #116 was about, so a
+            # descendant search would have corrupted 7 of 7 — which is why the
+            # fallback #162 proposed is refused rather than deferred. Four are
+            # deposited under ids their publisher reserves for an unnumbered
+            # table (`array1`, `array2`, `utbl0001`), so the missing label is
+            # the deposit's intent.
+            #
+            # Deciding the premise would need a rule for which of an exhibit's
+            # descendant labels *would* have been its own, and that rule is
+            # this one. So it stands on the argument below rather than on a
+            # measurement, and the honest population beside it is a different
+            # one: 121 exhibits of 7,058, in 83 of 997 recent articles, carry
+            # no <label> of their own. `to_html` used to give each of those an
+            # invented `Figure {i + 1}` / `Table {i + 1}`; it no longer does.
+            #
+            # The rule is also much the better of the two on the one
+            # comparison the corpus does support. A depth counter would
             # *mis-assign* 561 labels in 95 of these 997 articles — <fn>
             # (330), <list-item> (225) and <supplementary-material> (6), the
-            # last a container no enumeration written for #116 named —
-            # against 7 this one omits. A corruption is worse than a blank, and the parent
-            # test needs no list to avoid it.
+            # last a container no enumeration written for #116 named. A
+            # corruption is worse than a blank, and the parent test needs no
+            # list to avoid it.
             #
-            # The back-filled window is where the premise still measures full:
-            # 627 / 627, every label owned by its own <fig>. It carries no
-            # <table-wrap> at all, so it corroborates only the figure half.
+            # The back-filled window numbers every exhibit it deposits: 627 of
+            # 627, all <fig>, and no <table-wrap> at all — so it contributes
+            # nothing to either population above, rather than corroborating
+            # one of them.
             #
-            # Both figures count *labelled* exhibits, not every exhibit: the
-            # recent draw holds 7,058, so 114 carry no <label> either way and
-            # the premise is about where a label sits, never about how many
-            # exhibits have one. Of the 7,498 labels inside a recent exhibit,
+            # Of the 7,498 labels inside a recent exhibit,
             # 92.5% are the exhibit's own. The six that a
             # <supplementary-material> owns are one eLife article's figure
             # supplements, the same article the caption stack above is
@@ -2684,30 +2701,70 @@ def _build_html(h: JATSArticle) -> str:
     if h.figures:
         parts.append("<h2>Figures</h2>")
         for i, fig in enumerate(h.figures):
-            fig_num = fig.label or f"Figure {i + 1}"
+            # NO NUMBER IS INVENTED FOR AN EXHIBIT THE PUBLISHER DID NOT NUMBER
+            # (issue #162). `fig.label or f"Figure {i + 1}"` stated a number the
+            # document does not carry, which is #116's own symptom — a swallowed
+            # label is not a blank — reached from the other side, and it is a
+            # measured population rather than a hypothetical: 7,058 exhibits in
+            # the committed recent corpus carry 6,937 direct-child <label>
+            # elements, so 121 of them, in 83 of 997 articles (1.7% and 8.3%),
+            # were given one. The back-filled window measures 0 of 627.
+            #
+            # It is worse than a blank for the reason #116 was. The invented
+            # number is the *index*, so it does not merely add a number — it
+            # collides with a real one, and a paper whose first figure is an
+            # unnumbered schematic rendered two exhibits as "Figure 1". Four of
+            # the seven inspected deposits carry ids their publisher reserves
+            # for an unnumbered table (`array1`, `array2`, `utbl0001`), so the
+            # absent label is the deposit's intent and not an omission.
+            #
+            # This rule was already bmlib's, one branch over: an unsectioned
+            # `<body>`'s prose becomes a `JATSBodySection` with an empty title
+            # and `to_html` renders it with no heading, because no heading is
+            # invented (#30). Stated on one branch and not applied on the next
+            # is the shape this module keeps being caught by.
+            #
+            # The anchor id keeps its fallback: `fig{i + 1}` is a link target
+            # this renderer owns, never a claim about what the document says.
             anchor_id = fig.id or f"fig{i + 1}"
             parts.append(f'<figure id="{html_escape(anchor_id)}">')
             if fig.graphic_url:
                 full_url = _build_exhibit_url(fig.graphic_url, h.pmc_id)
+                # `alt` carried the same invented number, where a screen reader
+                # reads it out as the document's own. It falls back to the
+                # caption — text the deposit does carry — and then to the empty
+                # string, which asserts nothing rather than asserting a number.
+                alt = fig.label or fig.caption
                 parts.append(
-                    f'  <img src="{html_escape(full_url)}" '
-                    f'alt="{html_escape(fig_num)}" loading="lazy">'
+                    f'  <img src="{html_escape(full_url)}" alt="{html_escape(alt)}" loading="lazy">'
                 )
-            parts.append("  <figcaption>")
-            parts.append(f"    <strong>{html_escape(fig_num)}</strong>")
-            if fig.caption:
-                parts.append(f"    <p>{html_escape(fig.caption)}</p>")
-            parts.append("  </figcaption>")
+            # Emitted only where the deposit gives it something to hold. It
+            # used to be unconditional because the invented number always
+            # filled it, so dropping that would otherwise leave an empty
+            # <figcaption> on every unlabelled, uncaptioned figure.
+            if fig.label or fig.caption:
+                parts.append("  <figcaption>")
+                if fig.label:
+                    parts.append(f"    <strong>{html_escape(fig.label)}</strong>")
+                if fig.caption:
+                    parts.append(f"    <p>{html_escape(fig.caption)}</p>")
+                parts.append("  </figcaption>")
             parts.append("</figure>")
 
     # Tables
     if h.tables:
         parts.append("<h2>Tables</h2>")
         for i, tbl in enumerate(h.tables):
-            tbl_num = tbl.label or f"Table {i + 1}"
+            # The figure branch above carries the argument; this is the same
+            # rule, and the table side is where issue #162's whole inspected
+            # population sits. All seven of the exhibits it names are a
+            # <table-wrap> carrying neither a <label> nor a <caption>, so this
+            # heading was the only text rendered for them and every word of it
+            # was bmlib's.
             anchor_id = tbl.id or f"table{i + 1}"
             parts.append(f'<div class="table-container" id="{html_escape(anchor_id)}">')
-            parts.append(f"  <h3>{html_escape(tbl_num)}</h3>")
+            if tbl.label:
+                parts.append(f"  <h3>{html_escape(tbl.label)}</h3>")
             if tbl.caption:
                 parts.append(f'  <p class="table-caption">{html_escape(tbl.caption)}</p>')
             if tbl.html_content:
@@ -2718,9 +2775,9 @@ def _build_html(h: JATSArticle) -> str:
                 # emitting both shows one table twice. `JATSTableInfo` holds
                 # the href either way; choosing between them is the renderer's.
                 full_url = _build_exhibit_url(tbl.graphic_url, h.pmc_id)
+                alt = tbl.label or tbl.caption
                 parts.append(
-                    f'  <img src="{html_escape(full_url)}" '
-                    f'alt="{html_escape(tbl_num)}" loading="lazy">'
+                    f'  <img src="{html_escape(full_url)}" alt="{html_escape(alt)}" loading="lazy">'
                 )
             parts.append("</div>")
 

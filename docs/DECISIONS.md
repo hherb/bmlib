@@ -316,6 +316,51 @@ must not be re-done.
   `test_a_stub_with_no_article_raises` and
   `test_a_body_less_article_with_an_abstract_is_returned`.
 
+## fulltext — an exhibit with no `<label>` gets no fallback search (#162)
+
+**Do not add a descendant search when an exhibit carries no direct-child
+`<label>`.** It looks obviously right — the corpus appears to say 7 exhibits
+"carry a label only indirectly" — and it is refuted by 100% of that
+population.
+
+The appearance comes from the instrument. `exhibits_with_descendant_label`
+counts an exhibit holding **any** `<label>` in its subtree, so
+`descendant - direct` is the set a descendant search would *fire* on, never
+the set carrying its own label indirectly. Printed as `PREMISE VIOLATED`, that
+difference read as seven exhibits losing a label they had.
+
+All seven were fetched from Europe PMC (2026-09-02): `PMC12011025`,
+`PMC12111618`, `PMC12115352`, `PMC12149983`, `PMC12154067`, `PMC12159547`,
+`PMC12177175`. Every one is a `<table-wrap>` carrying **no `<label>` and no
+`<caption>`**, and every label below it is a `<table-wrap-foot><fn>` marker
+(`*`, `**`, the empty string) or a `<list-item>` bullet inside a cell (`1.`,
+`-`, `•`) — the two containers #116 was about, and the two a depth counter
+mis-assigns 561 labels from across the same 997 articles. A descendant search
+would have corrupted **7 of 7**. Four of the seven are deposited under ids
+their publisher reserves for an unnumbered table (`array1`, `array2`,
+`utbl0001`), so the missing label is the deposit's intent.
+
+So the parent rule's premise is **neither refuted nor confirmed** by the
+committed corpus: deciding it needs a rule for which of an exhibit's
+descendant labels *would* have been its own, and that is the rule under test.
+It stands on its argument, and the sampler now prints the two populations it
+can support instead of the verdict it cannot — but only the half it cannot.
+`direct` is a subset of `descendant` by construction, so a zero difference
+*does* prove no exhibit carries its label indirectly; that direction is kept,
+phrased as what was measured rather than as `PREMISE HOLDS`, because removing
+it left the report with no content-level line that changes between draws. The
+`<caption>` section has the identical asymmetry, and its equality on the
+recent corpus (6,938 / 6,938) is the measured result certifying #123's
+premise, not the coincidence an earlier draft called it.
+
+What the counters *do* support is why `to_html()` changed: 121 exhibits of
+7,058, in 83 of 997 recent articles, carry no `<label>` of their own, and each was
+given an invented `Figure {i + 1}` / `Table {i + 1}` — worse than a blank for
+#116's own reason, since the invented number is the *index* and so collides
+with a real one. Pinned by
+`test_jats_parser.py::TestAnUnlabelledExhibitIsNotGivenANumber` and
+`test_jats_exhibit_sampler.py::test_an_exhibit_with_no_label_of_its_own_is_a_measured_population`.
+
 ## fulltext — importable on a core install (#64, PR #66)
 
 **CLAUDE.md argues this one in full**, under "Optional dependencies guarded

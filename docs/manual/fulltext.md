@@ -425,9 +425,25 @@ Returns an HTML string with semantic markup:
 - `<p class="identifiers">` with linked DOI, PMC, PMID
 - `<h2>Abstract</h2>` with `<strong>` section labels
 - `<h2>`–`<h6>` for nested body sections
-- `<figure>` with `<img>` and `<figcaption>` for figures
+- `<figure>` with `<img>`, and a `<figcaption>` where the deposit carries a label or a caption, for figures
 - `<div class="table-container">` with `<table>` for tables, or an `<img>` where the table was deposited only as an image
 - `<ol class="references">` for bibliography
+
+**An exhibit the publisher did not number is rendered without one** *(changed,
+unreleased — #162)*. `to_html()` used to fill a missing `<label>` with
+`Figure {i + 1}` / `Table {i + 1}`, which states a number the document does
+not carry — and, being the *index*, collides with a real one: a paper whose
+first figure is an unnumbered schematic rendered two exhibits as `Figure 1`.
+Measured on the committed recent corpus, 121 exhibits of 7,058, in 83 of 997
+articles, carry no `<label>` of their own. Such an exhibit now renders its caption
+and content with no heading, the `<img>` `alt` falls back to the caption and
+then to the empty string, and the `<figcaption>` is omitted where the deposit
+gives it nothing to hold. The anchor id keeps its `fig{i + 1}` fallback — that
+is a link target this renderer owns, not a claim about the document. This is
+the rule `to_html()` already applied to an unsectioned `<body>`, whose prose
+is rendered with no heading because none is invented — it simply was not
+applied to exhibits. **A downstream holding cached full text should
+re-fetch**; the change reaches the HTML `FullTextService` caches.
 
 ### `parse_with_html()` → `tuple[JATSArticle, str]`
 

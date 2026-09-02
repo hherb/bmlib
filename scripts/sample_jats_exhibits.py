@@ -29,13 +29,18 @@ repository.
 
 Eight questions, each answering a decision the parser makes:
 
-1. **Is a ``<label>`` a direct child of the exhibit it numbers?** This is the
-   premise of the parent-based routing that replaced #116's footnote-depth
-   counter. If an exhibit anywhere carries its label *only* indirectly, the
-   rule loses that label and the premise is wrong — and on the redrawn recent
-   corpus it **is** wrong, for 7 exhibits of 6,944 in 7 of 997 articles. The
-   report says ``PREMISE VIOLATED`` rather than printing a rate, because a
-   premise is not a population.
+1. **Where does an exhibit's ``<label>`` sit?** This is the premise of the
+   parent-based routing that replaced #116's footnote-depth counter. The walk
+   counts an exhibit's own label and, separately, an exhibit holding *any*
+   ``<label>`` below it — and **a non-zero difference does not decide the
+   premise**, which is issue #162: it was printed as ``PREMISE VIOLATED`` and
+   read as seven exhibits losing a label, where all seven hold a footnote
+   marker or a list bullet and no label of their own. A *zero* difference does
+   decide it, the first count being a subset of the second, so that direction
+   is still reported — as a measurement, not a verdict. What the pair does
+   support is the population a reader feels: on the redrawn recent corpus
+   **121 exhibits of 7,058, in 83 of 997 articles, carry no ``<label>``
+   of their own**, and until #162 those were rendered with an invented number.
 2. **What else carries a ``<label>`` inside an exhibit?** The depth rule
    needed this enumerated; the parent rule does not. Measuring it says how
    much the enumeration was missing.
@@ -1774,6 +1779,16 @@ def _record_exhibit(el: ET.Element, tag: str, depth: int, row: ArticleMeasuremen
         if depth:
             row.nested_tables += 1
 
+    # WHAT THESE TWO MEAN, BECAUSE THE PAIR WAS MISREAD ONCE (issue #162).
+    # `direct` is the exhibit's own label. `descendant` is an exhibit holding
+    # **any** <label> anywhere below it — a <table-wrap-foot><fn>'s "*", a
+    # <list-item>'s bullet, a nested <supplementary-material>'s title — and NOT
+    # "an exhibit whose own label sits indirectly". The two are not the same
+    # question and their difference is not the premise: it is the set a
+    # descendant-search fallback would fire on, which is why `print_report`
+    # reports it under that name. Deciding the premise itself would need a rule
+    # for which descendant label is "the exhibit's own", and that rule is the
+    # one under test, so this walk deliberately does not have one.
     direct = [c for c in el if _local(c.tag) == "label"]
     descendant = [c for c in el.iter() if _local(c.tag) == "label" and c is not el]
     if direct:
@@ -2307,16 +2322,73 @@ def print_report(totals: Totals) -> bool:
     exhibits = figures + tables
     print(f"Exhibits: {figures} <fig> + {tables} <table-wrap> = {exhibits}\n")
 
-    print("1. IS A <label> A DIRECT CHILD OF ITS EXHIBIT?  (the parent rule's premise)")
+    print("1. WHERE AN EXHIBIT'S <label> SITS  (the parent rule's premise)")
     direct = totals.sum_of("exhibits_with_direct_label")
     descendant = totals.sum_of("exhibits_with_descendant_label")
-    print(f"   exhibits with a direct-child <label>   : {direct}")
-    print(f"   exhibits with a descendant <label>     : {descendant}")
+    unlabelled = exhibits - direct
+    holding_one_below = descendant - direct
+    print(f"   exhibits with a direct-child <label>      : {direct}")
     print(
-        "   PREMISE HOLDS: no exhibit carries its label only indirectly"
-        if direct >= descendant
-        else "   PREMISE VIOLATED: an exhibit carries a label only indirectly"
+        f"   exhibits with no <label> of their own     : {unlabelled}  {_pct(unlabelled, exhibits)}"
     )
+    print(f"   ...of those, ones holding a <label> below : {holding_one_below}")
+    # ONLY ONE DIRECTION OF THIS COMPARISON IS SOUND, AND #162 REMOVED BOTH.
+    # `exhibits_with_descendant_label` counts an exhibit holding *any* <label>
+    # in its subtree, so `descendant - direct` is the set a descendant-search
+    # fallback would fire on — never the set carrying its own label
+    # indirectly. Printed as `PREMISE VIOLATED`, that difference read as seven
+    # exhibits losing a label they had; fetched, all seven hold a
+    # <table-wrap-foot><fn> marker or a <list-item> bullet and no label of
+    # their own, so a descendant search would have corrupted 7 of 7 — #116
+    # verbatim. That half is an over-claim and is gone.
+    #
+    # But `direct` is a subset of `descendant` by construction (a direct child
+    # is a descendant, and `_record_exhibit` derives both from the same
+    # element), so `holding_one_below` is never negative and reaching **zero**
+    # says something the over-claim did not: no exhibit holds a <label> below
+    # it without one of its own, hence none can be carrying its label
+    # indirectly. That is a sound one-directional all-clear, and dropping it
+    # left the report with no content-level line that changes between draws —
+    # only instrument health. It is restored here as a statement of what was
+    # measured, never as a verdict word. It is not vacuous: it holds on the
+    # back-filled corpus (627/627) and fails on the recent one (6,937/6,944).
+    if holding_one_below:
+        print(
+            "   These counters do not decide the premise: the second counts\n"
+            "   any <label> in the subtree, so the difference above is the set\n"
+            "   a descendant-search fallback would fire on, not the set\n"
+            "   carrying its own label indirectly. Section 2 says what those\n"
+            "   labels belong to — inspect them before trusting either count.\n"
+            "   The second line is the population that matters to a reader: an\n"
+            "   exhibit with no <label> is rendered with no number (issue #162)."
+        )
+    elif descendant == 0:
+        # AN ABSENT DENOMINATOR IS NOT AN ALL-CLEAR. A draw carrying no <label>
+        # anywhere satisfies the zero test vacuously, and printing the clean
+        # result over it reports a confirmation this draw cannot give — which
+        # is the whole class #162 is about, one step further out. The
+        # back-filled window reaches this on <caption> (0 of 627).
+        #
+        # Worded "NO POPULATION HERE" and deliberately NOT with this report's
+        # `NOT MEASURED`, which is reserved for a row generation that predates
+        # a counter. "The instrument did not look" and "it looked and the
+        # element is absent" are different claims, and
+        # `test_a_freshly_measured_corpus_prints_the_rates` asserts the
+        # reserved token appears nowhere in a fully-measured run — it caught
+        # this borrowing the moment it was written.
+        print(
+            "   NO POPULATION HERE — no exhibit in this draw carries a <label>\n"
+            "   anywhere, so the zero above is an absent denominator and not a\n"
+            "   clean result. This draw says nothing about the premise."
+        )
+    else:
+        print(
+            "   No exhibit on this draw holds a <label> below it without one of\n"
+            "   its own, so none can be carrying its label indirectly and the\n"
+            "   parent rule loses nothing here. This is the one direction these\n"
+            "   counters do decide; a non-zero count above would NOT have been\n"
+            "   its converse (issue #162)."
+        )
 
     print("\n2. WHAT CARRIES A <label> INSIDE AN EXHIBIT")
     parents = totals.counter_of("label_parents")
@@ -2425,13 +2497,46 @@ def print_report(totals: Totals) -> bool:
     else:
         direct_caption = totals.sum_of("exhibits_with_direct_caption")
         descendant_caption = totals.sum_of("exhibits_with_descendant_caption")
-        print(f"   exhibits with a direct-child <caption> : {direct_caption}")
-        print(f"   exhibits with a descendant <caption>   : {descendant_caption}")
+        uncaptioned = exhibits - direct_caption
+        holding_one_below_caption = descendant_caption - direct_caption
+        print(f"   exhibits with a direct-child <caption>    : {direct_caption}")
         print(
-            "   PREMISE HOLDS: no exhibit carries its caption only indirectly"
-            if direct_caption >= descendant_caption
-            else "   PREMISE VIOLATED: an exhibit carries a caption only indirectly"
+            f"   exhibits with no <caption> of their own   : "
+            f"{uncaptioned}  {_pct(uncaptioned, exhibits)}"
         )
+        print(f"   ...of those, ones holding one below       : {holding_one_below_caption}")
+        # Read this pair the way section 1 says to read its own: identical
+        # shape, identical asymmetry. The `PREMISE VIOLATED` half stood here
+        # too and would have been wrong here for the same reason — a <caption>
+        # below an exhibit may belong to a <supplementary-material> inside it,
+        # which is the shape #123's owner test exists for.
+        #
+        # The zero branch is NOT luck, and calling it that was the same error
+        # one section over: `direct_caption` is a subset of
+        # `descendant_caption` by construction, so equality is a measured
+        # all-clear rather than a coincidence — and on the recent corpus
+        # (6,938 / 6,938) it is the result that certifies #123's premise.
+        if holding_one_below_caption:
+            print(
+                "   As in section 1, a non-zero count here does not decide the\n"
+                "   premise; a <caption> below an exhibit may belong to a\n"
+                "   <supplementary-material> inside it, which is the shape\n"
+                "   #123's owner test exists for. Inspect them."
+            )
+        elif descendant_caption == 0:
+            # As in section 1: no <caption> anywhere makes the zero vacuous.
+            print(
+                "   NO POPULATION HERE — no exhibit in this draw carries a\n"
+                "   <caption> anywhere, so the zero above is an absent\n"
+                "   denominator and not a clean result."
+            )
+        else:
+            print(
+                "   No exhibit on this draw holds a <caption> below it without\n"
+                "   one of its own, so none can be carrying its caption\n"
+                "   indirectly. As in section 1, this is the one direction\n"
+                "   these counters decide."
+            )
         captions = totals.sum_of("captions")
         nested = totals.sum_of("nested_captions")
         print(

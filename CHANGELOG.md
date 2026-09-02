@@ -8,6 +8,74 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **No number is invented for an exhibit the publisher did not number** (#162,
+  and the reading of #138's corpus that filed it). `to_html()` rendered
+  `fig.label or f"Figure {i + 1}"` and `tbl.label or f"Table {i + 1}"`, so an
+  exhibit deposited without a `<label>` was given one. That is #116's own
+  symptom — a swallowed label is not a blank, it is an invented value —
+  reached from the other side, and worse than a blank for #116's own reason:
+  the invented number is the *index*, so it does not merely add a number but
+  **collides with a real one**. A paper whose first figure is an unnumbered
+  schematic rendered two exhibits as `Figure 1`.
+
+  **Measured, and derivable from two first-generation counters of the
+  committed recent corpus**: 7,058 exhibits carry 6,937 direct-child `<label>`
+  elements, so **121 exhibits in 83 of 997 articles (1.7% and 8.3%)** were
+  given a number the deposit does not carry. The redrawn back-filled window
+  measures 0 of 627. Both kinds are reached — at least 7 of the 121 are a
+  `<fig>` and at least 11 a `<table-wrap>`, from the articles whose rows hold
+  none of the other kind. **Moves stored values**: the heading, the `<img>`
+  `alt` and, where the deposit carries neither label nor caption, the
+  `<figcaption>` element itself all change in the HTML `FullTextService`
+  caches, for 83 of every 997 recent articles. The anchor id keeps its
+  `fig{i + 1}` fallback — that is a link target this renderer owns, never a
+  claim about the document — and `alt` falls back to the caption, which is
+  text the deposit does carry, and then to the empty string.
+
+  **The issue as filed said something else, and the corpus refutes it.** It
+  reported the `<label>` direct-child premise **violated** — 6,937 direct
+  against 6,944 "carrying one anywhere" — and leaned toward a bounded
+  descendant search as the remedy. `exhibits_with_descendant_label` counts an
+  exhibit holding *any* `<label>` anywhere in its subtree, so that difference
+  is the set such a fallback would **fire** on, not the set carrying its own
+  label indirectly; reading it as the premise is *a count is of what you
+  looked for* one more time, inside the instrument built to check it. Fetched
+  from Europe PMC (2026-09-02), all seven of the named exhibits are a
+  `<table-wrap>` carrying no `<label>` **and no `<caption>`**, and every label
+  below them is a `<table-wrap-foot><fn>` marker (`*`, `**`, the empty string)
+  or a `<list-item>` bullet inside a cell (`1.`, `-`, `•`) — the two
+  containers #116 was about. A descendant search would have corrupted **7 of
+  7**. Four are deposited under ids their publisher reserves for an unnumbered
+  table (`array1`, `array2`, `utbl0001`), so the absent label is the deposit's
+  intent rather than an omission. The premise is therefore neither refuted nor
+  confirmed by the corpus: deciding it needs a rule for which descendant label
+  would have been the exhibit's own, and that is the rule under test.
+
+  The instrument says so now rather than printing a verdict it cannot
+  support — and only the half it cannot. `print_report` prints the exhibits
+  with no label of their own and, separately, how many of those hold a label
+  below, in place of `PREMISE VIOLATED`. But `direct` is a subset of
+  `descendant` by construction, so a zero difference is a sound one-directional
+  all-clear, and removing it along with the over-claim left the report with no
+  content-level line that changes between draws. It is kept, phrased as what
+  was measured rather than as a verdict, in both the `<label>` and `<caption>`
+  sections — the latter's equality (6,938 / 6,938 recent) being the measured
+  result that certifies #123's premise, not the coincidence an earlier draft
+  called it. The claim is corrected in `jats_parser.py`, `CLAUDE.md`,
+  `ROADMAP.md`, the sampler's module docstring and here.
+
+  The all-clear needed a second guard of its own, which is the same error one
+  step further out: a draw carrying no `<label>` — or no `<caption>` — anywhere
+  satisfies the zero test vacuously, and the back-filled window does exactly
+  that on `<caption>` (0 of 627). Both sections now distinguish "no exhibit
+  holds one below" from "this draw carries none at all", the latter worded
+  `NO POPULATION HERE` rather than borrowing `NOT MEASURED`, which is reserved
+  for a row generation predating a counter.
+
+  Two consequences are filed rather than fixed: the cached HTML this moves has
+  no version stamp to invalidate it (#172), and a figure's `alt` now duplicates
+  its own `<figcaption>` verbatim (#173).
+
 - **Six ways the exhibit sampler reported more than it measured** (#165-#170,
   from the review of PR #163). Each is a case of the instrument being trusted
   past what it had established, which is the class this whole branch exists to
@@ -192,8 +260,9 @@ All notable changes to bmlib are documented here. The format is based on
   encoding.
 
   *One claim was overturned and two are withdrawn as unre-derivable.* The
-  `<label>` direct-child premise is **violated** on the served rendition (see
-  the sampler entry below). #127's image-only-table population cannot be
+  `<label>` direct-child premise was recorded here as **violated** on the
+  served rendition; that reading is itself corrected above under #162 — the
+  counter behind it never measured the premise. #127's image-only-table population cannot be
   re-measured from either corpus, the redrawn back-filled window holding no
   `<table-wrap>` at all. And the empty population behind the abstract-branch
   exhibit guard — 44 exhibits inside an `<abstract>`, none titled — was an
@@ -325,18 +394,17 @@ All notable changes to bmlib are documented here. The format is based on
   over the same window also found `<chem-struct>` and `<th>`, which this one
   does not, so the owners are a set drawn from rather than a fixed list.
 
-  **And one was overturned.** The `<label>` parent rule's premise measured
+  **And one was recorded as overturned, wrongly** — see the #162 entry above,
+  which corrects it. The claim was that the `<label>` parent rule's premise,
   **full** in all three earlier draws (2,033 / 2,033, 1,446 / 1,446, 365 /
-  365), none of which is re-derivable. On the redrawn recent corpus it is
-  **VIOLATED**: 6,937 exhibits carry a direct-child `<label>` against 6,944
-  carrying one anywhere, so 7 exhibits in 7 articles carry their label only
-  indirectly and lose it, `to_html` then substituting `Figure {i + 1}` — an
-  invented number, which is #116's own symptom reached from the other
-  direction. The rule is still much the better of the two, a depth counter
-  *mis-assigning* 561 labels in 95 of those 997 articles against 7 this one
-  omits, and a corruption being worse than a blank. It is recorded here as
-  measured and left for a decision about a fallback; the comment in
-  `jats_parser.py` no longer claims the rule cannot lose a label.
+  365), is VIOLATED on the redrawn recent corpus at 6,937 direct against 6,944
+  "carrying one anywhere". `exhibits_with_descendant_label` counts an exhibit
+  holding *any* `<label>` in its subtree, so that difference is the set a
+  descendant-search fallback would fire on and not the premise. What the pair
+  does support — 121 exhibits carrying no `<label>` of their own, in 83 of 997
+  articles — is the population #162 acts on. The rule remains much the better
+  of the two on the comparison the corpus does support, a depth counter
+  *mis-assigning* 561 labels in 95 of those 997 articles.
 
 - **An end-of-parse audit for the JATS handler** (#134) — new private
   `bmlib/fulltext/_parse_audit.py`. `_JATSHandler` carries two dozen stacks,
@@ -1124,9 +1192,12 @@ All notable changes to bmlib are documented here. The format is based on
   figure/table?" flags, so the last footnote marker won. PMC12661592's single
   table reported its label as `"a"`. **Measured:** 27 of 225 surveyed articles
   (12.0%) carry a labelled `<table-wrap-foot><fn>`; `<fig>` has the identical
-  hole, JATS admitting `<fn>` there too. An empty label is not inert either —
-  the renderer substitutes `Table {i + 1}` for a table and `Figure {i + 1}`
-  for a figure, so the symptom is an invented number rather than a blank.
+  hole, JATS admitting `<fn>` there too. An overwritten label is not inert
+  either — the marker is rendered as the exhibit's own number, so the symptom
+  is a *wrong* number rather than a blank. (The renderer used to substitute
+  `Table {i + 1}` / `Figure {i + 1}` for an exhibit carrying no label of its own;
+  #162 removed that, so mis-routing is now the only route to an invented
+  number.)
 
   **The label is now routed by its parent element**, `<label>` being a direct
   child of the exhibit it numbers. That replaced a first cut which counted

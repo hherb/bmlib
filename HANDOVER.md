@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-02. **0.10.0 is released and on PyPI**; thirteen changes
+_Last updated: 2026-09-02. **0.10.0 is released and on PyPI**; fourteen changes
 sit unreleased on `main` — #73's atomic template install (PR #102), #96/#105's
 partitioning of an over-cap PubMed day (PRs #106 and #114), #109's typed
 article-id (PR #113), #110/#111's JATS sub-article and contributor-group
@@ -10,14 +10,13 @@ sampler (PR #126), #127's image-only table (PR #133),
 #134/#121/#129's end-of-parse audit (PR #139), #120/#140's undivided
 contributor name (PR #141), #146/#149's mixed-citation text (PR #148),
 #151's mechanised buffer-read invariant (PR #153, adding no behaviour),
-#112's funder-matching figures (PR #155), and #119's article-only full-text
-scan (PR #159, merged 2026-08-30). All thirteen are on `main`, and a
-fourteenth — the JATS corpus redraw answering #132, #138 and #158 — is open as
-**PR #163** on `fix/138-jats-corpus-redraw`. That one changes **no library
-behaviour**: `jats_parser.py` is AST-identical to `main` with docstrings
-stripped, and what moves is the sampler, the two committed corpora and the
-figures cited from them. All five version places agree at
-0.10.0. Nine of the thirteen are `fulltext` JATS fixes filed within days of
+#112's funder-matching figures (PR #155), #119's article-only full-text
+scan (PR #159), and the JATS corpus redraw answering #132, #138 and #158
+(PR #163, merged 2026-09-01, which also took #165-#170 from its own review).
+All fourteen are on `main`. A fifteenth — #162's invented exhibit number — is
+open as **PR #171** on `fix/162-unlabelled-exhibit-number`. All five version
+places agree at
+0.10.0. Ten of the fourteen are `fulltext` JATS fixes filed within days of
 each other; whoever cuts the next release should describe them together. Every
 unreleased ROADMAP row carries an `*(unreleased)*` marker.
 
@@ -30,7 +29,9 @@ changes from a thumbnail to the full image); #127 fills the new
 `JATSTableInfo.graphic_url`; #123/#125/#130 move `body_sections` for roughly
 one recent article in ten; #120/#140 collect a contributor whose name arrived
 undivided (3.3% of 1,025 articles lost at least one); #129 recovers an article
-lost to a malformed `colspan`. #146/#149 is the largest and the only one
+lost to a malformed `colspan`; #162 stops an exhibit the publisher did not
+number being given one, which moves the cached HTML for 83 of every 997 recent
+articles. #146/#149 is the largest and the only one
 measured by diffing a corpus rather than reasoned: over 880 local PMC articles
 / 20,770 references, `citation` moves for 4,499 (21.7%) in 191 articles —
 3,541 rebuilt, 958 emptied of an `<element-citation>` leak — `authors` for 502
@@ -106,89 +107,33 @@ fixed — so **diff `gh issue list` against the merged commit's own "filed"
 list**. And a mutation harness restoring with `git checkout -- <file>` deletes
 whatever is uncommitted in it.
 
-**The last session settled #112** — the funder-matching figures, corrected and
-then made answerable to the corpus. Eight claims in `analyzer.py`, the manual
-and the test file gave a measurement as the reason for a token's inclusion, and
-nothing checked *them*; the issue had found three. Four rules came out of it
-that outlive the fix.
+**Three settled PRs, condensed** — each is argued in full in `CHANGELOG.md`,
+`CLAUDE.md` and at its call site, and the transferable half is already in the
+rules above. What is kept here is only what a future session still has to act
+on.
 
-- **When several figures are wrong together, look for the one cause.** All four
-  headline numbers were self-consistent with a corpus holding 34 industry names
-  against the committed 30 — one uncommitted revision, not four slips.
-- **Correct a figure everywhere it is read**, not where the issue points: every
-  stale figure had been copied into `docs/manual/transparency.md`, the copy a
-  downstream consults.
-- **A test can take the comment as its input rather than a copy of it**, and
-  should **derive both sides of a comparison** or the older half goes stale
-  alone. The cost is a format contract, written at both ends.
-- **A stated rule that is not the applied rule is a defect with no behaviour
-  wrong** — and a corrected figure can be *uncheckable* rather than wrong,
-  which is #154.
-
-**PR #159 settled #119** — a reviewer's prose answered for the article.
-`TransparencyAnalyzer` never consumes `JATSParser` output: it fetches
-`fullTextXML` itself and regexes the raw string, so every `<sub-article>` /
-`<response>` region was scanned as the article's own. The regions are now
-removed in `_fetch_europepmc_fulltext`, the one door the full text enters
-through. Full argument in `CLAUDE.md`, the manual and the CHANGELOG; five
-things worth carrying forward.
-
-- **Measure the population you actually read.** The obvious corpus — the 880
-  Europe PMC articles PR #148 diffed against — puts nested articles at 6 of 876
-  (0.7%) and moves *nothing*, which reads as "this defect is theoretical".
-  PMC's `oa_comm` baseline package over 97,909 articles puts carriers at 3.45%
-  and moves a scan output for 602 of them. Same defect, two windows, opposite conclusions.
-- **Prefer a corpus with a name over a corpus on your disk.** The figures above
-  are re-derivable by anyone from `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`,
-  which is the cheap half of what #132 and #154 were asking for. The Europe PMC
-  draw is not, and the discrepancy it exposed is **#158** — both of which the
-  JATS corpus redraw on this branch has since done, drawing the identifiers
-  from that same package. It also found the half this lesson does not cover:
-  the package's *bytes* are an archive rendition and not what the parser is
-  fed, so naming the artifact is necessary and not sufficient.
-- **A text scan over markup can be exact, if the argument is closed.** In
-  well-formed XML a literal `<` can only open markup, so comment, CDATA,
-  processing instruction and DOCTYPE internal subset are the *complete* set of
-  places `<sub-article` is not a start tag — an argument, not a list of hazards
-  someone thought of. Say which population each guard has, and *run* it: the
-  imbalance path measures empty over all 97,909 articles, while the comment
-  token fires on 3 real deposits.
-- **A count is of what you grepped for, not of what the code does.** The first
-  cut of this fix said `<response>` measured 0; that was a grep for
-  `<sub-article`. Running the lexer over the *whole* archive rather than over
-  the carriers found 5 more articles changed than any claim accounted for —
-  genuine top-level `<response response-type="reply">` deposits. Rare, not
-  absent, and the difference is the whole argument for keeping it.
-- **Ask which line of the fixture the assertion depends on.** Eleven mutants,
-  ten caught; the survivor was the doctype token, and the fault was the
-  fixture — its entity held a *self-closing* `<sub-article/>`, which another
-  rule already refuses, so the test passed whether or not the doctype was lexed
-  at all. Review found the same shape twice more: the comment, CDATA and PI
-  fixtures each asserted `"Ours" in stripped`, and each killed its mutant by
-  `TypeError` rather than by content, because the fixture's element was
-  *unbalanced* — on the balanced shape Springer actually deposits, the mutant
-  lives. Exact equality, which one test in the class already used, is the fix.
-- **"Exact" is a claim, and the review is where it gets tested.** The lexer
-  argued its own completeness from "a literal `<` can only open markup". True,
-  and the converse does not hold for `>`, which is legal unescaped in an
-  attribute value and a system literal, nor for `]` in an entity's replacement
-  text — so a well-formed `<sub-article specific-use="a>b"/>` and a subset
-  carrying `]` each cost the article its whole full text. Fail-closed, measured
-  0 in both corpora, and still a refusal on a document the publisher deposited
-  correctly. Both branches now step over quoted literals, and both shapes have
-  a test. Where the argument survived intact it was scoped instead: an
-  unmatched *end* tag is harmless only **at depth 0**, the depth not being
-  matched against the element name.
-
-**PR #153 settled #151** (no behaviour) — the prospective half of
-`_inside_mixed_citation`, mechanised as
-`TestOnlyAnAccumulatingElementReadsTheBuffer`. Five rules, argued in full in
-`CLAUDE.md`: key a net on the thing and not on the names it currently has;
-define an exemption by what a statement *does*, not by what it binds; ask for
-containment, not overlap; a positive control sized as a canary decays, so it
-carries the whole inventory as a floor; and a control must not be judged
-against production data it does not own. That session also measured
-`<article-id>`'s reachability guard deciding *nought* tests, filed as **#152**.
+- **#112** (PR #155, funder figures). Eight claims gave a measurement as the
+  reason for a token's inclusion and nothing checked *them*. Four numbers were
+  wrong together because they were self-consistent with an uncommitted corpus
+  revision — **when several figures are wrong at once, look for the one
+  cause** — and every one had been copied into `docs/manual/transparency.md`,
+  so **correct a figure everywhere it is read**, not where the issue points.
+  A test can take the comment as its *input* rather than a copy of it. Left
+  behind: **#154, #156, #157**.
+- **#119** (PR #159, article-only full-text scan). A reviewer's prose answered
+  for the article, because `TransparencyAnalyzer` regexes `fullTextXML` itself
+  and never sees `JATSParser`. Two lessons beyond the rules above: **a text
+  scan over markup can be exact if the argument is closed** — in well-formed
+  XML a literal `<` can only open markup, so comment, CDATA, PI and DOCTYPE
+  subset are the *complete* set of exceptions — and **"exact" is a claim the
+  review tests**, which is where the converse for `>` and `]` was found. Left
+  behind: **#160, #161**.
+- **#151** (PR #153, no behaviour). `_inside_mixed_citation`'s prospective
+  half, mechanised as `TestOnlyAnAccumulatingElementReadsTheBuffer`. Key a net
+  on the thing and not on the names it currently has; define an exemption by
+  what a statement *does*, not what it binds; ask for containment, not
+  overlap; a positive control sized as a canary decays, so it carries the
+  whole inventory as a floor. Left behind: **#152**.
 
 **A closing keyword in prose closed an issue nobody decided — four times, and
 the fourth was the commit warning about the other three.** A commit body saying
@@ -213,34 +158,90 @@ the fact: after every merge that mentions an issue in prose, diff
 `gh issue list` against the commit's own list of what it filed. That check is
 what found #160 reopened here, one session late.
 
-**Next up: #162 and #147 are the two now carrying a measured population and
-nothing else in the way** — #162 is the `<label>` premise the redraw
-overturned, #147's `<alternatives>` objection measures 1,087 formulas carrying
-both encodings. That numerator counts **both** formula kinds —
-`_record_formula_alternatives` is called from the `<disp-formula>` arm and the
-`<inline-formula>` arm alike — so it is 9.8% of the 11,136 formulas the counter
-actually walks (1,915 `<disp-formula>` + 9,221 `<inline-formula>`), and **no
-per-`<disp-formula>` share is derivable**: the corpus does not record the
-split. It was written here as "57% of every `<disp-formula>`", which is 1,087
-over the narrow denominator alone. Then **#164 — the one thing the review of
-PR #163 left open, and the only new issue that is not already fixed on that
-branch: the figure-side graphic walk is still unscoped, and the argument that
-this costs nothing is refuted by the branch's own corpora (7 nested `<fig>`,
-three foreign owners). Fixing it re-measures #117 and moves every cited
-share.** Then **#124, #128, #137,
-#142–#145, #150 and #152 in
-`fulltext`, #160 and #161 in `transparency`, the older non-JATS
-ones (#86, #92, #94, #103), the
-funder corpus (#154, #156, #157), or Phase 3 of the bmlibrarian port, whose
-every row needs a design conversation.** The JATS corpus redraw is **done on
-this branch** — #132, #138 and #158 are closed and #142, #143, #147 and #150
-have their populations, of which **#142, #143 and #150 measure empty**, so
-those three are blocked on a stratified draw rather than on effort. The funder
-redraw is still one job answering three. #160 is the cheapest self-contained fix on the list: the
+**This session settled #162, and the finding was that the issue was wrong.**
+It was filed as the `<label>` direct-child premise being violated — 6,937
+direct against 6,944 "carrying one anywhere" — with a bounded descendant
+search as the likely remedy. `exhibits_with_descendant_label` counts an
+exhibit holding **any** `<label>` in its subtree, so that difference is the
+set such a fallback would *fire* on, never the set carrying its own label
+indirectly. Fetching all seven named articles settled it: each is a
+`<table-wrap>` with no `<label>` and no `<caption>`, every label below it a
+`<table-wrap-foot><fn>` marker or a `<list-item>` bullet in a cell — the two
+containers #116 was about — so the proposed remedy would have corrupted **7 of
+7**. Four carry ids their publisher reserves for an unnumbered table. Four
+lessons, and the first three are this repo's own, caught inside the instrument
+built to enforce them.
+
+- **A count is of what you looked for.** The counter's name said `descendant
+  label`; the premise needed `its own label, sitting indirectly`. Nothing
+  reconciled the two, and a verdict line printed `PREMISE VIOLATED` off the
+  difference. **Before acting on a counter, read its increment site**, not its
+  name and not the report.
+- **A verdict an instrument cannot support should not be printed — but only
+  the half it cannot support.** `PREMISE VIOLATED` was an over-claim and is
+  gone from both sections. `PREMISE HOLDS` was not: `direct` is a subset of
+  `descendant` by construction, so a zero difference *does* prove no exhibit
+  carries its label indirectly. Removing both left the report with no
+  content-level line that can change between draws, so the sound direction is
+  restored as a statement of what was measured rather than a verdict word. The
+  zero is not luck either — on the recent corpus the `<caption>` equality
+  (6,938 / 6,938) is the result that certifies #123's premise.
+- **The same rule stated on one branch is not applied on the next.** `to_html`
+  has invented no heading for an unsectioned `<body>` since #30. It was
+  inventing `Figure {i + 1}` for an exhibit four hundred lines away.
+- **An issue's own remedy is a hypothesis.** #162 named three candidates and
+  leaned toward the one its own population refutes. The fetch cost ten
+  minutes.
+- **A zero over an absent population is not a clean result.** Restoring the
+  sound all-clear immediately created the next version of the same error: the
+  back-filled window carries no `<caption>` at all, so its zero satisfied the
+  test vacuously and printed a confirmation the draw cannot give. Both
+  sections now separate "no exhibit holds one below" from "this draw carries
+  none anywhere", and the second is deliberately *not* worded `NOT MEASURED`,
+  which is reserved for a row generation predating a counter — the instrument
+  not looking and the element being absent are different claims.
+
+Two follow-ups are filed rather than fixed here. **#172**: `to_html`'s output
+moved, and `FullTextCache` carries no version stamp, so an existing cache
+serves the old rendering forever with nothing able to tell. **#173**: a
+figure's `alt` now duplicates its own `<figcaption>` verbatim, so AT announces
+the caption twice — an accessibility decision worth taking deliberately rather
+than folding into a fix about invented numbers. The cross-platform spec in
+`bmlibrarian_lite` still specifies the old behaviour as normative pseudocode
+(that repo's #197).
+
+What it changed is a different, larger population that was never the issue's
+subject: **121 exhibits of 7,058, in 83 of 997 recent articles**, carry no
+`<label>` of their own and were rendered with an invented number that, being the
+index, collides with a real one. **Moves stored values** in the cached HTML.
+
+**Next up: #147, then #164.** #147's `<alternatives>` objection measures 1,087
+formulas carrying both encodings. That numerator counts **both** formula kinds
+— `_record_formula_alternatives` is called from the `<disp-formula>` arm and
+the `<inline-formula>` arm alike — so it is 9.8% of the 11,136 formulas the
+counter actually walks (1,915 `<disp-formula>` + 9,221 `<inline-formula>`),
+and **no per-`<disp-formula>` share is derivable**: the corpus does not record
+the split. It was written here as "57% of every `<disp-formula>`", which is
+1,087 over the narrow denominator alone, and that same stale share sits in a
+comment on the issue with a correction beneath it. Then **#164 — the figure-side
+graphic walk is still unscoped, and the argument that this costs nothing is
+refuted by the committed corpora (7 nested `<fig>`, three foreign owners).
+Fixing it re-measures #117 and moves every cited share, so it is a redraw
+rather than a code edit.** It is also where the per-exhibit label-owner counter
+belongs: #162's spot-check of seven articles is a live one, and a counter
+recording what owns the labels inside an unlabelled exhibit would make it
+re-derivable at the next redraw rather than adding a dead field now. Then
+**#124, #128, #137, #142–#145, #150 and #152 in `fulltext`, #160 and #161 in
+`transparency`, the older non-JATS ones (#86, #92, #94, #103), the funder
+corpus (#154, #156, #157), or Phase 3 of the bmlibrarian port, whose every row
+needs a design conversation.** Of the populations the redraw delivered,
+**#142, #143 and #150 measure empty**, so those three are blocked on a
+stratified draw rather than on effort. The funder redraw is still one job
+answering three. #160 is the cheapest self-contained fix on the list: the
 remedy it prefers — match the element name when the depth closes — needs no
-invented constant and no corpus. See "Open GitHub issues" below for which is blocked on
-what; almost none is a drive-by, and the ones that lose content are blocked on
-a modelling decision rather than on effort.
+invented constant and no corpus. See "Open GitHub issues" below for which is
+blocked on what; almost none is a drive-by, and the ones that lose content are
+blocked on a modelling decision rather than on effort.
 
 This file briefs the next session on what is done, what is still open, and the
 conventions to keep. Update it whenever a session materially changes the plan;
@@ -268,10 +269,9 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
   questions are independent — the version number answers the API question,
   never the data one, and a downstream reading only the number must still read
   this list.
-- **Tests: 2837 passing + 63 skipped on `main`** (`uv run pytest tests/ -q`,
-  measured 2026-08-31, after PR #159) — 32 of them are
-  `TestANestedArticleIsNotThisArticles` in `test_transparency.py`, on the lexer
-  and on what the scans then see. The PostgreSQL half
+- **Tests: 3017 passing + 63 skipped on `main`** (`uv run pytest tests/ -q`,
+  measured 2026-09-02, after PR #163), and **3028 + 63** on
+  `fix/162-unlabelled-exhibit-number`. The PostgreSQL half
   has not been re-run since the SQL last moved; the
   last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the
   #105 branch. Of the 63 default skips, 61 are the PostgreSQL
@@ -295,9 +295,9 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression, not expected staleness. The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release time; **62 are outstanding for the next release** — 27 `ROADMAP.md`
-  rows and 35 spots across `docs/manual/publications.md` (13), `fulltext.md`
-  (15), `templates.md` (3) and `transparency.md` (4). Recounted 2026-09-02 with
+  release time; **64 are outstanding for the next release** — 28 `ROADMAP.md`
+  rows and 36 spots across `docs/manual/publications.md` (13), `fulltext.md`
+  (16), `templates.md` (3) and `transparency.md` (4). Recounted 2026-09-02 with
   `grep -ic unreleased`; the figure is measured, not maintained, so recount it
   rather than adjusting it. Grep case-insensitively for `unreleased` rather
   than for `(unreleased)`: three of 0.10.0's thirteen were spelled
@@ -322,23 +322,24 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 
 ### Open GitHub issues
 
-**Twenty-seven open** as this file is written (verified with `gh issue list`
-2026-09-02, after the corpus redraw settled 132, 138 and 158 and filed
-#162, and after the review of PR #163 filed #164-#170): #86, #92, #94, #103,
+**Twenty open** as this file is written (verified with `gh issue list`
+2026-09-02, after PR #163 merged, after #165-#170 were closed on its merge,
+and with #162 settled on the open PR): #86, #92, #94, #103,
 #124, #128, #137, #142, #143, #144, #145, #147, #150, #152, #154, #156, #157,
-#160, #161, #162, #164, #165, #166, #167, #168, #169, #170. Every one was
+#160, #161, #164. Every one was
 found by review or measurement rather than by a
 failing test, and **none of them loses records** — though **#124** loses an
 exhibit's footnotes, **#147** loses a formula from the prose that contains it,
 **#150** renders a note-only reference as an empty bullet, and **#128** would
 lose every figure image in a document binding XLink to another prefix.
 
-**#165-#170 are already fixed on the PR #163 branch** and are filed as the
-permanent handle for why that code looks the way it does — the shape every
-`(issue #N)` comment in this repo takes. **#164 is the one that is not
-fixed**: scoping the figure-side graphic walk means re-measuring #117 and
-moving every cited share, which is a redraw rather than a code edit, so PR
-#163 corrects the refuted premise in prose and leaves the scoping open. Count
+**#165-#170 were fixed on the PR #163 branch and closed when it merged** —
+they stay the permanent handle for why that code looks the way it does, which
+is the shape every `(issue #N)` comment in this repo takes, and closing them
+does not take that away. **#164 is the one PR #163 did not fix**: scoping the
+figure-side graphic walk means re-measuring #117 and
+moving every cited share, which is a redraw rather than a code edit, so that
+PR corrects the refuted premise in prose and leaves the scoping open. Count
 this against the repo before trusting it: the line has been wrong in three
 consecutive sessions, and one further way is an issue **closed as COMPLETED
 without being fixed**, which no count of open issues catches — that has now
@@ -370,70 +371,51 @@ session needs to *choose* between them.
 #143, #147 and #150 each have the population they were waiting for. What it
 cost and what it found is worth carrying forward.
 
-*The sample and the bytes had to come from different places.* The plan was to
-draw both windows from a PMC OA baseline package so a reader could re-derive
-the identifier list from `(packages, window, target, seed)`. Midway the plan's
-own instrument disproved its premise: a package holds an **archive** rendition
-while `FullTextService` feeds the parser Europe PMC's `fullTextXML`, and the
-two differ on exactly the populations being cited — `last_is_thumb` **differs
-in 156 of 300 compared articles, and where it differs the archive measures 0
-against 781 served**. A corpus drawn *and* measured from the package would
-have read #117's whole ranking rule as dead code. So the sample is
-package-defined and deterministic and the bytes are Europe PMC's
-(`--measure-europepmc`), with `tests/data/jats_exhibits.rendition.json` as the
-committed evidence. **Check the rendition before trusting an offline corpus**
-is the transferable lesson, and it generalises past JATS.
+*The sample and the bytes had to come from different places*, which is the
+finding, and `CLAUDE.md` carries it in full. A PMC OA baseline package holds
+an **archive** rendition while `FullTextService` feeds the parser Europe PMC's
+`fullTextXML`, and the two differ on exactly the cited populations —
+`last_is_thumb` **differs in 156 of 300 compared articles, and where it differs
+the archive measures 0 against 781 served** — so a corpus drawn *and* measured
+from the package would have read #117's ranking rule as dead code. The sample
+is package-defined, the bytes are Europe PMC's, and
+`tests/data/jats_exhibits.rendition.json` is the evidence. **Check the
+rendition before trusting an offline corpus**, which generalises past JATS.
+Three things to carry, all of them rules rather than figures.
 
-*And the second lesson is the first one's own rule, which this branch broke
-while writing it down.* The first account of that finding said "archive 0
-against 641 over 294 identifiers" and attached a mechanism: the archive
-deposits one bare `<graphic xlink:href="…-g001">` per figure where Europe PMC
-synthesises an `.jpg`/`.gif` pair. Both halves overreach.
-`rendition_delta` records a field **only where the renditions disagree**, so
-summing deltas gives a sum over disagreements and the archive's total over all
-300 is not in the artifact at all; and `PMC12169732` deposits its own four
-thumbnails as `specific-use="thumbnail"` where Europe PMC re-labels them
-`content-type="thumb"`, both measuring four — so there is no one mechanism to
-name. That article was in the *first* redraw's held sample and is in neither
-the corpus nor the artifact now, so it is cited as a **live spot-check**
-(re-run 2026-09-02) — which is the caveat's own point: the artifact carries
-disagreements alone, so no archive total can be read off it whatever one
-article does. **A count is of what you looked for, not of what
-exists**, and it was the person writing that rule down who got it wrong. The
-finding is decisive either way; only the statement was too big.
+- **The artifact records disagreements only**, so no archive *total* can be
+  read off it. The first account of this finding gave one, and named a
+  mechanism (`PMC12169732` refutes it, and is a live spot-check rather than a
+  corpus row). **A count is of what you looked for** — got wrong by the person
+  writing that rule down, and again one session later in the same instrument,
+  which is #162.
+- **Every figure moved for three reasons at once** — a different sample, a
+  different rendition and a scoped walk — so no movement may be attributed to
+  any one of them, the scoping least of all, since it is the only one whose
+  effect the corpus records (`unscoped`). Both corpora are 997 measured
+  articles of 1,000 at `seed 0`, recent from
+  `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` (2023-2025) and
+  back-filled from `…PMC002xxxxxx…` (1996-1998).
+- **Three claims did not survive, and the first was itself wrong.** The
+  `<label>` premise was reported violated; that reading is #162, corrected on
+  the open PR. #127's image-only-table population cannot be re-measured, the
+  back-filled window holding **0 `<table-wrap>` in 997 articles** — that its
+  1996-98 material is scanned page images is an *inference* from 0 tables
+  beside 627 figures and 3,873 `.png` deposits, so quoting that 0 as a
+  measurement would be the defect this work removed. And the abstract-branch
+  guard's "44 exhibits, none titled" is withdrawn as unre-derivable.
 
-*Every figure moved for three reasons at once* — a different sample, a
-different rendition and a scoped walk — so no movement may be attributed to
-any one of them, the scoping least of all, since it is the only one whose
-effect the corpus records (`unscoped`).
-Both corpora are 997 measured articles of 1,000 at `seed 0`, recent from
-`oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` (2023-2025) and
-back-filled from `…PMC002xxxxxx…` (1996-1998).
-
-*Three claims did not survive, and one of them is a defect.* The `<label>`
-direct-child premise is **violated** on the served rendition — 6,937 of 6,944,
-so 7 exhibits in 7 articles lose their label to an invented `Figure {i + 1}`,
-which is #116's own symptom from the other side. Three earlier draws measured
-it full and none is re-derivable, so this is real and not an archive artifact;
-it has a ROADMAP row and wants a decision about a fallback, not a prose repair.
-#127's image-only-table population cannot be re-measured — the redrawn
-back-filled window holds **0 `<table-wrap>` in 997 articles**, `oa_comm`'s
-1996-98 material being, by inference from 0 tables beside 627 figures and
-3,873 `.png` deposits rather than by any counter, scanned page images — so its
-evidence (11 of 93) is
-historical, and quoting the 0 as a measurement would be the exact defect this
-work removed. And the abstract-branch guard's "44 exhibits, none titled" was an
-ad-hoc walk over the replaced draws with no counter in the sampler, so it is
-withdrawn as unre-derivable rather than restated.
-
-*#158 is answered by naming the population.* "Carries a region" and "loses body
-text to one" are different claims, the first bounding the second. The
+*#158 is answered by naming the population.* "Carries a region" and "loses
+body text to one" are different claims, the first bounding the second. The
 re-derivable figure is the first: **29 of 997 (2.9%)** recent articles carry a
 nested-article region (145 regions), 0 of 997 back-filled, agreeing with
-`transparency`'s 3,382 of 97,909 (3.45%) over the same `oa_comm` package. The 4
-of 249 (1.6%) counted peer-review deposits and the 288 of 1,022 (28.2%) counted
-articles losing body text, both on draws that are in no commit. All four sites
-now say which population they are of.
+`transparency`'s 3,382 of 97,909 (3.45%) over the same package — across a
+rendition difference rather than as one measurement, since the served bytes
+*add* regions in 5 of 300 compared articles. The 4 of 249 counted peer-review
+deposits and the 288 of 1,022 (28.2%) counted articles losing body text, both
+on draws in no commit. The rate is genuinely a per-publisher property, so
+28.2% could be honest for a draw weighted to PLOS/eLife/BMJ/F1000; what made
+it a defect is that three of the four draws cannot be re-taken.
 
 **#128 is weaker than filed**: all 13,617 `<graphic>` hrefs in the two redrawn
 corpora use the `xlink` prefix bound to the XLink namespace, so the
