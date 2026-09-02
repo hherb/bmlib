@@ -167,9 +167,21 @@ class JATSTableInfo:
     field directly, and it is the only way to get at it: ``FullTextService``
     discards the ``JATSArticle`` and caches the rendered HTML alone, so for a
     service consumer that renderer choice is permanent. Both populations are
-    now measured over the two committed draws (600 articles, 755 tables): the
-    image is the *only* rendition for 11, all in the back-filled window, and
-    sits beside a ``<table>`` for 5, all in the recent one.
+    measured over the two committed draws (1,994 articles, 2,448
+    ``<table-wrap>``, every one of them in the recent window): the image is
+    the *only* rendition for **8**, and sits beside a ``<table>`` for **84**.
+
+    Those figures replace the pre-#138 draw's — 600 articles, 755 tables, 11
+    image-only (all back-filled) and 5 carrying both (all recent) — which
+    survived that redraw here alone: the reconciliation walked
+    ``jats_parser.py``, ``CLAUDE.md``, ``ROADMAP.md``, ``CHANGELOG.md`` and
+    ``docs/manual/``, and not this docstring. It had come to say the opposite
+    of the evidence in both directions, since the back-filled window holds
+    **no** ``<table-wrap>`` at all and so can supply no image-only table,
+    while "both" is the commoner rendition rather than the rarer.
+    ``TestTheCitedPopulationsAreWhatTheCorporaHold`` asserts the corpus
+    against literals in the test, so it cannot catch prose drifting away from
+    it — a figure has to be corrected everywhere it is read (#112).
 
     ``graphic_url`` is ``str | None`` while ``html_content`` beside it is
     ``str``, which is deliberate on both counts: ``html_content`` is rendered

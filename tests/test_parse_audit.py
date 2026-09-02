@@ -86,6 +86,20 @@ class TestEachImbalanceIsReportedWithItsCost:
 
         assert "<caption>" in message
 
+    def test_a_formula_left_open_is_reported(self):
+        """It costs two things, and the line names both — issue #147.
+
+        A formula emits its one chosen encoding at its end tag, so one left
+        open reaches the prose not at all; and ``characters()`` withholds
+        every cell's text while one is open, so the rendered table stops
+        being filled too.
+        """
+        [message] = unwind_diagnostics(ParseUnwindState(open_formulas=1))
+
+        assert "<inline-formula>/<disp-formula>" in message
+        assert "never emitted" in message
+        assert "lost its text" in message
+
     def test_a_contrib_group_left_open_is_reported(self):
         [message] = unwind_diagnostics(ParseUnwindState(open_contrib_groups=1))
 

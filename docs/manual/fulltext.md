@@ -467,6 +467,7 @@ pass.
 | `table-wrap/graphic` | A table deposited as an image — see below |
 | `ref-list/ref/element-citation` | Structured references |
 | `ref-list/ref/mixed-citation` | Structured references, plus the deposited string — see below |
+| `inline-formula` / `disp-formula` | Formulas, as one chosen encoding — see below *(unreleased, #147)* |
 | `bold/italic/sub/sup/monospace` | Inline formatting |
 | `xref` | Cross-reference anchor links |
 | `sub-article`, `response` | **Ignored** — a whole article of its own, see below |
@@ -593,6 +594,61 @@ pass.
 > `body_sections`. Nothing inside a figure or table counts towards
 > [`has_body`](#jatsarticle), so a `<body>` carrying only a captioned figure
 > still reports no body.
+
+> **A formula reaches the prose that contains it** *(unreleased, #147)*. A
+> `<tex-math>` used to be taken from the sentence around it and dropped, and a
+> `<disp-formula>` dropped outright — LaTeX, MathML and the `(1)` that body
+> prose cross-references. Both now reach `body_sections` and the rendered
+> HTML, as **one** encoding: a formula deposited as both LaTeX and MathML (the
+> common case where LaTeX appears at all) would otherwise print twice.
+>
+> What you get:
+>
+> - **LaTeX** where the deposit carries a `<tex-math>`, as the expression
+>   alone. Publishers deposit a whole LaTeX document — `\documentclass`, a run
+>   of `\usepackage` lines, then `\begin{document}` — and bmlib extracts what
+>   is between `\begin{document}` and `\end{document}`, taking whichever of the
+>   two markers is present so a truncated deposit cannot leak its preamble into
+>   your prose. The delimiters the depositor wrote are kept, **except that a
+>   display pair (`$$…$$`, `\[…\]`) on an *inline* formula is re-spelled
+>   `$…$`**: 98.6% of inline deposits carry `$$…$$`, which is the converter's
+>   artifact rather than a statement about context, and left alone it renders a
+>   multiplication sign in a caption as `$$\times$$`. A formula that stands
+>   alone keeps whatever pair it was given. Where there is no pair, one is
+>   added to match the context.
+>
+>   Where a formula carries several `<tex-math>`, the first that renders to
+>   anything is used — they are alternative encodings of one expression, not
+>   parts of it.
+> - **The MathML flattened to its leaf text** otherwise, undelimited, exactly
+>   as an inline MathML formula has always reached the prose. This is lossy:
+>   `<mml:mspace>` and `<mml:mfenced>` carry their spacing and brackets as
+>   attributes, so a flattened formula can run words together or lose its
+>   parentheses. It is what the document holds, not a rendering of it.
+> - **Nothing** for a formula deposited as an image alone — bmlib invents no
+>   placeholder and no bare equation number for it.
+>
+> Where the equation lands depends on where it was deposited. A
+> `<disp-formula>` inside a `<p>` joins that paragraph, because emitted
+> separately it would appear *before* the paragraph it interrupts; one
+> deposited as a block child of a `<sec>` becomes a paragraph of its own,
+> prefixed by its `<label>`. **A merged formula carries no number** — inside a
+> sentence a bare `2` reads as part of the expression rather than as the
+> equation's number.
+>
+> A formula inside a table cell reaches `html_content` the same way, as its one
+> rendition. Before this change the cell was given the LaTeX document
+> verbatim, preamble and all. **A display formula in a cell does keep its
+> number**, unlike one merged into a sentence: a cell is a slot rather than a
+> sentence, and in every measured case the number is the column's own datum —
+> a reaction- or equation-number column the body prose refers back to.
+>
+> Two limitations worth knowing. A display equation deposited somewhere bmlib
+> cannot file it — an appendix with no `<sec>`, or a float with no `<caption>`
+> open — is dropped, and logged once per article at `WARNING` (issue #177). And
+> where a formula carries both encodings, the LaTeX replaces the MathML text
+> that previously reached the prose; that is higher fidelity for a renderer and
+> worse for a consumer reading the text as prose, which is issue #178.
 
 > **A malformed span costs its own row, not the article** *(unreleased,
 > #129)*. `colspan` is CDATA in JATS, so `colspan="two"` — and

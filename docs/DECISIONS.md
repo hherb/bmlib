@@ -316,6 +316,131 @@ must not be re-done.
   `test_a_stub_with_no_article_raises` and
   `test_a_body_less_article_with_an_abstract_is_returned`.
 
+## fulltext — a formula is not one more `_INLINE_ELEMENTS` member (#147)
+
+**Do not "fix" a dropped formula by adding `<tex-math>` to
+`_INLINE_ELEMENTS`,** and do not print an equation number on a formula that
+was merged into a sentence. Both look like the one-line version of the fix and
+both are refuted by the corpus.
+
+*The merge prints the formula twice.* 1,087 formulas in the committed recent
+corpus and 188,473 across PMC's `oa_comm_xml.PMC012xxxxxx` baseline package
+carry a LaTeX **and** a MathML encoding of one expression. MathML accumulates
+no buffer, so its leaf text is already in the formula's own; merging the LaTeX
+back as well emits both. The encodings are therefore held and one is chosen at
+the formula's end tag, which also makes the choice independent of the order
+they were deposited in — and that order does vary, though **say which
+population that is**: 4,377 of the package's 188,473 both-encoding formulas
+are MathML-first, sitting in **37 of its 97,909 articles** at ~118 apiece. It
+is a house style, not a rate; a 997-article draw expects none, a random
+4,000-article one measured 2, and the rule stands on the content model
+admitting either order rather than on the count.
+
+*And it prints a LaTeX document, not an expression.* 99.9% of 4,422 sampled
+deposits are `\documentclass[12pt]{minimal}`, a run of `\usepackage` lines,
+then `\begin{document}` — some 300 characters of preamble per formula, which
+is worse than the drop it replaces. Every one of the 7,769 sampled
+*document-wrapped* deposits carries exactly one
+`\begin{document}`/`\end{document}` pair, and so do 147
+of 147 in two articles fetched live from Europe PMC, so the body is
+extractable; 96.0% of those bodies already carry `$$…$$` and 3.7% `$…$`, so
+the depositor's own delimiters are kept rather than a second pair added.
+
+*MathML needs no membership either*, and deliberately has none: it is why the
+change is small, and it is what makes a MathML deposit bound to a prefix other
+than `mml` keep exactly its old behaviour instead of depending on a literal
+prefix match the way #128 does.
+
+**The equation number is printed only where the equation stands apart.** A
+`<disp-formula>` inside a `<p>` is merged into that paragraph — 116,623 of the
+package's 150,598 (77.4%) sit there, and emitted separately each would land
+*ahead* of the paragraph it interrupts, the enclosing `<p>` not having closed.
+Printing the `<label>` there produced, over 880 local articles,
+`'as shown in eqn (2):2 τ = kn'`, where `2 τ` is a coefficient the deposit
+does not contain, and — for consecutive equations —
+`'NH3 + H2O → NH4+ + OH−2 Al3+ + 3OH− → Al(OH)33 Al(OH)3'`, where each number
+welds onto the previous formula and changes the chemistry. A corruption is
+worse than a blank (#116, #162), and the prose introducing a merged equation
+names its number in nearly every case anyway.
+
+**A merged display formula gets one space either side; an inline one gets
+whatever the deposit gave it.** The asymmetry is the point: a block deposit
+has no spacing of its own to keep (the renderer supplies the line break), so
+merged verbatim it welds onto the prose; an inline formula's separation is
+often written *inside* the element — `<inline-formula> k </inline-formula>mer`
+— and normalising without re-emitting it welded `'EndMatrix represents'` and
+`'−minus 0.505'` into single words. That second rule is the module's own,
+already written down for `_text_with_formatting`.
+
+**But a cell is a slot, not a sentence, and there the number stays.** The
+paragraph above is about prose, and applying it to a `<td>` was a regression
+found in review: `characters()` used to deliver the label to the cell, so
+withholding the formula's text took the equation number with it. All 40
+labelled display formulas measured in a cell — 8 of the package's 97,909
+articles — sit in a cell whose entire content is the number and the equation.
+PMC12164272's Table 2 is a reaction-number column whose rows the body prose
+cross-references by number; PMC12120668's tables 4, 6, 7 and 8 carry 18
+equation numbers the same way. There is no surrounding sentence for the number
+to weld into, which is the whole of why the prose rule does not reach it.
+
+**Do not "keep the depositor's delimiters" for an inline formula.** The first
+cut did, on the argument that re-spelling would invent a claim about the
+deposit. It does not: measured over one Europe PMC package, **98.6% of 20,251
+inline `<tex-math>` bodies carry `$$…$$`** (86 carry `$…$`, 203 none), and an
+inline formula cannot genuinely be 98.6% display math — the
+`minimal`-documentclass converter emits that wrapper for both contexts, so the
+pair carries no information about which one. Left verbatim it rendered `'×'`
+as `'$$\times$$'` inside a figure caption. A display pair on an inline formula
+is therefore re-spelled `$…$`. The rule is **one-directional** — an inline pair
+on a display formula is left alone, because a display delimiter inside a
+sentence breaks the line while an inline one on a formula standing alone merely
+under-styles it — and a body carrying several delimited runs (`$a$ + $b$`) is
+left alone too, its outer characters not being one pair around one expression.
+
+**Read the two document markers independently.** Requiring both let a deposit
+carrying only `\begin{document}` fall through to the bare-expression path,
+which then delimited the preamble and merged it into the prose:
+`'$$\documentclass…\begin{document}$$E=mc^2$$'` — the outcome this whole entry
+exists to prevent, *plus* the doubled pair the delimiter rule prevents, in one
+string. 0 unpaired deposits measured in both corpora, so this is severity and
+not frequency.
+
+**Among several `<tex-math>`, the first that renders wins.** `<alternatives>`
+holds alternative encodings of one expression, so joining them printed it
+twice — the outcome this entry's opening argument says the design exists to
+prevent. And the list is tested for a *rendition*, not for presence: an empty
+or preamble-only deposit used to short-circuit the buffer that held the MathML
+flattening, so `'Before Vmax after.'` became `'Before after.'`. Both
+populations measure **0** across both corpora and 0 of 501,132 formulas in the
+package, so both rules are stated rather than confirmed.
+
+**A rendition that reaches nowhere is counted, not dropped.** `_append_prose`
+has four branches and no fallthrough, so a standalone `<disp-formula>` in an
+unsectioned `<back>` (192 in 23 of 97,909 articles), or one the merge
+allow-list sends to the paragraph path from inside a float with no `<caption>`
+open (0 measured), is built and lost. Neither is a regression — `main`
+discarded the whole element — which is exactly why it is counted:
+`formulas_dropped` reports once per article at WARNING, the granularity and
+level `rejected_spans` settled for #129. Routing them is **#177**, left open
+because giving `<back>` an implicit section would move every unsectioned
+`<back>` `<p>` as well, which reaches `has_body`.
+
+**Still open: whether LaTeX should win for a both-encoding *inline* formula
+at all** (#178). For a display formula the preference is unambiguous — `main`
+dropped the element whole — but inline it *replaces* text that already reached
+the prose correctly, in **20,046 formulas against the 205 it recovers**
+(8,000-article package draw). #174 is the case for it (flattened MathML loses
+spacing and brackets); the case against is that `body_sections` is read as
+prose by consumers that do not render LaTeX.
+
+Pinned by `test_jats_parser.py::TestAFormulaReachesTheProseThatContainsIt`
+(30 tests) and `::TestTheFormulaRulesTheReviewCorrected` (15 more, every one
+mutation-verified), and by the `formula routing (#147)` counter generation in
+`scripts/sample_jats_exhibits.py`, which is what makes the three package
+populations above re-derivable at the next redraw — they are **not**
+re-derivable from the committed corpora today, which carry no row for those
+five counters.
+
 ## fulltext — an exhibit with no `<label>` gets no fallback search (#162)
 
 **Do not add a descendant search when an exhibit carries no direct-child

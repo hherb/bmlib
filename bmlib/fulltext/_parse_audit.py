@@ -88,6 +88,11 @@ class ParseUnwindState:
         open_captions: ``<caption>`` owners still on the stack. While one is
             open, ``<p>`` and ``<title>`` are caption text rather than the
             section's prose and heading.
+        open_formulas: ``<inline-formula>``/``<disp-formula>`` frames still on
+            the stack. A formula emits its one chosen encoding at its end tag,
+            so one left open never reaches the prose at all — and, while it is
+            open, ``characters()`` withholds every cell's text from the
+            rendered table, so the imbalance costs the rest of that table too.
         open_contrib_groups: ``<contrib-group>`` role declarations still on
             the stack. A contributor inherits the innermost, so a stale entry
             hands a later ``<contrib>`` a role from a group that had closed.
@@ -131,6 +136,7 @@ class ParseUnwindState:
     open_figures: int = 0
     open_tables: int = 0
     open_captions: int = 0
+    open_formulas: int = 0
     open_contrib_groups: int = 0
     open_contribs: int = 0
     unfilled_author_slots: int = 0
@@ -183,6 +189,12 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
         messages.append(
             f"{state.open_captions} <caption> still open: prose after the imbalance "
             "was filed as caption text rather than as the section's"
+        )
+    if state.open_formulas:
+        messages.append(
+            f"{state.open_formulas} <inline-formula>/<disp-formula> still open: their "
+            "formulas were never emitted, and every table cell after the imbalance lost "
+            "its text"
         )
     if state.open_contrib_groups:
         messages.append(

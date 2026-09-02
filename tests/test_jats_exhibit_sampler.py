@@ -1231,6 +1231,124 @@ class TestTheSamplerDoesNotShareTheParsersPredicates:
         assert row.alternatives_archival == 1
 
 
+class TestTheFormulaRoutingCountersMeasureWhatTheRulesRestOn:
+    """The generation added with #147's fix, and the trap it was caught by.
+
+    A counter's *scope* has to be the rule's scope. The first cut counted
+    which encoding came first inside an ``<alternatives>``, where the deposit
+    convention is near-uniform — 5,968 LaTeX-first against 2 over 4,000
+    package articles — while the parser holds the encodings until the
+    **formula** closes, so what decides whether a streaming rule could work is
+    which arrives first anywhere inside it. Counting the narrower thing would
+    have printed "order never varies" for a rule that exists because it does.
+    """
+
+    def test_where_a_display_formula_is_deposited_is_counted(self):
+        """What ``_DISPLAY_FORMULA_MERGE_PARENTS`` rests on: a formula inside a
+        ``<p>`` must join it, one inside a ``<sec>`` must not."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                "<sec><p>text<disp-formula><tex-math>a</tex-math></disp-formula></p>"
+                "<disp-formula><tex-math>b</tex-math></disp-formula></sec>"
+            ),
+        )
+
+        assert row.disp_formula_parents == {"p": 1, "sec": 1}
+
+    def test_the_encoding_order_is_read_across_the_whole_formula(self):
+        """Not inside the ``<alternatives>`` alone — see the class docstring."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                "<sec><p><disp-formula>"
+                '<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mi>a</mml:mi>'
+                "</mml:math><alternatives><tex-math>a</tex-math></alternatives>"
+                "</disp-formula></p></sec>"
+            ),
+        )
+
+        assert row.formula_encoding_order == {"math-first": 1}
+
+    def test_a_formula_carrying_one_encoding_has_no_order(self):
+        """The counter is a numerator over the both-encoding formulas alone, so
+        a single-encoding deposit must not enter it in either direction."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("<sec><p><disp-formula><tex-math>a</tex-math></disp-formula></p></sec>"),
+        )
+
+        assert row.formula_encoding_order == {}
+
+    def test_the_alternatives_count_stays_per_alternatives(self):
+        """``formula_alternatives_both`` is cited in six places at 1,087.
+
+        The order counter reads the whole formula; this one must keep reading
+        one ``<alternatives>`` at a time, or the redraw moves a figure that
+        nothing about #147's fix changed.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                "<sec><p><disp-formula>"
+                "<alternatives><tex-math>a</tex-math>"
+                '<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mi>a</mml:mi>'
+                "</mml:math></alternatives>"
+                "<alternatives><tex-math>b</tex-math>"
+                '<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mi>b</mml:mi>'
+                "</mml:math></alternatives>"
+                "</disp-formula></p></sec>"
+            ),
+        )
+
+        assert row.formula_alternatives_both == 2
+        assert row.formula_encoding_order == {"tex-math-first": 1}
+
+    def test_a_tex_math_in_a_cell_is_counted(self):
+        """The path no buffer rule reaches: a cell collects its text in
+        ``characters()``, so the LaTeX document was pasted into the rendered
+        table. 24,476 deposits in 856 of the package's 97,909 articles."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                "<sec><table-wrap><table><tbody><tr><td><inline-formula>"
+                "<tex-math>a</tex-math></inline-formula></td></tr></tbody></table>"
+                "</table-wrap><p><inline-formula><tex-math>b</tex-math></inline-formula></p></sec>"
+            ),
+        )
+
+        assert (row.tex_math, row.tex_math_in_a_cell) == (2, 1)
+
+    def test_the_document_wrapper_and_the_delimiters_are_counted_apart(self):
+        """The two shapes ``_latex_expression`` reads: the preamble it strips
+        and the delimiters it must not double."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article(
+                "<sec><p>"
+                "<inline-formula><tex-math>"
+                "\\documentclass{minimal}\\begin{document}$$a$$\\end{document}"
+                "</tex-math></inline-formula>"
+                "<inline-formula><tex-math>"
+                "\\begin{document}b + c\\end{document}"
+                "</tex-math></inline-formula>"
+                "<inline-formula><tex-math>$d$</tex-math></inline-formula>"
+                "</p></sec>"
+            ),
+        )
+
+        assert row.tex_math == 3
+        assert row.tex_math_document_wrapped == 2
+        assert row.tex_math_predelimited == 2
+
+    def test_the_delimiter_set_is_the_samplers_own(self):
+        """The standing prohibition, one rule further on: a corpus labelled by
+        the parser's own tuple could only ever confirm it."""
+        from bmlib.fulltext import jats_parser
+
+        assert sampler._TEX_DELIMITERS is not jats_parser._LATEX_DELIMITERS
+
+
 class TestTheSampleIsStratified:
     def test_the_windows_are_whole_calendar_months_most_recent_first(self):
         windows = sampler._month_windows(3, date(2026, 3, 15))
@@ -2009,11 +2127,14 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         """#142, #143, #147 and #150 — measured, and three of them empty.
 
         Each counter was added ahead of the redraw so the rule it belongs to
-        would be *decidable*; the measurement does not decide it, which is why
-        all four issues stay open. Three measure empty on both windows and one
-        does not: `<tex-math>` and `<disp-formula>` are a live population, and
-        1,087 `<alternatives>` holding both a MathML and a TeX encoding is
-        what rules out adding `<tex-math>` to `_INLINE_ELEMENTS` (#147).
+        would be *decidable*. Three measure empty on both windows and stay
+        open on that account; the fourth did not, and **#147 was decided on
+        exactly these numbers**: `<tex-math>` and `<disp-formula>` are a live
+        population, and the 1,087 `<alternatives>` holding both a MathML and a
+        TeX encoding is what ruled out adding `<tex-math>` to
+        `_INLINE_ELEMENTS` and forced the encodings to be held until the
+        formula closes. The counters the *fix* rests on are a generation of
+        their own and are asserted separately, once a draw has filled them.
 
         **#150's own population is empty in this draw and was not in the
         last** — 0 `<ref>` carrying only a `<note>`, against 2 before, while
@@ -2036,7 +2157,8 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             assert totals["contribs_multi_string_name"] == 0
             assert totals["name_alternatives"] == 0
             assert totals["collab_alternatives"] == 0
-        # #147 — formulas. The one non-empty population of the four.
+        # #147 — formulas. The one non-empty population of the four, and the
+        # one whose issue this corpus settled rather than merely sized.
         assert (recent["disp_formulas"], backfill["disp_formulas"]) == (1915, 0)
         assert (recent["disp_formulas_with_label"], backfill["disp_formulas_with_label"]) == (
             1459,

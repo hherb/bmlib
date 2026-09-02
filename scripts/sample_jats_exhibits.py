@@ -214,6 +214,7 @@ from _sampling import (
 )
 
 from bmlib import __version__
+from bmlib.fulltext import jats_parser
 
 EUROPE_PMC = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 PAGE_SIZE = 100
@@ -367,12 +368,25 @@ _FIRST_GENERATION_COUNTERS = (
     "graphics",
     "tables_image_only",
 )
+# The populations issue #147's fix rests on, added with the fix rather than
+# ahead of it: unlike the generation above, these do not decide whether to act
+# but record what the rules chosen actually cover, so the next redraw can
+# check them the way `TestTheCitedPopulationsAreWhatTheCorporaHold` checks the
+# rest.
+_FORMULA_ROUTING_COUNTERS = (
+    "disp_formula_parents",
+    "formula_encoding_order",
+    "tex_math_in_a_cell",
+    "tex_math_document_wrapped",
+    "tex_math_predelimited",
+)
 _COUNTER_GENERATIONS: dict[str, tuple[str, ...]] = {
     "the table side (#135)": _TABLE_SIDE_COUNTERS,
     "caption and title owners (#123, #125, #130)": _OWNER_SIDE_COUNTERS,
     "contributor spellings (#120, #140)": _CONTRIB_SIDE_COUNTERS,
     "nested-article scoping (#138, #158)": _SCOPE_SIDE_COUNTERS,
     "the four waiting populations (#142, #143, #147, #150)": _WAITING_SIDE_COUNTERS,
+    "formula routing (#147)": _FORMULA_ROUTING_COUNTERS,
 }
 # How a `<contrib>` names its contributor. JATS models it as
 # `(name | string-name | collab | anonymous | ...)`, and the tail of that model
@@ -1296,6 +1310,48 @@ class ArticleMeasurement:
     formula_alternatives_both: int = 0
     disp_formulas_with_label: int = 0
     disp_formulas_image_only: int = 0
+    # Issue #147's *fix*, whose three rules each rest on a population this
+    # generation makes re-derivable. They were measured for the fix from the
+    # `PMC012xxxxxx` baseline package with a throwaway script — a named public
+    # artifact, so a reader can repeat it, but not with the instrument this
+    # repo commits, which is the half #131 and #138 are about.
+    #
+    # `disp_formula_parents` is what `_DISPLAY_FORMULA_MERGE_PARENTS` rests
+    # on: a display formula inside a `<p>` has to join that paragraph, because
+    # emitted as one of its own it lands *ahead* of the paragraph it
+    # interrupts — the enclosing `<p>` has not closed yet. Measured 116,623 of
+    # 150,598 (77.4%) in the package and 201 of 654 in the 880-article local
+    # draw, so the two windows disagree on the share and agree that it is the
+    # commonest shape. An open vocabulary, like `label_parents`: the block
+    # containers are drawn from rather than fixed (`<app>`, `<boxed-text>`,
+    # `<disp-formula-group>`, `<body>` all appear).
+    #
+    # `formula_encoding_order` is why the encodings are held until the formula
+    # closes rather than resolved as they arrive: a streaming "first wins"
+    # rule picks the wrong encoding wherever the MathML is deposited first.
+    # **Expect this counter to read zero, and do not conclude from it.** 4,377
+    # of the package's 188,473 both-encoding formulas are MathML-first, but
+    # they sit in 37 of its 97,909 articles at ~118 apiece — a house style
+    # rather than a rate, so a 997-article draw expects none and a random
+    # 4,000-article one measured 2. The rule stands on the content model,
+    # which admits either order. Counted per formula, and only for the ones
+    # carrying both.
+    #
+    # `tex_math_in_a_cell` is the live corruption the fix removed, and the one
+    # no buffer rule reaches: a cell collects its text in `characters()`, so
+    # the LaTeX *document* — preamble and all — was pasted into the rendered
+    # table. 24,476 in 856 of the package's 97,909 articles.
+    #
+    # `tex_math_document_wrapped` and `tex_math_predelimited` are what
+    # `_latex_expression` rests on: 99.9% of deposits are a whole LaTeX
+    # document rather than an expression, and 96.0% of the bodies already
+    # carry `$$…$$`, so the rule extracts the body and keeps the depositor's
+    # own delimiters instead of adding a second pair.
+    disp_formula_parents: Counter[str] = field(default_factory=Counter)
+    formula_encoding_order: Counter[str] = field(default_factory=Counter)
+    tex_math_in_a_cell: int = 0
+    tex_math_document_wrapped: int = 0
+    tex_math_predelimited: int = 0
     # Issue #150 — a `<ref>` whose only content is a `<note>` renders as an
     # empty `<li>`. The vocabulary is open, so a `<ref>` child nobody has
     # listed prints as itself rather than as evidence of nothing.
@@ -1419,6 +1475,9 @@ def _measure_tree(pmcid: str, root: ET.Element, *, scoped: bool) -> ArticleMeasu
                 _record_contrib(child, chain, row)
             elif tag == "disp-formula":
                 row.disp_formulas += 1
+                # Where the deposit put it, which is what decides whether the
+                # parser merges it into open prose or emits a paragraph.
+                row.disp_formula_parents[chain[-1] if chain else "(root)"] += 1
                 if any(_local(c.tag) == "label" for c in child):
                     row.disp_formulas_with_label += 1
                 content = [_local(c.tag) for c in child if _local(c.tag) != "label"]
@@ -1433,6 +1492,7 @@ def _measure_tree(pmcid: str, root: ET.Element, *, scoped: bool) -> ArticleMeasu
                 _record_formula_alternatives(child, row)
             elif tag == "tex-math":
                 row.tex_math += 1
+                _record_tex_math_shape(child, chain, row)
             elif tag == "math":
                 row.mml_math += 1
             elif tag == "ref":
@@ -1668,12 +1728,63 @@ def _record_contrib(el: ET.Element, chain: list[str], row: ArticleMeasurement) -
         row.contrib_name_spellings["(none)"] += 1
 
 
+#: Delimiters a ``<tex-math>`` body may already carry, longest first so that
+#: ``$$`` is not read as ``$``. Deliberately **not** imported from
+#: ``jats_parser._LATEX_DELIMITERS``: a corpus labelled by the rule under test
+#: can only confirm that rule, which is this sampler's standing prohibition.
+_TEX_DELIMITERS = (("$$", "$$"), ("\\[", "\\]"), ("\\(", "\\)"), ("$", "$"))
+
+
+def _record_tex_math_shape(el: ET.Element, chain: list[str], row: ArticleMeasurement) -> None:
+    """Count what one ``<tex-math>`` deposit actually holds, and where.
+
+    Three populations #147's fix rests on. A deposit is a whole LaTeX
+    *document* rather than an expression in all but a handful of cases, so a
+    rule that merged the element's text would inject its preamble into the
+    prose; its body is usually already delimited, so a rule that added a pair
+    unconditionally would double them; and a deposit inside a table cell is
+    the one the parser's buffer rules never reach, because a cell collects its
+    text in ``characters()``.
+
+    Args:
+        el: The ``<tex-math>``.
+        chain: The element names enclosing it, outermost first.
+        row: The measurement to count into.
+    """
+    if "td" in chain or "th" in chain:
+        row.tex_math_in_a_cell += 1
+    text = "".join(el.itertext())
+    if text.count("\\begin{document}") == 1 and text.count("\\end{document}") == 1:
+        row.tex_math_document_wrapped += 1
+        body = text.split("\\begin{document}", 1)[1].rsplit("\\end{document}", 1)[0].strip()
+    else:
+        body = text.strip()
+    # `>=`, not `>`: a body is delimited as soon as it has room for both
+    # halves, so `$$` and `\[\]` are an empty delimited body and not an
+    # undelimited one. The parser states the same bound, and the two have to
+    # agree or this counter is not the population `_latex_expression` rests
+    # on — the *rule* is stated twice on purpose (see `_TEX_DELIMITERS`), the
+    # *bound* is not a second rule.
+    if any(
+        body.startswith(opening) and body.endswith(closing) and len(body) >= len(opening + closing)
+        for opening, closing in _TEX_DELIMITERS
+    ):
+        row.tex_math_predelimited += 1
+
+
 def _record_formula_alternatives(el: ET.Element, row: ArticleMeasurement) -> None:
     """Count a formula whose ``<alternatives>`` holds two encodings of itself.
 
     This is the count that decides #147's shape: where one formula is
     deposited as both LaTeX and MathML, merging every accumulating child would
     emit it twice, so the fix cannot be one more ``_INLINE_ELEMENTS`` member.
+
+    ``formula_encoding_order`` is the follow-on question the fix had to
+    answer: among the formulas carrying both, which encoding arrives first.
+    A streaming rule would have to choose as they arrive, and the minority
+    order is what makes that wrong — 4,377 MathML-first against 184,096
+    LaTeX-first in the ``PMC012xxxxxx`` package, **concentrated in 37 of its
+    97,909 articles**, so most draws measure none of it.
 
     Args:
         el: The ``<disp-formula>`` or ``<inline-formula>``.
@@ -1682,9 +1793,29 @@ def _record_formula_alternatives(el: ET.Element, row: ArticleMeasurement) -> Non
     for child in el:
         if _local(child.tag) != "alternatives":
             continue
+        # Per `<alternatives>` and not per formula, which is how this counter
+        # has always counted: widening it to the formula would move the 1,087
+        # every comment and `docs/manual/fulltext.md` cite, for a shape
+        # (two `<alternatives>` in one formula) nobody has observed.
         kinds = {_local(g.tag) for g in child}
         if "tex-math" in kinds and "math" in kinds:
             row.formula_alternatives_both += 1
+
+    # Order is a different question with a different scope, and conflating the
+    # two is a count of what you did not look for: the parser holds the
+    # encodings until the **formula** closes, so what decides whether a
+    # streaming rule could work is which arrives first anywhere inside it —
+    # not which sits first inside an `<alternatives>`, where the deposit
+    # convention is near-uniform (5,968 LaTeX-first against 2 over 4,000
+    # package articles, which would read as "order never varies" where the
+    # whole package holds 4,377 MathML-first, in 37 articles).
+    order = [
+        _local(descendant.tag)
+        for descendant in el.iter()
+        if _local(descendant.tag) in ("tex-math", "math")
+    ]
+    if set(order) == {"tex-math", "math"}:
+        row.formula_encoding_order[f"{order[0]}-first"] += 1
 
 
 def _record_ref(el: ET.Element, row: ArticleMeasurement) -> None:
@@ -2605,7 +2736,10 @@ def print_report(totals: Totals) -> bool:
         )
 
     # Issues #142, #143, #147 and #150 — four populations each waiting on a
-    # measurement before its fix can be chosen. One walk answers all four.
+    # measurement before its fix could be chosen. One walk answers all four.
+    # #147 has since been fixed on that answer; its section stays because the
+    # counters are what a later change to the formula rules is judged against,
+    # and section 14b beside it measures the fix's own routing.
     print("\n12. A <collab>'s ELEMENT CHILDREN  (issue #142)")
     if not all(totals.measured(name) for name in _WAITING_SIDE_COUNTERS):
         print("   NOT MEASURED — these rows predate the counter. Re-run to fill it.")
@@ -2673,6 +2807,56 @@ def print_report(totals: Totals) -> bool:
         print(
             f"   {'<alternatives> holding BOTH encodings':<40}: {both:>6}   "
             "(rules out one more _INLINE_ELEMENTS member)"
+        )
+
+    print("\n14b. HOW THE FORMULA RULES ROUTE  (issue #147's fix)")
+    if not all(totals.measured(name) for name in _FORMULA_ROUTING_COUNTERS):
+        print("   NOT MEASURED — these rows predate the counter. Re-run to fill it.")
+    else:
+        parents = totals.counter_of("disp_formula_parents")
+        placed = sum(parents.values())
+        print("   where a <disp-formula> is deposited (decides merge vs own paragraph):")
+        for name, count in parents.most_common(8):
+            # The annotation names what the parser does, so it reads the
+            # parser's own set rather than a third spelling of it. Importing
+            # here is outside this sampler's non-import rule, which forbids
+            # borrowing a *predicate that labels the corpus*: nothing is
+            # counted by this, the counter above being open-vocabulary. A
+            # literal ("p", "td", "th") was already wrong — the parser also
+            # merges into every `_INLINE_ELEMENTS` member — so the report
+            # would have stated the opposite of the routing for the first
+            # draw that turned one up.
+            merged = (
+                "merged into it"
+                if name in jats_parser._DISPLAY_FORMULA_MERGE_PARENTS
+                else "own paragraph"
+            )
+            print(f"      {name:<26} {count:>6}  {_pct(count, placed)}  {merged}")
+        if not parents:
+            print("      (no <disp-formula> in this draw)")
+        order = totals.counter_of("formula_encoding_order")
+        ordered = sum(order.values())
+        print("   which encoding a both-encoding formula deposits first:")
+        for name, count in order.most_common():
+            print(f"      {name:<26} {count:>6}  {_pct(count, ordered)}")
+        if not order:
+            print("      (no formula carries both encodings in this draw)")
+        tex = totals.sum_of("tex_math")
+        wrapped = totals.sum_of("tex_math_document_wrapped")
+        predelimited = totals.sum_of("tex_math_predelimited")
+        in_a_cell = totals.sum_of("tex_math_in_a_cell")
+        print(f"   {'<tex-math> deposits':<40}: {tex}")
+        print(
+            f"   {'...a whole LaTeX document':<40}: {wrapped:>6}  {_pct(wrapped, tex)}"
+            "   (its preamble must not reach the prose)"
+        )
+        print(
+            f"   {'...already delimited':<40}: {predelimited:>6}  {_pct(predelimited, tex)}"
+            "   (adding a pair would double them)"
+        )
+        print(
+            f"   {'...inside a <td>/<th>':<40}: {in_a_cell:>6}  {_pct(in_a_cell, tex)}"
+            "   (a cell takes its text from characters())"
         )
 
     print("\n15. REFERENCES CARRYING ONLY A <note>  (issue #150)")
