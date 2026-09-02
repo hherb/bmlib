@@ -38,8 +38,9 @@ All notable changes to bmlib are documented here. The format is based on
   is not a merge. 99.9% of 4,422 sampled deposits in that package are
   `\documentclass[12pt]{minimal}` … `\begin{document}` …, so merging the
   element's text raw would inject some 300 characters of `\usepackage` lines
-  per formula — worse than the drop it replaces. Every one of 7,769 sampled
-  deposits carries exactly one `\begin{document}`/`\end{document}` pair, and
+  per formula — worse than the drop it replaces. Every one of the 7,769 sampled
+  *document-wrapped* deposits carries exactly one
+  `\begin{document}`/`\end{document}` pair, and
   so do 147 of 147 in two articles fetched live from Europe PMC, the rendition
   bmlib is actually fed. 96.0% of the bodies already carry `$$…$$` and 3.7%
   `$…$`, so the depositor's own delimiters are kept and a pair is added only
@@ -66,21 +67,30 @@ All notable changes to bmlib are documented here. The format is based on
   worse than a blank (#116, #162).
 
   A formula holding nothing renders as nothing: 140 of the corpus's display
-  formulas are a `<graphic>` and a `<label>`, and no text-taking rule recovers
-  those — emitting the label alone would be #162's defect, a number standing
+  formulas hold nothing but a `<graphic>` once a `<label>` is set aside — the
+  population the counter actually measures, which does not require a label and
+  which at least 12 of the 140 do not carry — and no text-taking rule recovers
+  those. Emitting the label alone would be #162's defect, a number standing
   for content that is not there. An inline formula keeps the spacing the
   deposit gave it, the module's own `_text_with_formatting` rule (a run's edge
   whitespace is re-emitted outside its markers); a merged display formula gets
   one space either side, because a block deposit has no spacing of its own to
   keep and welds without it.
 
-  **Moves stored values.** Measured by diffing parsed output against `main`
-  over 880 local PMC articles, not reasoned from the call graph: prose moves
-  in **68 articles (7.7%), gaining 433 paragraphs and losing none**, and the
-  rendered HTML `FullTextService` caches moves in the same 68. Abstracts,
-  tables and reference strings move in **zero** — the first cut moved 3, 4 and
-  0, all of them collateral re-spacing of text that already reached the prose,
-  which is what the edge-whitespace rule above removed.
+  **Moves stored values**, measured by diffing parsed output against `main`
+  rather than reasoned from the call graph — and the first statement of it
+  counted only what its metric could see. "433 paragraphs gained, none lost,
+  abstracts/tables/citations zero" was of an 880-article draw nobody can
+  re-take, and *gained/lost* is structurally blind to a paragraph that changed
+  in place, which is the commoner effect. Re-measured over the 880 articles of
+  Europe PMC's named OA package `PMC10030002_PMC10040000.xml.gz`: prose moves
+  in **34** articles, abstracts in **3**, the `html_content` that
+  `FullTextService` caches in **12**, and figure and table captions in **17**
+  and **5** — captions being a public field the earlier statement named
+  nowhere. Paragraphs: 1 gained, **0 lost**, **159 changed in place**. Tables
+  moving is the point rather than a surprise, each of those 12 being the LaTeX
+  preamble leaving a rendered cell; zero there was never consistent with the
+  24,476 `<tex-math>` in a `<td>`/`<th>` cited two paragraphs above.
 
   `formula_stack` joins `_parse_audit`'s net, which demanded it:
   `TestTheAuditNetIsComplete` failed on the new stack before a line of the
@@ -88,7 +98,42 @@ All notable changes to bmlib are documented here. The format is based on
   generation for the three populations the *fix* rests on — where a
   `<disp-formula>` is deposited, which encoding a both-encoding formula
   deposits first, and what a `<tex-math>` actually holds — so the next redraw
-  re-derives them rather than leaving them in a throwaway script.
+  re-derives them rather than leaving them in a throwaway script. Those five
+  counters are **not** in either committed corpus yet, so the package figures
+  above stay non-re-derivable until the next redraw, and `print_report` prints
+  `NOT MEASURED` for that section against the corpora as they stand.
+
+  **Six defects found reviewing the above, three of which moved stored
+  values.** Each is a rule the docstrings stated and no fixture exercised.
+
+  - *An equation number in a table cell was discarded.* A formula in a cell is
+    never "standalone", so the label was read and never printed, while
+    `characters()` had stopped delivering it — a regression against `main`. A
+    cell is a slot, not a sentence: all 40 labelled display formulas measured
+    in a cell (8 of 97,909 articles) sit in a cell whose whole content is the
+    number and the equation, PMC12164272's Table 2 being a reaction-number
+    column the prose cross-references.
+  - *An inline formula emitted display delimiters.* 98.6% of 20,251 inline
+    `<tex-math>` bodies carry `$$…$$`, which is the `minimal`-documentclass
+    converter's artifact and not a claim about context — so `'×'` rendered as
+    `'$$\times$$'` in a figure caption. A display pair on an inline formula is
+    now re-spelled `$…$`; the rule is one-directional, and a body of several
+    delimited runs (`$a$ + $b$`) is left alone.
+  - *An empty `<tex-math>` suppressed the encoding beside it.* The list was
+    tested for presence rather than for a rendition, so `'Before Vmax after.'`
+    became `'Before after.'`.
+  - *Several `<tex-math>` printed the expression twice*, the outcome the design
+    exists to prevent. The first that renders now wins.
+  - *A deposit carrying `\begin{document}` and no `\end{document}`* fell
+    through to the bare-expression path and delimited its own preamble — both
+    failures this rule prevents, in one string.
+  - *A rendered formula could reach no section, caption or cell and be dropped
+    in silence.* Now counted and reported once per article at WARNING
+    (`formulas_dropped`); routing it is #177. 192 in 23 of 97,909 articles.
+
+  Filed rather than fixed: **#178**, whether LaTeX should win for a
+  *both-encoding inline* formula at all, where it replaces prose that was
+  already correct in 20,046 formulas against the 205 it recovers.
 
 - **`JATSTableInfo.graphic_url`'s cited populations are the committed ones**
   (found while fixing #147). The docstring still quoted the pre-#138 draw —
@@ -920,15 +965,16 @@ All notable changes to bmlib are documented here. The format is based on
   *replaced* by a `[text](#rid)` link rather than merged, and nothing pinned
   that: dropping the suppression passed the whole suite while emitting
   `Figure 1[Figure 1](#f1)` into body prose. It has tests now. And the same
-  taken-and-not-returned shape loses a `<tex-math>` formula from the prose
+  taken-and-not-returned shape lost a `<tex-math>` formula from the prose
   around it and a `<disp-formula>` from the article outright — filed as #147,
   since delimiting LaTeX in prose is a decision rather than one more member of
-  a set. Note that #147 is now scoped to prose *outside* a citation: inside
-  one the ancestor test merges `<tex-math>` like anything else, so a formula
-  cited in a reference emits raw undelimited LaTeX and an `<alternatives>`
-  pair emits both encodings. That path measures 0 of 10,671 `<mixed-citation>`
-  across 227 articles and 0 in the local corpus, so it is unexercised rather
-  than live.
+  a set. **#147 is fixed in this same unreleased window, and the citation path
+  is not the exception this entry used to name**: `_FORMULA_PARTS` is
+  subtracted from the merge after the ancestor test, so a `<tex-math>` in a
+  `<mixed-citation>` is rendered by the formula arm like any other — one
+  rendition, delimited, no preamble. The 0 of 10,671 `<mixed-citation>` across
+  227 articles and 0 in the local corpus sizes an unexercised path, which is
+  all it ever sized.
 
 - **A contributor whose name arrived undivided was dropped** (#120, #140).
   JATS names a contributor with `(name | string-name | collab | …)` and bmlib

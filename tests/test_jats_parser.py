@@ -4650,9 +4650,10 @@ class TestAFormulaReachesTheProseThatContainsIt:
     sampled ``<tex-math>`` deposits in that package are
     ``\\documentclass[12pt]{minimal}`` … ``\\begin{document}`` … , so merging
     the element's text raw would inject some 300 characters of ``\\usepackage``
-    lines per formula — worse than the drop it replaces. Every one of 7,769
-    sampled deposits carries exactly one ``\\begin{document}``/``\\end{document}``
-    pair, 96.0% of those bodies are already ``$$…$$``-delimited and 3.7%
+    lines per formula — worse than the drop it replaces. Every one of the 7,769
+    sampled *document-wrapped* deposits carries exactly one
+    ``\\begin{document}``/``\\end{document}`` pair — a count of the wrapped
+    ones and not of all of them. 96.0% of those bodies are ``$$…$$`` and 3.7%
     ``$…$``, so the rule takes the body and keeps the depositor's own
     delimiters, adding its own only where there are none. Confirmed on the
     rendition the parser is actually fed: 147 of 147 ``<tex-math>`` in two
@@ -5209,6 +5210,335 @@ class TestAFormulaReachesTheProseThatContainsIt:
         assert [p for s in article.body_sections for p in s.paragraphs] == ["Ours."]
 
 
+class TestTheFormulaRulesTheReviewCorrected:
+    """Issue #147's second round — what the review of PR #176 found.
+
+    Six defects and five unpinned rules, each of which survived the first
+    thirty tests. They are grouped here rather than folded into the class
+    above because what they have in common is *how they were missed*: every
+    one is a rule the docstrings stated and no fixture exercised, which is
+    this module's standing failure mode and worth being able to read in one
+    place. Three moved stored values (the cell's equation number, the inline
+    formula's delimiters, an empty ``<tex-math>``), and three were latent.
+    """
+
+    def test_a_display_formula_in_a_cell_keeps_its_number(self):
+        """A cell is a slot, not a sentence — see ``_TABLE_CELL_ELEMENTS``.
+
+        The regression this pins: ``characters()`` used to deliver the label
+        to the cell, and withholding the formula's text took the number with
+        it. Measured over the 40 labelled display formulas sitting in a cell,
+        every one is a cell whose whole content is the number and the
+        equation — PMC12164272's Table 2 is a reaction-number column whose
+        rows the body prose cross-references by number.
+        """
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <table-wrap id="t1"><label>Table 1</label>
+      <table><tbody>
+        <tr><td><disp-formula><label>(10)</label>\
+<tex-math>\\begin{document}$$a+b=c$$\\end{document}</tex-math></disp-formula></td></tr>
+      </tbody></table>
+    </table-wrap>
+  </sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert "<td>(10) $$a+b=c$$</td>" in article.tables[0].html_content
+        # And the preamble still does not reach it — the number comes back
+        # without the corruption it used to arrive beside.
+        assert "documentclass" not in article.tables[0].html_content
+
+    def test_a_merged_display_formula_in_prose_still_carries_no_number(self):
+        """The cell rule must not widen into the sentence rule it sits beside.
+
+        ``'as shown in eqn (2):2 τ = kn'`` is what printing it here produced —
+        the label read as a coefficient. Pinned alongside the cell case so a
+        future edit cannot satisfy one by breaking the other.
+        """
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title><p>As shown in eqn (2):\
+<disp-formula><label>2</label>\
+<tex-math>\\begin{document}$$\\tau = kn$$\\end{document}</tex-math></disp-formula>\
+the rate follows.</p></sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert article.body_sections[0].paragraphs == [
+            "As shown in eqn (2): $$\\tau = kn$$ the rate follows."
+        ]
+
+    def test_an_empty_tex_math_does_not_suppress_the_encoding_beside_it(self):
+        """``frame.latex`` was tested for presence rather than for a rendition.
+
+        An empty or preamble-only ``<tex-math>`` short-circuited the buffer
+        that held the MathML flattening, so a formula carrying content
+        rendered as nothing.
+        """
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title><p>Before <inline-formula><tex-math>   </tex-math>\
+<italic>V</italic><sub>max</sub></inline-formula> after.</p></sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert article.body_sections[0].paragraphs == ["Before Vmax after."]
+
+    def test_an_inline_formula_does_not_emit_display_delimiters(self):
+        """98.6% of 20,251 inline ``<tex-math>`` bodies carry ``$$…$$``.
+
+        Inline formulas cannot genuinely be 98.6% display math, so that pair
+        is the ``minimal``-documentclass converter's artifact and not a claim
+        about context. Left verbatim it rendered ``'×'`` as ``'$$\\times$$'``
+        inside a figure caption.
+        """
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title><p>at <inline-formula>\
+<tex-math>\\begin{document}$$\\times$$\\end{document}</tex-math></inline-formula> here</p>
+  </sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert article.body_sections[0].paragraphs == ["at $\\times$ here"]
+
+    def test_a_display_formula_keeps_an_inline_pair_the_depositor_wrote(self):
+        """The re-delimiting rule is one-directional, and this is the half it
+        does not touch: a display delimiter inside a sentence is wrong markup,
+        an inline one on a formula standing alone merely under-styles it."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>\
+<disp-formula><tex-math>\\begin{document}$x=1$\\end{document}</tex-math></disp-formula>
+  </sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert article.body_sections[0].paragraphs == ["$x=1$"]
+
+    def test_a_body_carrying_several_delimited_runs_is_left_alone(self):
+        """Its outer characters are not one pair around one expression, so
+        stripping them would corrupt it into ``$$a$ + $b$$``."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title><p>see <inline-formula>\
+<tex-math>\\begin{document}$a$ + $b$\\end{document}</tex-math></inline-formula> there</p>
+  </sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert article.body_sections[0].paragraphs == ["see $a$ + $b$ there"]
+
+    def test_several_tex_math_deposits_render_the_expression_once(self):
+        """``<alternatives>`` holds alternative encodings of one expression.
+
+        Joining them printed it twice — the outcome ``_FORMULA_ELEMENTS`` says
+        the design exists to prevent, contradicted three comments away. The
+        population measures 0 in both corpora, so this pins a rule rather than
+        a behaviour anyone has observed.
+        """
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <disp-formula><label>(1)</label><alternatives>\
+<tex-math>\\begin{document}$$E = mc^2$$\\end{document}</tex-math>\
+<tex-math>\\begin{document}$$E = m c^{2}$$\\end{document}</tex-math></alternatives></disp-formula>
+  </sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert article.body_sections[0].paragraphs == ["(1) $$E = mc^2$$"]
+
+    def test_a_deposit_missing_its_closing_marker_does_not_leak_the_preamble(self):
+        """The two document markers are read independently, because requiring
+        both let a truncated deposit fall through to the bare-expression path
+        — which then delimited the preamble and doubled the pair, both of the
+        failures this function exists to prevent, in one string."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <disp-formula><tex-math>\\documentclass[12pt]{minimal}\\usepackage{amsmath}\
+\\begin{document}$$E = mc^2$$</tex-math></disp-formula>
+  </sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert article.body_sections[0].paragraphs == ["$$E = mc^2$$"]
+        assert "documentclass" not in article.body_sections[0].paragraphs[0]
+        assert "$$$$" not in article.body_sections[0].paragraphs[0]
+
+    def test_a_body_opening_an_environment_is_not_delimited(self):
+        """``$$\\begin{equation}…`` is not valid LaTeX: the environment
+        establishes its own math mode. 0.2% of deposits."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <disp-formula><tex-math>\\begin{document}\\begin{aligned}x &amp;= y\\end{aligned}\
+\\end{document}</tex-math></disp-formula>
+  </sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert article.body_sections[0].paragraphs == ["\\begin{aligned}x &= y\\end{aligned}"]
+
+    def test_the_bracket_delimiters_are_recognised(self):
+        """``\\[…\\]`` and ``\\(…\\)`` were in ``_LATEX_DELIMITERS`` with
+        nothing exercising either — deleting both left the suite green. The
+        population measures 0 of 10,193 sampled deposits, so this pins the
+        membership rather than a shape anyone has met: ``\\[…\\]`` is a
+        display pair and is re-spelled inline, ``\\(…\\)`` is already inline
+        and is kept.
+        """
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title><p>a <inline-formula>\
+<tex-math>\\begin{document}\\[u\\]\\end{document}</tex-math></inline-formula> b \
+<inline-formula><tex-math>\\begin{document}\\(v\\)\\end{document}</tex-math></inline-formula> c</p>
+  </sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert article.body_sections[0].paragraphs == ["a $u$ b \\(v\\) c"]
+
+    def test_a_formula_in_an_abstract_reaches_the_abstract(self):
+        """``abstract_sections`` is rendered into the HTML ``FullTextService``
+        caches while ``body_sections`` reaches no bmlib path at all, so this
+        is the branch of ``_append_prose`` that matters most and the one no
+        fixture exercised."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+    <abstract><p>We used <inline-formula>\
+<tex-math>\\begin{document}$$x$$\\end{document}</tex-math></inline-formula>.</p></abstract>
+  </article-meta></front>
+  <body><sec><title>M</title><p>Prose.</p></sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert article.abstract_sections[0].content == "We used $x$."
+
+    def test_a_formula_that_holds_nothing_leaves_no_space_behind(self):
+        """``_normalize_whitespace`` collapses a run to one space rather than
+        deleting it, so padding an empty rendition welds a gap into the word
+        it sits inside. The guard that prevents it was unpinned: an
+        image-only formula is 140 of 1,915 display formulas, so the shape is
+        the common one rather than a contrivance."""
+        xml = b"""<?xml version="1.0"?>
+<article xmlns:xlink="http://www.w3.org/1999/xlink">
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <p>k<inline-formula> </inline-formula>mer here.</p>
+    <table-wrap id="t1"><table><tbody><tr><td>a<inline-formula>\
+<graphic xlink:href="e.png"/></inline-formula>b</td></tr></tbody></table></table-wrap>
+  </sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert article.body_sections[0].paragraphs == ["kmer here."]
+        assert "<td>ab</td>" in article.tables[0].html_content
+
+    def test_a_cell_takes_its_text_back_after_the_formula_closes(self):
+        """The hold-back has two edges and only one was pinned.
+
+        ``characters()`` withholds every cell's text while a formula is open.
+        Every fixture put the formula last in a one-cell, one-row table, so a
+        mutant that never cleared the hold — a sticky flag in place of the
+        stack test — blanked every later cell in the table and stayed green
+        across the whole suite. That is permanent: ``html_content`` is what
+        ``FullTextService`` caches.
+        """
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <table-wrap id="t1"><table><tbody>
+      <tr><td>ratio <inline-formula>\
+<tex-math>\\begin{document}$r$\\end{document}</tex-math></inline-formula> total</td>\
+<td>second cell</td></tr>
+      <tr><td>row two a</td><td>row two b</td></tr>
+    </tbody></table></table-wrap>
+    <p>After the table.</p>
+  </sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+        cell = article.tables[0].html_content
+
+        # The rest of the formula's own cell, the cell beside it, and every
+        # cell of the row after it.
+        assert "<td>ratio $r$ total</td>" in cell
+        assert "<td>second cell</td>" in cell
+        assert "<td>row two a</td>" in cell
+        assert "<td>row two b</td>" in cell
+        assert article.body_sections[0].paragraphs == ["After the table."]
+
+    def test_a_rendered_formula_that_reaches_nowhere_is_reported(self, parser_log):
+        """``_append_prose`` has four branches and no fallthrough, so a
+        standalone ``<disp-formula>`` in an unsectioned ``<back>`` is built
+        and then lost — 192 in 23 of the package's 97,909 articles. Not a
+        regression, which is why it is counted: the parser now renders the
+        string before losing it. Routing is issue #177.
+
+        WARNING and not ERROR: a publisher's deposit reaches this one, so it
+        cannot spend the audit's "an ERROR means bmlib is wrong" contract.
+        """
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title><p>Prose.</p></sec></body>
+  <back><app-group><app id="a1"><disp-formula><label>(A1)</label>\
+<tex-math>\\begin{document}$$s = 1$$\\end{document}</tex-math></disp-formula>\
+</app></app-group></back>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert [p for s in article.body_sections for p in s.paragraphs] == ["Prose."]
+        assert any(
+            "reached no section, caption or cell" in message
+            for message in parser_log.messages(logging.WARNING)
+        )
+
+    def test_a_formula_that_reaches_its_section_is_not_reported(self, parser_log):
+        """The negative control the counter needs: a rule that fires on every
+        standalone formula would report the 77.4% that are fine."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>\
+<disp-formula><tex-math>\\begin{document}$$s = 1$$\\end{document}</tex-math></disp-formula>
+  </sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert article.body_sections[0].paragraphs == ["$$s = 1$$"]
+        assert not [m for m in parser_log.messages(logging.WARNING) if "reached no section" in m]
+
+
 class TestAnUnparseableSpanCostsOneCellAndNotTheArticle:
     """``colspan`` is CDATA, so a value ``int()`` refuses must not raise — #129.
 
@@ -5734,6 +6064,7 @@ class TestTheAuditNetIsComplete:
             "contribs_naming_nobody",
             "doi",
             "doi_is_typed",
+            "formulas_dropped",
             "front_contributor_name_count",
             "issue",
             "journal",

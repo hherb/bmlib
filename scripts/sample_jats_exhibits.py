@@ -214,6 +214,7 @@ from _sampling import (
 )
 
 from bmlib import __version__
+from bmlib.fulltext import jats_parser
 
 EUROPE_PMC = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 PAGE_SIZE = 100
@@ -1758,8 +1759,14 @@ def _record_tex_math_shape(el: ET.Element, chain: list[str], row: ArticleMeasure
         body = text.split("\\begin{document}", 1)[1].rsplit("\\end{document}", 1)[0].strip()
     else:
         body = text.strip()
+    # `>=`, not `>`: a body is delimited as soon as it has room for both
+    # halves, so `$$` and `\[\]` are an empty delimited body and not an
+    # undelimited one. The parser states the same bound, and the two have to
+    # agree or this counter is not the population `_latex_expression` rests
+    # on — the *rule* is stated twice on purpose (see `_TEX_DELIMITERS`), the
+    # *bound* is not a second rule.
     if any(
-        body.startswith(opening) and body.endswith(closing) and len(body) > len(opening + closing)
+        body.startswith(opening) and body.endswith(closing) and len(body) >= len(opening + closing)
         for opening, closing in _TEX_DELIMITERS
     ):
         row.tex_math_predelimited += 1
@@ -2810,7 +2817,20 @@ def print_report(totals: Totals) -> bool:
         placed = sum(parents.values())
         print("   where a <disp-formula> is deposited (decides merge vs own paragraph):")
         for name, count in parents.most_common(8):
-            merged = "merged into it" if name in ("p", "td", "th") else "own paragraph"
+            # The annotation names what the parser does, so it reads the
+            # parser's own set rather than a third spelling of it. Importing
+            # here is outside this sampler's non-import rule, which forbids
+            # borrowing a *predicate that labels the corpus*: nothing is
+            # counted by this, the counter above being open-vocabulary. A
+            # literal ("p", "td", "th") was already wrong — the parser also
+            # merges into every `_INLINE_ELEMENTS` member — so the report
+            # would have stated the opposite of the routing for the first
+            # draw that turned one up.
+            merged = (
+                "merged into it"
+                if name in jats_parser._DISPLAY_FORMULA_MERGE_PARENTS
+                else "own paragraph"
+            )
             print(f"      {name:<26} {count:>6}  {_pct(count, placed)}  {merged}")
         if not parents:
             print("      (no <disp-formula> in this draw)")

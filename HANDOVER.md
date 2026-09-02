@@ -203,9 +203,17 @@ merge on their own — and the whole argument is in `docs/DECISIONS.md`,
   is 2.3% of formulas and **37 of 97,909 articles** — a house style, so the
   new sampler counter will read zero on almost any draw and a reader must not
   conclude the order never varies.
-- **Blast radius from a diff, not the call graph**: 68 of 880 local articles
-  (7.7%) gain 433 paragraphs and lose none; abstracts, tables and citations
-  move in zero — where the first cut moved 3, 4 and 0.
+- **Blast radius from a diff, not the call graph — and the first statement of
+  it counted only what its metric could see.** "68 of 880, 433 paragraphs
+  gained, abstracts/tables/citations zero" was of a draw nobody can re-take,
+  and *gained/lost* is blind to a paragraph that changed **in place**, which
+  is the commoner effect. Re-measured over Europe PMC's named OA package
+  `PMC10030002_PMC10040000.xml.gz` (880 articles): prose moves in **34**,
+  abstracts **3**, cached `html_content` **12**, figure and table captions
+  **17** and **5** — captions being a public field the first statement named
+  nowhere; 1 paragraph gained, 0 lost, **159 changed in place**. Tables
+  moving is the *point*, each of those 12 being the preamble leaving a cell;
+  zero there was never consistent with the 24,476 cited two bullets up.
 
 `scripts/sample_jats_exhibits.py` gains a `formula routing (#147)` counter
 generation for the three populations the fix rests on, so the next redraw
@@ -214,6 +222,50 @@ scoping was wrong in this repo's own signature way** — it counted encoding
 order inside `<alternatives>`, where the convention is near-uniform, while the
 rule is about the whole formula; the narrower counter would have printed
 "order never varies" for the rule that exists because it does not.
+
+**The review of PR #176 found six more defects in that fix, three of which
+moved stored values.** Every one is a rule the docstrings stated and no
+fixture exercised — this module's standing failure mode, now with fifteen
+tests of its own in `TestTheFormulaRulesTheReviewCorrected`, all
+mutation-verified.
+
+- **A cell's equation number was discarded** — a regression, `characters()`
+  having delivered it before. A cell is a slot, not a sentence: all 40
+  labelled display formulas measured in a cell (8 of 97,909 articles) sit in a
+  cell whose whole content is the number and the equation. PMC12164272's Table
+  2 is a reaction-number column the prose cross-references.
+- **An inline formula emitted display delimiters.** 98.6% of 20,251 inline
+  `<tex-math>` bodies carry `$$…$$`, so that pair is the converter's artifact
+  and not a claim about context — `'×'` rendered as `'$$\times$$'` in a
+  caption. Re-spelled `$…$` now, one-directionally.
+- **An empty `<tex-math>` suppressed the encoding beside it**, the list being
+  tested for presence rather than for a rendition: `'Before Vmax after.'`
+  became `'Before after.'`.
+- **Several `<tex-math>` printed the expression twice**, the outcome the design
+  exists to prevent, contradicted three comments away. First-that-renders wins.
+- **A deposit carrying `\begin{document}` and no `\end{document}`** fell
+  through to the bare-expression path and delimited its own preamble — both
+  failures the rule prevents, in one string. The markers are read separately.
+- **A rendered formula could reach nowhere and vanish.** `_append_prose` has
+  four branches and no fallthrough. Counted at WARNING now
+  (`formulas_dropped`, 0 of 880 real articles, so not noisy); routing is
+  **#177**.
+
+Two stale claims went with them, both saying the opposite of this PR's own
+tests: `CLAUDE.md`'s and `CHANGELOG.md`'s #146 paragraphs still read "#147 is
+scoped to prose outside a citation", which `_FORMULA_PARTS` had already made
+false — and the CHANGELOG one sat under `[Unreleased]`, so it would have
+shipped beside the fix refuting it. `7,769` was corrected in six places to
+name its population (*document-wrapped* deposits, not all deposits), and the
+"140 are a `<graphic>` and a `<label>`" wording in two, the counter requiring
+no label and at least 12 of the 140 carrying none.
+
+**#178 is the one thing the review raised and did not settle**: whether LaTeX
+should win for a *both-encoding inline* formula at all. Display is
+unambiguous, `main` having dropped the element whole — but inline it
+**replaces** text that already reached the prose correctly, in **20,046
+formulas against the 205 it recovers**. #174 is the case for it; against it is
+that `body_sections` is read as prose by consumers that do not render LaTeX.
 
 It left **#174** (flattened MathML loses its spacing and brackets — `mspace`
 has no text so words weld, `mfenced` carries its brackets as attributes, and
@@ -334,12 +386,13 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 
 ### Open GitHub issues
 
-**Twenty-four open** as this file is written, **twenty-three once this branch
-merges and closes #147** (it filed #174 and #175) (verified with `gh issue list` 2026-09-02, after PR
-#171 merged, which closed #162 and filed #172 and #173; #165-#170 were closed
-on PR #163's merge): #86, #92, #94, #103,
-#124, #128, #137, #142, #143, #144, #145, #150, #152, #154, #156, #157,
-#160, #161, #164, #172, #173, #174, #175. Every one was
+**Twenty-six open** as this file is written, **twenty-five once this branch
+merges** and 147 is resolved with it — that branch filed #174, #175 and, from
+its own review, #177 and #178 (verified with `gh issue list` 2026-09-02, after
+PR #171 merged, which resolved 162 and filed #172 and #173; #165-#170 went
+with PR #163's merge): #86, #92, #94, #103,
+#124, #128, #137, #142, #143, #144, #145, #147, #150, #152, #154, #156, #157,
+#160, #161, #164, #172, #173, #174, #175, #177, #178. Every one was
 found by review or measurement rather than by a
 failing test, and **none of them loses records** — though **#124** loses an
 exhibit's footnotes, **#150** renders a note-only reference as an empty
@@ -369,7 +422,7 @@ five came out of it (released provenance is in `CHANGELOG.md`): **#73** → PR
 PR #148, filing **#147**, **#149**–**#151**; **#151** → PR #153, filing
 **#152**; **#112** → PR #155, filing **#154**, **#156**, **#157**; **#119** →
 PR #159, filing **#158**, **#160**, **#161**; **#162** → PR #171, filing
-**#172**, **#173**; **#147** → this branch, filing **#174** and **#175**.
+**#172**, **#173**; **#147** → this branch, filing **#174** and **#175**, and its own review filing **#177** and **#178**.
 
 
 **#151's own filing is the counter-example to the count above.** PR #148 filed

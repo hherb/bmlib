@@ -607,9 +607,19 @@ pass.
 > - **LaTeX** where the deposit carries a `<tex-math>`, as the expression
 >   alone. Publishers deposit a whole LaTeX document — `\documentclass`, a run
 >   of `\usepackage` lines, then `\begin{document}` — and bmlib extracts what
->   is between `\begin{document}` and `\end{document}`, keeping the delimiters
->   the depositor wrote (`$$…$$` for nearly all of them) and adding `$…$` or
->   `$$…$$` only where there are none.
+>   is between `\begin{document}` and `\end{document}`, taking whichever of the
+>   two markers is present so a truncated deposit cannot leak its preamble into
+>   your prose. The delimiters the depositor wrote are kept, **except that a
+>   display pair (`$$…$$`, `\[…\]`) on an *inline* formula is re-spelled
+>   `$…$`**: 98.6% of inline deposits carry `$$…$$`, which is the converter's
+>   artifact rather than a statement about context, and left alone it renders a
+>   multiplication sign in a caption as `$$\times$$`. A formula that stands
+>   alone keeps whatever pair it was given. Where there is no pair, one is
+>   added to match the context.
+>
+>   Where a formula carries several `<tex-math>`, the first that renders to
+>   anything is used — they are alternative encodings of one expression, not
+>   parts of it.
 > - **The MathML flattened to its leaf text** otherwise, undelimited, exactly
 >   as an inline MathML formula has always reached the prose. This is lossy:
 >   `<mml:mspace>` and `<mml:mfenced>` carry their spacing and brackets as
@@ -628,7 +638,17 @@ pass.
 >
 > A formula inside a table cell reaches `html_content` the same way, as its one
 > rendition. Before this change the cell was given the LaTeX document
-> verbatim, preamble and all.
+> verbatim, preamble and all. **A display formula in a cell does keep its
+> number**, unlike one merged into a sentence: a cell is a slot rather than a
+> sentence, and in every measured case the number is the column's own datum —
+> a reaction- or equation-number column the body prose refers back to.
+>
+> Two limitations worth knowing. A display equation deposited somewhere bmlib
+> cannot file it — an appendix with no `<sec>`, or a float with no `<caption>`
+> open — is dropped, and logged once per article at `WARNING` (issue #177). And
+> where a formula carries both encodings, the LaTeX replaces the MathML text
+> that previously reached the prose; that is higher fidelity for a renderer and
+> worse for a consumer reading the text as prose, which is issue #178.
 
 > **A malformed span costs its own row, not the article** *(unreleased,
 > #129)*. `colspan` is CDATA in JATS, so `colspan="two"` — and
