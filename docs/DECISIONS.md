@@ -344,12 +344,17 @@ So the parent rule's premise is **neither refuted nor confirmed** by the
 committed corpus: deciding it needs a rule for which of an exhibit's
 descendant labels *would* have been its own, and that is the rule under test.
 It stands on its argument, and the sampler now prints the two populations it
-can support instead of a verdict it cannot. The `<caption>` verdict line had
-the identical defect and had never fired only because those two counts have
-been equal in every draw.
+can support instead of the verdict it cannot — but only the half it cannot.
+`direct` is a subset of `descendant` by construction, so a zero difference
+*does* prove no exhibit carries its label indirectly; that direction is kept,
+phrased as what was measured rather than as `PREMISE HOLDS`, because removing
+it left the report with no content-level line that changes between draws. The
+`<caption>` section has the identical asymmetry, and its equality on the
+recent corpus (6,938 / 6,938) is the measured result certifying #123's
+premise, not the coincidence an earlier draft called it.
 
 What the counters *do* support is why `to_html()` changed: 121 exhibits of
-7,058, in 83 of 997 recent articles, carry no `<label>` at all, and each was
+7,058, in 83 of 997 recent articles, carry no `<label>` of their own, and each was
 given an invented `Figure {i + 1}` / `Table {i + 1}` — worse than a blank for
 #116's own reason, since the invented number is the *index* and so collides
 with a real one. Pinned by

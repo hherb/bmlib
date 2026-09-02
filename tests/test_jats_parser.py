@@ -2034,9 +2034,12 @@ class TestAnExhibitLabelIsNotAFootnoteMarker:
     alone, so a footnote marker — ``a``, ``b``, ``*`` — overwrote the exhibit's
     own number, last one winning (issue #116). Measured: 27 of 225 surveyed
     articles (12.0%) carry a labelled ``<table-wrap-foot><fn>``. The table
-    loses its number wherever it is rendered or cross-referenced, and an empty
-    label is not inert either — the renderer substitutes ``Table {i + 1}``, so
-    the symptom is an invented number rather than a blank.
+    loses its number wherever it is rendered or cross-referenced, and an
+    overwritten label is not inert either — the marker is rendered as the
+    table's own number, so the symptom is a *wrong* number rather than a
+    blank. Since #162 the renderer invents nothing for an exhibit carrying no
+    label of its own, which makes mis-routing the only remaining route to an
+    invented number.
     """
 
     def test_a_table_footnote_marker_does_not_overwrite_the_tables_number(self):
@@ -3122,7 +3125,11 @@ class TestAnUnlabelledExhibitIsNotGivenANumber:
         ).to_html()
 
         assert "Figure 1" not in html
-        assert "A caption the publisher did write." in html
+        # Asserted in its rendered form. The bare substring is also present in
+        # the <img> `alt`, so it passed while a mutant dropped the whole
+        # <figcaption> — an assertion satisfied by a second home is not
+        # pinning the branch it was written for.
+        assert "<p>A caption the publisher did write.</p>" in html
 
     def test_a_labelled_exhibit_still_renders_its_own_number(self):
         """The old half of the condition, so dropping the label is not the fix."""
@@ -3267,6 +3274,123 @@ class TestAnUnlabelledExhibitIsNotGivenANumber:
         ).to_html()
 
         assert 'alt=""' in html
+        assert "Table 1" not in html
+
+    # THE CONDITIONALS THIS FIX INTRODUCED, PINNED ON BOTH EDGES.
+    #
+    # Removing the invented number replaced two unconditional writes with five
+    # conditionals, and the tests above pin only that no number appears. Three
+    # first-order mutants of those conditionals survived the whole file — each
+    # verified by mutation, `__pycache__` cleared between runs — so what
+    # follows is the other edge of each: that the branch still emits what the
+    # deposit *does* carry. `A number is not invented` and `a label is still
+    # rendered` are two claims, and the suite asserted only the first.
+
+    def test_a_labelled_uncaptioned_figure_still_renders_its_figcaption(self):
+        """The left disjunct of the ``<figcaption>`` guard, unpinned until now.
+
+        Every fixture above that carries a ``<label>`` also carries a
+        ``<caption>``, so ``if fig.label or fig.caption:`` narrowed to
+        ``if fig.caption:`` — or to ``and`` — passed the entire suite while
+        dropping the legend of every label-only figure. That is the opposite
+        failure from the one #162 fixes and a silent one, the same class as
+        #116 and #125.
+
+        The empty ``<p>`` assertion is the second edge: ``if fig.caption:``
+        widened to ``if True:`` emits one for every uncaptioned figure.
+        """
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="f1"><label>Fig. 3</label><graphic xlink:href="f1.jpg"/></fig>
+    </sec>""")
+        ).to_html()
+
+        assert "<figcaption>" in html
+        assert "<strong>Fig. 3</strong>" in html
+        assert "<p></p>" not in html
+
+    def test_an_unlabelled_captioned_figure_emits_no_empty_heading(self):
+        """``if fig.label:`` widened to ``if True:`` survived the suite.
+
+        It emits ``<strong></strong>`` on every unlabelled figure — a blank
+        where the deposit says nothing, which is not what "renders no number"
+        means and is invisible to a `"Figure 1" not in html` assertion.
+        """
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="f1"><caption><p>Study flow diagram.</p></caption></fig>
+    </sec>""")
+        ).to_html()
+
+        assert "<figcaption>" in html
+        assert "<p>Study flow diagram.</p>" in html
+        assert "<strong>" not in html
+
+    def test_a_labelled_figures_image_is_described_by_its_own_label(self):
+        """The figure counterpart of ``test_the_label_is_the_images_alt_text``.
+
+        The table side pinned both orders of its ``alt`` fallback; the figure
+        side pinned neither, so ``fig.label or fig.caption`` collapsing to
+        ``fig.caption`` — or inverting to ``fig.caption or fig.label`` — passed
+        the suite. The label is the better alternative text where both exist,
+        because the caption is already rendered beside the image.
+        """
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="f1"><label>Fig. 3</label>
+        <caption><p>Study flow diagram.</p></caption>
+        <graphic xlink:href="f1.jpg"/></fig>
+    </sec>""")
+        ).to_html()
+
+        assert 'alt="Fig. 3"' in html
+
+    def test_an_unlabelled_table_emits_no_empty_heading(self):
+        """``if tbl.label:`` narrowed to ``is not None:`` survived the suite.
+
+        ``JATSTableInfo.label`` defaults to the empty string rather than
+        ``None``, so the identity test is always true and every one of the 121
+        unlabelled exhibits renders ``<h3></h3>``. The tests above assert only
+        that ``Table 1`` is absent, which an empty heading satisfies.
+        """
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="utbl0001">
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+      </table-wrap>
+    </sec>""")
+        ).to_html()
+
+        assert "<h3>" not in html
+        assert "12.3" in html
+
+    def test_a_content_free_exhibit_still_carries_its_anchor(self):
+        """An exhibit with nothing in it renders an empty container, on purpose.
+
+        Neither ``</fig>`` nor ``</table-wrap>`` filters an exhibit carrying no
+        label, caption, graphic or rows, and before #162 the invented number
+        always gave the container something to hold. It is kept rather than
+        skipped because the ``id`` is what an ``<xref>`` in the prose targets,
+        so dropping the element would break a link the document does make.
+        Pinned so a later "emit no empty elements" tidy-up cannot take the
+        anchor with it.
+        """
+        html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <p>See <xref ref-type="table" rid="tA">the table</xref>.</p>
+      <fig id="fA"/>
+      <table-wrap id="tA"/>
+    </sec>""")
+        ).to_html()
+
+        assert 'id="fA"' in html
+        assert 'id="tA"' in html
+        assert "Figure 1" not in html
         assert "Table 1" not in html
 
 

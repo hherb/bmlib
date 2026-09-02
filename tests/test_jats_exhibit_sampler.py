@@ -517,10 +517,11 @@ class TestAnArticleThatCouldNotBeMeasuredIsNeverAFinding:
     def test_a_reportable_sample_prints_its_populations(self, capsys):
         """Asserted on the counts, not on a verdict word.
 
-        It used to assert ``PREMISE HOLDS``, a line ``print_report`` no longer
-        prints because the two counters behind it never decided that premise
-        (issue #162). The counts are what a reader acts on, and unlike a verdict
-        they cannot be right for the wrong reason.
+        It used to assert ``PREMISE HOLDS``, a verdict word ``print_report``
+        no longer prints. Only one direction of that comparison was ever sound
+        (issue #162), and it is kept as a statement of what was measured; the
+        counts beside it are what a reader acts on, and unlike a verdict they
+        cannot be right for the wrong reason.
         """
         totals = sampler.Totals()
         totals.add(
@@ -531,6 +532,61 @@ class TestAnArticleThatCouldNotBeMeasuredIsNeverAFinding:
         out = capsys.readouterr().out
         assert "exhibits with a direct-child <label>      : 1" in out
         assert "exhibits with no <label> of their own     : 0" in out
+        # The zero branch of the one direction these counters do decide. It is
+        # a measured all-clear, not a verdict, and it has to be reachable or
+        # restoring it bought nothing. Both sections, since the caption half
+        # had no assertion of any kind before.
+        assert "No exhibit on this draw holds a <label> below it" in out
+        # The caption half is vacuous on this fixture — the figure carries no
+        # <caption> anywhere — so it must report an absent denominator rather
+        # than an all-clear. A zero over nothing is not a clean result, which
+        # is #162's own lesson one step further out.
+        assert "no exhibit in this draw carries a\n   <caption> anywhere" in out
+        assert "No exhibit on this draw holds a <caption> below it" not in out
+
+    def test_a_draw_carrying_no_label_anywhere_reports_an_absent_denominator(self, capsys):
+        """The zero test is satisfied vacuously by a draw with no labels.
+
+        The back-filled corpus reaches exactly this on ``<caption>`` (0 of
+        627). Printing the clean result over it would report a confirmation
+        the draw cannot give.
+        """
+        totals = sampler.Totals()
+        totals.add(sampler.measure_article("PMC1", _article('<fig id="f1"/>')))
+
+        assert sampler.print_report(totals) is True
+        out = capsys.readouterr().out
+        assert "no exhibit in this draw carries a <label>" in out
+        assert "No exhibit on this draw holds a <label> below it" not in out
+
+    def test_an_exhibit_holding_a_label_below_it_is_reported_as_that_and_no_more(self, capsys):
+        """The non-zero branch: #162's whole subject, and previously unprinted.
+
+        The fixture is PMC12011025's shape — a ``<table-wrap>`` with no label
+        of its own carrying a ``<table-wrap-foot><fn>`` marker. The report must
+        count it under "holding a <label> below" and must not read it as the
+        table's own, which is what ``PREMISE VIOLATED`` did.
+        """
+        totals = sampler.Totals()
+        totals.add(
+            sampler.measure_article(
+                "PMC1",
+                _article("""
+                <table-wrap id="t1">
+                  <table><tbody><tr><td>1</td></tr></tbody></table>
+                  <table-wrap-foot><fn><label>*</label><p>Note.</p></fn></table-wrap-foot>
+                </table-wrap>"""),
+            )
+        )
+
+        assert sampler.print_report(totals) is True
+        out = capsys.readouterr().out
+        assert "exhibits with a direct-child <label>      : 0" in out
+        assert "exhibits with no <label> of their own     : 1" in out
+        assert "...of those, ones holding a <label> below : 1" in out
+        # The all-clear must not print here, and no verdict word may return.
+        assert "No exhibit on this draw holds a <label> below it" not in out
+        assert "PREMISE" not in out
 
     def test_image_only_tables_are_reported_as_a_share_of_tables(self, capsys):
         """A bare count cannot be compared across two draws of different sizes.
@@ -1809,7 +1865,7 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         would have been "the exhibit's own", which is the rule under test.
         What *is* measured, from `figures + tables` against the direct count,
         is the population a reader feels — 121 exhibits in 83 articles
-        carrying no label at all, which until #162 were rendered with an
+        carrying no label of their own, which until #162 were rendered with an
         invented number.
 
         The seven are asserted by name because they are the fixture set for

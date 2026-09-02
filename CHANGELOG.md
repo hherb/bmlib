@@ -51,13 +51,30 @@ All notable changes to bmlib are documented here. The format is based on
   confirmed by the corpus: deciding it needs a rule for which descendant label
   would have been the exhibit's own, and that is the rule under test.
 
-  The instrument says so now rather than printing a verdict it cannot support.
-  `print_report` prints the exhibits with no label of their own and, separately,
-  how many of those hold a label below, in place of `PREMISE HOLDS` /
-  `PREMISE VIOLATED`; the identical line over `<caption>`, which had the same
-  defect and never fired only because those two counts have been equal in
-  every draw, goes the same way. The claim is corrected in `jats_parser.py`,
-  `CLAUDE.md`, `ROADMAP.md`, the sampler's module docstring and here.
+  The instrument says so now rather than printing a verdict it cannot
+  support — and only the half it cannot. `print_report` prints the exhibits
+  with no label of their own and, separately, how many of those hold a label
+  below, in place of `PREMISE VIOLATED`. But `direct` is a subset of
+  `descendant` by construction, so a zero difference is a sound one-directional
+  all-clear, and removing it along with the over-claim left the report with no
+  content-level line that changes between draws. It is kept, phrased as what
+  was measured rather than as a verdict, in both the `<label>` and `<caption>`
+  sections — the latter's equality (6,938 / 6,938 recent) being the measured
+  result that certifies #123's premise, not the coincidence an earlier draft
+  called it. The claim is corrected in `jats_parser.py`, `CLAUDE.md`,
+  `ROADMAP.md`, the sampler's module docstring and here.
+
+  The all-clear needed a second guard of its own, which is the same error one
+  step further out: a draw carrying no `<label>` — or no `<caption>` — anywhere
+  satisfies the zero test vacuously, and the back-filled window does exactly
+  that on `<caption>` (0 of 627). Both sections now distinguish "no exhibit
+  holds one below" from "this draw carries none at all", the latter worded
+  `NO POPULATION HERE` rather than borrowing `NOT MEASURED`, which is reserved
+  for a row generation predating a counter.
+
+  Two consequences are filed rather than fixed: the cached HTML this moves has
+  no version stamp to invalidate it (#172), and a figure's `alt` now duplicates
+  its own `<figcaption>` verbatim (#173).
 
 - **Six ways the exhibit sampler reported more than it measured** (#165-#170,
   from the review of PR #163). Each is a case of the instrument being trusted
@@ -384,7 +401,7 @@ All notable changes to bmlib are documented here. The format is based on
   "carrying one anywhere". `exhibits_with_descendant_label` counts an exhibit
   holding *any* `<label>` in its subtree, so that difference is the set a
   descendant-search fallback would fire on and not the premise. What the pair
-  does support — 121 exhibits carrying no `<label>` at all, in 83 of 997
+  does support — 121 exhibits carrying no `<label>` of their own, in 83 of 997
   articles — is the population #162 acts on. The rule remains much the better
   of the two on the comparison the corpus does support, a depth counter
   *mis-assigning* 561 labels in 95 of those 997 articles.
@@ -1175,9 +1192,12 @@ All notable changes to bmlib are documented here. The format is based on
   figure/table?" flags, so the last footnote marker won. PMC12661592's single
   table reported its label as `"a"`. **Measured:** 27 of 225 surveyed articles
   (12.0%) carry a labelled `<table-wrap-foot><fn>`; `<fig>` has the identical
-  hole, JATS admitting `<fn>` there too. An empty label is not inert either —
-  the renderer substitutes `Table {i + 1}` for a table and `Figure {i + 1}`
-  for a figure, so the symptom is an invented number rather than a blank.
+  hole, JATS admitting `<fn>` there too. An overwritten label is not inert
+  either — the marker is rendered as the exhibit's own number, so the symptom
+  is a *wrong* number rather than a blank. (The renderer used to substitute
+  `Table {i + 1}` / `Figure {i + 1}` for an exhibit carrying no label of its own;
+  #162 removed that, so mis-routing is now the only route to an invented
+  number.)
 
   **The label is now routed by its parent element**, `<label>` being a direct
   child of the exhibit it numbers. That replaced a first cut which counted

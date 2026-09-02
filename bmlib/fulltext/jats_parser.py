@@ -2071,9 +2071,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # the 225 surveyed articles (issue #116), and a <fn-group>'s
             # "Notes", a <disp-formula>'s "(1)" and eLife's
             # <supplementary-material> "Figure 1—source data 1" all did the
-            # same. A swallowed label is not a blank either — the renderer
-            # substitutes `Table {i + 1}` or `Figure {i + 1}`, so the symptom
-            # is an invented number.
+            # same. A swallowed label is not a blank either: the marker that
+            # overwrote it is rendered as the exhibit's own number, so the
+            # symptom is a *wrong* number rather than a missing one. That is
+            # what still makes this routing load-bearing now that an exhibit
+            # carrying no label of its own is rendered without one (#162) —
+            # the renderer no longer substitutes anything, so a mis-routed
+            # marker is the only way an invented number can still appear.
             #
             # Asking the parent needs no enumeration of the containers that
             # may carry a <label>, which is what a depth counter needed and
@@ -2111,7 +2115,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # this one. So it stands on the argument below rather than on a
             # measurement, and the honest population beside it is a different
             # one: 121 exhibits of 7,058, in 83 of 997 recent articles, carry
-            # no <label> at all. `to_html` used to give each of those an
+            # no <label> of their own. `to_html` used to give each of those an
             # invented `Figure {i + 1}` / `Table {i + 1}`; it no longer does.
             #
             # The rule is also much the better of the two on the one

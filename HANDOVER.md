@@ -12,7 +12,7 @@ contributor name (PR #141), #146/#149's mixed-citation text (PR #148),
 #151's mechanised buffer-read invariant (PR #153, adding no behaviour),
 #112's funder-matching figures (PR #155), #119's article-only full-text
 scan (PR #159), and the JATS corpus redraw answering #132, #138 and #158
-(PR #163, merged 2026-09-01, which also fixed #165-#170 from its own review).
+(PR #163, merged 2026-09-01, which also took #165-#170 from its own review).
 All fourteen are on `main`. A fifteenth — #162's invented exhibit number — is
 open as **PR #171** on `fix/162-unlabelled-exhibit-number`. All five version
 places agree at
@@ -177,21 +177,42 @@ built to enforce them.
   reconciled the two, and a verdict line printed `PREMISE VIOLATED` off the
   difference. **Before acting on a counter, read its increment site**, not its
   name and not the report.
-- **A verdict an instrument cannot support should not be printed.** Both
-  `PREMISE HOLDS` / `PREMISE VIOLATED` lines are gone, replaced by the two
-  populations the counters do support. The `<caption>` line had the identical
-  defect and had never fired, only because those two counts have been equal in
-  every draw — luck, not a difference.
+- **A verdict an instrument cannot support should not be printed — but only
+  the half it cannot support.** `PREMISE VIOLATED` was an over-claim and is
+  gone from both sections. `PREMISE HOLDS` was not: `direct` is a subset of
+  `descendant` by construction, so a zero difference *does* prove no exhibit
+  carries its label indirectly. Removing both left the report with no
+  content-level line that can change between draws, so the sound direction is
+  restored as a statement of what was measured rather than a verdict word. The
+  zero is not luck either — on the recent corpus the `<caption>` equality
+  (6,938 / 6,938) is the result that certifies #123's premise.
 - **The same rule stated on one branch is not applied on the next.** `to_html`
   has invented no heading for an unsectioned `<body>` since #30. It was
   inventing `Figure {i + 1}` for an exhibit four hundred lines away.
 - **An issue's own remedy is a hypothesis.** #162 named three candidates and
   leaned toward the one its own population refutes. The fetch cost ten
   minutes.
+- **A zero over an absent population is not a clean result.** Restoring the
+  sound all-clear immediately created the next version of the same error: the
+  back-filled window carries no `<caption>` at all, so its zero satisfied the
+  test vacuously and printed a confirmation the draw cannot give. Both
+  sections now separate "no exhibit holds one below" from "this draw carries
+  none anywhere", and the second is deliberately *not* worded `NOT MEASURED`,
+  which is reserved for a row generation predating a counter — the instrument
+  not looking and the element being absent are different claims.
+
+Two follow-ups are filed rather than fixed here. **#172**: `to_html`'s output
+moved, and `FullTextCache` carries no version stamp, so an existing cache
+serves the old rendering forever with nothing able to tell. **#173**: a
+figure's `alt` now duplicates its own `<figcaption>` verbatim, so AT announces
+the caption twice — an accessibility decision worth taking deliberately rather
+than folding into a fix about invented numbers. The cross-platform spec in
+`bmlibrarian_lite` still specifies the old behaviour as normative pseudocode
+(that repo's #197).
 
 What it changed is a different, larger population that was never the issue's
 subject: **121 exhibits of 7,058, in 83 of 997 recent articles**, carry no
-`<label>` at all and were rendered with an invented number that, being the
+`<label>` of their own and were rendered with an invented number that, being the
 index, collides with a real one. **Moves stored values** in the cached HTML.
 
 **Next up: #147, then #164.** #147's `<alternatives>` objection measures 1,087
