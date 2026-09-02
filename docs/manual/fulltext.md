@@ -560,7 +560,9 @@ pass.
 > replace that section's heading — leaving not a blank but text that was never
 > a heading. `JATSBodySection.title` now holds only the `<sec>`'s own; a title
 > belonging to something bmlib does not model is dropped rather than
-> relocated. Measured at 69 titles in 31 of 300 recent open-access articles.
+> relocated. Measured at 411 titles in 104 of 997 recent open-access articles
+> (10.4%), owned by a `<caption>` (387), a `<def-list>` (12) and an
+> `<fn-group>` (12).
 
 > **A table may be deposited as an image.** A `<table-wrap>` whose content is
 > a `<graphic>` — a scanned or typographically complex table — puts its href in
@@ -694,9 +696,20 @@ they can hold most of a document's prose, and dropping that changes neither
 `has_body` nor `FullTextResult.content_kind`, which between them report only
 *total* loss. Measured across 1,022 open-access articles parsed before and
 after the #110 fix, 288 lose body text and 5,520,938 characters are removed,
-and `has_body` flips on none of them. This is the one field that says a
-nested article was there at all; each one is also logged at `DEBUG` with its
-`article-type` as it opens.
+and `has_body` flips on none of them. **That 28.2% is a rate of articles
+*losing body text*, on a draw that is in no commit** — the population it
+bounds, and the one this repo can re-derive, is how often an article *carries*
+a region at all: 29 of 997 (2.9%) in `tests/data/jats_exhibits.json` and 0 of
+997 in the back-filled corpus. That interval overlaps the 3,382 of 97,909
+(3.45%) counted by `bmlib.transparency` over the same PMC `oa_comm` baseline
+package — but the two read *different renditions*, transparency the archive
+bytes and the sampler the `fullTextXML` this parser is fed, and Europe PMC
+adds regions in 5 of 300 compared articles, so they corroborate each other
+across a known difference rather than being one measurement. The rate is
+a per-publisher property, so a draw weighted to publishers that deposit review
+histories as policy can honestly be an order of magnitude higher (#158). This
+is the one field that says a nested article was there at all; each one is also
+logged at `DEBUG` with its `article-type` as it opens.
 
 ### JATSAuthorInfo
 
