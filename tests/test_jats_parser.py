@@ -4617,6 +4617,598 @@ class TestAnUndividedNameInProseStaysInTheProse:
         )
 
 
+class TestAFormulaReachesTheProseThatContainsIt:
+    """A formula's text is emitted once, by the formula element — issue #147.
+
+    Two constructs lost content, and they are the same defect as #146 one
+    context over: a text-accumulating child that is not inline has its text
+    *taken and not returned*. ``<tex-math>`` is such a child, so an inline
+    formula rendered as the sentence with a hole in it; and ``<disp-formula>``
+    accumulates with no handler at all, so a display equation — its LaTeX, its
+    MathML *and* the ``(1)`` that prose cross-references — was popped and
+    discarded.
+
+    The rule is **choose one rendition, at the formula element**, never "merge
+    every child". Measured over the committed recent corpus, 1,087 formulas
+    carry a LaTeX *and* a MathML encoding of the same expression, so a rule
+    that merged both would print every one of them twice; over the
+    ``PMC012xxxxxx`` baseline package the same population is 188,473, of which
+    4,377 deposit the MathML *first*, so no streaming "first wins" rule works
+    either and the encodings have to be held until the formula closes.
+
+    MathML needs no membership of any set here, which is the whole reason this
+    change is small: it does not accumulate, so its leaf text is already
+    sitting in the formula's own buffer. LaTeX wins where a ``<tex-math>``
+    arrived; the buffer serves otherwise — and *"otherwise"* covers the
+    flattened MathML, a formula deposited as ordinary ``<italic>``/``<sub>``
+    markup (71 of the 141 encoding-less display formulas in the 880-article
+    served draw), and a MathML deposit whose namespace is bound to some prefix
+    other than ``mml``, which therefore keeps exactly today's behaviour rather
+    than depending on a literal prefix match the way #128 does.
+
+    **The LaTeX is a whole document, not an expression.** 99.9% of 4,422
+    sampled ``<tex-math>`` deposits in that package are
+    ``\\documentclass[12pt]{minimal}`` … ``\\begin{document}`` … , so merging
+    the element's text raw would inject some 300 characters of ``\\usepackage``
+    lines per formula — worse than the drop it replaces. Every one of 7,769
+    sampled deposits carries exactly one ``\\begin{document}``/``\\end{document}``
+    pair, 96.0% of those bodies are already ``$$…$$``-delimited and 3.7%
+    ``$…$``, so the rule takes the body and keeps the depositor's own
+    delimiters, adding its own only where there are none. Confirmed on the
+    rendition the parser is actually fed: 147 of 147 ``<tex-math>`` in two
+    live-fetched Europe PMC articles (PMC12000231, PMC12044768, 2026-09-02)
+    have the same shape.
+    """
+
+    #: The issue's own inline example. The deposit is what a publisher really
+    #: sends — a whole LaTeX document — so the fixture is the preamble as well
+    #: as the expression.
+    INLINE_LATEX = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>Methods</title>
+    <p>The model is <inline-formula><alternatives>\
+<tex-math id="M1">\\documentclass[12pt]{minimal}
+\\usepackage{amsmath}
+\\begin{document}$y = mx + b$\\end{document}</tex-math>\
+</alternatives></inline-formula> throughout.</p>
+  </sec></body>
+</article>"""
+
+    #: The issue's own display example: a numbered equation between two
+    #: paragraphs, deposited as a block child of the section.
+    DISPLAY_LATEX = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>Results</title>
+    <p>Before.</p>
+    <disp-formula id="e1"><label>(1)</label>\
+<tex-math>\\documentclass[12pt]{minimal}\\begin{document}$$E = mc^2$$\\end{document}</tex-math>\
+</disp-formula>
+    <p>After.</p>
+  </sec></body>
+</article>"""
+
+    def _sections(self, xml: bytes):
+        return JATSParser(xml).parse().body_sections
+
+    def test_an_inline_formula_reaches_the_sentence_that_contains_it(self):
+        """The hole in the sentence is what #147 was filed for."""
+        sections = self._sections(self.INLINE_LATEX)
+
+        assert sections[0].paragraphs == ["The model is $y = mx + b$ throughout."]
+
+    def test_a_display_formula_becomes_its_own_paragraph_with_its_number(self):
+        """1,459 of 1,915 display formulas in the committed corpus carry a
+        ``<label>``, so prose cross-referencing "(1)" is the common case."""
+        sections = self._sections(self.DISPLAY_LATEX)
+
+        assert sections[0].paragraphs == ["Before.", "(1) $$E = mc^2$$", "After."]
+
+    def test_the_preamble_the_publisher_wrapped_it_in_does_not_reach_the_prose(self):
+        """The half that makes a raw merge worse than the drop it replaces."""
+        prose = " ".join(self._sections(self.DISPLAY_LATEX)[0].paragraphs)
+
+        assert "documentclass" not in prose
+        assert "usepackage" not in prose
+        assert "begin{document}" not in prose
+
+    def test_the_depositors_own_delimiters_are_not_doubled(self):
+        """96.0% of bodies already carry ``$$…$$``; wrapping again gives
+        ``$$$$…$$$$``, which no reader and no renderer wants."""
+        prose = " ".join(self._sections(self.DISPLAY_LATEX)[0].paragraphs)
+
+        assert "$$$$" not in prose
+        assert prose.count("$$") == 2
+
+    def test_an_undelimited_body_is_delimited_by_its_context(self):
+        """0.04% of bodies carry no delimiter of their own, and the display
+        and inline spellings differ, so the context supplies it."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <p>Inline <inline-formula>\
+<tex-math>\\begin{document}a+b\\end{document}</tex-math></inline-formula>.</p>
+    <disp-formula><tex-math>\\begin{document}c+d\\end{document}</tex-math></disp-formula>
+  </sec></body>
+</article>"""
+        paragraphs = self._sections(xml)[0].paragraphs
+
+        assert paragraphs == ["Inline $a+b$.", "$$c+d$$"]
+
+    def test_a_deposit_that_is_not_a_whole_document_is_used_as_it_stands(self):
+        """3 of 4,422 sampled deposits carry no ``\\begin{document}`` wrapper.
+
+        Splitting on a marker that is not there must not empty the formula.
+        """
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <disp-formula><tex-math>x = 1</tex-math></disp-formula>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["$$x = 1$$"]
+
+    def test_a_formula_carrying_both_encodings_is_emitted_once(self):
+        """1,087 formulas in the committed recent corpus, 188,473 in the
+        package. Merging every child would print each of them twice."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <disp-formula><label>(2)</label><alternatives>\
+<tex-math>\\begin{document}$$E = mc^2$$\\end{document}</tex-math>\
+<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mi>E</mml:mi><mml:mo>=</mml:mo>\
+<mml:mi>m</mml:mi><mml:msup><mml:mi>c</mml:mi><mml:mn>2</mml:mn></mml:msup></mml:math>\
+</alternatives></disp-formula>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["(2) $$E = mc^2$$"]
+
+    def test_the_choice_does_not_depend_on_the_order_they_were_deposited(self):
+        """4,377 of the package's 188,473 both-encoding formulas put the
+        MathML first, so a streaming "first wins" rule picks differently for
+        2.3% of them. The frame holds both until the formula closes."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <disp-formula><alternatives>\
+<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mi>E</mml:mi></mml:math>\
+<tex-math>\\begin{document}$$E = mc^2$$\\end{document}</tex-math>\
+</alternatives></disp-formula>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["$$E = mc^2$$"]
+
+    def test_a_mathml_only_display_formula_reaches_the_prose(self):
+        """MathML dominates LaTeX 10,202 to 1,398 in the committed corpus, and
+        a display formula dropped its MathML as surely as its LaTeX."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <disp-formula><label>(3)</label>\
+<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mi>y</mml:mi><mml:mo>=</mml:mo>\
+<mml:mi>x</mml:mi></mml:math></disp-formula>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["(3) y=x"]
+
+    def test_a_display_formula_deposited_as_plain_markup_reaches_the_prose(self):
+        """71 of the 141 encoding-less display formulas in the 880-article
+        served draw hold the equation as ``<italic>``/``<sub>``/``<sup>``
+        alone — no MathML, no LaTeX, and no encoding choice to make."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <disp-formula><label>(4)</label><italic>C</italic><sub>max</sub> = 12</disp-formula>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["(4) Cmax = 12"]
+
+    def test_a_formula_deposited_as_an_image_alone_emits_nothing(self):
+        """140 of the committed corpus's 1,915 display formulas are a
+        ``<graphic>`` and a ``<label>``. No text-taking rule recovers those,
+        and #162's rule is that nothing is invented for them — so no empty
+        paragraph, and no paragraph holding a bare number."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <p>Before.</p>
+    <disp-formula id="e5"><label>(5)</label>\
+<graphic xlink:href="eq5.jpg" xmlns:xlink="http://www.w3.org/1999/xlink"/></disp-formula>
+    <p>After.</p>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["Before.", "After."]
+
+    def test_a_display_formula_inside_a_paragraph_stays_inside_it(self):
+        """The routing half. 116,623 of the package's 150,598 display formulas
+        (77.4%) sit inside a ``<p>``, and 201 of 654 in the served draw.
+        Emitted as its own paragraph, every one of them would be appended
+        *ahead* of the paragraph it interrupts, because the enclosing ``<p>``
+        has not closed yet."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <p>We fitted <disp-formula><tex-math>\\begin{document}$$y = a$$\\end{document}</tex-math>\
+</disp-formula> to the data.</p>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["We fitted $$y = a$$ to the data."]
+
+    def test_a_merged_display_formula_carries_no_number(self):
+        """A number in front of an expression mid-sentence is read as part of
+        it. Measured over the 880-article local corpus, printing it gave
+        ``'as shown in eqn (2):2 τ = kn'`` — where ``2 τ`` is a coefficient
+        the deposit does not contain. The equation number is printed where the
+        equation stands apart, which is where it can be told from the maths."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <p>as shown in eqn (2):<disp-formula><label>2</label>\
+<tex-math>\\begin{document}$$\\tau = k$$\\end{document}</tex-math></disp-formula></p>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["as shown in eqn (2): $$\\tau = k$$"]
+
+    def test_two_merged_display_formulas_do_not_weld_together(self):
+        """A display formula is a block, so the deposit puts nothing between
+        it and its neighbours — the markup relies on the line break it is
+        rendered with. Merged verbatim, the local corpus produced
+        ``'NH3 + H2O → NH4+ + OH−2 Al3+ + 3OH− → Al(OH)33 Al(OH)3'``: two
+        equations and their numbers run into one string."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <p>the following reactions:<disp-formula><label>1</label>\
+<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mi>a</mml:mi></mml:math>\
+</disp-formula><disp-formula><label>2</label>\
+<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mi>b</mml:mi></mml:math>\
+</disp-formula></p>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["the following reactions: a b"]
+
+    def test_an_inline_formula_is_merged_with_no_spacing_of_its_own(self):
+        """The other half of that rule: an inline formula is *in* the line, so
+        the deposit's own spacing around it is already right and adding to it
+        would put a space before the full stop."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <p>Let <inline-formula>\
+<tex-math>\\begin{document}$x$\\end{document}</tex-math></inline-formula>.</p>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["Let $x$."]
+
+    def test_an_inline_formula_keeps_the_spacing_the_deposit_gave_it(self):
+        """The module's own rule, already written for ``_text_with_formatting``:
+        a run's edge whitespace is re-emitted outside its markers. Elsevier
+        deposits ``<inline-formula> k </inline-formula>mer``, putting the
+        separation *inside* the element, so normalising without re-emitting it
+        welded ``'EndMatrix represents'`` and ``'-minus 0.505'`` into single
+        words over the local corpus. #147 is about formulas that were dropped;
+        text that already reached the prose keeps its spacing."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <p>the value<inline-formula> \
+<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mi>k</mml:mi></mml:math> \
+</inline-formula>mer content.</p>
+  </sec></body>
+</article>"""
+
+        # Deliberately no space in the prose either side: the separation this
+        # asserts is the deposit's own, inside the element, and a fixture that
+        # spaced it outside would pass whatever the rule does.
+        assert self._sections(xml)[0].paragraphs == ["the value k mer content."]
+
+    def test_an_inline_formula_the_deposit_did_not_space_is_not_spaced(self):
+        """The other edge of the same rule, and the one that makes it a rule
+        rather than a blanket space: ``<inline-formula>`` written tight against
+        its neighbours means the publisher wanted them tight."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <p>the value<inline-formula>\
+<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mi>k</mml:mi></mml:math>\
+</inline-formula>mer content.</p>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["the valuekmer content."]
+
+    def test_a_display_formula_in_a_block_container_stands_on_its_own(self):
+        """The other side of the same test: a ``<disp-quote>`` accumulates
+        nothing, so there is no prose for the formula to join — 50 of the
+        served draw's 654 are deposited that way, and 33,270 of the package's
+        sit directly in a ``<sec>``."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <disp-quote><disp-formula><tex-math>\\begin{document}$$q = 1$$\\end{document}</tex-math>\
+</disp-formula></disp-quote>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["$$q = 1$$"]
+
+    def test_a_formula_in_a_table_cell_stays_in_the_cell(self):
+        """80,918 inline formulas in the package sit in a ``<td>`` and 10,413
+        in a ``<th>``; 281 display formulas sit in a ``<td>``. A cell's text is
+        flowing text, so the formula joins it rather than being promoted to a
+        paragraph of the section that holds the table."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <table-wrap id="t1"><label>Table 1</label>
+      <table><tbody><tr><td>ratio <inline-formula>\
+<tex-math>\\begin{document}$r$\\end{document}</tex-math></inline-formula></td></tr></tbody></table>
+    </table-wrap>
+    <p>Prose.</p>
+  </sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+        cell = article.tables[0].html_content
+
+        assert article.body_sections[0].paragraphs == ["Prose."]
+        assert "<td>ratio $r$</td>" in cell
+        # The half that was a live corruption rather than a missing value: a
+        # cell collects its text from characters() and not from a buffer, so
+        # the LaTeX *document* reached the rendered table verbatim. 24,476
+        # <tex-math> in 856 of the package's 97,909 articles sit in a cell.
+        assert "documentclass" not in cell
+        assert "begin{document}" not in cell
+        # And exactly once — the formula's text is withheld from the cell so
+        # that its rendition can replace it, not join it.
+        assert cell.count("$r$") == 1
+
+    def test_mathml_outside_any_formula_element_still_reaches_the_prose(self):
+        """36,969 ``mml:math`` in the package sit outside any formula element
+        — 30,961 in a ``<p>`` alone. They flow through today because MathML
+        accumulates no buffer, and this change deliberately gives it none, so
+        that path is untouched."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <p>The value <mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML">\
+<mml:mi>k</mml:mi></mml:math> is fixed.</p>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["The value k is fixed."]
+
+    def test_a_tex_math_outside_any_formula_element_is_not_deleted(self):
+        """5 in the package sit directly in a ``<p>``. With no frame to stash
+        into, the expression is merged where it was deposited rather than
+        being taken and dropped — the failure this issue is about."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <p>Let <tex-math>\\begin{document}$z$\\end{document}</tex-math> denote it.</p>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["Let $z$ denote it."]
+
+    def test_a_formulas_label_is_not_the_enclosing_exhibits_number(self):
+        """#116, from the side this change could have reopened. A
+        ``<disp-formula>``'s ``(1)`` is one of the four labels the retired
+        depth counter mis-assigned to the exhibit around it."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <fig id="f1"><label>Figure 1</label>
+      <caption><p>A caption.</p></caption>
+      <disp-formula><label>(1)</label>\
+<tex-math>\\begin{document}$$w = 2$$\\end{document}</tex-math></disp-formula>
+      <graphic xlink:href="f1.jpg" xmlns:xlink="http://www.w3.org/1999/xlink"/>
+    </fig>
+  </sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert article.figures[0].label == "Figure 1"
+
+    def test_a_formula_in_a_citation_reaches_the_citation_string_once(self):
+        """The path CLAUDE.md records as unexercised — 0 of 10,671
+        ``<mixed-citation>`` across 227 articles carry a formula. #146's
+        ancestor test merges every descendant of a citation, so without the
+        formula arm the LaTeX would arrive there raw, preamble and all, and an
+        ``<alternatives>`` pair would arrive twice."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <back><ref-list>
+    <ref id="R1"><mixed-citation><source>J Med</source>. On <inline-formula>\
+<tex-math>\\documentclass{minimal}\\begin{document}$k$\\end{document}</tex-math>\
+</inline-formula>.</mixed-citation></ref>
+  </ref-list></back>
+</article>"""
+        reference = JATSParser(xml).parse().references[0]
+
+        assert reference.citation == "J Med. On $k$."
+
+    def test_a_footnote_marker_inside_a_formula_is_not_the_equation_number(self):
+        """#116's own shape, one element in. The ``<label>`` a formula reads is
+        the one whose *parent* it is — an ambient "is a formula open?" test
+        would take a ``<fn>``'s ``a``/``*`` marker exactly as the retired depth
+        counter took it for the exhibit enclosing it."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <disp-formula><label>(7)</label>\
+<tex-math>\\begin{document}$$p = 0.05$$\\end{document}</tex-math>\
+<fn><label>*</label><p>two-sided</p></fn></disp-formula>
+  </sec></body>
+</article>"""
+
+        paragraphs = self._sections(xml)[0].paragraphs
+
+        assert "(7) $$p = 0.05$$" in paragraphs
+        assert not any(par.startswith("*") for par in paragraphs)
+
+    def test_a_formula_in_a_citation_with_no_formula_element_is_rendered_once(self):
+        """Why ``<tex-math>`` is in ``_FORMULA_PARTS`` and not left to
+        ``_INLINE_ELEMENTS``. Inside a ``<mixed-citation>`` #146's ancestor
+        test merges *every* accumulating descendant, so a ``<tex-math>``
+        deposited there with no formula element around it would be merged raw
+        — preamble and all — **and** rendered by its own arm, printing the
+        expression twice."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <back><ref-list>
+    <ref id="R1"><mixed-citation><source>J Med</source>. On \
+<tex-math>\\documentclass{minimal}\\begin{document}$q$\\end{document}</tex-math>.\
+</mixed-citation></ref>
+  </ref-list></back>
+</article>"""
+        citation = JATSParser(xml).parse().references[0].citation
+
+        assert citation == "J Med. On $q$."
+
+    def test_a_nested_formula_in_a_cell_is_not_printed_twice(self):
+        """The cell takes the *outermost* formula's rendition alone: the inner
+        one's text is already inside the outer's buffer, so offering both
+        would print the expression twice in the rendered table."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <table-wrap id="t1"><label>Table 1</label>
+      <table><tbody><tr><td><disp-formula>where <inline-formula>\
+<tex-math>\\begin{document}$n$\\end{document}</tex-math></inline-formula></disp-formula>\
+</td></tr></tbody></table>
+    </table-wrap>
+  </sec></body>
+</article>"""
+        cell = JATSParser(xml).parse().tables[0].html_content
+
+        assert cell.count("$n$") == 1
+        assert "<td>where $n$</td>" in cell
+
+    def test_a_display_formula_counts_as_body_prose(self):
+        """``has_body`` is what holds a body-less deposit back from the cache,
+        and an article whose section is one equation does have a body."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <disp-formula><tex-math>\\begin{document}$$y = a$$\\end{document}</tex-math></disp-formula>
+  </sec></body>
+</article>"""
+
+        assert JATSParser(xml).parse().has_body is True
+
+    def test_an_empty_formula_adds_no_paragraph(self):
+        """A ``<disp-formula>`` holding nothing at all must not open a
+        paragraph, for the reason an empty ``<p>`` does not open a section."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <p>Only this.</p>
+    <disp-formula id="e9"/>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["Only this."]
+
+    def test_a_nested_formula_contributes_to_the_one_that_encloses_it(self):
+        """Formulas nest — 21 inline formulas inside a display formula in the
+        880-article draw — so the frames are a stack, per #115. The inner
+        emission lands in the outer formula's own buffer, which the outer then
+        emits because it has no LaTeX of its own."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title>
+    <disp-formula><label>(6)</label>where <inline-formula>\
+<tex-math>\\begin{document}$n$\\end{document}</tex-math></inline-formula> is fixed</disp-formula>
+  </sec></body>
+</article>"""
+
+        assert self._sections(xml)[0].paragraphs == ["(6) where $n$ is fixed"]
+
+    def test_a_formula_inside_a_nested_article_is_not_this_articles(self):
+        """Every handler is suppressed inside a ``<sub-article>`` (#110), and
+        a formula arm added later has to be too — the reason the suppression
+        is tested before every branch rather than at each one."""
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title><p>Ours.</p></sec></body>
+  <sub-article article-type="reviewer-report">
+    <front-stub><title-group><article-title>Review</article-title></title-group></front-stub>
+    <body><sec><title>R</title>
+      <disp-formula><label>(1)</label>\
+<tex-math>\\begin{document}$$reviewer = 1$$\\end{document}</tex-math></disp-formula>
+    </sec></body>
+  </sub-article>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert [p for s in article.body_sections for p in s.paragraphs] == ["Ours."]
+
+
 class TestAnUnparseableSpanCostsOneCellAndNotTheArticle:
     """``colspan`` is CDATA, so a value ``int()`` refuses must not raise — #129.
 
@@ -4767,6 +5359,27 @@ _AUDITED_ARTICLE = b"""<?xml version="1.0"?>
 </article>"""
 
 
+#: The audited article with a display formula in it, for the one stack
+#: ``_AUDITED_ARTICLE`` does not exercise.
+_AUDITED_FORMULA_ARTICLE = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="pmc">PMC1234567</article-id>
+    <title-group><article-title>Real article</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Adeyemi</surname><given-names>K</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <body>
+    <sec><title>Results</title>
+      <p>Body prose.</p>
+      <disp-formula id="e1"><label>(1)</label>\
+<tex-math>\\begin{document}$$E = mc^2$$\\end{document}</tex-math></disp-formula>
+    </sec>
+  </body>
+</article>"""
+
+
 class TestTheParseIsAuditedWhenItEnds:
     """An unbalanced handler must not fail silently — issue #134.
 
@@ -4823,6 +5436,23 @@ class TestTheParseIsAuditedWhenItEnds:
         JATSParser(_AUDITED_ARTICLE).parse()
 
         assert any("<contrib-group> still open" in m for m in parser_log.messages(logging.ERROR))
+
+    def test_a_formula_left_open_is_reported(self, monkeypatch, parser_log):
+        """The stack #147 added, captured from the handler rather than posed.
+
+        Its own fixture because ``_AUDITED_ARTICLE`` carries no formula, and
+        adding one there would make every other test in this class depend on
+        an element none of them is about.
+        """
+        parser_log.expect_errors()
+        _drop_end_tag(monkeypatch, "disp-formula")
+
+        JATSParser(_AUDITED_FORMULA_ARTICLE).parse()
+
+        assert any(
+            "<inline-formula>/<disp-formula> still open" in m
+            for m in parser_log.messages(logging.ERROR)
+        )
 
     def test_a_leftover_text_buffer_is_reported(self, monkeypatch, parser_log):
         """``<p>`` accumulates its own buffer, so a dropped ``</p>`` strands one."""
@@ -5130,6 +5760,7 @@ class TestTheAuditNetIsComplete:
             "element_stack",
             "figure_slots",
             "figure_stack",
+            "formula_stack",
             "nested_article_depth",
             "section_stack",
             "table_slots",

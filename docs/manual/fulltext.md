@@ -467,6 +467,7 @@ pass.
 | `table-wrap/graphic` | A table deposited as an image — see below |
 | `ref-list/ref/element-citation` | Structured references |
 | `ref-list/ref/mixed-citation` | Structured references, plus the deposited string — see below |
+| `inline-formula` / `disp-formula` | Formulas, as one chosen encoding — see below *(unreleased, #147)* |
 | `bold/italic/sub/sup/monospace` | Inline formatting |
 | `xref` | Cross-reference anchor links |
 | `sub-article`, `response` | **Ignored** — a whole article of its own, see below |
@@ -593,6 +594,41 @@ pass.
 > `body_sections`. Nothing inside a figure or table counts towards
 > [`has_body`](#jatsarticle), so a `<body>` carrying only a captioned figure
 > still reports no body.
+
+> **A formula reaches the prose that contains it** *(unreleased, #147)*. A
+> `<tex-math>` used to be taken from the sentence around it and dropped, and a
+> `<disp-formula>` dropped outright — LaTeX, MathML and the `(1)` that body
+> prose cross-references. Both now reach `body_sections` and the rendered
+> HTML, as **one** encoding: a formula deposited as both LaTeX and MathML (the
+> common case where LaTeX appears at all) would otherwise print twice.
+>
+> What you get:
+>
+> - **LaTeX** where the deposit carries a `<tex-math>`, as the expression
+>   alone. Publishers deposit a whole LaTeX document — `\documentclass`, a run
+>   of `\usepackage` lines, then `\begin{document}` — and bmlib extracts what
+>   is between `\begin{document}` and `\end{document}`, keeping the delimiters
+>   the depositor wrote (`$$…$$` for nearly all of them) and adding `$…$` or
+>   `$$…$$` only where there are none.
+> - **The MathML flattened to its leaf text** otherwise, undelimited, exactly
+>   as an inline MathML formula has always reached the prose. This is lossy:
+>   `<mml:mspace>` and `<mml:mfenced>` carry their spacing and brackets as
+>   attributes, so a flattened formula can run words together or lose its
+>   parentheses. It is what the document holds, not a rendering of it.
+> - **Nothing** for a formula deposited as an image alone — bmlib invents no
+>   placeholder and no bare equation number for it.
+>
+> Where the equation lands depends on where it was deposited. A
+> `<disp-formula>` inside a `<p>` joins that paragraph, because emitted
+> separately it would appear *before* the paragraph it interrupts; one
+> deposited as a block child of a `<sec>` becomes a paragraph of its own,
+> prefixed by its `<label>`. **A merged formula carries no number** — inside a
+> sentence a bare `2` reads as part of the expression rather than as the
+> equation's number.
+>
+> A formula inside a table cell reaches `html_content` the same way, as its one
+> rendition. Before this change the cell was given the LaTeX document
+> verbatim, preamble and all.
 
 > **A malformed span costs its own row, not the article** *(unreleased,
 > #129)*. `colspan` is CDATA in JATS, so `colspan="two"` — and

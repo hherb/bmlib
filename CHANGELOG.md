@@ -8,6 +8,100 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A formula reaches the prose that contains it** (#147). Two constructs lost
+  their content, in the two ways a text-accumulating element can. `<tex-math>`
+  accumulates a buffer and is not inline, so an `<inline-formula>` merged an
+  empty one and the sentence rendered with a hole in it. `<disp-formula>`
+  accumulates with no handler at all, so a display equation was popped and
+  discarded whole — its LaTeX, its MathML **and** the `(1)` that body prose
+  goes on to cross-reference.
+
+  The rule is **choose one rendition, at the formula element**, held until the
+  formula closes because either encoding may be deposited first — 4,377 of the
+  package's 188,473 both-encoding formulas are MathML-first, though **in 37 of
+  its 97,909 articles at ~118 apiece**, so that is one publisher's house style
+  rather than a rate and a 997-article draw expects none of it. The
+  measurement is what rules out the obvious alternative: 1,087 formulas in the
+  committed recent corpus, and 188,473 across PMC's `oa_comm_xml.PMC012xxxxxx`
+  baseline package, carry a LaTeX *and* a MathML encoding of one expression,
+  so adding `<tex-math>` to `_INLINE_ELEMENTS` would print each of them twice.
+  LaTeX wins where a `<tex-math>` arrived; the formula's own buffer serves
+  otherwise, and *otherwise* is the common case rather than a fallback — it
+  carries the MathML flattening (10,202 against 1,398 `<tex-math>` in that
+  corpus), a formula deposited as ordinary `<italic>`/`<sub>`/`<sup>` markup
+  (71 of the 141 encoding-less display formulas in an 880-article local
+  draw), and a MathML deposit bound to some prefix other than `mml`, which
+  therefore keeps exactly its old behaviour instead of depending on a literal
+  prefix match the way #128 does.
+
+  **The LaTeX is a whole document, not an expression**, which is why the fix
+  is not a merge. 99.9% of 4,422 sampled deposits in that package are
+  `\documentclass[12pt]{minimal}` … `\begin{document}` …, so merging the
+  element's text raw would inject some 300 characters of `\usepackage` lines
+  per formula — worse than the drop it replaces. Every one of 7,769 sampled
+  deposits carries exactly one `\begin{document}`/`\end{document}` pair, and
+  so do 147 of 147 in two articles fetched live from Europe PMC, the rendition
+  bmlib is actually fed. 96.0% of the bodies already carry `$$…$$` and 3.7%
+  `$…$`, so the depositor's own delimiters are kept and a pair is added only
+  where there is none.
+
+  **A live corruption went with it**, and no buffer rule reaches it: a table
+  cell collects its text in `characters()`, not from a buffer, so the LaTeX
+  document was pasted into the rendered table verbatim — 24,476 `<tex-math>`
+  in 856 of that package's 97,909 articles sit inside a `<td>` or a `<th>`.
+  The cell now takes the same one rendition the prose does.
+
+  Two routing rules, both measured. A `<disp-formula>` inside a `<p>` is
+  **merged into that paragraph** — 116,623 of the package's 150,598 (77.4%)
+  and 201 of the local draw's 654 sit there, and emitted as a paragraph of its
+  own each would land *ahead* of the paragraph it interrupts, the enclosing
+  `<p>` not having closed yet. One deposited as a block child stands as its
+  own paragraph, routed exactly as a `<p>` is, prefixed by its `<label>`
+  (1,459 of the corpus's 1,915 display formulas carry one). And the number is
+  printed **only** where the equation stands apart: merged into a sentence a
+  bare number is not read as a number, which over the local corpus gave
+  `'as shown in eqn (2):2 τ = kn'` — a coefficient the deposit does not
+  contain — and, for consecutive equations,
+  `'NH3 + H2O → NH4+ + OH−2 Al3+ + 3OH− → Al(OH)33 Al(OH)3'`. A corruption is
+  worse than a blank (#116, #162).
+
+  A formula holding nothing renders as nothing: 140 of the corpus's display
+  formulas are a `<graphic>` and a `<label>`, and no text-taking rule recovers
+  those — emitting the label alone would be #162's defect, a number standing
+  for content that is not there. An inline formula keeps the spacing the
+  deposit gave it, the module's own `_text_with_formatting` rule (a run's edge
+  whitespace is re-emitted outside its markers); a merged display formula gets
+  one space either side, because a block deposit has no spacing of its own to
+  keep and welds without it.
+
+  **Moves stored values.** Measured by diffing parsed output against `main`
+  over 880 local PMC articles, not reasoned from the call graph: prose moves
+  in **68 articles (7.7%), gaining 433 paragraphs and losing none**, and the
+  rendered HTML `FullTextService` caches moves in the same 68. Abstracts,
+  tables and reference strings move in **zero** — the first cut moved 3, 4 and
+  0, all of them collateral re-spacing of text that already reached the prose,
+  which is what the edge-whitespace rule above removed.
+
+  `formula_stack` joins `_parse_audit`'s net, which demanded it:
+  `TestTheAuditNetIsComplete` failed on the new stack before a line of the
+  audit was written. `scripts/sample_jats_exhibits.py` gains a counter
+  generation for the three populations the *fix* rests on — where a
+  `<disp-formula>` is deposited, which encoding a both-encoding formula
+  deposits first, and what a `<tex-math>` actually holds — so the next redraw
+  re-derives them rather than leaving them in a throwaway script.
+
+- **`JATSTableInfo.graphic_url`'s cited populations are the committed ones**
+  (found while fixing #147). The docstring still quoted the pre-#138 draw —
+  600 articles, 755 tables, 11 image-only "all in the back-filled window" and
+  5 carrying both — where the redrawn corpora hold 1,994 articles and 2,448
+  `<table-wrap>`, of which **8** are image-only and **84** carry both, every
+  one in the recent window. It had come to say the opposite of the evidence in
+  both directions: the back-filled window holds no `<table-wrap>` at all, and
+  "both" is the commoner rendition. PR #163 reconciled `jats_parser.py`,
+  `CLAUDE.md`, `ROADMAP.md`, `CHANGELOG.md` and `docs/manual/` and did not
+  walk this file; the mechanised check asserts the corpus against literals in
+  the test, so it cannot catch prose drifting away from it.
+
 - **No number is invented for an exhibit the publisher did not number** (#162,
   and the reading of #138's corpus that filed it). `to_html()` rendered
   `fig.label or f"Figure {i + 1}"` and `tbl.label or f"Table {i + 1}"`, so an

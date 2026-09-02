@@ -316,6 +316,66 @@ must not be re-done.
   `test_a_stub_with_no_article_raises` and
   `test_a_body_less_article_with_an_abstract_is_returned`.
 
+## fulltext — a formula is not one more `_INLINE_ELEMENTS` member (#147)
+
+**Do not "fix" a dropped formula by adding `<tex-math>` to
+`_INLINE_ELEMENTS`,** and do not print an equation number on a formula that
+was merged into a sentence. Both look like the one-line version of the fix and
+both are refuted by the corpus.
+
+*The merge prints the formula twice.* 1,087 formulas in the committed recent
+corpus and 188,473 across PMC's `oa_comm_xml.PMC012xxxxxx` baseline package
+carry a LaTeX **and** a MathML encoding of one expression. MathML accumulates
+no buffer, so its leaf text is already in the formula's own; merging the LaTeX
+back as well emits both. The encodings are therefore held and one is chosen at
+the formula's end tag, which also makes the choice independent of the order
+they were deposited in — and that order does vary, though **say which
+population that is**: 4,377 of the package's 188,473 both-encoding formulas
+are MathML-first, sitting in **37 of its 97,909 articles** at ~118 apiece. It
+is a house style, not a rate; a 997-article draw expects none, a random
+4,000-article one measured 2, and the rule stands on the content model
+admitting either order rather than on the count.
+
+*And it prints a LaTeX document, not an expression.* 99.9% of 4,422 sampled
+deposits are `\documentclass[12pt]{minimal}`, a run of `\usepackage` lines,
+then `\begin{document}` — some 300 characters of preamble per formula, which
+is worse than the drop it replaces. Every one of 7,769 sampled deposits
+carries exactly one `\begin{document}`/`\end{document}` pair, and so do 147
+of 147 in two articles fetched live from Europe PMC, so the body is
+extractable; 96.0% of those bodies already carry `$$…$$` and 3.7% `$…$`, so
+the depositor's own delimiters are kept rather than a second pair added.
+
+*MathML needs no membership either*, and deliberately has none: it is why the
+change is small, and it is what makes a MathML deposit bound to a prefix other
+than `mml` keep exactly its old behaviour instead of depending on a literal
+prefix match the way #128 does.
+
+**The equation number is printed only where the equation stands apart.** A
+`<disp-formula>` inside a `<p>` is merged into that paragraph — 116,623 of the
+package's 150,598 (77.4%) sit there, and emitted separately each would land
+*ahead* of the paragraph it interrupts, the enclosing `<p>` not having closed.
+Printing the `<label>` there produced, over 880 local articles,
+`'as shown in eqn (2):2 τ = kn'`, where `2 τ` is a coefficient the deposit
+does not contain, and — for consecutive equations —
+`'NH3 + H2O → NH4+ + OH−2 Al3+ + 3OH− → Al(OH)33 Al(OH)3'`, where each number
+welds onto the previous formula and changes the chemistry. A corruption is
+worse than a blank (#116, #162), and the prose introducing a merged equation
+names its number in nearly every case anyway.
+
+**A merged display formula gets one space either side; an inline one gets
+whatever the deposit gave it.** The asymmetry is the point: a block deposit
+has no spacing of its own to keep (the renderer supplies the line break), so
+merged verbatim it welds onto the prose; an inline formula's separation is
+often written *inside* the element — `<inline-formula> k </inline-formula>mer`
+— and normalising without re-emitting it welded `'EndMatrix represents'` and
+`'−minus 0.505'` into single words. That second rule is the module's own,
+already written down for `_text_with_formatting`.
+
+Pinned by `test_jats_parser.py::TestAFormulaReachesTheProseThatContainsIt`
+(30 tests, every one mutation-verified) and by the `formula routing (#147)`
+counter generation in `scripts/sample_jats_exhibits.py`, which is what makes
+the three populations above re-derivable at the next redraw.
+
 ## fulltext — an exhibit with no `<label>` gets no fallback search (#162)
 
 **Do not add a descendant search when an exhibit carries no direct-child

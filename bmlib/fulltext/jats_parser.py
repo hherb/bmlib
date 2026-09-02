@@ -555,6 +555,56 @@ class _ContribFrame:
 
 
 @dataclass
+class _FormulaFrame:
+    """One open ``<inline-formula>`` or ``<disp-formula>`` (issue #147).
+
+    A formula holds its expression in one of several *encodings* of the same
+    thing, and the rule is to emit exactly one of them. Merging every child —
+    what ``_INLINE_ELEMENTS`` would have done — prints the formula twice
+    wherever both are deposited: 1,087 formulas in the committed recent corpus
+    and 188,473 across the ``PMC012xxxxxx`` baseline package carry a LaTeX and
+    a MathML encoding of one expression.
+
+    Only ``<tex-math>`` needs a field. MathML accumulates no buffer, so its
+    leaf text is already sitting in the formula's own — which is why
+    :func:`_render_formula` takes that buffer as its fallback rather than this
+    frame carrying a second list, and why a MathML deposit binding the
+    namespace to something other than ``mml`` keeps exactly today's behaviour
+    instead of depending on a literal prefix match the way issue #128 does.
+
+    A stack of these, for the reason :class:`_ExhibitFrame` is one: formulas
+    nest. 21 ``<inline-formula>`` in the 880-article served draw sit inside a
+    ``<disp-formula>``, where the inner emission lands in the outer's buffer
+    and the outer emits it as its own text.
+
+    ``label`` is the equation number — 1,459 of the committed corpus's 1,915
+    display formulas carry one, so the ``(1)`` that body prose cross-references
+    is the common case and not the exception. It is read from a ``<label>``
+    whose *parent* is this formula, the rule issue #116 established, and used
+    for a display formula alone: an inline formula sits inside a sentence,
+    where a number printed beside it is furniture rather than prose.
+    """
+
+    display: bool
+    label: str = ""
+    #: Every ``<tex-math>`` this formula has closed, in document order. A list
+    #: because ``<alternatives>`` may hold more than one, and because the
+    #: choice cannot be made while the encodings are still arriving: a
+    #: streaming "first wins" rule would pick the wrong encoding wherever the
+    #: MathML is deposited first.
+    #:
+    #: **Say which population that is.** 4,377 of the package's 188,473
+    #: both-encoding formulas are MathML-first — 2.3% of *formulas*, but they
+    #: sit in **37 of its 97,909 articles**, ~118 apiece. So it is one
+    #: publisher's house style rather than a rate: a 997-article draw expects
+    #: none, and a random 4,000-article one measured 2. The rule stands on the
+    #: content model, which admits either order, and not on the count; the
+    #: count is here so that a later reader meeting a zero does not conclude
+    #: the order never varies.
+    latex: list[str] = field(default_factory=list)
+
+
+@dataclass
 class _ReferenceBuilder:
     id: str = ""
     label: str = ""
@@ -627,6 +677,159 @@ _WS_RE = re.compile(r"\s+")
 
 def _normalize_whitespace(text: str) -> str:
     return _WS_RE.sub(" ", text).strip()
+
+
+#: The delimiter pairs a depositor may already have written around a LaTeX
+#: expression, tested in this order. ``$$`` precedes ``$`` because the shorter
+#: one is a prefix of the longer.
+_LATEX_DELIMITERS: tuple[tuple[str, str], ...] = (
+    ("$$", "$$"),
+    ("\\[", "\\]"),
+    ("\\(", "\\)"),
+    ("$", "$"),
+)
+
+
+def _latex_expression(deposit: str, display: bool) -> str:
+    """Render one ``<tex-math>`` deposit as an expression fit for prose.
+
+    A ``<tex-math>`` does not hold an expression. 99.9% of 4,422 deposits
+    sampled from the ``PMC012xxxxxx`` baseline package are a whole LaTeX
+    *document* — ``\\documentclass[12pt]{minimal}``, a run of ``\\usepackage``
+    lines, then ``\\begin{document}`` — so merging the element's text as it
+    stands injects some 300 characters of preamble per formula, which is worse
+    than the drop it replaces. Every one of 7,769 sampled deposits carries
+    exactly one ``\\begin{document}``/``\\end{document}`` pair, and the same
+    holds for 147 of 147 in two articles fetched live from Europe PMC
+    (PMC12000231 and PMC12044768, 2026-09-02) — the rendition the parser is
+    actually fed, which is the half issue #138 had to learn separately.
+
+    A deposit carrying no such pair is used as it stands: 3 of those 4,422 are
+    a bare expression, and splitting on a marker that is not there must not
+    empty the formula.
+
+    **The depositor's own delimiters are kept.** 96.0% of the bodies are
+    already wrapped in ``$$…$$`` and 3.7% in ``$…$``, so adding a pair
+    unconditionally gives ``$$$$…$$$$``. A body already carrying a pair is
+    returned verbatim — including where its pair disagrees with its context,
+    since re-spelling a display formula's ``$…$`` as ``$$…$$`` would be
+    inventing a claim about the deposit rather than reading one. Only an
+    undelimited body is delimited here, by its context.
+
+    A body opening an environment (``\\begin{aligned}``, 0.2%) is left alone
+    for the same reason: the environment establishes its own math mode, and
+    ``$$\\begin{equation}…`` is not valid LaTeX.
+
+    Args:
+        deposit: The ``<tex-math>`` element's text.
+        display: Whether the formula is a ``<disp-formula>``.
+
+    Returns:
+        The expression, delimited, or ``""`` if the deposit held nothing.
+    """
+    body = deposit
+    if "\\begin{document}" in body and "\\end{document}" in body:
+        body = body.split("\\begin{document}", 1)[1].rsplit("\\end{document}", 1)[0]
+    body = _normalize_whitespace(body)
+    if not body:
+        return ""
+    if body.startswith("\\begin{"):
+        return body
+    for opening, closing in _LATEX_DELIMITERS:
+        if (
+            body.startswith(opening)
+            and body.endswith(closing)
+            and len(body) > len(opening) + len(closing) - 1
+        ):
+            return body
+    return f"$${body}$$" if display else f"${body}$"
+
+
+def _pad_as_deposited(rendered: str, buffered: str, display: bool) -> str:
+    """Space a merged formula the way the deposit spaced it.
+
+    Two rules, and the second is the module's own, already written down for
+    ``_text_with_formatting``: **a run's edge whitespace is re-emitted outside
+    its markers**. :func:`_render_formula` normalises, so an inline formula
+    whose deposit reads ``<inline-formula> k </inline-formula>mer`` would
+    otherwise lose the separation the publisher put *inside* the element —
+    measured over the 880-article local corpus, that welded ``'EndMatrix
+    represents'`` into one word and ``'−minus 0.505'`` into another. Issue
+    #147 is about formulas that were **dropped**; re-spacing text that already
+    reached the prose is collateral, so the inline path keeps the deposit's
+    spacing exactly.
+
+    The first rule is the display one, and there the deposit has no spacing to
+    keep: a ``<disp-formula>`` is a block, rendered on a line of its own, so
+    the markup puts nothing between it and the text either side. Merged
+    verbatim it welds — the same corpus ran ``'following reactions:'`` straight
+    into the first equation, and consecutive equations into each other. One
+    space either side is the least that can be invented and still not join two
+    expressions into one; the paragraph normalises the doubles away.
+
+    Args:
+        rendered: The formula's chosen rendition, already normalised.
+        buffered: The formula's own text buffer, whose *edges* are read here.
+        display: Whether this is a ``<disp-formula>``.
+
+    Returns:
+        The rendition with whatever spacing it merges with.
+    """
+    if display:
+        return f" {rendered} "
+    lead = " " if buffered[:1].isspace() else ""
+    trail = " " if buffered[-1:].isspace() else ""
+    return f"{lead}{rendered}{trail}"
+
+
+def _render_formula(frame: _FormulaFrame, buffered: str, *, standalone: bool) -> str:
+    """The one rendition a formula contributes to the text around it.
+
+    LaTeX wins wherever a ``<tex-math>`` arrived, because it is the deposit's
+    exact expression where the alternative is a flattening. The buffer serves
+    otherwise, and *otherwise* is the common case rather than a fallback: it
+    carries the leaf text of a MathML encoding (which outnumbers LaTeX 10,202
+    to 1,398 in the committed recent corpus), a formula deposited as ordinary
+    ``<italic>``/``<sub>``/``<sup>`` markup (71 of the 141 encoding-less
+    display formulas in the 880-article served draw), and a MathML deposit
+    whose namespace prefix is not ``mml``.
+
+    A formula holding nothing renders as nothing — 140 of the committed
+    corpus's 1,915 display formulas are a ``<graphic>`` and a ``<label>``, and
+    no text-taking rule recovers those. Emitting the label alone would be
+    issue #162's defect: a number standing for content that is not there.
+
+    **The equation number is printed only where the equation stands apart**,
+    and that is a measured rule rather than a taste. A display formula
+    deposited inside a ``<p>`` is merged into the sentence, where a bare
+    number in front of the expression is not read as a number: over the
+    880-article local corpus this produced ``'as shown in eqn (2):2 τ = kn'``,
+    where the label reads as a coefficient, and — two formulas running on —
+    ``'NH3 + H2O → NH4+ + OH−2 Al3+ + 3OH− → Al(OH)33 Al(OH)3'``, where each
+    number welds onto the previous formula's tail and changes the chemistry.
+    21 insertions across that corpus opened with such a number. A corruption
+    is worse than a blank (issues #116 and #162), and the prose introducing a
+    merged equation names its number in nearly every case anyway.
+
+    Args:
+        frame: The formula that is closing.
+        buffered: Its own text buffer, whatever reached it that no arm took.
+        standalone: Whether this formula is becoming a paragraph of its own
+            rather than joining the text around it.
+
+    Returns:
+        The rendered formula, or ``""`` if it held no text at all.
+    """
+    if frame.latex:
+        parts = [_latex_expression(deposit, frame.display) for deposit in frame.latex]
+        body = " ".join(part for part in parts if part)
+    else:
+        body = _normalize_whitespace(buffered)
+    if not body:
+        return ""
+    if standalone and frame.label:
+        return f"{frame.label} {body}"
+    return body
 
 
 def _pad_row(row: list[str], count: int) -> list[str]:
@@ -887,6 +1090,56 @@ _INLINE_ELEMENTS = frozenset(
     }
 )
 
+# The two formula elements, whose text is emitted by their own arm and never
+# by the buffer pop (issue #147).
+#
+# Both used to lose content, in the two ways a text-accumulating element can.
+# <inline-formula> is inline, so its buffer merged into the sentence — but
+# <tex-math> beneath it accumulates and is *not* inline, so the buffer it
+# merged was empty and the sentence rendered with a hole in it.
+# <disp-formula> accumulates with no handler at all, so a display equation was
+# popped and discarded whole: its LaTeX, its MathML, and the "(1)" that body
+# prose goes on to cross-reference.
+#
+# The rule is to CHOOSE ONE RENDITION, AT THE FORMULA ELEMENT. It cannot be
+# expressed by adding <tex-math> to _INLINE_ELEMENTS, and the reason is
+# measured rather than hypothetical: 1,087 formulas in the committed recent
+# corpus, and 188,473 across the PMC012xxxxxx baseline package, carry a LaTeX
+# *and* a MathML encoding of the same expression, so a rule that merged every
+# child would print each of them twice.
+_FORMULA_ELEMENTS = frozenset({"inline-formula", "disp-formula"})
+
+# The elements whose text a formula's own arm delivers, so the pop must never
+# merge them. <tex-math> is here because its text is rendered before it is
+# merged — a raw merge is worse than the drop it replaces, since 99.9% of
+# 4,422 sampled deposits are a whole LaTeX document, preamble and all — and
+# the formula elements are here because their arm decides where their one
+# rendition goes. Kept as a set beside _INLINE_ELEMENTS rather than removing
+# <inline-formula> from it: that membership still states the true thing, that
+# an inline formula's text belongs to the prose around it. What changed is who
+# delivers it.
+_FORMULA_PARTS = _FORMULA_ELEMENTS | {"tex-math"}
+
+# Parents a <disp-formula> merges into rather than standing beside as its own
+# paragraph.
+#
+# 116,623 of the package's 150,598 display formulas (77.4%) sit inside a <p>,
+# and 201 of the 880-article served draw's 654. Emitted as its own paragraph,
+# every one of those would be appended *ahead* of the paragraph it interrupts,
+# because the enclosing <p> has not closed yet. The rest are block children —
+# 33,270 directly in a <sec>, and <app>, <boxed-text>, <disp-formula-group>,
+# <body> and <disp-quote> beyond that — where there is no open prose to join
+# and a paragraph of its own is the only way the equation reaches the article.
+#
+# AN ALLOW-LIST, AND IT FAILS TOWARD THE PARAGRAPH. A <sec> accumulates a
+# buffer like a <p> does, but nothing ever reads it, so merging into an
+# unlisted parent is a silent loss where emitting a paragraph is at worst an
+# ordering surprise. The listed members are the ones this module actually
+# reads back: <p> and the two cell elements, whose text reaches the rendered
+# table, plus _INLINE_ELEMENTS, each of which merges onward into one of them.
+_DISPLAY_FORMULA_MERGE_PARENTS = _INLINE_ELEMENTS | {"p", "td", "th"}
+
+
 # The two spellings that give a contributor's name as one undivided string.
 #
 # Both are inline, so their text goes back to the parent — which is what keeps
@@ -1131,6 +1384,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # was merely usually right.
         self.caption_stack: list[_FigureBuilder | _TableBuilder | None] = []
 
+        # Formula state. A stack because formulas nest, and holding only what
+        # the encoding *choice* needs: see `_FormulaFrame` (issue #147).
+        self.formula_stack: list[_FormulaFrame] = []
+
         # Reference state
         self.in_ref_list = False
         self.in_ref = False
@@ -1245,6 +1502,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             open_figures=len(self.figure_stack),
             open_tables=len(self.table_stack),
             open_captions=len(self.caption_stack),
+            open_formulas=len(self.formula_stack),
             open_contrib_groups=len(self.contrib_group_stack),
             open_contribs=len(self.contrib_stack),
             unfilled_author_slots=sum(slot is None for slot in self.author_slots),
@@ -1505,6 +1763,58 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             return self.current_table
         return None
 
+    def _append_prose(self, text: str, *, keep_empty: bool) -> None:
+        """Route one run of prose to whatever the parse currently has open.
+
+        Extracted from the ``<p>`` arm when ``<disp-formula>`` gained one
+        (issue #147): a display equation standing between two paragraphs *is*
+        a paragraph of the section, and the routing it needs — caption before
+        section, abstract before body, sectioned before unsectioned — is the
+        same routing, argued in the same order and for the same reasons. Two
+        copies of it would be two things to keep in step, which is the shape
+        this module keeps being caught by.
+
+        The ``<p>`` caller asks for ``keep_empty`` because an empty paragraph
+        inside a section is still a paragraph the document deposited, and
+        several tests pin the resulting empty string. A formula holding
+        nothing is not: it renders as ``""`` and must add no paragraph at all,
+        for the reason ``to_html`` invents no number for an unlabelled exhibit
+        (issue #162).
+
+        Args:
+            text: The prose, already whitespace-normalised.
+            keep_empty: Whether an empty ``text`` still appends inside a
+                section. Never opens an implicit body section either way.
+        """
+        if self.in_figure or self.in_table_wrap:
+            # Figure and table internals, tested before every prose branch
+            # because a <fig> or <table-wrap> usually sits inside a <sec>:
+            # asking about the section first would blank the caption and
+            # reprint it as article prose. Only <caption> content is kept,
+            # and `_append_caption_text` decides which caption's owner gets
+            # it. Cell and footnote <p> is dropped — characters() already
+            # collects cells into the rendered table, so letting it through
+            # would duplicate furniture into the prose and count it towards
+            # has_body.
+            self._append_caption_text(text)
+        elif self.in_abstract:
+            if text:
+                self.current_abstract_text.append(text)
+        elif (self.in_body or self.in_back) and self.section_stack:
+            if not text and not keep_empty:
+                return
+            if self.in_body and text:
+                self.body_paragraph_count += 1
+            self.section_stack[-1].paragraphs.append(text)
+        elif self.in_body and text:
+            # An unsectioned <body> child. Empty paragraphs are dropped
+            # rather than opening a section, so a <body> holding nothing
+            # but whitespace stays body-less.
+            if self.implicit_body_section is None:
+                self.implicit_body_section = _SectionBuilder()
+            self.body_paragraph_count += 1
+            self.implicit_body_section.paragraphs.append(text)
+
     def _append_caption_text(self, text: str) -> None:
         """Append caption prose to the innermost open ``<caption>``'s owner.
 
@@ -1638,6 +1948,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     builder=_FigureBuilder(id=attrs.get("id", "")),
                 )
             )
+        elif name in _FORMULA_ELEMENTS:
+            # A frame per formula, and a stack because formulas nest — see
+            # `_FormulaFrame`. What it collects is decided at the close, which
+            # is what makes the encoding choice independent of the order the
+            # encodings were deposited in (issue #147).
+            self.formula_stack.append(_FormulaFrame(display=name == "disp-formula"))
         elif name == "caption":
             # `element_stack[-1]` is this <caption>, as at <article-id> above.
             parent = self.element_stack[-2] if len(self.element_stack) >= 2 else ""
@@ -1741,6 +2057,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # pushed and popped by the element handlers, never here.
             return
         self._append_text(content)
+        if self.formula_stack:
+            # A cell collects its text here rather than from a buffer, so a
+            # formula inside one has to be held back the same way it is held
+            # back from prose: its arm appends the one rendition it chose.
+            # Without this the LaTeX reaches the rendered table raw, preamble
+            # and all — 24,476 <tex-math> in 856 of the PMC012xxxxxx package's
+            # 97,909 articles sit inside a <td> or a <th>, and every one of
+            # them pasted some 300 characters of \usepackage lines into the
+            # cell, in HTML `FullTextService` then caches (issue #147).
+            return
         current_table = self.current_table
         if current_table is not None:
             current_table.append_cell_text(content)
@@ -1758,10 +2084,17 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # An undivided name inside a <contrib> belongs to that contributor
             # and is not merged back; see `_UNDIVIDED_NAME_ELEMENTS`.
             is_owned_name = name in _UNDIVIDED_NAME_ELEMENTS and bool(self.contrib_stack)
+            # A formula and its LaTeX are emitted by the formula arm, which
+            # renders one chosen encoding — so neither may merge here, inside
+            # a <mixed-citation> included. Merging <tex-math> would put a
+            # whole LaTeX document into the prose, and merging both encodings
+            # of one expression would print it twice (issue #147).
+            is_formula_part = name in _FORMULA_PARTS
             element_text = self._pop_text_buffer(
                 merge_with_parent=(is_inline or self._inside_mixed_citation())
                 and not is_fig_table_xref
                 and not is_owned_name
+                and not is_formula_part
             )
         else:
             element_text = self.current_text
@@ -2001,32 +2334,58 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # reader does not take it for one.
                 self.section_stack[-1].title = normalized_text
         elif name == "p":
-            if self.in_figure or self.in_table_wrap:
-                # Figure and table internals, tested before every prose branch
-                # because a <fig> or <table-wrap> usually sits inside a <sec>:
-                # asking about the section first would blank the caption and
-                # reprint it as article prose. Only <caption> content is kept,
-                # and `_append_caption_text` decides which caption's owner gets
-                # it. Cell and footnote <p> is dropped — characters() already
-                # collects cells into the rendered table, so letting it through
-                # would duplicate furniture into the prose and count it towards
-                # has_body.
-                self._append_caption_text(normalized_text)
-            elif self.in_abstract:
-                if normalized_text:
-                    self.current_abstract_text.append(normalized_text)
-            elif (self.in_body or self.in_back) and self.section_stack:
-                if self.in_body and normalized_text:
-                    self.body_paragraph_count += 1
-                self.section_stack[-1].paragraphs.append(normalized_text)
-            elif self.in_body and normalized_text:
-                # An unsectioned <body> child. Empty paragraphs are dropped
-                # rather than opening a section, so a <body> holding nothing
-                # but whitespace stays body-less.
-                if self.implicit_body_section is None:
-                    self.implicit_body_section = _SectionBuilder()
-                self.body_paragraph_count += 1
-                self.implicit_body_section.paragraphs.append(normalized_text)
+            self._append_prose(normalized_text, keep_empty=True)
+        elif name == "tex-math":
+            # Stashed, never merged: the choice between this and the MathML
+            # beside it belongs to the formula, which has not closed yet, and
+            # 4,377 of the package's 188,473 both-encoding formulas deposit
+            # the MathML first (issue #147).
+            #
+            # With no formula open the expression is merged where it was
+            # deposited — 5 <tex-math> in that package sit directly in a <p>.
+            # Rendered rather than raw, because what the element holds is a
+            # whole LaTeX document; `display=False` since a formula standing
+            # in prose with no <disp-formula> around it is not a display one.
+            if self.formula_stack:
+                self.formula_stack[-1].latex.append(element_text)
+            else:
+                self._append_text(_latex_expression(element_text, display=False))
+        elif name in _FORMULA_ELEMENTS:
+            if self.formula_stack:
+                # Guarded for the reason </fig> is: SAX makes a close with
+                # nothing open unreachable, and a suppression region guarded
+                # on startElement alone is how that stops being true.
+                formula = self.formula_stack.pop()
+                parent = self.element_stack[-2] if len(self.element_stack) >= 2 else ""
+                standalone = formula.display and parent not in _DISPLAY_FORMULA_MERGE_PARENTS
+                rendered = _render_formula(formula, element_text, standalone=standalone)
+                if standalone:
+                    # A block-level equation between two paragraphs is a
+                    # paragraph of the section — routed exactly as one, since
+                    # it is one. `keep_empty=False` is the whole of the rule
+                    # that a formula holding nothing adds no paragraph: an
+                    # image-only <disp-formula> renders as "" and must not
+                    # open one, and stating that twice would leave two
+                    # spellings of one rule to keep in step.
+                    self._append_prose(rendered, keep_empty=False)
+                else:
+                    # Inside flowing text, which is where an inline formula
+                    # always is and 77.4% of display formulas are.
+                    # `_append_text` reaches the buffer this formula's own pop
+                    # restored, so the rendition lands where the element was
+                    # deposited.
+                    if rendered:
+                        rendered = _pad_as_deposited(rendered, element_text, formula.display)
+                    self._append_text(rendered)
+                    current_table = self.current_table
+                    if current_table is not None and not self.formula_stack:
+                        # characters() held this formula's text back from the
+                        # cell so the LaTeX could be rendered first; this is
+                        # where the cell gets its one rendition. Guarded on
+                        # the innermost frame alone: a nested formula's
+                        # emission is already inside the outer one's buffer,
+                        # so offering it to the cell as well prints it twice.
+                        current_table.append_cell_text(rendered)
 
         elif name == "body":
             self._flush_implicit_body_section()
@@ -2139,7 +2498,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # named as absent, and a single deposit convention is what put it
             # in both windows' worth of evidence at once.
             parent = self.element_stack[-2] if len(self.element_stack) >= 2 else ""
-            if parent == "fig" and self.current_figure is not None:
+            if parent in _FORMULA_ELEMENTS and self.formula_stack:
+                # An equation number, and the same parent test: a
+                # <disp-formula>'s "(1)" is one of the four labels the
+                # retired depth counter mis-assigned to the exhibit around it
+                # (issue #116), so routing it here rather than by an ambient
+                # flag is what keeps it off the figure that encloses it.
+                self.formula_stack[-1].label = text
+            elif parent == "fig" and self.current_figure is not None:
                 self.current_figure.label = text
             elif parent == "table-wrap" and self.current_table is not None:
                 self.current_table.label = text
