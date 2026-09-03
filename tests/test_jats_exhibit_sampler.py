@@ -2068,6 +2068,32 @@ class TestEveryCounterIsInAGeneration:
             sampler._COUNTER_GENERATIONS
         )
 
+    def test_a_section_is_gated_on_every_counter_it_reads(self, capsys):
+        """Not on the generation it is named after — 14b divides by `tex_math`.
+
+        That counter belongs to the generation *before* the one the section is
+        named for, so a row fresh for the routing counters and stale for the
+        waiting ones reaches `wilson()` with ``n = -1``, which raises out of
+        `print_report` rather than saying NOT MEASURED. A report that crashes
+        loses the other fourteen sections with it.
+
+        Pinned on the rule rather than on the chronology: the waiting
+        generation shipped first, so no *committed* corpus can carry this
+        shape — but a journal is topped up across runs, the generations are
+        hand-maintained, and the next section to divide by a counter from
+        another generation will not be announced.
+        """
+        fresh = sampler.measure_article("PMC1", _article("<p>Plain prose.</p>"))
+        stale = fresh.to_dict()
+        for name in sampler._WAITING_SIDE_COUNTERS:
+            del stale[name]
+        totals = sampler.Totals()
+        totals.add(sampler.ArticleMeasurement.from_dict(stale))
+
+        sampler.print_report(totals)
+
+        assert any("NOT MEASURED" in line for line in _section(capsys.readouterr().out, "14b."))
+
     def test_a_counter_field_is_never_treated_as_a_count(self):
         """`measured` used to raise `TypeError` on all eleven `Counter` fields.
 

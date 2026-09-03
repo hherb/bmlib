@@ -1429,13 +1429,13 @@ class ArticleMeasurement:
         """Rebuild a row written by :meth:`to_dict`.
 
         A counter the row does not carry is set to ``NOT_MEASURED`` rather
-        than left at its zero default. These arrived in five generations —
+        than left at its zero default. These arrived in seven generations —
         ``_TABLE_SIDE_COUNTERS`` with issue #135, ``_OWNER_SIDE_COUNTERS`` with
         #123/#125/#130, ``_CONTRIB_SIDE_COUNTERS`` with #120/#140,
         ``_SCOPE_SIDE_COUNTERS`` with #138, ``_WAITING_SIDE_COUNTERS`` with
-        #142/#143/#147/#150, and ``_FIGURE_SCOPE_COUNTERS`` with
-        #164/#162 — so a corpus or journal older than
-        a generation carries none of it, and
+        #142/#143/#147/#150, ``_FORMULA_ROUTING_COUNTERS`` with #147's fix and
+        ``_FIGURE_SCOPE_COUNTERS`` with #164/#162 — so a corpus or journal
+        older than a generation carries none of it, and
         each would otherwise sum to zero, which is exactly what a genuine "no
         table deposits an image", "no caption nests" or "no contributor is
         named undivided" draw looks like; reading one as the other is the
