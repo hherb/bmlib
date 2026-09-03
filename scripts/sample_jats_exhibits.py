@@ -2479,14 +2479,34 @@ class Totals:
         return merged
 
     def articles_where(self, attribute: str) -> int:
-        """How many rows carry a non-zero *attribute*.
+        """How many rows carry a non-empty *attribute*.
 
-        ``> 0``, never truthiness: `NOT_MEASURED` is ``-1``, which is truthy,
-        so a row that measured *nothing* used to count as an article that
-        carries the thing — inflating exactly the article-level denominators
-        the comments cite beside a counter total (issue #168).
+        For an integer counter: ``> 0``, never truthiness. `NOT_MEASURED` is
+        ``-1``, which is truthy, so a row that measured *nothing* used to
+        count as an article that carries the thing — inflating exactly the
+        article-level denominators the comments cite beside a counter total
+        (issue #168).
+
+        For a ``Counter``: **non-empty**, which is not what `_as_count` says.
+        That helper exists so :meth:`measured` stops raising on a `Counter`,
+        and flattening one to ``0`` is the right answer *there* — a `Counter`
+        takes no sentinel, so it is always measured. Borrowed here it answered
+        a different question wrongly, and silently: every `Counter`-backed
+        population read as carried by **no** article, so the report printed
+        ``<title> inside a <sec>, owned elsewhere: 411   in 0 articles
+        0.0%`` while the corpus held it in over a hundred. The prose was
+        never wrong — it is derived from the corpus directly — so only a
+        maintainer *running the sampler* met the zero, and would have read
+        the population as empty. `_as_count` is deliberately left alone: the
+        two callers are asking different things, which is the whole defect.
         """
-        return sum(1 for r in self.rows if _as_count(getattr(r, attribute)) > 0)
+
+        def carries(value: object) -> bool:
+            if isinstance(value, Counter):
+                return bool(value)
+            return isinstance(value, int) and value > 0
+
+        return sum(1 for r in self.rows if carries(getattr(r, attribute)))
 
     def measured(self, attribute: str) -> bool:
         """Did **every** row actually carry *attribute*?

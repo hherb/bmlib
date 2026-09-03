@@ -2110,6 +2110,51 @@ class TestEveryCounterIsInAGeneration:
                 assert totals.measured(name) is True
                 assert totals.articles_where(name) == 0
 
+    def test_an_article_carrying_a_counter_population_is_counted_as_one(self):
+        """The other half, and the one that was silently wrong.
+
+        The fixture above populates no `Counter` at all, so its
+        ``articles_where(...) == 0`` held for the wrong reason and the defect
+        went unseen: `articles_where` borrowed `_as_count`, which flattens a
+        `Counter` to ``0`` so that `measured` stops raising on one — a right
+        answer to a different question. Every `Counter`-backed population
+        therefore read as carried by no article, and section 10 printed
+        ``in 0 articles  0.0%`` over a population the corpus holds in more
+        than a hundred.
+
+        Only the *report* was wrong: the prose figures come from the corpus
+        rows directly. So this is what a maintainer running the sampler
+        sees, which is the whole audience the instrument has.
+        """
+        totals = sampler.Totals()
+        totals.add(
+            sampler.measure_article(
+                "PMC1",
+                _article("<sec><fn-group><title>Not the section's</title></fn-group></sec>"),
+            )
+        )
+        totals.add(sampler.measure_article("PMC2", _article("<sec><p>Nothing owned.</p></sec>")))
+
+        assert totals.counter_of("section_renaming_titles") == {"fn-group": 1}
+        assert totals.articles_where("section_renaming_titles") == 1
+
+    def test_the_report_names_the_articles_a_counter_population_reaches(self, capsys):
+        """And the fix has to reach the line that was printing the zero."""
+        totals = sampler.Totals()
+        totals.add(
+            sampler.measure_article(
+                "PMC1",
+                _article("<sec><fn-group><title>Not the section's</title></fn-group></sec>"),
+            )
+        )
+
+        sampler.print_report(totals)
+
+        line = next(
+            ln for ln in _section(capsys.readouterr().out, "10.") if "owned elsewhere" in ln
+        )
+        assert "in 1 articles" in line
+
 
 class TestTheCitedPopulationsAreWhatTheCorporaHold:
     """Every number a comment cites has to be re-derivable from the repo.
