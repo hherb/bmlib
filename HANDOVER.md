@@ -1,7 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-02. **0.10.0 is released and on PyPI**; sixteen changes
-sit unreleased once this branch merges — #73's atomic template install (PR #102), #96/#105's
+_Last updated: 2026-09-03. **0.10.0 is released and on PyPI**; seventeen changes
+sit unreleased — #73's atomic template install (PR #102), #96/#105's
 partitioning of an over-cap PubMed day (PRs #106 and #114), #109's typed
 article-id (PR #113), #110/#111's JATS sub-article and contributor-group
 fixes (PR #118), #115/#116/#117/#131's exhibit nesting, ranking and
@@ -14,8 +14,9 @@ contributor name (PR #141), #146/#149's mixed-citation text (PR #148),
 scan (PR #159), and the JATS corpus redraw answering #132, #138 and #158
 (PR #163, merged 2026-09-01, which also took #165-#170 from its own review),
 #162's invented exhibit number (PR #171, merged 2026-09-02, filing #172 and
-#173), and #147's dropped formulas (this branch). All five version places
-agree at 0.10.0. Twelve of the sixteen are `fulltext` JATS fixes filed within
+#173), #147's dropped formulas (PR #176, merged 2026-09-02, filing #174, #175,
+#177 and #178), and #164's owner-scoped figure walk (this branch). All five
+version places agree at 0.10.0. Thirteen of the seventeen are `fulltext` JATS fixes filed within
 days of each other; whoever cuts the next release should describe them
 together. Every unreleased ROADMAP row carries an `*(unreleased)*` marker.
 
@@ -39,7 +40,7 @@ measured by diffing a corpus rather than reasoned: over 880 local PMC articles
 3,541 rebuilt, 958 emptied of an `<element-citation>` leak — `authors` for 502
 in 14, rendered HTML for 576 in 23.
 
-**Two of the fifteen move stored *transparency* values, and both are outside
+**Two of the seventeen move stored *transparency* values, and both are outside
 `fulltext`.** #112 admits `plc`/`pty` to `_INDUSTRY_WORDS`, so `"GSK plc"` now
 sets `industry_funding_detected`, which feeds a HIGH-risk rule and a quality
 downgrade; neither token is in the labelled corpus, so **no measured figure
@@ -335,7 +336,7 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
   never the data one, and a downstream reading only the number must still read
   this list.
 - **Tests: 3074 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
-  2026-09-02 on this branch; `main` is 3035 + 63). The PostgreSQL half
+  2026-09-03 on `main`, which now carries PR #176's own review tests). The PostgreSQL half
   has not been re-run since the SQL last moved; the
   last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the
   #105 branch. Of the 63 default skips, 61 are the PostgreSQL
@@ -386,7 +387,7 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 
 ### Open GitHub issues
 
-**Twenty-six open** as this file is written, **twenty-five once this branch
+**Twenty-five open** as this file is written, **twenty-four once this branch
 merges** and 147 is resolved with it — that branch filed #174, #175 and, from
 its own review, #177 and #178 (verified with `gh issue list` 2026-09-02, after
 PR #171 merged, which resolved 162 and filed #172 and #173; #165-#170 went
@@ -422,7 +423,15 @@ five came out of it (released provenance is in `CHANGELOG.md`): **#73** → PR
 PR #148, filing **#147**, **#149**–**#151**; **#151** → PR #153, filing
 **#152**; **#112** → PR #155, filing **#154**, **#156**, **#157**; **#119** →
 PR #159, filing **#158**, **#160**, **#161**; **#162** → PR #171, filing
-**#172**, **#173**; **#147** → this branch, filing **#174** and **#175**, and its own review filing **#177** and **#178**.
+**#172**, **#173**; **#147** → PR #176, filing **#174** and **#175**, and its
+own review filing **#177** and **#178**; **#164** → this branch.
+
+**#147 had to be closed by hand, one session late** — PR #176's body says
+*"Fixes the formula-dropping issue (147)"*, which is the phrasing the
+closing-keyword paragraph above asks for, so GitHub correctly did **not**
+close it and nobody did either. That is the same check from the other side:
+the after-the-fact diff of `gh issue list` against what a merge says it fixed
+catches a keyword that fired *and* one that did not.
 
 
 **#151's own filing is the counter-example to the count above.** PR #148 filed
