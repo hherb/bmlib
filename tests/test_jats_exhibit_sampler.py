@@ -41,10 +41,12 @@ exhibit at all. The month windows are what spread it.
 from __future__ import annotations
 
 import argparse
+import ast
 import importlib.util
 import io
 import json
 import sys
+from collections import Counter
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -170,7 +172,7 @@ class TestCountingAgainstHandBuiltMarkup:
 
         Its only assertion anywhere was the corpus's own `== 0`, which is
         tautological for a counter that cannot fire — so the cited "0 nested
-        `<table-wrap>` across 1,994 articles" rested on nothing. JATS admits
+        `<table-wrap>` across 1,997 articles" rested on nothing. JATS admits
         a `<table-wrap>` inside another's `<table-wrap-foot>`, which is
         exactly the shape `jats_parser` cites as the reason a table's frame
         has to be a stack. The zero is real; this is what makes it evidence.
@@ -217,6 +219,16 @@ class TestCountingAgainstHandBuiltMarkup:
 
         assert (last.figures_multi_graphic, last.last_is_thumb, last.first_is_thumb) == (1, 1, 0)
         assert (first.figures_multi_graphic, first.last_is_thumb, first.first_is_thumb) == (1, 0, 1)
+        # The `_subtree` companions need the same positive control, and did
+        # not have one (issue #164's review). Both corpora measure
+        # `first_is_thumb_subtree` at 0 and every other assertion of it is
+        # `== 0`, so `if False: row.first_is_thumb_subtree += 1` left the
+        # whole suite green — a counter that *cannot* fire is indistinguish-
+        # able from the zero it reports, and CLAUDE.md cites "0% depositing a
+        # thumbnail first" off exactly this pair. The scoped twin was
+        # controlled here from the start; the companion is now too.
+        assert (last.last_is_thumb_subtree, last.first_is_thumb_subtree) == (1, 0)
+        assert (first.last_is_thumb_subtree, first.first_is_thumb_subtree) == (0, 1)
 
     def test_a_graphic_owned_by_a_non_exhibit_is_recorded_with_its_owner(self):
         row = sampler.measure_article(
@@ -387,11 +399,14 @@ class TestTheTableSideCountsWhatTheParserWouldRoute:
     have read "40% of tables carry several deposits", which is a statement
     about cell decoration and not about the ranking rule it was measuring.
 
-    The figure side deliberately keeps the subtree walk: its percentages are
-    cited in ``jats_parser`` and in CLAUDE.md, and re-scoping them silently
-    would invalidate every one. Both committed draws record zero nested
-    exhibits, so no ``<td>`` sits under a ``<fig>`` in either and the two
-    walks agree there anyway.
+    The figure side followed with issue #164 — see
+    ``TestTheFigureSideCountsWhatTheParserWouldRoute`` below. It kept the
+    subtree walk for several revisions longer because its percentages are
+    cited in ``jats_parser`` and in CLAUDE.md and re-scoping them silently
+    would have invalidated every one; the argument that the two walks agreed anyway
+    ("both committed draws record zero nested exhibits, so no ``<td>`` sits
+    under a ``<fig>``") is refuted by the redrawn corpora and is not restated
+    here.
     """
 
     def test_a_cell_image_is_not_the_tables_own_deposit(self):
@@ -443,6 +458,404 @@ class TestTheTableSideCountsWhatTheParserWouldRoute:
 
         assert (row.tables_with_graphic, row.tables_multi_graphic) == (1, 0)
         assert (row.figures_with_graphic, row.figures_multi_graphic) == (1, 0)
+
+
+class TestTheFigureSideCountsWhatTheParserWouldRoute:
+    """A ``<td>``'s or an ``<inline-formula>``'s image is not the figure's own.
+
+    Issue #164. The table counters were scoped to what the parser routes with
+    #135; the figure ones kept a whole-subtree ``el.iter()`` walk on an
+    argument that the redrawn corpora refute — *"both committed draws record
+    zero nested exhibits and every foreign owner is a ``<td>``, which can only
+    sit under a ``<table-wrap>``"*. The recent window holds **7 nested
+    ``<fig>``** (all in ``PMC12143881``) and **three** foreign owners, of
+    which an ``<inline-formula>`` is confined to no exhibit at all.
+
+    Both readings are now kept per row: the counters name what the parser
+    routes, and a ``_subtree`` companion records what the old walk said, so
+    the correction is *measured* inside one draw rather than inferred from a
+    diff against a corpus fetched on another day. That is #138's rule — three
+    simultaneous causes make a movement unattributable — applied to the one
+    cause this change introduces.
+    """
+
+    def test_a_cell_image_under_a_figure_is_not_the_figures_own_deposit(self):
+        """The table side's own fixture, one exhibit family over."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><label>Figure 1</label>
+              <graphic xlink:href="f1.jpg"/>
+              <table-wrap id="t1"><table><tbody><tr>
+                <td><graphic xlink:href="tick.gif"/></td>
+              </tr></tbody></table></table-wrap>
+            </fig>"""),
+        )
+
+        assert (row.figures_with_graphic, row.figures_multi_graphic) == (1, 0)
+        assert (row.figures_with_graphic_subtree, row.figures_multi_graphic_subtree) == (1, 1)
+        assert row.foreign_owned_graphics == {"td": 1}
+
+    def test_an_inline_formulas_image_belongs_to_the_formula(self):
+        """The owner the refuted premise could not account for.
+
+        69 of the recent window's 153 foreign-owned graphics have this owner,
+        and an ``<inline-formula>`` sits wherever prose does — including in a
+        figure's own caption, which is the shape here.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><graphic xlink:href="f1.jpg"/>
+              <caption><p>Fitted to <inline-formula>
+                <graphic xlink:href="eq1.gif"/>
+              </inline-formula> throughout.</p></caption>
+            </fig>"""),
+        )
+
+        assert (row.figures_with_graphic, row.figures_multi_graphic) == (1, 0)
+        assert (row.figures_with_graphic_subtree, row.figures_multi_graphic_subtree) == (1, 1)
+        assert row.foreign_owned_graphics == {"inline-formula": 1}
+
+    def test_a_nested_figures_deposit_belongs_to_the_nested_figure(self):
+        """eLife's house style — ``PMC12143881`` nests 7 of its 19 figures.
+
+        Unscoped the enclosing figure reads as carrying both deposits, and
+        since the supplement's is deposited last, whether the *outer* figure
+        "ends on a thumbnail" is decided by the supplement's rendition.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><graphic xlink:href="f1.jpg"/>
+              <fig id="f1s1"><graphic content-type="thumb" xlink:href="f1s1.gif"/></fig>
+            </fig>"""),
+        )
+
+        assert (row.figures, row.nested_figures) == (2, 1)
+        assert (row.figures_with_graphic, row.figures_multi_graphic) == (2, 0)
+        assert (row.last_is_thumb, row.first_is_thumb) == (0, 0)
+        assert (row.figures_with_graphic_subtree, row.figures_multi_graphic_subtree) == (2, 1)
+        assert (row.last_is_thumb_subtree, row.first_is_thumb_subtree) == (1, 0)
+
+    def test_a_nested_tables_own_deposit_is_the_tables_and_neither_is_foreign(self):
+        """Where the two exhibit families meet, and what `foreign_owned` is not.
+
+        A ``<table-wrap>`` inside a ``<fig>``, carrying its own ``<graphic>``:
+        the figure must not count it (it is the table's), the table must, and
+        ``foreign_owned_graphics`` records **nothing** — that counter is for a
+        *non-exhibit* owner. So the corpus's 153 foreign-owned graphics do not
+        account for the nested-exhibit half of the scoping at all, and the two
+        causes of the 18 are visible only by reading it beside
+        ``nested_figures``. Worth stating because this class leads with the
+        ``<td>`` case, which on the corpus moved **zero** figure counters —
+        all 18 are ``<inline-formula>`` images and eLife's nested supplements.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><graphic xlink:href="f1.jpg"/>
+              <table-wrap id="t1"><graphic xlink:href="t1.jpg"/>
+                <table><tbody><tr><td>x</td></tr></tbody></table></table-wrap>
+            </fig>"""),
+        )
+
+        assert (row.figures_with_graphic, row.figures_multi_graphic) == (1, 0)
+        assert (row.figures_with_graphic_subtree, row.figures_multi_graphic_subtree) == (1, 1)
+        assert (row.tables_with_graphic, row.tables_multi_graphic) == (1, 0)
+        assert row.foreign_owned_graphics == {}
+
+    def test_a_transparent_wrapper_still_hands_the_deposit_over(self):
+        """``<alternatives>`` and ``<p>`` are the parser's own see-through set.
+
+        Without this the scoping would empty #117's population rather than
+        correct it: 7,055 of the two corpora's deposits sit in an
+        ``<alternatives>``.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><alternatives>
+              <graphic xlink:href="f1.tif"/>
+              <graphic content-type="thumb" xlink:href="f1.gif"/>
+            </alternatives></fig>"""),
+        )
+
+        assert (row.figures_with_graphic, row.figures_multi_graphic) == (1, 1)
+        assert (row.last_is_thumb, row.first_is_thumb) == (1, 0)
+        assert (row.figures_with_graphic_subtree, row.figures_multi_graphic_subtree) == (1, 1)
+
+    def test_an_unscoped_only_deposit_is_not_counted_as_the_figures_own(self):
+        """A figure whose *only* image is a cell decoration carries none.
+
+        The table side's `test_an_image_only_table_is_judged_on_what_it_owns`
+        from the other side: the scoped reading has to be able to go to zero,
+        or it is the subtree walk with extra steps.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><table-wrap id="t1"><table><tbody><tr>
+              <td><graphic xlink:href="tick.gif"/></td>
+            </tr></tbody></table></table-wrap></fig>"""),
+        )
+
+        assert (row.figures_with_graphic, row.figures_multi_graphic) == (0, 0)
+        assert (row.figures_with_graphic_subtree, row.figures_multi_graphic_subtree) == (1, 0)
+
+    def test_a_figure_the_two_walks_agree_on_records_the_same_pair(self):
+        """The ordinary case, which is the great majority of the corpus."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><graphic xlink:href="f1.jpg"/>
+              <graphic content-type="thumb" xlink:href="f1t.gif"/></fig>"""),
+        )
+
+        assert (row.figures_with_graphic, row.figures_multi_graphic) == (1, 1)
+        assert (row.figures_with_graphic_subtree, row.figures_multi_graphic_subtree) == (1, 1)
+        assert (row.last_is_thumb, row.last_is_thumb_subtree) == (1, 1)
+
+    def test_a_row_written_before_these_counters_reads_as_not_measured(self):
+        """The sentinel rule, for the sixth generation as for the five before.
+
+        Zero is what a draw in which the two walks agree everywhere genuinely
+        measures, so a corpus predating the companion counters must not read
+        as one.
+        """
+        stale = sampler.ArticleMeasurement.from_dict({"pmcid": "PMC1", "figures": 3})
+
+        for name in sampler._FIGURE_SCOPE_COUNTERS:
+            assert getattr(stale, name) == sampler.NOT_MEASURED
+
+    def test_the_report_says_the_two_walks_apart(self, capsys):
+        """The movement has to be *printed*, or the redraw cannot be read.
+
+        Asserted on the rendered counts and the rendered difference, not on
+        the mere presence of the word ``subtree`` beside a digit. The first
+        cut of this test did the latter and two mutants survived it at 282
+        passed: the four `sum_of("..._subtree")` calls swapped to the scoped
+        counters, printing one reading twice under two headings; and the
+        differences hardcoded to zero. Both defeat the entire purpose of the
+        companion, which is that a reader can *see* what the scoping moved.
+        """
+        totals = sampler.Totals()
+        row = sampler.ArticleMeasurement(pmcid="PMC1")
+        row.figures = 2
+        row.figures_with_graphic = 2
+        row.figures_multi_graphic = 1
+        row.last_is_thumb = 1
+        row.figures_with_graphic_subtree = 2
+        row.figures_multi_graphic_subtree = 2
+        row.last_is_thumb_subtree = 2
+        totals.add(row)
+
+        sampler.print_report(totals)
+
+        section = _section(capsys.readouterr().out, "4.")
+        assert any("owner-scoped" in line for line in section)
+        multi = next(ln for ln in section if "more than one, subtree" in ln)
+        # The subtree count itself, not only its share — every figure
+        # published before #164 is of this walk.
+        assert "2" in multi.split(":")[1]
+        # The difference, and in the direction the prose states everywhere:
+        # the subtree walk *overcounted*. `subtree - scoped` is non-negative
+        # by construction, so a `+N` rendering could only ever read as an
+        # increase where the count went down.
+        assert "subtree overcounted by 1" in multi
+        assert not any("scoping moved +" in ln for ln in section)
+        last = next(ln for ln in section if "LAST / FIRST a thumbnail" in ln)
+        assert "subtree overcounted by 1 / 0" in last
+
+    def test_the_report_says_how_many_articles_the_scoping_changes(self, capsys):
+        """A total alone reads as diffuse; on the corpus it is 4 articles.
+
+        18 figures over 4,602 is two thirds of one percent, and those 18 sit
+        in 4 articles of 997 — each losing *every* multi-graphic figure it
+        had. That is a per-publisher property, not a rate, and the third
+        defect #164 fixed was that the report must say how many articles a
+        population reaches. This is that rule applied to #164's own.
+        """
+        totals = sampler.Totals()
+        moved = sampler.ArticleMeasurement(pmcid="PMC1")
+        moved.figures = moved.figures_with_graphic = moved.figures_with_graphic_subtree = 1
+        moved.figures_multi_graphic_subtree = 1
+        unmoved = sampler.ArticleMeasurement(pmcid="PMC2")
+        unmoved.figures = unmoved.figures_with_graphic = unmoved.figures_with_graphic_subtree = 1
+        unmoved.figures_multi_graphic = unmoved.figures_multi_graphic_subtree = 1
+        totals.add(moved)
+        totals.add(unmoved)
+
+        sampler.print_report(totals)
+
+        line = next(
+            ln for ln in _section(capsys.readouterr().out, "4.") if "articles the scoping" in ln
+        )
+        assert "1" in line.split(":")[1]
+
+    def test_a_corpus_predating_the_companion_says_so_rather_than_printing_zero(self, capsys):
+        """`NOT MEASURED`, never a share of a denominator nothing measured."""
+        totals = sampler.Totals()
+        totals.add(
+            sampler.ArticleMeasurement.from_dict({"pmcid": "PMC1", "figures_with_graphic": 3})
+        )
+
+        sampler.print_report(totals)
+
+        section = _section(capsys.readouterr().out, "4.")
+        assert any("NOT MEASURED" in line for line in section)
+
+
+class TestWhatOwnsALabelInsideAnUnlabelledExhibit:
+    """Issue #162's spot-check, made re-derivable at the next redraw.
+
+    Seven exhibits in the recent window carry no ``<label>`` of their own and
+    at least one below them — the set a descendant-search fallback would fire
+    on, and the whole of what refuted #162's proposed remedy. Deciding that
+    took a live fetch of the seven articles, because the corpus recorded the
+    *counts* and not what owned those labels. It records the owners now, so
+    the next reader re-derives the refutation instead of re-fetching for it.
+
+    Deliberately scoped to an exhibit carrying **no** direct label: an
+    exhibit that has its own is not the population, and counting its
+    footnote markers here would bury the seven in ``label_parents``'
+    330 ``<fn>``.
+    """
+
+    def test_a_footnote_marker_below_an_unlabelled_table_is_recorded_with_its_owner(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1">
+              <table><tbody><tr><td>12.3<sup>a</sup></td></tr></tbody></table>
+              <table-wrap-foot><fn id="tf1"><label>a</label><p>Adjusted.</p></fn>
+              </table-wrap-foot></table-wrap>"""),
+        )
+
+        assert row.unlabelled_exhibits_with_descendant_label == 1
+        assert row.unlabelled_exhibit_label_owners == {"fn": 1}
+
+    def test_a_labelled_exhibit_contributes_nothing_to_either(self):
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1"><label>Table 1</label>
+              <table-wrap-foot><fn id="tf1"><label>a</label><p>Adjusted.</p></fn>
+              </table-wrap-foot></table-wrap>"""),
+        )
+
+        assert row.unlabelled_exhibits_with_descendant_label == 0
+        assert row.unlabelled_exhibit_label_owners == {}
+
+    def test_an_unlabelled_exhibit_with_no_label_below_it_is_not_the_population(self):
+        """The commoner shape by far — 114 of the 121 unlabelled exhibits."""
+        row = sampler.measure_article(
+            "PMC1", _article('<fig id="f1"><graphic xlink:href="f1.jpg"/></fig>')
+        )
+
+        assert row.unlabelled_exhibits_with_descendant_label == 0
+        assert row.unlabelled_exhibit_label_owners == {}
+
+    def test_a_list_bullet_in_a_cell_is_recorded_under_its_own_owner(self):
+        """The other owner the seven turned out to carry."""
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1"><table><tbody><tr><td>
+              <list><list-item><label>1.</label><p>First.</p></list-item></list>
+            </td></tr></tbody></table></table-wrap>"""),
+        )
+
+        assert row.unlabelled_exhibits_with_descendant_label == 1
+        assert row.unlabelled_exhibit_label_owners == {"list-item": 1}
+
+    def test_a_nested_exhibits_own_label_is_recorded_under_the_exhibits_tag(self):
+        """The one owner that would *support* #162's refuted remedy.
+
+        The docstring on `_descendant_label_owners` used to promise "the
+        exhibit itself never appears", which holds only of the exhibit the
+        walk starts at. A *nested* labelled exhibit inside an unlabelled one
+        records `fig` or `table-wrap` — a genuine exhibit label, and the only
+        reading under which a descendant search would have picked up
+        something real. Nested `<fig>` is a measured, non-empty population
+        (7, all `PMC12143881`); it simply does not intersect the seven in
+        this draw. `print_report` annotates the row so it cannot be misread
+        as one of #116's footnote markers.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <fig id="f1"><graphic xlink:href="f1.jpg"/>
+              <fig id="f1s1"><label>Figure 1-figure supplement 1</label>
+                <graphic xlink:href="f1s1.jpg"/></fig>
+            </fig>"""),
+        )
+
+        assert row.unlabelled_exhibits_with_descendant_label == 1
+        assert row.unlabelled_exhibit_label_owners == {"fig": 1}
+
+    def test_the_report_marks_an_exhibits_own_label_as_such(self, capsys):
+        """And the annotation has to reach the reader, not just the corpus."""
+        totals = sampler.Totals()
+        totals.add(
+            sampler.measure_article(
+                "PMC1",
+                _article("""
+                <fig id="f1"><graphic xlink:href="f1.jpg"/>
+                  <fig id="f1s1"><label>Figure 1-figure supplement 1</label></fig>
+                </fig>"""),
+            )
+        )
+
+        sampler.print_report(totals)
+
+        section = _section(capsys.readouterr().out, "1.")
+        line = next(ln for ln in section if ln.strip().startswith("fig"))
+        assert "an exhibit's own label" in line
+
+    def test_the_unlabelled_counter_is_the_pairs_difference(self):
+        """It is an alias for a derivation, and the comment now says so.
+
+        `_FIGURE_SCOPE_COUNTERS` used to justify this counter by claiming the
+        existing pair is article-level and cannot be subtracted. Both halves
+        were false — `_record_exhibit` increments both per *exhibit*, and a
+        direct child is always in `el.iter()`, so `direct` is a subset of
+        `descendant` and the difference is exact. It is kept because a
+        generation needs a member that can carry a sentinel and the datum
+        #162 wanted is a `Counter`, which cannot. Pinned as an identity so a
+        future edit cannot let the two drift apart without a word.
+        """
+        row = sampler.measure_article(
+            "PMC1",
+            _article("""
+            <table-wrap id="t1"><label>Table 1</label>
+              <table-wrap-foot><fn id="a"><label>a</label><p>x</p></fn></table-wrap-foot>
+            </table-wrap>
+            <table-wrap id="t2">
+              <table-wrap-foot><fn id="b"><label>b</label><p>y</p></fn></table-wrap-foot>
+            </table-wrap>
+            <fig id="f1"><graphic xlink:href="f1.jpg"/></fig>"""),
+        )
+
+        assert row.unlabelled_exhibits_with_descendant_label == (
+            row.exhibits_with_descendant_label - row.exhibits_with_direct_label
+        )
+
+    def test_the_identity_holds_across_both_committed_corpora(self):
+        """Verified at 0 mismatched rows when the claim was written."""
+        for path in (
+            Path(__file__).parent / "data" / "jats_exhibits.json",
+            Path(__file__).parent / "data" / "jats_exhibits.backfill.json",
+        ):
+            for row in json.loads(path.read_text())["rows"]:
+                assert row["unlabelled_exhibits_with_descendant_label"] == (
+                    row["exhibits_with_descendant_label"] - row["exhibits_with_direct_label"]
+                ), f"{path.name}: {row['pmcid']}"
+
+    def test_a_row_written_before_the_counter_reads_as_not_measured(self):
+        stale = sampler.ArticleMeasurement.from_dict({"pmcid": "PMC1", "tables": 2})
+
+        assert stale.unlabelled_exhibits_with_descendant_label == sampler.NOT_MEASURED
 
 
 class TestAnArticleThatCouldNotBeMeasuredIsNeverAFinding:
@@ -1187,7 +1600,15 @@ class TestARefusalStopsTheRun:
 
 
 class TestTheSamplerDoesNotShareTheParsersPredicates:
-    """A corpus labelled by the rule under test can only confirm that rule."""
+    """A corpus labelled by the rule under test can only confirm that rule.
+
+    **The wrapper set is the exception, and it is not one of these.** A
+    predicate the sampler *judges* with must be able to disagree with the
+    parser's; a scope the sampler *measures within* must not. See
+    `TestTheWrapperSetIsTheParsersOwn` below — the distinction the comment
+    beside `_TRANSPARENT_WRAPPERS` had the wrong way round after #164 made
+    the figure counters route through it.
+    """
 
     def test_the_archival_hints_are_wider_than_the_parsers(self):
         from bmlib.fulltext.jats_parser import _ARCHIVAL_EXTENSIONS, _ARCHIVAL_MIME_SUBTYPES
@@ -1197,6 +1618,31 @@ class TestTheSamplerDoesNotShareTheParsersPredicates:
         assert sampler._ARCHIVAL_HINTS - parser_side, (
             "the sampler must be able to report a deposit the parser does not "
             "classify as archival, or it can only confirm the parser's list"
+        )
+
+    def test_the_wrapper_set_is_identical_to_the_parsers(self):
+        """The scope both walks share, and since #164 it decides #117's shares.
+
+        `_ARCHIVAL_HINTS` and `_THUMB_PATTERN` above must *differ* from the
+        parser's: they are judgements, and a corpus labelled by the rule under
+        test can only confirm it. `_TRANSPARENT_WRAPPERS` is the opposite kind
+        of thing — it defines the scope the walk measures *within*, the way
+        `_NESTED_ARTICLE_ELEMENTS` does, and the comment beside it classified
+        it with the judgements.
+
+        That was harmless while only the table counters routed through
+        `_owned`. #164 put the figure counters through it too, so this set now
+        decides 57.8% against 58.1% and every #117 share `offer_graphic` and
+        CLAUDE.md cite. If the parser gains a transparent wrapper and the
+        sampler does not, the next redraw publishes a number that is neither
+        the subtree reading nor what the parser routes — a third meaning for
+        one figure, arriving silently.
+        """
+        from bmlib.fulltext.jats_parser import _GRAPHIC_TRANSPARENT_WRAPPERS
+
+        assert sampler._TRANSPARENT_WRAPPERS == _GRAPHIC_TRANSPARENT_WRAPPERS, (
+            "the sampler measures within the parser's own transparent-wrapper scope; "
+            "a divergence here silently republishes #117's shares against a third walk"
         )
 
     def test_the_sampler_classifies_a_deposit_the_parser_would_not(self):
@@ -1676,6 +2122,218 @@ class TestTheTableSideOfTheRankingIsCounted:
         assert any("NOT MEASURED" in line for line in section), section
 
 
+class TestEverySectionIsGatedOnEveryCounterItReads:
+    """The 14b defect, mechanised instead of pinned by one scenario.
+
+    `print_report` prints fifteen-odd sections, each gated on the counter
+    generation it is named after. Section 14b divides by `tex_math`, which
+    belongs to the generation *before* it, so a row fresh for the routing
+    counters and stale for the waiting ones reached `wilson()` with ``n =
+    -1`` and raised out of the report — losing every later section and the
+    exit-code decision with it. The gate was corrected and pinned by
+    `test_a_section_is_gated_on_every_counter_it_reads`, which builds that
+    one shape by hand and whose own docstring concedes it: *"the next
+    section to divide by a counter from another generation will not be
+    announced."*
+
+    This repo's standing answer to a rule enforced by prose plus one
+    example is an AST walk — `TestTheAuditNetIsComplete`,
+    `TestEveryCounterIsInAGeneration`,
+    `TestOnlyAnAccumulatingElementReadsTheBuffer`. This is that walk: split
+    `print_report` on its section headings, collect the counter names each
+    section reads through `sum_of`/`counter_of`/`articles_where`, and
+    require every one to be either in that section's own gate or in
+    `_FIRST_GENERATION_COUNTERS` (which every row carries, so it needs no
+    gate) or a `Counter` field (which takes no sentinel, there being no
+    negative dict).
+
+    **It fails closed**, the `TestTheAuditNetIsComplete` rule: a section
+    header it cannot parse, a gate it cannot read, or a `print_report` it
+    cannot find is a failure and not a section skipped — "I found nothing"
+    must not be an answer this net can return.
+    """
+
+    def _report_source(self):
+        source = Path(sampler.__file__).read_text()
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "print_report":
+                return node
+        raise AssertionError("print_report not found — this net cannot report 'no sections'.")
+
+    def _field_names(self):
+        import dataclasses
+
+        return {f.name for f in dataclasses.fields(sampler.ArticleMeasurement)}
+
+    def _counter_fields(self):
+        import dataclasses
+
+        return {
+            f.name
+            for f in dataclasses.fields(sampler.ArticleMeasurement)
+            if "Counter" in str(f.type)
+        }
+
+    def test_no_section_reads_a_counter_its_gate_does_not_cover(self):
+        node = self._report_source()
+        counter_fields = self._counter_fields()
+        first_generation = set(sampler._FIRST_GENERATION_COUNTERS)
+        field_names = self._field_names()
+
+        sections: dict[str, set[str]] = {}
+        gates: dict[str, set[str]] = {}
+        current = "0. preamble"
+        sections[current] = set()
+        gates[current] = set()
+
+        def strings_in(expr) -> set[str]:
+            """Every string constant in *expr*, and every one a `_NAME` holds.
+
+            Used for two different jobs that need the same resolution: the
+            counter names a `totals.measured(...)` gate covers, and the ones
+            a `for ... in (literal)` can bind. A `_NAME` that does not
+            resolve on the module is a failure, not a skip.
+            """
+            found: set[str] = set()
+            for sub in ast.walk(expr):
+                if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                    found.add(sub.value)
+                elif isinstance(sub, ast.Name) and sub.id.startswith("_"):
+                    resolved = getattr(sampler, sub.id, None)
+                    if resolved is None:
+                        raise AssertionError(
+                            f"{sub.id} is named in {current} and this net cannot resolve it."
+                        )
+                    found.update(resolved)
+            return found
+
+        def measured_names(stmt) -> set[str]:
+            """Counter names a `totals.measured(...)` inside *stmt* guards.
+
+            Section 6 guards `tables_with_both` with a ternary rather than an
+            `if` statement, which is a gate all the same. Collected from the
+            `measured` call alone, never from the whole statement, or the
+            `sum_of` beside it would be read as guarding itself.
+            """
+            found: set[str] = set()
+            for sub in ast.walk(stmt):
+                if (
+                    isinstance(sub, ast.Call)
+                    and isinstance(sub.func, ast.Attribute)
+                    and sub.func.attr == "measured"
+                ):
+                    for arg in sub.args:
+                        found.update(strings_in(arg))
+            return found
+
+        def reads_of(stmt, bound: set[str]) -> set[str]:
+            found: set[str] = set()
+            for sub in ast.walk(stmt):
+                if not (
+                    isinstance(sub, ast.Call)
+                    and isinstance(sub.func, ast.Attribute)
+                    and sub.func.attr in ("sum_of", "counter_of", "articles_where")
+                ):
+                    continue
+                for arg in sub.args:
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                        found.add(arg.value)
+                    elif isinstance(arg, ast.Name) and (bound & field_names):
+                        # Bound by an enclosing `for` over a literal (section
+                        # 8 reads `counter_of(attribute)` that way). Every
+                        # string that loop can bind counts as read, which
+                        # over-approximates and so cannot let one through.
+                        found.update(bound & field_names)
+                    else:
+                        raise AssertionError(
+                            f"{sub.func.attr} is called with a non-literal in {current}; "
+                            "this net cannot tell which counter that reads."
+                        )
+            return found
+
+        def walk(body, gate: set[str], bound: set[str]) -> None:
+            nonlocal current
+            for stmt in body:
+                header = _section_header_of(stmt)
+                if header is not None:
+                    current = header
+                    sections.setdefault(current, set())
+                    gates.setdefault(current, set())
+                if isinstance(stmt, ast.If):
+                    inner = strings_in(stmt.test)
+                    walk(stmt.body, gate | inner, bound)
+                    walk(stmt.orelse, gate | inner, bound)
+                elif isinstance(stmt, ast.For):
+                    walk(stmt.body, gate, bound | strings_in(stmt.iter))
+                    walk(stmt.orelse, gate, bound | strings_in(stmt.iter))
+                elif isinstance(stmt, ast.While | ast.With | ast.Try):
+                    for field in ("body", "orelse", "finalbody"):
+                        walk(getattr(stmt, field, []) or [], gate, bound)
+                else:
+                    sections[current].update(reads_of(stmt, bound))
+                    gates[current].update(gate | measured_names(stmt))
+
+        # A `for` over a literal binds labels as well as counter names
+        # (section 8 iterates `(label, attribute)` pairs), so the
+        # over-approximation is narrowed to strings that are actually fields
+        # on the row — still an over-approximation within that space, and so
+        # still unable to let an ungated counter through.
+        walk(node.body, set(), set())
+        assert len(sections) > 10, f"only found {sorted(sections)} — the net is not walking."
+
+        offenders = {
+            name: sorted(reads - gates[name] - first_generation - counter_fields)
+            for name, reads in sections.items()
+            if reads - gates[name] - first_generation - counter_fields
+        }
+        assert offenders == {}, (
+            f"{offenders} are read by a section whose gate does not name them. A row stale "
+            "for that counter's generation loads NOT_MEASURED (-1) and reaches wilson(), "
+            "which raises out of print_report and loses every later section."
+        )
+
+    def test_the_net_notices_an_ungated_read(self):
+        """The negative control: this walk must be able to fail.
+
+        Every section is gated correctly today, so a walk that silently
+        found nothing would pass exactly as a correct one does — the
+        `TestTheAuditNetIsComplete` rule that "I found nothing" must not be
+        an answer a net can return. Re-runs the real walk against a
+        `print_report` with 14b's gate reverted to the shape that shipped,
+        and requires it to name `tex_math`.
+        """
+        source = Path(sampler.__file__).read_text()
+        broken = source.replace(
+            'for name in (*_FORMULA_ROUTING_COUNTERS, "tex_math")',
+            "for name in _FORMULA_ROUTING_COUNTERS",
+        )
+        assert broken != source, "14b's gate no longer has the shape this control reverts."
+
+        with mock.patch.object(Path, "read_text", lambda self, *a, **k: broken):
+            with pytest.raises(AssertionError, match="tex_math"):
+                self.test_no_section_reads_a_counter_its_gate_does_not_cover()
+
+
+def _section_header_of(stmt):
+    """The section label a top-level `print` in `print_report` opens, if any."""
+    if not isinstance(stmt, ast.Expr):
+        return None
+    call = stmt.value
+    if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)):
+        return None
+    if call.func.id != "print" or not call.args:
+        return None
+    first = call.args[0]
+    if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
+        return None
+    text = first.value.lstrip("\n")
+    head = text.split(".", 1)[0]
+    if head and head[0].isdigit():
+        return text.split("  ")[0]
+    return None
+
+
 class TestEveryCounterIsInAGeneration:
     """The `TestTheAuditNetIsComplete` precedent, applied to the sentinel.
 
@@ -1775,6 +2433,214 @@ class TestEveryCounterIsInAGeneration:
         assert totals.articles_where("refs") == 0
         assert totals.measured("refs") is False
 
+    def test_every_generation_has_a_member_that_can_carry_a_sentinel(self):
+        """`from_dict`'s comment states this invariant; nothing enforced it.
+
+        A `Counter` field takes no sentinel — there is no negative dict — so
+        an absent one loads empty and `measured()` answers True. A generation
+        consisting of nothing else would therefore be **undetectable when
+        absent**: its section would print, `_unmeasured_generations` would
+        never name it, and the run would write the *canonical* corpus name at
+        exit 0 over a population nothing counted. That is the collapse
+        `_FORMULA_ROUTING_COUNTERS` suffered from the other end, and the
+        `from_dict` comment answers it with "none does" — a claim about the
+        registry as it stands, which is exactly the kind this repo has been
+        caught by. #162's own datum is a `Counter`, which is why its
+        generation carries an integer alias beside it.
+        """
+        import dataclasses
+
+        counters = {
+            f.name
+            for f in dataclasses.fields(sampler.ArticleMeasurement)
+            if "Counter" in str(f.type)
+        }
+
+        without = sorted(
+            label
+            for label, names in sampler._COUNTER_GENERATIONS.items()
+            if not set(names) - counters
+        )
+
+        assert without == [], (
+            f"{without} consist only of Counter fields, which carry no sentinel — a corpus "
+            "predating them reads as measured-empty and reaches the canonical filename."
+        )
+
+    def test_a_key_naming_no_field_is_refused_rather_than_becoming_a_phantom(self):
+        """`to_dict` walks `__dict__`, so a phantom reaches the corpus.
+
+        `setattr` on an unknown key created an instance attribute that
+        serialised straight back out into the committed artifact, while
+        `TestEveryCounterIsInAGeneration` — which walks
+        `dataclasses.fields` — could not see it. Reachable by renaming a
+        field under a shared journal, and for a *first-generation* counter
+        there is no sentinel to notice the old name went absent.
+        """
+        with pytest.raises(ValueError, match="names no field"):
+            sampler.ArticleMeasurement.from_dict({"pmcid": "PMC1", "figures_of_speech": 3})
+
+    def test_a_count_carrying_a_string_is_refused(self):
+        """It summed into the total and vanished from the denominator.
+
+        `sum_of` calls `int(...)`, so `"5"` contributed 5; `articles_where`
+        tests `isinstance(value, int)`, so the same row counted as carrying
+        nothing. One row could move a total and be absent from the article
+        count beside it — the two figures a comment cites together.
+        """
+        with pytest.raises(ValueError, match="is a count carrying"):
+            sampler.ArticleMeasurement.from_dict({"pmcid": "PMC1", "figures": "5"})
+
+    def test_a_null_count_is_refused_where_it_is_read_and_not_far_away(self):
+        """`None` read as measured and raised out of `sum_of` instead."""
+        with pytest.raises(ValueError, match="is a count carrying"):
+            sampler.ArticleMeasurement.from_dict({"pmcid": "PMC1", "figures": None})
+
+    def test_a_counter_field_carrying_a_count_is_refused(self):
+        """The mirror case, which used to raise a bare `TypeError`."""
+        with pytest.raises(ValueError, match="Counter field carrying"):
+            sampler.ArticleMeasurement.from_dict({"pmcid": "PMC1", "label_parents": 3})
+
+    def test_every_committed_row_loads_under_the_strict_reader(self):
+        """The negative control: strictness must not refuse the evidence.
+
+        A reader that rejected everything would pass all four tests above
+        while making both corpora unloadable.
+        """
+        for path in (
+            Path(__file__).parent / "data" / "jats_exhibits.json",
+            Path(__file__).parent / "data" / "jats_exhibits.backfill.json",
+        ):
+            rows = json.loads(path.read_text())["rows"]
+            assert [sampler.ArticleMeasurement.from_dict(r).pmcid for r in rows] == [
+                r["pmcid"] for r in rows
+            ]
+
+    def test_a_sentinel_reaches_every_generations_counters(self):
+        """The registry being right is only half of it.
+
+        `from_dict` used to splat a hand-written list of generation tuples,
+        beside the registry rather than from it — and it had already gone out
+        of step: `_FORMULA_ROUTING_COUNTERS` was registered by the commit that
+        added it and never reached that list, so every row of **both
+        committed corpora**, written before the generation existed, loaded its
+        three integer counters at 0 rather than at the sentinel.
+        `print_report` then read them as measured and section 14b printed
+        ``<tex-math> inside a <td>/<th>: 0  0.0%`` — a measured-looking share
+        of a population nothing had counted, on the very population issue
+        #147's live-corruption fix rests on.
+
+        The two-place rule is what failed, so this asserts the second place
+        directly: a row carrying nothing but its identifier must come back
+        with the sentinel on every integer counter any generation claims.
+        """
+        row = sampler.ArticleMeasurement.from_dict({"pmcid": "PMC1"})
+
+        missed = sorted(
+            name
+            for names in sampler._COUNTER_GENERATIONS.values()
+            for name in names
+            if not isinstance(getattr(row, name), Counter)
+            and getattr(row, name) != sampler.NOT_MEASURED
+        )
+
+        assert missed == [], (
+            f"{missed} are registered in `_COUNTER_GENERATIONS` but load at their "
+            "zero default, so a corpus predating them reads as measured-empty."
+        )
+
+    def test_a_generation_absent_from_the_corpus_is_reported_as_unmeasured(self):
+        """And the sentinel has to *reach* the report, not merely be set.
+
+        `_unmeasured_generations` gates the exit code and the filename, so a
+        generation whose sentinel never arrives is a run that writes the
+        canonical corpus name over a population it did not measure.
+        """
+        totals = sampler.Totals()
+        totals.add(sampler.ArticleMeasurement.from_dict({"pmcid": "PMC1"}))
+
+        assert sorted(sampler._unmeasured_generations(totals)) == sorted(
+            sampler._COUNTER_GENERATIONS
+        )
+
+    def test_a_section_is_gated_on_every_counter_it_reads(self, capsys):
+        """Not on the generation it is named after — 14b divides by `tex_math`.
+
+        That counter belongs to the generation *before* the one the section is
+        named for, so a row fresh for the routing counters and stale for the
+        waiting ones reaches `wilson()` with ``n = -1``, which raises out of
+        `print_report` rather than saying NOT MEASURED. A report that crashes
+        loses the other fourteen sections with it.
+
+        Pinned on the rule rather than on the chronology: the waiting
+        generation shipped first, so no *committed* corpus can carry this
+        shape — but a journal is topped up across runs, the generations are
+        hand-maintained, and the next section to divide by a counter from
+        another generation will not be announced.
+        """
+        fresh = sampler.measure_article("PMC1", _article("<p>Plain prose.</p>"))
+        stale = fresh.to_dict()
+        for name in sampler._WAITING_SIDE_COUNTERS:
+            del stale[name]
+        totals = sampler.Totals()
+        totals.add(sampler.ArticleMeasurement.from_dict(stale))
+
+        sampler.print_report(totals)
+
+        assert any("NOT MEASURED" in line for line in _section(capsys.readouterr().out, "14b."))
+
+    def test_a_share_of_a_sentinel_says_not_measured_rather_than_raising(self):
+        """`_pct`'s backstop for the section a gate has not been fixed on yet.
+
+        `NOT_MEASURED` is ``-1``. Reaching `wilson()` with it raises — *"no
+        attempts to compute an interval over"* from the denominator, a bare
+        ``math domain error`` from the numerator — and neither names a
+        counter, a section or an attribute, while taking every later section
+        and the exit-code decision down with it. That is what 14b did before
+        its gate was corrected. The gates are the fix and
+        `TestEverySectionIsGatedOnEveryCounterItReads` is what keeps them
+        right; this is the thing that turns the next miss into a legible
+        `NOT MEASURED` instead of a traceback.
+        """
+        assert sampler._pct(sampler.NOT_MEASURED, 100) == "NOT MEASURED"
+        assert sampler._pct(5, sampler.NOT_MEASURED) == "NOT MEASURED"
+        # And the ordinary readings are untouched, or the guard is a mute.
+        assert sampler._pct(0, 0) == "n/a"
+        assert "50.0%" in sampler._pct(1, 2)
+
+    def test_articles_where_refuses_a_type_it_does_not_know(self):
+        """The silent zero, one type further on than the one #164 fixed.
+
+        `articles_where` stopped borrowing `_as_count` because that helper
+        flattens a `Counter` to 0 and made every `Counter`-backed population
+        read as carried by no article. The replacement answered `False` for
+        anything that was neither an `int` nor a `Counter` — which is the
+        same defect for the next type someone adds. `unscoped` is a plain
+        `dict` on this very row: over the committed recent corpus it reads
+        as carried by **0** articles where 29 rows hold a non-empty one.
+
+        `sum_of` raises on a type it cannot count; this now does too, so a
+        new field is a loud failure rather than a population that quietly
+        reports zero.
+        """
+        totals = sampler.Totals()
+        row = sampler.ArticleMeasurement(pmcid="PMC1")
+        row.pmcid = "PMC1"
+        totals.add(row)
+
+        with pytest.raises(TypeError, match="pmcid"):
+            totals.articles_where("pmcid")
+
+    def test_articles_where_counts_a_plain_dict_field(self):
+        """And the fix has to make `unscoped` answerable, not merely loud."""
+        totals = sampler.Totals()
+        carrying = sampler.ArticleMeasurement(pmcid="PMC1")
+        carrying.unscoped = {"figures": 2}
+        totals.add(carrying)
+        totals.add(sampler.ArticleMeasurement(pmcid="PMC2"))
+
+        assert totals.articles_where("unscoped") == 1
+
     def test_a_counter_field_is_never_treated_as_a_count(self):
         """`measured` used to raise `TypeError` on all eleven `Counter` fields.
 
@@ -1790,6 +2656,51 @@ class TestEveryCounterIsInAGeneration:
             if "Counter" in str(field.type):
                 assert totals.measured(name) is True
                 assert totals.articles_where(name) == 0
+
+    def test_an_article_carrying_a_counter_population_is_counted_as_one(self):
+        """The other half, and the one that was silently wrong.
+
+        The fixture above populates no `Counter` at all, so its
+        ``articles_where(...) == 0`` held for the wrong reason and the defect
+        went unseen: `articles_where` borrowed `_as_count`, which flattens a
+        `Counter` to ``0`` so that `measured` stops raising on one — a right
+        answer to a different question. Every `Counter`-backed population
+        therefore read as carried by no article, and section 10 printed
+        ``in 0 articles  0.0%`` over a population the corpus holds in more
+        than a hundred.
+
+        Only the *report* was wrong: the prose figures come from the corpus
+        rows directly. So this is what a maintainer running the sampler
+        sees, which is the whole audience the instrument has.
+        """
+        totals = sampler.Totals()
+        totals.add(
+            sampler.measure_article(
+                "PMC1",
+                _article("<sec><fn-group><title>Not the section's</title></fn-group></sec>"),
+            )
+        )
+        totals.add(sampler.measure_article("PMC2", _article("<sec><p>Nothing owned.</p></sec>")))
+
+        assert totals.counter_of("section_renaming_titles") == {"fn-group": 1}
+        assert totals.articles_where("section_renaming_titles") == 1
+
+    def test_the_report_names_the_articles_a_counter_population_reaches(self, capsys):
+        """And the fix has to reach the line that was printing the zero."""
+        totals = sampler.Totals()
+        totals.add(
+            sampler.measure_article(
+                "PMC1",
+                _article("<sec><fn-group><title>Not the section's</title></fn-group></sec>"),
+            )
+        )
+
+        sampler.print_report(totals)
+
+        line = next(
+            ln for ln in _section(capsys.readouterr().out, "10.") if "owned elsewhere" in ln
+        )
+        assert "in 1 articles" in line
 
 
 class TestTheCitedPopulationsAreWhatTheCorporaHold:
@@ -1869,9 +2780,15 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         disagree on exactly the populations cited below — see
         `tests/data/jats_exhibits.rendition.json`.
         """
-        for path, first, last, package in (
-            (self.RECENT, 2023, 2025, "oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz"),
-            (self.BACKFILL, 1996, 1998, "oa_comm_xml.PMC002xxxxxx.baseline.2025-06-26.tar.gz"),
+        for path, first, last, package, measured in (
+            (self.RECENT, 2023, 2025, "oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz", 997),
+            (
+                self.BACKFILL,
+                1996,
+                1998,
+                "oa_comm_xml.PMC002xxxxxx.baseline.2025-06-26.tar.gz",
+                1000,
+            ),
         ):
             corpus = json.loads(path.read_text())
             window = corpus["window"]
@@ -1882,19 +2799,77 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             assert window["seed"] == 0
             # The bytes measured, not the bytes drawn from.
             assert window["rendition"] == "europepmc"
-            assert (corpus["articles"], corpus["unmeasured"]) == (997, 3)
-        # Why the three were unmeasured, in the vocabulary the rendition
+            assert (corpus["articles"], corpus["unmeasured"]) == (measured, 1000 - measured)
+        # Why an article was unmeasured, in the vocabulary the rendition
         # artifact already used — a bare count cannot be read as permanent
         # (an article Europe PMC does not serve) or transient (a throttled
-        # fetch), and those call for different actions. The back-filled
-        # corpus predates the field and is asserted as *absent* rather than
-        # as `{}`: filling it means re-drawing that window, which would move
-        # every back-filled figure for a provenance key, so it is left as
-        # the older format deliberately.
+        # fetch), and those call for different actions.
         assert json.loads(self.RECENT.read_text())["unmeasured_causes"] == {
             "europepmc_unavailable": 3
         }
-        assert "unmeasured_causes" not in json.loads(self.BACKFILL.read_text())
+        # #164's redraw served the whole back-filled draw, where the one
+        # before it lost three — so this window is now **1,000 of 1,000** and
+        # its causes are an empty mapping rather than an absent key. Both
+        # halves are asserted: an empty mapping beside a non-zero
+        # `unmeasured` would be the accounting hole `count_unmeasured`
+        # centralises the causes to prevent.
+        assert json.loads(self.BACKFILL.read_text())["unmeasured_causes"] == {}
+
+    def test_the_sums_the_prose_cites_across_both_windows_are_the_corpora_s(self):
+        """The denominators cited as one number over *both* draws.
+
+        Each window's own size is asserted above, and that is what the redraw
+        reconciled. What it missed is every site citing the **pair** as a
+        single denominator: `jats_parser.py` and `models.py` said "1,997
+        articles" in six places and `CLAUDE.md`/`CHANGELOG.md`/`ROADMAP.md`
+        said "12,659 `<contrib>`", both correct before the back-filled window
+        went 997 → 1,000 and neither pinned by anything. One of those sites
+        is a docstring in this file, eleven lines above an assertion of
+        `(7798, 4861)` — a file contradicting itself, which is precisely the
+        shape PR #136 left behind and `TestTheCitedPopulationsAreWhatTheCorpora
+        Hold` exists to stop.
+
+        A cross-window sum is exactly the figure a single-window assertion
+        cannot see, so it gets its own.
+        """
+        recent, _, _ = self._totals(self.RECENT)
+        backfill, _, _ = self._totals(self.BACKFILL)
+        recent_corpus = json.loads(self.RECENT.read_text())
+        backfill_corpus = json.loads(self.BACKFILL.read_text())
+
+        # "the two committed draws' N articles" — 997 served of the recent
+        # window's 1,000 drawn, and all 1,000 of the back-filled one.
+        assert recent_corpus["articles"] + backfill_corpus["articles"] == 1997
+        # "0 of N <contrib>", the bound #120/#140's <string-name> absence is
+        # quoted at.
+        assert recent["contribs"] + backfill["contribs"] == 12659
+
+    def test_the_recent_window_is_the_same_articles_the_previous_draw_measured(self):
+        """What licenses reading #164's movement as the scoping's (issue #164).
+
+        A redraw ordinarily moves the sample, the served bytes and — this time
+        — the walk, and PR #163's rule is that three simultaneous causes make a
+        movement unattributable. Two of the three did not move here: the recent
+        window's 997 identifiers are the same 997 the previous draw measured,
+        and every counter the scoping does not touch came back **identical**,
+        so Europe PMC served byte-stable content across the two days.
+
+        That is a property of one redraw and not a promise about the next, so
+        it is asserted as what makes *this* attribution sound rather than
+        relied on. The per-row `_subtree` companions are the durable answer:
+        they hold whatever the next draw's sample and rendition do.
+        """
+        rows = json.loads(self.RECENT.read_text())["rows"]
+        recent, _, _ = self._totals(self.RECENT)
+
+        # The subtree companions reproduce the previously committed values
+        # exactly — which is the check that the new counters measure the old
+        # walk, and not merely something near it.
+        assert recent["figures_with_graphic_subtree"] == 4602
+        assert recent["figures_multi_graphic_subtree"] == 2676
+        assert recent["last_is_thumb_subtree"] == 2639
+        assert recent["first_is_thumb_subtree"] == 0
+        assert len(rows) == 997
 
     def test_the_title_owner_population_is_what_the_comments_cite(self):
         """The #125/#130 population, cited in five files.
@@ -1918,13 +2893,13 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             "def-list": 12,
             "fn-group": 12,
         }
-        assert sum(backfill_maps.get("section_renaming_titles", {}).values()) == 0
+        assert sum(backfill_maps["section_renaming_titles"].values()) == 0
         assert backfill_articles == 0
-        assert backfill_maps.get("section_renaming_titles", {}) == {}
+        assert backfill_maps["section_renaming_titles"] == {}
         assert recent["captions"] == 8111
         # Not "no exhibit is captioned" but "this window deposits no
         # <caption> at all". Why is inferred rather than counted: 0 tables
-        # beside 627 figures and 3,873 `.png` deposits reads as scanned page
+        # beside 627 figures and 3,880 `.png` deposits reads as scanned page
         # images, and no counter measures that.
         assert backfill["captions"] == 0
 
@@ -1959,7 +2934,7 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             "table-wrap": 2347,
             "supplementary-material": 6,
         }
-        assert backfill_maps.get("exhibit_caption_owners", {}) == {}
+        assert backfill_maps["exhibit_caption_owners"] == {}
 
     def test_an_exhibit_with_no_label_of_its_own_is_a_measured_population(self):
         """What this pair of counters supports, and what it does not.
@@ -2036,17 +3011,73 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             "supplementary-material": 6,
         }
         assert backfill_maps["label_parents"] == {"fig": 627}
+        # **What the fallback would actually have picked up**, recorded with
+        # #164 so the refutation stops resting on a live fetch. Settling #162
+        # meant fetching all seven articles, because the corpus held the
+        # counts and not the owners; the owners are here now, and they are
+        # the two containers #116 was about — a `<table-wrap-foot><fn>`'s
+        # marker and a `<list-item>`'s bullet. Not one is an exhibit's own
+        # label, so a descendant-search fallback corrupts 7 of 7.
+        assert recent["unlabelled_exhibits_with_descendant_label"] == 7
+        assert self._articles_with(self.RECENT, "unlabelled_exhibits_with_descendant_label") == 7
+        assert recent_maps["unlabelled_exhibit_label_owners"] == {"fn": 9, "list-item": 67}
+        assert backfill["unlabelled_exhibits_with_descendant_label"] == 0
+        assert backfill_maps["unlabelled_exhibit_label_owners"] == {}
 
     def test_the_graphic_populations_are_what_offer_graphic_cites(self):
-        """#117's shares and #127's two renditions, both cited as percentages."""
+        """#117's shares and #127's two renditions, both cited as percentages.
+
+        **The shares are of the owner-scoped walk since #164.** The counters
+        used to walk a whole subtree, so a ``<td>``'s cell image and a nested
+        figure supplement's deposit counted as the enclosing figure's, which
+        is not what the parser routes. What that cost is measured here rather
+        than argued: the recent window's identifiers and served bytes are the
+        previous draw's, so the *only* thing that moved is the walk, and it
+        moved **one** of the four counters by **18 figures** — 2,676 to 2,658,
+        58.1% to 57.8%, inside each other's interval. Nothing else moves at
+        all, in either window.
+
+        That is the answer to the question #164 left open, and it is not the
+        one the issue expected. Its spot measurement over the same articles'
+        *archive* bytes moved the multi-graphic count 77 to 58 and read as
+        "large enough to matter". The absolute correction is almost the same
+        on both renditions — 19 figures there, 18 here — but the archive
+        holds 77 multi-graphic figures against the served rendition's 2,676,
+        so one denominator makes it a quarter of the population and the other
+        makes it two thirds of one percent. **A share is of a denominator,
+        and the rendition chooses the denominator**: the same finding this
+        corpus exists to enforce, arriving on the count that motivated it.
+        """
         recent, recent_maps, _ = self._totals(self.RECENT)
         backfill, backfill_maps, _ = self._totals(self.BACKFILL)
 
         assert (recent["figures_with_graphic"], backfill["figures_with_graphic"]) == (4602, 627)
-        assert (recent["figures_multi_graphic"], backfill["figures_multi_graphic"]) == (2676, 276)
+        assert (recent["figures_multi_graphic"], backfill["figures_multi_graphic"]) == (2658, 276)
         assert (recent["last_is_thumb"], backfill["last_is_thumb"]) == (2639, 276)
         assert (recent["first_is_thumb"], backfill["first_is_thumb"]) == (0, 0)
-        assert recent["graphics"] + backfill["graphics"] == 13617
+        # What the pre-#164 subtree walk said, so the correction stays
+        # derivable from the corpus rather than from a diff against a file
+        # nobody can re-fetch. Only `figures_multi_graphic` moves, and only
+        # in the recent window.
+        for window, scoped, subtree in (
+            (recent, 4602, 4602),
+            (backfill, 627, 627),
+        ):
+            assert window["figures_with_graphic_subtree"] == subtree
+            assert window["figures_with_graphic"] == scoped
+        assert recent["figures_multi_graphic_subtree"] == 2676
+        assert recent["figures_multi_graphic_subtree"] - recent["figures_multi_graphic"] == 18
+        assert recent["last_is_thumb_subtree"] == recent["last_is_thumb"]
+        assert recent["first_is_thumb_subtree"] == recent["first_is_thumb"] == 0
+        # The back-filled window is untouched by the scoping on every count.
+        for name in (
+            "figures_with_graphic",
+            "figures_multi_graphic",
+            "last_is_thumb",
+            "first_is_thumb",
+        ):
+            assert backfill[name] == backfill[f"{name}_subtree"]
+        assert recent["graphics"] + backfill["graphics"] == 13624
         assert recent["alternatives_members"] + backfill["alternatives_members"] == 7055
         assert recent["alternatives_declaring_mime"] + backfill["alternatives_declaring_mime"] == 0
         assert recent["alternatives_archival"] + backfill["alternatives_archival"] == 0
@@ -2066,7 +3097,7 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         # "scanned page images". It is an *inference* from a count, so the
         # count at least has to be the corpus's — it was cited in four files
         # and asserted in none.
-        assert backfill_maps["graphic_extensions"][".png"] == 3873
+        assert backfill_maps["graphic_extensions"][".png"] == 3880
 
     def test_the_table_side_answers_135_as_an_empty_population(self):
         """#135, and the #127 window neither corpus can reproduce any more.
@@ -2100,7 +3131,7 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             "disp-formula": 2,
         }
         assert self._articles_with(self.RECENT, "foreign_owned_graphics") == 12
-        assert backfill_maps.get("foreign_owned_graphics", {}) == {}
+        assert backfill_maps["foreign_owned_graphics"] == {}
         assert (recent["nested_figures"], recent["nested_tables"]) == (7, 0)
         assert backfill["nested_figures"] + backfill["nested_tables"] == 0
 
@@ -2149,8 +3180,8 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         # #142 — a <collab>'s element children.
         assert recent["collabs_with_element_children"] == 0
         assert backfill["collabs_with_element_children"] == 0
-        assert recent_maps.get("collab_children", {}) == {}
-        assert backfill_maps.get("collab_children", {}) == {}
+        assert recent_maps["collab_children"] == {}
+        assert backfill_maps["collab_children"] == {}
         # #143 — contributor multiplicity per <contrib>.
         for totals in (recent, backfill):
             assert totals["contribs_multi_collab"] == 0
@@ -2176,11 +3207,64 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             0,
         )
         # #150 — a <ref> carrying only a <note>.
-        assert (recent["refs"], backfill["refs"]) == (52969, 19447)
+        assert (recent["refs"], backfill["refs"]) == (52969, 19513)
         assert (recent["refs_note_only"], backfill["refs_note_only"]) == (0, 0)
         assert recent_maps["ref_child_kinds"]["note"] == 1
         assert recent_maps["ref_child_kinds"]["citation-alternatives"] == 2709
         assert "citation-alternatives" not in backfill_maps["ref_child_kinds"]
+
+    def test_the_formula_routing_counters_reach_a_corpus_for_the_first_time(self):
+        """#147's fix, corroborated on the rendition bmlib is actually fed.
+
+        These counters shipped with the fix and never reached either committed
+        corpus: they were registered as a generation and omitted from
+        `from_dict`'s sentinel list, so both corpora — written before the
+        generation existed — loaded them at 0 and the report printed shares
+        over a population nothing had counted. Fixed with #164, and this is
+        what they actually hold.
+
+        **One of them disagrees with the figure the rule cites, and the
+        disagreement is a rendition split.** `_DISPLAY_FORMULA_MERGE_PARENTS`
+        rests on 116,623 of 150,598 (77.4%) display formulas sitting inside a
+        `<p>` — measured over the *archive* bytes of the whole
+        `PMC012xxxxxx` package. On the **served** rendition this corpus
+        measures **714 of 1,915 (37.3%)**, with `<sec>` the commoner parent at
+        1,199; and the 880-article served draw the fix also quotes measured
+        201 of 654 (30.7%). So the two served measurements agree with each
+        other and the archive is the outlier — which makes "the commonest
+        shape" an archive property, not a claim about what the parser is fed.
+
+        The **rule** is unaffected: both parents are routed, one by merging
+        and one by emitting a paragraph, and 37.3% is still a large minority
+        that would land ahead of the paragraph it interrupts. Only the cited
+        share and the "commonest" wording were wrong for this rendition.
+        """
+        recent, recent_maps, _ = self._totals(self.RECENT)
+        backfill, backfill_maps, _ = self._totals(self.BACKFILL)
+
+        assert recent_maps["disp_formula_parents"] == {"sec": 1199, "p": 714, "td": 2}
+        assert sum(recent_maps["disp_formula_parents"].values()) == recent["disp_formulas"]
+        assert backfill_maps["disp_formula_parents"] == {}
+        # Every deposit here is a whole LaTeX document and all but one is
+        # already delimited — the two rules `_latex_expression` rests on,
+        # measured at 99.9% and 96.0% over the package and now corroborated
+        # at 100.0% and 99.9% over this window.
+        assert (recent["tex_math_document_wrapped"], recent["tex_math"]) == (1398, 1398)
+        assert recent["tex_math_predelimited"] == 1397
+        # The live corruption the fix removed, on the one path no buffer rule
+        # reaches. 229 of 1,398 here (16.4%); 24,476 in 856 of the package's
+        # 97,909 articles.
+        assert recent["tex_math_in_a_cell"] == 229
+        # **Expect this to read tex-math-first only, and conclude nothing from
+        # it.** MathML-first is 4,377 of the package's 188,473 both-encoding
+        # formulas but sits in 37 of its 97,909 articles at ~118 apiece — a
+        # house style, so a 997-article draw expects none, and none is what it
+        # finds. The rule stands on the content model, which admits either.
+        assert recent_maps["formula_encoding_order"] == {"tex-math-first": 1087}
+        assert recent["formula_alternatives_both"] == 1087
+        for name in sampler._FORMULA_ROUTING_COUNTERS:
+            if name not in ("disp_formula_parents", "formula_encoding_order"):
+                assert backfill[name] == 0
 
     def test_the_contributor_counters_are_what_120_and_140_wait_on(self):
         """#120/#140's spellings, sized for the first time (section 11).
@@ -2205,7 +3289,7 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         its own name unless it is in `_CONTRIB_NON_NAME_CHILDREN` (skipped) or
         `_CONTRIB_NAME_WRAPPERS` (descended through), and `string-name` is in
         neither — so one occurrence anywhere in either window would have
-        printed under its own key. An absent key is therefore 0 of 12,650
+        printed under its own key. An absent key is therefore 0 of 12,659
         `<contrib>`, upper bound 0.03%, which is what `CLAUDE.md`,
         `CHANGELOG.md` and `ROADMAP.md` all say. That openness is exactly what
         #121 argued for: against a closed list the unforeseen spelling falls
@@ -2215,7 +3299,7 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         recent, recent_maps, _ = self._totals(self.RECENT)
         backfill, backfill_maps, _ = self._totals(self.BACKFILL)
 
-        assert (recent["contribs"], backfill["contribs"]) == (7798, 4852)
+        assert (recent["contribs"], backfill["contribs"]) == (7798, 4861)
         assert recent_maps["contrib_name_spellings"] == {
             "name": 7784,
             "contrib-id": 823,
@@ -2223,7 +3307,7 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             "collab": 14,
             "ext-link": 1,
         }
-        assert backfill_maps["contrib_name_spellings"] == {"name": 4852}
+        assert backfill_maps["contrib_name_spellings"] == {"name": 4861}
         assert "string-name" not in recent_maps["contrib_name_spellings"]
         assert (recent["nested_contribs"], backfill["nested_contribs"]) == (0, 0)
         assert (recent["collabs_with_a_roster"], backfill["collabs_with_a_roster"]) == (0, 0)
@@ -2249,6 +3333,16 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         `deltas` is a sum over disagreements. The only honest form of the
         headline number is "differs in N of 300, and where it differs archive
         A against served B", and that is what this asserts.
+
+        **Regenerated with #164 so all three artifacts share a code version.**
+        The two corpora were redrawn for the figure-side scoping, and a
+        comparison file measured by the *previous* walk beside them would be
+        mixed provenance — the failure this class exists to catch, one
+        artifact over. Nothing in the headline moved: the same 300 articles,
+        the same 289 differing, the same 156 / 0 / 781 below. Seven fields
+        appear that did not before — the four `_subtree` companions and three
+        formula-routing counters — the latter because they had been reading
+        as an agreeing zero on both sides, which was the sentinel defect.
 
         **The provenance is asserted at the width it can move.** This used to
         check `source`, `first_year` and `last_year` alone — the three fields
@@ -3944,6 +5038,89 @@ class TestTheComparisonUnmeasuredShareIsReportable:
         assert unreportable["comparison"]["unmeasured"] == 7
 
 
+class TestARunThatCanMeasureNothingSaysSo:
+    """ "Re-run to fill it" is unachievable in exactly the case that creates it.
+
+    `print_report`'s `NOT MEASURED` lines tell the operator to re-run. A
+    journal already holding every drawn identifier makes `wanted` empty, so
+    nothing is re-measured, `totals` holds the same stale rows, and the next
+    run prints the identical ERROR and the identical `.unreportable.json` at
+    exit 1 — for ever. The remedy is to delete the journal and nothing said
+    so. Adding a counter generation is the event that makes this reachable,
+    which is why it was found adding one (issue #164's review).
+
+    Runs `main()` twice over a synthetic package, stripping the newest
+    generation out of the journal in between, so the second invocation is
+    exactly the stuck state.
+    """
+
+    def _package(self, tmp_path: Path, n: int) -> Path:
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        for i in range(n):
+            (tmp_path / f"PMC{i:08d}.xml").write_text(
+                '<article xmlns:xlink="http://www.w3.org/1999/xlink">'
+                "<front><article-meta>"
+                "<pub-date pub-type='epub'><year>2024</year></pub-date>"
+                "</article-meta></front><body><fig id='f1'/></body></article>"
+            )
+        return tmp_path
+
+    def _argv(self, package: Path, output: Path) -> list[str]:
+        return [
+            "sample_jats_exhibits.py",
+            "--package",
+            str(package),
+            "--from-year",
+            "2024",
+            "--to-year",
+            "2024",
+            "--target",
+            "4",
+            "--seed",
+            "0",
+            "-o",
+            str(output),
+        ]
+
+    def test_a_journal_that_cannot_be_topped_up_names_the_remedy(self, tmp_path, capsys):
+        package = self._package(tmp_path / "package", n=4)
+        output = tmp_path / "out" / "jats_exhibits.json"
+        with mock.patch.object(sys, "argv", self._argv(package, output)):
+            assert sampler.main() == 0
+        journal = output.with_suffix(".journal.jsonl")
+
+        # Age every row out of the newest generation, leaving the header — the
+        # shape a journal written before a generation existed actually has.
+        lines = journal.read_text().splitlines()
+        aged = [lines[0]]
+        for line in lines[1:]:
+            row = json.loads(line)
+            for name in sampler._FIGURE_SCOPE_COUNTERS:
+                row.pop(name, None)
+            aged.append(json.dumps(row))
+        journal.write_text("\n".join(aged) + "\n")
+
+        capsys.readouterr()
+        with mock.patch.object(sys, "argv", self._argv(package, output)):
+            code = sampler.main()
+        out = capsys.readouterr().out
+
+        # Stuck: nothing new measured, a generation still missing, exit 1.
+        assert code != 0
+        assert "Nothing was measured this run" in out
+        assert "delete (or move aside) the journal" in out
+
+    def test_a_run_that_does_measure_something_does_not_say_it(self, tmp_path, capsys):
+        """The negative control — the advice must not fire on a normal run."""
+        package = self._package(tmp_path / "package", n=4)
+        output = tmp_path / "out" / "jats_exhibits.json"
+
+        with mock.patch.object(sys, "argv", self._argv(package, output)):
+            assert sampler.main() == 0
+
+        assert "Nothing was measured this run" not in capsys.readouterr().out
+
+
 class TestCompareEuropepmcSurvivesAJournalResume:
     """The Critical a review caught: `main()`'s `--compare-europepmc` must
     not silently measure nothing on the ordinary workflow of drawing a
@@ -5059,6 +6236,62 @@ class TestTheJournalHeaderDisagreementCheck:
 
         assert reason is not None
         assert "draw" in reason
+
+    def test_a_journal_written_under_other_definitions_is_refused(self, tmp_path):
+        """The fourth axis, and the one that is not about the draw at all.
+
+        `(source, rendition, draw)` all answer "which identifiers did this
+        run ask for". #164 changed what four *first-generation* counters
+        count — `el.iter()` to owner-scoped — under their own names, so a
+        journal written by the previous commit for the same package, window
+        and seed agreed on all three and pooled. Reproduced in review of PR
+        #180 over the real recent corpus: section 4 printed `2,664  57.9%`,
+        neither the owner-scoped 2,658 nor the subtree 2,676, above a
+        heading asserting `owner-scoped`.
+
+        The sentinel cannot reach it — a redefined counter is *present*,
+        and the whole generation mechanism detects absence. So the version
+        is stamped and compared, and this is the test that makes the stamp
+        load-bearing rather than decorative.
+        """
+        journal = tmp_path / "older-definitions.journal.jsonl"
+        header = json.loads(sampler._journal_header_line("package", "archive", self._DRAW))
+        header["definitions"] = sampler._COUNTER_DEFINITIONS_VERSION - 1
+        journal.write_text(json.dumps(header) + "\n")
+
+        reason = sampler._journal_disagreement(journal, "package", "archive", self._DRAW)
+
+        assert reason is not None
+        assert "definitions" in reason
+
+    def test_a_header_predating_the_definitions_stamp_is_refused(self, tmp_path):
+        """Fail closed on absence, which is what every existing journal is.
+
+        A header written before the stamp existed carries no `definitions`
+        key, so `.get` returns `None`. That must disagree with any version
+        rather than being read as "no opinion" — a journal that cannot say
+        what it counted is exactly the one that must not be pooled.
+        """
+        journal = tmp_path / "no-stamp.journal.jsonl"
+        header = json.loads(sampler._journal_header_line("package", "archive", self._DRAW))
+        del header["definitions"]
+        journal.write_text(json.dumps(header) + "\n")
+
+        reason = sampler._journal_disagreement(journal, "package", "archive", self._DRAW)
+
+        assert reason is not None
+        assert "definitions" in reason
+
+    def test_a_journal_this_version_wrote_is_resumable(self, tmp_path):
+        """The negative control: the stamp must not refuse everything.
+
+        Without this, a stamp that never matched would pass both tests
+        above while making every run unresumable.
+        """
+        journal = tmp_path / "same.journal.jsonl"
+        journal.write_text(sampler._journal_header_line("package", "archive", self._DRAW))
+
+        assert sampler._journal_disagreement(journal, "package", "archive", self._DRAW) is None
 
     def test_a_legacy_header_less_journal_is_a_disagreement_not_a_crash(self, tmp_path):
         """A journal written before this check existed opens with a real

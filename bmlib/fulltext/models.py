@@ -167,7 +167,7 @@ class JATSTableInfo:
     field directly, and it is the only way to get at it: ``FullTextService``
     discards the ``JATSArticle`` and caches the rendered HTML alone, so for a
     service consumer that renderer choice is permanent. Both populations are
-    measured over the two committed draws (1,994 articles, 2,448
+    measured over the two committed draws (1,997 articles, 2,448
     ``<table-wrap>``, every one of them in the recent window): the image is
     the *only* rendition for **8**, and sits beside a ``<table>`` for **84**.
 

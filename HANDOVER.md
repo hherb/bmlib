@@ -1,7 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-02. **0.10.0 is released and on PyPI**; sixteen changes
-sit unreleased once this branch merges — #73's atomic template install (PR #102), #96/#105's
+_Last updated: 2026-09-03. **0.10.0 is released and on PyPI**; seventeen changes
+sit unreleased — #73's atomic template install (PR #102), #96/#105's
 partitioning of an over-cap PubMed day (PRs #106 and #114), #109's typed
 article-id (PR #113), #110/#111's JATS sub-article and contributor-group
 fixes (PR #118), #115/#116/#117/#131's exhibit nesting, ranking and
@@ -14,8 +14,9 @@ contributor name (PR #141), #146/#149's mixed-citation text (PR #148),
 scan (PR #159), and the JATS corpus redraw answering #132, #138 and #158
 (PR #163, merged 2026-09-01, which also took #165-#170 from its own review),
 #162's invented exhibit number (PR #171, merged 2026-09-02, filing #172 and
-#173), and #147's dropped formulas (this branch). All five version places
-agree at 0.10.0. Twelve of the sixteen are `fulltext` JATS fixes filed within
+#173), #147's dropped formulas (PR #176, merged 2026-09-02, filing #174, #175,
+#177 and #178), and #164's owner-scoped figure walk (this branch). All five
+version places agree at 0.10.0. Thirteen of the seventeen are `fulltext` JATS fixes filed within
 days of each other; whoever cuts the next release should describe them
 together. Every unreleased ROADMAP row carries an `*(unreleased)*` marker.
 
@@ -39,7 +40,7 @@ measured by diffing a corpus rather than reasoned: over 880 local PMC articles
 3,541 rebuilt, 958 emptied of an `<element-citation>` leak — `authors` for 502
 in 14, rendered HTML for 576 in 23.
 
-**Two of the fifteen move stored *transparency* values, and both are outside
+**Two of the seventeen move stored *transparency* values, and both are outside
 `fulltext`.** #112 admits `plc`/`pty` to `_INDUSTRY_WORDS`, so `"GSK plc"` now
 sets `industry_funding_detected`, which feeds a HIGH-risk rule and a quality
 downgrade; neither token is in the labelled corpus, so **no measured figure
@@ -110,20 +111,15 @@ list**. And a mutation harness restoring with `git checkout -- <file>` deletes
 whatever is uncommitted in it.
 
 **Three older PRs, in one line each** — argued in full in `CHANGELOG.md`,
-`CLAUDE.md` and at their call sites; only what a future session must act on is
-kept. **#112** (PR #155, funder figures): eight claims cited a measurement
-nothing checked, four wrong together because they matched an uncommitted
-corpus revision — *when several figures are wrong at once, look for the one
-cause*, and *correct a figure everywhere it is read*; left **#154, #156,
-#157**. **#119** (PR #159): a reviewer's prose answered for the article, and
-*a text scan over markup can be exact if the argument is closed* — in
-well-formed XML a literal `<` opens markup, so comment, CDATA, PI and DOCTYPE
-subset are the complete set of exceptions, and *"exact" is a claim the review
-tests*; left **#160, #161**. **#151** (PR #153, no behaviour): key a net on
-the thing and not the names it has, define an exemption by what a statement
-*does*, ask for containment not overlap, and size a positive control as the
-whole inventory rather than a canary; left **#152**.
-
+`CLAUDE.md` and at their call sites. **#112** (PR #155, funder figures): eight
+claims cited a measurement nothing checked, four wrong together because they
+matched an uncommitted corpus revision — *when several figures are wrong at
+once, look for the one cause* — leaving **#154, #156, #157**. **#119** (PR
+#159): a reviewer's prose answered for the article, and *a text scan over
+markup can be exact if the argument is closed*; left **#160, #161**. **#151**
+(PR #153, no behaviour): key a net on the thing and not the names it has,
+define an exemption by what a statement *does*, and size a positive control as
+the whole inventory rather than a canary; left **#152**.
 
 **A closing keyword in prose has closed an issue nobody decided — four
 times**, the fourth being the commit that warned about the other three. GitHub
@@ -140,173 +136,149 @@ an issue in prose, diff `gh issue list` against what the commit says it
 filed.** That is what found #160 reopened, one session late.
 
 
-**PR #171 settled #162 by refuting it**, and the whole argument is now in
-`docs/DECISIONS.md` and `CHANGELOG.md`. The issue read
-`exhibits_with_descendant_label` — an exhibit holding *any* `<label>` below it
-— as "carries its own label indirectly", so 6,937 against 6,944 printed
-`PREMISE VIOLATED`; fetching all seven showed each is a `<table-wrap>` with no
-`<label>` and no `<caption>`, every label below it a `<table-wrap-foot><fn>`
-marker or a `<list-item>` bullet, so the proposed fallback would have
-corrupted 7 of 7. What it fixed instead is 17× larger: **121 exhibits in 83 of
-997 recent articles** carry no label and were given an invented `Figure
-{i + 1}` — the *index*, so it collides with a real number. Five lessons,
-carried forward because they keep recurring:
+**Three recent PRs, in short form** — argued in full in `CHANGELOG.md`,
+`docs/DECISIONS.md`, `CLAUDE.md` and at their call sites, so only what a
+future session must act on is kept.
 
-- **A count is of what you looked for** — before acting on a counter, read its
-  increment site, not its name and not the report.
-- **Print only the half of a verdict the instrument supports.** `PREMISE
-  VIOLATED` went; the sound direction stayed, since `direct` is a subset of
-  `descendant` by construction.
-- **A zero over an absent population is not a clean result** — the back-filled
-  window carries no `<caption>` at all, so its zero certified nothing.
-- **The same rule stated on one branch is not applied on the next** —
-  `to_html` had invented no heading since #30 and was inventing figure numbers
-  four hundred lines away.
-- **An issue's own remedy is a hypothesis.** The fetch that refuted this one
-  cost ten minutes.
+**#162** (PR #171, invented exhibit numbers). The issue was settled by being
+*refuted*: it read `exhibits_with_descendant_label` as "carries its own label
+indirectly", where the seven exhibits it names hold a `<table-wrap-foot><fn>`
+marker or a `<list-item>` bullet and no label of their own, so the proposed
+fallback would have corrupted 7 of 7. #164 has now recorded those owners in
+the corpus, so that no longer rests on a live fetch. What it fixed instead is
+17× larger — 121 exhibits in 83 of 997 recent articles were given an invented
+`Figure {i + 1}`, the *index*, so it collides with a real number. Four rules
+survive: **a count is of what you looked for** (read the increment site, not
+the name or the report); **print only the half of a verdict the instrument
+supports**; **a zero over an absent population is not a clean result**; and
+**an issue's own remedy is a hypothesis** — the fetch that refuted this one
+cost ten minutes. Left **#172** and **#173**. The cross-platform spec in
+`bmlibrarian_lite` still has the old behaviour as normative pseudocode (that
+repo's #197).
 
-It left **#172** (`to_html`'s output moved and `FullTextCache` has no version
-stamp, so an old rendering is served forever) and **#173** (a figure's `alt`
-duplicates its own `<figcaption>`, so AT announces it twice). The
-cross-platform spec in `bmlibrarian_lite` still has the old behaviour as
-normative pseudocode (that repo's #197).
+**#147** (PR #176, dropped formulas). A `<tex-math>` was taken from its
+sentence and a `<disp-formula>` dropped whole. The rule is **choose one
+rendition, at the formula element**. Four things to carry: the obvious fix —
+one more `_INLINE_ELEMENTS` member — was **refused by measurement twice**,
+printing both encodings of 1,087 corpus formulas and printing a LaTeX
+*document* rather than an expression; **a table cell is the path no buffer
+rule reaches**, `characters()` having pasted the preamble into 24,476
+rendered cells; the first cut **corrupted what it recovered**, printing a
+merged equation's number as a coefficient, which only the corpus diff showed;
+and **blast radius comes from a diff, and `gained/lost` is blind to a
+paragraph that changed in place** — 1 gained, 0 lost, **159 changed in
+place**. Its own review then found six more defects in the fix, every one a
+rule the docstrings stated and no fixture exercised — this module's standing
+failure mode. Left **#174**, **#175**, **#177** and **#178**. **#178 is the
+open question**: whether LaTeX should win for a *both-encoding inline*
+formula at all, since there it replaces prose that was already correct in
+20,046 formulas against the 205 it recovers.
 
-**This session settled #147: a formula now reaches the prose that contains
-it.** `<tex-math>` was taken from its sentence and dropped; `<disp-formula>`
-was dropped whole, LaTeX, MathML and the `(1)` prose cross-references. The
-rule is **choose one rendition, at the formula element** — the encodings never
-merge on their own — and the whole argument is in `docs/DECISIONS.md`,
-`CLAUDE.md` and `CHANGELOG.md`. Six things worth carrying forward.
 
-- **The obvious fix was refused by measurement, twice over.** Adding
-  `<tex-math>` to `_INLINE_ELEMENTS` prints 1,087 corpus formulas (188,473 in
-  the package) twice, since both encodings are deposited; and it would print a
-  LaTeX *document*, 99.9% of deposits being `\documentclass` … preamble …
-  rather than an expression.
-- **The change stayed small because MathML needed no membership at all.** It
-  accumulates nothing, so its flattening is already in the formula's own
-  buffer — which also means a deposit binding the namespace to a prefix other
-  than `mml` keeps today's behaviour instead of hanging on a literal prefix
-  match the way #128 does. The first design had it in two sets.
-- **A live corruption sat beside the missing content**: a table cell takes its
-  text from `characters()`, not a buffer, so the LaTeX preamble was pasted
-  into the rendered HTML — 24,476 deposits in 856 of 97,909 articles. No
-  buffer rule reaches it; the fix had to hold the cell back too.
-- **The first cut of the fix corrupted what it recovered, and only the corpus
-  diff showed it.** Printing a merged equation's number gave `'eqn (2):2 τ =
-  kn'` — a coefficient the deposit does not contain — and welded consecutive
-  equations into `'… + OH−2 Al3+ …'`. The number is now printed only where the
-  equation stands apart. Likewise the first cut re-spaced text that already
-  reached the prose (`'EndMatrix represents'` → one word), fixed by the
-  module's own `_text_with_formatting` rule.
-- **Say which population a number is of, again.** 4,377 MathML-first formulas
-  is 2.3% of formulas and **37 of 97,909 articles** — a house style, so the
-  new sampler counter will read zero on almost any draw and a reader must not
-  conclude the order never varies.
-- **Blast radius from a diff, not the call graph — and the first statement of
-  it counted only what its metric could see.** "68 of 880, 433 paragraphs
-  gained, abstracts/tables/citations zero" was of a draw nobody can re-take,
-  and *gained/lost* is blind to a paragraph that changed **in place**, which
-  is the commoner effect. Re-measured over Europe PMC's named OA package
-  `PMC10030002_PMC10040000.xml.gz` (880 articles): prose moves in **34**,
-  abstracts **3**, cached `html_content` **12**, figure and table captions
-  **17** and **5** — captions being a public field the first statement named
-  nowhere; 1 paragraph gained, 0 lost, **159 changed in place**. Tables
-  moving is the *point*, each of those 12 being the preamble leaving a cell;
-  zero there was never consistent with the 24,476 cited two bullets up.
+**This session settled #164, found three instrument defects doing it, and
+four more in review of the PR.** The figure-side graphic counters are
+owner-scoped now, as the table side has been since #135, and the argument that
+the asymmetry cost nothing is gone rather than restated. The full argument is
+in `CLAUDE.md`, `CHANGELOG.md` and at the call sites; the review's four are
+summarised below the original six, and one finding it raised is filed as
+**#181** rather than fixed here. Ten things are worth carrying forward.
 
-`scripts/sample_jats_exhibits.py` gains a `formula routing (#147)` counter
-generation for the three populations the fix rests on, so the next redraw
-re-derives them instead of leaving them in a throwaway script. **Its first
-scoping was wrong in this repo's own signature way** — it counted encoding
-order inside `<alternatives>`, where the convention is near-uniform, while the
-rule is about the whole formula; the narrower counter would have printed
-"order never varies" for the rule that exists because it does not.
+- **A share is of a denominator, and the rendition chooses the denominator.**
+  #164 was filed on an archive spot-check that moved the multi-graphic figure
+  count 77 → 58 and read as "large enough to matter". On the served rendition
+  the shares are actually of, the same correction is **18 figures** — 2,676 →
+  2,658, 58.1% → 57.8%, each inside the other's interval — because the archive
+  holds 77 multi-graphic figures against the served rendition's 2,676. The
+  absolute correction is almost identical (19 against 18); only the
+  denominator differs. Nothing else moves: `figures_with_graphic`,
+  `last_is_thumb` and `first_is_thumb` are untouched, and so is the whole
+  back-filled window.
+- **Keep both readings when you re-scope a counter.** A redraw moves the
+  sample, the served bytes and the walk at once, and three simultaneous causes
+  make a movement unattributable. `_FIGURE_SCOPE_COUNTERS` records the subtree
+  reading per row beside the scoped one, so the correction is derivable inside
+  one draw. Two of the three happened not to move here — the recent window's
+  997 identifiers are the previous draw's and every unscoped counter came back
+  identical — but that is a property of one redraw and not a promise.
+- **A rule mechanised at one end is not mechanised.** `_FORMULA_ROUTING_COUNTERS`
+  was registered in `_COUNTER_GENERATIONS` and never added to `from_dict`'s
+  hand-written sentinel list, so **both committed corpora** loaded its three
+  integer counters at 0 and section 14b printed `<tex-math> inside a
+  <td>/<th>: 0  0.0%` over a population nothing had counted — the population
+  #147's live-corruption fix rests on. `TestEveryCounterIsInAGeneration` could
+  not catch it, because it checks the registry and the registry was right.
+- **Gate a report section on every counter it reads**, not on the generation
+  it is named after; and **`articles_where` must not borrow `_as_count`**,
+  which flattens a `Counter` to 0 — right for `measured`, and it made every
+  `Counter`-backed population read as carried by no article.
+- **Unblocking those counters corrected a parser figure.**
+  `_DISPLAY_FORMULA_MERGE_PARENTS` cited 77.4% of display formulas sitting in
+  a `<p>`, measured over *archive* bytes and written down as though it
+  described what the parser is fed. Served, it is **37.3%** with `<sec>`
+  commoner — and the 880-article served draw agrees at 30.7%. Two served
+  measurements against one archive outlier, so a `<p>` is the *minority*
+  parent on the bytes bmlib actually gets.
+- **The concurrency shortcut cost a draw, and is now #179.** Running the two
+  windows at once lost 103 and 98 articles to Europe PMC refusals against 3
+  sequentially; the journal made it recoverable, and the per-host pacer is
+  per-process so nothing prevents the next one. The reasoning that licensed it
+  estimated the request rate from row counts compared across turns without
+  checking the clock — off by 6×.
 
-**The review of PR #176 found six more defects in that fix, three of which
-moved stored values.** Every one is a rule the docstrings stated and no
-fixture exercised — this module's standing failure mode, now with fifteen
-tests of its own in `TestTheFormulaRulesTheReviewCorrected`, all
-mutation-verified.
+**The PR review found four more, all in the instrument and all now fixed.**
 
-- **A cell's equation number was discarded** — a regression, `characters()`
-  having delivered it before. A cell is a slot, not a sentence: all 40
-  labelled display formulas measured in a cell (8 of 97,909 articles) sit in a
-  cell whose whole content is the number and the equation. PMC12164272's Table
-  2 is a reaction-number column the prose cross-references.
-- **An inline formula emitted display delimiters.** 98.6% of 20,251 inline
-  `<tex-math>` bodies carry `$$…$$`, so that pair is the converter's artifact
-  and not a claim about context — `'×'` rendered as `'$$\times$$'` in a
-  caption. Re-spelled `$…$` now, one-directionally.
-- **An empty `<tex-math>` suppressed the encoding beside it**, the list being
-  tested for presence rather than for a rendition: `'Before Vmax after.'`
-  became `'Before after.'`.
-- **Several `<tex-math>` printed the expression twice**, the outcome the design
-  exists to prevent, contradicted three comments away. First-that-renders wins.
-- **A deposit carrying `\begin{document}` and no `\end{document}`** fell
-  through to the bare-expression path and delimited its own preamble — both
-  failures the rule prevents, in one string. The markers are read separately.
-- **A rendered formula could reach nowhere and vanish.** `_append_prose` has
-  four branches and no fallthrough. Counted at WARNING now
-  (`formulas_dropped`, 0 of 880 real articles, so not noisy); routing is
-  **#177**.
+- **The sentinel sees an absent counter, never a redefined one.** #164 changed
+  four *first-generation* counters from `el.iter()` to owner-scoped **in
+  place**, and `_journal_disagreement` compared `(source, rendition, draw)` —
+  everything about which identifiers were asked for and nothing about what the
+  sampler did with them. A pre-#164 journal for the same package, window and
+  seed resumed cleanly and pooled, printing **2,664**, neither reading, under
+  a heading asserting `owner-scoped`. `_COUNTER_DEFINITIONS_VERSION` is the
+  fourth axis; **bump it whenever an existing counter starts counting
+  something else**, because nothing can detect that for you. Renaming the four
+  was refused — the names are the corpus's keys, so it would redraw both
+  corpora and destroy #164's own attribution.
+- **Mechanise a gate rule, or it holds for one section.**
+  `TestEverySectionIsGatedOnEveryCounterItReads` walks `print_report` with
+  `ast` and checks every section's reads against its gate; `_pct` returns
+  `NOT MEASURED` on a sentinel as the backstop. The converse also held —
+  section 4 named #162's counter, which it does not read.
+- **A silent zero moves to the next type.** `articles_where` stopped
+  flattening a `Counter` and answered `False` for everything else, so
+  `unscoped` (a plain `dict`) read as carried by 0 articles over 29 non-empty
+  rows. It raises now, as `sum_of` does. `from_dict` is strict for the same
+  reason: an unknown key used to become a phantom attribute that round-tripped
+  into the committed corpus.
+- **A scope is not a judgement.** `_TRANSPARENT_WRAPPERS` was grouped with
+  `_ARCHIVAL_HINTS`/`_THUMB_PATTERN`, which must *differ* from the parser's
+  sets; since #164 it decides every #117 share, so it is pinned as identical.
 
-Two stale claims went with them, both saying the opposite of this PR's own
-tests: `CLAUDE.md`'s and `CHANGELOG.md`'s #146 paragraphs still read "#147 is
-scoped to prose outside a citation", which `_FORMULA_PARTS` had already made
-false — and the CHANGELOG one sat under `[Unreleased]`, so it would have
-shipped beside the fix refuting it. `7,769` was corrected in six places to
-name its population (*document-wrapped* deposits, not all deposits), and the
-"140 are a `<graphic>` and a `<label>`" wording in two, the counter requiring
-no label and at least 12 of the 140 carrying none.
+**Filed rather than fixed: #181.** `last_is_thumb`/`first_is_thumb` increment
+only inside `len(graphics) > 1`, so their population is `figures_multi_graphic`
+— but the report and five files divide them by `figures_with_graphic`. Over
+its own population the recent window reads **99.3%**, not 57.3%, which makes
+#117's rule far more load-bearing than the published figure says. Not fixed
+here because one remedy restates a share cited in five files and the other
+needs both corpora redrawn, which would destroy #164's attribution.
 
-**#178 is the one thing the review raised and did not settle**: whether LaTeX
-should win for a *both-encoding inline* formula at all. Display is
-unambiguous, `main` having dropped the element whole — but inline it
-**replaces** text that already reached the prose correctly, in **20,046
-formulas against the 205 it recovers**. #174 is the case for it; against it is
-that `body_sections` is read as prose by consumers that do not render LaTeX.
+Both corpora were redrawn on this branch's code and day, so all three
+artifacts share a version. The recent window is 997 measured of 1,000 as
+before; **the back-filled one is now 1,000 of 1,000**, Europe PMC having
+served the three it refused last time, so every back-filled denominator moved
+from 997 to 1,000. Its 627 figures and 0 `<table-wrap>` are unchanged.
 
-It left **#174** (flattened MathML loses its spacing and brackets — `mspace`
-has no text so words weld, `mfenced` carries its brackets as attributes, and
-`msup` renders `c²` as `c2`; latent for inline formulas before, now reaching
-1,915 display formulas in 185 of 997 articles) and **#175** (a formula
-deposited as an image has no field to reach it, 140 of those 1,915 — #127's
-table fix from the other side, and blocked on the same modelling decision a
-`JATSFormulaInfo` would settle). A comment on **#172** records that this is
-the second renderer change in one unreleased window.
-
-Also corrected in passing: `JATSTableInfo.graphic_url`'s docstring still cited
-the pre-#138 draw (600 articles, 755 tables) and had come to say the opposite
-of the committed corpora in both directions. PR #163 reconciled five other
-files and not that one, and the mechanised check asserts the corpus against
-literals in the test, so it cannot catch prose drifting from it.
-
-(The stale-share correction that preceded #147's fix still stands: the 1,087
-both-encoding formulas are 9.8% of the 11,136 the counter walks — 1,915
-`<disp-formula>` + 9,221 `<inline-formula>` — never "57% of every
-`<disp-formula>`", `_record_formula_alternatives` being called from both arms,
-so no per-`<disp-formula>` share is derivable at all.)
-
-**Next up: #164.** **The figure-side
-graphic walk is still unscoped, and the argument that this costs nothing is
-refuted by the committed corpora (7 nested `<fig>`, three foreign owners).
-Fixing it re-measures #117 and moves every cited share, so it is a redraw
-rather than a code edit.** It is also where the per-exhibit label-owner counter
-belongs: #162's spot-check of seven articles is a live one, and a counter
-recording what owns the labels inside an unlabelled exhibit would make it
-re-derivable at the next redraw rather than adding a dead field now. Then
-**#124, #128, #137, #142–#145, #150 and #152 in `fulltext`, #160 and #161 in
-`transparency`, the older non-JATS ones (#86, #92, #94, #103), the funder
-corpus (#154, #156, #157), or Phase 3 of the bmlibrarian port, whose every row
-needs a design conversation.** Of the populations the redraw delivered,
-**#142, #143 and #150 measure empty**, so those three are blocked on a
-stratified draw rather than on effort. The funder redraw is still one job
-answering three. #160 is the cheapest self-contained fix on the list: the
-remedy it prefers — match the element name when the depth closes — needs no
-invented constant and no corpus. See "Open GitHub issues" below for which is
-blocked on what; almost none is a drive-by, and the ones that lose content are
-blocked on a modelling decision rather than on effort.
+**Next up: #160 is the cheapest self-contained fix on the list** — match the
+element name when the depth closes, which needs no invented constant and no
+corpus, and bound the four skip branches that are quadratic on an unterminated
+construct. Then **#124, #128, #137, #142–#145, #150 and #152 in `fulltext`,
+#161 in `transparency`, the older non-JATS ones (#86, #92, #94, #103), the
+funder corpus (#154, #156, #157), #179's pacer, or Phase 3 of the bmlibrarian
+port, whose every row needs a design conversation.** Of the populations the
+redraw delivered, **#142, #143 and #150 measure empty**, so those three are
+blocked on a stratified draw rather than on effort. The funder redraw is still
+one job answering three. See "Open GitHub issues" below for which is blocked
+on what; almost none is a drive-by, and the ones that lose content are blocked
+on a modelling decision rather than on effort.
 
 This file briefs the next session on what is done, what is still open, and the
 conventions to keep. Update it whenever a session materially changes the plan;
@@ -335,7 +307,7 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
   never the data one, and a downstream reading only the number must still read
   this list.
 - **Tests: 3074 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
-  2026-09-02 on this branch; `main` is 3035 + 63). The PostgreSQL half
+  2026-09-03 on `main`, which now carries PR #176's own review tests). The PostgreSQL half
   has not been re-run since the SQL last moved; the
   last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the
   #105 branch. Of the 63 default skips, 61 are the PostgreSQL
@@ -387,12 +359,10 @@ lives in git history, `CHANGELOG.md` and `docs/plans/` — not here.
 ### Open GitHub issues
 
 **Twenty-six open** as this file is written, **twenty-five once this branch
-merges** and 147 is resolved with it — that branch filed #174, #175 and, from
-its own review, #177 and #178 (verified with `gh issue list` 2026-09-02, after
-PR #171 merged, which resolved 162 and filed #172 and #173; #165-#170 went
-with PR #163's merge): #86, #92, #94, #103,
-#124, #128, #137, #142, #143, #144, #145, #147, #150, #152, #154, #156, #157,
-#160, #161, #164, #172, #173, #174, #175, #177, #178. Every one was
+merges** (verified with `gh issue list` 2026-09-03, after #147 was closed by
+hand — see below — and after this branch filed **#179**): #86, #92, #94, #103,
+#124, #128, #137, #142, #143, #144, #145, #150, #152, #154, #156, #157,
+#160, #161, #164, #172, #173, #174, #175, #177, #178, #179. Every one was
 found by review or measurement rather than by a
 failing test, and **none of them loses records** — though **#124** loses an
 exhibit's footnotes, **#150** renders a note-only reference as an empty
@@ -401,10 +371,9 @@ to another prefix.
 
 **#165-#170 were fixed on PR #163's branch and closed when it merged**; they
 stay the permanent handle for why that code looks the way it does, which is
-what every `(issue #N)` comment here is. **#164 is the one that PR did not
-fix**: scoping the figure-side graphic walk re-measures #117 and moves every
-cited share, so it is a redraw rather than a code edit, and the PR corrected
-the refuted premise in prose instead.
+what every `(issue #N)` comment here is. **#164 was the one that PR did not
+fix**, and this branch does: the scoping re-measures #117, which is why it
+was a redraw rather than a code edit.
 
 **Count the open issues against the repo before trusting the number.** The
 line has been wrong in three consecutive sessions, and an issue **closed as
@@ -422,7 +391,16 @@ five came out of it (released provenance is in `CHANGELOG.md`): **#73** → PR
 PR #148, filing **#147**, **#149**–**#151**; **#151** → PR #153, filing
 **#152**; **#112** → PR #155, filing **#154**, **#156**, **#157**; **#119** →
 PR #159, filing **#158**, **#160**, **#161**; **#162** → PR #171, filing
-**#172**, **#173**; **#147** → this branch, filing **#174** and **#175**, and its own review filing **#177** and **#178**.
+**#172**, **#173**; **#147** → PR #176, filing **#174** and **#175**, and its
+own review filing **#177** and **#178**; **#164** → this branch, filing
+**#179**.
+
+**#147 had to be closed by hand, one session late** — PR #176's body says
+*"Fixes the formula-dropping issue (147)"*, which is the phrasing the
+closing-keyword paragraph above asks for, so GitHub correctly did **not**
+close it and nobody did either. That is the same check from the other side:
+the after-the-fact diff of `gh issue list` against what a merge says it fixed
+catches a keyword that fired *and* one that did not.
 
 
 **#151's own filing is the counter-example to the count above.** PR #148 filed
@@ -435,8 +413,9 @@ session needs to *choose* between them.
 
 **That corpus redraw is done** — #132, #138 and #158 are answered, and #142,
 #143, #147 and #150 each have the population they were waiting for (#147 was
-then fixed on it). Both corpora are 997 measured articles of 1,000 at `seed
-0`, recent from `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`
+then fixed on it). Both are 1,000-article draws at `seed
+0` — 997 of the recent window served, all 1,000 of the back-filled one —
+recent from `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`
 (2023-2025) and back-filled from `…PMC002xxxxxx…` (1996-1998). Full argument
 in `CLAUDE.md`; four rules survive it.
 
@@ -450,19 +429,22 @@ in `CLAUDE.md`; four rules survive it.
   `tests/data/jats_exhibits.rendition.json` records **disagreements only**, so
   no archive total can be read off it.
 - **Every figure moved for three reasons at once** — sample, rendition and a
-  scoped walk — so no movement may be attributed to any one, the scoping least
-  of all, since it is the only one the corpus records (`unscoped`).
+  scoped walk — so no movement may be attributed to any one. #164 is the
+  answer to that in general: when you re-scope a counter, keep **both**
+  readings per row, so the scoping's cost is derivable inside one draw
+  whatever the sample and the bytes do (`unscoped` for the region walk,
+  `_FIGURE_SCOPE_COUNTERS` for the figure one).
 - **Three claims did not survive.** The `<label>` premise reported violated is
   #162, corrected by PR #171. #127's image-only-table population cannot be
-  re-measured, the back-filled window holding **0 `<table-wrap>` in 997
+  re-measured, the back-filled window holding **0 `<table-wrap>` in 1,000
   articles** — that its material is scanned page images is an *inference* from
-  0 tables beside 627 figures and 3,873 `.png` deposits, and quoting that 0 as
+  0 tables beside 627 figures and 3,880 `.png` deposits, and quoting that 0 as
   a measurement would be the defect this work removed. The abstract-branch
   guard's "44 exhibits, none titled" is withdrawn as unre-derivable.
 - **#158 is answered by naming the population.** "Carries a region" and "loses
   body text to one" are different claims, the first bounding the second, and
   the re-derivable one: **29 of 997 (2.9%)** recent articles carry a region
-  (145 regions), 0 of 997 back-filled, agreeing with `transparency`'s 3,382 of
+  (145 regions), 0 of 1,000 back-filled, agreeing with `transparency`'s 3,382 of
   97,909 (3.45%) over the same package — across a rendition difference, the
   served bytes *adding* regions in 5 of 300. The 4 of 249 counted peer-review
   deposits and the 288 of 1,022 (28.2%) counted articles losing body text,
@@ -471,7 +453,7 @@ in `CLAUDE.md`; four rules survive it.
   that three of the four draws cannot be re-taken.
 
 
-**#128 is weaker than filed**: all 13,617 `<graphic>` hrefs in the two redrawn
+**#128 is weaker than filed**: all 13,624 `<graphic>` hrefs in the two redrawn
 corpora use the `xlink` prefix bound to the XLink namespace, so the
 literal-prefix match is safe on measured evidence. Worth downgrading rather
 than closing — no sample proves no publisher does otherwise.

@@ -41,6 +41,10 @@ Eight questions, each answering a decision the parser makes:
    support is the population a reader feels: on the redrawn recent corpus
    **121 exhibits of 7,058, in 83 of 997 articles, carry no ``<label>``
    of their own**, and until #162 those were rendered with an invented number.
+   The **owners** of the labels inside those seven are recorded too, which is
+   what makes #162's refutation re-derivable: settling it cost a live fetch of
+   the seven articles because the corpus held the counts and not what the
+   fallback would have picked up.
 2. **What else carries a ``<label>`` inside an exhibit?** The depth rule
    needed this enumerated; the parent rule does not. Measuring it says how
    much the enumeration was missing.
@@ -48,7 +52,13 @@ Eight questions, each answering a decision the parser makes:
    demotion is keyed on it, with an extension fallback for the undeclared
    case. Both tiers are dead code if nothing archival is ever deposited.
 4. **How are several ``<graphic>`` deposited?** Counts per figure, and which
-   end the thumbnail sits at — the population behind #117's ranking.
+   end the thumbnail sits at — the population behind #117's ranking. Routed
+   by **owner** since #164, as the table side has been since #135, with the
+   whole-subtree reading kept beside it: every share published before that
+   was of the subtree walk, so both have to be in the corpus for a reader to
+   reconcile an older comment, and the difference between them is what the
+   scoping cost — separable from the sample and the rendition, which a redraw
+   moves at the same time.
 5. **The same question for a ``<table-wrap>``**, counted separately (#135).
    #127 routes a table's deposits through #117's ranking, which was measured
    on figures alone; until a draw finds a table carrying more than one, that
@@ -177,6 +187,7 @@ same draw rather than an earlier one::
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import glob
 import json
 import random
@@ -254,17 +265,32 @@ _ARCHIVAL_HINTS = frozenset({"tiff", "tif", "eps", "ps", "postscript", "svg", "p
 # Likewise this sampler's own thumbnail test, not the parser's.
 _THUMB_PATTERN = re.compile(r"thumb", re.IGNORECASE)
 
-# And its own idea of a wrapper that does not take ownership of a <graphic>,
-# stated here rather than imported so the measurement can disagree with the
-# parser's `_GRAPHIC_TRANSPARENT_WRAPPERS`.
+# The wrapper set, and it belongs with `_NESTED_ARTICLE_ELEMENTS` below rather
+# than with the two judgements above. Those two are *predicates* — what counts
+# as archival, what counts as a thumbnail — so they must be free to disagree
+# with the parser, or a corpus labelled by the rule under test could only ever
+# confirm it. This one is a *scope*: it says which elements `_owned` walks
+# through when deciding whose deposit a <graphic> is, which is the parser's
+# own routing question and not a judgement about the corpus.
+#
+# It was classified with the judgements while only the table counters routed
+# through `_owned`, where it cost nothing. #164 put the figure counters through
+# it too, so this set now decides 57.8% against 58.1% and every #117 share
+# `offer_graphic` and CLAUDE.md cite. A parser-side addition the sampler did
+# not follow would publish a third reading — neither the subtree walk nor what
+# the parser routes — at the next redraw and in silence. Restated rather than
+# imported, so this module needs nothing from `bmlib.fulltext.jats_parser`;
+# `test_the_wrapper_set_is_identical_to_the_parsers` is what keeps the two in
+# step, exactly as the archival test is pinned as *differing*.
 _TRANSPARENT_WRAPPERS = frozenset({"alternatives", "p"})
 
 # The two elements the parser suppresses entirely (#110). Restated here
 # rather than imported so this module needs nothing from
-# `bmlib.fulltext.jats_parser` — unlike `_ARCHIVAL_HINTS` / `_THUMB_PATTERN` /
-# `_TRANSPARENT_WRAPPERS` above, which must deliberately *differ* from the
-# parser's own sets, this one must be identical to it: it defines the scope
-# the walk is measuring, not a judgement the walk is free to disagree with.
+# `bmlib.fulltext.jats_parser` — unlike `_ARCHIVAL_HINTS` / `_THUMB_PATTERN`
+# above, which must deliberately *differ* from the parser's own sets, this one
+# must be identical to it, and so must `_TRANSPARENT_WRAPPERS`: both define a
+# scope the walk measures within, not a judgement the walk is free to disagree
+# with.
 # The set is complete for a structural reason — exactly three JATS elements
 # admit `<front>`/`<front-stub>` and `<body>`, and the third is `<article>`
 # itself.
@@ -333,6 +359,55 @@ _WAITING_SIDE_COUNTERS = (
     "refs",
     "refs_note_only",
 )
+# The sixth generation (issues #164 and #162), and the same sentinel rule as
+# the five before it. Two unrelated questions ship together because they ship
+# in one commit, which is what a generation *is*:
+#
+# The four `_subtree` companions are what the whole-subtree `el.iter()` walk
+# said, kept beside the owner-scoped counters that replaced it. Recording both
+# is what makes the correction a measurement rather than a silent application
+# of it — the same argument `unscoped` makes for #138, and needed for the same
+# reason: a redraw taken on another day moves the sample, the served bytes and
+# the scoping at once, and PR #163's rule is that three simultaneous causes
+# make a movement unattributable. Held per row rather than in `unscoped`,
+# which is reserved for the nested-article walk and would otherwise conflate
+# two different scopings under one key. A draw in which the two walks agree
+# everywhere measures zero difference, so zero cannot also mean "absent".
+#
+# `unlabelled_exhibits_with_descendant_label` is the *per-exhibit* count of
+# the set a descendant-search fallback would fire on — and it is **exactly
+# `exhibits_with_descendant_label - exhibits_with_direct_label`**, which
+# `print_report` already prints as `holding_one_below`. An earlier draft of
+# this comment claimed the subtraction could not answer it, on the grounds
+# that the two are article-level and an article carrying one exhibit of each
+# kind contributes to both. That is wrong twice over: `_record_exhibit`
+# increments both once *per exhibit*, and a direct child is always in
+# `el.iter()`, so `direct` is a subset of `descendant` per exhibit and the
+# difference is exact. Verified at 0 mismatched rows across both corpora.
+#
+# It is kept, for a reason that is not the one given: **a generation needs a
+# member that can carry a sentinel**, and the datum #162 actually wanted is
+# `unlabelled_exhibit_label_owners`, a `Counter`, which cannot. Without the
+# integer beside it this generation would be undetectable when absent —
+# `measured()` answers True for an empty `Counter` — which is the collapse
+# `_FORMULA_ROUTING_COUNTERS` suffered from the other end. So it is a
+# sentinel-bearing alias for a derivation, not a new population, and
+# `test_the_unlabelled_counter_is_the_pairs_difference` pins the identity so
+# a future edit cannot let the two drift apart in silence.
+#
+# Split in two because section 4 reads the four `_subtree` counters and
+# section 1 reads #162's: a section is gated on every counter it reads, and
+# on no others, so neither gate may name the whole generation.
+_FIGURE_SUBTREE_COUNTERS = (
+    "figures_with_graphic_subtree",
+    "figures_multi_graphic_subtree",
+    "last_is_thumb_subtree",
+    "first_is_thumb_subtree",
+)
+_FIGURE_SCOPE_COUNTERS = (
+    *_FIGURE_SUBTREE_COUNTERS,
+    "unlabelled_exhibits_with_descendant_label",
+)
 # Every counter generation, by the name the report and the corpus header use
 # for it. A generation is a set of fields added in one commit, so a row written
 # before that commit carries `NOT_MEASURED` for all of them together — which is
@@ -387,7 +462,51 @@ _COUNTER_GENERATIONS: dict[str, tuple[str, ...]] = {
     "nested-article scoping (#138, #158)": _SCOPE_SIDE_COUNTERS,
     "the four waiting populations (#142, #143, #147, #150)": _WAITING_SIDE_COUNTERS,
     "formula routing (#147)": _FORMULA_ROUTING_COUNTERS,
+    "the figure side scoped, and #162's owners (#164, #162)": _FIGURE_SCOPE_COUNTERS,
 }
+# WHAT THE SENTINEL CANNOT SEE: A COUNTER WHOSE **MEANING** CHANGED UNDER ITS
+# OWN NAME. Every mechanism above detects an *absent* field — a generation is
+# a set of names a stale row does not carry, and `NOT_MEASURED` is what that
+# absence loads as. #164 did something the whole design has no answer for: it
+# left `figures_with_graphic`, `figures_multi_graphic`, `last_is_thumb` and
+# `first_is_thumb` present, named, and in `_FIRST_GENERATION_COUNTERS` (whose
+# comment — "every row ever written carries them, so they need no sentinel" —
+# stayed true and stopped being sufficient), while changing what they count
+# from a whole-subtree walk to the owner-scoped one.
+#
+# A journal is deliberately allowed to outlive one run, and
+# `_journal_disagreement` compared `(source, rendition, draw)` — everything
+# about *which identifiers* were asked for and nothing about what the sampler
+# did with them. So a journal written by the pre-#164 commit for the same
+# package, window and seed resumed **cleanly** and its rows pooled with fresh
+# ones. Reproduced during review of PR #180, half-stale over the real recent
+# corpus: section 4 printed `2,664  57.9%`, which is neither the owner-scoped
+# 2,658 nor the subtree 2,676, above a heading asserting `owner-scoped` and
+# under a `NOT MEASURED` line naming only the companion generation. The
+# corpus filename was still protected — the sixth generation's sentinel forces
+# exit 1 — so the artifact was safe and the number a maintainer *reads* was
+# not, which is the half this instrument exists for.
+#
+# Renaming the four would make the absence detectable the ordinary way, and
+# is refused: the field names are the corpus's own keys, so a rename
+# regenerates both corpora and moves every figure again — destroying exactly
+# the "only the walk moved" attribution #164 was able to make. A version
+# stamp costs one integer and refuses at startup instead.
+#
+# **BUMP THIS WHENEVER AN EXISTING COUNTER STARTS COUNTING SOMETHING ELSE.**
+# Adding a counter does not qualify (that is a generation, and the sentinel
+# already sees it); renaming one does not either (the old name goes absent).
+# Only a redefinition in place, which nothing else in this module can detect.
+# There is no mechanical test for "the meaning changed" — that is a human
+# judgement, which is why this is prose where `_COUNTER_GENERATIONS` is a
+# registry — but the *consequence* is mechanised:
+# `TestTheJournalHeaderDisagreementCheck`'s three `definitions` tests pin that
+# the stamp reaches the header, that a disagreeing or absent one is refused
+# rather than pooled, and that an agreeing one still resumes.
+#
+# 1: every commit up to and including the formula-routing generation.
+# 2: #164 — the figure-side graphic counters became owner-scoped.
+_COUNTER_DEFINITIONS_VERSION = 2
 # How a `<contrib>` names its contributor. JATS models it as
 # `(name | string-name | collab | anonymous | ...)`, and the tail of that model
 # is the point: `<on-behalf-of>` is in it too, and #130's `<list>` is the
@@ -1019,13 +1138,17 @@ def _journal_header_line(source: str, rendition: str, draw: dict[str, Any]) -> s
         draw: This run's own draw identity — see :func:`_journal_disagreement`.
 
     Returns:
-        A single JSON line, newline-terminated, naming all three.
+        A single JSON line, newline-terminated, naming all four. ``draw`` says
+        which identifiers were asked for; ``definitions`` says what this
+        sampler counted when it read them, which is the axis #164 moved and
+        the first three could not see (:data:`_COUNTER_DEFINITIONS_VERSION`).
     """
     header = {
         _JOURNAL_HEADER_KEY: True,
         "source": source,
         "rendition": rendition,
         "draw": draw,
+        "definitions": _COUNTER_DEFINITIONS_VERSION,
     }
     return json.dumps(header) + "\n"
 
@@ -1082,6 +1205,17 @@ def _journal_disagreement(
     what a path cannot see, a different snapshot's tarball swapped in
     beside a directory that has not moved. See :func:`_package_location`.
 
+    *The three axes above all describe the draw, and #164 moved a fourth*
+    (review of PR #180, reproduced over the real recent corpus). They answer
+    "which identifiers did this run ask for"; none answers "what did the
+    sampler count when it read them". #164 changed four first-generation
+    counters from a whole-subtree walk to the owner-scoped one **in place**,
+    so a journal written by the previous commit for the same package, window
+    and seed agreed on all three and pooled — printing `2,664`, neither
+    reading, under a heading asserting the new one. `definitions` is that
+    fourth axis; :data:`_COUNTER_DEFINITIONS_VERSION` carries the rule for
+    when to bump it.
+
     Args:
         journal: The path this run is about to read from and append to.
         source: This run's own ``"package"`` or ``"europepmc"``.
@@ -1124,7 +1258,19 @@ def _journal_disagreement(
         )
     mismatches = [
         f"{name} {header.get(name)!r} != {value!r}"
-        for name, value in (("source", source), ("rendition", rendition), ("draw", draw))
+        for name, value in (
+            ("source", source),
+            ("rendition", rendition),
+            ("draw", draw),
+            # The fourth axis, and the one about this sampler rather than
+            # about the draw: a journal written when a counter meant
+            # something else must not be pooled with fresh rows under the
+            # name it still has. An older header carries no `definitions`
+            # key at all, so `.get` returns `None`, which disagrees with any
+            # version and refuses — the fail-closed direction, and the one
+            # every pre-#164 journal now takes.
+            ("definitions", _COUNTER_DEFINITIONS_VERSION),
+        )
         if header.get(name) != value
     ]
     if mismatches:
@@ -1319,10 +1465,14 @@ class ArticleMeasurement:
     # `disp_formula_parents` is what `_DISPLAY_FORMULA_MERGE_PARENTS` rests
     # on: a display formula inside a `<p>` has to join that paragraph, because
     # emitted as one of its own it lands *ahead* of the paragraph it
-    # interrupts — the enclosing `<p>` has not closed yet. Measured 116,623 of
-    # 150,598 (77.4%) in the package and 201 of 654 in the 880-article local
-    # draw, so the two windows disagree on the share and agree that it is the
-    # commonest shape. An open vocabulary, like `label_parents`: the block
+    # interrupts — the enclosing `<p>` has not closed yet. **The share is a
+    # property of the rendition, and this counter is what established that**:
+    # 116,623 of 150,598 (77.4%) over the package's *archive* bytes, against
+    # 714 of 1,915 (37.3%) here and 201 of 654 (30.7%) in the 880-article
+    # served draw — so the two served measurements agree, the archive is the
+    # outlier, and a `<p>` is the *minority* parent on the bytes the parser is
+    # actually fed. It used to be written down as the commonest shape on the
+    # archive figure alone. An open vocabulary, like `label_parents`: the block
     # containers are drawn from rather than fixed (`<app>`, `<boxed-text>`,
     # `<disp-formula-group>`, `<body>` all appear).
     #
@@ -1358,6 +1508,26 @@ class ArticleMeasurement:
     refs: int = 0
     refs_note_only: int = 0
     ref_child_kinds: Counter[str] = field(default_factory=Counter)
+    # Issue #164 — what the whole-subtree walk said, beside what the parser
+    # routes. The four counters above them (`figures_with_graphic`,
+    # `figures_multi_graphic`, `last_is_thumb`, `first_is_thumb`) are now
+    # owner-scoped the way the table side has been since #135; these record
+    # the reading the shares published before this commit were of, so the
+    # movement is derivable *within* one draw. See `_FIGURE_SCOPE_COUNTERS`.
+    figures_with_graphic_subtree: int = 0
+    figures_multi_graphic_subtree: int = 0
+    last_is_thumb_subtree: int = 0
+    first_is_thumb_subtree: int = 0
+    # Issue #162's spot-check, made re-derivable. Seven recent-window exhibits
+    # carry no `<label>` of their own and at least one below them — the set a
+    # descendant-search fallback would fire on — and settling that it would
+    # have corrupted all seven took a live fetch, because the corpus recorded
+    # the counts and not the owners. `unlabelled_exhibit_label_owners` is
+    # scoped to an exhibit carrying no direct label of its own: an exhibit
+    # that has one is not the population, and folding its footnote markers in
+    # here would bury the seven among `label_parents`' 330 `<fn>`.
+    unlabelled_exhibits_with_descendant_label: int = 0
+    unlabelled_exhibit_label_owners: Counter[str] = field(default_factory=Counter)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise for the journal and the corpus file."""
@@ -1371,12 +1541,13 @@ class ArticleMeasurement:
         """Rebuild a row written by :meth:`to_dict`.
 
         A counter the row does not carry is set to ``NOT_MEASURED`` rather
-        than left at its zero default. These arrived in five generations —
+        than left at its zero default. These arrived in seven generations —
         ``_TABLE_SIDE_COUNTERS`` with issue #135, ``_OWNER_SIDE_COUNTERS`` with
         #123/#125/#130, ``_CONTRIB_SIDE_COUNTERS`` with #120/#140,
-        ``_SCOPE_SIDE_COUNTERS`` with #138, and ``_WAITING_SIDE_COUNTERS`` with
-        #142/#143/#147/#150 — so a corpus or journal older than
-        a generation carries none of it, and
+        ``_SCOPE_SIDE_COUNTERS`` with #138, ``_WAITING_SIDE_COUNTERS`` with
+        #142/#143/#147/#150, ``_FORMULA_ROUTING_COUNTERS`` with #147's fix and
+        ``_FIGURE_SCOPE_COUNTERS`` with #164/#162 — so a corpus or journal
+        older than a generation carries none of it, and
         each would otherwise sum to zero, which is exactly what a genuine "no
         table deposits an image", "no caption nests" or "no contributor is
         named undivided" draw looks like; reading one as the other is the
@@ -1384,23 +1555,78 @@ class ArticleMeasurement:
         :meth:`Totals.measured` is what tests it.
         """
         row = cls(pmcid=str(data["pmcid"]))
-        for name in (
-            *_TABLE_SIDE_COUNTERS,
-            *_OWNER_SIDE_COUNTERS,
-            *_CONTRIB_SIDE_COUNTERS,
-            *_SCOPE_SIDE_COUNTERS,
-            *_WAITING_SIDE_COUNTERS,
-        ):
-            if name not in data:
-                setattr(row, name, NOT_MEASURED)
+        # Read off `_COUNTER_GENERATIONS` rather than re-listed here, because
+        # a hand-written copy of the registry is a rule enforced by prose and
+        # this one had already gone out of step: `_FORMULA_ROUTING_COUNTERS`
+        # was registered as a generation by the commit that added it and never
+        # reached this list, so every row of both committed corpora — written
+        # before that generation existed — loaded its three integer counters
+        # at 0 instead of the sentinel. `print_report` then read them as
+        # measured, and section 14b printed "<tex-math> inside a <td>/<th>:
+        # 0  0.0%" over a population nothing had counted: the exact collapse
+        # the sentinel exists to prevent, on the population issue #147's
+        # live-corruption fix rests on. `TestEveryCounterIsInAGeneration`
+        # could not catch it — it checks the registry, and the registry was
+        # right — so `TestASentinelReachesEveryGenerationsCounters` checks
+        # this end.
+        for name in (name for names in _COUNTER_GENERATIONS.values() for name in names):
+            if name in data or isinstance(getattr(row, name), Counter):
+                # A `Counter` field takes no sentinel — there is no negative
+                # dict, and `counter_of` would raise updating from an int —
+                # so an absent one loads empty and reads as measured-empty.
+                # A generation is detectable as absent through its *integer*
+                # counters; one consisting of nothing else would not be, and
+                # none does.
+                continue
+            setattr(row, name, NOT_MEASURED)
+        # A ROW IS ONLY EVER LOADED FROM A FILE THIS SCRIPT WROTE, WHICH IS
+        # NOT A REASON TO BELIEVE IT (issue #164's review). Three shapes got
+        # through before: a key naming no field created a **phantom
+        # attribute**, and `to_dict` walks `self.__dict__`, so it round-tripped
+        # into the committed corpus while `TestEveryCounterIsInAGeneration` —
+        # which walks `dataclasses.fields` — could not see it; a registered
+        # integer counter carrying a string was summed by `sum_of` (`"5"` →
+        # 5) and skipped by `articles_where`, so one row could inflate a total
+        # and vanish from its own article denominator; and `null` loaded as
+        # `None`, which reads as measured and raises out of `sum_of` far from
+        # here. All three are reachable by a field rename across a shared
+        # journal, and a rename of a *first-generation* counter carries no
+        # sentinel to catch it — the same blind spot `_COUNTER_DEFINITIONS_
+        # VERSION` closes from the other end.
+        #
+        # So the read is as strict as the write: a key must name a field, and
+        # its value must have the field's own shape. Raising is right rather
+        # than harsh — `main` reads the journal before measuring anything, so
+        # a refusal costs a re-run and a silent phantom costs a corpus.
+        fields = {f.name for f in dataclasses.fields(cls)}
         for key, value in data.items():
             if key == "pmcid":
                 continue
-            current = getattr(row, key, None)
-            if isinstance(current, Counter):
+            if key not in fields:
+                raise ValueError(
+                    f"{data.get('pmcid')}: {key!r} names no field on ArticleMeasurement. "
+                    "A row this script did not write, or a field renamed under a shared "
+                    "journal; delete the journal rather than loading it."
+                )
+            if isinstance(getattr(row, key), Counter):
+                if not isinstance(value, dict):
+                    raise ValueError(
+                        f"{data.get('pmcid')}: {key!r} is a Counter field carrying "
+                        f"{type(value).__name__}."
+                    )
                 setattr(row, key, Counter(value))
-            elif current is not None or isinstance(value, int):
+            elif isinstance(value, dict):
+                # `unscoped` and its kind — a plain mapping field, taken as it
+                # is written.
                 setattr(row, key, value)
+            elif isinstance(value, int) and not isinstance(value, bool):
+                setattr(row, key, value)
+            else:
+                raise ValueError(
+                    f"{data.get('pmcid')}: {key!r} is a count carrying "
+                    f"{type(value).__name__} ({value!r}); a count that is not an int "
+                    "sums into a total and vanishes from its article denominator."
+                )
         return row
 
 
@@ -1861,22 +2087,19 @@ def _owned(el: ET.Element, wanted: str) -> list[ET.Element]:
     ``tables_with_graphic`` 92 and ``tables_multi_graphic`` 0 — scoped, and
     with no unscoped table counter to compare against.
 
-    The **figure** counters deliberately keep the subtree walk: their
-    percentages are cited at ``offer_graphic`` and in CLAUDE.md, and
-    re-scoping them silently would invalidate every one.
-
-    **The argument that this costs nothing is refused rather than restated**
-    (issue #164). It used to read "both committed draws record zero nested
-    exhibits and every foreign owner is a ``<td>``, which can only sit under a
-    ``<table-wrap>``" — and the redraw refutes both halves: the recent corpus
-    holds 7 nested ``<fig>`` (all ``PMC12143881``) and three foreign owners,
-    ``<td>`` 82, ``<inline-formula>`` 69, ``<disp-formula>`` 2. An
-    ``<inline-formula>`` is not confined to a ``<table-wrap>``. What the
-    unscoped walk costs on the **served** rendition the percentages are of is
-    unmeasured; a spot check over the same articles' *archive* bytes moves the
-    multi-graphic figure count 77 → 58, which is large enough to matter and
-    the wrong rendition to cite. Scoping the figure side means re-measuring
-    #117 — that is #164, not a docstring edit.
+    **The figure counters route through this too, since issue #164** — they
+    were the asymmetry, kept on a whole-subtree walk because every share
+    ``offer_graphic`` and CLAUDE.md cite from #117 was of that walk. The
+    argument that the asymmetry cost nothing was refuted by the redrawn
+    corpora rather than by reasoning: it read *"both committed draws record
+    zero nested exhibits and every foreign owner is a ``<td>``, which can only
+    sit under a ``<table-wrap>``"*, and the recent window holds 7 nested
+    ``<fig>`` (all ``PMC12143881``) and three foreign owners — ``<td>`` 82,
+    ``<inline-formula>`` 69, ``<disp-formula>`` 2 — of which an
+    ``<inline-formula>`` is confined to no exhibit at all. Both readings are
+    now recorded per row (``_FIGURE_SCOPE_COUNTERS``), so what the scoping
+    costs is a measurement inside one draw and not a diff against a corpus
+    fetched on another day.
 
     Args:
         el: The exhibit element.
@@ -1897,6 +2120,54 @@ def _owned(el: ET.Element, wanted: str) -> list[ET.Element]:
 
     descend(el)
     return found
+
+
+def _descendant_label_owners(el: ET.Element) -> Counter[str]:
+    """What owns each ``<label>`` anywhere below *el*, by its parent's name.
+
+    Asked only of an exhibit carrying no ``<label>`` of its own, which is the
+    set a descendant-search fallback would fire on (issue #162). A whole
+    subtree deliberately, not :func:`_owned`: the question is what the
+    fallback would have *reached*, and a fallback searching only through
+    transparent wrappers would not have found #162's own population — every
+    one of those labels sits behind a ``<table-wrap-foot>`` or a ``<td>``.
+
+    Args:
+        el: The exhibit element.
+
+    Returns:
+        A count per owning element name, over every ``<label>`` in the
+        subtree — so it counts *(exhibit, label)* visits, not labels, and
+        must not be summed against ``label_parents``, which counts each
+        label once. Two nested unlabelled exhibits sharing one footnote
+        marker below them contribute it twice, which is right for "what
+        would this fallback have reached, per exhibit" and wrong for "how
+        many labels are there".
+
+        **``el``'s own tag can appear, and that case is the interesting
+        one.** An earlier draft promised the exhibit never shows up; that
+        holds of *el* alone, which by the guard has no direct ``<label>``.
+        A **nested** labelled exhibit inside it is owned by its own tag, so
+        an unlabelled ``<fig>`` wrapping a labelled figure supplement
+        records ``{"fig": 1}`` — the one reading under which a
+        descendant-search fallback would have picked up a real exhibit
+        label rather than one of #116's footnote markers. Nested ``<fig>``
+        is a live population here (7, all ``PMC12143881``); it does not
+        intersect the seven this draw found. `print_report` annotates the
+        row rather than leaving a reader to notice, since section 2's own
+        idiom for an exhibit tag means something different there.
+    """
+    owners: Counter[str] = Counter()
+
+    def descend(node: ET.Element) -> None:
+        name = _local(node.tag)
+        for child in node:
+            if _local(child.tag) == "label":
+                owners[name] += 1
+            descend(child)
+
+    descend(el)
+    return owners
 
 
 def _record_exhibit(el: ET.Element, tag: str, depth: int, row: ArticleMeasurement) -> None:
@@ -1926,6 +2197,16 @@ def _record_exhibit(el: ET.Element, tag: str, depth: int, row: ArticleMeasuremen
         row.exhibits_with_direct_label += 1
     if descendant:
         row.exhibits_with_descendant_label += 1
+    if descendant and not direct:
+        # The set the fallback issue #162 proposed would actually have fired
+        # on, counted per exhibit and with each label's owner recorded. All
+        # seven in the recent window turned out to be a `<table-wrap-foot>`'s
+        # `<fn>` marker or a `<list-item>`'s bullet, so the fallback would
+        # have corrupted 7 of 7 — a conclusion that cost a live fetch of the
+        # seven articles because the corpus held the counts and not the
+        # owners. It holds the owners now.
+        row.unlabelled_exhibits_with_descendant_label += 1
+        row.unlabelled_exhibit_label_owners += _descendant_label_owners(el)
 
     # The same pair for <caption>, which is now routed by its parent for the
     # reason <label> is — so it owes the same premise (#123).
@@ -1935,9 +2216,13 @@ def _record_exhibit(el: ET.Element, tag: str, depth: int, row: ArticleMeasuremen
         row.exhibits_with_descendant_caption += 1
 
     if tag == "fig":
-        # A whole-subtree walk, unlike the table branch below — see `_owned`
-        # for why the asymmetry is deliberate and why it costs nothing here.
-        graphics = [g for g in el.iter() if _local(g.tag) == "graphic"]
+        # Owner-scoped since issue #164, as the table branch below has been
+        # since #135 — and the whole-subtree reading kept beside it, because
+        # every share issue #117 cites was of that walk and a redraw moves
+        # the sample and the served bytes at the same time. `_owned` carries
+        # the argument; `_FIGURE_SCOPE_COUNTERS` carries why both are kept.
+        graphics = _owned(el, "graphic")
+        subtree = [g for g in el.iter() if _local(g.tag) == "graphic"]
         if graphics:
             row.figures_with_graphic += 1
         if len(graphics) > 1:
@@ -1946,6 +2231,14 @@ def _record_exhibit(el: ET.Element, tag: str, depth: int, row: ArticleMeasuremen
                 row.last_is_thumb += 1
             if _is_thumbnail(graphics[0]):
                 row.first_is_thumb += 1
+        if subtree:
+            row.figures_with_graphic_subtree += 1
+        if len(subtree) > 1:
+            row.figures_multi_graphic_subtree += 1
+            if _is_thumbnail(subtree[-1]):
+                row.last_is_thumb_subtree += 1
+            if _is_thumbnail(subtree[0]):
+                row.first_is_thumb_subtree += 1
     else:
         # The same three counts for a <table-wrap>, because #127 routes a
         # table's deposits through the *same* ranking a figure's go through
@@ -2356,14 +2649,48 @@ class Totals:
         return merged
 
     def articles_where(self, attribute: str) -> int:
-        """How many rows carry a non-zero *attribute*.
+        """How many rows carry a non-empty *attribute*.
 
-        ``> 0``, never truthiness: `NOT_MEASURED` is ``-1``, which is truthy,
-        so a row that measured *nothing* used to count as an article that
-        carries the thing — inflating exactly the article-level denominators
-        the comments cite beside a counter total (issue #168).
+        For an integer counter: ``> 0``, never truthiness. `NOT_MEASURED` is
+        ``-1``, which is truthy, so a row that measured *nothing* used to
+        count as an article that carries the thing — inflating exactly the
+        article-level denominators the comments cite beside a counter total
+        (issue #168).
+
+        For a ``Counter``: **non-empty**, which is not what `_as_count` says.
+        That helper exists so :meth:`measured` stops raising on a `Counter`,
+        and flattening one to ``0`` is the right answer *there* — a `Counter`
+        takes no sentinel, so it is always measured. Borrowed here it answered
+        a different question wrongly, and silently: every `Counter`-backed
+        population read as carried by **no** article, so the report printed
+        ``<title> inside a <sec>, owned elsewhere: 411   in 0 articles
+        0.0%`` while the corpus held it in over a hundred. The prose was
+        never wrong — it is derived from the corpus directly — so only a
+        maintainer *running the sampler* met the zero, and would have read
+        the population as empty. `_as_count` is deliberately left alone: the
+        two callers are asking different things, which is the whole defect.
+
+        **And it fails loudly on a type it does not know**, the way
+        :meth:`sum_of` does and unlike the helper it replaced. Answering
+        ``False`` for an unrecognised value is the same silent zero one type
+        further on: `unscoped` is a plain ``dict`` on this very row, and a
+        fallthrough predicate reported it as carried by **0** articles over a
+        corpus holding 29 non-empty ones. Every future ``list``/``set``/
+        ``dict`` field would reproduce the defect this method was rewritten
+        to remove, so an unknown type raises instead of scoring zero.
         """
-        return sum(1 for r in self.rows if _as_count(getattr(r, attribute)) > 0)
+
+        def carries(value: object) -> bool:
+            if isinstance(value, Counter | dict):
+                return bool(value)
+            if isinstance(value, int):
+                return value > 0
+            raise TypeError(
+                f"articles_where({attribute!r}) reached a {type(value).__name__}; "
+                "add it here rather than letting it score zero."
+            )
+
+        return sum(1 for r in self.rows if carries(getattr(r, attribute)))
 
     def measured(self, attribute: str) -> bool:
         """Did **every** row actually carry *attribute*?
@@ -2396,14 +2723,21 @@ class Totals:
 
 
 def _as_count(value: object) -> int:
-    """*value* as a count, for the two accessors that must not mis-read one.
+    """*value* as a count, for the one accessor that must not mis-read one.
 
     A ``Counter`` field carries no sentinel — it cannot, there being no
     negative dict — so an empty one is genuinely "measured, and empty" and a
     populated one is measured too. Reading it as ``0`` therefore says the
-    right thing to both callers, where comparing the ``Counter`` itself
-    against an ``int`` raised `TypeError` and made
-    :meth:`Totals.measured` unusable on eleven of this row's fields.
+    right thing to :meth:`Totals.measured`, where comparing the ``Counter``
+    itself against an ``int`` raised `TypeError` and made that method
+    unusable on eleven of this row's fields.
+
+    **One caller, deliberately.** It had two until #164's review:
+    :meth:`Totals.articles_where` borrowed it and inherited the flattening,
+    which is the right answer to "was this measured?" and the wrong one to
+    "does this row carry anything?" — so every ``Counter``-backed population
+    read as carried by no article. That method now asks its own question.
+    Do not re-share this helper on the strength of the two looking alike.
     """
     return value if isinstance(value, int) else 0
 
@@ -2426,6 +2760,21 @@ def _unmeasured_generations(totals: Totals) -> list[str]:
 
 
 def _pct(part: int, whole: int) -> str:
+    """*part* of *whole* as a percentage with its Wilson interval.
+
+    **Fails closed on a sentinel at either end**, which is the class 14b's
+    gate closed one instance of. `NOT_MEASURED` is ``-1``, so an ungated
+    section reaching here raises out of `print_report` and takes every later
+    section — and the exit-code decision — with it: `wilson(k, -1)` gives
+    *"no attempts to compute an interval over"* and a negative *part* gives a
+    bare ``math domain error``, neither naming a counter, a section or an
+    attribute. The rule "a section is gated on every counter it reads" is
+    enforced by `TestEverySectionIsGatedOnEveryCounterItReads`; this is the
+    backstop for the section that rule has not been applied to yet, and it
+    reports the same ``NOT MEASURED`` token the gates do rather than a share.
+    """
+    if part < 0 or whole < 0:
+        return "NOT MEASURED"
     if not whole:
         return "n/a"
     low, high = wilson(part, whole)
@@ -2463,6 +2812,34 @@ def print_report(totals: Totals) -> bool:
         f"   exhibits with no <label> of their own     : {unlabelled}  {_pct(unlabelled, exhibits)}"
     )
     print(f"   ...of those, ones holding a <label> below : {holding_one_below}")
+    # WHAT THOSE LABELS ACTUALLY BELONG TO, PRINTED HERE RATHER THAN LEFT TO
+    # SECTION 2 (issue #164's review). This is the set a descendant-search
+    # fallback would fire on, and until now the report answered "what owns
+    # them?" by pointing at `label_parents` — which pools every exhibit in the
+    # draw, so the seven exhibits' 76 labels sat inside that section's 330
+    # <fn> and 225 <list-item> rows and could not be told from the markers of
+    # exhibits that are numbered perfectly well. The counter exists precisely
+    # so they need not be (see `unlabelled_exhibit_label_owners`), and the
+    # instrument was still routing its reader to the burial.
+    #
+    # Gated on the integer counter, not the Counter beside it: a Counter takes
+    # no sentinel, so an empty one cannot be told from a stale row's.
+    if not totals.measured("unlabelled_exhibits_with_descendant_label"):
+        print("      NOT MEASURED — these rows predate the owner counter (issue #162).")
+    elif holding_one_below:
+        owners = totals.counter_of("unlabelled_exhibit_label_owners")
+        print(
+            f"      ...in {totals.articles_where('unlabelled_exhibits_with_descendant_label')} "
+            f"article(s), and those labels are owned by:"
+        )
+        for name, count in owners.most_common():
+            # An exhibit's own tag here is the one reading that would support
+            # #162's proposed fallback, and it is reachable: a *nested*
+            # labelled exhibit inside an unlabelled one records `fig` or
+            # `table-wrap` (see `_descendant_label_owners`). Annotated so it
+            # cannot be read as one of #116's footnote markers.
+            own = "  <-- an exhibit's own label" if name in _EXHIBITS else ""
+            print(f"         {name:<23} {count:>6}{own}")
     # ONLY ONE DIRECTION OF THIS COMPARISON IS SOUND, AND #162 REMOVED BOTH.
     # `exhibits_with_descendant_label` counts an exhibit holding *any* <label>
     # in its subtree, so `descendant - direct` is the set a descendant-search
@@ -2488,8 +2865,9 @@ def print_report(totals: Totals) -> bool:
             "   These counters do not decide the premise: the second counts\n"
             "   any <label> in the subtree, so the difference above is the set\n"
             "   a descendant-search fallback would fire on, not the set\n"
-            "   carrying its own label indirectly. Section 2 says what those\n"
-            "   labels belong to — inspect them before trusting either count.\n"
+            "   carrying its own label indirectly. The owners listed above are\n"
+            "   what such a fallback would have picked up — read them, not\n"
+            "   section 2, which pools every exhibit in the draw.\n"
             "   The second line is the population that matters to a reader: an\n"
             "   exhibit with no <label> is rendered with no number (issue #162)."
         )
@@ -2535,7 +2913,19 @@ def print_report(totals: Totals) -> bool:
     print(f"   ...declaring mime-subtype              : {declaring}")
     print(f"   ...archival by subtype or extension    : {totals.sum_of('alternatives_archival')}")
 
-    print("\n4. SEVERAL <graphic> PER FIGURE  (issue #117's population)")
+    print("\n4. SEVERAL <graphic> PER FIGURE  (issue #117's population, owner-scoped)")
+    # THE TWO THUMBNAIL LINES BELOW ARE PRINTED OVER THE WRONG DENOMINATOR,
+    # AND THAT IS #181 RATHER THAN AN OVERSIGHT HERE. `last_is_thumb` and
+    # `first_is_thumb` increment only inside `len(graphics) > 1`, so their
+    # population is `figures_multi_graphic` and not `figures_with_graphic` —
+    # a figure whose single deposit is a thumbnail is in the denominator and
+    # in neither numerator. Over its own population the recent window reads
+    # 99.3% rather than 57.3%, which makes #117's rule far more load-bearing
+    # than the figure cited in five files says. Left alone here deliberately:
+    # correcting it restates a published share, which is a different
+    # reconciliation from the one #164 is making, and the alternative remedy
+    # (widening the numerators) needs both corpora redrawn — which would
+    # destroy the attribution #164 rests on. See #181.
     with_graphic = totals.sum_of("figures_with_graphic")
     multi = totals.sum_of("figures_multi_graphic")
     print(f"   figures carrying a <graphic>           : {with_graphic}")
@@ -2549,6 +2939,69 @@ def print_report(totals: Totals) -> bool:
         f"   ...whose FIRST deposit is a thumbnail  : "
         f"{first_thumb:>6}  {_pct(first_thumb, with_graphic)}"
     )
+    # What the pre-#164 whole-subtree walk said, printed beside it rather than
+    # instead of it: every share published before that commit is of this
+    # reading, so a reader reconciling an old comment needs both numbers and
+    # the difference between them — which is the movement scoping alone
+    # caused, uncontaminated by the sample or the rendition moving with it.
+    # Gated on the four counters this block actually reads, not on the whole
+    # sixth generation: `_FIGURE_SCOPE_COUNTERS` also carries #162's
+    # `unlabelled_exhibits_with_descendant_label`, which section 1 reads and
+    # this one does not. Naming it here is the converse of the 14b defect —
+    # a false NOT MEASURED rather than a crash — and the rule is the same one:
+    # a section is gated on every counter it reads, and on no others.
+    if not all(totals.measured(name) for name in _FIGURE_SUBTREE_COUNTERS):
+        print("   NOT MEASURED — these rows predate the companion (issue #164). Re-run to fill it.")
+    else:
+        subtree_with = totals.sum_of("figures_with_graphic_subtree")
+        subtree_multi = totals.sum_of("figures_multi_graphic_subtree")
+        subtree_last = totals.sum_of("last_is_thumb_subtree")
+        subtree_first = totals.sum_of("first_is_thumb_subtree")
+        # THE DIFFERENCE IS PRINTED AS WHAT THE SUBTREE WALK OVERCOUNTED, NOT
+        # AS "WHAT SCOPING MOVED" (issue #164's review). `_owned` yields a
+        # subset of `el.iter()`, so `subtree - scoped` is non-negative by
+        # construction and `{:+d}` could only ever print `+`. Scoping moved
+        # the multi-graphic count *down*, 2,676 to 2,658, which is how every
+        # prose statement of it in this repo reads — while the report said
+        # `+18`. Labelled as the overcount, the sign and the wording agree,
+        # and a future scoping that legitimately *adds* figures cannot print
+        # a negative under a heading claiming a reduction.
+        #
+        # Both raw counts are printed, not just the share: the whole reason
+        # these companions exist is that every figure published before #164
+        # is of this walk, so a reader reconciling an old comment needs
+        # 2,676 itself and not only the 58.1% it produced.
+        print("   what the pre-#164 subtree walk said, and what the scoping removed:")
+        print(
+            f"      carrying a <graphic>   subtree      : {subtree_with:>6}  "
+            f"(subtree overcounted by {subtree_with - with_graphic})"
+        )
+        print(
+            f"      ...carrying more than one, subtree  : {subtree_multi:>6}  "
+            f"{_pct(subtree_multi, subtree_with)}  "
+            f"(subtree overcounted by {subtree_multi - multi})"
+        )
+        print(
+            f"      LAST / FIRST a thumbnail, subtree   : {subtree_last:>6} / {subtree_first:<6} "
+            f"(subtree overcounted by {subtree_last - totals.sum_of('last_is_thumb')} / "
+            f"{subtree_first - first_thumb})"
+        )
+        # THE MOVEMENT IS NOT DIFFUSE, AND A TOTAL ALONE READS AS IF IT WERE.
+        # 18 figures over 4,602 is two thirds of one percent; those 18 sit in
+        # **4 articles of 997**, each of which loses *every* multi-graphic
+        # figure it had — three to <inline-formula> images in captions, one to
+        # eLife's nested figure supplements. That is a per-publisher property,
+        # the way this repo's own nesting rate is, and a draw catching more of
+        # either publisher moves it a long way. The third defect #164 fixed
+        # was that the report must say how many articles a population reaches;
+        # this is that rule applied to the population #164 itself added.
+        moved = totals.articles_where("figures_multi_graphic_subtree") - totals.articles_where(
+            "figures_multi_graphic"
+        )
+        print(
+            f"      articles the scoping changes        : {moved:>6}  "
+            f"{_pct(moved, totals.articles)} of the draw"
+        )
 
     # Issue #135. The ranking these deposits go through was measured on
     # figures alone and reasoned onto tables; this is what would settle it.
@@ -2810,7 +3263,13 @@ def print_report(totals: Totals) -> bool:
         )
 
     print("\n14b. HOW THE FORMULA RULES ROUTE  (issue #147's fix)")
-    if not all(totals.measured(name) for name in _FORMULA_ROUTING_COUNTERS):
+    # `tex_math` is the denominator of three rows below and belongs to the
+    # generation *before* this one, so the gate has to name it: a row stale
+    # for that generation but fresh for this one reaches `wilson()` with
+    # ``n = -1``, which raises out of the report rather than saying NOT
+    # MEASURED. A section is gated on every counter it reads, not on the
+    # generation it is named after.
+    if not all(totals.measured(name) for name in (*_FORMULA_ROUTING_COUNTERS, "tex_math")):
         print("   NOT MEASURED — these rows predate the counter. Re-run to fill it.")
     else:
         parents = totals.counter_of("disp_formula_parents")
@@ -3019,7 +3478,7 @@ def _validate_args(args: argparse.Namespace) -> str | None:
     recent corpus's name, or — journal present — tops one window's rows up
     with another's and prints the pooled result as one rate. The window
     decides the answer — the two committed corpora hold 2,448
-    ``<table-wrap>`` and 0, and 58.1% against 44.0% of figures carrying
+    ``<table-wrap>`` and 0, and 57.8% against 44.0% of figures carrying
     several ``<graphic>`` — so pooling two windows produces a number
     describing neither. Naming an explicit ``-o`` is the whole fix.
 
@@ -3267,6 +3726,10 @@ def main() -> int:
             seen.add(row.pmcid)
             totals.add(row)
     _ensure_journal_header(journal, source, rendition, draw_identity)
+    # How many rows the journal supplied, so the exit path can tell "this run
+    # measured nothing new" from "this run measured nothing at all" — the two
+    # look identical in `totals` and call for opposite advice.
+    replayed = totals.articles
 
     # Hoisted above the branch it is filled in, rather than left to a
     # refusal 150 lines away (`_validate_args` already refuses
@@ -3445,6 +3908,23 @@ def main() -> int:
     print(f"\nWrote {destination}")
     if not ok:
         print("At least one population is unreportable; the journal keeps every row.")
+    # "RE-RUN TO FILL IT" IS UNACHIEVABLE IN EXACTLY THE SITUATION ADDING A
+    # GENERATION CREATES (issue #164's review). `print_report`'s NOT MEASURED
+    # lines say to re-run, and a journal already holding every drawn
+    # identifier makes `wanted` empty — so nothing is re-measured, `totals`
+    # holds the same stale rows, and the next run prints the identical ERROR
+    # and the identical `.unreportable.json` at exit 1, for ever. The remedy
+    # is to delete the journal, and no message said so; adding a counter
+    # generation is the event that makes this reachable, so it is named here
+    # rather than left for the operator to deduce from an unchanging exit
+    # code.
+    if missing_generations and totals.articles == replayed:
+        print(
+            f"Nothing was measured this run: {journal.name} already holds every drawn "
+            f"identifier, at a generation predating {', '.join(missing_generations)}. "
+            "Re-running cannot fill them — delete (or move aside) the journal to "
+            "re-measure this draw."
+        )
 
     # Derived from `-o`, the way `journal` and the `.unreportable.json` corpus
     # path both are, rather than a fixed literal: `--package X -o other.json

@@ -3807,10 +3807,17 @@ class TestACaptionBelongsToTheElementThatOpenedIt:
     figure's legend. That is the same shape #116 settled for ``<label>``, and
     it is the case a stack alone gets wrong.
 
-    **Both of #123's populations measure empty**, so these two fixtures are
-    hand-built rather than drawn from a corpus: no ``<caption>`` nests inside
-    another across the two committed draws (0 of 1,550 and 0 of 288), and none
-    inside an exhibit is owned by anything but that exhibit. The
+    **Neither of #123's populations measures empty any longer**, and the
+    denominators that framed them are gone with the draws they came from (0
+    of 1,550 and 0 of 288 were the two 300-article draws #138 replaced). The
+    committed recent corpus holds **6 nested ``<caption>`` of 8,111**, and
+    **6 inside an exhibit owned by a ``<supplementary-material>``** rather
+    than by the exhibit enclosing them — both counts one eLife article,
+    ``PMC12143881``, depositing its figure supplements that way. The
+    back-filled window contributes to neither, holding no ``<caption>`` at
+    all, so its zeroes are an absent denominator. These fixtures stay
+    hand-built because the shape is one publisher's house style rather than
+    because nothing deposits it. The
     ``<supplementary-material>`` fixture below is a shape JATS permits, not one
     a publisher was observed depositing — an earlier draft of this docstring
     attributed it to eLife, which deposits its figure supplements as nested
@@ -3948,8 +3955,13 @@ class TestACaptionBelongsToTheElementThatOpenedIt:
         on all of them and the ambient form survives the whole suite —
         mutation-verified. The discriminating shape is a ``<title>`` arriving
         *while* a caption is open and owned by something else, which is not
-        hypothetical: it is the back-filled draw's entire measured population
-        (13 titles, all owned by a ``<list>``, in PMC7135044).
+        hypothetical: the committed recent corpus measures **411 such titles
+        in 104 of 997 articles**, owned by a ``<caption>`` (387), a
+        ``<def-list>`` (12) and an ``<fn-group>`` (12). The ``<list>``-owned
+        example this used to cite (13 titles in PMC7135044) came from a
+        back-filled draw #138 replaced; that article is in neither corpus and
+        the redrawn back-filled window carries no renaming title at all, so
+        it is historical and not re-derivable.
 
         A ``<list>``'s own heading welded into a figure legend is the reason
         this needs pinning rather than noting — a legend is prose, so one
@@ -4844,8 +4856,10 @@ class TestAFormulaReachesTheProseThatContainsIt:
         assert self._sections(xml)[0].paragraphs == ["Before.", "After."]
 
     def test_a_display_formula_inside_a_paragraph_stays_inside_it(self):
-        """The routing half. 116,623 of the package's 150,598 display formulas
-        (77.4%) sit inside a ``<p>``, and 201 of 654 in the served draw.
+        """The routing half. A large minority of display formulas sit inside
+        a ``<p>`` — 714 of 1,915 (37.3%) in the committed recent corpus and 201
+        of 654 in the 880-article served draw, against 116,623 of 150,598
+        (77.4%) over the *archive* bytes the served rendition disagrees with.
         Emitted as its own paragraph, every one of them would be appended
         *ahead* of the paragraph it interrupts, because the enclosing ``<p>``
         has not closed yet."""
@@ -5524,7 +5538,8 @@ the rate follows.</p></sec></body>
 
     def test_a_formula_that_reaches_its_section_is_not_reported(self, parser_log):
         """The negative control the counter needs: a rule that fires on every
-        standalone formula would report the 77.4% that are fine."""
+        standalone formula would report every one that is fine — the majority
+        on the served rendition, where a <sec> is the commoner parent."""
         xml = b"""<?xml version="1.0"?>
 <article>
   <front><article-meta><title-group><article-title>T</article-title></title-group>

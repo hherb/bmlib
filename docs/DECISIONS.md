@@ -352,9 +352,17 @@ than `mml` keep exactly its old behaviour instead of depending on a literal
 prefix match the way #128 does.
 
 **The equation number is printed only where the equation stands apart.** A
-`<disp-formula>` inside a `<p>` is merged into that paragraph — 116,623 of the
-package's 150,598 (77.4%) sit there, and emitted separately each would land
-*ahead* of the paragraph it interrupts, the enclosing `<p>` not having closed.
+`<disp-formula>` inside a `<p>` is merged into that paragraph, and emitted
+separately each would land *ahead* of the paragraph it interrupts, the
+enclosing `<p>` not having closed. How large that population is **depends on
+the rendition, and this entry cited the wrong one**: 116,623 of 150,598
+(77.4%) is over the *archive* bytes of the whole `PMC012xxxxxx` package, where
+the served rendition `FullTextService` actually hands the parser measures
+714 of 1,915 (37.3%) in the committed recent corpus and 201 of 654 (30.7%) in
+the 880-article served draw — the two served measurements agreeing, the
+archive the outlier, and a `<p>` therefore the *minority* parent on the bytes
+that reach this code. The rule turns on neither share: both parents are
+routed, one by merging and one by emitting a paragraph.
 Printing the `<label>` there produced, over 880 local articles,
 `'as shown in eqn (2):2 τ = kn'`, where `2 τ` is a coefficient the deposit
 does not contain, and — for consecutive equations —
@@ -456,8 +464,16 @@ difference read as seven exhibits losing a label they had.
 
 All seven were fetched from Europe PMC (2026-09-02): `PMC12011025`,
 `PMC12111618`, `PMC12115352`, `PMC12149983`, `PMC12154067`, `PMC12159547`,
-`PMC12177175`. Every one is a `<table-wrap>` carrying **no `<label>` and no
-`<caption>`**, and every label below it is a `<table-wrap-foot><fn>` marker
+`PMC12177175`. **That fetch is no longer what this rests on** (#164): the
+sampler records `unlabelled_exhibit_label_owners` per row, so the corpus now
+holds the owners as well as the counts — **9 `<fn>` and 67 `<list-item>` over
+those seven exhibits, in those same seven articles** — and `print_report`
+prints them in section 1 instead of pointing a reader at `label_parents`,
+which pools every exhibit in the draw and buries them among its 330 `<fn>`
+and 225 `<list-item>`. Re-derive the refutation from
+`tests/data/jats_exhibits.json` rather than re-fetching for it. Every one is a
+`<table-wrap>` carrying **no `<label>` and no `<caption>`**, and every label
+below it is a `<table-wrap-foot><fn>` marker
 (`*`, `**`, the empty string) or a `<list-item>` bullet inside a cell (`1.`,
 `-`, `•`) — the two containers #116 was about, and the two a depth counter
 mis-assigns 561 labels from across the same 997 articles. A descendant search

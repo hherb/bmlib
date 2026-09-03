@@ -144,7 +144,8 @@ _ARCHIVAL_EXTENSIONS = frozenset({".tif", ".tiff", ".eps", ".ps"})
 
 # BOTH SETS ARE DEFENSIVE, AND THE MEASUREMENT SAYS SO. Measured by
 # `scripts/sample_jats_exhibits.py` (issues #131, #138) over the two committed
-# draws — 997 articles each, drawn deterministically from a named PMC OA
+# draws — 1,000 articles each, 997 of the recent window served, drawn
+# deterministically from a named PMC OA
 # baseline package and measured on the rendition FullTextService feeds this
 # parser, Europe PMC's `fullTextXML` rather than the package's own archive
 # bytes: **7,055 <graphic> sit inside an <alternatives>** (6,503 recent, 552
@@ -160,7 +161,7 @@ _ARCHIVAL_EXTENSIONS = frozenset({".tif", ".tiff", ".eps", ".ps"})
 # Extensions are counted over every deposit rather than over <alternatives>
 # members alone — the sampler holds the two in separate counters and never
 # cross-tabulates them, so no extension figure scoped to the members is
-# derivable from either corpus. At that wider scope, across all 13,617:
+# derivable from either corpus. At that wider scope, across all 13,624:
 # .jpg and .gif in both windows and .png in the back-filled one, with **no
 # deposit in either window whose href carries no extension**. That is a
 # property of the *served* rendition and not of publishers, and
@@ -176,7 +177,7 @@ _ARCHIVAL_EXTENSIONS = frozenset({".tif", ".tiff", ".eps", ".ps"})
 # They are kept rather than deleted because the failure they prevent is silent
 # and permanent: an undeclared master deposited first ranks FULL, wins under
 # the strictly-better rule, and leaves the figure pointing at something no
-# browser renders. "No instance in 1,994 articles" is not "cannot happen", and
+# browser renders. "No instance in 1,997 articles" is not "cannot happen", and
 # the cost of carrying the tiers is one comparison. Re-run the sampler before
 # concluding otherwise — that is what it is for.
 
@@ -263,11 +264,11 @@ class _GraphicHolder:
     docstring did.
 
     The back-filled window contributes **no denominator at all** — 0
-    ``<table-wrap>`` in 997 articles. So the answer above rests entirely on
+    ``<table-wrap>`` in 1,000 articles. So the answer above rests entirely on
     the recent window, and the redrawn back-filled one can no longer
     corroborate or contradict it. (*That the 1996-1998 ``oa_comm`` material is
     scanned page images with no tabular markup is an inference*, from 0 tables
-    beside 627 figures and 3,873 ``.png`` deposits; no counter measures it.)
+    beside 627 figures and 3,880 ``.png`` deposits; no counter measures it.)
 
     The instrument had to be corrected before that number meant anything. The
     sampler counted a table's deposits with a whole-subtree walk while the
@@ -301,15 +302,41 @@ class _GraphicHolder:
 
         **The two committed draws are the evidence, and they are what a
         reader can re-derive** (``scripts/sample_jats_exhibits.py``, issue
-        #138 — 997 articles per window, drawn from a named PMC OA baseline
-        package and measured on Europe PMC's ``fullTextXML``): of **4,602**
-        recent figures carrying a ``<graphic>``, **58.1%** [56.7-59.6] carry
+        #138 — a 1,000-article draw per window, 997 of the recent one and
+        all 1,000 of the back-filled one served, drawn from a named PMC OA
+        baseline package and measured on Europe PMC's ``fullTextXML``): of
+        **4,602**
+        recent figures carrying a ``<graphic>``, **57.8%** [56.3-59.2] carry
         more than one and **57.3%** [55.9-58.8] end on a thumbnail; of **627**
         back-filled ones, **44.0%** [40.2-47.9] on both counts. **0%** deposit
         a thumbnail *first* in either — so the convention that motivates
         ranking over plain first-wins appears in neither window, and ranking
         earns its place on the other number: it is what stops half of all
         figures resolving to a preview.
+
+        **These are what the parser routes, not what a subtree holds** (issue
+        #164). The sampler counted every ``<graphic>`` anywhere below a
+        ``<fig>`` until then, so a ``<td>``'s cell image and a nested figure
+        supplement's deposit counted as the enclosing figure's. Scoping it to
+        the owner test this module actually uses moves **one** of the four
+        counts, by **18 figures**: 2,676 to 2,658, 58.1% to the 57.8% above,
+        each inside the other's interval. Nothing else moves, in either
+        window — the thumbnail-position counts are identical — and the
+        corpus keeps both readings per row, so the correction is derivable
+        from one file rather than from a diff against another draw.
+
+        The size of that is worth stating because #164 expected otherwise. Its
+        spot check over the same articles' *archive* bytes moved the
+        multi-graphic count 77 to 58 and read as "large enough to matter" —
+        an ad-hoc measurement over package bytes, in the repo nowhere and
+        re-derivable from neither corpus, so it is quoted the way the
+        225-article survey and the vanished 276-article draw are. The
+        absolute correction is almost identical on the two renditions — 19
+        figures there, 18 here — but the archive holds 77 multi-graphic
+        figures against the served rendition's 2,676, so the same 18-or-so
+        figures are a quarter of one population and two thirds of one percent
+        of the other. **A share is of a denominator, and the rendition
+        chooses the denominator.**
 
         Two earlier figures are superseded and neither is re-derivable: the
         58.0% / 52.9% above, from the 225-article survey, and **49.9% /
@@ -1083,7 +1110,7 @@ _TEXT_ACCUMULATING = frozenset(
 # HOW OFTEN AN ARTICLE **CARRIES** A REGION, which is the only population
 # re-derivable from this repo and is the *bound* on how often one loses
 # content to it (#158): **29 of 997 recent committed-corpus articles, 2.9%
-# [2.0-4.1], 145 regions in all**, and 0 of 997 in the back-filled window
+# [2.0-4.1], 145 regions in all**, and 0 of 1,000 in the back-filled window
 # (`scripts/sample_jats_exhibits.py`). `bmlib.transparency` counts the same
 # population over the same PMC `oa_comm` baseline package PMC012xxxxxx at
 # 3,382 of 97,909 (3.45%) — a far larger draw whose interval overlaps this
@@ -1135,7 +1162,7 @@ _NESTED_ARTICLE_ELEMENTS = frozenset({"sub-article", "response"})
 # THIS ONE IS NOT DEFENSIVE, AND THE FIGURE MOVED TWICE. The vanished
 # 276-article draw found exactly one <graphic> owned by a non-exhibit inside
 # an exhibit, which read as a population of one. The two committed draws find
-# **153, in 12 of 997 recent articles** — and 0 of 997 back-filled — spread
+# **153, in 12 of 997 recent articles** — and 0 of 1,000 back-filled — spread
 # over three owners, none of which this comment could have enumerated in
 # advance: <td> 82 (8 articles), <inline-formula> 69 (3),
 # <disp-formula> 2 (1). The cell images are what make it
@@ -1230,13 +1257,28 @@ _TABLE_CELL_ELEMENTS = frozenset({"td", "th"})
 # Parents a <disp-formula> merges into rather than standing beside as its own
 # paragraph.
 #
-# 116,623 of the package's 150,598 display formulas (77.4%) sit inside a <p>,
-# and 201 of the 880-article served draw's 654. Emitted as its own paragraph,
-# every one of those would be appended *ahead* of the paragraph it interrupts,
-# because the enclosing <p> has not closed yet. The rest are block children —
-# 33,270 directly in a <sec>, and <app>, <boxed-text>, <disp-formula-group>,
-# <body> and <disp-quote> beyond that — where there is no open prose to join
-# and a paragraph of its own is the only way the equation reaches the article.
+# A large minority of display formulas sit inside a <p>. Emitted as its own
+# paragraph, every one of those would be appended *ahead* of the paragraph it
+# interrupts, because the enclosing <p> has not closed yet. The rest are block
+# children — chiefly a <sec> directly, and <app>, <boxed-text>,
+# <disp-formula-group>, <body> and <disp-quote> beyond that — where there is no
+# open prose to join and a paragraph of its own is the only way the equation
+# reaches the article. Both parents are routed, so the rule does not turn on
+# which is commoner; the share is recorded because it sizes what merging is for.
+#
+# HOW LARGE THAT MINORITY IS DEPENDS ON THE RENDITION, AND THE FIRST STATEMENT
+# OF IT CITED THE WRONG ONE. Over the *archive* bytes of the whole
+# `PMC012xxxxxx` package it is 116,623 of 150,598 (77.4%), with 33,270 directly
+# in a <sec> — a majority, and it was written down here as though it described
+# what this parser is fed. It does not: on Europe PMC's `fullTextXML`, which is
+# the rendition `FullTextService` hands over, the committed recent corpus
+# measures **714 of 1,915 (37.3%)** in a <p> against **1,199 in a <sec>**, and
+# the 880-article served draw measures 201 of 654 (30.7%). The two served
+# measurements agree with each other and the archive is the outlier, so a <p>
+# is the *minority* parent on the bytes that reach this code. Measured with
+# issue #164, whose sentinel fix is what let these counters reach a corpus at
+# all — they had been registered as a generation and omitted from the loader,
+# so both corpora read them as a measured zero.
 #
 # AN ALLOW-LIST, AND IT FAILS TOWARD THE PARAGRAPH *IN FLOWING PROSE ONLY*. A
 # <sec> accumulates a buffer like a <p> does, but nothing ever reads it, so
@@ -1432,13 +1474,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # (2 articles, both eLife, losing 6 of 12 and 5 of 11 figures).
         # **Neither draw is in the repo, and the committed corpora put the
         # rate lower still**: 7 nested <fig> and 0 nested <table-wrap> across
-        # 1,994 articles, all seven in **one** article — eLife's PMC12143881,
+        # 1,997 articles, all seven in **one** article — eLife's PMC12143881,
         # 7 of its 19 figures (`scripts/sample_jats_exhibits.py`, issue #138).
-        # So one article in 1,994 is the whole population, and it is the
+        # So one article in 1,997 is the whole population, and it is the
         # publisher the shape was always attributed to: a house style costing
         # about a third of *its* figures, not a general convention. eLife's
         # PMC8754430, where the issue came from, is the same shape outside any
-        # committed corpus. Read the 1-in-1,994 as a property of which
+        # committed corpus. Read the 1-in-1,997 as a property of which
         # publishers a draw happens to catch, never as a rate. And
         # JATS lets a <table-wrap> open inside another's <table-wrap-foot>. As
         # one slot, the inner open overwrote the parent's builder, the inner
@@ -1483,7 +1525,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # what the retired boolean would do, not what a draw caught it doing.
         #
         # NEITHER POPULATION MEASURES EMPTY ANY LONGER, AND THIS SAYS SO.
-        # Over the two committed draws (1,994 articles,
+        # Over the two committed draws (1,997 articles,
         # `scripts/sample_jats_exhibits.py`, issue #138): **6 <caption> of
         # 8,111 recent nest inside another**, and **6 <caption> inside an
         # exhibit are owned by a <supplementary-material>** rather than by the
@@ -2143,7 +2185,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # attribute to spaces rather than collapsing it, so a wrapped
             # href would take the ranking slot, block the real deposit that
             # follows, and render as a broken src. No instance in either
-            # committed corpus (13,617 deposits, every extension unpadded) —
+            # committed corpus (13,624 deposits, every extension unpadded) —
             # this guards a population measured empty, not an observed one.
             href = (
                 attrs.get("xlink:href") or attrs.get("href") or attrs.get("xlink-href") or ""
@@ -2434,7 +2476,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             #
             # MEASURED, and this half is not a small population. Over the two
             # committed draws (`scripts/sample_jats_exhibits.py`, issue #138 —
-            # 997 articles per window, drawn from a named PMC OA baseline
+            # a 1,000-article draw per window, 997 of the recent one served,
+            # drawn from a named PMC OA baseline
             # package and measured on Europe PMC's fullTextXML), counting only
             # a <title> that a <sec> was open for and that no exhibit already
             # excluded: **411 titles in 104 of 997 recent articles (10.4%
@@ -2554,7 +2597,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     self._append_prose(rendered, keep_empty=False)
                 else:
                     # Inside flowing text, which is where an inline formula
-                    # always is and 77.4% of display formulas are.
+                    # always is and a large minority of display formulas are
+                    # (37.3% on the served rendition; see the set's comment).
                     # `_append_text` reaches the buffer this formula's own pop
                     # restored, so the rendition lands where the element was
                     # deposited.
