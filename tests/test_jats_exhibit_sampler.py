@@ -2233,9 +2233,15 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         disagree on exactly the populations cited below — see
         `tests/data/jats_exhibits.rendition.json`.
         """
-        for path, first, last, package in (
-            (self.RECENT, 2023, 2025, "oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz"),
-            (self.BACKFILL, 1996, 1998, "oa_comm_xml.PMC002xxxxxx.baseline.2025-06-26.tar.gz"),
+        for path, first, last, package, measured in (
+            (self.RECENT, 2023, 2025, "oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz", 997),
+            (
+                self.BACKFILL,
+                1996,
+                1998,
+                "oa_comm_xml.PMC002xxxxxx.baseline.2025-06-26.tar.gz",
+                1000,
+            ),
         ):
             corpus = json.loads(path.read_text())
             window = corpus["window"]
@@ -2246,19 +2252,48 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             assert window["seed"] == 0
             # The bytes measured, not the bytes drawn from.
             assert window["rendition"] == "europepmc"
-            assert (corpus["articles"], corpus["unmeasured"]) == (997, 3)
-        # Why the three were unmeasured, in the vocabulary the rendition
+            assert (corpus["articles"], corpus["unmeasured"]) == (measured, 1000 - measured)
+        # Why an article was unmeasured, in the vocabulary the rendition
         # artifact already used — a bare count cannot be read as permanent
         # (an article Europe PMC does not serve) or transient (a throttled
-        # fetch), and those call for different actions. The back-filled
-        # corpus predates the field and is asserted as *absent* rather than
-        # as `{}`: filling it means re-drawing that window, which would move
-        # every back-filled figure for a provenance key, so it is left as
-        # the older format deliberately.
+        # fetch), and those call for different actions.
         assert json.loads(self.RECENT.read_text())["unmeasured_causes"] == {
             "europepmc_unavailable": 3
         }
-        assert "unmeasured_causes" not in json.loads(self.BACKFILL.read_text())
+        # #164's redraw served the whole back-filled draw, where the one
+        # before it lost three — so this window is now **1,000 of 1,000** and
+        # its causes are an empty mapping rather than an absent key. Both
+        # halves are asserted: an empty mapping beside a non-zero
+        # `unmeasured` would be the accounting hole `count_unmeasured`
+        # centralises the causes to prevent.
+        assert json.loads(self.BACKFILL.read_text())["unmeasured_causes"] == {}
+
+    def test_the_recent_window_is_the_same_articles_the_previous_draw_measured(self):
+        """What licenses reading #164's movement as the scoping's (issue #164).
+
+        A redraw ordinarily moves the sample, the served bytes and — this time
+        — the walk, and PR #163's rule is that three simultaneous causes make a
+        movement unattributable. Two of the three did not move here: the recent
+        window's 997 identifiers are the same 997 the previous draw measured,
+        and every counter the scoping does not touch came back **identical**,
+        so Europe PMC served byte-stable content across the two days.
+
+        That is a property of one redraw and not a promise about the next, so
+        it is asserted as what makes *this* attribution sound rather than
+        relied on. The per-row `_subtree` companions are the durable answer:
+        they hold whatever the next draw's sample and rendition do.
+        """
+        rows = json.loads(self.RECENT.read_text())["rows"]
+        recent, _, _ = self._totals(self.RECENT)
+
+        # The subtree companions reproduce the previously committed values
+        # exactly — which is the check that the new counters measure the old
+        # walk, and not merely something near it.
+        assert recent["figures_with_graphic_subtree"] == 4602
+        assert recent["figures_multi_graphic_subtree"] == 2676
+        assert recent["last_is_thumb_subtree"] == 2639
+        assert recent["first_is_thumb_subtree"] == 0
+        assert len(rows) == 997
 
     def test_the_title_owner_population_is_what_the_comments_cite(self):
         """The #125/#130 population, cited in five files.
@@ -2400,17 +2435,73 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             "supplementary-material": 6,
         }
         assert backfill_maps["label_parents"] == {"fig": 627}
+        # **What the fallback would actually have picked up**, recorded with
+        # #164 so the refutation stops resting on a live fetch. Settling #162
+        # meant fetching all seven articles, because the corpus held the
+        # counts and not the owners; the owners are here now, and they are
+        # the two containers #116 was about — a `<table-wrap-foot><fn>`'s
+        # marker and a `<list-item>`'s bullet. Not one is an exhibit's own
+        # label, so a descendant-search fallback corrupts 7 of 7.
+        assert recent["unlabelled_exhibits_with_descendant_label"] == 7
+        assert self._articles_with(self.RECENT, "unlabelled_exhibits_with_descendant_label") == 7
+        assert recent_maps["unlabelled_exhibit_label_owners"] == {"fn": 9, "list-item": 67}
+        assert backfill["unlabelled_exhibits_with_descendant_label"] == 0
+        assert backfill_maps.get("unlabelled_exhibit_label_owners", {}) == {}
 
     def test_the_graphic_populations_are_what_offer_graphic_cites(self):
-        """#117's shares and #127's two renditions, both cited as percentages."""
+        """#117's shares and #127's two renditions, both cited as percentages.
+
+        **The shares are of the owner-scoped walk since #164.** The counters
+        used to walk a whole subtree, so a ``<td>``'s cell image and a nested
+        figure supplement's deposit counted as the enclosing figure's, which
+        is not what the parser routes. What that cost is measured here rather
+        than argued: the recent window's identifiers and served bytes are the
+        previous draw's, so the *only* thing that moved is the walk, and it
+        moved **one** of the four counters by **18 figures** — 2,676 to 2,658,
+        58.1% to 57.8%, inside each other's interval. Nothing else moves at
+        all, in either window.
+
+        That is the answer to the question #164 left open, and it is not the
+        one the issue expected. Its spot measurement over the same articles'
+        *archive* bytes moved the multi-graphic count 77 to 58 and read as
+        "large enough to matter". The absolute correction is almost the same
+        on both renditions — 19 figures there, 18 here — but the archive
+        holds 77 multi-graphic figures against the served rendition's 2,676,
+        so one denominator makes it a quarter of the population and the other
+        makes it two thirds of one percent. **A share is of a denominator,
+        and the rendition chooses the denominator**: the same finding this
+        corpus exists to enforce, arriving on the count that motivated it.
+        """
         recent, recent_maps, _ = self._totals(self.RECENT)
         backfill, backfill_maps, _ = self._totals(self.BACKFILL)
 
         assert (recent["figures_with_graphic"], backfill["figures_with_graphic"]) == (4602, 627)
-        assert (recent["figures_multi_graphic"], backfill["figures_multi_graphic"]) == (2676, 276)
+        assert (recent["figures_multi_graphic"], backfill["figures_multi_graphic"]) == (2658, 276)
         assert (recent["last_is_thumb"], backfill["last_is_thumb"]) == (2639, 276)
         assert (recent["first_is_thumb"], backfill["first_is_thumb"]) == (0, 0)
-        assert recent["graphics"] + backfill["graphics"] == 13617
+        # What the pre-#164 subtree walk said, so the correction stays
+        # derivable from the corpus rather than from a diff against a file
+        # nobody can re-fetch. Only `figures_multi_graphic` moves, and only
+        # in the recent window.
+        for window, scoped, subtree in (
+            (recent, 4602, 4602),
+            (backfill, 627, 627),
+        ):
+            assert window["figures_with_graphic_subtree"] == subtree
+            assert window["figures_with_graphic"] == scoped
+        assert recent["figures_multi_graphic_subtree"] == 2676
+        assert recent["figures_multi_graphic_subtree"] - recent["figures_multi_graphic"] == 18
+        assert recent["last_is_thumb_subtree"] == recent["last_is_thumb"]
+        assert recent["first_is_thumb_subtree"] == recent["first_is_thumb"] == 0
+        # The back-filled window is untouched by the scoping on every count.
+        for name in (
+            "figures_with_graphic",
+            "figures_multi_graphic",
+            "last_is_thumb",
+            "first_is_thumb",
+        ):
+            assert backfill[name] == backfill[f"{name}_subtree"]
+        assert recent["graphics"] + backfill["graphics"] == 13624
         assert recent["alternatives_members"] + backfill["alternatives_members"] == 7055
         assert recent["alternatives_declaring_mime"] + backfill["alternatives_declaring_mime"] == 0
         assert recent["alternatives_archival"] + backfill["alternatives_archival"] == 0
@@ -2430,7 +2521,7 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         # "scanned page images". It is an *inference* from a count, so the
         # count at least has to be the corpus's — it was cited in four files
         # and asserted in none.
-        assert backfill_maps["graphic_extensions"][".png"] == 3873
+        assert backfill_maps["graphic_extensions"][".png"] == 3880
 
     def test_the_table_side_answers_135_as_an_empty_population(self):
         """#135, and the #127 window neither corpus can reproduce any more.
@@ -2540,11 +2631,64 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             0,
         )
         # #150 — a <ref> carrying only a <note>.
-        assert (recent["refs"], backfill["refs"]) == (52969, 19447)
+        assert (recent["refs"], backfill["refs"]) == (52969, 19513)
         assert (recent["refs_note_only"], backfill["refs_note_only"]) == (0, 0)
         assert recent_maps["ref_child_kinds"]["note"] == 1
         assert recent_maps["ref_child_kinds"]["citation-alternatives"] == 2709
         assert "citation-alternatives" not in backfill_maps["ref_child_kinds"]
+
+    def test_the_formula_routing_counters_reach_a_corpus_for_the_first_time(self):
+        """#147's fix, corroborated on the rendition bmlib is actually fed.
+
+        These counters shipped with the fix and never reached either committed
+        corpus: they were registered as a generation and omitted from
+        `from_dict`'s sentinel list, so both corpora — written before the
+        generation existed — loaded them at 0 and the report printed shares
+        over a population nothing had counted. Fixed with #164, and this is
+        what they actually hold.
+
+        **One of them disagrees with the figure the rule cites, and the
+        disagreement is a rendition split.** `_DISPLAY_FORMULA_MERGE_PARENTS`
+        rests on 116,623 of 150,598 (77.4%) display formulas sitting inside a
+        `<p>` — measured over the *archive* bytes of the whole
+        `PMC012xxxxxx` package. On the **served** rendition this corpus
+        measures **714 of 1,915 (37.3%)**, with `<sec>` the commoner parent at
+        1,199; and the 880-article served draw the fix also quotes measured
+        201 of 654 (30.7%). So the two served measurements agree with each
+        other and the archive is the outlier — which makes "the commonest
+        shape" an archive property, not a claim about what the parser is fed.
+
+        The **rule** is unaffected: both parents are routed, one by merging
+        and one by emitting a paragraph, and 37.3% is still a large minority
+        that would land ahead of the paragraph it interrupts. Only the cited
+        share and the "commonest" wording were wrong for this rendition.
+        """
+        recent, recent_maps, _ = self._totals(self.RECENT)
+        backfill, backfill_maps, _ = self._totals(self.BACKFILL)
+
+        assert recent_maps["disp_formula_parents"] == {"sec": 1199, "p": 714, "td": 2}
+        assert sum(recent_maps["disp_formula_parents"].values()) == recent["disp_formulas"]
+        assert backfill_maps.get("disp_formula_parents", {}) == {}
+        # Every deposit here is a whole LaTeX document and all but one is
+        # already delimited — the two rules `_latex_expression` rests on,
+        # measured at 99.9% and 96.0% over the package and now corroborated
+        # at 100.0% and 99.9% over this window.
+        assert (recent["tex_math_document_wrapped"], recent["tex_math"]) == (1398, 1398)
+        assert recent["tex_math_predelimited"] == 1397
+        # The live corruption the fix removed, on the one path no buffer rule
+        # reaches. 229 of 1,398 here (16.4%); 24,476 in 856 of the package's
+        # 97,909 articles.
+        assert recent["tex_math_in_a_cell"] == 229
+        # **Expect this to read tex-math-first only, and conclude nothing from
+        # it.** MathML-first is 4,377 of the package's 188,473 both-encoding
+        # formulas but sits in 37 of its 97,909 articles at ~118 apiece — a
+        # house style, so a 997-article draw expects none, and none is what it
+        # finds. The rule stands on the content model, which admits either.
+        assert recent_maps["formula_encoding_order"] == {"tex-math-first": 1087}
+        assert recent["formula_alternatives_both"] == 1087
+        for name in sampler._FORMULA_ROUTING_COUNTERS:
+            if name not in ("disp_formula_parents", "formula_encoding_order"):
+                assert backfill[name] == 0
 
     def test_the_contributor_counters_are_what_120_and_140_wait_on(self):
         """#120/#140's spellings, sized for the first time (section 11).
@@ -2579,7 +2723,7 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         recent, recent_maps, _ = self._totals(self.RECENT)
         backfill, backfill_maps, _ = self._totals(self.BACKFILL)
 
-        assert (recent["contribs"], backfill["contribs"]) == (7798, 4852)
+        assert (recent["contribs"], backfill["contribs"]) == (7798, 4861)
         assert recent_maps["contrib_name_spellings"] == {
             "name": 7784,
             "contrib-id": 823,
@@ -2587,7 +2731,7 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
             "collab": 14,
             "ext-link": 1,
         }
-        assert backfill_maps["contrib_name_spellings"] == {"name": 4852}
+        assert backfill_maps["contrib_name_spellings"] == {"name": 4861}
         assert "string-name" not in recent_maps["contrib_name_spellings"]
         assert (recent["nested_contribs"], backfill["nested_contribs"]) == (0, 0)
         assert (recent["collabs_with_a_roster"], backfill["collabs_with_a_roster"]) == (0, 0)

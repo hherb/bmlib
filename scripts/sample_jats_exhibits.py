@@ -1357,10 +1357,14 @@ class ArticleMeasurement:
     # `disp_formula_parents` is what `_DISPLAY_FORMULA_MERGE_PARENTS` rests
     # on: a display formula inside a `<p>` has to join that paragraph, because
     # emitted as one of its own it lands *ahead* of the paragraph it
-    # interrupts — the enclosing `<p>` has not closed yet. Measured 116,623 of
-    # 150,598 (77.4%) in the package and 201 of 654 in the 880-article local
-    # draw, so the two windows disagree on the share and agree that it is the
-    # commonest shape. An open vocabulary, like `label_parents`: the block
+    # interrupts — the enclosing `<p>` has not closed yet. **The share is a
+    # property of the rendition, and this counter is what established that**:
+    # 116,623 of 150,598 (77.4%) over the package's *archive* bytes, against
+    # 714 of 1,915 (37.3%) here and 201 of 654 (30.7%) in the 880-article
+    # served draw — so the two served measurements agree, the archive is the
+    # outlier, and a `<p>` is the *minority* parent on the bytes the parser is
+    # actually fed. It used to be written down as the commonest shape on the
+    # archive figure alone. An open vocabulary, like `label_parents`: the block
     # containers are drawn from rather than fixed (`<app>`, `<boxed-text>`,
     # `<disp-formula-group>`, `<body>` all appear).
     #
@@ -3191,7 +3195,7 @@ def _validate_args(args: argparse.Namespace) -> str | None:
     recent corpus's name, or — journal present — tops one window's rows up
     with another's and prints the pooled result as one rate. The window
     decides the answer — the two committed corpora hold 2,448
-    ``<table-wrap>`` and 0, and 58.1% against 44.0% of figures carrying
+    ``<table-wrap>`` and 0, and 57.8% against 44.0% of figures carrying
     several ``<graphic>`` — so pooling two windows produces a number
     describing neither. Naming an explicit ``-o`` is the whole fix.
 

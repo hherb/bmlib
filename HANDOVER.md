@@ -444,8 +444,9 @@ session needs to *choose* between them.
 
 **That corpus redraw is done** — #132, #138 and #158 are answered, and #142,
 #143, #147 and #150 each have the population they were waiting for (#147 was
-then fixed on it). Both corpora are 997 measured articles of 1,000 at `seed
-0`, recent from `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`
+then fixed on it). Both are 1,000-article draws at `seed
+0` — 997 of the recent window served, all 1,000 of the back-filled one —
+recent from `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`
 (2023-2025) and back-filled from `…PMC002xxxxxx…` (1996-1998). Full argument
 in `CLAUDE.md`; four rules survive it.
 
@@ -463,7 +464,7 @@ in `CLAUDE.md`; four rules survive it.
   of all, since it is the only one the corpus records (`unscoped`).
 - **Three claims did not survive.** The `<label>` premise reported violated is
   #162, corrected by PR #171. #127's image-only-table population cannot be
-  re-measured, the back-filled window holding **0 `<table-wrap>` in 997
+  re-measured, the back-filled window holding **0 `<table-wrap>` in 1,000
   articles** — that its material is scanned page images is an *inference* from
   0 tables beside 627 figures and 3,873 `.png` deposits, and quoting that 0 as
   a measurement would be the defect this work removed. The abstract-branch
@@ -471,7 +472,7 @@ in `CLAUDE.md`; four rules survive it.
 - **#158 is answered by naming the population.** "Carries a region" and "loses
   body text to one" are different claims, the first bounding the second, and
   the re-derivable one: **29 of 997 (2.9%)** recent articles carry a region
-  (145 regions), 0 of 997 back-filled, agreeing with `transparency`'s 3,382 of
+  (145 regions), 0 of 1,000 back-filled, agreeing with `transparency`'s 3,382 of
   97,909 (3.45%) over the same package — across a rendition difference, the
   served bytes *adding* regions in 5 of 300. The 4 of 249 counted peer-review
   deposits and the 288 of 1,022 (28.2%) counted articles losing body text,

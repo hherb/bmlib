@@ -8,6 +8,110 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The figure-side graphic walk counted what the parser does not route**
+  (#164). `scripts/sample_jats_exhibits.py` scoped its **table** counters to
+  the owner test the parser uses when #135 was answered, and left the
+  **figure** ones on a whole-subtree `el.iter()` walk, because every share
+  #117 cites was of that walk and re-scoping them silently would have
+  invalidated each one. The argument that the asymmetry cost nothing was
+  refuted by the corpora committed in PR #163 and is not restated: it read
+  *"both committed draws record zero nested exhibits and every foreign owner
+  is a `<td>`, which can only sit under a `<table-wrap>`"*, and the recent
+  window holds **7 nested `<fig>`** — all in `PMC12143881`, eLife's figure
+  supplements — and **three** foreign owners, `<td>` 82, `<inline-formula>`
+  69 and `<disp-formula>` 2. An `<inline-formula>` sits wherever prose does,
+  including in a figure's own caption, so it is confined to no exhibit at all.
+
+  **What the scoping costs, on the rendition the shares are of: 18 figures.**
+  `figures_multi_graphic` goes 2,676 → 2,658 and 58.1% → **57.8%**
+  [56.3-59.2], each inside the other's interval. The other three counters do
+  not move at all — `figures_with_graphic` stays 4,602, `last_is_thumb` 2,639
+  and `first_is_thumb` 0 — and the back-filled window is untouched on every
+  count. So #117's ranking rule keeps its evidence: around half of all figures
+  carry several deposits and end on a thumbnail, and none deposits one first.
+
+  **That is not the size #164 expected, and the reason is a denominator.** The
+  issue's spot check over the same articles' *archive* bytes moved the
+  multi-graphic count 77 → 58 and read as "large enough to matter". The
+  absolute correction is almost identical on the two renditions — 19 figures
+  there, 18 here — but the archive holds 77 multi-graphic figures against the
+  served rendition's 2,676, so the same handful of figures is a quarter of one
+  population and two thirds of one percent of the other. *A share is of a
+  denominator, and the rendition chooses the denominator.*
+
+  **Both readings are kept per row**, which is what makes this a measurement
+  rather than a silent application. A redraw ordinarily moves the sample, the
+  served bytes and the walk at once, and PR #163's own rule is that three
+  simultaneous causes make a movement unattributable — so
+  `_FIGURE_SCOPE_COUNTERS` records what the subtree walk said beside what the
+  parser routes. Two of the three did not move here: the recent window's 997
+  identifiers are the previous draw's, and every counter the scoping does not
+  touch came back **identical**. That is a property of one redraw, not a
+  promise, which is exactly why the companions are per-row.
+
+  Beside it, **what owns a `<label>` inside an exhibit carrying none of its
+  own** — the set a descendant-search fallback would fire on, and the whole of
+  what refuted #162. Settling that cost a live fetch of the seven articles,
+  because the corpus held the counts and not the owners. It holds them now:
+  **7 exhibits in 7 articles, whose labels are 9 `<fn>` markers and 67
+  `<list-item>` bullets** — the two containers #116 was about, not one of them
+  an exhibit's own label, so the fallback would corrupt 7 of 7.
+
+  The back-filled window is redrawn too and Europe PMC served all of it, so
+  that corpus is now **1,000 articles** where it was 997; its 627 figures and
+  0 `<table-wrap>` are unchanged, the three added articles carrying neither.
+
+- **A counter generation reached the registry and not the sentinel** — found
+  while testing the above, and live on both committed corpora.
+  `ArticleMeasurement.from_dict` splatted a hand-written list of generation
+  tuples *beside* `_COUNTER_GENERATIONS` rather than reading it, and
+  `_FORMULA_ROUTING_COUNTERS` — registered by the commit that added it — never
+  reached that list. Every row of both corpora, written before that generation
+  existed, therefore loaded its three integer counters at `0` instead of at
+  `NOT_MEASURED`; `print_report` read them as measured, and section 14b printed
+  `<tex-math> inside a <td>/<th>: 0  0.0%` over a population nothing had
+  counted — on the very population #147's live-corruption fix rests on
+  (24,476 deposits in 856 of 97,909 articles). That is exactly the collapse
+  the sentinel exists to prevent, and `TestEveryCounterIsInAGeneration` could
+  not catch it: it checks the registry, and the registry was right.
+
+  The registry is the single source now, and
+  `TestASentinelReachesEveryGenerationsCounters` checks the other end. A
+  `Counter` field takes no sentinel — there is no negative dict, and
+  `counter_of` would raise updating from an `int` — so a generation is
+  detectable as absent through its *integer* counters, and none consists of
+  anything else. And **a section is gated on every counter it reads**, not on
+  the generation it is named after: 14b divides by `tex_math`, which belongs
+  to the generation before it, so a row fresh for the routing counters and
+  stale for the waiting ones reached `wilson()` with `n = -1` and raised out
+  of the report, losing the other fourteen sections with it. The mutation
+  sweep found that one — six of seven mutants died to the tests as written,
+  and the survivor was the gate.
+
+  **The counters this unblocked corrected a figure in `jats_parser.py`.**
+  `_DISPLAY_FORMULA_MERGE_PARENTS` cited 116,623 of 150,598 (77.4%) display
+  formulas sitting inside a `<p>`, measured over the *archive* bytes of the
+  whole `PMC012xxxxxx` package and written down as though it described what
+  the parser is fed. On Europe PMC's `fullTextXML` the recent corpus measures
+  **714 of 1,915 (37.3%)**, with `<sec>` the commoner parent at 1,199 — and
+  the 880-article served draw the same fix quotes measured 201 of 654 (30.7%).
+  The two served measurements agree and the archive is the outlier, so a `<p>`
+  is the **minority** parent on the bytes that reach this code. The routing
+  rule is unaffected, both parents being handled; only the share and the
+  "commonest shape" wording were wrong for this rendition.
+
+- **An article carrying a `Counter` population counted as none of them.**
+  `Totals.articles_where` borrowed `_as_count`, which flattens a `Counter` to
+  `0` so that `Totals.measured` stops raising on one — a right answer to a
+  different question. Every `Counter`-backed population therefore read as
+  carried by no article, and the report printed
+  `<title> inside a <sec>, owned elsewhere: 411   in 0 articles   0.0%` over a
+  population the corpus holds in more than a hundred. Only the report was
+  wrong, the prose figures being derived from the corpus rows directly — but a
+  maintainer running the sampler is the whole audience the instrument has. The
+  test beside it did not catch it because its fixture populates no `Counter`
+  at all, so the assertion held for the wrong reason.
+
 - **A formula reaches the prose that contains it** (#147). Two constructs lost
   their content, in the two ways a text-accumulating element can. `<tex-math>`
   accumulates a buffer and is not inline, so an `<inline-formula>` merged an
@@ -324,8 +428,9 @@ All notable changes to bmlib are documented here. The format is based on
   *The sample is now re-derivable.* `scripts/sample_jats_exhibits.py --package`
   draws deterministically from a PMC OA baseline package, so a reader
   reconstructs the identifier list from `(packages, window, target, seed)`,
-  all four of which the corpus records. Both committed corpora are 997
-  measured articles of 1,000 drawn at `seed 0`:
+  all four of which the corpus records. Both committed corpora are 1,000-article
+  draws at `seed 0` — 997 of the recent window served and all 1,000 of the
+  back-filled one:
   `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` for 2023-2025 and
   `oa_comm_xml.PMC002xxxxxx.baseline.2025-06-26.tar.gz` for 1996-1998. The
   windows they replace were live stratified draws counted back from *today*,
@@ -439,7 +544,7 @@ All notable changes to bmlib are documented here. The format is based on
   sitting in 2 articles from one journal where they were *every* table the
   article had (6 of 6, 5 of 5) — PMC3437083 and PMC3437093, both clinical
   papers whose data is entirely in those tables. The #138 redraw replaced both
-  windows, and the new back-filled one contributes **0 `<table-wrap>` in 997
+  windows, and the new back-filled one contributes **0 `<table-wrap>` in 1,000
   articles**. (*That `oa_comm`'s 1996-1998 material is scanned page images
   with no tabular markup is an inference* from 0 tables beside 627 figures and
   3,873 `.png` deposits — no counter measures it.) That 0 is an absent
@@ -484,21 +589,21 @@ All notable changes to bmlib are documented here. The format is based on
   ten recent-window tables "carried several deposits"; every one was the
   `<td>` cell images of two articles. Scoped to what the parser would route
   (`_owned`), no table in either draw carries a second deposit at all. The
-  figure counters keep the subtree walk on purpose, their percentages being
-  cited. **The argument that used to justify that is refuted by this branch's
-  own corpora, and the scoping is left open rather than restated** (#164): it
+  figure counters kept the subtree walk at this revision, their percentages
+  being cited. **The argument that justified that is refuted by this branch's
+  own corpora, and the scoping was left open rather than restated** (#164): it
   read "both draws record zero nested exhibits and every foreign owner is a
   `<td>`, which can only sit under a `<table-wrap>`", and the redrawn recent
   corpus holds **7 nested `<fig>`** (all `PMC12143881`) and **three** foreign
   owners — `<td>` 82, `<inline-formula>` 69, `<disp-formula>` 2, 153 graphics
   in 12 of 997 articles. An `<inline-formula>` is not confined to a
   `<table-wrap>`, so the premise that the two walks agree on the figure side
-  no longer holds. What that costs is **not** measured on the rendition the
+  did not hold. What that cost was **not** measured on the rendition the
   percentages are of: a spot measurement over the same drawn articles'
-  *archive* bytes moves the multi-graphic figure count 77 → 58, which is the
-  right order of magnitude to matter and the wrong rendition to cite. Do not
-  read the cited 58.1% / 57.3% as confirmed against a scoped walk — they are
-  what the subtree walk measured.
+  *archive* bytes moved the multi-graphic figure count 77 → 58, which is the
+  right order of magnitude to matter and the wrong rendition to cite. **#164
+  scoped the figure side and answered it on the right rendition — 18 figures
+  — in the entry above.**
 
 - **`scripts/sample_jats_exhibits.py`** (#131), the live runner behind the
   JATS exhibit rules below — the fifth in `scripts/`, and the one to re-run
@@ -1363,7 +1468,7 @@ All notable changes to bmlib are documented here. The format is based on
   Both figures are **superseded and neither is re-derivable** — the
   225-article survey is in no commit. `jats_parser.py`'s `_GraphicHolder`
   says so at the site and carries the redrawn measurement in its place:
-  58.1% / 57.3% on the recent committed corpus and 44.0% on both counts on
+  57.8% / 57.3% on the recent committed corpus and 44.0% on both counts on
   the back-filled one, with 0% depositing a thumbnail first in either. The
   shape of the finding — around half of all figures, never a thumbnail first
   — is what reproduces across every draw taken; the share is not.
@@ -1485,7 +1590,7 @@ All notable changes to bmlib are documented here. The format is based on
   random open-access articles (1.6%), on a draw that is in no commit. The
   figure this repo can re-derive is a different one — how often an article
   *carries* a nested-article region at all, of any kind: **29 of 997 (2.9%
-  [2.0-4.1]) in `tests/data/jats_exhibits.json`** and 0 of 997 in the
+  [2.0-4.1]) in `tests/data/jats_exhibits.json`** and 0 of 1,000 in the
   back-filled corpus. That is the quantity bounding "loses body text", since
   an article can only lose content to a region it carries; it bounds nothing
   about peer review, a translation `<sub-article>` costing an article its

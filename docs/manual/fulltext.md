@@ -772,7 +772,7 @@ and `has_body` flips on none of them. **That 28.2% is a rate of articles
 *losing body text*, on a draw that is in no commit** — the population it
 bounds, and the one this repo can re-derive, is how often an article *carries*
 a region at all: 29 of 997 (2.9%) in `tests/data/jats_exhibits.json` and 0 of
-997 in the back-filled corpus. That interval overlaps the 3,382 of 97,909
+1,000 in the back-filled corpus. That interval overlaps the 3,382 of 97,909
 (3.45%) counted by `bmlib.transparency` over the same PMC `oa_comm` baseline
 package — but the two read *different renditions*, transparency the archive
 bytes and the sampler the `fullTextXML` this parser is fed, and Europe PMC
