@@ -2323,7 +2323,7 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         assert recent["captions"] == 8111
         # Not "no exhibit is captioned" but "this window deposits no
         # <caption> at all". Why is inferred rather than counted: 0 tables
-        # beside 627 figures and 3,873 `.png` deposits reads as scanned page
+        # beside 627 figures and 3,880 `.png` deposits reads as scanned page
         # images, and no counter measures that.
         assert backfill["captions"] == 0
 
@@ -2757,6 +2757,16 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         `deltas` is a sum over disagreements. The only honest form of the
         headline number is "differs in N of 300, and where it differs archive
         A against served B", and that is what this asserts.
+
+        **Regenerated with #164 so all three artifacts share a code version.**
+        The two corpora were redrawn for the figure-side scoping, and a
+        comparison file measured by the *previous* walk beside them would be
+        mixed provenance — the failure this class exists to catch, one
+        artifact over. Nothing in the headline moved: the same 300 articles,
+        the same 289 differing, the same 156 / 0 / 781 below. Seven fields
+        appear that did not before — the four `_subtree` companions and three
+        formula-routing counters — the latter because they had been reading
+        as an agreeing zero on both sides, which was the sentinel defect.
 
         **The provenance is asserted at the width it can move.** This used to
         check `source`, `first_year` and `last_year` alone — the three fields

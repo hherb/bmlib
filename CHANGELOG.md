@@ -532,7 +532,7 @@ All notable changes to bmlib are documented here. The format is based on
   normalises a pretty-printed attribute to spaces rather than collapsing it,
   and a padded href is truthy, so it would take the ranking slot, block the
   real deposit behind it and render as a broken `src`. No instance in either
-  corpus (13,617 deposits) — the guard is for a population measured empty.
+  corpus (13,624 deposits) — the guard is for a population measured empty.
   `to_html()` renders the image as an `<img>`, but **only where there is no
   `<table>` markup**: a `<table-wrap>` may carry both, and where it does the
   markup is the better rendition. The model holds the href either way.
@@ -547,7 +547,7 @@ All notable changes to bmlib are documented here. The format is based on
   windows, and the new back-filled one contributes **0 `<table-wrap>` in 1,000
   articles**. (*That `oa_comm`'s 1996-1998 material is scanned page images
   with no tabular markup is an inference* from 0 tables beside 627 figures and
-  3,873 `.png` deposits — no counter measures it.) That 0 is an absent
+  3,880 `.png` deposits — no counter measures it.) That 0 is an absent
   denominator, not a measurement of
   the population, and must not be quoted as one. The recent window measures
   8 of 2,448 (0.3%), so the shape is present but rare there. The rule stands

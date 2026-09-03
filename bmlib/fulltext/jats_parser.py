@@ -161,7 +161,7 @@ _ARCHIVAL_EXTENSIONS = frozenset({".tif", ".tiff", ".eps", ".ps"})
 # Extensions are counted over every deposit rather than over <alternatives>
 # members alone — the sampler holds the two in separate counters and never
 # cross-tabulates them, so no extension figure scoped to the members is
-# derivable from either corpus. At that wider scope, across all 13,617:
+# derivable from either corpus. At that wider scope, across all 13,624:
 # .jpg and .gif in both windows and .png in the back-filled one, with **no
 # deposit in either window whose href carries no extension**. That is a
 # property of the *served* rendition and not of publishers, and
@@ -268,7 +268,7 @@ class _GraphicHolder:
     the recent window, and the redrawn back-filled one can no longer
     corroborate or contradict it. (*That the 1996-1998 ``oa_comm`` material is
     scanned page images with no tabular markup is an inference*, from 0 tables
-    beside 627 figures and 3,873 ``.png`` deposits; no counter measures it.)
+    beside 627 figures and 3,880 ``.png`` deposits; no counter measures it.)
 
     The instrument had to be corrected before that number meant anything. The
     sampler counted a table's deposits with a whole-subtree walk while the
@@ -2180,7 +2180,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # attribute to spaces rather than collapsing it, so a wrapped
             # href would take the ranking slot, block the real deposit that
             # follows, and render as a broken src. No instance in either
-            # committed corpus (13,617 deposits, every extension unpadded) —
+            # committed corpus (13,624 deposits, every extension unpadded) —
             # this guards a population measured empty, not an observed one.
             href = (
                 attrs.get("xlink:href") or attrs.get("href") or attrs.get("xlink-href") or ""
