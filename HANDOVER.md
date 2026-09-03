@@ -175,11 +175,13 @@ formula at all, since there it replaces prose that was already correct in
 20,046 formulas against the 205 it recovers.
 
 
-**This session settled #164, and found three instrument defects doing it.**
-The figure-side graphic counters are owner-scoped now, as the table side has
-been since #135, and the argument that the asymmetry cost nothing is gone
-rather than restated. The full argument is in `CLAUDE.md`, `CHANGELOG.md` and
-at the call sites; six things are worth carrying forward.
+**This session settled #164, found three instrument defects doing it, and
+four more in review of the PR.** The figure-side graphic counters are
+owner-scoped now, as the table side has been since #135, and the argument that
+the asymmetry cost nothing is gone rather than restated. The full argument is
+in `CLAUDE.md`, `CHANGELOG.md` and at the call sites; the review's four are
+summarised below the original six, and one finding it raised is filed as
+**#181** rather than fixed here. Ten things are worth carrying forward.
 
 - **A share is of a denominator, and the rendition chooses the denominator.**
   #164 was filed on an archive spot-check that moved the multi-graphic figure
@@ -222,6 +224,42 @@ at the call sites; six things are worth carrying forward.
   per-process so nothing prevents the next one. The reasoning that licensed it
   estimated the request rate from row counts compared across turns without
   checking the clock — off by 6×.
+
+**The PR review found four more, all in the instrument and all now fixed.**
+
+- **The sentinel sees an absent counter, never a redefined one.** #164 changed
+  four *first-generation* counters from `el.iter()` to owner-scoped **in
+  place**, and `_journal_disagreement` compared `(source, rendition, draw)` —
+  everything about which identifiers were asked for and nothing about what the
+  sampler did with them. A pre-#164 journal for the same package, window and
+  seed resumed cleanly and pooled, printing **2,664**, neither reading, under
+  a heading asserting `owner-scoped`. `_COUNTER_DEFINITIONS_VERSION` is the
+  fourth axis; **bump it whenever an existing counter starts counting
+  something else**, because nothing can detect that for you. Renaming the four
+  was refused — the names are the corpus's keys, so it would redraw both
+  corpora and destroy #164's own attribution.
+- **Mechanise a gate rule, or it holds for one section.**
+  `TestEverySectionIsGatedOnEveryCounterItReads` walks `print_report` with
+  `ast` and checks every section's reads against its gate; `_pct` returns
+  `NOT MEASURED` on a sentinel as the backstop. The converse also held —
+  section 4 named #162's counter, which it does not read.
+- **A silent zero moves to the next type.** `articles_where` stopped
+  flattening a `Counter` and answered `False` for everything else, so
+  `unscoped` (a plain `dict`) read as carried by 0 articles over 29 non-empty
+  rows. It raises now, as `sum_of` does. `from_dict` is strict for the same
+  reason: an unknown key used to become a phantom attribute that round-tripped
+  into the committed corpus.
+- **A scope is not a judgement.** `_TRANSPARENT_WRAPPERS` was grouped with
+  `_ARCHIVAL_HINTS`/`_THUMB_PATTERN`, which must *differ* from the parser's
+  sets; since #164 it decides every #117 share, so it is pinned as identical.
+
+**Filed rather than fixed: #181.** `last_is_thumb`/`first_is_thumb` increment
+only inside `len(graphics) > 1`, so their population is `figures_multi_graphic`
+— but the report and five files divide them by `figures_with_graphic`. Over
+its own population the recent window reads **99.3%**, not 57.3%, which makes
+#117's rule far more load-bearing than the published figure says. Not fixed
+here because one remedy restates a share cited in five files and the other
+needs both corpora redrawn, which would destroy #164's attribution.
 
 Both corpora were redrawn on this branch's code and day, so all three
 artifacts share a version. The recent window is 997 measured of 1,000 as

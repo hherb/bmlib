@@ -8,6 +8,85 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A counter redefined in place is invisible to every sentinel, and a stale
+  journal pooled with it** (found reviewing PR #180). #164 changed four
+  *first-generation* counters — `figures_with_graphic`,
+  `figures_multi_graphic`, `last_is_thumb`, `first_is_thumb` — from a
+  whole-subtree walk to the owner-scoped one **under their own names**. Every
+  mechanism in `scripts/sample_jats_exhibits.py` detects an *absent* field: a
+  generation is a set of names a stale row does not carry, and `NOT_MEASURED`
+  is what that absence loads as. `_journal_disagreement` compared
+  `(source, rendition, draw)` — everything about *which identifiers* a run
+  asked for and nothing about what the sampler did with them — so a journal
+  written by the previous commit for the same package, window and seed
+  resumed **cleanly** and its rows pooled with fresh ones. Reproduced
+  half-stale over the real recent corpus, section 4 printed `2,664  57.9%`:
+  neither the owner-scoped 2,658 nor the subtree 2,676, above a heading
+  asserting `owner-scoped`, with the only marker a `NOT MEASURED` line naming
+  the companion generation. The corpus filename stayed protected — the sixth
+  generation's sentinel forces exit 1 — so the artifact was safe and the
+  number a maintainer *reads* was not, which is the half the instrument
+  exists for. `_COUNTER_DEFINITIONS_VERSION` is a fourth journal-identity
+  axis, stamped in the header and compared like the other three; **bump it
+  whenever an existing counter starts counting something else**, since no test
+  can detect a change of meaning. Renaming the four was refused: the names are
+  the corpus's own keys, so a rename regenerates both corpora and moves every
+  figure again, destroying exactly the "only the walk moved" attribution #164
+  was able to make.
+
+  Four smaller instrument defects came out of the same review.
+  **A report section is gated on every counter it *reads*** — the rule #164
+  established for 14b — now enforced by an `ast` walk over `print_report`
+  (`TestEverySectionIsGatedOnEveryCounterItReads`, with a negative control
+  that reverts 14b's gate and requires the walk to name `tex_math`) rather
+  than by one hand-written scenario, and `_pct` returns `NOT MEASURED` on a
+  sentinel at either end instead of raising a bare `math domain error` out of
+  the report. The converse held too: section 4's gate named #162's counter,
+  which it does not read. **`Totals.articles_where` raises on a type it does
+  not know**, the silent zero it was rewritten to remove having simply moved
+  to the next type — `unscoped` is a plain `dict` and read as carried by **0**
+  articles over a corpus holding 29 non-empty ones. **`ArticleMeasurement.
+  from_dict` is as strict as the write**: a key naming no field used to become
+  a phantom attribute that `to_dict` round-tripped into the committed corpus
+  where `TestEveryCounterIsInAGeneration` could not see it, and a count
+  carrying a string was summed by `sum_of` and skipped by `articles_where`.
+  And **`_TRANSPARENT_WRAPPERS` is a scope, not a judgement** — grouped with
+  `_ARCHIVAL_HINTS`/`_THUMB_PATTERN`, which must *differ* from the parser's
+  sets so a corpus cannot merely confirm the rule under test, while since #164
+  it decides every #117 share; it is pinned as identical to the parser's now.
+  Beside them, a run that can measure nothing — every drawn identifier already
+  journalled at an older generation — says to delete the journal rather than
+  repeating "re-run to fill it" at exit 1 for ever.
+
+- **Stale cross-corpus sums** (found reviewing PR #180). The back-filled
+  window going 997 → 1,000 reconciled every per-window figure and neither
+  figure cited as a **sum over both**: "1,994 articles" (997 + 1,000 = 1,997)
+  in `bmlib/fulltext/jats_parser.py` ×5, `bmlib/fulltext/models.py`,
+  `CLAUDE.md`, `ROADMAP.md`, `CHANGELOG.md` and a test docstring, and
+  "12,650 `<contrib>`" (7,798 + 4,861 = 12,659) in four files — one of them
+  eleven lines above an assertion of `(7798, 4861)`, a file contradicting
+  itself. `models.py` is the sharpest instance: the paragraph below it exists
+  to record that the *previous* redraw's reconciliation missed that docstring.
+  Both sums are now asserted against the corpora, which is the guard that was
+  missing — a cross-window sum is exactly the figure a per-window assertion
+  cannot see.
+
+- **The #162 label owners were measured, committed, and printed nowhere**
+  (found reviewing PR #180). `unlabelled_exhibit_label_owners` exists so the
+  seven exhibits' labels need not be read out of `label_parents`, which pools
+  every exhibit in the draw — and `print_report`'s section 1 still told the
+  reader *"Section 2 says what those labels belong to"*, which is that pooling.
+  Section 1 prints the owners now (`{fn: 9, list-item: 67}`, in 7 articles)
+  and points at them. `docs/DECISIONS.md` records that the refutation is
+  re-derivable from the corpus rather than resting on the 2026-09-02 live
+  fetch of seven articles. Section 4's companion block prints the subtree
+  *count* (2,676) and not only its share, labels the difference as what the
+  subtree **overcounted** — `subtree - scoped` is non-negative by
+  construction, so the old `{:+d}` could only ever print `+18` for a
+  reduction — and says how many articles the scoping changes (**4 of 997**,
+  each losing every multi-graphic figure it had), since a bare total reads as
+  diffuse where this is a per-publisher property.
+
 - **The figure-side graphic walk counted what the parser does not route**
   (#164). `scripts/sample_jats_exhibits.py` scoped its **table** counters to
   the owner test the parser uses when #135 was answered, and left the
@@ -26,8 +105,9 @@ All notable changes to bmlib are documented here. The format is based on
   `figures_multi_graphic` goes 2,676 → 2,658 and 58.1% → **57.8%**
   [56.3-59.2], each inside the other's interval. The other three counters do
   not move at all — `figures_with_graphic` stays 4,602, `last_is_thumb` 2,639
-  and `first_is_thumb` 0 — and the back-filled window is untouched on every
-  count. So #117's ranking rule keeps its evidence: around half of all figures
+  and `first_is_thumb` 0 — and the back-filled window is untouched by the
+  scoping on every count (its own totals do move with the redraw, which served
+  three more articles: see below). So #117's ranking rule keeps its evidence: around half of all figures
   carry several deposits and end on a thumbnail, and none deposits one first.
 
   **That is not the size #164 expected, and the reason is a denominator.** The
@@ -242,7 +322,7 @@ All notable changes to bmlib are documented here. The format is based on
 - **`JATSTableInfo.graphic_url`'s cited populations are the committed ones**
   (found while fixing #147). The docstring still quoted the pre-#138 draw —
   600 articles, 755 tables, 11 image-only "all in the back-filled window" and
-  5 carrying both — where the redrawn corpora hold 1,994 articles and 2,448
+  5 carrying both — where the redrawn corpora hold 1,997 articles and 2,448
   `<table-wrap>`, of which **8** are image-only and **84** carry both, every
   one in the recent window. It had come to say the opposite of the evidence in
   both directions: the back-filled window holds no `<table-wrap>` at all, and
@@ -1182,10 +1262,10 @@ All notable changes to bmlib are documented here. The format is based on
   nested `<contrib>`, `<collab>` rosters, and articles naming every
   contributor undivided), and **the #138 redraw has now run them**, scoped so
   a peer-review `<sub-article>`'s reviewers no longer inflate a count the
-  parser never sees. Across 12,650 `<contrib>` in the two committed corpora:
+  parser never sees. Across 12,659 `<contrib>` in the two committed corpora:
   `<collab>` names 14 contributors (all in the recent window:
   0.18% [0.11-0.30] of *that* window's 7,798)
-  and **`<string-name>` none at all** — 0 of 12,650, upper
+  and **`<string-name>` none at all** — 0 of 12,659, upper
   bound 0.03%, which is a measured absence rather than an omission, the
   vocabulary being open. **No** `<contrib>` nests inside another, **no**
   `<collab>` carries a roster, and 2 of 997 recent articles name every
@@ -1403,8 +1483,8 @@ All notable changes to bmlib are documented here. The format is based on
   both eLife, losing 6 of 12 and 5 of 11 figures); neither draw is in the
   repo. The two committed corpora reproduce the **shape** for the first time
   and refute both rates: **7 nested `<fig>` and 0 nested `<table-wrap>` across
-  1,994 articles**, every one of the seven in a single eLife article
-  (`PMC12143881`, 7 of its 19 figures). One article in 1,994 is a fact about
+  1,997 articles**, every one of the seven in a single eLife article
+  (`PMC12143881`, 7 of its 19 figures). One article in 1,997 is a fact about
   which publishers a draw catches rather than a rate, so neither 19.6% nor
   0.7% is re-derivable here — but the house style they describe is, and this
   is the first committed evidence that exercises the stack at all.

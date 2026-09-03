@@ -177,7 +177,7 @@ _ARCHIVAL_EXTENSIONS = frozenset({".tif", ".tiff", ".eps", ".ps"})
 # They are kept rather than deleted because the failure they prevent is silent
 # and permanent: an undeclared master deposited first ranks FULL, wins under
 # the strictly-better rule, and leaves the figure pointing at something no
-# browser renders. "No instance in 1,994 articles" is not "cannot happen", and
+# browser renders. "No instance in 1,997 articles" is not "cannot happen", and
 # the cost of carrying the tiers is one comparison. Re-run the sampler before
 # concluding otherwise — that is what it is for.
 
@@ -302,8 +302,10 @@ class _GraphicHolder:
 
         **The two committed draws are the evidence, and they are what a
         reader can re-derive** (``scripts/sample_jats_exhibits.py``, issue
-        #138 — 997 and 1,000 articles, drawn from a named PMC OA baseline
-        package and measured on Europe PMC's ``fullTextXML``): of **4,602**
+        #138 — a 1,000-article draw per window, 997 of the recent one and
+        all 1,000 of the back-filled one served, drawn from a named PMC OA
+        baseline package and measured on Europe PMC's ``fullTextXML``): of
+        **4,602**
         recent figures carrying a ``<graphic>``, **57.8%** [56.3-59.2] carry
         more than one and **57.3%** [55.9-58.8] end on a thumbnail; of **627**
         back-filled ones, **44.0%** [40.2-47.9] on both counts. **0%** deposit
@@ -325,7 +327,10 @@ class _GraphicHolder:
 
         The size of that is worth stating because #164 expected otherwise. Its
         spot check over the same articles' *archive* bytes moved the
-        multi-graphic count 77 to 58 and read as "large enough to matter". The
+        multi-graphic count 77 to 58 and read as "large enough to matter" —
+        an ad-hoc measurement over package bytes, in the repo nowhere and
+        re-derivable from neither corpus, so it is quoted the way the
+        225-article survey and the vanished 276-article draw are. The
         absolute correction is almost identical on the two renditions — 19
         figures there, 18 here — but the archive holds 77 multi-graphic
         figures against the served rendition's 2,676, so the same 18-or-so
@@ -1469,13 +1474,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # (2 articles, both eLife, losing 6 of 12 and 5 of 11 figures).
         # **Neither draw is in the repo, and the committed corpora put the
         # rate lower still**: 7 nested <fig> and 0 nested <table-wrap> across
-        # 1,994 articles, all seven in **one** article — eLife's PMC12143881,
+        # 1,997 articles, all seven in **one** article — eLife's PMC12143881,
         # 7 of its 19 figures (`scripts/sample_jats_exhibits.py`, issue #138).
-        # So one article in 1,994 is the whole population, and it is the
+        # So one article in 1,997 is the whole population, and it is the
         # publisher the shape was always attributed to: a house style costing
         # about a third of *its* figures, not a general convention. eLife's
         # PMC8754430, where the issue came from, is the same shape outside any
-        # committed corpus. Read the 1-in-1,994 as a property of which
+        # committed corpus. Read the 1-in-1,997 as a property of which
         # publishers a draw happens to catch, never as a rate. And
         # JATS lets a <table-wrap> open inside another's <table-wrap-foot>. As
         # one slot, the inner open overwrote the parent's builder, the inner
@@ -1520,7 +1525,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # what the retired boolean would do, not what a draw caught it doing.
         #
         # NEITHER POPULATION MEASURES EMPTY ANY LONGER, AND THIS SAYS SO.
-        # Over the two committed draws (1,994 articles,
+        # Over the two committed draws (1,997 articles,
         # `scripts/sample_jats_exhibits.py`, issue #138): **6 <caption> of
         # 8,111 recent nest inside another**, and **6 <caption> inside an
         # exhibit are owned by a <supplementary-material>** rather than by the
@@ -2471,7 +2476,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             #
             # MEASURED, and this half is not a small population. Over the two
             # committed draws (`scripts/sample_jats_exhibits.py`, issue #138 —
-            # 1,000 articles per window, drawn from a named PMC OA baseline
+            # a 1,000-article draw per window, 997 of the recent one served,
+            # drawn from a named PMC OA baseline
             # package and measured on Europe PMC's fullTextXML), counting only
             # a <title> that a <sec> was open for and that no exhibit already
             # excluded: **411 titles in 104 of 997 recent articles (10.4%
