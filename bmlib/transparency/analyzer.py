@@ -934,6 +934,20 @@ _NESTED_ARTICLE_ELEMENTS = ("sub-article", "response")
 # they nor the processing instructions ever hold these element names. So all
 # four are kept for the structural argument and none of them for a measured
 # population on this module's own input.
+#
+# A fifth branch refuses the document, and it is what bounds the work (issue
+# #160). Each of the four above scans to end-of-string when its terminator is
+# absent, and `finditer` then retries at every later opener, so the lex was
+# quadratic in the input: 256 kB of a repeated `<!DOCTYPE a[` took 22.9s and
+# every doubling cost four times the last, while `_HTTP_TIMEOUT_SECONDS`
+# bounds the request and nothing bounds this — so a truncated HTTP-200 body
+# did not fail, it stalled, reaching neither the refusal below nor its
+# warning. Slow was not the whole of it: with no branch matching, the
+# construct's own content was then read as this article's markup, which is
+# what the four exist to prevent. Refusing at the first unterminated opener
+# costs one failed scan and stops. The issue's other two remedies — a size cap
+# and a multiple of the input length — each wanted a constant nobody had
+# drawn, and real articles reach 3.4 MB; this one needs none.
 _NESTED_ARTICLE_ALTERNATION = "|".join(re.escape(name) for name in _NESTED_ARTICLE_ELEMENTS)
 
 # The two groups are *named*: they are read below to tell a start tag from an
@@ -958,10 +972,63 @@ _NESTED_ARTICLE_TOKEN_RE = re.compile(
     # closes, and self-closing is then read off the run's last character
     # instead of from a second group, which a "/" inside a quoted value would
     # otherwise have to be kept out of.
-    r"|<(?P<closing>/?)(?:" + _NESTED_ARTICLE_ALTERNATION + r")(?![-.:\w])"
-    r"(?P<attributes>(?:[^>\"']|\"[^\"]*\"|'[^']*')*+)>",
+    r"|<(?P<closing>/?)(?P<element>" + _NESTED_ARTICLE_ALTERNATION + r")(?![-.:\w])"
+    r"(?P<attributes>(?:[^>\"']|\"[^\"]*\"|'[^']*')*+)>"
+    # Last, and so reached only where every branch above it failed: a bare
+    # *opener*. In well-formed XML each of the five terminates, so this branch
+    # cannot fire on the input the contract describes — the negative control
+    # in `test_a_well_formed_construct_never_reaches_the_refusal_branch` is
+    # what keeps that true, since a fallback matched too early would refuse
+    # every article carrying a comment and break no other test.
+    #
+    # The "<" sits *outside* the group on purpose, and it is the difference
+    # between this costing nothing and costing 14x. `sre` derives a prefix for
+    # the whole pattern only when every top-level branch starts with the same
+    # literal, and then skips from "<" to "<" instead of trying the pattern at
+    # every position; a branch opening with a group defeats that analysis.
+    # Measured over 7.8 MB of real articles: 13.5 ms with the literal outside,
+    # 191 ms with it inside — and factoring the alternatives *within* the
+    # group does not help, so it is the group boundary and not the shape of
+    # what follows. `test_every_branch_of_the_lexer_opens_with_the_literal`
+    # is the guard, since prose is not enforcement.
+    r"|<(?P<unterminated>!--|!\[CDATA\[|\?|!DOCTYPE|/?(?:"
+    + _NESTED_ARTICLE_ALTERNATION
+    + r")(?![-.:\w]))",
     re.DOTALL,
 )
+
+# What each opener is called when the refusal names it, keyed on the whole
+# opener rather than on what the group captures — the "<" is outside it for
+# the prefix reason above, and a key that reads `!--` would put that
+# optimisation's fingerprint into a message an operator reads. Anything not
+# here is one of the two element tags, whose own text the message carries.
+_UNTERMINATED_OPENER_NAMES = {
+    "<!--": "comment",
+    "<![CDATA[": "CDATA section",
+    "<?": "processing instruction",
+    "<!DOCTYPE": "doctype",
+}
+
+
+class _UnterminatedMarkupError(ValueError):
+    """A construct in the served body never terminates, so it cannot be lexed.
+
+    Raised by :func:`_strip_nested_articles` and caught at its one call site,
+    where it becomes a WARNING and a fall back to the abstract. It is not a
+    bmlib defect and not a publisher's deposit either: **0 of 3,880 sampled
+    articles** is malformed, so what reaches this is a body truncated or
+    corrupted in transit — an HTTP 200 is not a promise that the whole
+    document arrived.
+
+    An exception rather than the ``None`` the function already returns,
+    because the two refusals are different claims and an operator acts on them
+    differently: an unclosed region is a document bmlib will not segment, and
+    this is a document that did not arrive. Collapsing them onto one return
+    value would put the module's own issue #161 shape one level down —
+    "refused" and "never served" reading identically downstream — and the
+    message names the construct and the offset, which nothing downstream could
+    re-derive without lexing the body a second time.
+    """
 
 
 def _strip_nested_articles(xml: str) -> str | None:
@@ -981,9 +1048,20 @@ def _strip_nested_articles(xml: str) -> str | None:
     Args:
         xml: A ``fullTextXML`` body as Europe PMC served it. Assumed
             well-formed, which is what the caller is served and what every one
-            of 3,880 sampled deposits was; the function neither validates it
-            nor bounds its own running time, so a caller handing it something
-            else owns that.
+            of 3,880 sampled deposits was. The assumption is no longer
+            unenforced: a construct that never terminates refuses the document
+            (see Raises), which is both what bounds the running time and what
+            stops that construct's own content being read as markup. It is
+            still not a well-formedness check — nothing here would notice a
+            mismatched ``<p>`` — so a caller handing this something other than
+            served XML still owns the rest.
+
+    Raises:
+        _UnterminatedMarkupError: A comment, CDATA section, processing
+            instruction, doctype or nested-article tag opens and never closes,
+            naming which and where. Only a document expat would reject can
+            hold one, and none of 3,880 sampled deposits does; what reaches it
+            is a body truncated in transit.
 
     Returns:
         The article's own markup, or ``None`` if a region is left open at the
@@ -994,31 +1072,51 @@ def _strip_nested_articles(xml: str) -> str | None:
         triggers the missing-COI downgrade. An unmatched *end* tag **at depth
         0** is not an imbalance in this sense — no nested prose reaches the
         scans through one — so it is ignored rather than costing the article a
-        signal it really carries. That is the whole of the claim: the depth is
-        not matched against the element name, so an unmatched end tag *inside*
-        an open region closes it and does re-admit the rest of the outer round.
-        Only a document expat would reject can hold one, which is why it is
-        left as it is rather than guarded.
+        signal it really carries. An end tag *inside* an open region is a
+        different matter and is matched against the element that opened it
+        (issue #160): as a bare depth, `</response>` closed a region a
+        <sub-article> had opened, and the rest of the outer round came back as
+        this article's prose — issue #119's own defect, reached through the
+        fix for it. A mismatch closes nothing, so a region left open by one is
+        refused here like any other.
     """
     kept: list[str] = []
-    depth = 0
+    # The open regions, innermost last. A bare count read `</response>` as
+    # closing a region a <sub-article> had opened, and the rest of the outer
+    # round then came back as the article's own prose — the defect issue #119
+    # removed, from inside the fix for it. Names cost one list.
+    open_elements: list[str] = []
     resume_at = 0
     for token in _NESTED_ARTICLE_TOKEN_RE.finditer(xml):
+        unterminated = token.group("unterminated")
+        if unterminated is not None:
+            opener = "<" + unterminated
+            # The first one wins and the scan stops: continuing is the
+            # quadratic half of issue #160, and there is nothing left to be
+            # right about once the markup cannot be located.
+            raise _UnterminatedMarkupError(
+                f"unterminated {_UNTERMINATED_OPENER_NAMES.get(opener, 'tag')} "
+                f"({opener!r}) at offset {token.start()}"
+            )
         closing = token.group("closing")
         if closing is None:
             continue  # a comment, CDATA section, PI or doctype: not markup we route on
         if closing:
-            if depth:
-                depth -= 1
-                if depth == 0:
+            # A mismatch is ignored rather than refused here: at depth 0 it is
+            # the harmless stray end tag the docstring scopes, and inside a
+            # region it leaves that region open, which the refusal below
+            # catches. Either way no nested prose reaches the scans.
+            if open_elements and open_elements[-1] == token.group("element"):
+                open_elements.pop()
+                if not open_elements:
                     resume_at = token.end()
             continue
         if token.group("attributes").endswith("/"):
             continue  # self-closing: opens nothing
-        if depth == 0:
+        if not open_elements:
             kept.append(xml[resume_at : token.start()])
-        depth += 1
-    if depth:
+        open_elements.append(token.group("element"))
+    if open_elements:
         return None
     kept.append(xml[resume_at:])
     return "".join(kept)
@@ -1434,8 +1532,11 @@ class TransparencyAnalyzer:
         article's; the caller falls back to the abstract in every case, which
         leaves the COI status *unknown* rather than absent — it can still be
         set ``True`` from the abstract, but never ``False``, and only ``False``
-        triggers the missing-COI downgrade. The two segmentation outcomes
-        WARN; a non-200 does not, because there is nothing there to report.
+        triggers the missing-COI downgrade. The three segmentation outcomes
+        WARN, each naming which it was — an unclosed region, markup that never
+        terminates, and a body that was entirely nested articles are different
+        claims about what arrived. A non-200 does not warn, because there is
+        nothing there to report.
         """
         if not source or not ext_id:
             return None
@@ -1454,7 +1555,21 @@ class TransparencyAnalyzer:
             return None
         if resp.status_code != 200:
             return None
-        article_xml = _strip_nested_articles(resp.text)
+        # The one documented raise, on its own line and caught on its own
+        # terms: a truncated body can reach it, so it is not the bmlib defect
+        # the wider `except` above would report it as. Anything *else* this
+        # computation raises still is one, and still must not be swallowed.
+        try:
+            article_xml = _strip_nested_articles(resp.text)
+        except _UnterminatedMarkupError as e:
+            logger.warning(
+                "EuropePMC full text for %s/%s is not well-formed (%s); "
+                "scanning the abstract instead",
+                source,
+                ext_id,
+                e,
+            )
+            return None
         if article_xml is None:
             # A deposit can reach this, so it is not a bmlib defect: WARNING,
             # and the analysis proceeds on the abstract.

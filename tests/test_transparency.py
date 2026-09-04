@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import pytest
 
@@ -52,6 +53,7 @@ from bmlib.transparency.analyzer import (
     _PubMedSignals,
     _score_data_availability,
     _strip_nested_articles,
+    _UnterminatedMarkupError,
 )
 from bmlib.transparency.models import (
     TransparencyResult,
@@ -806,8 +808,9 @@ class TestANestedArticleIsNotThisArticles:
         ):
             assert _strip_nested_articles(xml) == xml
 
-    def test_only_the_tag_branch_sets_a_group(self):
-        # The loop tells a start tag from a comment by the groups being unset.
+    def test_each_branch_sets_only_its_own_groups(self):
+        # The loop tells a start tag from a comment by the groups being unset,
+        # and an unterminated construct from either by a group of its own.
         # Named groups make that independent of the pattern's shape; with
         # positional ones, a group added to any earlier branch would have made
         # a comment look like a start tag, with nothing failing.
@@ -820,11 +823,25 @@ class TestANestedArticleIsNotThisArticles:
             match = _NESTED_ARTICLE_TOKEN_RE.match(token)
             assert match is not None, token
             assert match.group("closing") is None
+            assert match.group("element") is None
             assert match.group("attributes") is None
+            assert match.group("unterminated") is None
         opening = _NESTED_ARTICLE_TOKEN_RE.match("<sub-article>")
         assert opening is not None
         assert opening.group("closing") == ""
+        assert opening.group("element") == "sub-article"
         assert opening.group("attributes") == ""
+        assert opening.group("unterminated") is None
+        # The refusal branch is the mirror image: it is reached only when
+        # every branch above it failed, and it names the opener it stopped at.
+        unterminated = _NESTED_ARTICLE_TOKEN_RE.match("<!-- c")
+        assert unterminated is not None
+        # Without the "<", which is outside the group so that every top-level
+        # branch opens with the same literal — see the test below.
+        assert unterminated.group("unterminated") == "!--"
+        assert unterminated.group("closing") is None
+        assert unterminated.group("element") is None
+        assert unterminated.group("attributes") is None
 
     # ---- what the scans then see ----
 
@@ -919,6 +936,29 @@ class TestANestedArticleIsNotThisArticles:
         assert len(matching) == 1
         assert matching[0].levelno == logging.WARNING
 
+    def test_a_body_that_never_terminates_is_reported_as_what_it_is(self, caplog):
+        # The third segmentation outcome (issue #160), and a different claim
+        # from the other two: an unclosed region is a document bmlib will not
+        # segment, and this is a document that did not arrive — an HTTP 200 is
+        # not a promise that the whole body came with it. Reported apart from
+        # the other refusal rather than folded into it, which would put this
+        # module's own issue #161 shape one level down.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient("<article><body><p>Methods.</p><!-- truncated here")
+        analysis = _Analysis()
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is False
+        assert analysis.coi_disclosed is None
+        assert _INDICATOR_COI_UNKNOWN in analysis.indicators
+        matching = [r for r in caplog.records if "is not well-formed" in r.getMessage()]
+        assert len(matching) == 1
+        assert matching[0].levelno == logging.WARNING
+        # The construct, not merely the fact: "which one and where" is what an
+        # operator cannot re-derive without lexing the body a second time.
+        assert "unterminated comment" in matching[0].getMessage()
+        assert "offset 30" in matching[0].getMessage()
+
     def test_a_document_that_is_all_nested_articles_is_reported_not_dropped(self, caplog):
         # `_strip_nested_articles` returns "" here, which the caller's
         # `if full_text:` reads as "nothing was served" — the one outcome that
@@ -980,6 +1020,206 @@ class TestANestedArticleIsNotThisArticles:
         analyzer._check_europepmc(client, _epmc_record(), analysis)
         assert analysis.industry_funding is True
         assert _INDICATOR_INDUSTRY_COI in analysis.indicators
+
+
+def _top_level_alternatives(pattern: str) -> list[str]:
+    """Split a regex source on the ``|`` that separate its top-level branches.
+
+    Deliberately a splitter and not a parse: it tracks escapes, character
+    classes and group nesting, which is all that is needed to say where each
+    branch of this one pattern begins.
+    """
+    branches: list[str] = []
+    current: list[str] = []
+    depth = 0
+    in_class = False
+    escaped = False
+    for char in pattern:
+        if escaped:
+            current.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            current.append(char)
+            escaped = True
+            continue
+        if in_class:
+            current.append(char)
+            if char == "]":
+                in_class = False
+            continue
+        if char == "[":
+            in_class = True
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == "|" and depth == 0:
+            branches.append("".join(current))
+            current = []
+            continue
+        current.append(char)
+    branches.append("".join(current))
+    return branches
+
+
+class TestMarkupTheContractDoesNotDescribe:
+    """Issue #160 — what a body that is not well-formed costs this scan.
+
+    ``_strip_nested_articles`` documents its input as *"a ``fullTextXML`` body
+    as Europe PMC served it"*, assumed well-formed, and the assumption is
+    sound as a description of the corpus: **0 of 3,880 sampled deposits** is
+    malformed (3,000 drawn at random from the ``oa_comm`` ``PMC012xxxxxx``
+    baseline package plus all 880 of a Europe PMC draw). What it did not have
+    is any behaviour for the case it excludes, and a contract nothing enforces
+    is a contract the transport can break: an HTTP 200 carrying a truncated
+    body is not a shape a publisher deposits, it is a shape a network
+    produces.
+
+    Two consequences, both fixed here, and neither reachable from a deposit.
+    An end tag closed a region opened by the *other* element, which re-admits
+    the rest of the outer round as the article's prose — the exact defect
+    #119 removed, from inside the fix for it. And every skip branch scanned to
+    end-of-string when its terminator was absent while ``finditer`` retried at
+    every later opener, so the lex was quadratic: 256 kB of a repeated
+    unterminated construct took **22.9s**, and each doubling cost four times
+    the last. ``_HTTP_TIMEOUT_SECONDS`` bounds the request, not the
+    post-processing, so that body did not fail — it stalled, reaching neither
+    the refusal nor the warning.
+
+    Both fixes are in the fail-closed direction the module already takes, and
+    **neither needs a constant drawn from a corpus** — the issue's other two
+    remedies, a size cap and a work multiple, each wanted a threshold nothing
+    had measured, and real articles reach 3.4 MB.
+    """
+
+    # ---- an end tag closes the element that opened the region ----
+
+    def test_an_end_tag_closes_only_the_element_that_named_it(self):
+        # The depth used to be a bare count, so `</response>` closed a region
+        # a <sub-article> had opened and the reviewer prose after it came back
+        # as this article's. A stack of names costs one list and fixes it: the
+        # mismatched end tag is ignored, and the region ends where it says it
+        # ends.
+        stripped = _strip_nested_articles(
+            "<article><p>Ours.</p>"
+            "<sub-article><p>Reviewer prose.</p></response>"
+            "<p>MORE REVIEWER PROSE.</p></sub-article>"
+            "<p>Ours again.</p></article>"
+        )
+        assert stripped == "<article><p>Ours.</p><p>Ours again.</p></article>"
+
+    def test_regions_closed_in_the_wrong_order_refuse_the_document(self):
+        # Improperly nested the other way: the inner region is still open when
+        # the outer one closes. Ignoring the mismatch leaves a region open at
+        # the end, which is the refusal the module already makes — no tail is
+        # kept, and the analysis falls back to the abstract.
+        assert (
+            _strip_nested_articles(
+                "<article><p>Ours.</p><sub-article><response><p>Theirs.</p>"
+                "</sub-article></response><p>Ours again.</p></article>"
+            )
+            is None
+        )
+
+    def test_an_unmatched_end_tag_between_two_regions_still_costs_nothing(self):
+        # The depth-0 case the docstring already scopes, kept as the negative
+        # control for the rule above: a stray end tag outside every region
+        # admits no nested prose, so refusing the article would lose a signal
+        # it really carries. It must also not move the resume point — reading
+        # it as a close would splice the prose after it onto the region
+        # before it.
+        stripped = _strip_nested_articles(
+            "<article><p>One.</p>"
+            "<sub-article><p>Round one.</p></sub-article>"
+            "</response><p>Two.</p></article>"
+        )
+        assert stripped == "<article><p>One.</p></response><p>Two.</p></article>"
+
+    # ---- a construct that never terminates ----
+
+    @pytest.mark.parametrize(
+        ("kind", "xml"),
+        [
+            ("comment", "<article><p>Ours.</p><!-- <sub-article> and then the body ends"),
+            ("CDATA section", "<article><p>Ours.</p><![CDATA[ <sub-article> then the body ends"),
+            ("processing instruction", "<article><p>Ours.</p><?publisher <sub-article> ends"),
+            ("doctype", "<!DOCTYPE article [<!ENTITY r '<sub-article>'> <article><p>Ours."),
+            ("tag", "<article><p>Ours.</p><sub-article xml:lang='en' specific-use"),
+        ],
+    )
+    def test_an_unterminated_construct_refuses_the_document(self, kind, xml):
+        # Each of the five is a construct the lexer must skip whole, and each
+        # one that never terminates says the body is not what the contract
+        # describes. Refusing is what bounds the work: the alternative is the
+        # scan continuing over a string whose markup it can no longer locate,
+        # quadratically, and then reading the unterminated construct's own
+        # content as this article's markup.
+        with pytest.raises(_UnterminatedMarkupError) as excinfo:
+            _strip_nested_articles(xml)
+        assert kind in str(excinfo.value)
+
+    def test_the_refusal_names_the_first_opener_rather_than_a_later_one(self):
+        # Deterministic half of the bound below: bailing at the *first*
+        # unterminated opener is what makes one failed scan the whole cost. A
+        # loop that noted the refusal and carried on would still return None
+        # and still pass every test above, at O(n^2).
+        xml = "<article>" + "<!--x" * 2_000
+        with pytest.raises(_UnterminatedMarkupError) as excinfo:
+            _strip_nested_articles(xml)
+        assert "offset 9" in str(excinfo.value)
+
+    def test_an_unterminated_construct_does_not_lex_quadratically(self):
+        # The only end-to-end proof of the bound, so it is a wall-clock
+        # assertion with a margin rather than a ratio: this shape took 22.9s
+        # before the refusal and takes single-digit milliseconds after, so the
+        # ceiling is ~300x the measured time and ~0.1x the defect's. Doubling
+        # the input doubles the ceiling's slack rather than eating it, which
+        # is the property under test.
+        xml = "<!DOCTYPE a[" * 21_333  # ~256 kB, the issue's largest shape
+        start = time.perf_counter()
+        with pytest.raises(_UnterminatedMarkupError):
+            _strip_nested_articles(xml)
+        assert time.perf_counter() - start < 2.0
+
+    # ---- the refusal fires on no well-formed document ----
+
+    def test_a_well_formed_construct_never_reaches_the_refusal_branch(self):
+        # The negative control the parametrisation above needs: every one of
+        # the five terminates here, so the branch that refuses is last in the
+        # alternation and unreachable. Without this, a fallback that matched
+        # ahead of the real branches would refuse every article that carries a
+        # comment and still pass every test above.
+        for token in (
+            "<!-- c -->",
+            "<![CDATA[c]]>",
+            "<?pi c?>",
+            '<!DOCTYPE article PUBLIC "-//NLM//DTD JATS 1.4//EN" "JATS.dtd">',
+            '<!DOCTYPE article [<!ENTITY r "<sub-article>">]>',
+            "<sub-article>",
+            "</sub-article>",
+            '<sub-article specific-use="a>b"/>',
+        ):
+            match = _NESTED_ARTICLE_TOKEN_RE.match(token)
+            assert match is not None, token
+            assert match.group("unterminated") is None, token
+            assert match.end() == len(token), token
+
+    def test_every_branch_of_the_lexer_opens_with_the_literal(self):
+        # `sre` derives a prefix for the whole pattern only when every
+        # top-level branch begins with the same literal, and then skips from
+        # "<" to "<" rather than trying the pattern at every position. A
+        # branch that opens with a group defeats that analysis silently:
+        # measured over 7.8 MB of real articles, the refusal branch written
+        # `(?P<unterminated><!--|...)` cost **191 ms against 13.5 ms**, and
+        # factoring the alternatives inside the group did not recover it. The
+        # correct form differs by two characters, so nothing but this test
+        # stands between the two — a 14x tax on every article, with the whole
+        # suite green.
+        branches = _top_level_alternatives(_NESTED_ARTICLE_TOKEN_RE.pattern)
+        assert len(branches) == 6, branches
+        for branch in branches:
+            assert branch.startswith("<"), branch
 
 
 class TestTheRestatedSetMatchesTheParsers:
