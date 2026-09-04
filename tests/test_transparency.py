@@ -1068,9 +1068,11 @@ class TestMarkupTheContractDoesNotDescribe:
 
     ``_strip_nested_articles`` documents its input as *"a ``fullTextXML`` body
     as Europe PMC served it"*, assumed well-formed, and the assumption is
-    sound as a description of the corpus: **0 of 3,880 sampled deposits** is
-    malformed (3,000 drawn at random from the ``oa_comm`` ``PMC012xxxxxx``
-    baseline package plus all 880 of a Europe PMC draw). What it did not have
+    sound as a description of the corpus, and measured over more of it than
+    the issue sampled: **0 of 98,789 articles** carries either shape — every
+    article of the ``oa_comm`` ``PMC012xxxxxx`` baseline package (97,909,
+    archive rendition) and of an 880-article Europe PMC draw (served
+    rendition), against the issue's 3,880. What it did not have
     is any behaviour for the case it excludes, and a contract nothing enforces
     is a contract the transport can break: an HTTP 200 carrying a truncated
     body is not a shape a publisher deposits, it is a shape a network
@@ -1082,10 +1084,11 @@ class TestMarkupTheContractDoesNotDescribe:
     #119 removed, from inside the fix for it. And every skip branch scanned to
     end-of-string when its terminator was absent while ``finditer`` retried at
     every later opener, so the lex was quadratic: 256 kB of a repeated
-    unterminated construct took **22.9s**, and each doubling cost four times
-    the last. ``_HTTP_TIMEOUT_SECONDS`` bounds the request, not the
-    post-processing, so that body did not fail — it stalled, reaching neither
-    the refusal nor the warning.
+    ``<!DOCTYPE a[`` took **33.6s** and 224 kB of an unterminated tag 33.3s,
+    each doubling costing about four times the last.
+    ``_HTTP_TIMEOUT_SECONDS`` bounds the request, not the post-processing, so
+    that body did not fail — it stalled, reaching neither the refusal nor the
+    warning.
 
     Both fixes are in the fail-closed direction the module already takes, and
     **neither needs a constant drawn from a corpus** — the issue's other two
@@ -1171,9 +1174,9 @@ class TestMarkupTheContractDoesNotDescribe:
 
     def test_an_unterminated_construct_does_not_lex_quadratically(self):
         # The only end-to-end proof of the bound, so it is a wall-clock
-        # assertion with a margin rather than a ratio: this shape took 22.9s
-        # before the refusal and takes single-digit milliseconds after, so the
-        # ceiling is ~300x the measured time and ~0.1x the defect's. Doubling
+        # assertion with a margin rather than a ratio: this shape took 33.6s
+        # at 256 kB before the refusal and takes ~1 ms after, so the ceiling is
+        # ~1,400x the measured time and ~0.06x the defect's. Doubling
         # the input doubles the ceiling's slack rather than eating it, which
         # is the property under test.
         xml = "<!DOCTYPE a[" * 21_333  # ~256 kB, the issue's largest shape

@@ -938,16 +938,19 @@ _NESTED_ARTICLE_ELEMENTS = ("sub-article", "response")
 # A fifth branch refuses the document, and it is what bounds the work (issue
 # #160). Each of the four above scans to end-of-string when its terminator is
 # absent, and `finditer` then retries at every later opener, so the lex was
-# quadratic in the input: 256 kB of a repeated `<!DOCTYPE a[` took 22.9s and
-# every doubling cost four times the last, while `_HTTP_TIMEOUT_SECONDS`
-# bounds the request and nothing bounds this — so a truncated HTTP-200 body
-# did not fail, it stalled, reaching neither the refusal below nor its
-# warning. Slow was not the whole of it: with no branch matching, the
-# construct's own content was then read as this article's markup, which is
-# what the four exist to prevent. Refusing at the first unterminated opener
-# costs one failed scan and stops. The issue's other two remedies — a size cap
-# and a multiple of the input length — each wanted a constant nobody had
-# drawn, and real articles reach 3.4 MB; this one needs none.
+# quadratic in the input: 256 kB of a repeated `<!DOCTYPE a[` took 33.6s and
+# 224 kB of an unterminated tag 33.3s, every doubling costing about four times
+# the last (the issue's own 22.9s is the first shape on another machine),
+# against 4-9 ms for the three largest well-formed articles in the corpus at
+# 2.9-3.4 MB. `_HTTP_TIMEOUT_SECONDS` bounds the request and nothing bounded
+# this, so a truncated HTTP-200 body did not fail — it stalled, reaching
+# neither the refusal below nor its warning. Slow was not the whole of it:
+# with no branch matching, the construct's own content was then read as this
+# article's markup, which is what the four exist to prevent. Refusing at the
+# first unterminated opener costs one failed scan and stops, 0.001-0.004s for
+# those same two shapes. The issue's other two remedies — a size cap and a
+# multiple of the input length — each wanted a constant nobody had drawn, and
+# real articles reach 3.4 MB; this one needs none.
 _NESTED_ARTICLE_ALTERNATION = "|".join(re.escape(name) for name in _NESTED_ARTICLE_ELEMENTS)
 
 # The two groups are *named*: they are read below to tell a start tag from an
@@ -1015,10 +1018,12 @@ class _UnterminatedMarkupError(ValueError):
 
     Raised by :func:`_strip_nested_articles` and caught at its one call site,
     where it becomes a WARNING and a fall back to the abstract. It is not a
-    bmlib defect and not a publisher's deposit either: **0 of 3,880 sampled
-    articles** is malformed, so what reaches this is a body truncated or
-    corrupted in transit — an HTTP 200 is not a promise that the whole
-    document arrived.
+    bmlib defect and not a publisher's deposit either: **0 of 98,789
+    articles** carries an unterminated construct — every article of PMC's
+    `oa_comm` `PMC012xxxxxx` baseline package (97,909, archive rendition) and
+    of an 880-article Europe PMC draw (served rendition) — so what reaches
+    this is a body truncated or corrupted in transit, an HTTP 200 being no
+    promise that the whole document arrived.
 
     An exception rather than the ``None`` the function already returns,
     because the two refusals are different claims and an operator acts on them
@@ -1038,30 +1043,31 @@ def _strip_nested_articles(xml: str) -> str | None:
     its end tag — is cut out, and the text either side of it is kept verbatim,
     so the JATS-tagged containers the COI scan matches on survive untouched.
 
-    Regions are counted as a **depth**, not tracked as a flag, because JATS
-    nests them: a ``<response>`` sits inside the ``<sub-article>`` it answers,
-    and an inner end tag would otherwise re-admit the rest of the outer round
-    as the article's own prose. Nesting is measured, not hypothetical: 98 of
-    the 3,382 carriers in the baseline corpus nest. A self-closing
-    ``<sub-article/>`` opens nothing.
+    Regions are held as a **stack of element names**, not as a flag and not as
+    a bare count, because JATS nests them: a ``<response>`` sits inside the
+    ``<sub-article>`` it answers, and an inner end tag would otherwise
+    re-admit the rest of the outer round as the article's own prose. Nesting
+    is measured, not hypothetical: 98 of the 3,382 carriers in the baseline
+    corpus nest. The names are what a count alone could not give — see
+    Returns. A self-closing ``<sub-article/>`` opens nothing.
 
     Args:
         xml: A ``fullTextXML`` body as Europe PMC served it. Assumed
             well-formed, which is what the caller is served and what every one
-            of 3,880 sampled deposits was. The assumption is no longer
-            unenforced: a construct that never terminates refuses the document
-            (see Raises), which is both what bounds the running time and what
-            stops that construct's own content being read as markup. It is
-            still not a well-formedness check — nothing here would notice a
-            mismatched ``<p>`` — so a caller handing this something other than
-            served XML still owns the rest.
+            of 98,789 articles across both corpora was. The assumption is no
+            longer unenforced: a construct that never terminates refuses the
+            document (see Raises), which is both what bounds the running time
+            and what stops that construct's own content being read as
+            markup. It is still not a well-formedness check — nothing here
+            would notice a mismatched ``<p>`` — so a caller handing this
+            something other than served XML still owns the rest.
 
     Raises:
         _UnterminatedMarkupError: A comment, CDATA section, processing
             instruction, doctype or nested-article tag opens and never closes,
             naming which and where. Only a document expat would reject can
-            hold one, and none of 3,880 sampled deposits does; what reaches it
-            is a body truncated in transit.
+            hold one, and none of the 98,789 articles in the two corpora does;
+            what reaches it is a body truncated in transit.
 
     Returns:
         The article's own markup, or ``None`` if a region is left open at the

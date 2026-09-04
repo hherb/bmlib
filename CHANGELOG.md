@@ -8,6 +8,67 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The nested-article lexer assumed well-formed input in two ways that cost
+  the article, and enforced neither** (issue #160, from PR #159's own review).
+  `_strip_nested_articles` in `bmlib/transparency/analyzer.py` documented its
+  input as *"a `fullTextXML` body as Europe PMC served it"* and left both
+  consequences of that assumption unhandled. Neither is reachable from a
+  publisher's deposit — **0 of 98,789 articles across both corpora** carries
+  either shape — but both are reachable from a truncated HTTP-200 body, which
+  is a network product rather than a deposit.
+
+  **An end tag now closes only the element that opened the region.** As a bare
+  depth, `</response>` closed a region a `<sub-article>` had opened, and the
+  rest of the outer round came back as this article's prose — issue #119's own
+  defect, reached through the fix for it. The regions are a stack of names; a
+  mismatch closes nothing, so a region left open by one is refused like any
+  other.
+
+  **A construct that never terminates refuses the document.** Each of the four
+  skip branches scanned to end-of-string when its terminator was absent while
+  the scan retried at every later opener, so the lex was quadratic: measured
+  here at 33.6s for 256 kB of a repeated `<!DOCTYPE a[` and 33.3s for 224 kB
+  of an unterminated tag, every doubling costing about four times the last
+  (the issue's own 22.9s is the first shape on another machine), against
+  4-9 ms for the corpus's three largest well-formed articles (2.9-3.4 MB). `_HTTP_TIMEOUT_SECONDS` bounds the request and nothing bounded
+  this, so such a body did not fail — it stalled, reaching neither the refusal
+  nor the warning. Being slow was not the whole of it: with no branch
+  matching, the unterminated construct's own content was then read as this
+  article's markup, which is what those four branches exist to prevent.
+  Refusing at the first opener costs one failed scan and stops; the same
+  shapes now take 0.001-0.004s. It is **not** a well-formedness check —
+  nothing here would notice a mismatched `<p>` — and neither fix needs a
+  constant drawn from a corpus, which the issue's other two remedies (a size
+  cap, a multiple of the input length) both did.
+
+  The refusal is a private exception rather than the `None` the function
+  already returns, because the two are different claims: an unclosed region is
+  a document bmlib will not segment, and this is a document that did not
+  arrive. Each WARNs in its own words, naming the construct and the offset;
+  collapsing them onto one return value would put issue #161's shape one level
+  down. `TransparencyAnalyzer` behaviour is otherwise unchanged — the analysis
+  falls back to the abstract exactly as it does for an unclosed region.
+
+  **The literal `<` sits outside the new branch's capturing group, and that is
+  worth 14x.** `sre` derives a prefix for the whole pattern only when every
+  top-level branch opens with the same literal, and then skips from `<` to `<`
+  rather than trying the pattern at every position; a branch opening with a
+  group defeats that analysis silently. Written `(?P<unterminated><!--|…)` the
+  guard cost **191 ms against 13.5 ms** over 7.8 MB of real articles, and
+  factoring the alternatives inside the group recovered none of it. The two
+  forms differ by two characters and both pass every behavioural test, so
+  `test_every_branch_of_the_lexer_opens_with_the_literal` is what stands
+  between them. Correctly placed, the guard costs 1.9x on well-formed input —
+  13.4 to 26.6 ms over those 7.8 MB, 0.17 to 0.31 ms on a median article — for
+  a function called once per analysis behind four to six HTTP round trips.
+
+  **Blast radius is a diff, not an argument**: lexing every article of both
+  corpora with and without the change — all 97,909 of PMC's `oa_comm`
+  `PMC012xxxxxx` baseline package (archive rendition) and all 880 of a Europe
+  PMC draw (served rendition) — **0 of 98,789 outputs differ and not one
+  article is refused**. That also measures the contract itself, over 25x the
+  3,880 articles the issue sampled.
+
 - **A counter redefined in place is invisible to every sentinel, and a stale
   journal pooled with it** (found reviewing PR #180). #164 changed four
   *first-generation* counters — `figures_with_graphic`,
@@ -970,8 +1031,9 @@ All notable changes to bmlib are documented here. The format is based on
   `<CoiStatement>` — is the finding that triggers the missing-COI HIGH-risk
   rule. An unmatched *end* tag **at depth 0** is not an imbalance in that sense
   — no nested prose reaches the scans through one — so it costs the article
-  nothing; the depth is not matched against the element name, so one *inside* a
-  region does close it, and only a document expat would reject can carry one.
+  nothing; one *inside* a region names an element that did not open it, so
+  since issue #160 it closes nothing and the region is refused like any other.
+  Only a document expat would reject can carry either.
   A document that is **entirely** nested articles WARNs too, rather than
   returning the empty string the caller would read as "nothing was served".
   The element names are matched with a negative lookahead rather than `\b` —

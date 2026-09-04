@@ -37,9 +37,10 @@ must not be re-done.
   full text" — the finding that, absent a PubMed `<CoiStatement>`, triggers the
   missing-COI HIGH-risk rule. An unmatched *end* tag **at depth 0** is
   deliberately **not** treated the same way, since no nested prose reaches the
-  scans through one; the depth is not matched against the element name, so one
-  *inside* a region does close it, and only a document expat would reject can
-  carry one. Two paths measure empty over all 97,909 articles in the `oa_comm`
+  scans through one; one *inside* a region names an element that did not open
+  it, so since #160 it closes nothing and the region is refused like any
+  other. Only a document expat would reject can carry either — 0 of 98,789
+  articles across both corpora does. Two paths measure empty over all 97,909 articles in the `oa_comm`
   `PMC012xxxxxx` baseline — none leaves a region open, and none is emptied by
   the removal — so both guard a truncated body rather than a shape anyone has
   seen. **The lexer's four skip tokens have no measured population on this
@@ -49,6 +50,32 @@ must not be re-done.
   three with no comments and carries one in 0 of an 880-article draw against
   25.6% of the archive. Keep all four for the structural argument; do not cite
   a population for them.
+- **The refusal branch's `<` must stay outside its group** (#160). The lexer's
+  fifth branch — a bare opener, which refuses a construct that never
+  terminates — is written `<(?P<unterminated>!--|…)` and not
+  `(?P<unterminated><!--|…)`. `sre` derives a prefix for the whole pattern only
+  when every top-level branch begins with the same literal, and then skips from
+  `<` to `<` instead of trying the pattern at every position; a branch opening
+  with a group defeats that analysis silently. Measured over 7.8 MB of real
+  articles: **13.5 ms against 191 ms**, and factoring the alternatives *inside*
+  the group recovers none of it, so it is the group boundary and not the shape
+  of what follows. The two forms differ by two characters and both pass every
+  behavioural test, so the guard is
+  `tests/test_transparency.py::TestMarkupTheContractDoesNotDescribe::test_every_branch_of_the_lexer_opens_with_the_literal`.
+  Correctly placed the branch still costs 1.9x on well-formed input, which is
+  the accepted price of bounding a 33.6s stall.
+- **An unterminated construct raises rather than returning `None`** (#160).
+  `_strip_nested_articles` has two refusals and they are different claims: an
+  unclosed region is a document bmlib will not segment, and an unterminated
+  comment, CDATA section, PI, doctype or tag is a document that did not
+  arrive — an HTTP 200 is not a promise the whole body came with it. Both fall
+  back to the abstract, and each WARNs in its own words, naming the construct
+  and the offset. Do not collapse them onto one return value: that is #161's
+  shape one level down, and the caller cannot re-derive which without lexing
+  the body a second time. The raise is caught at the one call site, on its own
+  line, deliberately outside the `except` that wraps the request — anything
+  *else* this computation raises is still a bmlib defect and must not be
+  swallowed.
 - **`_INDUSTRY_STEMS` and `_INDUSTRY_WORDS` must not be merged into one
   list**, and neither may be extended without re-running
   `scripts/sample_funder_names.py` against `tests/data/funder_names.json` —

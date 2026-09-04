@@ -365,9 +365,14 @@ Four things worth knowing about the rule:
   is the same rule `bmlib.fulltext.jats_parser` makes — restated there in full —
   and deliberately restated rather than imported, so `bmlib.transparency`
   depends on nothing in `bmlib.fulltext`.
-- **It is a depth, not a flag.** JATS nests these: a `<response>` sits inside
-  the `<sub-article>` it answers, and an inner end tag would otherwise re-admit
-  the rest of the outer round as the article's prose.
+- **It is a stack of names, not a flag and not a bare count.** JATS nests
+  these: a `<response>` sits inside the `<sub-article>` it answers, and an
+  inner end tag would otherwise re-admit the rest of the outer round as the
+  article's prose. A count alone was not enough either — `</response>` closed
+  a region a `<sub-article>` had opened, which is the same re-admission
+  reached through the fix for it, so an end tag closes only the element that
+  opened the region *(unreleased, issue #160)*. A mismatch closes nothing,
+  which leaves that region open and refuses the document like any other.
 - **A comment, a CDATA section, a processing instruction and the DOCTYPE
   internal subset are skipped as tokens.** In well-formed XML a literal `<` can
   only open markup, so those four are the *complete* set of places the
@@ -379,6 +384,24 @@ Four things worth knowing about the rule:
   and close the internal subset at the `]` before the `>`, rather than at the
   first one. None of the four has a measured population on this module's own
   input; see the note under the refusal rule below.
+- **A fifth branch refuses a construct that never terminates**, and it is what
+  bounds the running time *(unreleased, issue #160)*. Each of the four above
+  scanned to end-of-string when its terminator was absent while the scan
+  retried at every later opener, so the lex was quadratic: 256 kB of a
+  repeated `<!DOCTYPE a[` took 33.6s and 224 kB of a repeated unterminated tag
+  33.3s, each doubling costing about four times the last, against 4-9 ms for
+  the
+  corpus's three largest well-formed articles at 2.9-3.4 MB. The HTTP timeout
+  bounds the request and nothing bounded this, so a truncated body did not
+  fail — it stalled, reaching neither the refusal below nor its warning. Being
+  slow was not the whole of it: with no branch matching, the unterminated
+  construct's own content was then read as this article's markup, which is
+  what those four exist to prevent. Refusing at the first such opener costs
+  one failed scan and stops — the same shapes now take 0.001-0.004s. It is
+  **not** a well-formedness check: nothing here would notice a mismatched
+  `<p>`. The guard costs 1.9x on well-formed input (13.4 to 26.6 ms over 7.8
+  MB of real articles, 0.17 to 0.31 ms on a median one) for a function called
+  once per analysis behind four to six HTTP round trips.
 - **An unclosed region is refused, not guessed at.** The document is treated as
   though no full text was served — one `WARNING`, `full_text_analyzed` stays
   `False`, and `coi_disclosed` cannot be set `False`. (It can still be set
@@ -388,11 +411,12 @@ Four things worth knowing about the rule:
   "No COI disclosure found in full text", which — absent a PubMed
   `<CoiStatement>` to rescue it — is the finding that triggers the missing-COI
   HIGH-risk rule. An unmatched *end* tag **at depth 0** is not an imbalance in
-  that sense, so it costs the article nothing; the depth is not matched against
-  the element name, so one *inside* a region does close it, and only a document
-  expat would reject can carry one. That path measures **empty**: not one of the
-  97,909 articles leaves a region open, so it guards against a truncated body
-  rather than against a shape anyone has seen. So does the emptied-article path
+  that sense, so it costs the article nothing; one *inside* a region names an
+  element that did not open it, so it closes nothing and the region stays open
+  to be refused here. Only a document expat would reject can carry either.
+  That path measures **empty**: not one of the 97,909 articles leaves a region
+  open, so it guards against a truncated body rather than against a shape
+  anyone has seen. So does the emptied-article path
   — all 3,389 carriers keep their `<body>`, the least of them retaining 32.2% of
   its bytes. **And the four skip tokens have no measured population here
   either**: the comment token fires on 3 archive deposits, where Springer
@@ -421,6 +445,13 @@ None of the five `<response>` articles is among the 602, so that element is
 version of this section said it measured zero, and that number was a grep for
 the other element. Stored transparency values are not comparable across this
 change for a paper whose full text carries a nested article.
+
+Issue #160's two fixes move **nothing** by contrast, and that is measured
+rather than argued: lexing every article of both corpora — all 97,909 of the
+baseline package and all 880 of the Europe PMC draw — with and without them,
+**0 of 98,789 outputs differ and not one article is refused**. Each needs
+input expat would reject, so what they guard is a body truncated in transit,
+not a publisher's deposit *(unreleased)*.
 
 Step 4's ordering is deliberate. It sits after Europe PMC so a DOI-only analysis can reuse the PMID from the record already fetched, and before ClinicalTrials.gov so a structured registry accession can feed the posted-results check. It costs one request at most, and none at all when no PMID is available. Its four signals — COI, trial registration, data-deposition accessions, and funders — are all publisher-supplied structured metadata, which is why they outrank the text heuristics elsewhere in the module. A PubMed record that is missing, unreachable, or unparsable yields no signals and changes nothing.
 
