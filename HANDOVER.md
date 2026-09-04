@@ -1,12 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-04. **0.10.0 is released and on PyPI**; eighteen changes
+_Last updated: 2026-09-04. **0.10.0 is released and on PyPI**; twenty changes
 sit unreleased. All five version places agree at 0.10.0. Every unreleased
 ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Eighteen changes, fourteen of them `fulltext` JATS fixes filed within days of
+Twenty changes, fourteen of them `fulltext` JATS fixes filed within days of
 each other — whoever cuts the next release should describe those together. Per-PR
 detail is in `CHANGELOG.md`; only the *data* answer is kept here, because the
 version number answers the API question and never that one.
@@ -29,7 +29,7 @@ measured by diffing a corpus rather than reasoned: over 880 local PMC articles /
 rebuilt, 958 emptied of an `<element-citation>` leak — `authors` for 502 in 14,
 rendered HTML for 576 in 23.
 
-**Three move stored *transparency* values, and all three are outside
+**Five move stored *transparency* values, and all five are outside
 `fulltext`.** #112 admits `plc`/`pty` to `_INDUSTRY_WORDS`, so `"GSK plc"` now
 sets `industry_funding_detected`, which feeds a HIGH-risk rule and a quality
 downgrade; neither token is in the labelled corpus, so **no measured figure
@@ -37,7 +37,15 @@ moves** — which is why the omission sat unnoticed. #119 stops a reviewer's pro
 answering for the article: 0.61% of PMC's `oa_comm` `PMC012xxxxxx` baseline
 package (97,909 articles) has at least one scan output move, dominated by
 `data_availability_level` (499 of 602). #160 moves **nothing** — measured, 0 of
-98,789 articles across both corpora.
+98,789 articles across both corpora. #183 moves nothing measurable either — a
+body truncated between tags is a network product, and 0 of 106,027 articles
+across both corpora is refused by the check — but where it *does* fire it
+turns a manufactured `coi_disclosed=False` into `None`, which is the
+difference between firing the missing-COI downgrade and not. #161 adds a
+field rather than moving one: `TransparencyResult.full_text_status`, plus an
+honest indicator string on the refusal paths, so a stored result that used to
+say *"full text unavailable"* for a document Europe PMC served now says
+*"served but not usable"*. A downstream matching that prose has to widen.
 
 **The JATS fixes reach a bmlib path through the cached HTML**, a claim this file
 once had backwards twice: `_build_html` renders authors, figures, tables and both
@@ -54,6 +62,9 @@ again rather than what it can look up.
 *Evidence.* A rule's population can be large, empty, or both, and only a draw
 says which; one window is not the rate (#127 read 0 of 662 recent tables and 11
 of 93 in a 1996-1998 draw; #119 reads 0.7% of one corpus and 3.45% of another).
+**An issue's own remedy is a hypothesis too** — #162's cost ten minutes to
+refute, #183's was refuted by 1,750 articles that end in a legal trailing
+comment.
 **Measure the population the code actually reads**; prefer a corpus with a public
 name over one on your disk — and check that its *rendition* is the one the code
 is fed, which is the half #138 learned the hard way. **A share is of a
@@ -105,56 +116,47 @@ because the rule was written, read and then broken by one session, the real chec
 is after the fact: **after every merge that mentions an issue in prose, diff `gh
 issue list` against what the commit says it filed and fixed.** That has now caught
 a keyword that fired (#137, #142, #160) *and* two that did not (#147, #164, each
-closed by hand one session late). Also: **an issue's own remedy is a hypothesis**
-— the fetch that refuted #162's cost ten minutes — and a mutation harness
+closed by hand one session late). Also, a mutation harness
 restoring with `git checkout -- <file>` deletes whatever is uncommitted in it.
 
-## This session: #160
+## This session: #183 and #161
 
-`_strip_nested_articles` documented a well-formed-input contract and enforced
-none of it. Both halves are fixed, neither needs a constant drawn from a corpus,
-and **the blast radius is 0 of 98,789 articles** — every article of both corpora,
-lexed with and without the change, with none refused by either.
+Both from PR #182's and PR #159's reviews, and both the same question: what a
+stored result says about full text it could not use. The argument is in
+`CHANGELOG.md`, `ROADMAP.md` and at the call site; what a session repeats is:
 
-- **An end tag closes only the element that opened the region.** As a bare depth
-  `</response>` closed one a `<sub-article>` had opened, re-admitting the outer
-  round's prose — #119's own defect, reached through the fix for it.
-- **A construct that never terminates refuses the document**, which is what
-  bounds the work: the four skip branches each scanned to end-of-string with the
-  scan retrying at every later opener, so the lex was quadratic (33.6s for
-  256 kB of `<!DOCTYPE a[`; 33.3s for 224 kB of an unterminated tag; the
-  issue's own 22.9s is the first shape on another machine) against 4-9 ms for
-  the corpus's three largest well-formed articles. The same shapes now take
-  0.001-0.004s. **Slow was not the whole of it**: with no branch matching,
-  the construct's own content was read as this article's markup.
-- **A performance property can hide behind a two-character edit.** The new
-  branch's `<` must sit *outside* its capturing group: `sre` derives a prefix for
-  the whole pattern only when every top-level branch opens with the same literal.
-  `test_every_branch_of_the_lexer_opens_with_the_literal` splits the pattern's
-  top-level branches and asserts the property, rather than timing it.
-- **Name the configuration a timing belongs to, or two of them get conflated.**
-  Three of them here, over 7.8 MB of real articles: **13.4 ms** with no refusal
-  branch, **26.6 ms** with it and the literal outside the group, **191 ms** with
-  it inside. So the *placement* penalty is **7.2x** and the guard's own cost is
-  **1.9x** (0.17 → 0.31 ms on a median article). Review found "13.5 ms with the
-  literal outside" in seven files: 13.5 is the *no-guard* baseline, and the
-  headline "14x" multiplied the two costs by comparing the misplaced guard
-  against no guard. Both figures were right and both labels were wrong, which
-  no arithmetic check would catch — only naming the three configurations does.
-- **Interleave timing runs.** Run-to-run drift on one machine reached 27%,
-  larger than the gap between two of the sampled ratios, so a ratio taken from
-  separate runs is not one. The re-derivable draw is the first 880 articles of
-  `PMC10030002_PMC10040000.xml.gz` (90.8 MB, served rendition): 165 → 297 →
-  1,959 ms, so 1.80x and 6.6x.
-- **Two refusals, two claims.** It raises rather than returning `None`, because
-  an unclosed region is a document bmlib will not segment and this is one that
-  did not arrive. Folding them together is #161's shape one level down.
+- **An issue's own remedy is a hypothesis, and this one was refuted.** #183
+  proposed `rstrip().endswith("</article>")` — but trailing comments, PIs and
+  whitespace after the root are legal XML, and **1,727 of 97,909 archive
+  articles (1.76%) and 23 of 8,118 served ones (0.28%)** end
+  `</article><!--requester-ID …-->`. Testing **presence** rather than position
+  is cheaper and exact, and refuses **0 of all 106,027**.
+- **Order the refusals most-specific-first, and pin the order.** A truncated
+  body satisfies several at once — truncation is the cause, the rest are
+  symptoms — so the completeness check runs *last*. Ahead of the lex it makes
+  #160's construct-and-offset message unreachable for the only input that
+  produces it; ahead of the entirely-nested report it makes that unreachable
+  too, since a body of nothing but `<sub-article>` carries no `</article>`.
+- **A new field's `None` must mean *not recorded*, never a determinate
+  member.** `full_text_status` mirrors `unknown_reason` throughout; a legacy
+  result may carry `full_text_analyzed=True`, so loading it as `NOT_ATTEMPTED`
+  would be a false machine-readable claim. `__post_init__` enforces the one
+  direction it can.
 
-Seven of seven mutants killed, including reverting the name check, deferring the
-refusal to the end of the scan, moving the branch to the front of the
-alternation, and moving the `<` inside the group *with the message code
-corrected to match* — that last one is the mutant that matters, since the naive
-version dies for the wrong reason.
+**18 of 18 mutants killed**, including the refuted remedy (caught by the
+trailing-comment negative control) and each of the three ordering moves.
+
+**The measurement turned up #184, which is larger than either.** Fetching a
+live `fullTextXML` body to see what a served response looks like returned 404
+for every identifier: `_fetch_europepmc_fulltext` builds
+`.../rest/{source}/{ext_id}/fullTextXML`, and the form Europe PMC serves is the
+single-segment one `fulltext/service.py:1652` already uses. Four identifiers
+spanning 2012-2025, 200 on one form and 404 on the other. **`TransparencyAnalyzer`
+has lost full text entirely** — every analysis falls back to the abstract,
+`coi_disclosed` can never reach `False`, up to 30 points off every open-access
+paper — and it fails silently, a non-200 being the one outcome that
+deliberately does not warn. Not fixed here: it moves stored values broadly and
+wants its own blast radius.
 
 ## Current state
 
@@ -174,7 +176,7 @@ version dies for the wrong reason.
   previous release wrote is durable under #95's rule, so the whole window is
   re-fetched once. The two questions are independent, and a downstream reading
   only the number must still read this list.
-- **Tests: 3147 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
+- **Tests: 3170 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
   2026-09-04 on this branch). The PostgreSQL half has not been re-run since the
   SQL last moved; the last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set
   is 2435 + 2 on the #105 branch. Of the 63 default skips, 61 are the PostgreSQL
@@ -196,10 +198,10 @@ version dies for the wrong reason.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **74 are outstanding** — 33
-  `ROADMAP.md` rows and 41 spots across `docs/manual/fulltext.md` (18),
-  `publications.md` (13), `transparency.md` (7) and `templates.md` (3).
-  Recounted 2026-09-04; the figure is measured, not maintained, so recount rather
+  `ROADMAP.md` are promoted at release time; **83 are outstanding** — 35
+  `ROADMAP.md` rows and 48 spots across `docs/manual/fulltext.md` (18),
+  `transparency.md` (14), `publications.md` (13) and `templates.md` (3).
+  Recounted 2026-09-04 on this branch; the figure is measured, not maintained, so recount rather
   than adjust it. Grep case-insensitively for `unreleased`, not for
   `(unreleased)`: three of 0.10.0's were spelled `*(unreleased, #99)*` and
   `(changed, unreleased — …)`. Write the marker bare, never with a guessed
@@ -216,15 +218,26 @@ version dies for the wrong reason.
 
 ### Open GitHub issues
 
-**Twenty-seven open** as this file is written, **twenty-six once this branch
-merges** (`gh issue list`, 2026-09-04, after #164 was closed by hand — see the
-process rule above, and after this branch's review filed **#183**): #86, #92,
-#94, #103, #124, #128, #137, #142, #143, #144, #145, #150, #152, #154, #156,
-#157, #160, #161, #172, #173, #174, #175, #177, #178, #179, #181, #183. Every
-one was found by review or measurement rather than by a failing test, and
-**none loses records** — though **#124** loses an exhibit's footnotes, **#150**
-renders a note-only reference as an empty bullet, and **#128** would lose every
-figure image in a document binding XLink to another prefix.
+**Twenty-five open** as this file is written, **twenty-three once this branch
+merges** (`gh issue list`, 2026-09-04, after #160 was closed by hand — see the
+process rule above — and after this session filed **#184**): #86, #92, #94,
+#103, #124, #128, #137, #142, #143, #144, #145, #150, #152, #154, #156, #157,
+#161, #172, #173, #174, #175, #177, #178, #179, #181, #183, #184. This branch
+answers #183 and #161. All but #184 were found by review or measurement rather
+than by a failing test, and **none loses records** — though **#184 loses every
+open-access paper's full text** from `transparency`, **#124** loses an
+exhibit's footnotes, **#150** renders a note-only reference as an empty bullet,
+and **#128** would lose every figure image in a document binding XLink to
+another prefix.
+
+**#184 is the one to do next, and it is not like the others.** It is the only
+open issue found against the *live* API rather than by reading code or a
+corpus, the only one costing a whole analysis input, and a one-line fix whose
+cost is entirely in the blast radius it needs — restoring full text to every
+open-access paper moves `coi_disclosed`, `data_availability_level`,
+`industry_funding*` and the score. Its remedy also has two halves the issue
+names: the URL, and a test that could have caught it, since every existing
+test mocks the client and matches any path ending `/fullTextXML`.
 
 **Count them against the repo before trusting that number.** The line has been
 wrong in several sessions, and an issue closed as COMPLETED without being fixed
@@ -241,7 +254,8 @@ filing **#140**; **#120**, **#140** → PR #141, filing **#142**–**#146**;
 **#119** → PR #159, filing **#158**, **#160**, **#161**; **#162** → PR #171,
 filing **#172**, **#173**; **#147** → PR #176, filing **#174**, **#175**,
 **#177**, **#178**; **#164** → PR #180, filing **#179** and **#181**; **#160** →
-this branch, filing **#183**. (#149 and #152 were filed and fixed inside one
+PR #182, filing **#183**; **#183**, **#161** → this branch, filing **#184**
+(from measurement rather than review — see the session note above). (#149 and #152 were filed and fixed inside one
 PR, so neither ever appeared as open work — read the per-PR list, not the total.)
 
 Each issue carries its own argument on GitHub; what follows is only what a
@@ -311,27 +325,9 @@ them by `figures_with_graphic` — over its own population the recent window rea
 published figure says. One remedy restates a share cited in five files and the
 other needs both corpora redrawn, which would destroy #164's attribution.
 
-**#183 came out of this branch's own review, and is the half of #160 the fix
-does not reach.** A body truncated *between* tags opens no unterminated
-construct, so it is accepted, scanned, and yields `coi_disclosed=False` — "No
-COI disclosure found in full text" — for a disclosure that was in the lost
-tail, with nothing logged at any level. #160's loud half now refuses and WARNs;
-this one is silent *and* manufactures the finding that triggers the missing-COI
-downgrade, so it is the worse of the two. The cheap remedy is a completeness
-check (`endswith("</article>")`) rather than a well-formedness one, and it wants
-two things measured first — how many served articles legitimately do not end
-there, and whether Europe PMC ever serves a partial body at HTTP 200. It needs a
-proxy that truncates *and* re-frames, since httpx raises on a framing mismatch;
-narrow, not zero.
-
-**#161 is #160's neighbour and the natural next step in `transparency`**: a full
-text that was *served* and then refused is indistinguishable, in the stored
-`TransparencyResult`, from one that was never served — both carry `full text
-unavailable`, which is false for the refusal — and the score silently loses up to
-30 points, enough to reach HIGH against the default threshold. That is
-`publications/`' `FetchResult.note` → `SyncReport.notes` argument one module over.
-#160 has now added a third refusal path, so the case is one stronger; all of them
-measure empty.
+**#183 and #161 are answered by this branch** — see the session note above.
+What is left of that family is **#184**, which the same measurement turned up
+and which is larger than either.
 
 **#154, #156 and #157 are one job, and it is the funder corpus.** #154:
 `scripts/sample_funder_names.py` writes `tests/data/funder_names.raw.json`, which

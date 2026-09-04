@@ -31,6 +31,7 @@ Requires `httpx` for HTTP requests to external APIs. The import is **lazy**: `ht
 
 ```python
 from bmlib.transparency import (
+    FullTextStatus,  # unreleased
     TransparencyAnalyzer,
     TransparencyResult,
     TransparencyRisk,
@@ -78,6 +79,42 @@ elif result.unknown_reason is TransparencyUnknownReason.NO_IDENTIFIER:
 **Invariant:** `unknown_reason` is set if and only if `risk_level is TransparencyRisk.UNKNOWN`. Every determinate result carries `None`.
 
 `__post_init__` enforces one half of that: constructing a non-`UNKNOWN` result with a reason raises `ValueError`. The other half is deliberately not enforced — an `UNKNOWN` *without* a reason constructs fine, because that is what results persisted before this field existed load as, and rejecting them would turn an additive field into a breaking change.
+
+### `FullTextStatus`
+
+*(unreleased)*
+
+```python
+class FullTextStatus(Enum):
+    NOT_ATTEMPTED = "not_attempted"              # no request was made
+    NOT_SERVED = "not_served"                    # requested; failed or non-200
+    ANALYZED = "analyzed"                        # served, segmented, scanned
+    TRUNCATED = "truncated"                      # served; no </article>, tail lost
+    UNTERMINATED_MARKUP = "unterminated_markup"  # served; a construct never closes
+    UNCLOSED_REGION = "unclosed_region"          # served; a nested region left open
+    ENTIRELY_NESTED = "entirely_nested"          # served; nothing outside a region
+```
+
+`full_text_analyzed` says *whether* findings came from full text; this says **why not** when they did not, carried on [`TransparencyResult.full_text_status`](#transparencyresult).
+
+Before it existed, several outcomes were indistinguishable in anything a caller stored: a non-200, a document bmlib could not segment, and one that was entirely nested articles all reached storage as `full_text_analyzed=False` and the indicator `"COI disclosure status unknown (full text unavailable)"` — which is **false** for the refusals, where Europe PMC answered HTTP 200 with a document. Since results are cacheable ([`cache_results`](#transparencysettings)) and driven concurrently, a refusal was stored, permanent and unmarked, while the score lost up to `SCORE_COI_DISCLOSED + SCORE_DATA_FULL_OPEN` = 30 points — enough on its own to reach HIGH against the default `score_threshold=40` and set `tier_downgrade_applied`.
+
+**`is_refusal` is the grouping to branch on**, rather than enumerating members at each call site — a member added later then has to choose a side:
+
+```python
+if result.full_text_status is not None and result.full_text_status.is_refusal:
+    # EuropePMC served this document and bmlib declined to scan it, so the
+    # score is missing whatever the full text would have contributed.
+    requeue(result.document_id, reason=result.full_text_status.value)
+```
+
+`is_refusal` is `True` for `TRUNCATED`, `UNTERMINATED_MARKUP`, `UNCLOSED_REGION` and `ENTIRELY_NESTED`; `False` for `ANALYZED`, and for `NOT_SERVED` and `NOT_ATTEMPTED`, where nothing was served and so there is nothing to have refused.
+
+**`None` means *not recorded*, never `NOT_ATTEMPTED`.** Results persisted before the field existed load with the default, and one of those may perfectly well carry `full_text_analyzed=True`; reading that back as a determinate "nothing was attempted" would be a worse answer than admitting the field was not written. Branch on `is not None` first, as above.
+
+**Invariant:** when the field is set, `full_text_status is FullTextStatus.ANALYZED` if and only if `full_text_analyzed` is `True`; `__post_init__` raises `ValueError` on a disagreement. That flag is what qualifies a stored `coi_disclosed=False` as *scanned and absent* rather than *undeterminable*, so a status contradicting it makes the pair uninterpretable. As with `unknown_reason`, a `None` status imposes nothing.
+
+Each refusal also logs one WARNING naming which it was, the `document_id` that joins the line to a stored result, and how many bytes were served. A non-200 does not warn — there is nothing there to report.
 
 ---
 
@@ -144,9 +181,10 @@ class TransparencyResult:
     analyzer_version: str = "1.0"
     full_text_analyzed: bool = False
     unknown_reason: TransparencyUnknownReason | None = None
+    full_text_status: FullTextStatus | None = None
 ```
 
-> **`unknown_reason` is declared last on purpose.** Downstream projects construct this dataclass positionally, so placing it beside its logical neighbours (`risk_level`, `risk_indicators`) would shift every following argument by one with nothing raised anywhere. The same rule governs `Publication.pmcid` and `BaseAgent`'s `embedding_model`.
+> **`unknown_reason` and `full_text_status` are declared last on purpose.** Downstream projects construct this dataclass positionally, so placing it beside its logical neighbours (`risk_level`, `risk_indicators`) would shift every following argument by one with nothing raised anywhere. The same rule governs `Publication.pmcid` and `BaseAgent`'s `embedding_model`. `full_text_status` was added later and sits after it: the rule is *append*, not *sort*. *(unreleased)*
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -166,6 +204,7 @@ class TransparencyResult:
 | `analyzer_version` | `str` | Version of the analyzer heuristics (`"1.0"`), **not** the bmlib version. |
 | `full_text_analyzed` | `bool` | Whether Europe PMC full text was retrieved and scanned, rather than only the abstract. |
 | `unknown_reason` | `TransparencyUnknownReason \| None` | Why the result is `UNKNOWN`; `None` on every determinate result. |
+| `full_text_status` | `FullTextStatus \| None` | What became of the full-text attempt — see [`FullTextStatus`](#fulltextstatus). `None` means *not recorded*, which is every result persisted before the field existed. *(unreleased)* |
 
 #### Tri-state `coi_disclosed`
 
@@ -175,7 +214,7 @@ class TransparencyResult:
 |-------|---------|------------------------|
 | `True` | A COI/disclosure statement was found. A statement that there is nothing to declare counts as disclosed. | *(none, or `"COI disclosure found in PubMed record"`)* |
 | `False` | Full text **was** retrieved and scanned, it contains no COI statement, and PubMed carries none either. | `"No COI disclosure found in full text"` |
-| `None` | Undeterminable — full text was unavailable, the abstract carried no COI signal, and PubMed carried no statement. | `"COI disclosure status unknown (full text unavailable)"` |
+| `None` | Undeterminable — full text was not usable, the abstract carried no COI signal, and PubMed carried no statement. | `"COI disclosure status unknown (full text unavailable)"`, or `"… (full text served but not usable)"` when Europe PMC answered HTTP 200 and bmlib refused the document *(unreleased)* |
 
 A statement is found by any of three routes:
 
@@ -185,7 +224,7 @@ A statement is found by any of three routes:
 
 A whitespace-only tagged section proves nothing and does not suppress the fallback, so an untagged disclosure elsewhere in the document is still found. `SCORE_COI_DISCLOSED` is credited exactly once no matter how many routes fire.
 
-A PubMed statement can arrive *after* the full-text scan has already appended `"No COI disclosure found in full text"` or `"COI disclosure status unknown (full text unavailable)"`. Both lines would then contradict `coi_disclosed=True`, so they are removed and `"COI disclosure found in PubMed record"` is appended in their place — the indicator list never has to be reconciled against the field.
+A PubMed statement can arrive *after* the full-text scan has already appended `"No COI disclosure found in full text"` or either `"COI disclosure status unknown (…)"` line. All of them would then contradict `coi_disclosed=True`, so they are removed and `"COI disclosure found in PubMed record"` is appended in their place — the indicator list never has to be reconciled against the field.
 
 The converse does **not** hold: a PubMed record *without* `<CoiStatement>` leaves `coi_disclosed` alone. Absence there means the publisher supplied no statement to PubMed, not that the paper carries none, and demoting `None` to `False` would trigger the missing-COI downgrade on no evidence.
 
@@ -197,8 +236,8 @@ Note that the dataclass **default** is `True`, as is the `from_dict()` fallback 
 
 | Method | Description |
 |--------|-------------|
-| `to_dict() -> dict[str, Any]` | Serialise to a JSON-safe dictionary. `risk_level` and `unknown_reason` become their `.value` strings (`unknown_reason` is `None` when unset); `analyzed_at` becomes an ISO 8601 string. |
-| `from_dict(data: dict) -> TransparencyResult` | Deserialise. `document_id`, `transparency_score`, and `risk_level` are required keys; a missing or empty `analyzed_at` defaults to now; a missing or null `unknown_reason` defaults to `None`, so results persisted before the field existed still load. |
+| `to_dict() -> dict[str, Any]` | Serialise to a JSON-safe dictionary. `risk_level`, `unknown_reason` and `full_text_status` become their `.value` strings (the last two are `None` when unset); `analyzed_at` becomes an ISO 8601 string. |
+| `from_dict(data: dict) -> TransparencyResult` | Deserialise. `document_id`, `transparency_score`, and `risk_level` are required keys; a missing or empty `analyzed_at` defaults to now; a missing or null `unknown_reason` or `full_text_status` defaults to `None`, so results persisted before either field existed still load. A **present but unrecognised** value for either raises, exactly as `risk_level` does: a member this version does not know about is a result it cannot interpret. |
 
 The round trip is lossless — every field, including `full_text_analyzed`, survives:
 
@@ -398,8 +437,9 @@ Four things worth knowing about the rule:
   what those four exist to prevent. Refusing at the first such opener costs
   one failed scan and stops — the same shapes now take 0.001-0.004s. It is
   **not** a well-formedness check: nothing here would notice a mismatched
-  `<p>`, and a body truncated *between* tags is accepted in silence — see the
-  note below. The guard costs 1.9x on well-formed input (13.4 to 26.6 ms over
+  `<p>`. A body truncated *between* tags opens no unterminated construct at
+  all and is caught by the completeness check below instead. The guard costs
+  1.9x on well-formed input (13.4 to 26.6 ms over
   7.8 MB of real articles, 0.17 to 0.31 ms on a median one) for a function
   called once per analysis behind four to six HTTP round trips. Its `<` must
   sit outside the branch's capturing group or `sre` derives no prefix for the
@@ -449,11 +489,51 @@ version of this section said it measured zero, and that number was a grep for
 the other element. Stored transparency values are not comparable across this
 change for a paper whose full text carries a nested article.
 
-What the refusal does **not** cover is the other half of the same hazard: a
-body truncated *between* tags opens no unterminated construct, so it is
-accepted, scanned, and can yield `coi_disclosed=False` — "No COI disclosure
-found in full text" — for a disclosure that was in the lost tail, with nothing
-logged. The loud half is fixed here; the silent half is issue #183.
+- **A body that did not arrive whole is refused too** *(unreleased, issue
+  #183)* — the other half of the same hazard, and the worse half. A body
+  truncated *between* tags opens no unterminated construct, leaves no region
+  open and empties nothing, so all three checks above passed it. Scanned as a
+  complete article it yielded `coi_disclosed=False` — "No COI disclosure found
+  in full text" — for a disclosure that was in the lost tail, with nothing
+  logged at any level: the missing-COI HIGH downgrade fired on evidence that
+  does not exist. It is now refused, WARNed and fallen back from like every
+  other refusal, which leaves COI *unknown* rather than absent.
+
+  **The test is for the presence of `</article>`, not for its position**, and
+  that is measured rather than assumed. The obvious
+  `xml.rstrip().endswith("</article>")` refuses complete articles at a real
+  rate, because trailing comments, PIs and whitespace after the root are legal
+  XML: **1,727 of the 97,909 archive articles (1.76%) and 23 of the 8,118
+  served ones (0.28%)** end `</article><!--requester-ID …-->`. A truncation
+  removes the tail and the root's end tag *is* in the tail, so absence is
+  exactly what a truncation looks like — **0 false refusals across all 106,027
+  articles of both corpora**. `</sub-article>` does not contain the substring,
+  so what the strip removes cannot affect it. Still not a well-formedness
+  check, which would be a second parse of every article.
+
+  **It runs last of the four, and the order is load-bearing.** A truncated
+  body can satisfy several refusals at once — truncation is the cause and the
+  rest are symptoms — and each of the other three knows something this one
+  does not: which construct and at what offset, which element was left open,
+  that nothing outside a nested region arrived. Placed ahead of the lex it
+  would make issue #160's message unreachable for the only input that produces
+  it; ahead of the entirely-nested report it would make *that* unreachable,
+  since a body of nothing but `<sub-article>` carries no `</article>` either.
+
+  One residual is left and stated rather than implied: httpx raises on a
+  Content-Length or chunked-framing mismatch, so reaching this at all needs a
+  proxy that truncates *and* re-frames. Whether Europe PMC ever serves a
+  legitimately partial body at HTTP 200 is **not measured** — the 8,118 served
+  bodies in the local draw all carry `</article>`, but that draw was written
+  by an importer that may have discarded failures.
+
+**Every refusal above leaves a trace in the stored result** *(unreleased, issue
+#161)*, through [`TransparencyResult.full_text_status`](#fulltextstatus). Before
+that, a refusal was indistinguishable downstream from a document that was never
+served — both carried `full_text_analyzed=False` and the indicator "full text
+unavailable", which is false when Europe PMC answered HTTP 200. Results are
+cacheable and driven concurrently, so a refusal was stored, permanent and
+unmarked, while the score lost up to 30 points.
 
 Issue #160's two fixes move **nothing** by contrast, and that is measured
 rather than argued: lexing every article of both corpora — all 97,909 of the
