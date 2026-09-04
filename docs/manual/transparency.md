@@ -88,6 +88,9 @@ elif result.unknown_reason is TransparencyUnknownReason.NO_IDENTIFIER:
 class FullTextStatus(Enum):
     NOT_ATTEMPTED = "not_attempted"              # no request was made
     NOT_SERVED = "not_served"                    # requested; failed or non-200
+    # "full text unavailable" is true of NOT_SERVED *and* NOT_ATTEMPTED —
+    # neither is "the only" such outcome; the refusals are the ones it is
+    # false of, which is what is_refusal groups.
     ANALYZED = "analyzed"                        # served, segmented, scanned
     TRUNCATED = "truncated"                      # served; no </article>, tail lost
     UNTERMINATED_MARKUP = "unterminated_markup"  # served; a construct never closes
@@ -111,6 +114,8 @@ if result.full_text_status is not None and result.full_text_status.is_refusal:
 `is_refusal` is `True` for `TRUNCATED`, `UNTERMINATED_MARKUP`, `UNCLOSED_REGION` and `ENTIRELY_NESTED`; `False` for `ANALYZED`, and for `NOT_SERVED` and `NOT_ATTEMPTED`, where nothing was served and so there is nothing to have refused.
 
 **`None` means *not recorded*, never `NOT_ATTEMPTED`.** Results persisted before the field existed load with the default, and one of those may perfectly well carry `full_text_analyzed=True`; reading that back as a determinate "nothing was attempted" would be a worse answer than admitting the field was not written. Branch on `is not None` first, as above.
+
+Nothing this version writes carries `None` — every path out of `analyze()`, including the three early returns for a disabled analyzer, a missing identifier and an unreachable network, records a determinate status. That is what keeps `None` meaning *legacy row* and nothing else; a current-version path leaving the default behind would make the two indistinguishable and defeat the discrimination the field exists to give.
 
 **Invariant:** when the field is set, `full_text_status is FullTextStatus.ANALYZED` if and only if `full_text_analyzed` is `True`; `__post_init__` raises `ValueError` on a disagreement. That flag is what qualifies a stored `coi_disclosed=False` as *scanned and absent* rather than *undeterminable*, so a status contradicting it makes the pair uninterpretable. As with `unknown_reason`, a `None` status imposes nothing.
 
@@ -204,7 +209,7 @@ class TransparencyResult:
 | `analyzer_version` | `str` | Version of the analyzer heuristics (`"1.0"`), **not** the bmlib version. |
 | `full_text_analyzed` | `bool` | Whether Europe PMC full text was retrieved and scanned, rather than only the abstract. |
 | `unknown_reason` | `TransparencyUnknownReason \| None` | Why the result is `UNKNOWN`; `None` on every determinate result. |
-| `full_text_status` | `FullTextStatus \| None` | What became of the full-text attempt — see [`FullTextStatus`](#fulltextstatus). `None` means *not recorded*, which is every result persisted before the field existed. *(unreleased)* |
+| `full_text_status` | `FullTextStatus \| None` | What became of the full-text attempt — see [`FullTextStatus`](#fulltextstatus). `None` means *not recorded*, which is every result persisted before the field existed and nothing this version writes. *(unreleased)* |
 
 #### Tri-state `coi_disclosed`
 
@@ -394,7 +399,7 @@ takes a string that has to be the article's *(unreleased)*. The marker sits
 here rather than in the heading above so that the two links to this section
 keep working when it is promoted.
 
-Four things worth knowing about the rule:
+Six things worth knowing about the rule:
 
 - **The two-element set is complete, structurally.** Of JATS's ~295 elements
   exactly three admit `<front>`/`<front-stub>` and `<body>`, and the third is
@@ -469,6 +474,62 @@ Four things worth knowing about the rule:
   and carries a comment in 0 of an 880-article draw of it against 25.6% of the
   archive. They are kept for the structural argument, not for a population.
 
+- **A body that did not arrive whole is refused too** *(unreleased, issue
+  #183)* — the other half of the same hazard, and the worse half. A body
+  truncated *between* tags opens no unterminated construct, leaves no region
+  open and empties nothing, so all three checks above passed it. Scanned as a
+  complete article it yielded `coi_disclosed=False` — "No COI disclosure found
+  in full text" — for a disclosure that was in the lost tail, with nothing
+  logged at any level: the missing-COI HIGH downgrade fired on evidence that
+  does not exist. It is now refused, WARNed and fallen back from like every
+  other refusal, which leaves COI *unknown* rather than absent.
+
+  **The test is for the presence of `</article>`, not for its position**, and
+  that is measured rather than assumed. The obvious
+  `xml.rstrip().endswith("</article>")` refuses complete articles at a real
+  rate, because trailing comments, PIs and whitespace after the root are legal
+  XML: **1,727 of the 97,909 archive articles (1.76%)** of `oa_comm` baseline
+  package `PMC012xxxxxx` (2025-06-26) **and 23 of the 8,118 served ones
+  (0.28%)** in Europe PMC bundle `PMC10030002_PMC10040000.xml.gz` end
+  `</article><!--requester-ID …-->`. Both counts are honest on the served
+  bundle too, since what is measured there is the gap *between* one article's
+  end tag and the next article's opener.
+
+  **The presence test's own zero is measured on the archive half only** —
+  **0 false refusals of 97,909 individual documents**. The served bundle
+  cannot answer it: it is one concatenation split into articles on
+  `</article>`, so "does this article contain `</article>`?" is true by
+  construction, and pooling the two into a single 106,027 would report a
+  tautology as evidence. A truncation removes the tail and the root's end tag
+  *is* in the tail, so absence is what a truncation looks like.
+  `</sub-article>` does not contain the substring, so what the strip removes
+  cannot affect it. Still not a well-formedness check, which would be a second
+  parse of every article.
+
+  **It runs last of the four, and the order is load-bearing.** A truncated
+  body can satisfy several refusals at once — truncation is the cause and the
+  rest are symptoms — and each of the other three knows something this one
+  does not: which construct and at what offset, that a nested region was left
+  open, that nothing outside a nested region arrived. (The unclosed-region
+  refusal knows *which* element too — `_strip_nested_articles` holds them as a
+  stack of names — but discards it at the return rather than reporting it;
+  issue #186 tracks that, and the ordering argument does not rest on it.)
+  Placed ahead of the lex it would make issue #160's message unreachable for
+  the input that most often produces it — a body *corrupted* rather than
+  truncated still carries `</article>` and reaches the lex, so "only" would
+  overstate it; ahead of the entirely-nested report it would make *that*
+  unreachable, since a body of nothing but `<sub-article>` carries no
+  `</article>` either.
+
+  One residual is left and stated rather than implied: httpx raises on a
+  Content-Length or chunked-framing mismatch, so reaching this at all needs a
+  proxy that truncates *and* re-frames. Whether Europe PMC ever serves a
+  legitimately partial body at HTTP 200 is **not measured**, and the local
+  served draw is not evidence either way: its articles were split on
+  `</article>`, so all 8,118 carrying one is true by construction, and the
+  draw was written by an importer that may have discarded failures in any
+  case. Narrow, not zero.
+
 **What it moves.** Measured over PMC's `oa_comm` baseline package
 `PMC012xxxxxx` (2025-06-26, 97,909 open-access articles), 3,382 (3.45%) carry a
 region this removes — 3,377 a `<sub-article>`, and 5 more a top-level
@@ -489,44 +550,6 @@ version of this section said it measured zero, and that number was a grep for
 the other element. Stored transparency values are not comparable across this
 change for a paper whose full text carries a nested article.
 
-- **A body that did not arrive whole is refused too** *(unreleased, issue
-  #183)* — the other half of the same hazard, and the worse half. A body
-  truncated *between* tags opens no unterminated construct, leaves no region
-  open and empties nothing, so all three checks above passed it. Scanned as a
-  complete article it yielded `coi_disclosed=False` — "No COI disclosure found
-  in full text" — for a disclosure that was in the lost tail, with nothing
-  logged at any level: the missing-COI HIGH downgrade fired on evidence that
-  does not exist. It is now refused, WARNed and fallen back from like every
-  other refusal, which leaves COI *unknown* rather than absent.
-
-  **The test is for the presence of `</article>`, not for its position**, and
-  that is measured rather than assumed. The obvious
-  `xml.rstrip().endswith("</article>")` refuses complete articles at a real
-  rate, because trailing comments, PIs and whitespace after the root are legal
-  XML: **1,727 of the 97,909 archive articles (1.76%) and 23 of the 8,118
-  served ones (0.28%)** end `</article><!--requester-ID …-->`. A truncation
-  removes the tail and the root's end tag *is* in the tail, so absence is
-  exactly what a truncation looks like — **0 false refusals across all 106,027
-  articles of both corpora**. `</sub-article>` does not contain the substring,
-  so what the strip removes cannot affect it. Still not a well-formedness
-  check, which would be a second parse of every article.
-
-  **It runs last of the four, and the order is load-bearing.** A truncated
-  body can satisfy several refusals at once — truncation is the cause and the
-  rest are symptoms — and each of the other three knows something this one
-  does not: which construct and at what offset, which element was left open,
-  that nothing outside a nested region arrived. Placed ahead of the lex it
-  would make issue #160's message unreachable for the only input that produces
-  it; ahead of the entirely-nested report it would make *that* unreachable,
-  since a body of nothing but `<sub-article>` carries no `</article>` either.
-
-  One residual is left and stated rather than implied: httpx raises on a
-  Content-Length or chunked-framing mismatch, so reaching this at all needs a
-  proxy that truncates *and* re-frames. Whether Europe PMC ever serves a
-  legitimately partial body at HTTP 200 is **not measured** — the 8,118 served
-  bodies in the local draw all carry `</article>`, but that draw was written
-  by an importer that may have discarded failures.
-
 **Every refusal above leaves a trace in the stored result** *(unreleased, issue
 #161)*, through [`TransparencyResult.full_text_status`](#fulltextstatus). Before
 that, a refusal was indistinguishable downstream from a document that was never
@@ -536,7 +559,7 @@ cacheable and driven concurrently, so a refusal was stored, permanent and
 unmarked, while the score lost up to 30 points.
 
 Issue #160's two fixes move **nothing** by contrast, and that is measured
-rather than argued: lexing every article of both corpora — all 97,909 of the
+rather than argued: lexing every article of the lexing pair — all 97,909 of the
 baseline package and all 880 of the Europe PMC draw — with and without them,
 **0 of 98,789 outputs differ and not one article is refused**. Each needs
 input expat would reject, so what they guard is a body truncated in transit,

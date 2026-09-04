@@ -85,11 +85,17 @@ class FullTextStatus(Enum):
     """
 
     #: No request was made — Europe PMC never claimed to hold full text
-    #: (``inEPMC != "Y"``), or there was no record to ask about. Distinct from
-    #: a request that was made and answered with a non-200.
+    #: (``inEPMC != "Y"``), there was no record to ask about, or the record
+    #: claimed full text and carried no address for it (which WARNs, being a
+    #: malformed record rather than an ordinary closed-access paper). Distinct
+    #: from a request that was made and answered with a non-200.
     NOT_ATTEMPTED = "not_attempted"
     #: Requested and not served: the request failed, or the response was not
-    #: HTTP 200. The only outcome for which "full text unavailable" is true.
+    #: HTTP 200. Together with :attr:`NOT_ATTEMPTED` — the dominant case, and
+    #: every paper Europe PMC holds no open-access full text for — this is an
+    #: outcome for which "full text unavailable" is true. The refusals below
+    #: are the ones for which it is false, which is what :attr:`is_refusal`
+    #: groups; neither of these two is "the only" such outcome.
     NOT_SERVED = "not_served"
     #: Served, segmented, and scanned as the article's own text.
     ANALYZED = "analyzed"
@@ -118,16 +124,41 @@ class FullTextStatus(Enum):
         return self in _REFUSED_FULL_TEXT_STATUSES
 
 
-#: Defined beside the enum rather than inside it: a plain set attribute in an
-#: ``Enum`` body would become a member, and every alternative (a nested class,
-#: a module-level function) puts the grouping further from the members it
-#: groups. Read only through :attr:`FullTextStatus.is_refusal`.
+#: Defined beside the enum rather than inside it. The obvious objection — that
+#: a plain set attribute in an ``Enum`` body becomes a member — is answered by
+#: ``enum.nonmember`` on the Python this package targets, so it is *not* the
+#: reason: members are not bound during class-body execution, so a frozenset
+#: written in the body would capture the raw **values** (``frozenset({'truncated',
+#: ...})``) and force ``self.value in ...``, throwing away member identity for
+#: no gain. Every other alternative (a nested class, a module-level function)
+#: puts the grouping further from the members it groups. Read only through
+#: :attr:`FullTextStatus.is_refusal`.
 _REFUSED_FULL_TEXT_STATUSES = frozenset(
     {
         FullTextStatus.TRUNCATED,
         FullTextStatus.UNTERMINATED_MARKUP,
         FullTextStatus.UNCLOSED_REGION,
         FullTextStatus.ENTIRELY_NESTED,
+    }
+)
+
+#: The other side, named rather than left implicit — the whole of *"a member
+#: added later has to choose a side"*. Membership of the refused set alone
+#: leaves the rule enforced by prose: an eighth member omitted from it simply
+#: reads as ``is_refusal is False`` and routes into the *"full text
+#: unavailable"* indicator, which for a served document is the falsehood issue
+#: #161 exists to remove — so the silent default runs the wrong way. Naming
+#: both sides lets ``test_every_status_chooses_a_side`` assert the partition,
+#: which
+#: turns the eighth member into a red test instead. The same rule
+#: ``TestTheAuditNetIsComplete`` and ``TestEveryCounterIsInAGeneration`` make
+#: in ``fulltext/``, and for the same reason: a rule enforced by prose is not
+#: enforced.
+_NOT_REFUSED_FULL_TEXT_STATUSES = frozenset(
+    {
+        FullTextStatus.NOT_ATTEMPTED,
+        FullTextStatus.NOT_SERVED,
+        FullTextStatus.ANALYZED,
     }
 )
 

@@ -38,6 +38,7 @@ from bmlib.transparency.analyzer import (
     _INDICATOR_NO_COI_IN_FULLTEXT,
     _INDICATOR_NO_POSTED_RESULTS,
     _INDICATOR_RESULTS_NOT_CHECKABLE,
+    _INDICATORS_RETRACTED_BY_PUBMED_COI,
     _NESTED_ARTICLE_ALTERNATION,
     _NESTED_ARTICLE_ELEMENTS,
     _NESTED_ARTICLE_TOKEN_RE,
@@ -61,6 +62,8 @@ from bmlib.transparency.analyzer import (
     _UnterminatedMarkupError,
 )
 from bmlib.transparency.models import (
+    _NOT_REFUSED_FULL_TEXT_STATUSES,
+    _REFUSED_FULL_TEXT_STATUSES,
     FullTextStatus,
     TransparencyResult,
     TransparencyRisk,
@@ -75,6 +78,16 @@ class _FakeResponse:
         self.status_code = status_code
         self._json = json_data or {}
         self.text = text
+
+    @property
+    def content(self) -> bytes:
+        """The encoded body, as httpx serves it.
+
+        The analyzer quantifies a refusal in *bytes*, which `text` cannot
+        answer for a body carrying non-ASCII — so the fake has to distinguish
+        the two exactly as httpx does, or the test pins the wrong number.
+        """
+        return self.text.encode("utf-8")
 
     def json(self):
         return self._json
@@ -1801,8 +1814,12 @@ class TestTransparencyResultRoundTrip:
             tier_downgrade_applied=1,
             analyzer_version="1.0",
             full_text_analyzed=True,
+            # Named here because the test claims *every* field; both sides
+            # otherwise default to `None` and the field rides along uncovered.
+            full_text_status=FullTextStatus.ANALYZED,
         )
         assert TransparencyResult.from_dict(original.to_dict()) == original
+        assert set(original.to_dict()) == {f.name for f in dataclasses.fields(TransparencyResult)}
 
 
 class TestSettingsEnabled:
@@ -2097,10 +2114,29 @@ def _install_fake_client(monkeypatch: pytest.MonkeyPatch, client: _RecordingClie
     monkeypatch.setattr(httpx, "Client", lambda *a, **k: client)
 
 
-def _epmc_payload(*, abstract: str = "", pmid: str | None = None, in_epmc: str = "N") -> dict:
+def _epmc_payload(
+    *,
+    abstract: str = "",
+    pmid: str | None = None,
+    in_epmc: str = "N",
+    addressable: bool = False,
+) -> dict:
+    """Build a EuropePMC search envelope for an ``analyze()``-level test.
+
+    ``addressable`` adds the ``source``/``pmcid`` pair without which
+    :meth:`TransparencyAnalyzer._fetch_europepmc_fulltext` returns
+    ``NOT_ATTEMPTED`` before issuing a request. It defaults ``False`` because
+    most callers here are testing something else — but a test about full text
+    that omits it is testing nothing, which is how
+    ``test_a_pubmed_statement_retracts_the_full_text_absence_indicator`` came
+    to assert the absence of an indicator that was never added.
+    """
     record: dict = {"abstractText": abstract, "inEPMC": in_epmc}
     if pmid is not None:
         record["pmid"] = pmid
+    if addressable:
+        record["source"] = "PMC"
+        record["pmcid"] = "PMC123"
     return {"resultList": {"result": [record]}}
 
 
@@ -2435,13 +2471,18 @@ class TestPubMedSignalMerge:
         # one: leaving "No COI disclosure found in full text" in the result
         # would contradict coi_disclosed=True.
         client = _RecordingClient(
-            epmc=_epmc_payload(pmid="1", in_epmc="Y"),
+            # `addressable=True` is load-bearing: without it no request is made
+            # and `_INDICATOR_NO_COI_IN_FULLTEXT` is never appended, so the
+            # assertion below passes on an empty list and pins nothing.
+            epmc=_epmc_payload(pmid="1", in_epmc="Y", addressable=True),
             full_text="<article><body><p>Methods and results.</p></body></article>",
             pubmed=_pubmed_xml(coi="The authors declare none."),
         )
         result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.full_text_analyzed is True
         assert result.coi_disclosed is True
         assert _INDICATOR_NO_COI_IN_FULLTEXT not in result.risk_indicators
+        assert _INDICATOR_COI_IN_PUBMED in result.risk_indicators
 
     def test_coi_is_not_scored_twice(self, monkeypatch):
         client = _RecordingClient(
@@ -2848,6 +2889,53 @@ class TestARefusedFullTextLeavesATrace:
         assert not FullTextStatus.NOT_SERVED.is_refusal
         assert not FullTextStatus.NOT_ATTEMPTED.is_refusal
 
+    def test_every_status_chooses_a_side(self):
+        # The rule the docstring states — "a member added later has to choose
+        # a side" — mechanised rather than asserted. Enumerating the seven
+        # above stays green when an eighth appears, and an eighth omitted from
+        # the refused set reads as `is_refusal is False`, which routes into
+        # the "full text unavailable" indicator: for a served document that is
+        # the falsehood issue #161 exists to remove, so the silent default
+        # runs the wrong way. `TestTheAuditNetIsComplete`'s rule, applied to
+        # an enum: a rule enforced by prose is not enforced.
+        assert (_REFUSED_FULL_TEXT_STATUSES | _NOT_REFUSED_FULL_TEXT_STATUSES) == set(
+            FullTextStatus
+        )
+        assert not (_REFUSED_FULL_TEXT_STATUSES & _NOT_REFUSED_FULL_TEXT_STATUSES)
+        # And the sets are what `is_refusal` actually reads, so neither can
+        # drift into being a description of the property rather than its
+        # definition.
+        for status in FullTextStatus:
+            assert status.is_refusal is (status in _REFUSED_FULL_TEXT_STATUSES)
+
+    def test_a_record_promising_full_text_with_no_address_is_reported(self, caplog):
+        # Reachable only under `inEPMC == "Y"`, so EuropePMC has claimed to
+        # hold the full text and then given nothing to address it by. That is
+        # a malformed record, not a closed-access paper, and it used to be
+        # indistinguishable from one: no request, no log at any level.
+        analyzer = TransparencyAnalyzer()
+        analysis = _Analysis()
+        record = {"resultList": {"result": [{"abstractText": "", "inEPMC": "Y"}]}}
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            analyzer._check_europepmc(_FakeFullTextClient(None), record, analysis, "doc-9")
+        assert analysis.full_text_status is FullTextStatus.NOT_ATTEMPTED
+        matching = [r for r in caplog.records if "no address for it" in r.getMessage()]
+        assert len(matching) == 1
+        assert matching[0].levelno == logging.WARNING
+        assert "doc-9" in matching[0].getMessage()
+
+    def test_an_ordinary_closed_access_record_is_not_reported(self, caplog):
+        # The negative control: `inEPMC != "Y"` is the ordinary case and must
+        # stay silent, or the warning above fires on most of the corpus.
+        analyzer = TransparencyAnalyzer()
+        analysis = _Analysis()
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            analyzer._check_europepmc(
+                _FakeFullTextClient(None), _epmc_record(in_epmc="N"), analysis, "doc-9"
+            )
+        assert analysis.full_text_status is FullTextStatus.NOT_ATTEMPTED
+        assert not [r for r in caplog.records if "no address for it" in r.getMessage()]
+
     def test_the_warning_names_the_analysis_and_not_only_the_article(self, caplog):
         # `source`/`ext_id` resolve the *article*; `document_id` is the
         # caller's own key and the only field joining a log line to a stored
@@ -2875,7 +2963,26 @@ class TestARefusedFullTextLeavesATrace:
             analyzer._check_europepmc(_FakeFullTextClient(body), _epmc_record(), analysis)
         matching = [r for r in caplog.records if "did not arrive whole" in r.getMessage()]
         assert len(matching) == 1
-        assert str(len(body)) in matching[0].getMessage()
+        assert str(len(body.encode("utf-8"))) in matching[0].getMessage()
+
+    def test_the_quantity_is_bytes_and_not_characters(self, caplog):
+        # `resp.text` is decoded, so `len()` on it under-reports any body
+        # carrying non-ASCII — routine in this corpus. The number exists to be
+        # compared against a `Content-Length` or a corpus size distribution,
+        # so the two readings must not be confused. Here they differ by 20,
+        # and the negative half is what pins it: asserting only the byte count
+        # would pass on a message that also printed the character count.
+        analyzer = TransparencyAnalyzer()
+        body = "<article><body><p>Δοκιμή — μέθοδοι καὶ ἀποτελέσματα.</p>"
+        assert len(body.encode("utf-8")) != len(body)
+        analysis = _Analysis()
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            analyzer._check_europepmc(_FakeFullTextClient(body), _epmc_record(), analysis)
+        message = next(
+            r.getMessage() for r in caplog.records if "did not arrive whole" in r.getMessage()
+        )
+        assert f"{len(body.encode('utf-8'))} bytes served" in message
+        assert f"{len(body)} bytes served" not in message
 
     def test_the_status_reaches_the_stored_result(self, monkeypatch):
         # End to end: the field is on `TransparencyResult`, not only on the
@@ -2883,7 +2990,81 @@ class TestARefusedFullTextLeavesATrace:
         client = _RecordingClient(epmc=_epmc_payload(pmid="12345678"))
         _install_fake_client(monkeypatch, client)
         result = TransparencyAnalyzer().analyze("doc-1", pmid="12345678")
-        assert result.full_text_status is not None
+        assert result.full_text_status is FullTextStatus.NOT_ATTEMPTED
+
+    def test_a_refusal_reaches_the_stored_result_as_that_refusal(self, monkeypatch):
+        # The end-to-end claim the issue actually makes, and the one that was
+        # unpinned: *which* refusal it was has to survive to storage. Every
+        # `analyze()`-level fixture used to omit `source`/`pmcid`, so no such
+        # test ever issued a full-text request and all of them landed on the
+        # `NOT_ATTEMPTED` default — under which
+        # `full_text_status=ANALYZED if full_text_analyzed else NOT_ATTEMPTED`,
+        # which discards every refusal distinction and is exactly the
+        # information content this change removes, passed the whole suite.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1", in_epmc="Y", addressable=True),
+            full_text="<article><body><p>Methods and results.</p>",
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+        assert any("fullTextXML" in url for url in client.urls())
+        assert result.full_text_status is FullTextStatus.TRUNCATED
+        assert result.full_text_analyzed is False
+        assert _INDICATOR_COI_UNKNOWN_REFUSED in result.risk_indicators
+        # And it round-trips, since the point is that a *stored* result answers.
+        assert (
+            TransparencyResult.from_dict(result.to_dict()).full_text_status
+            is FullTextStatus.TRUNCATED
+        )
+
+    def test_a_pubmed_statement_retracts_the_refused_indicator_too(self, monkeypatch):
+        # The third COI line. `_merge_pubmed_signals` retracted the other two
+        # and not this one, so a served-and-refused full text plus a PubMed
+        # <CoiStatement> stored "status unknown" beside "disclosure found",
+        # against `coi_disclosed=True` — permanently, in a persisted field,
+        # which is issue #161's own failure mode inside the fix for it.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1", in_epmc="Y", addressable=True),
+            full_text="<article><body><p>Ours.</p><sub-article><p>Theirs.</p></article>",
+            pubmed=_pubmed_xml(coi="Dr X consults for Y."),
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+        assert result.full_text_status is FullTextStatus.UNCLOSED_REGION
+        assert result.coi_disclosed is True
+        assert _INDICATOR_COI_IN_PUBMED in result.risk_indicators
+        assert _INDICATOR_COI_UNKNOWN_REFUSED not in result.risk_indicators
+
+    def test_every_coi_line_written_before_pubmed_is_retracted_by_it(self):
+        # The rule itself, rather than one instance of it: every indicator the
+        # COI branch can append while the status is undeterminable has to be in
+        # the retraction set, or the next one added escapes it the way this one
+        # did. Both branches of `_check_europepmc`'s undeterminable arm are
+        # named here, so a third cannot be added without this failing.
+        assert _INDICATOR_COI_UNKNOWN in _INDICATORS_RETRACTED_BY_PUBMED_COI
+        assert _INDICATOR_COI_UNKNOWN_REFUSED in _INDICATORS_RETRACTED_BY_PUBMED_COI
+        assert _INDICATOR_NO_COI_IN_FULLTEXT in _INDICATORS_RETRACTED_BY_PUBMED_COI
+        # And the line PubMed puts in their place is not itself retracted.
+        assert _INDICATOR_COI_IN_PUBMED not in _INDICATORS_RETRACTED_BY_PUBMED_COI
+
+    def test_the_document_id_is_threaded_from_analyze(self, monkeypatch, caplog):
+        # The other half of the plumbing. The class above already pins
+        # `_check_europepmc` -> `_fetch_europepmc_fulltext`; this pins
+        # `analyze()` -> `_check_europepmc`, which defaults the parameter to
+        # `""` and so loses the join key silently — the `_stamp_source()`
+        # hazard, one module over. Deleting the argument at the call site
+        # survived the whole suite before this existed.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1", in_epmc="Y", addressable=True),
+            full_text="<article><body><p>Methods and results.</p>",
+        )
+        _install_fake_client(monkeypatch, client)
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            TransparencyAnalyzer().analyze("doc-77", pmid="1")
+        message = next(
+            r.getMessage() for r in caplog.records if "did not arrive whole" in r.getMessage()
+        )
+        assert "doc-77" in message
 
 
 class TestFullTextStatusOnTheResult:
@@ -2911,6 +3092,21 @@ class TestFullTextStatusOnTheResult:
         assert payload["full_text_status"] == "truncated"
         assert TransparencyResult.from_dict(payload).full_text_status is FullTextStatus.TRUNCATED
 
+    def test_not_attempted_round_trips_and_does_not_collapse_to_none(self):
+        # The other direction of "`None` means *not recorded*, never
+        # `NOT_ATTEMPTED`". Pinned only from the `None` side, a `to_dict` that
+        # wrote `None` for `NOT_ATTEMPTED` — or a `from_dict` that read it back
+        # as `None` — is invisible, and both erase a determinate answer this
+        # version does record.
+        result = TransparencyResult(
+            "doc-1", 50, TransparencyRisk.MEDIUM, full_text_status=FullTextStatus.NOT_ATTEMPTED
+        )
+        payload = result.to_dict()
+        assert payload["full_text_status"] == "not_attempted"
+        assert TransparencyResult.from_dict(payload).full_text_status is (
+            FullTextStatus.NOT_ATTEMPTED
+        )
+
     def test_a_result_persisted_before_the_field_existed_loads(self):
         # The additive-not-breaking half: the *key* is read defensively.
         payload = TransparencyResult(
@@ -2929,14 +3125,17 @@ class TestFullTextStatusOnTheResult:
         # inventing `None` would report it as never recorded.
         payload = TransparencyResult("doc-1", 50, TransparencyRisk.MEDIUM).to_dict()
         payload["full_text_status"] = "teleported"
-        with pytest.raises(ValueError):
+        # `match=` is load-bearing: a bare `pytest.raises(ValueError)` is also
+        # satisfied by `__post_init__`'s status/flag invariant, so a `from_dict`
+        # that mapped an unrecognised value onto a *member* would still pass.
+        with pytest.raises(ValueError, match="teleported"):
             TransparencyResult.from_dict(payload)
 
     def test_analyzed_and_the_flag_must_agree(self):
         # The one direction that can be enforced. `full_text_analyzed` is the
         # field that qualifies a stored `coi_disclosed=False`, so a status
         # disagreeing with it makes the pair uninterpretable.
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="if and only if"):
             TransparencyResult(
                 "doc-1",
                 50,
@@ -2944,7 +3143,7 @@ class TestFullTextStatusOnTheResult:
                 full_text_analyzed=False,
                 full_text_status=FullTextStatus.ANALYZED,
             )
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="if and only if"):
             TransparencyResult(
                 "doc-1",
                 50,

@@ -381,9 +381,10 @@ _DEPOSITION_DATABANK_LEVELS: dict[str, str] = {
 
 # ---- Indicator strings ----
 # Named rather than inlined because the PubMed step must be able to retract the
-# two COI lines: a structured <CoiStatement> can establish a disclosure that the
-# full-text scan missed, and leaving either line in place would then contradict
-# `coi_disclosed=True`.
+# COI lines: a structured <CoiStatement> can establish a disclosure that the
+# full-text scan missed, and leaving any of them in place would then contradict
+# `coi_disclosed=True`. They are named once, in
+# `_INDICATORS_RETRACTED_BY_PUBMED_COI` below.
 _INDICATOR_NO_COI_IN_FULLTEXT = "No COI disclosure found in full text"
 _INDICATOR_COI_UNKNOWN = "COI disclosure status unknown (full text unavailable)"
 # The same finding for a document that *was* served. "Unavailable" is a claim
@@ -394,6 +395,23 @@ _INDICATOR_COI_UNKNOWN = "COI disclosure status unknown (full text unavailable)"
 # and the argument `unknown_reason` made for issue #21).
 _INDICATOR_COI_UNKNOWN_REFUSED = "COI disclosure status unknown (full text served but not usable)"
 _INDICATOR_COI_IN_PUBMED = "COI disclosure found in PubMed record"
+#: The COI lines written before PubMed is consulted, every one of which claims
+#: the status is undeterminable — so a `<CoiStatement>` arriving afterwards
+#: refutes all of them at once and they are retracted together (see
+#: :func:`_merge_pubmed_signals`). A set rather than a tuple spelled out at the
+#: one call site, for `FullTextStatus.is_refusal`'s reason one module over: the
+#: third member was added with the refusal indicator and *not* added to the
+#: enumeration, so a served-and-refused full text with a PubMed statement
+#: stored "status unknown" beside "disclosure found" — permanently, in a
+#: persisted field, which is issue #161's own failure mode inside its fix.
+#: A fourth line now has one place to be declared and one to be forgotten.
+_INDICATORS_RETRACTED_BY_PUBMED_COI = frozenset(
+    {
+        _INDICATOR_NO_COI_IN_FULLTEXT,
+        _INDICATOR_COI_UNKNOWN,
+        _INDICATOR_COI_UNKNOWN_REFUSED,
+    }
+)
 _INDICATOR_INDUSTRY_COI = "Industry ties disclosed in COI statement"
 _INDICATOR_DATA_NOT_AVAILABLE = "Data explicitly not available"
 # A prefix, completed with the repository names. `data_availability_level`
@@ -803,13 +821,13 @@ def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
     if pubmed.coi_statement and analysis.coi_disclosed is not True:
         analysis.coi_disclosed = True
         analysis.score += SCORE_COI_DISCLOSED
-        # Both lines were written before PubMed was consulted and would now
-        # contradict the result, so they are retracted rather than left to
-        # be reconciled by whoever reads the indicators.
+        # Every one of those lines was written before PubMed was consulted and
+        # would now contradict the result, so they are retracted rather than
+        # left to be reconciled by whoever reads the indicators. Read from
+        # `_INDICATORS_RETRACTED_BY_PUBMED_COI` rather than enumerated here:
+        # this site is where the third one went missing.
         analysis.indicators = [
-            ind
-            for ind in analysis.indicators
-            if ind not in (_INDICATOR_NO_COI_IN_FULLTEXT, _INDICATOR_COI_UNKNOWN)
+            ind for ind in analysis.indicators if ind not in _INDICATORS_RETRACTED_BY_PUBMED_COI
         ]
         analysis.indicators.append(_INDICATOR_COI_IN_PUBMED)
 
@@ -1146,10 +1164,15 @@ def _strip_nested_articles(xml: str) -> str | None:
             and what stops that construct's own content being read as
             markup. It is still not a well-formedness check — nothing here
             would notice a mismatched ``<p>`` — so a caller handing this
-            something other than served XML still owns the rest. That leaves
-            one shape of the hazard this guard was built for: a body truncated
-            *between* tags opens no unterminated construct, so it is accepted
-            and scanned as a complete article. Issue #183.
+            something other than served XML still owns the rest. One shape of
+            the hazard this guard was built for is still not reached *here*: a
+            body truncated *between* tags opens no unterminated construct,
+            leaves no region open and empties nothing, so it passes this
+            function unremarked. It is refused at the call site instead, by a
+            separate completeness check — see
+            :meth:`TransparencyAnalyzer._fetch_europepmc_fulltext`, which owns
+            the ordering argument for why that check runs after this one
+            (issue #183).
 
     Raises:
         _UnterminatedMarkupError: A comment, CDATA section, processing
@@ -1397,6 +1420,12 @@ class TransparencyAnalyzer:
                 risk_level=TransparencyRisk.UNKNOWN,
                 risk_indicators=["Transparency analysis disabled in settings"],
                 unknown_reason=TransparencyUnknownReason.DISABLED,
+                # Determinate, so it is recorded. `None` is reserved for a
+                # result persisted before the field existed; a path that
+                # *knows* nothing was attempted and leaves `None` behind makes
+                # this version's own output indistinguishable from a legacy
+                # row, which is the discrimination the field exists to give.
+                full_text_status=FullTextStatus.NOT_ATTEMPTED,
             )
 
         try:
@@ -1414,6 +1443,8 @@ class TransparencyAnalyzer:
                 risk_level=TransparencyRisk.UNKNOWN,
                 risk_indicators=["No PMID or DOI provided"],
                 unknown_reason=TransparencyUnknownReason.NO_IDENTIFIER,
+                # Likewise: no identifier, so no request was made.
+                full_text_status=FullTextStatus.NOT_ATTEMPTED,
             )
 
         self._api_reachable = False
@@ -1460,6 +1491,13 @@ class TransparencyAnalyzer:
                 risk_level=TransparencyRisk.UNKNOWN,
                 risk_indicators=["Transparency APIs unreachable — score not determinable"],
                 unknown_reason=TransparencyUnknownReason.UNREACHABLE,
+                # The analysis ran, so report what it recorded rather than
+                # discarding it. `NOT_ATTEMPTED` is the only value reachable
+                # here — the full-text step runs only after the EuropePMC
+                # search answered 200, which is what sets `_api_reachable` —
+                # but reading it from the carrier keeps that an observation
+                # rather than a second place to restate it.
+                full_text_status=analysis.full_text_status,
             )
 
         # Awarded here rather than by the step that found the level: two
@@ -1545,7 +1583,10 @@ class TransparencyAnalyzer:
 
         Sets ``coi_disclosed`` tri-state: ``True`` (statement found), ``False``
         (full text scanned, none found), or — left as it was — ``None``
-        (undeterminable: full text unavailable and no abstract signal).
+        (undeterminable: full text not usable and no abstract signal — which
+        of *"unavailable"* and *"served but not usable"* is reported depends on
+        :attr:`_Analysis.full_text_status`, since only one of them is ever
+        true).
 
         Industry ties disclosed in the COI statement itself (consultancies,
         speaker fees, …) are recorded through
@@ -1656,19 +1697,42 @@ class TransparencyAnalyzer:
         load-bearing.** A truncated body can satisfy several of them at once —
         truncation is the cause and the rest are symptoms — and each of the
         first three knows something the completeness check does not: which
-        construct and at what offset, which element was left open, that
-        nothing outside a nested region arrived. Put the completeness check
+        construct and at what offset, that a nested region was left open, that
+        nothing outside a nested region arrived. (The unclosed-region refusal
+        knows *which* element too — :func:`_strip_nested_articles` holds them
+        as a stack of names — but discards it at the return rather than
+        reporting it; issue #186 is where that is tracked. The ordering
+        argument does not rest on it.) Put the completeness check
         ahead of the lex and issue #160's message becomes unreachable for the
-        only input that produces it; put it ahead of the entirely-nested
+        input that most often produces it — a body *corrupted* rather than
+        truncated still carries ``</article>`` and reaches the lex, so
+        "only" would overstate it; put it ahead of the entirely-nested
         report and *that* becomes unreachable, since a body of nothing but
         ``<sub-article>`` carries no ``</article>`` either. So it runs last
         and reports only what nothing more specific claimed.
 
         Every refusal WARNs, naming which it was, the ``document_id`` that
-        joins the line to a stored result, and how much was served. A non-200
-        does not warn, because there is nothing there to report.
+        joins the line to a stored result — where the caller supplied one;
+        ``analyze()`` always does, but its own ``document_id`` is a caller's
+        string and may be empty, and a line without it cannot be joined to
+        anything — and how much was served, in bytes. A non-200 does not warn,
+        because there is nothing there to report.
         """
         if not source or not ext_id:
+            # Reachable only under `inEPMC == "Y"`, so EuropePMC has positively
+            # claimed to hold the full text and then given nothing to address
+            # it by. That is a malformed record rather than an ordinary
+            # closed-access paper, and it used to be indistinguishable from
+            # one: no request, no log at any level, and a status a reader would
+            # take as "we had no reason to ask". A deposit can reach it, so
+            # WARNING and not ERROR — the module's own rule.
+            logger.warning(
+                "EuropePMC says it holds full text for document %s but the record carries "
+                "no address for it (source=%r, id=%r); scanning the abstract instead",
+                document_id or "?",
+                source,
+                ext_id,
+            )
             return _FullTextFetch(None, FullTextStatus.NOT_ATTEMPTED)
         subject = f"{source}/{ext_id}"
         if document_id:
@@ -1689,6 +1753,12 @@ class TransparencyAnalyzer:
         if resp.status_code != 200:
             return _FullTextFetch(None, FullTextStatus.NOT_SERVED)
         served = resp.text
+        # Bytes, not `len(served)`: `resp.text` is the *decoded* string, so its
+        # length under-reports any body carrying non-ASCII — routine in this
+        # corpus — and the number exists to be compared against a
+        # `Content-Length` or a corpus size distribution. httpx has already
+        # read the response, so this costs nothing.
+        served_bytes = len(resp.content)
         # The one documented raise, on its own line and caught on its own
         # terms: a truncated body can reach it, so it is not a bmlib defect,
         # and the wider `except` above would have logged it at DEBUG as a
@@ -1703,7 +1773,7 @@ class TransparencyAnalyzer:
                 "scanning the abstract instead",
                 subject,
                 e,
-                len(served),
+                served_bytes,
             )
             return _FullTextFetch(None, FullTextStatus.UNTERMINATED_MARKUP)
         if article_xml is None:
@@ -1713,7 +1783,7 @@ class TransparencyAnalyzer:
                 "EuropePMC full text for %s leaves an unclosed nested article in %d bytes "
                 "served; scanning the abstract instead",
                 subject,
-                len(served),
+                served_bytes,
             )
             return _FullTextFetch(None, FullTextStatus.UNCLOSED_REGION)
         if not article_xml.strip():
@@ -1727,7 +1797,7 @@ class TransparencyAnalyzer:
                 "EuropePMC full text for %s is entirely nested articles (%d bytes served); "
                 "scanning the abstract instead",
                 subject,
-                len(served),
+                served_bytes,
             )
             return _FullTextFetch(None, FullTextStatus.ENTIRELY_NESTED)
         if _ROOT_END_TAG not in served:
@@ -1740,14 +1810,24 @@ class TransparencyAnalyzer:
             # missing-COI HIGH downgrade fired on evidence that does not exist.
             #
             # **Presence, not position.** Issue #183 proposed
-            # `rstrip().endswith(_ROOT_END_TAG)`; measured against both
-            # corpora that refuses complete articles at a real rate, because
-            # trailing comments, PIs and whitespace after the root are legal
-            # XML — 1,727 of the 97,909 archive articles (1.76%) and 23 of the
-            # 8,118 served ones (0.28%) end `</article><!--requester-ID …-->`.
-            # A truncation removes the tail and the root's end tag *is* in the
-            # tail, so absence is exactly what a truncation looks like:
-            # 0 false refusals across all 106,027 articles of both corpora.
+            # `rstrip().endswith(_ROOT_END_TAG)`; measured, that refuses
+            # complete articles at a real rate, because trailing comments, PIs
+            # and whitespace after the root are legal XML — 1,727 of the
+            # 97,909 archive articles (1.76%) of `oa_comm` baseline package
+            # `PMC012xxxxxx` (2025-06-26) and 23 of the 8,118 served ones in
+            # EuropePMC bundle `PMC10030002_PMC10040000.xml.gz` (0.28%) end
+            # `</article><!--requester-ID …-->`. Both of those are honest on
+            # the served bundle too: what is measured there is the gap
+            # *between* one article's end tag and the next article's opener.
+            #
+            # **The presence test's own 0 is measured on the archive half
+            # only** — 0 false refusals of 97,909 individual documents. The
+            # served bundle *cannot* answer it: it is one concatenation split
+            # into articles on `</article>`, so "does this article contain
+            # `</article>`?" is true by construction, and pooling the two into
+            # a single 106,027 would report a tautology as evidence. A
+            # truncation removes the tail and the root's end tag *is* in the
+            # tail, so absence is what a truncation looks like.
             # `</sub-article>` does not contain the substring, so what the
             # strip removes cannot affect this.
             #
@@ -1758,7 +1838,7 @@ class TransparencyAnalyzer:
                 "scanning the abstract instead",
                 subject,
                 _ROOT_END_TAG,
-                len(served),
+                served_bytes,
             )
             return _FullTextFetch(None, FullTextStatus.TRUNCATED)
         return _FullTextFetch(article_xml, FullTextStatus.ANALYZED)

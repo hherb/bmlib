@@ -44,7 +44,25 @@ All notable changes to bmlib are documented here. The format is based on
   `"COI disclosure status unknown (full text served but not usable)"`. Plus
   the two smaller things the issue names — `document_id` threaded into every
   refusal WARNING, the only field joining a log line to a stored result, and
-  each message quantified with the bytes served.
+  each message quantified with the bytes served (`len(resp.content)`, not
+  `len(resp.text)`: the latter is characters, and the number exists to be
+  compared against a `Content-Length`).
+
+  All three of the COI lines written while the status is undeterminable are
+  retracted together when PubMed supplies a `<CoiStatement>`, from one named
+  set (`_INDICATORS_RETRACTED_BY_PUBMED_COI`). The refused line was added to
+  the site that appends it and not to the site that retracts, so a
+  served-and-refused full text with a PubMed statement stored *"status
+  unknown"* beside *"disclosure found"* against `coi_disclosed=True` —
+  permanently, in a persisted field, which is this issue's own failure mode
+  inside the fix for it. `is_refusal`'s two sides are named sets and the
+  partition is asserted, so an eighth member cannot default to *not a
+  refusal*; and no path this version writes leaves `full_text_status` at
+  `None`, which is what keeps that value meaning *legacy row* alone.
+
+  A record claiming `inEPMC="Y"` and carrying no `source`/`pmcid` to address
+  it by now WARNs instead of passing silently as an ordinary closed-access
+  paper.
 
 ### Fixed
 
@@ -67,26 +85,31 @@ All notable changes to bmlib are documented here. The format is based on
   `</article><!--requester-ID …-->`, so that check refuses complete articles
   at a real rate. Testing for the **presence** of the end tag instead is
   cheaper and exact — a truncation removes the tail and the root's end tag is
-  in the tail — and refuses **0 of all 106,027 articles** across both corpora.
-  `</sub-article>` does not contain the substring, so what the strip removes
-  cannot affect it. It is still not a well-formedness check, which would be
+  in the tail — and refuses **0 of the 97,909 archive articles**. That zero is
+  of the archive half alone: the served draw is one concatenation split into
+  articles on `</article>`, so containment there is true by construction and
+  pooling the two into a single 106,027 would report a tautology as evidence.
+  The 1,727/23 counts above are unaffected, measuring the gap *between* one
+  article's end tag and the next article's opener. `</sub-article>` does not
+  contain the substring, so what the strip removes cannot affect it. It is still not a well-formedness check, which would be
   the second parse PR #159 and PR #182 both declined.
 
   **The four refusals are ordered most-specific-first, and the order is
   load-bearing.** A truncated body can satisfy several at once — truncation is
   the cause and the rest are symptoms — and each of the other three knows
   something this one does not. Ahead of the lex it would make issue #160's
-  construct-and-offset message unreachable for the only input that produces
-  it; ahead of the entirely-nested report it would make that unreachable too,
+  construct-and-offset message unreachable for the input that most often
+  produces it — a *corrupted* body still carries `</article>` and reaches the
+  lex; ahead of the entirely-nested report it would make that unreachable too,
   a body of nothing but `<sub-article>` carrying no `</article>` either. Three
   ordering tests pin it.
 
   One residual is stated rather than implied: httpx raises on a Content-Length
   or chunked-framing mismatch, so reaching this needs a proxy that truncates
   *and* re-frames. Whether Europe PMC ever serves a legitimately partial body
-  at HTTP 200 is **not measured** — the 8,118 served bodies in the local draw
-  all carry `</article>`, but that draw was written by an importer that may
-  have discarded failures.
+  at HTTP 200 is **not measured**, and the local served draw is not evidence
+  either way: its articles were split on `</article>`, and it was written by an
+  importer that may have discarded failures. Narrow, not zero.
 
 - **The nested-article lexer assumed well-formed input in two ways that cost
   the article, and enforced neither** (issue #160, from PR #159's own review).
