@@ -218,7 +218,7 @@ wants its own blast radius.
 
 ### Open GitHub issues
 
-**Twenty-five open** as this file is written, **twenty-three once this branch
+**Twenty-seven open** as this file is written, **twenty-five once this branch
 merges** (`gh issue list`, 2026-09-04, after #160 was closed by hand — see the
 process rule above — and after this session filed **#184**): #86, #92, #94,
 #103, #124, #128, #137, #142, #143, #144, #145, #150, #152, #154, #156, #157,
