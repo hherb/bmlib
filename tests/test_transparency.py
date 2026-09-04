@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 
 import pytest
@@ -35,9 +36,11 @@ from bmlib.transparency.analyzer import (
     _INDICATOR_NO_COI_IN_FULLTEXT,
     _INDICATOR_NO_POSTED_RESULTS,
     _INDICATOR_RESULTS_NOT_CHECKABLE,
+    _NESTED_ARTICLE_ALTERNATION,
     _NESTED_ARTICLE_ELEMENTS,
     _NESTED_ARTICLE_TOKEN_RE,
     _TRIAL_REGISTRY_NAMES,
+    _UNTERMINATED_OPENER_NAMES,
     DEFAULT_INDUSTRY_CONFIDENCE,
     SCORE_CITED,
     SCORE_COI_DISCLOSED,
@@ -959,6 +962,23 @@ class TestANestedArticleIsNotThisArticles:
         assert "unterminated comment" in matching[0].getMessage()
         assert "offset 30" in matching[0].getMessage()
 
+    def test_another_exception_from_the_strip_is_not_swallowed(self, monkeypatch):
+        # The narrow `except _UnterminatedMarkupError` is the whole of what
+        # keeps a bmlib defect out of the abstract fallback, and widening it
+        # to `except Exception` passed all 204 tests. That is the swallow
+        # #159 moved this call out of the request handler to avoid: the tier
+        # chain would report the article as unavailable and the defect would
+        # never surface. Only the documented raise may be caught here.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient("<article><body><p>Methods.</p></body></article>")
+
+        def _boom(_xml):
+            raise ZeroDivisionError("a bmlib defect, not a truncated body")
+
+        monkeypatch.setattr("bmlib.transparency.analyzer._strip_nested_articles", _boom)
+        with pytest.raises(ZeroDivisionError):
+            analyzer._check_europepmc(client, _epmc_record(), _Analysis())
+
     def test_a_document_that_is_all_nested_articles_is_reported_not_dropped(self, caplog):
         # `_strip_nested_articles` returns "" here, which the caller's
         # `if full_text:` reads as "nothing was served" — the one outcome that
@@ -1098,16 +1118,27 @@ class TestMarkupTheContractDoesNotDescribe:
 
     # ---- an end tag closes the element that opened the region ----
 
-    def test_an_end_tag_closes_only_the_element_that_named_it(self):
+    @pytest.mark.parametrize(
+        ("outer", "stray"), [("sub-article", "response"), ("response", "sub-article")]
+    )
+    def test_an_end_tag_closes_only_the_element_that_named_it(self, outer, stray):
         # The depth used to be a bare count, so `</response>` closed a region
         # a <sub-article> had opened and the reviewer prose after it came back
         # as this article's. A stack of names costs one list and fixes it: the
         # mismatched end tag is ignored, and the region ends where it says it
         # ends.
+        #
+        # **Both directions, because the rule is per element and the fixture
+        # was not.** Written with <sub-article> outside only, a mutant that
+        # let a <response>-opened region close on any end tag passed all 204
+        # tests and re-admitted the reviewer prose verbatim — the module's own
+        # "mutation testing needs both edges", one element over. Neither
+        # element is privileged in `open_elements`, so neither may be in the
+        # fixture.
         stripped = _strip_nested_articles(
             "<article><p>Ours.</p>"
-            "<sub-article><p>Reviewer prose.</p></response>"
-            "<p>MORE REVIEWER PROSE.</p></sub-article>"
+            f"<{outer}><p>Reviewer prose.</p></{stray}>"
+            f"<p>MORE REVIEWER PROSE.</p></{outer}>"
             "<p>Ours again.</p></article>"
         )
         assert stripped == "<article><p>Ours.</p><p>Ours again.</p></article>"
@@ -1165,8 +1196,10 @@ class TestMarkupTheContractDoesNotDescribe:
     def test_the_refusal_names_the_first_opener_rather_than_a_later_one(self):
         # Deterministic half of the bound below: bailing at the *first*
         # unterminated opener is what makes one failed scan the whole cost. A
-        # loop that noted the refusal and carried on would still return None
-        # and still pass every test above, at O(n^2).
+        # loop that noted the refusal and carried on would still raise, and so
+        # would still satisfy the five cases above, at O(n^2) — it is the
+        # *offset* that says it stopped at the first opener rather than
+        # walking the whole string.
         xml = "<article>" + "<!--x" * 2_000
         with pytest.raises(_UnterminatedMarkupError) as excinfo:
             _strip_nested_articles(xml)
@@ -1190,9 +1223,12 @@ class TestMarkupTheContractDoesNotDescribe:
     def test_a_well_formed_construct_never_reaches_the_refusal_branch(self):
         # The negative control the parametrisation above needs: every one of
         # the five terminates here, so the branch that refuses is last in the
-        # alternation and unreachable. Without this, a fallback that matched
-        # ahead of the real branches would refuse every article that carries a
-        # comment and still pass every test above.
+        # alternation and unreachable on the input the contract describes.
+        # This states that property directly. It is not the only thing that
+        # would catch a fallback matched too early — moving the branch to the
+        # front of the alternation reddens 31 tests, 27 of them in
+        # `TestANestedArticleIsNotThisArticles`, which predates this class —
+        # so keep it for saying so outright, not for being the sole guard.
         for token in (
             "<!-- c -->",
             "<![CDATA[c]]>",
@@ -1208,17 +1244,50 @@ class TestMarkupTheContractDoesNotDescribe:
             assert match.group("unterminated") is None, token
             assert match.end() == len(token), token
 
+    def test_the_refusal_group_names_every_opener_it_can_capture(self):
+        # `.get(opener, "tag")` asserts that anything the refusal branch can
+        # capture and that is not in the name table is one of the two element
+        # tags. That was true by hand-enumeration and by nothing else: an
+        # alternative added to the group alone comes out labelled "tag", with
+        # the branch count still 6 and the test below still green.
+        #
+        # So this reads the alternatives out of the *pattern* rather than
+        # probing a list written here — a test that enumerates its own inputs
+        # can only confirm them, and the first cut of this one did exactly
+        # that and let the mutant through. The group's non-tag half is derived
+        # from the table in `analyzer.py`; this is what stops it being
+        # un-derived.
+        branch = _top_level_alternatives(_NESTED_ARTICLE_TOKEN_RE.pattern)[-1]
+        inner = branch[branch.index("<unterminated>") + len("<unterminated>") : -1]
+        alternatives = _top_level_alternatives(inner)
+        named = {opener[1:] for opener in _UNTERMINATED_OPENER_NAMES}
+        element_form = r"/?(?:" + _NESTED_ARTICLE_ALTERNATION + r")(?![-.:\w])"
+        for alternative in alternatives:
+            # `re.escape` may spell a literal differently from the table, so
+            # compare what each one matches, not how it is written.
+            assert alternative == element_form or any(
+                re.fullmatch(alternative, candidate) for candidate in named
+            ), alternative
+        # And every named opener is actually reachable through the branch.
+        for opener in _UNTERMINATED_OPENER_NAMES:
+            match = _NESTED_ARTICLE_TOKEN_RE.match(opener + " ")
+            assert match is not None, opener
+            assert "<" + match.group("unterminated") == opener, opener
+
     def test_every_branch_of_the_lexer_opens_with_the_literal(self):
         # `sre` derives a prefix for the whole pattern only when every
         # top-level branch begins with the same literal, and then skips from
         # "<" to "<" rather than trying the pattern at every position. A
-        # branch that opens with a group defeats that analysis silently:
-        # measured over 7.8 MB of real articles, the refusal branch written
-        # `(?P<unterminated><!--|...)` cost **191 ms against 13.5 ms**, and
-        # factoring the alternatives inside the group did not recover it. The
-        # correct form differs by two characters, so nothing but this test
-        # stands between the two — a 14x tax on every article, with the whole
-        # suite green.
+        # branch that opens with a group defeats that analysis silently.
+        # Three configurations, and the labels are the point: over 7.8 MB of
+        # real articles, 13.4 ms with no refusal branch, 26.6 ms with it and
+        # the literal outside the group, 191 ms with it inside. The two forms
+        # that differ by two characters are therefore **26.6 and 191 — a 7.2x
+        # placement tax**, not the 14x an earlier draft claimed, which was
+        # 191 against the no-guard baseline and so counted the guard's own
+        # 1.9x cost a second time. Factoring the alternatives inside the group
+        # recovers ~8% of the penalty and not the penalty. Nothing but this
+        # test stands between the two forms, with the whole suite green.
         branches = _top_level_alternatives(_NESTED_ARTICLE_TOKEN_RE.pattern)
         assert len(branches) == 6, branches
         for branch in branches:

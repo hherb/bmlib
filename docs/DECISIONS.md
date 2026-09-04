@@ -40,9 +40,10 @@ must not be re-done.
   scans through one; one *inside* a region names an element that did not open
   it, so since #160 it closes nothing and the region is refused like any
   other. Only a document expat would reject can carry either — 0 of 98,789
-  articles across both corpora does. Two paths measure empty over all 97,909 articles in the `oa_comm`
-  `PMC012xxxxxx` baseline — none leaves a region open, and none is emptied by
-  the removal — so both guard a truncated body rather than a shape anyone has
+  articles across both corpora does. Two paths measure empty over all 97,909
+  articles in the `oa_comm` `PMC012xxxxxx` baseline — none leaves a region
+  open, and none is emptied by the removal — so both guard a truncated body
+  rather than a shape anyone has
   seen. **The lexer's four skip tokens have no measured population on this
   module's input at all**: the comment token fires on 3 *archive* deposits,
   where Springer comments out an `<authorqueries>` block whose `<aq>` children
@@ -56,11 +57,15 @@ must not be re-done.
   `(?P<unterminated><!--|…)`. `sre` derives a prefix for the whole pattern only
   when every top-level branch begins with the same literal, and then skips from
   `<` to `<` instead of trying the pattern at every position; a branch opening
-  with a group defeats that analysis silently. Measured over 7.8 MB of real
-  articles: **13.5 ms against 191 ms**, and factoring the alternatives *inside*
-  the group recovers none of it, so it is the group boundary and not the shape
-  of what follows. The two forms differ by two characters and both pass every
-  behavioural test, so the guard is
+  with a group defeats that analysis silently. Three configurations over 7.8 MB
+  of real articles, and the labels are load-bearing: **13.4 ms** with no
+  refusal branch, **26.6 ms** with it and the literal outside, **191 ms** with
+  it inside. The *placement* penalty is therefore **7.2x** — not the 14x an
+  earlier draft gave, which was 191 against the no-guard baseline and so
+  counted the guard's own 1.9x a second time. Factoring the alternatives
+  *inside* the group recovers ~8% of the penalty and not the penalty, so it is
+  the group boundary and not the shape of what follows. The two forms differ
+  by two characters and both pass every behavioural test, so the guard is
   `tests/test_transparency.py::TestMarkupTheContractDoesNotDescribe::test_every_branch_of_the_lexer_opens_with_the_literal`.
   Correctly placed the branch still costs 1.9x on well-formed input, which is
   the accepted price of bounding a 33.6s stall.

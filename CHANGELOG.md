@@ -50,17 +50,44 @@ All notable changes to bmlib are documented here. The format is based on
   falls back to the abstract exactly as it does for an unclosed region.
 
   **The literal `<` sits outside the new branch's capturing group, and that is
-  worth 14x.** `sre` derives a prefix for the whole pattern only when every
+  worth 7.2x.** `sre` derives a prefix for the whole pattern only when every
   top-level branch opens with the same literal, and then skips from `<` to `<`
   rather than trying the pattern at every position; a branch opening with a
-  group defeats that analysis silently. Written `(?P<unterminated><!--|…)` the
-  guard cost **191 ms against 13.5 ms** over 7.8 MB of real articles, and
-  factoring the alternatives inside the group recovered none of it. The two
+  group defeats that analysis silently. Three configurations over 7.8 MB of
+  real articles, and they must be kept apart: **13.4 ms** with no refusal
+  branch, **26.6 ms** with it and the literal outside the group, **191 ms**
+  with it inside. So the *placement* penalty is 191/26.6 = **7.2x**, and the
+  guard's own cost against having none is **1.9x** (0.17 to 0.31 ms on a
+  median article) — for a function called once per analysis behind four to six
+  HTTP round trips. Multiplying the two together gives the 14x an earlier
+  draft of this entry claimed, which compared the misplaced guard against no
+  guard at all and so counted the 1.9x twice. Factoring the alternatives
+  inside the group recovers ~8% of the penalty and not the penalty. The two
   forms differ by two characters and both pass every behavioural test, so
   `test_every_branch_of_the_lexer_opens_with_the_literal` is what stands
-  between them. Correctly placed, the guard costs 1.9x on well-formed input —
-  13.4 to 26.6 ms over those 7.8 MB, 0.17 to 0.31 ms on a median article — for
-  a function called once per analysis behind four to six HTTP round trips.
+  between them. Re-measured on a re-derivable draw — the first 880 articles of
+  `PMC10030002_PMC10040000.xml.gz`, 90.8 MB, nine interleaved runs — 165 to
+  297 to 1,959 ms, so 1.80x and 6.6x; the ratios move with the sample and with
+  the run (drift reached 27% on one machine), the ordering does not.
+
+  **Review of this change corrected its own account of itself, and added two
+  guards.** Three configurations were being reported as two: "13.5 ms with the
+  literal outside" is the *no-guard* baseline, so the headline "14x" compared
+  the misplaced guard against having none and counted the guard's own 1.9x a
+  second time. Both figures were right and both labels were wrong in seven
+  files, which no arithmetic check catches — only naming the configurations
+  does. Two mutants also survived the suite: one letting a `<response>`-opened
+  region close on any end tag (the fixture exercised `<sub-article>` only, and
+  the mutant re-admitted reviewer prose verbatim), and one widening the call
+  site's `except` to `except Exception`, which is the swallow PR #159 moved
+  that call out of the request handler to avoid. Both are pinned now, and the
+  refusal branch's non-tag half is **derived** from `_UNTERMINATED_OPENER_NAMES`
+  so its `'tag'` fallback is provable rather than hand-enumerated — an
+  alternative added to one and not the other used to come out labelled `'tag'`
+  with the branch count still 6. Issue **#183** was filed for the half of the
+  truncation hazard this change does not reach: a body cut *between* tags opens
+  no unterminated construct, so it is scanned as complete and manufactures a
+  missing-COI finding, silently.
 
   **Blast radius is a diff, not an argument**: lexing every article of both
   corpora with and without the change — all 97,909 of PMC's `oa_comm`

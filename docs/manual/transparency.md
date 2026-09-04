@@ -390,8 +390,7 @@ Four things worth knowing about the rule:
   retried at every later opener, so the lex was quadratic: 256 kB of a
   repeated `<!DOCTYPE a[` took 33.6s and 224 kB of a repeated unterminated tag
   33.3s, each doubling costing about four times the last, against 4-9 ms for
-  the
-  corpus's three largest well-formed articles at 2.9-3.4 MB. The HTTP timeout
+  the corpus's three largest well-formed articles at 2.9-3.4 MB. The HTTP timeout
   bounds the request and nothing bounded this, so a truncated body did not
   fail — it stalled, reaching neither the refusal below nor its warning. Being
   slow was not the whole of it: with no branch matching, the unterminated
@@ -399,9 +398,13 @@ Four things worth knowing about the rule:
   what those four exist to prevent. Refusing at the first such opener costs
   one failed scan and stops — the same shapes now take 0.001-0.004s. It is
   **not** a well-formedness check: nothing here would notice a mismatched
-  `<p>`. The guard costs 1.9x on well-formed input (13.4 to 26.6 ms over 7.8
-  MB of real articles, 0.17 to 0.31 ms on a median one) for a function called
-  once per analysis behind four to six HTTP round trips.
+  `<p>`, and a body truncated *between* tags is accepted in silence — see the
+  note below. The guard costs 1.9x on well-formed input (13.4 to 26.6 ms over
+  7.8 MB of real articles, 0.17 to 0.31 ms on a median one) for a function
+  called once per analysis behind four to six HTTP round trips. Its `<` must
+  sit outside the branch's capturing group or `sre` derives no prefix for the
+  pattern and the same guard costs 191 ms — a 7.2x placement penalty on top of
+  the 1.9x, and the two must not be multiplied into one figure.
 - **An unclosed region is refused, not guessed at.** The document is treated as
   though no full text was served — one `WARNING`, `full_text_analyzed` stays
   `False`, and `coi_disclosed` cannot be set `False`. (It can still be set
@@ -416,10 +419,10 @@ Four things worth knowing about the rule:
   to be refused here. Only a document expat would reject can carry either.
   That path measures **empty**: not one of the 97,909 articles leaves a region
   open, so it guards against a truncated body rather than against a shape
-  anyone has seen. So does the emptied-article path
-  — all 3,389 carriers keep their `<body>`, the least of them retaining 32.2% of
-  its bytes. **And the four skip tokens have no measured population here
-  either**: the comment token fires on 3 archive deposits, where Springer
+  anyone has seen. So does the emptied-article path — all 3,389 carriers keep
+  their `<body>`, the least of them retaining 32.2% of its bytes. **And the
+  four skip tokens have no measured population here either**: the comment
+  token fires on 3 archive deposits, where Springer
   comments out an `<authorqueries>` block whose `<aq>` children carry
   `<response>` elements — but Europe PMC's `fullTextXML`, which is what this
   step actually reads, serves those same three articles with no comments at all,
@@ -445,6 +448,12 @@ None of the five `<response>` articles is among the 602, so that element is
 version of this section said it measured zero, and that number was a grep for
 the other element. Stored transparency values are not comparable across this
 change for a paper whose full text carries a nested article.
+
+What the refusal does **not** cover is the other half of the same hazard: a
+body truncated *between* tags opens no unterminated construct, so it is
+accepted, scanned, and can yield `coi_disclosed=False` — "No COI disclosure
+found in full text" — for a disclosure that was in the lost tail, with nothing
+logged. The loud half is fixed here; the silent half is issue #183.
 
 Issue #160's two fixes move **nothing** by contrast, and that is measured
 rather than argued: lexing every article of both corpora — all 97,909 of the

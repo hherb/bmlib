@@ -952,13 +952,40 @@ _NESTED_ARTICLE_ELEMENTS = ("sub-article", "response")
 # multiple of the input length — each wanted a constant nobody had drawn, and
 # real articles reach 3.4 MB; this one needs none.
 _NESTED_ARTICLE_ALTERNATION = "|".join(re.escape(name) for name in _NESTED_ARTICLE_ELEMENTS)
+# What each opener is called when the refusal names it, keyed on the whole
+# opener rather than on what the refusal branch captures. That branch leaves
+# the "<" outside its group, for the prefix reason argued at the branch below,
+# so keying on the bare `!--` would make this table read as a fingerprint of
+# that optimisation rather than as a list of constructs. (The keys are never
+# printed — the message interpolates this table's *value* and the
+# reconstructed opener — so the choice is about what a reader of this dict
+# sees, not what an operator does.) Anything not here is one of the two
+# element tags, whose own text the message carries.
+_UNTERMINATED_OPENER_NAMES = {
+    "<!--": "comment",
+    "<![CDATA[": "CDATA section",
+    "<?": "processing instruction",
+    "<!DOCTYPE": "doctype",
+}
 
-# The two groups are *named*: they are read below to tell a start tag from an
-# end tag and from a self-closing one, and every other branch here must leave
-# both unset. Positional groups made that a property of the pattern's shape —
-# a group added to any earlier branch would have silently made a comment look
-# like a start tag, with nothing failing. `TestOnlyTheTagBranchSetsAGroup`
-# is the guard, for the same reason the set has one.
+# The non-tag half of the refusal branch is *derived* from that table, so the
+# `.get(opener, "tag")` fallback below is provable rather than checked by
+# hand: every alternative here is either a key or one of the two elements.
+# Stating the rule and enumerating it separately is how a construct added to
+# one and not the other would come out labelled "tag" — with the branch count
+# still 6, so `test_every_branch_of_the_lexer_opens_with_the_literal` would
+# not notice. Keys are matched in insertion order, and none is a prefix of
+# another; a future one that is must be ordered longest-first.
+_UNTERMINATED_OPENERS = "|".join(re.escape(opener[1:]) for opener in _UNTERMINATED_OPENER_NAMES)
+
+# The four groups are *named*: `closing`, `element` and `attributes` are read
+# below to tell a start tag from an end tag and from a self-closing one, and
+# `unterminated` to tell either from a construct that never closes. Every
+# branch must leave the groups that are not its own unset. Positional groups
+# made that a property of the pattern's shape — a group added to any earlier
+# branch would have silently made a comment look like a start tag, with
+# nothing failing. `test_each_branch_sets_only_its_own_groups` is the guard,
+# for the same reason the set has one.
 _NESTED_ARTICLE_TOKEN_RE = re.compile(
     r"<!--.*?-->"  # comment
     r"|<!\[CDATA\[.*?\]\]>"  # CDATA section
@@ -979,38 +1006,47 @@ _NESTED_ARTICLE_TOKEN_RE = re.compile(
     r"(?P<attributes>(?:[^>\"']|\"[^\"]*\"|'[^']*')*+)>"
     # Last, and so reached only where every branch above it failed: a bare
     # *opener*. In well-formed XML each of the five terminates, so this branch
-    # cannot fire on the input the contract describes — the negative control
-    # in `test_a_well_formed_construct_never_reaches_the_refusal_branch` is
-    # what keeps that true, since a fallback matched too early would refuse
-    # every article carrying a comment and break no other test.
+    # cannot fire on the input the contract describes, and
+    # `test_a_well_formed_construct_never_reaches_the_refusal_branch` is the
+    # negative control that says so directly. It is not the only thing
+    # standing there — moving this branch to the front of the alternation
+    # reddens 31 tests, 27 of them in `TestANestedArticleIsNotThisArticles`,
+    # which predates the branch — so the control is kept for stating the
+    # property outright rather than for being the sole guard. An earlier
+    # draft claimed it broke no other test; that was never measured.
     #
-    # The "<" sits *outside* the group on purpose, and it is the difference
-    # between this costing nothing and costing 14x. `sre` derives a prefix for
+    # The "<" sits *outside* the group on purpose. `sre` derives a prefix for
     # the whole pattern only when every top-level branch starts with the same
     # literal, and then skips from "<" to "<" instead of trying the pattern at
     # every position; a branch opening with a group defeats that analysis.
-    # Measured over 7.8 MB of real articles: 13.5 ms with the literal outside,
-    # 191 ms with it inside — and factoring the alternatives *within* the
-    # group does not help, so it is the group boundary and not the shape of
-    # what follows. `test_every_branch_of_the_lexer_opens_with_the_literal`
-    # is the guard, since prose is not enforcement.
-    r"|<(?P<unterminated>!--|!\[CDATA\[|\?|!DOCTYPE|/?(?:"
+    #
+    # Three configurations, and naming them is load-bearing because two were
+    # once conflated: over 7.8 MB of real articles, **13.4 ms** with no
+    # refusal branch at all, **26.6 ms** with it and the literal outside the
+    # group, **191 ms** with it inside. So the *placement* penalty — the two
+    # forms that differ by two characters — is **7.2x**; the guard's own cost
+    # against having none is the 1.9x under Raises, and the two must not be
+    # multiplied into one figure. Re-measured on a re-derivable draw (the
+    # first 880 articles of `PMC10030002_PMC10040000.xml.gz`, 90.8 MB, the
+    # served rendition this module reads), nine interleaved runs, best of
+    # each: 165 -> 297 -> 1,959 ms, so **1.80x** and **6.6x**. Interleave
+    # them: run-to-run drift on one machine reached 27% here, which is larger
+    # than the difference between two of the sampled ratios, so a figure
+    # taken from separate runs is not one. The ratios move with the sample;
+    # the ordering and the magnitude do not.
+    #
+    # Factoring the alternatives *within* the group recovers ~8% of the
+    # penalty and not the penalty, so it is the group boundary and not the
+    # shape of what follows.
+    # `test_every_branch_of_the_lexer_opens_with_the_literal` is the guard,
+    # since prose is not enforcement.
+    r"|<(?P<unterminated>"
+    + _UNTERMINATED_OPENERS
+    + r"|/?(?:"
     + _NESTED_ARTICLE_ALTERNATION
     + r")(?![-.:\w]))",
     re.DOTALL,
 )
-
-# What each opener is called when the refusal names it, keyed on the whole
-# opener rather than on what the group captures — the "<" is outside it for
-# the prefix reason above, and a key that reads `!--` would put that
-# optimisation's fingerprint into a message an operator reads. Anything not
-# here is one of the two element tags, whose own text the message carries.
-_UNTERMINATED_OPENER_NAMES = {
-    "<!--": "comment",
-    "<![CDATA[": "CDATA section",
-    "<?": "processing instruction",
-    "<!DOCTYPE": "doctype",
-}
 
 
 class _UnterminatedMarkupError(ValueError):
@@ -1053,14 +1089,21 @@ def _strip_nested_articles(xml: str) -> str | None:
 
     Args:
         xml: A ``fullTextXML`` body as Europe PMC served it. Assumed
-            well-formed, which is what the caller is served and what every one
-            of 98,789 articles across both corpora was. The assumption is no
-            longer unenforced: a construct that never terminates refuses the
+            well-formed, which is what the caller is served. What the
+            differential over the 98,789 articles of both corpora could
+            establish is narrower than that, and is all it is quoted for
+            here: none of them carries an unterminated construct, and none
+            leaves a region open. Well-formedness itself is neither checked
+            here nor measured there. The assumption is no longer
+            unenforced: a construct that never terminates refuses the
             document (see Raises), which is both what bounds the running time
             and what stops that construct's own content being read as
             markup. It is still not a well-formedness check — nothing here
             would notice a mismatched ``<p>`` — so a caller handing this
-            something other than served XML still owns the rest.
+            something other than served XML still owns the rest. That leaves
+            one shape of the hazard this guard was built for: a body truncated
+            *between* tags opens no unterminated construct, so it is accepted
+            and scanned as a complete article. Issue #183.
 
     Raises:
         _UnterminatedMarkupError: A comment, CDATA section, processing
@@ -1538,7 +1581,13 @@ class TransparencyAnalyzer:
         article's; the caller falls back to the abstract in every case, which
         leaves the COI status *unknown* rather than absent — it can still be
         set ``True`` from the abstract, but never ``False``, and only ``False``
-        triggers the missing-COI downgrade. The three segmentation outcomes
+        triggers the missing-COI downgrade. That is a claim about *that* rule
+        and not about the result: ``score < score_threshold`` is the first
+        test in :func:`~bmlib.transparency.models.calculate_risk_level`, so an
+        article can still reach ``HIGH`` by losing the points its full text
+        would have scored. Falling back is cheaper than being wrong, but it
+        is not free, and issue #161 is where that is tracked. The three
+        segmentation outcomes
         WARN, each naming which it was — an unclosed region, markup that never
         terminates, and a body that was entirely nested articles are different
         claims about what arrived. A non-200 does not warn, because there is
@@ -1562,9 +1611,11 @@ class TransparencyAnalyzer:
         if resp.status_code != 200:
             return None
         # The one documented raise, on its own line and caught on its own
-        # terms: a truncated body can reach it, so it is not the bmlib defect
-        # the wider `except` above would report it as. Anything *else* this
-        # computation raises still is one, and still must not be swallowed.
+        # terms: a truncated body can reach it, so it is not a bmlib defect,
+        # and the wider `except` above would have logged it at DEBUG as a
+        # fetch failure — the mischaracterisation #159 moved this call out of
+        # that block to avoid. Anything *else* this computation raises IS a
+        # bmlib defect, and the narrow type here is what keeps it unswallowed.
         try:
             article_xml = _strip_nested_articles(resp.text)
         except _UnterminatedMarkupError as e:

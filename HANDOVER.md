@@ -129,17 +129,23 @@ lexed with and without the change, with none refused by either.
   the construct's own content was read as this article's markup.
 - **A performance property can hide behind a two-character edit.** The new
   branch's `<` must sit *outside* its capturing group: `sre` derives a prefix for
-  the whole pattern only when every top-level branch opens with the same literal,
-  and written the other way the guard cost **191 ms against 13.5 ms** over 7.8 MB
-  of real articles — with every behavioural test green. Factoring the
-  alternatives inside the group recovered none of it, so it is the group
-  boundary. `test_every_branch_of_the_lexer_opens_with_the_literal` splits the
-  pattern's top-level branches and asserts the property, rather than timing it.
-- **Measure the guard's own cost, not only the defect's.** Correctly placed it
-  still costs **1.9x** on well-formed input (13.4 → 26.6 ms over those 7.8 MB;
-  0.17 → 0.31 ms on a median article), inherent to trying a sixth branch at every
-  `<`. Accepted and stated: the function runs once per analysis behind four to
-  six HTTP round trips.
+  the whole pattern only when every top-level branch opens with the same literal.
+  `test_every_branch_of_the_lexer_opens_with_the_literal` splits the pattern's
+  top-level branches and asserts the property, rather than timing it.
+- **Name the configuration a timing belongs to, or two of them get conflated.**
+  Three of them here, over 7.8 MB of real articles: **13.4 ms** with no refusal
+  branch, **26.6 ms** with it and the literal outside the group, **191 ms** with
+  it inside. So the *placement* penalty is **7.2x** and the guard's own cost is
+  **1.9x** (0.17 → 0.31 ms on a median article). Review found "13.5 ms with the
+  literal outside" in seven files: 13.5 is the *no-guard* baseline, and the
+  headline "14x" multiplied the two costs by comparing the misplaced guard
+  against no guard. Both figures were right and both labels were wrong, which
+  no arithmetic check would catch — only naming the three configurations does.
+- **Interleave timing runs.** Run-to-run drift on one machine reached 27%,
+  larger than the gap between two of the sampled ratios, so a ratio taken from
+  separate runs is not one. The re-derivable draw is the first 880 articles of
+  `PMC10030002_PMC10040000.xml.gz` (90.8 MB, served rendition): 165 → 297 →
+  1,959 ms, so 1.80x and 6.6x.
 - **Two refusals, two claims.** It raises rather than returning `None`, because
   an unclosed region is a document bmlib will not segment and this is one that
   did not arrive. Folding them together is #161's shape one level down.
@@ -210,14 +216,15 @@ version dies for the wrong reason.
 
 ### Open GitHub issues
 
-**Twenty-six open** as this file is written, **twenty-five once this branch
+**Twenty-seven open** as this file is written, **twenty-six once this branch
 merges** (`gh issue list`, 2026-09-04, after #164 was closed by hand — see the
-process rule above): #86, #92, #94, #103, #124, #128, #137, #142, #143, #144,
-#145, #150, #152, #154, #156, #157, #160, #161, #172, #173, #174, #175, #177,
-#178, #179, #181. Every one was found by review or measurement rather than by a
-failing test, and **none loses records** — though **#124** loses an exhibit's
-footnotes, **#150** renders a note-only reference as an empty bullet, and **#128**
-would lose every figure image in a document binding XLink to another prefix.
+process rule above, and after this branch's review filed **#183**): #86, #92,
+#94, #103, #124, #128, #137, #142, #143, #144, #145, #150, #152, #154, #156,
+#157, #160, #161, #172, #173, #174, #175, #177, #178, #179, #181, #183. Every
+one was found by review or measurement rather than by a failing test, and
+**none loses records** — though **#124** loses an exhibit's footnotes, **#150**
+renders a note-only reference as an empty bullet, and **#128** would lose every
+figure image in a document binding XLink to another prefix.
 
 **Count them against the repo before trusting that number.** The line has been
 wrong in several sessions, and an issue closed as COMPLETED without being fixed
@@ -234,8 +241,8 @@ filing **#140**; **#120**, **#140** → PR #141, filing **#142**–**#146**;
 **#119** → PR #159, filing **#158**, **#160**, **#161**; **#162** → PR #171,
 filing **#172**, **#173**; **#147** → PR #176, filing **#174**, **#175**,
 **#177**, **#178**; **#164** → PR #180, filing **#179** and **#181**; **#160** →
-this branch. (#149 and #152 were filed and fixed inside one PR, so neither ever
-appeared as open work — read the per-PR list, not the total.)
+this branch, filing **#183**. (#149 and #152 were filed and fixed inside one
+PR, so neither ever appeared as open work — read the per-PR list, not the total.)
 
 Each issue carries its own argument on GitHub; what follows is only what a
 session needs to *choose* between them. Almost none is a drive-by.
@@ -303,6 +310,19 @@ them by `figures_with_graphic` — over its own population the recent window rea
 **99.3%**, not 57.3%, which makes #117's rule far more load-bearing than the
 published figure says. One remedy restates a share cited in five files and the
 other needs both corpora redrawn, which would destroy #164's attribution.
+
+**#183 came out of this branch's own review, and is the half of #160 the fix
+does not reach.** A body truncated *between* tags opens no unterminated
+construct, so it is accepted, scanned, and yields `coi_disclosed=False` — "No
+COI disclosure found in full text" — for a disclosure that was in the lost
+tail, with nothing logged at any level. #160's loud half now refuses and WARNs;
+this one is silent *and* manufactures the finding that triggers the missing-COI
+downgrade, so it is the worse of the two. The cheap remedy is a completeness
+check (`endswith("</article>")`) rather than a well-formedness one, and it wants
+two things measured first — how many served articles legitimately do not end
+there, and whether Europe PMC ever serves a partial body at HTTP 200. It needs a
+proxy that truncates *and* re-frames, since httpx raises on a framing mismatch;
+narrow, not zero.
 
 **#161 is #160's neighbour and the natural next step in `transparency`**: a full
 text that was *served* and then refused is indistinguishable, in the stored
