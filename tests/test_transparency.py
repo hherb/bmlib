@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
 import time
@@ -30,6 +31,7 @@ from bmlib.transparency.analyzer import (
     _DEPOSITION_DATABANK_LEVELS,
     _INDICATOR_COI_IN_PUBMED,
     _INDICATOR_COI_UNKNOWN,
+    _INDICATOR_COI_UNKNOWN_REFUSED,
     _INDICATOR_DATA_DEPOSITED_PREFIX,
     _INDICATOR_DATA_NOT_AVAILABLE,
     _INDICATOR_INDUSTRY_COI,
@@ -59,6 +61,7 @@ from bmlib.transparency.analyzer import (
     _UnterminatedMarkupError,
 )
 from bmlib.transparency.models import (
+    FullTextStatus,
     TransparencyResult,
     TransparencyRisk,
     TransparencySettings,
@@ -931,7 +934,11 @@ class TestANestedArticleIsNotThisArticles:
             analyzer._check_europepmc(client, _epmc_record(), analysis)
         assert analysis.full_text_analyzed is False
         assert analysis.coi_disclosed is None
-        assert _INDICATOR_COI_UNKNOWN in analysis.indicators
+        # Served and refused, so the line says so (issue #161). "Unavailable"
+        # is a claim about EuropePMC and it is false here: HTTP 200 with a
+        # document bmlib then declined to scan.
+        assert _INDICATOR_COI_UNKNOWN_REFUSED in analysis.indicators
+        assert _INDICATOR_COI_UNKNOWN not in analysis.indicators
         # The level is asserted, not just the message: `at_level(WARNING)`
         # admits ERROR, and ERROR is the level this module reserves for "bmlib
         # is wrong" — the distinction this test's own comment turns on.
@@ -953,7 +960,8 @@ class TestANestedArticleIsNotThisArticles:
             analyzer._check_europepmc(client, _epmc_record(), analysis)
         assert analysis.full_text_analyzed is False
         assert analysis.coi_disclosed is None
-        assert _INDICATOR_COI_UNKNOWN in analysis.indicators
+        assert _INDICATOR_COI_UNKNOWN_REFUSED in analysis.indicators
+        assert _INDICATOR_COI_UNKNOWN not in analysis.indicators
         matching = [r for r in caplog.records if "is not well-formed" in r.getMessage()]
         assert len(matching) == 1
         assert matching[0].levelno == logging.WARNING
@@ -2665,3 +2673,296 @@ class TestDataDepositionMerge:
         # indicator, the assertion below would pass under any ordering.
         assert _INDICATOR_RESULTS_NOT_CHECKABLE in result.risk_indicators
         assert result.risk_indicators[-1] == _INDICATOR_DATA_NOT_AVAILABLE
+
+
+class TestABodyTruncatedBetweenTagsIsRefused:
+    """Issue #183 — the half of issue #160 that fix does not reach.
+
+    Issue #160 bounds the lexer and refuses a construct that never
+    *terminates*. A body truncated **between tags** opens no such construct,
+    so it used to be accepted and scanned as a complete article: no refusal,
+    no ``None``, and no log line at any level. Downstream that gave
+    ``full_text_analyzed=True`` and ``coi_disclosed=False`` with the indicator
+    *"No COI disclosure found in full text"* — for a disclosure that was in
+    the lost tail — which is the missing-COI HIGH downgrade fired on evidence
+    that does not exist. Loud and losing the full text (issue #160's half) is
+    strictly better than silent and scoring it wrong.
+    """
+
+    def test_a_body_truncated_between_tags_is_refused(self, caplog):
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><sec><title>Methods</title><p>Some prose.</p></sec>"
+        )
+        analysis = _Analysis()
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is False
+        # The whole point: `None`, never `False`. Only `False` triggers the
+        # missing-COI downgrade, and there is no evidence for it here.
+        assert analysis.coi_disclosed is None
+        assert analysis.full_text_status is FullTextStatus.TRUNCATED
+        matching = [r for r in caplog.records if "did not arrive whole" in r.getMessage()]
+        assert len(matching) == 1
+        # WARNING, not ERROR: ERROR is what this module reserves for "bmlib is
+        # wrong", and a truncated body is a network product.
+        assert matching[0].levelno == logging.WARNING
+
+    def test_a_trailing_comment_after_the_root_is_not_a_truncation(self):
+        # The negative control, and the measured one. Issue #183 proposed
+        # `xml.rstrip().endswith("</article>")`, which refuses this shape —
+        # and it is not hypothetical: **1,727 of the 97,909 archive articles
+        # (1.76%) and 23 of the 8,118 served ones (0.28%) end this way**, all
+        # of the form `</article><!--requester-ID gmcconne-->`. Trailing
+        # comments, PIs and whitespace after the root are legal XML. Testing
+        # for the *presence* of the end tag rather than for its position
+        # costs nothing and refuses none of them.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><back><fn-group>"
+            '<fn fn-type="COI-statement"><p>The authors declare no conflict of interest.</p></fn>'
+            "</fn-group></back></article><!--requester-ID gmcconne-->"
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.full_text_status is FullTextStatus.ANALYZED
+        assert analysis.coi_disclosed is True
+
+    def test_trailing_whitespace_and_a_processing_instruction_are_not_a_truncation(self):
+        # The other two legal trailing constructs, for the same reason.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><back><fn-group>"
+            '<fn fn-type="COI-statement"><p>Nothing to declare.</p></fn>'
+            "</fn-group></back></article>\n<?oxygen-final?>\n  "
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_analyzed is True
+        assert analysis.full_text_status is FullTextStatus.ANALYZED
+
+    def test_the_truncation_check_is_the_net_for_what_the_others_miss(self, caplog):
+        # Ordering, pinned rather than left to the reading order of the
+        # function. A truncated body can satisfy several refusals at once —
+        # truncation is the *cause* and the rest are symptoms — and each of
+        # the three specific checks knows something this one does not: which
+        # construct and at what offset, which element was left open, that
+        # nothing but nested articles arrived. So the truncation check runs
+        # last and reports only what nothing more specific claimed.
+        analyzer = TransparencyAnalyzer()
+        # Truncated *and* leaving a region open. Both are true; the specific
+        # one is the one stored.
+        client = _FakeFullTextClient("<article><body><p>Ours.</p><sub-article><p>Theirs.</p>")
+        analysis = _Analysis()
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_status is FullTextStatus.UNCLOSED_REGION
+        assert not [r for r in caplog.records if "did not arrive whole" in r.getMessage()]
+
+    def test_an_unterminated_construct_still_reports_itself(self, caplog):
+        # The same ordering rule one check further up, and the one that would
+        # cost most if it went the other way: a body truncated mid-comment has
+        # no `</article>` either, so a truncation check placed ahead of the
+        # lex would make issue #160's message — which names the construct and
+        # the offset — unreachable for the only input that produces it.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient("<article><body><p>Methods.</p><!-- truncated here")
+        analysis = _Analysis()
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_status is FullTextStatus.UNTERMINATED_MARKUP
+        assert not [r for r in caplog.records if "did not arrive whole" in r.getMessage()]
+
+    def test_a_body_that_is_entirely_nested_still_reports_itself(self, caplog):
+        # And the third. A body of nothing but nested articles carries no
+        # `</article>` of its own, so without this ordering the entirely-nested
+        # report — added deliberately as the one outcome that would otherwise
+        # reach storage with no signal at all — would become unreachable.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient("<sub-article><p>Round one.</p></sub-article>")
+        analysis = _Analysis()
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_status is FullTextStatus.ENTIRELY_NESTED
+        assert not [r for r in caplog.records if "did not arrive whole" in r.getMessage()]
+
+
+class TestARefusedFullTextLeavesATrace:
+    """Issue #161 — a served-but-refused full text is not "unavailable".
+
+    ``_fetch_europepmc_fulltext`` has several outcomes and all the failing
+    ones used to be indistinguishable in anything a caller stores:
+    ``full_text_analyzed=False`` and the indicator *"COI disclosure status
+    unknown (full text unavailable)"*, which is **false** for a refusal —
+    Europe PMC served HTTP 200 with a document. Results are cacheable and
+    driven concurrently, so a refusal is stored, permanent and unmarked, and
+    the score silently loses up to 30 points on that path — enough to reach
+    HIGH against the default ``score_threshold`` and set
+    ``tier_downgrade_applied``. The same argument as ``FetchResult.note`` ->
+    ``SyncReport.notes`` in ``publications/``: permanent *and* invisible is
+    the pair these rules exist to break up.
+    """
+
+    def test_a_non_200_is_the_only_outcome_that_is_really_unavailable(self):
+        analyzer = TransparencyAnalyzer()
+        analysis = _Analysis()
+        analyzer._check_europepmc(_FakeFullTextClient(None), _epmc_record(), analysis)
+        assert analysis.full_text_status is FullTextStatus.NOT_SERVED
+        assert _INDICATOR_COI_UNKNOWN in analysis.indicators
+        assert _INDICATOR_COI_UNKNOWN_REFUSED not in analysis.indicators
+
+    def test_a_record_with_no_full_text_was_never_attempted(self):
+        # `inEPMC != "Y"` means Europe PMC never claimed to hold full text, so
+        # nothing was requested. Distinct from a request that was made and
+        # answered with a non-200, which is what `NOT_SERVED` records.
+        analyzer = TransparencyAnalyzer()
+        analysis = _Analysis()
+        analyzer._check_europepmc(_FakeFullTextClient(None), _epmc_record(in_epmc="N"), analysis)
+        assert analysis.full_text_status is FullTextStatus.NOT_ATTEMPTED
+
+    def test_a_refusal_says_it_was_served_rather_than_unavailable(self):
+        # The prose half. `risk_indicators` is persisted, so this reaches a
+        # stored result too — but as prose for humans, which is exactly why
+        # the enum beside it exists (the `unknown_reason` argument, issue #21).
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>Ours.</p><sub-article><p>Theirs.</p></article>"
+        )
+        analysis = _Analysis()
+        analyzer._check_europepmc(client, _epmc_record(), analysis)
+        assert analysis.full_text_status is FullTextStatus.UNCLOSED_REGION
+        assert _INDICATOR_COI_UNKNOWN_REFUSED in analysis.indicators
+        assert _INDICATOR_COI_UNKNOWN not in analysis.indicators
+
+    def test_every_refusal_is_a_refusal_and_the_other_two_are_not(self):
+        # The grouping the issue's own question needs — "which of my stored
+        # results were computed without the full text I was served?" — put on
+        # the enum so no caller re-enumerates it, and so a member added later
+        # has to choose a side.
+        assert FullTextStatus.TRUNCATED.is_refusal
+        assert FullTextStatus.UNTERMINATED_MARKUP.is_refusal
+        assert FullTextStatus.UNCLOSED_REGION.is_refusal
+        assert FullTextStatus.ENTIRELY_NESTED.is_refusal
+        assert not FullTextStatus.ANALYZED.is_refusal
+        assert not FullTextStatus.NOT_SERVED.is_refusal
+        assert not FullTextStatus.NOT_ATTEMPTED.is_refusal
+
+    def test_the_warning_names_the_analysis_and_not_only_the_article(self, caplog):
+        # `source`/`ext_id` resolve the *article*; `document_id` is the
+        # caller's own key and the only field joining a log line to a stored
+        # result. It was available two frames up and not threaded down.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient(
+            "<article><body><p>Ours.</p><sub-article><p>Theirs.</p></article>"
+        )
+        analysis = _Analysis()
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            analyzer._check_europepmc(client, _epmc_record(), analysis, document_id="doc-42")
+        matching = [r for r in caplog.records if "unclosed nested article" in r.getMessage()]
+        assert len(matching) == 1
+        assert "doc-42" in matching[0].getMessage()
+
+    def test_the_warning_quantifies_what_was_served(self, caplog):
+        # "The message quantifies nothing" — contrast
+        # `JATSArticle.suppressed_nested_articles`, which exists in `fulltext/`
+        # for this and reports a count. How much arrived is what tells a
+        # truncation at the first tag from one in the last paragraph.
+        analyzer = TransparencyAnalyzer()
+        body = "<article><body><sec><title>Methods</title><p>Some prose.</p></sec>"
+        analysis = _Analysis()
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            analyzer._check_europepmc(_FakeFullTextClient(body), _epmc_record(), analysis)
+        matching = [r for r in caplog.records if "did not arrive whole" in r.getMessage()]
+        assert len(matching) == 1
+        assert str(len(body)) in matching[0].getMessage()
+
+    def test_the_status_reaches_the_stored_result(self, monkeypatch):
+        # End to end: the field is on `TransparencyResult`, not only on the
+        # private carrier, since the carrier never leaves this module.
+        client = _RecordingClient(epmc=_epmc_payload(pmid="12345678"))
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="12345678")
+        assert result.full_text_status is not None
+
+
+class TestFullTextStatusOnTheResult:
+    """The field's own contract, mirroring `unknown_reason`'s (issue #21).
+
+    Declared last for positional stability, serialised by value, read
+    defensively, and **additive rather than breaking**: results persisted
+    before it existed load with ``None``, which means *not recorded* and not
+    ``NOT_ATTEMPTED`` — a legacy result carrying ``full_text_analyzed=True``
+    must not come back claiming nothing was attempted.
+    """
+
+    def test_it_defaults_to_not_recorded(self):
+        result = TransparencyResult("doc-1", 50, TransparencyRisk.MEDIUM)
+        assert result.full_text_status is None
+
+    def test_it_round_trips_by_value(self):
+        result = TransparencyResult(
+            "doc-1",
+            50,
+            TransparencyRisk.MEDIUM,
+            full_text_status=FullTextStatus.TRUNCATED,
+        )
+        payload = result.to_dict()
+        assert payload["full_text_status"] == "truncated"
+        assert TransparencyResult.from_dict(payload).full_text_status is FullTextStatus.TRUNCATED
+
+    def test_a_result_persisted_before_the_field_existed_loads(self):
+        # The additive-not-breaking half: the *key* is read defensively.
+        payload = TransparencyResult(
+            "doc-1", 50, TransparencyRisk.MEDIUM, full_text_analyzed=True
+        ).to_dict()
+        del payload["full_text_status"]
+        loaded = TransparencyResult.from_dict(payload)
+        assert loaded.full_text_status is None
+        # And `None` must not be read as a determinate claim about a result
+        # that plainly did analyse full text.
+        assert loaded.full_text_analyzed is True
+
+    def test_an_unrecognised_member_raises_rather_than_loading_as_none(self):
+        # Exactly as `risk_level` and `unknown_reason` do: a member this
+        # version does not know about is a result it cannot interpret, and
+        # inventing `None` would report it as never recorded.
+        payload = TransparencyResult("doc-1", 50, TransparencyRisk.MEDIUM).to_dict()
+        payload["full_text_status"] = "teleported"
+        with pytest.raises(ValueError):
+            TransparencyResult.from_dict(payload)
+
+    def test_analyzed_and_the_flag_must_agree(self):
+        # The one direction that can be enforced. `full_text_analyzed` is the
+        # field that qualifies a stored `coi_disclosed=False`, so a status
+        # disagreeing with it makes the pair uninterpretable.
+        with pytest.raises(ValueError):
+            TransparencyResult(
+                "doc-1",
+                50,
+                TransparencyRisk.MEDIUM,
+                full_text_analyzed=False,
+                full_text_status=FullTextStatus.ANALYZED,
+            )
+        with pytest.raises(ValueError):
+            TransparencyResult(
+                "doc-1",
+                50,
+                TransparencyRisk.MEDIUM,
+                full_text_analyzed=True,
+                full_text_status=FullTextStatus.TRUNCATED,
+            )
+
+    def test_not_recording_the_status_imposes_nothing(self):
+        # The converse is deliberately unenforced, for `unknown_reason`'s own
+        # reason: refusing to construct a legacy result would make the field
+        # a breaking change rather than an additive one.
+        TransparencyResult("doc-1", 50, TransparencyRisk.MEDIUM, full_text_analyzed=True)
+        TransparencyResult("doc-1", 50, TransparencyRisk.MEDIUM, full_text_analyzed=False)
+
+    def test_the_field_is_declared_last(self):
+        # Downstream projects construct this dataclass positionally, so a new
+        # field beside its logical neighbours would shift every following
+        # argument by one with no error raised anywhere — the reason
+        # `unknown_reason` and `Publication.pmcid` are where they are.
+        assert list(dataclasses.fields(TransparencyResult))[-1].name == "full_text_status"

@@ -34,6 +34,7 @@ from typing import Any
 
 from bmlib import __version__
 from bmlib.transparency.models import (
+    FullTextStatus,
     TransparencyResult,
     TransparencyRisk,
     TransparencySettings,
@@ -385,6 +386,13 @@ _DEPOSITION_DATABANK_LEVELS: dict[str, str] = {
 # `coi_disclosed=True`.
 _INDICATOR_NO_COI_IN_FULLTEXT = "No COI disclosure found in full text"
 _INDICATOR_COI_UNKNOWN = "COI disclosure status unknown (full text unavailable)"
+# The same finding for a document that *was* served. "Unavailable" is a claim
+# about EuropePMC, and on a refusal path it is false: HTTP 200 with a document
+# that bmlib then declined to scan. `risk_indicators` is persisted, so this
+# reaches a stored result — but as prose for humans, which is why
+# `FullTextStatus` sits beside it as the machine-readable form (issue #161,
+# and the argument `unknown_reason` made for issue #21).
+_INDICATOR_COI_UNKNOWN_REFUSED = "COI disclosure status unknown (full text served but not usable)"
 _INDICATOR_COI_IN_PUBMED = "COI disclosure found in PubMed record"
 _INDICATOR_INDUSTRY_COI = "Industry ties disclosed in COI statement"
 _INDICATOR_DATA_NOT_AVAILABLE = "Data explicitly not available"
@@ -680,6 +688,14 @@ class _Analysis:
         trial_registered: A trial registration was established.
         results_compliant: Posted results were found for a registered trial.
         full_text_analyzed: Findings came from full text, not just an abstract.
+        full_text_status: What became of the full-text attempt — see
+            :class:`~bmlib.transparency.models.FullTextStatus`. Defaults to
+            ``NOT_ATTEMPTED``, which is what an analysis that never reaches
+            the EuropePMC step (no record, or ``inEPMC != "Y"``) should carry.
+            Unlike the field of the same name on ``TransparencyResult`` this
+            is never ``None``: the carrier is built fresh by every analysis,
+            so "not recorded" cannot arise here and a default that means it
+            would only be reachable by mistake.
         funder_info_scored: :data:`SCORE_FUNDER_INFO` has been spent. Named
             state rather than a positional bool, so a third funder source gets
             the once-only rule from :meth:`award_funder_info` instead of having
@@ -699,6 +715,7 @@ class _Analysis:
     results_compliant: bool = False
     full_text_analyzed: bool = False
     funder_info_scored: bool = False
+    full_text_status: FullTextStatus = FullTextStatus.NOT_ATTEMPTED
 
     def award_funder_info(self) -> None:
         """Award :data:`SCORE_FUNDER_INFO` the first time any source reports funders.
@@ -1049,6 +1066,35 @@ _NESTED_ARTICLE_TOKEN_RE = re.compile(
 )
 
 
+#: The root element's end tag. A served ``fullTextXML`` body that does not
+#: contain it did not arrive whole (issue #183) — see the completeness check
+#: in :meth:`TransparencyAnalyzer._fetch_europepmc_fulltext` for why presence
+#: rather than position, and for the corpus counts behind that.
+_ROOT_END_TAG = "</article>"
+
+
+@dataclass(frozen=True)
+class _FullTextFetch:
+    """What one full-text fetch produced, and what became of it.
+
+    Frozen and private, like :class:`_PubMedSignals` beside it: a message from
+    one step rather than shared state, which is why it carries no
+    ``to_dict()``. Two fields because "no full text" was several different
+    claims collapsed onto one ``None`` — the whole of issue #161 — and the
+    caller needs the reason to choose an honest indicator and to store it.
+
+    ``text`` is non-``None`` if and only if ``status`` is
+    :attr:`~bmlib.transparency.models.FullTextStatus.ANALYZED`. That is not
+    enforced here: this type never leaves the module and has one producer,
+    where :class:`~bmlib.transparency.models.TransparencyResult` is
+    constructed by downstream projects and enforces the matching rule in
+    ``__post_init__``.
+    """
+
+    text: str | None
+    status: FullTextStatus
+
+
 class _UnterminatedMarkupError(ValueError):
     """A construct in the served body never terminates, so it cannot be lexed.
 
@@ -1384,7 +1430,7 @@ class TransparencyAnalyzer:
             # --- EuropePMC (full text / abstract, COI, data availability) ---
             epmc = self._fetch_europepmc(client, pmid, doi)
             if epmc:
-                self._check_europepmc(client, epmc, analysis)
+                self._check_europepmc(client, epmc, analysis, document_id)
 
             # --- PubMed (structured COI, trial registration, grants) ---
             # Placed after Europe PMC so a DOI-only analysis can reuse the PMID
@@ -1442,6 +1488,7 @@ class TransparencyAnalyzer:
             trial_results_compliant=analysis.results_compliant,
             risk_indicators=analysis.indicators,
             full_text_analyzed=analysis.full_text_analyzed,
+            full_text_status=analysis.full_text_status,
             tier_downgrade_applied=(
                 self.settings.tier_downgrade_amount if risk_level == TransparencyRisk.HIGH else 0
             ),
@@ -1482,7 +1529,13 @@ class TransparencyAnalyzer:
             return self._query_europepmc(client, f"EXT_ID:{pmid}")
         return None
 
-    def _check_europepmc(self, client: Any, epmc: dict, analysis: _Analysis) -> None:
+    def _check_europepmc(
+        self,
+        client: Any,
+        epmc: dict,
+        analysis: _Analysis,
+        document_id: str = "",
+    ) -> None:
         """Fold COI and data-availability signals from EuropePMC into *analysis*.
 
         COI and data-availability statements live in a paper's full text, not
@@ -1512,13 +1565,15 @@ class TransparencyAnalyzer:
         # abstract. EuropePMC serves full text for open-access records.
         search_text = abstract_text
         if record.get("inEPMC") == "Y":
-            full_text = self._fetch_europepmc_fulltext(
+            fetch = self._fetch_europepmc_fulltext(
                 client,
                 record.get("source"),
                 record.get("pmcid") or record.get("id"),
+                document_id,
             )
-            if full_text:
-                search_text = full_text.lower()
+            analysis.full_text_status = fetch.status
+            if fetch.text:
+                search_text = fetch.text.lower()
                 analysis.full_text_analyzed = True
 
         # COI detection (a COI/disclosure statement counts as "disclosed",
@@ -1534,6 +1589,11 @@ class TransparencyAnalyzer:
             # Full text inspected and no COI statement found -> explicitly absent.
             analysis.coi_disclosed = False
             analysis.indicators.append(_INDICATOR_NO_COI_IN_FULLTEXT)
+        elif analysis.full_text_status.is_refusal:
+            # Served, and refused. "Unavailable" would be a false claim about
+            # EuropePMC, and this line is persisted in `risk_indicators`
+            # (issue #161). The status beside it carries which refusal it was.
+            analysis.indicators.append(_INDICATOR_COI_UNKNOWN_REFUSED)
         else:
             # Could not inspect full text; status is genuinely unknown.
             analysis.indicators.append(_INDICATOR_COI_UNKNOWN)
@@ -1567,34 +1627,52 @@ class TransparencyAnalyzer:
         client: Any,
         source: str | None,
         ext_id: str | None,
-    ) -> str | None:
+        document_id: str = "",
+    ) -> _FullTextFetch:
         """Fetch this article's own full-text XML for an open-access EuropePMC record.
 
         Nested articles are removed here rather than at each scan, so there is
         one door into the module for a string that has to be the article's:
         every reader downstream — the tagged-COI match, the cue-phrase scan,
         the data-availability patterns and the industry-COI extraction — takes
-        it from this return value. ``None`` means "no full text", whether
-        because none was served, because what was served could not be
-        segmented into the article's own text (see
-        :func:`_strip_nested_articles`), or because none of it was the
-        article's; the caller falls back to the abstract in every case, which
+        it from this return value.
+
+        A :class:`_FullTextFetch` rather than a bare ``str | None``, because
+        "no full text" is several different claims and collapsing them is
+        issue #161: none was served, or what was served could not be
+        segmented into the article's own text, or none of it was the
+        article's. The caller falls back to the abstract in every case, which
         leaves the COI status *unknown* rather than absent — it can still be
-        set ``True`` from the abstract, but never ``False``, and only ``False``
-        triggers the missing-COI downgrade. That is a claim about *that* rule
-        and not about the result: ``score < score_threshold`` is the first
-        test in :func:`~bmlib.transparency.models.calculate_risk_level`, so an
-        article can still reach ``HIGH`` by losing the points its full text
-        would have scored. Falling back is cheaper than being wrong, but it
-        is not free, and issue #161 is where that is tracked. The three
-        segmentation outcomes
-        WARN, each naming which it was — an unclosed region, markup that never
-        terminates, and a body that was entirely nested articles are different
-        claims about what arrived. A non-200 does not warn, because there is
-        nothing there to report.
+        set ``True`` from the abstract, but never ``False``, and only
+        ``False`` triggers the missing-COI downgrade. That is a claim about
+        *that* rule and not about the result: ``score < score_threshold`` is
+        the first test in
+        :func:`~bmlib.transparency.models.calculate_risk_level`, so an article
+        can still reach ``HIGH`` by losing the points its full text would have
+        scored. Falling back is cheaper than being wrong, but it is not free,
+        which is why the reason is now carried rather than logged only.
+
+        **The four refusals are ordered most-specific-first, and the order is
+        load-bearing.** A truncated body can satisfy several of them at once —
+        truncation is the cause and the rest are symptoms — and each of the
+        first three knows something the completeness check does not: which
+        construct and at what offset, which element was left open, that
+        nothing outside a nested region arrived. Put the completeness check
+        ahead of the lex and issue #160's message becomes unreachable for the
+        only input that produces it; put it ahead of the entirely-nested
+        report and *that* becomes unreachable, since a body of nothing but
+        ``<sub-article>`` carries no ``</article>`` either. So it runs last
+        and reports only what nothing more specific claimed.
+
+        Every refusal WARNs, naming which it was, the ``document_id`` that
+        joins the line to a stored result, and how much was served. A non-200
+        does not warn, because there is nothing there to report.
         """
         if not source or not ext_id:
-            return None
+            return _FullTextFetch(None, FullTextStatus.NOT_ATTEMPTED)
+        subject = f"{source}/{ext_id}"
+        if document_id:
+            subject = f"{subject} (document {document_id})"
         self._rate_limit()
         # Only the request is wrapped. `_strip_nested_articles` is bmlib's own
         # computation over a string, so anything it raises is a bmlib defect,
@@ -1606,10 +1684,11 @@ class TransparencyAnalyzer:
                 f"https://www.ebi.ac.uk/europepmc/webservices/rest/{source}/{ext_id}/fullTextXML"
             )
         except Exception as e:
-            logger.debug("EuropePMC full-text fetch failed for %s/%s: %s", source, ext_id, e)
-            return None
+            logger.debug("EuropePMC full-text fetch failed for %s: %s", subject, e)
+            return _FullTextFetch(None, FullTextStatus.NOT_SERVED)
         if resp.status_code != 200:
-            return None
+            return _FullTextFetch(None, FullTextStatus.NOT_SERVED)
+        served = resp.text
         # The one documented raise, on its own line and caught on its own
         # terms: a truncated body can reach it, so it is not a bmlib defect,
         # and the wider `except` above would have logged it at DEBUG as a
@@ -1617,42 +1696,72 @@ class TransparencyAnalyzer:
         # that block to avoid. Anything *else* this computation raises IS a
         # bmlib defect, and the narrow type here is what keeps it unswallowed.
         try:
-            article_xml = _strip_nested_articles(resp.text)
+            article_xml = _strip_nested_articles(served)
         except _UnterminatedMarkupError as e:
             logger.warning(
-                "EuropePMC full text for %s/%s is not well-formed (%s); "
+                "EuropePMC full text for %s is not well-formed (%s) in %d bytes served; "
                 "scanning the abstract instead",
-                source,
-                ext_id,
+                subject,
                 e,
+                len(served),
             )
-            return None
+            return _FullTextFetch(None, FullTextStatus.UNTERMINATED_MARKUP)
         if article_xml is None:
             # A deposit can reach this, so it is not a bmlib defect: WARNING,
             # and the analysis proceeds on the abstract.
             logger.warning(
-                "EuropePMC full text for %s/%s leaves an unclosed nested article; "
-                "scanning the abstract instead",
-                source,
-                ext_id,
+                "EuropePMC full text for %s leaves an unclosed nested article in %d bytes "
+                "served; scanning the abstract instead",
+                subject,
+                len(served),
             )
-            return None
+            return _FullTextFetch(None, FullTextStatus.UNCLOSED_REGION)
         if not article_xml.strip():
-            # Everything served was nested. The caller's `if full_text:` would
+            # Everything served was nested. The caller's `if fetch.text:` would
             # read the empty string as "nothing was served" and fall back
-            # silently, so it is reported here instead — the one outcome of
-            # this function that would otherwise reach storage with no signal
-            # at all. Measured empty: all 3,389 carriers across the baseline
-            # corpus and an 880-article EuropePMC draw keep their <body>, the
-            # least of them retaining 32.2% of its bytes.
+            # silently, so it is reported here instead. Measured empty: all
+            # 3,389 carriers across the baseline corpus and an 880-article
+            # EuropePMC draw keep their <body>, the least of them retaining
+            # 32.2% of its bytes.
             logger.warning(
-                "EuropePMC full text for %s/%s is entirely nested articles; "
+                "EuropePMC full text for %s is entirely nested articles (%d bytes served); "
                 "scanning the abstract instead",
-                source,
-                ext_id,
+                subject,
+                len(served),
             )
-            return None
-        return article_xml
+            return _FullTextFetch(None, FullTextStatus.ENTIRELY_NESTED)
+        if _ROOT_END_TAG not in served:
+            # Issue #183, and the last check for the reason given above: a body
+            # truncated *between* tags opens no unterminated construct, leaves
+            # no region open and empties nothing, so all three checks above
+            # pass it. Scanned as a complete article it yields
+            # `coi_disclosed=False` — "No COI disclosure found in full text" —
+            # for a disclosure that was in the lost tail, which is the
+            # missing-COI HIGH downgrade fired on evidence that does not exist.
+            #
+            # **Presence, not position.** Issue #183 proposed
+            # `rstrip().endswith(_ROOT_END_TAG)`; measured against both
+            # corpora that refuses complete articles at a real rate, because
+            # trailing comments, PIs and whitespace after the root are legal
+            # XML — 1,727 of the 97,909 archive articles (1.76%) and 23 of the
+            # 8,118 served ones (0.28%) end `</article><!--requester-ID …-->`.
+            # A truncation removes the tail and the root's end tag *is* in the
+            # tail, so absence is exactly what a truncation looks like:
+            # 0 false refusals across all 106,027 articles of both corpora.
+            # `</sub-article>` does not contain the substring, so what the
+            # strip removes cannot affect this.
+            #
+            # Not a well-formedness check, which is the second parse PR #159
+            # and PR #182 both declined; it would notice no mismatched <p>.
+            logger.warning(
+                "EuropePMC full text for %s did not arrive whole: no %s in %d bytes served; "
+                "scanning the abstract instead",
+                subject,
+                _ROOT_END_TAG,
+                len(served),
+            )
+            return _FullTextFetch(None, FullTextStatus.TRUNCATED)
+        return _FullTextFetch(article_xml, FullTextStatus.ANALYZED)
 
     def _check_pubmed(self, client: Any, pmid: str | None) -> _PubMedSignals:
         """Fetch and parse the PubMed record for *pmid*.
