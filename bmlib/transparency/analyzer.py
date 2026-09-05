@@ -475,8 +475,15 @@ _HTTP_TIMEOUT_SECONDS = 15.0
 # `NameError` carries `UnboundLocalError` in by inheritance.
 #
 # The two copies are pinned as agreeing by
-# `test_the_bug_types_agree_with_the_other_modules_copy`; a rule stated in
-# prose is not enforced.
+# `TestTheRestatedBugTypesMatchTheOtherModules`; a rule stated in prose is not
+# enforced — including this pointer, which named a test that has never existed
+# until the review of PR #192 grepped for it.
+#
+# The membership is pinned by `isinstance`, never by name: replacing
+# `KeyError, IndexError` with their shared base `LookupError` in *both* copies
+# passed the whole suite, silently widening the deny-list to every
+# `LookupError` subclass, because a set comparison sees two edited copies
+# agreeing and a name-exclusion test sees a name it was not told about.
 _BUG_TYPES: tuple[type[BaseException], ...] = (
     TypeError,
     AttributeError,
@@ -1853,29 +1860,52 @@ class TransparencyAnalyzer:
             #
             # The level is the exception's, not the branch's. A `TypeError`
             # from a client that is not what this code assumes, an
-            # `httpx.InvalidURL` from an `ext_id` that arrived as a non-string
-            # — those are bmlib being wrong, and holding one at DEBUG is what
-            # `fulltext/service.py` keeps `_BUG_TYPES` for. Everything else is
-            # the environment, and WARNs for the reason the non-404 branch
-            # below WARNs: results cache, nothing retries, and a silent
-            # transport failure is stored forever.
+            # `AttributeError` from one that arrived as `None` — those are
+            # bmlib being wrong, and holding one at DEBUG is what
+            # `fulltext/service.py` keeps `_BUG_TYPES` for. Both examples are
+            # `_BUG_TYPES` members and both are exercised by
+            # `test_a_bmlib_defect_is_reported_as_one`; an earlier draft named
+            # `httpx.InvalidURL` here, which is **neither** — it subclasses
+            # `Exception` directly, so it takes the WARNING branch, and the
+            # `ext_id` it blamed is interpolated into an f-string that
+            # stringifies anything. Everything else is the environment, and
+            # WARNs for the reason the non-404 branch below WARNs: results
+            # cache, nothing retries, and a silent transport failure is stored
+            # forever.
             #
             # **It does not re-raise**, which was issue #187's other option.
-            # Every other step in `analyze()` swallows so one dead API cannot
-            # cost an analysis; `fulltext/service.py` — the precedent the
-            # issue itself cites — reports a `_BUG_TYPES` member at ERROR and
-            # continues rather than raising; and making *this* step alone
-            # fatal would change what a public `analyze()` may raise while
-            # `_check_crossref`'s identical defect stayed swallowed. The
-            # ERROR is what an operator acts on; the status is what a stored
-            # result can be audited by.
+            # Every network step in this module swallows its own request so
+            # one dead API cannot cost an analysis — `analyze()` itself wraps
+            # nothing, which is why each step must — and making *this* step
+            # alone fatal would change what a public `analyze()` may raise
+            # while `_check_crossref`'s identical defect stayed swallowed.
+            # The ERROR is what an operator acts on; the status is what a
+            # stored result can be audited by.
+            #
+            # ERROR rather than WARNING is `jats_parser`'s level for the
+            # identical claim, and that is the whole of the precedent: a
+            # bmlib defect is not a remote-data failure. **`fulltext/
+            # service.py` is not a second precedent for the level** — four
+            # documents said it "reports a `_BUG_TYPES` member at ERROR",
+            # and it does not; `_warn_swallowed_bug` routes through
+            # `_warn_once`, which is `logger.warning`, and that module
+            # contains no `logger.error` at all. What it *is* the precedent
+            # for is reporting and continuing rather than raising, which is
+            # the claim this paragraph makes of it.
             if isinstance(e, _BUG_TYPES):
+                # `exc_info=True`, which no other line in this module carries:
+                # every one of them reports something a remote gave us, where
+                # this one reports that bmlib is wrong. The stack is the whole
+                # of what an operator can act on, and without it the report is
+                # "bmlib logged a TypeError". `fulltext/service.py` pairs its
+                # own bug report with a traceback for the same reason.
                 logger.error(
                     "EuropePMC full-text request for %s raised %s, which can only mean a bmlib "
                     "defect: %s; scanning the abstract instead",
                     subject,
                     type(e).__name__,
                     e,
+                    exc_info=True,
                 )
             else:
                 logger.warning(
@@ -1909,8 +1939,11 @@ class TransparencyAnalyzer:
             # 200 `IN_EPMC:Y` records stratified the same way and addressed
             # exactly as `_check_europepmc` addresses them, **81 of the 81
             # non-200s were 404** — so the DEBUG level is measured on the
-            # whole of what this branch now takes, and 0 of 200 is the floor
-            # under the branch below.
+            # whole of what this branch now takes, and 0 of the 81 non-200s
+            # is the floor under the branch below. That denominator is the
+            # tight one: 119 of the 200 served, so they could never have
+            # reached it, and "0 of 200" dilutes the claim with probes that
+            # were never eligible for it.
             #
             # It is logged rather than dropped, though, because #184 lived a
             # whole release inside this silence: every request 404'd and
@@ -1935,10 +1968,11 @@ class TransparencyAnalyzer:
             # WARNING, and the asymmetry with the 404 is the measurement, not
             # a preference. The 404's DEBUG rests on it being the ordinary
             # majority outcome of the gate this module uses; this branch took
-            # 0 of 200 live probes (2026-09-05), so it fires on nothing in a
-            # healthy draw and a WARNING on it is not noise. It is the level
-            # the consequence needs, too: `cache_results` defaults True and
-            # there is no retry and no `Retry-After` handling anywhere in
+            # 0 of the 81 non-200s among 200 live probes (2026-09-05) — the
+            # eligible denominator, the other 119 having served — so it fires
+            # on nothing in a healthy draw and a WARNING is not noise. It is
+            # the level the consequence needs, too: `cache_results` is True by
+            # default and there is no retry, no `Retry-After` handling in
             # `transparency/`, so an outage window silently caches a corpus of
             # absences, each having lost up to
             # `SCORE_COI_DISCLOSED + SCORE_DATA_FULL_OPEN`, never re-attempted.
@@ -1970,11 +2004,22 @@ class TransparencyAnalyzer:
             # usable"* for a response that carried no document. Issue #161's
             # own class of stored dishonesty, one branch it did not reach.
             #
-            # **`not served`, not `not served.strip()`.** A body
-            # carrying bytes that strip to nothing did arrive, and is a
-            # document-shaped claim; moving the boundary there would make the
-            # entirely-nested branch unreachable for a document whose regions
-            # strip out leaving whitespace. Pinned both ways.
+            # **`not served`, not `not served.strip()`.** A body carrying
+            # bytes that strip to nothing did arrive, and is a document-shaped
+            # claim; the stricter test would take a **wholly-whitespace body**
+            # — `"   \n  "` — out of the entirely-nested branch and report it
+            # as nothing served, which is a claim about the transport that the
+            # response refutes. Pinned both ways, and the second direction
+            # rests on `test_a_whitespace_only_body_is_still_entirely_nested_
+            # not_empty` alone.
+            #
+            # An earlier draft justified this by *"a document whose regions
+            # strip out leaving whitespace"* — `"  <sub-article>…</sub-
+            # article>  "` — which is the wrong document and measures nothing:
+            # its `served.strip()` is truthy, so both spellings of the guard
+            # reach the entirely-nested branch identically. Mutating the
+            # boundary reddens exactly one test, and it is the wholly-
+            # whitespace one.
             #
             # Measured empty, so the guard is carried by the branch it lands
             # in being wrong rather than by a rate: of 119 bodies served

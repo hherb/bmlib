@@ -147,11 +147,15 @@ must not be re-done.
   `NameError`/`KeyError`/`IndexError` at ERROR, since those can only mean
   bmlib is wrong — but it still returns rather than propagating, which was the
   issue's other option. Three reasons, and re-raising undoes all three: every
-  step in `analyze()` swallows, so one dead API cannot cost an analysis;
-  `fulltext/service.py` — the precedent #187 itself cites — reports a
-  `_BUG_TYPES` member at ERROR through `on_bug` and continues, rather than
-  raising; and making *this* step alone fatal changes what a public
-  `analyze()` may raise while `_check_crossref`'s identical defect stays
+  network step in the module swallows its own request, so one dead API cannot
+  cost an analysis (`analyze()` itself wraps nothing, which is why each step
+  must); `fulltext/service.py` — the precedent #187 itself cites — reports a
+  `_BUG_TYPES` member through `on_bug` and continues, rather than raising —
+  **at WARNING, not ERROR**: `on_bug` is `_warn_swallowed_bug`, which routes
+  through `_warn_once`, and that module has no `logger.error` at all, so it is
+  the precedent for continuing and `jats_parser` is the precedent for the
+  level (PR #192's review); and making *this* step alone fatal changes what
+  a public `analyze()` may raise while `_check_crossref`'s identical defect stays
   swallowed one method away. The ERROR is what an operator acts on; the stored
   `REQUEST_FAILED` is what the result is audited by afterwards. Tests:
   `TestAnAttemptThatGotNoAnswerSaysSo::test_a_bmlib_defect_is_reported_as_one`
@@ -169,7 +173,30 @@ must not be re-done.
   `json.JSONDecodeError`, `SyntaxError` carries `ET.ParseError`,
   `RuntimeError` carries `RecursionError`, and `OSError` is the environment —
   so adding any of the four would report a remote-data failure as a bmlib
-  defect and break the ERROR level's meaning from the other side.
+  defect and break the ERROR level's meaning from the other side. **The
+  exclusions are pinned by `isinstance`, never by `not in _BUG_TYPES`**
+  (PR #192's review): a membership test sees only the names it was given,
+  so replacing `KeyError, IndexError` with their shared base `LookupError`
+  in *both* copies passed the whole suite — the agreement test saw two
+  edited copies agreeing and the exclusion test saw a name nobody had told
+  it about, while the deny-list had silently widened to every `LookupError`
+  subclass. Test the relation the code uses.
+- **`analyzer_version` is deliberately not bumped for the `NOT_SERVED`
+  narrowing** (#191, raised in PR #192's review). Narrowing a published
+  enum member's meaning is normally a migration problem: a stored
+  `not_served` written before the change may have been a 503, and after
+  it the member is documented as *"Europe PMC answered HTTP 404"*, so a
+  consumer joining an existing corpus would read legacy rows as 404s —
+  the failure mode `full_text_status=None` exists to prevent one field
+  up. It does not arise here, and the reason is release scope rather
+  than design: `FullTextStatus` was added by #161 in the **same
+  `[Unreleased]` block**, so no published version of bmlib has ever
+  written the field at all and the two meanings never ship apart. Only a
+  corpus written from unreleased `main` between #161 and #191 can hold
+  the old meaning, and nothing distinguishes it there. Do not re-open
+  this as a compatibility gap — but note that the argument expires the
+  moment `FullTextStatus` ships: a *later* narrowing of any member would
+  need the bump, and `analyzer_version` has never been moved off `1.0`.
 - **The empty-body guard is `not served`, never `not served.strip()`** (#190).
   It sits at the status dispatch, above all four refusals, because an empty
   body is not a claim about a document's shape — nothing arrived to have one.

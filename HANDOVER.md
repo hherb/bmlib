@@ -162,7 +162,8 @@ branch; what a session repeats:
   fresh probe — 200 records, stratified by source and year, addressed exactly
   as `_check_europepmc` addresses them (2026-09-05) — read 119 served and **81
   of 81 non-200s were 404**. So DEBUG is now measured over the whole of what
-  its branch takes, and a non-404 fires on 0 of 200: a floor under the
+  its branch takes, and a non-404 fires on 0 of the 81 non-200s — the
+  eligible denominator, not 0 of 200 — a floor under the
   WARNING, not a proof Europe PMC never emits one.
 - **`""` is falsy and is not `None`.** `_strip_nested_articles("")` returns
   `""`, so an empty 200 body slipped past the `is None` check and landed in
@@ -173,8 +174,11 @@ branch; what a session repeats:
   carried by the branch being wrong for it and not by a rate.
 - **The re-raise was refused, on the precedent the issue itself cited.**
   #187 offered ERROR-and-raise or a narrowed `except`; `fulltext/service.py`
-  reports a `_BUG_TYPES` member at ERROR and *continues*, every step in
-  `analyze()` swallows so one dead API cannot cost an analysis, and making
+  reports a `_BUG_TYPES` member and *continues* (at WARNING, not ERROR — the
+  review of PR #192 found four documents claiming otherwise; the ERROR level
+  here rests on `jats_parser`, which does log ERROR for the identical claim),
+  every network step in the module swallows its own request so one dead API
+  cannot cost an analysis — `analyze()` itself wraps nothing — and making
   this step alone fatal would change what a public `analyze()` may raise while
   `_check_crossref`'s identical defect stayed swallowed one method away. Read
   what a cited precedent actually does before quoting it.
@@ -185,15 +189,32 @@ branch; what a session repeats:
   exception hierarchy. What is load-bearing is what the list *excludes* —
   `ValueError` carries `json.JSONDecodeError`, `SyntaxError` carries
   `ET.ParseError`, `RuntimeError` carries `RecursionError`.
-- **Eleven mutants, all killed**, including the two that matter most: the
-  empty-body boundary moved to `.strip()` (which makes the entirely-nested
-  branch unreachable for a document whose regions strip out leaving
-  whitespace), and the new member omitted from the partition.
+- **Eleven mutants, all killed** — and PR #192's review found two more that
+  were **not**, both now closed. Widening `KeyError, IndexError` to their
+  shared base `LookupError` in *both* `_BUG_TYPES` copies passed the whole
+  suite, because a set comparison sees two edited copies agreeing and a
+  name-exclusion test sees a name nobody named; the exclusions are asserted
+  through `isinstance` now, which is the relation the code uses. And the
+  WARNING branch could drop `type(e).__name__` unnoticed, leaving a
+  `ConnectTimeout` and a `ReadTimeout` indistinguishable in a log — the
+  ERROR branch beside it was already pinned.
+- **A rationale must name the document it decides.** The empty-body boundary
+  was justified, in three files, by *"a document whose regions strip out
+  leaving whitespace"* — the wrong document: `"  <sub-article>…"` has a
+  truthy `.strip()`, so both spellings of the guard reach the
+  entirely-nested branch identically. Mutating it reddens exactly one test,
+  and it is the **wholly-whitespace** body. Measured, and now pinned from
+  both sides by `test_the_document_the_boundary_does_not_decide`.
 
-**Nothing was filed from this branch.** That is unusual here — almost every
-recent PR filed its successor — so it is worth stating rather than leaving to
-be inferred from a count. #186 and #188 are what remain of the family and both
-predate this branch.
+**#193 was filed from this branch**, out of its own review. The four
+`_query_*` helpers and `_check_trial_results` drop a non-200 with **no log
+line at any level** — the `except` catches only raises — and swallow a
+`_BUG_TYPES` member at DEBUG, which is #187 unfixed in five more places.
+`_query_europepmc`'s copy is the one that matters: it *gates* this branch's
+fix, so in a Europe PMC outage the search 503s, `_check_europepmc` is never
+called, and the result stores `NOT_ATTEMPTED` — *"No request was made"* —
+silently, at HIGH with a tier downgrade. **Do not read this branch's ROADMAP
+row as closing the family.** #186 and #188 also remain and predate it.
 
 ## Current state
 
