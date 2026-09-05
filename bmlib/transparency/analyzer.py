@@ -286,6 +286,30 @@ _INDUSTRY_COI_KEYWORDS = [
     "advisory board",
 ]
 
+# ---- EuropePMC REST ----
+#: The base every EuropePMC call is built from. One constant rather than two
+#: literals, because issue #184 was exactly the two drifting apart: the search
+#: call was right and the full-text call was not, and nothing said so.
+#:
+#: **An article is addressed by its EuropePMC accession alone** — no
+#: ``{source}`` segment. That is measured, not inferred: on 2026-09-05 the
+#: single-segment form served 200 for PMC12900525, PMC3258128, PMC10030002,
+#: PMC13426601 and six ``PPR`` accessions, while ``{source}/{ext_id}``, the
+#: bare numeric id and the PMID all returned EuropePMC's own 404 (their CORS
+#: headers, ``content-length: 0``, so theirs rather than a proxy's). The
+#: sibling two-segment endpoints ``textMinedTerms`` and ``supplementaryFiles``
+#: 404 the same way, so it is the path shape and not one endpoint.
+#:
+#: The accession is **not** a PMCID and must not be normalised into one:
+#: 75,760 of EuropePMC's 12,220,678 ``IN_EPMC:Y`` records (0.62%, from their
+#: own hit counts rather than a draw) are preprints carrying no ``pmcid``,
+#: addressed by a ``PPR…`` accession that
+#: :func:`~bmlib.fulltext.service._normalise_pmc_id` would reject. This
+#: module and ``fulltext/service.py`` agree on the *base* — pinned by
+#: ``test_the_two_modules_build_the_same_url_for_the_same_article`` — and
+#: deliberately not on the identifier.
+EUROPEPMC_REST_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
+
 # ---- PubMed E-utilities ----
 EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 # NCBI asks every E-utilities caller to identify itself; `email` comes from the
@@ -1715,10 +1739,22 @@ class TransparencyAnalyzer:
         joins the line to a stored result — where the caller supplied one;
         ``analyze()`` always does, but its own ``document_id`` is a caller's
         string and may be empty, and a line without it cannot be joined to
-        anything — and how much was served, in bytes. A non-200 does not warn,
-        because there is nothing there to report.
+        anything — and how much was served, in bytes. A non-200 does **not**
+        warn, being the ordinary outcome for a paper EuropePMC holds but does
+        not serve open-access; it logs the URL at DEBUG, and the comment at
+        that branch carries the measurement the level rests on.
+
+        Args:
+            client: An ``httpx``-shaped client; only ``get(url)`` is used.
+            source: The record's ``source``. It addresses nothing — see
+                :data:`EUROPEPMC_REST_BASE` — and is used only to name the
+                subject of the log lines, so it may be ``None``.
+            ext_id: The EuropePMC accession (``PMC…`` or ``PPR…``). This is
+                the address; without it no request is made.
+            document_id: The caller's own identifier, so a log line can be
+                joined to the stored result. May be empty.
         """
-        if not source or not ext_id:
+        if not ext_id:
             # Reachable only under `inEPMC == "Y"`, so EuropePMC has positively
             # claimed to hold the full text and then given nothing to address
             # it by. That is a malformed record rather than an ordinary
@@ -1726,6 +1762,14 @@ class TransparencyAnalyzer:
             # one: no request, no log at any level, and a status a reader would
             # take as "we had no reason to ask". A deposit can reach it, so
             # WARNING and not ERROR — the module's own rule.
+            #
+            # **`source` is deliberately not required.** It was, while it was
+            # a path segment; since issue #184 it addresses nothing, and a
+            # guard kept past the reason for it refuses a fetch that would
+            # have worked — the module's own rule about asking what else a
+            # guard was holding. It is still reported, because a record
+            # naming no source is worth seeing in the line, and it still
+            # names the subject of every message below.
             logger.warning(
                 "EuropePMC says it holds full text for document %s but the record carries "
                 "no address for it (source=%r, id=%r); scanning the abstract instead",
@@ -1743,14 +1787,41 @@ class TransparencyAnalyzer:
         # and inside this `except` it would be logged at DEBUG as "fetch
         # failed" and reported to the caller as "EuropePMC served nothing" —
         # the shape `fulltext/service.py` keeps `_BUG_TYPES` for.
+        url = f"{EUROPEPMC_REST_BASE}/{ext_id}/fullTextXML"
         try:
-            resp = client.get(
-                f"https://www.ebi.ac.uk/europepmc/webservices/rest/{source}/{ext_id}/fullTextXML"
-            )
+            resp = client.get(url)
         except Exception as e:
             logger.debug("EuropePMC full-text fetch failed for %s: %s", subject, e)
             return _FullTextFetch(None, FullTextStatus.NOT_SERVED)
         if resp.status_code != 200:
+            # DEBUG, and the level is measured rather than chosen. Issue #184
+            # proposed raising it, on the argument that a non-200 for a record
+            # whose own metadata says `inEPMC: Y` is EuropePMC contradicting
+            # itself. It is not: `inEPMC` says EuropePMC *holds* the text,
+            # while `fullTextXML` serves the open-access subset of it. Probed
+            # on 2026-09-05 over 150 `IN_EPMC:Y` records stratified by source
+            # and publication year, **no `isOpenAccess: N` record served — 0
+            # of 53** — and `isOpenAccess: Y` still 404'd in 35 of 97. So a
+            # non-200 here is the ordinary majority outcome for the gate this
+            # module actually uses, and a WARNING on it would be noise on
+            # every closed-access paper analysed. (Each cell is one cursor
+            # page, so those are not population rates; the 0 of 53 is what
+            # the decision rests on, and it is a floor, not a proof that no
+            # such record can serve.)
+            #
+            # It is logged rather than dropped, though, because #184 lived a
+            # whole release inside this silence: every request 404'd and
+            # nothing said so at any level. The URL is what names the defect,
+            # so the URL is what the line carries. What actually catches the
+            # next #184 is the test that pins it —
+            # `TestTheFullTextUrlIsTheOneEuropePmcServes` — not this line,
+            # which no operator reads until they already suspect something.
+            logger.debug(
+                "EuropePMC served no full text for %s: HTTP %d from %s",
+                subject,
+                resp.status_code,
+                url,
+            )
             return _FullTextFetch(None, FullTextStatus.NOT_SERVED)
         served = resp.text
         # Bytes, not `len(served)`: `resp.text` is the *decoded* string, so its
@@ -1950,7 +2021,7 @@ class TransparencyAnalyzer:
         self._rate_limit()
         try:
             resp = client.get(
-                "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+                f"{EUROPEPMC_REST_BASE}/search",
                 params={"query": query, "format": "json", "resultType": "core"},
             )
             if resp.status_code == 200:

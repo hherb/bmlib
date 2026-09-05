@@ -370,7 +370,7 @@ All requests go through one `httpx.Client` with a 15-second timeout and the head
 |------|-----|----------|----------|----------|
 | 1 | CrossRef | `https://api.crossref.org/works/{doi}` | `doi` | Funder records; structured industry-funder detection. |
 | 2 | Europe PMC search | `https://www.ebi.ac.uk/europepmc/webservices/rest/search` | `doi` or `pmid` | Record lookup by `DOI:"{doi}"` (preferred) or `EXT_ID:{pmid}`; abstract text; the PMID for step 4. |
-| 3 | Europe PMC full text | `https://www.ebi.ac.uk/europepmc/webservices/rest/{source}/{ext_id}/fullTextXML` | step 2 record with `inEPMC == "Y"` | COI statement, industry-COI detection, data-availability statement. Nested articles are removed first — see [The full text is the article's own](#the-full-text-is-the-articles-own). |
+| 3 | Europe PMC full text | `https://www.ebi.ac.uk/europepmc/webservices/rest/{ext_id}/fullTextXML` | step 2 record with `inEPMC == "Y"` | COI statement, industry-COI detection, data-availability statement. Nested articles are removed first — see [The full text is the article's own](#the-full-text-is-the-articles-own). The article is addressed by its Europe PMC **accession** alone — see [Addressing an article](#addressing-an-article). *(unreleased)* |
 | 4 | PubMed E-utilities | `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi` (`db=pubmed&retmode=xml`) | `pmid`, or a PMID in the step-2 record | `<CoiStatement>`, `<DataBankList>` trial registrations and data-deposition accessions, `<GrantList>` funders. |
 | 5 | OpenAlex | `https://api.openalex.org/works/doi:{doi}` | `doi` | Open-access status, citation count. |
 | 6 | ClinicalTrials.gov v2 | `https://clinicaltrials.gov/api/v2/studies/{nct_id}` (`fields=hasResults`) | an NCT id from step 4, else one credited in step 2's abstract | Posted-results check. |
@@ -378,6 +378,18 @@ All requests go through one `httpx.Client` with a 15-second timeout and the head
 The step-2 search is issued **once** per document: the record is threaded into the PubMed and trial-registration steps rather than re-queried, halving Europe PMC traffic compared to earlier releases.
 
 Step 3 is the difference between a real data-availability reading and a guess. COI and data-availability statements live in a paper's full text, never its abstract, so when `inEPMC != "Y"` (no open-access full text at Europe PMC) the analyzer falls back to scanning the abstract, `full_text_analyzed` stays `False`, and industry-COI detection does not run at all. COI *disclosure* and data availability are two exceptions: step 4 can establish either — a COI statement, or a `<DataBankList>` deposition accession — from PubMed's structured metadata whether or not full text was reachable.
+
+#### Addressing an article
+
+*(unreleased — issue #184)*
+
+An article's full text is addressed by its **Europe PMC accession alone**: `.../rest/PMC3258128/fullTextXML`. There is no `{source}` segment, and the source the search record carries plays no part in the URL.
+
+That is measured rather than read off the documentation. Probed on 2026-09-05, the single-segment form served HTTP 200 for `PMC12900525`, `PMC3258128`, `PMC10030002`, `PMC13426601` and six `PPR` accessions; `{source}/{ext_id}`, the bare numeric id and the PMID all returned Europe PMC's own 404 (their CORS headers, `content-length: 0`). The sibling two-segment endpoints `textMinedTerms` and `supplementaryFiles` 404 the same way, so it is the path shape rather than one endpoint or one article.
+
+**The accession is not a PMCID, and normalising it into one would lose a population.** 75,760 of Europe PMC's 12,220,678 `IN_EPMC:Y` records — 0.62%, from their own hit counts rather than a draw — are preprints carrying no `pmcid` at all, addressed by a `PPR…` accession. `bmlib.fulltext`'s `_normalise_pmc_id` would reject every one of them, so the two modules deliberately agree on the *base* URL and not on the identifier; a test pins the first and would fail on the second.
+
+**A non-200 here is ordinary, and is logged at DEBUG.** `inEPMC` says Europe PMC *holds* the full text; `fullTextXML` serves the open-access subset of it. Of 150 `IN_EPMC:Y` records probed across sources and publication years, no `isOpenAccess: N` record served — 0 of 53 — and `isOpenAccess: Y` still 404'd in 35 of 97. So warning on a non-200 would mean a warning on every closed-access paper analysed. Each of those cells is one cursor page rather than a random sample, so they are not population rates; the `0 of 53` is a floor, not a proof that no such record can serve.
 
 #### The full text is the article's own
 
