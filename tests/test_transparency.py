@@ -101,10 +101,18 @@ class _FakeFullTextClient:
     This fake used to accept any ``url.endswith("/fullTextXML")``, so the
     path the analyzer built was asserted nowhere and issue #184 — an extra
     ``{source}/`` segment that made every live fetch 404 — sat undetected
-    behind 47 green tests that each *looked* like a full-text test. Matching
-    exactly makes all of them a URL check for free, the ``parser_log``
-    fixture's trick one module over: a fake that serves any path can only
-    ever confirm that the analyzer asked for something.
+    behind tests that each *looked* like a full-text test. Matching exactly
+    turns the ones that actually fetch into URL checks for free, the
+    ``parser_log`` fixture's trick one module over: a fake that serves any
+    path can only ever confirm that the analyzer asked for something.
+
+    Measured, and say which tree each number is of: with the suffix match,
+    reintroducing the defect passes **236 of `main`'s 236**; with the whole
+    URL matched here and in :class:`_RecordingClient`, it reddens **52 of
+    this branch's 249**, of which **43 are tests that predate the branch**.
+    Not *every* test reaching the fake: those passing ``None`` or
+    ``in_epmc="N"`` never fetch, so they are silent on the address by
+    construction and correctly stay green.
 
     ``served_urls`` records what was asked for, so a test can assert on the
     URL directly rather than only through the body it got back.
@@ -399,7 +407,11 @@ class TestTheFullTextUrlIsTheOneEuropePmcServes:
             client = _FakeFullTextClient("<article>body</article>", ext_id="PMC123")
             analyzer._fetch_europepmc_fulltext(client, source, "PMC123")
             built.append(client.served_urls)
-        assert built[0] == built[1] == built[2]
+        # Named, not merely equal: three empty lists are all equal too, so a
+        # mutant that stops fetching altogether satisfies the differential
+        # assertion on its own. The positive control is what excludes it.
+        expected = [f"{EUROPEPMC_REST_BASE}/PMC123/fullTextXML"]
+        assert built == [expected, expected, expected]
 
     def test_a_preprint_accession_is_passed_through_unnormalised(self):
         """A ``PPR`` accession is the address, so it must not be made a PMCID.
@@ -421,23 +433,101 @@ class TestTheFullTextUrlIsTheOneEuropePmcServes:
         ]
         assert fetch.text is not None
 
-    def test_the_two_modules_build_the_same_url_for_the_same_article(self):
+    def test_a_record_with_no_pmcid_is_addressed_by_its_id(self):
+        """The line that actually supplies a preprint's accession.
+
+        Every other test in this class calls ``_fetch_europepmc_fulltext``
+        directly, which steps over ``record["pmcid"] or record["id"]`` in
+        ``_check_europepmc`` — the *only* place a ``PPR…`` accession is
+        chosen. Deleting that fallback, which loses the address for all
+        75,760 preprints this class's docstrings argue about, passed the
+        whole suite: the module's most-argued claim had nothing behind it.
+
+        So this one goes through ``_check_europepmc``, with a record shaped
+        as Europe PMC serves a preprint — ``pmcid`` absent entirely, ``id``
+        carrying the accession (verified live: ``SRC:PPR AND IN_EPMC:Y``
+        records return ``{'id': 'PPR1303959', 'pmcid': None}``).
+        """
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient("<article>body</article>", ext_id="PPR1303959")
+        analysis = _Analysis()
+        analyzer._check_europepmc(
+            client,
+            {
+                "resultList": {
+                    "result": [
+                        {
+                            "abstractText": "",
+                            "inEPMC": "Y",
+                            "source": "PPR",
+                            "id": "PPR1303959",
+                        }
+                    ]
+                }
+            },
+            analysis,
+        )
+        assert client.served_urls == [f"{EUROPEPMC_REST_BASE}/PPR1303959/fullTextXML"]
+        assert analysis.full_text_analyzed is True
+
+    def test_a_pmcid_is_preferred_over_the_id_that_stands_in_for_it(self):
+        """The other half: ``id`` is the fallback, not the address.
+
+        A ``MED`` record carries both — ``id`` being the PMID — and the PMID
+        form is measured to 404, so preferring it would break every record
+        that has a PMCID. Pins the ``or`` in both directions.
+        """
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient("<article>body</article>", ext_id="PMC123")
+        analysis = _Analysis()
+        analyzer._check_europepmc(
+            client,
+            {
+                "resultList": {
+                    "result": [
+                        {
+                            "abstractText": "",
+                            "inEPMC": "Y",
+                            "source": "MED",
+                            "id": "12345678",
+                            "pmcid": "PMC123",
+                        }
+                    ]
+                }
+            },
+            analysis,
+        )
+        assert client.served_urls == [f"{EUROPEPMC_REST_BASE}/PMC123/fullTextXML"]
+        assert analysis.full_text_analyzed is True
+
+    def test_the_two_modules_agree_on_the_base_and_on_a_pmcid(self):
         """The defect was the two modules disagreeing, so pin them together.
 
         ``fulltext/service.py`` was always right; ``transparency`` was the
         broken one. Importing both here creates no runtime dependency —
-        ``transparency`` still needs nothing from ``fulltext`` — but it does
-        mean a later change to either base is a failing test rather than a
-        silent divergence.
+        ``transparency`` still needs nothing from ``fulltext``, and the two
+        deliberately hold **two** constants rather than one, since sharing
+        one would be the dependency this module does not have.
+
+        **Say what this pins and what it does not.** It pins the bases equal,
+        and — for a plain PMCID, where the two modules' *identifiers* also
+        agree — that ``transparency``'s URL is the one ``service.py``'s
+        normalisation and base compose to. It does not evaluate
+        ``service.py``'s own f-string, so that module regaining a path
+        segment (this defect, one module over) is not caught here; nothing
+        short of calling its fetch would catch that, and the identifiers
+        diverge by design for ``PPR`` — the test above.
         """
-        from bmlib.fulltext.service import EUROPE_PMC_BASE
+        from bmlib.fulltext.service import EUROPE_PMC_BASE, _normalise_pmc_id
 
         assert EUROPEPMC_REST_BASE == EUROPE_PMC_BASE
 
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient("<article>body</article>", ext_id="PMC3258128")
         analyzer._fetch_europepmc_fulltext(client, "PMC", "PMC3258128")
-        assert client.served_urls == [f"{EUROPE_PMC_BASE}/PMC3258128/fullTextXML"]
+        assert client.served_urls == [
+            f"{EUROPE_PMC_BASE}/{_normalise_pmc_id('PMC3258128')}/fullTextXML"
+        ]
 
     def test_a_record_naming_no_source_is_still_fetched(self):
         """``source`` addressed the article until #184; now it addresses nothing.
@@ -453,6 +543,31 @@ class TestTheFullTextUrlIsTheOneEuropePmcServes:
         assert client.served_urls == [f"{EUROPEPMC_REST_BASE}/PMC123/fullTextXML"]
         assert fetch.text is not None
         assert fetch.status is FullTextStatus.ANALYZED
+
+    def test_an_unnamed_source_does_not_print_as_a_path_segment(self, caplog):
+        """``None/PMC123`` is the shape this fix removed from the URL.
+
+        ``subject`` names the article in six log lines, four of them
+        refusal WARNINGs. Built unconditionally as ``f"{source}/{ext_id}"``
+        it renders a two-segment path for a record naming no source — in the
+        one module whose signature defect *was* a spurious two-segment path,
+        printed beside the corrected single-segment URL on the same DEBUG
+        line. Nothing pinned the rendering in either direction.
+        """
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient("<article>body</article>", ext_id="PMC123")
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            analyzer._fetch_europepmc_fulltext(client, None, "PMC999", "doc-1")
+        assert "None/PMC999" not in caplog.text
+        assert "for PMC999 (document doc-1)" in caplog.text
+
+    def test_a_named_source_still_names_the_subject(self, caplog):
+        """The other direction: a source that *is* named stays in the line."""
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient("<article>body</article>", ext_id="PMC123")
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            analyzer._fetch_europepmc_fulltext(client, "MED", "PMC999", "doc-1")
+        assert "MED/PMC999 (document doc-1)" in caplog.text
 
     def test_a_record_naming_no_accession_is_not_fetched(self):
         """The other half of the guard is the half that still holds."""
@@ -471,8 +586,14 @@ class TestTheFullTextUrlIsTheOneEuropePmcServes:
         record served (0 of 53) and ``isOpenAccess: Y`` still 404'd in 35 of
         97 — so a non-200 is the ordinary majority outcome for this module's
         gate, and warning on it would be noise on every closed-access paper.
-        The assertion is on the *URL* rather than on the word "HTTP", which
-        several other lines in this module already carry.
+        The assertion is on the *URL* because the URL is the claim: ``HTTP
+        %d`` would pass whatever address the module asked for, which is
+        exactly how #184 stayed hidden.
+
+        The level is asserted on the record that carries the URL rather than
+        via ``caplog.at_level``, which admits anything at or above DEBUG — so
+        a line moved to INFO passed this and its ``does_not_warn`` companion
+        both.
         """
         analyzer = TransparencyAnalyzer()
         # Serves only PMC123, so asking for anything else is a 404.
@@ -480,7 +601,10 @@ class TestTheFullTextUrlIsTheOneEuropePmcServes:
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
             fetch = analyzer._fetch_europepmc_fulltext(client, "PMC", "PMC999")
         assert fetch.status is FullTextStatus.NOT_SERVED
-        assert f"{EUROPEPMC_REST_BASE}/PMC999/fullTextXML" in caplog.text
+        url = f"{EUROPEPMC_REST_BASE}/PMC999/fullTextXML"
+        named = [r for r in caplog.records if url in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.DEBUG
 
     def test_a_non_200_does_not_warn(self, caplog):
         """The other half of the level claim, and the half a mutant flips."""
@@ -491,7 +615,13 @@ class TestTheFullTextUrlIsTheOneEuropePmcServes:
         assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
     def test_the_search_endpoint_is_built_from_the_same_base(self):
-        """One base, so a move cannot leave the two Europe PMC calls apart."""
+        """One base, so a move cannot leave the two Europe PMC calls apart.
+
+        The assertion is the **literal** URL, not ``f"{EUROPEPMC_REST_BASE}
+        /search"``: written against the constant, source and assertion move
+        together, so the one thing the name promises — that a drift in the
+        base is caught — is the one thing it could not detect.
+        """
         analyzer = TransparencyAnalyzer()
         seen = []
 
@@ -501,7 +631,7 @@ class TestTheFullTextUrlIsTheOneEuropePmcServes:
                 return _FakeResponse(status_code=200, json_data={})
 
         analyzer._query_europepmc(_Client(), "DOI:10.1/x")
-        assert seen == [f"{EUROPEPMC_REST_BASE}/search"]
+        assert seen == ["https://www.ebi.ac.uk/europepmc/webservices/rest/search"]
 
 
 class TestStructuralCOIDetection:
@@ -755,7 +885,11 @@ class TestIndustryCOIDetection:
             def get(self, url, **kwargs):
                 if "crossref" in url:
                     return _FakeResponse(status_code=200, json_data={"message": {}})
-                if "fullTextXML" in url:
+                if url.endswith("/fullTextXML"):
+                    # One address, for `_RecordingClient`'s reason: a
+                    # substring match is satisfied by #184's two-segment form.
+                    if url != f"{EUROPEPMC_REST_BASE}/PMC123/fullTextXML":
+                        return _FakeResponse(status_code=404)
                     return _FakeResponse(status_code=200, text=full_text)
                 if "europepmc" in url:
                     return _FakeResponse(status_code=200, json_data=epmc_record)
@@ -2202,7 +2336,21 @@ def _pubmed_xml(
 
 
 class _RecordingClient:
-    """Fake httpx client that dispatches on URL and records every request."""
+    """Fake httpx client that dispatches on URL and records every request.
+
+    **It serves full text at one address only**, for the reason
+    :class:`_FakeFullTextClient` does — and this is the fake that matters
+    most, being the only one reached through :meth:`analyze`, the end-to-end
+    path issue #184 actually broke. It matched ``"fullTextXML" in url``, a
+    *substring* test looser still than the ``endswith`` #184 removed from the
+    other fake, so the whole-URL net stopped one level short of the path a
+    caller exercises.
+
+    Routing stays on the endpoint and only *serving* is address-checked: a
+    request for the wrong full-text URL has to 404 the way the live API does,
+    not fall through to the ``"europepmc" in url`` branch below and be
+    answered with a search payload.
+    """
 
     def __init__(
         self,
@@ -2212,12 +2360,18 @@ class _RecordingClient:
         full_text: str | None = None,
         pubmed: str | None = None,
         trial_has_results: bool = False,
+        ext_id: str = "PMC123",
     ):
         self.crossref = crossref
         self.epmc = epmc
         self.full_text = full_text
         self.pubmed = pubmed
         self.trial_has_results = trial_has_results
+        #: The one address full text is served at. ``PMC123`` is the accession
+        #: `_epmc_payload` and `_epmc_record` deposit, and the three literals
+        #: have to agree — loudly, since a drift reddens every test that
+        #: fetches rather than silently serving nothing.
+        self.full_text_url = f"{EUROPEPMC_REST_BASE}/{ext_id}/fullTextXML"
         self.calls: list[tuple[str, dict]] = []
 
     def __enter__(self):
@@ -2233,8 +2387,8 @@ class _RecordingClient:
             if self.crossref is None:
                 return _FakeResponse(status_code=404)
             return _FakeResponse(status_code=200, json_data=self.crossref)
-        if "fullTextXML" in url:
-            if self.full_text is None:
+        if url.endswith("/fullTextXML"):
+            if self.full_text is None or url != self.full_text_url:
                 return _FakeResponse(status_code=404)
             return _FakeResponse(status_code=200, text=self.full_text)
         if "europepmc" in url:
@@ -3167,7 +3321,10 @@ class TestARefusedFullTextLeavesATrace:
         )
         _install_fake_client(monkeypatch, client)
         result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
-        assert any("fullTextXML" in url for url in client.urls())
+        # The whole URL, not a substring of it: `"fullTextXML" in url` is
+        # satisfied by #184's two-segment form too, so this assertion passed
+        # while every live fetch 404'd.
+        assert client.full_text_url in client.urls()
         assert result.full_text_status is FullTextStatus.TRUNCATED
         assert result.full_text_analyzed is False
         assert _INDICATOR_COI_UNKNOWN_REFUSED in result.risk_indicators

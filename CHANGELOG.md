@@ -85,10 +85,14 @@ All notable changes to bmlib are documented here. The format is based on
   PMCID**: 75,760 of Europe PMC's 12,220,678 `IN_EPMC:Y` records — 0.62%, from
   their own hit counts rather than a draw — are preprints carrying no `pmcid`
   at all, addressed by a `PPR…` accession that `fulltext`'s
-  `_normalise_pmc_id` would reject. So the two modules now agree on
-  `EUROPEPMC_REST_BASE` (one constant, since two literals drifting apart is
-  exactly what this was) and deliberately not on the identifier; a test pins
-  the first and would fail on the second.
+  `_normalise_pmc_id` would reject. So the two modules now **agree on the
+  base** and deliberately not on the identifier; a test pins the first and
+  would fail on the second. They agree by assertion, not by sharing: each
+  still holds its own literal (`transparency`'s `EUROPEPMC_REST_BASE`,
+  `fulltext`'s `EUROPE_PMC_BASE`), because importing across would be the
+  runtime dependency `transparency` deliberately does not have. What the one
+  new constant unified is this module's **own** two literals — the search call
+  and the full-text call, which is where the drift happened.
 
   The guard beside it lost its `source` half at the same time. It refused to
   fetch unless *both* `source` and `ext_id` were present, which was right
@@ -133,6 +137,16 @@ All notable changes to bmlib are documented here. The format is based on
   `isOpenAccess: N` record served (0 of 53) and `isOpenAccess: Y` still 404'd
   in 35 of 97.
 
+  **Traffic and per-analysis latency move too**, which is a consequence of
+  restoring the step rather than of any choice in it, and is not visible in
+  the table above. Every one of these requests used to be answered with a
+  0-byte 404; each now downloads a full JATS body and lexes it —
+  `PMC3258128`, `PMC10030002` and `PMC12900525` measure 94 kB, 99 kB and
+  164 kB. A caller analysing a large open-access corpus should expect roughly
+  100 kB per article where it previously paid nothing, plus one
+  `_strip_nested_articles` pass over it; the 0.35 s inter-request floor is
+  unchanged, so throughput is not.
+
   **The test is the remedy for the silence, not the log line.** A non-200 is
   the one outcome that deliberately does not warn, so the defect was invisible
   for its whole life; issue #184 proposed raising that level, arguing a 404
@@ -145,14 +159,21 @@ All notable changes to bmlib are documented here. The format is based on
   directions.
 
   What could have caught it is a test, and there was none: `_FakeFullTextClient`
-  matched `url.endswith("/fullTextXML")`, which **both** URL forms satisfy, so
-  47 tests that each looked like a full-text test asserted nothing about the
-  path. Measured: with that fake, reintroducing the defect passes **236 of
-  236**; with the fake matching the whole URL it reddens **42**. That is the
-  `parser_log` fixture's trick one module over — a net that costs nothing
-  because existing tests become URL checks without being rewritten — plus five
-  tests pinning the URL, the source's absence from it, a `PPR` accession
-  passing through unnormalised, and the two modules' bases being equal.
+  matched `url.endswith("/fullTextXML")` and `_RecordingClient` — the fake
+  reached through `analyze()`, so the end-to-end path — matched the looser
+  `"fullTextXML" in url`. **Both** URL forms satisfy either, so tests that each
+  looked like a full-text test asserted nothing about the path. Measured, and
+  each number says which tree it is of: with the suffix match, reintroducing
+  the defect passes **236 of `main`'s 236**; with both fakes matching the whole
+  URL it reddens **52 of this branch's 249**, of which **43 predate the
+  branch**. That is the `parser_log` fixture's trick one module over — a net
+  that costs nothing because existing tests become URL checks without being
+  rewritten — plus **thirteen** new tests: the URL literal, the source's
+  absence from it, a `PPR` accession passing through unnormalised, the
+  `record["pmcid"] or record["id"]` fallback in both directions, a record
+  naming no source and one naming no accession, the subject rendering in both
+  directions, the two modules' bases, the search endpoint, and the DEBUG line's
+  URL, level and absence of a warning.
 
   Filed rather than folded in: **issue #188**, a record carrying no PMC
   accession is still fetched by PMID — which never serves — and stores

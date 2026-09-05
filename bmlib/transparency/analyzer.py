@@ -306,7 +306,7 @@ _INDUSTRY_COI_KEYWORDS = [
 #: addressed by a ``PPR…`` accession that
 #: :func:`~bmlib.fulltext.service._normalise_pmc_id` would reject. This
 #: module and ``fulltext/service.py`` agree on the *base* — pinned by
-#: ``test_the_two_modules_build_the_same_url_for_the_same_article`` — and
+#: ``test_the_two_modules_agree_on_the_base_and_on_a_pmcid`` — and
 #: deliberately not on the identifier.
 EUROPEPMC_REST_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 
@@ -1749,8 +1749,12 @@ class TransparencyAnalyzer:
             source: The record's ``source``. It addresses nothing — see
                 :data:`EUROPEPMC_REST_BASE` — and is used only to name the
                 subject of the log lines, so it may be ``None``.
-            ext_id: The EuropePMC accession (``PMC…`` or ``PPR…``). This is
-                the address; without it no request is made.
+            ext_id: What addresses the article. Ordinarily a EuropePMC
+                accession (``PMC…`` or ``PPR…``), but the caller builds it as
+                ``record["pmcid"] or record["id"]``, so for a ``MED`` record
+                carrying no ``pmcid`` it is a bare PMID — a request whose 404
+                is known before it is made (issue #188). Without it no
+                request is made at all.
             document_id: The caller's own identifier, so a log line can be
                 joined to the stored result. May be empty.
         """
@@ -1778,7 +1782,15 @@ class TransparencyAnalyzer:
                 ext_id,
             )
             return _FullTextFetch(None, FullTextStatus.NOT_ATTEMPTED)
-        subject = f"{source}/{ext_id}"
+        # `{source}/{ext_id}` only while a source was named. `source` may now
+        # be `None` — it addresses nothing, see `EUROPEPMC_REST_BASE` — and
+        # the unconditional form then renders `None/PMC123`: a two-segment
+        # path, in the one module whose signature defect *was* a spurious
+        # two-segment path, printed on the same DEBUG line as the corrected
+        # single-segment URL. The accession alone is what identifies the
+        # article, so an unnamed source drops out of the subject rather than
+        # printing as a segment that never existed.
+        subject = f"{source}/{ext_id}" if source else ext_id
         if document_id:
             subject = f"{subject} (document {document_id})"
         self._rate_limit()
@@ -1808,6 +1820,16 @@ class TransparencyAnalyzer:
             # page, so those are not population rates; the 0 of 53 is what
             # the decision rests on, and it is a floor, not a proof that no
             # such record can serve.)
+            #
+            # **That draw is of 404s, and this branch takes every status.** A
+            # 429, a 503 or a 403 is the ordinary outcome of nothing, and
+            # results are cached, so an outage stores absences that cannot be
+            # told from closed-access papers. The stored value stays honest
+            # either way — `NOT_SERVED.is_refusal` is False, so "full text
+            # unavailable" is true of a 503 — and splitting the branch means
+            # a new status member and a level nobody has measured, so it is
+            # issue #191 rather than a line here. A count is of what you
+            # looked for, and this comment says which.
             #
             # It is logged rather than dropped, though, because #184 lived a
             # whole release inside this silence: every request 404'd and

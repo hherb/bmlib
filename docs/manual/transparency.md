@@ -391,6 +391,10 @@ That is measured rather than read off the documentation. Probed on 2026-09-05, t
 
 **A non-200 here is ordinary, and is logged at DEBUG.** `inEPMC` says Europe PMC *holds* the full text; `fullTextXML` serves the open-access subset of it. Of 150 `IN_EPMC:Y` records probed across sources and publication years, no `isOpenAccess: N` record served — 0 of 53 — and `isOpenAccess: Y` still 404'd in 35 of 97. So warning on a non-200 would mean a warning on every closed-access paper analysed. Each of those cells is one cursor page rather than a random sample, so they are not population rates; the `0 of 53` is a floor, not a proof that no such record can serve.
 
+That draw is of **404s**, and the branch takes every status code: a 429, a 503 or a 403 is logged and stored the same way, and with `cache_results` on and no retry anywhere in the module, an outage caches absences that cannot be told from closed-access papers. The stored value stays honest either way — `full_text_status` is `NOT_SERVED`, whose `is_refusal` is `False`, so *"full text unavailable"* is true of a 503 — but *"would re-running change this?"* is not answerable from it. Issue #191 tracks splitting the branch; it needs a new status member and a level nobody has measured.
+
+**There is no committed instrument for the figures in this section.** Unlike the sampled populations elsewhere in this manual, the URL shapes and the 150-record probe were measured by hand against the live API on 2026-09-05 and no `scripts/sample_*.py` re-derives them. The hit counts (`IN_EPMC:Y`, `SRC:PPR AND IN_EPMC:Y`) are re-checkable in one request each and drift upward daily; the rest would need re-probing.
+
 #### The full text is the article's own
 
 `TransparencyAnalyzer` never consumes `JATSParser` output: it fetches the

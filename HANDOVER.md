@@ -142,8 +142,11 @@ at the call site; what a session repeats:
   The obvious fix — reuse `fulltext/service.py`'s `_normalise_pmc_id`, since the
   two modules disagreeing *is* the defect — loses every preprint: 75,760 of
   12,220,678 `IN_EPMC:Y` records (0.62%, Europe PMC's own hit counts) carry no
-  `pmcid` and are addressed by a `PPR…` accession. The two modules share
-  `EUROPEPMC_REST_BASE` and deliberately not the identifier.
+  `pmcid` and are addressed by a `PPR…` accession. The two modules agree on the
+  *base* and deliberately not on the identifier — by assertion, each keeping
+  its own literal, since importing across would be the runtime dependency
+  `transparency` does not have. `EUROPEPMC_REST_BASE` unified this module's own
+  two literals, which is where the drift was.
 - **The issue's own remedy for the silence was refuted, again.** #184 asked to
   raise the non-200 log level, arguing a 404 under `inEPMC: Y` is Europe PMC
   contradicting itself. It is not — `inEPMC` says they *hold* the text, while
@@ -151,11 +154,16 @@ at the call site; what a session repeats:
   `isOpenAccess: N` served and 35 of 97 open-access ones still 404'd, so a
   WARNING would fire on every closed-access paper.
 - **The remedy for a silent defect was a test, not a log line.**
-  `_FakeFullTextClient` matched `url.endswith("/fullTextXML")`, which *both* URL
-  forms satisfy, so 47 tests that looked like full-text tests asserted nothing
-  about the path. Measured: with that fake the defect passes **236 of 236**;
-  matching the whole URL reddens **42** — the `parser_log` fixture's trick one
-  module over, a net that is free because existing tests become URL checks.
+  `_FakeFullTextClient` matched `url.endswith("/fullTextXML")` and
+  `_RecordingClient` — the `analyze()`-level fake, so the end-to-end path — the
+  looser `"fullTextXML" in url`; *both* URL forms satisfy either, so tests that
+  looked like full-text tests asserted nothing about the path. Measured, each
+  number naming its tree: with the suffix match the defect passes **236 of
+  `main`'s 236**; with both fakes matching the whole URL it reddens **52 of
+  this branch's 249**, **43** of them pre-existing — the `parser_log` fixture's
+  trick one module over, a net that is free because existing tests become URL
+  checks. Tests passing `None` or `in_epmc="N"` never fetch and correctly stay
+  green, so it is not *every* test that reaches a fake.
 - **When a rule replaces a guard, ask what else the guard was holding.** The
   fetch refused unless *both* `source` and `ext_id` were present; `source`
   addresses nothing now, so that half would refuse a fetch that works.
@@ -175,6 +183,43 @@ results explicitly is what made the third run legible.
 still fetched by PMID, which never serves, and stores `NOT_SERVED` for a 404
 known in advance where `NOT_ATTEMPTED` is honest (#161's argument one case
 back, which #184 itself predicted).
+
+**What this branch's own review then found**, and it is the same lesson twice:
+*the net stopped one level short, and the numbers describing it were of the
+wrong tree.*
+
+- **The `analyze()`-level fake was left loose.** `_FakeFullTextClient` was
+  hardened to the whole URL and `_RecordingClient` — the fake reached through
+  `analyze()`, so the only end-to-end full-text path — kept the *looser*
+  `"fullTextXML" in url`. The one test asserting a full-text request at that
+  level asserted a substring both URL forms satisfy, so #184's own shape stayed
+  unpinned where it actually mattered. Fixing it moved the counterfactual from
+  44 red to 52.
+- **The most-argued claim had no test.** Every URL test called
+  `_fetch_europepmc_fulltext` directly, stepping over `record["pmcid"] or
+  record["id"]` in `_check_europepmc` — the *only* line that ever chooses a
+  `PPR…` accession. Deleting that fallback, which loses the address for all
+  75,760 preprints the docstrings argue about, **passed the whole suite**.
+  Pinned now in both directions.
+- **42 and 47 were of no tree.** Restated as measured, each naming its
+  population: 236 of `main`'s 236, 52 of this branch's 249, 43 of them
+  pre-existing. "Five tests" and "seven" were both wrong for a class that holds
+  thirteen.
+- **`subject` reproduced the defect's own shape** — `f"{source}/{ext_id}"` with
+  `source` newly allowed to be `None` printed `None/PMC123`, a two-segment path
+  beside the corrected single-segment URL, in the module whose signature defect
+  was a spurious two-segment path.
+- **Two tests claimed more than they checked**: the cross-module one never
+  evaluated `fulltext`'s URL, and the search one asserted the constant against
+  itself, so the drift its name promises to catch was the one thing it could
+  not.
+
+**Filed rather than folded in: #190 and #191.** #190 — an empty HTTP 200 body
+is stored as `ENTIRELY_NESTED`, a refusal that did not happen, and logs *"is
+entirely nested articles (0 bytes served)"*. #191 — the DEBUG level for a
+non-200 is measured on **404s** and applied to 429/503/403, which cache as
+permanent absences with no retry anywhere in the module. Both move a stored
+status value, which is #188's reason for being filed rather than ridden along.
 
 ## Current state
 
@@ -236,12 +281,13 @@ back, which #184 itself predicted).
 
 ### Open GitHub issues
 
-**Twenty-eight open** as this file is written, **twenty-seven once this branch
+**Thirty open** as this file is written, **twenty-nine once this branch
 merges** (`gh issue list`, 2026-09-05, after #183 and #161 were closed by hand
 — PR #185 named them in prose only, see the process rule above — and after this
-session filed **#188**): #86, #92, #94, #103, #124, #128, #137, #142, #143,
+session filed **#188**, and this branch's own review filed **#190** and
+**#191**): #86, #92, #94, #103, #124, #128, #137, #142, #143,
 #144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178,
-#179, #181, #184, #186, #187, #188. This branch answers #184. Every one was
+#179, #181, #184, #186, #187, #188, #190, #191. This branch answers #184. Every one was
 found by review or measurement rather than by a failing test, and **none loses
 records** — though **#124** loses an exhibit's footnotes, **#150** renders a
 note-only reference as an empty bullet, and **#128** would lose every figure
@@ -261,7 +307,7 @@ is invisible to any such count. Almost every open issue was filed *by* a PR
 reviewing an earlier fix, so the provenance is a chain rather than a list; the
 recent end of it is **#119** → PR #159, filing #158, #160, #161; **#160** → PR
 #182, filing #183; **#183**, **#161** → PR #185, filing #184, #186, #187;
-**#184** → this branch, filing #188. For anything older, `gh issue view <n>`
+**#184** → this branch, filing #188, #190 and #191. For anything older, `gh issue view <n>`
 carries it, and released provenance is in `CHANGELOG.md`. (#149 and #152 were
 filed and fixed inside one PR, so neither ever appeared as open work — read the
 per-PR history, not the total.)
@@ -333,7 +379,7 @@ them by `figures_with_graphic` — over its own population the recent window rea
 published figure says. One remedy restates a share cited in five files and the
 other needs both corpora redrawn, which would destroy #164's attribution.
 
-**#186, #187 and #188 are what is left of the full-text-refusal family**, all
+**#186, #187, #188, #190 and #191 are what is left of the full-text-refusal family**, all
 three small and all three in `_fetch_europepmc_fulltext`. #186: the
 unclosed-region refusal holds the element names in a stack and discards them at
 the return, so the WARNING cannot say which element was left open — naming one
