@@ -458,6 +458,33 @@ _MIN_REQUEST_INTERVAL_SECONDS = 0.35
 # ---- HTTP settings ----
 _HTTP_TIMEOUT_SECONDS = 15.0
 
+# Exception types that can only mean a bmlib defect, never a remote-data or
+# environment failure (issue #187). Every network step in this module wraps its
+# request in `except Exception`, which is right for a transport error and wrong
+# for a `TypeError` — and since issue #161 the value returned from that handler
+# is a determinate, persisted claim, so a bmlib bug was being stored as a
+# Europe PMC absence at DEBUG.
+#
+# **Restated from `fulltext/service.py`, not imported**, exactly as the
+# nested-article element set is: importing across would make `bmlib.fulltext` a
+# runtime dependency of `bmlib.transparency`, which it is not. The deny-list
+# and its reasoning belong to that module's comment; what is load-bearing is
+# what is *excluded*, and three of those are counter-intuitive —
+# `json.JSONDecodeError` IS a `ValueError`, `ET.ParseError` IS a `SyntaxError`,
+# `RecursionError` IS a `RuntimeError`, and `OSError` is the environment.
+# `NameError` carries `UnboundLocalError` in by inheritance.
+#
+# The two copies are pinned as agreeing by
+# `test_the_bug_types_agree_with_the_other_modules_copy`; a rule stated in
+# prose is not enforced.
+_BUG_TYPES: tuple[type[BaseException], ...] = (
+    TypeError,
+    AttributeError,
+    NameError,
+    KeyError,
+    IndexError,
+)
+
 # ---- Transparency scoring weights ----
 SCORE_FUNDER_INFO = 15
 SCORE_COI_DISCLOSED = 10
@@ -1739,10 +1766,24 @@ class TransparencyAnalyzer:
         joins the line to a stored result — where the caller supplied one;
         ``analyze()`` always does, but its own ``document_id`` is a caller's
         string and may be empty, and a line without it cannot be joined to
-        anything — and how much was served, in bytes. A non-200 does **not**
-        warn, being the ordinary outcome for a paper EuropePMC holds but does
-        not serve open-access; it logs the URL at DEBUG, and the comment at
-        that branch carries the measurement the level rests on.
+        anything — and how much was served, in bytes.
+
+        **Exactly one outcome is quiet, and it is the only one measured to be
+        ordinary.** A **404** logs the URL at DEBUG: EuropePMC answered, and
+        its answer is that it serves no open-access full text here, which is
+        the majority outcome of the ``inEPMC`` gate this module uses. Every
+        other way of getting no document WARNs and stores
+        :attr:`~bmlib.transparency.models.FullTextStatus.REQUEST_FAILED`
+        rather than ``NOT_SERVED``, because none of them is EuropePMC saying
+        anything about this article (issues #187, #190, #191): a raised
+        request, a 429 or 503 or 403, and an HTTP 200 carrying an empty body.
+        Results are cacheable and nothing in this package retries, so an
+        outage window used to cache absences indistinguishable from
+        closed-access papers. The one exception to *WARNING* is upward: a
+        request raising a :data:`_BUG_TYPES` member logs **ERROR**, since that
+        can only mean bmlib is wrong — the level the parse audit in
+        ``fulltext/`` fixes for the identical claim. It still does not raise;
+        see the comment at that branch.
 
         Args:
             client: An ``httpx``-shaped client; only ``get(url)`` is used.
@@ -1803,9 +1844,49 @@ class TransparencyAnalyzer:
         try:
             resp = client.get(url)
         except Exception as e:
-            logger.debug("EuropePMC full-text fetch failed for %s: %s", subject, e)
-            return _FullTextFetch(None, FullTextStatus.NOT_SERVED)
-        if resp.status_code != 200:
+            # `REQUEST_FAILED`, not `NOT_SERVED` (issue #187). The scope of
+            # this handler is right and deliberate — only `client.get` is
+            # inside it — but since issue #161 its return value is a
+            # determinate, machine-readable, persisted claim, and "requested
+            # and not served" is a claim about *Europe PMC*. Nothing here
+            # licenses one: the request never reached an answer.
+            #
+            # The level is the exception's, not the branch's. A `TypeError`
+            # from a client that is not what this code assumes, an
+            # `httpx.InvalidURL` from an `ext_id` that arrived as a non-string
+            # — those are bmlib being wrong, and holding one at DEBUG is what
+            # `fulltext/service.py` keeps `_BUG_TYPES` for. Everything else is
+            # the environment, and WARNs for the reason the non-404 branch
+            # below WARNs: results cache, nothing retries, and a silent
+            # transport failure is stored forever.
+            #
+            # **It does not re-raise**, which was issue #187's other option.
+            # Every other step in `analyze()` swallows so one dead API cannot
+            # cost an analysis; `fulltext/service.py` — the precedent the
+            # issue itself cites — reports a `_BUG_TYPES` member at ERROR and
+            # continues rather than raising; and making *this* step alone
+            # fatal would change what a public `analyze()` may raise while
+            # `_check_crossref`'s identical defect stayed swallowed. The
+            # ERROR is what an operator acts on; the status is what a stored
+            # result can be audited by.
+            if isinstance(e, _BUG_TYPES):
+                logger.error(
+                    "EuropePMC full-text request for %s raised %s, which can only mean a bmlib "
+                    "defect: %s; scanning the abstract instead",
+                    subject,
+                    type(e).__name__,
+                    e,
+                )
+            else:
+                logger.warning(
+                    "EuropePMC full-text request for %s failed (%s: %s); scanning the abstract "
+                    "instead",
+                    subject,
+                    type(e).__name__,
+                    e,
+                )
+            return _FullTextFetch(None, FullTextStatus.REQUEST_FAILED)
+        if resp.status_code == 404:
             # DEBUG, and the level is measured rather than chosen. Issue #184
             # proposed raising it, on the argument that a non-200 for a record
             # whose own metadata says `inEPMC: Y` is EuropePMC contradicting
@@ -1821,15 +1902,15 @@ class TransparencyAnalyzer:
             # the decision rests on, and it is a floor, not a proof that no
             # such record can serve.)
             #
-            # **That draw is of 404s, and this branch takes every status.** A
-            # 429, a 503 or a 403 is the ordinary outcome of nothing, and
-            # results are cached, so an outage stores absences that cannot be
-            # told from closed-access papers. The stored value stays honest
-            # either way — `NOT_SERVED.is_refusal` is False, so "full text
-            # unavailable" is true of a 503 — and splitting the branch means
-            # a new status member and a level nobody has measured, so it is
-            # issue #191 rather than a line here. A count is of what you
-            # looked for, and this comment says which.
+            # **That draw is of 404s, and so is this branch, since issue
+            # #191.** It used to take every status code, which generalised the
+            # measurement past what it looked for: a 429, a 503 or a 403 is
+            # the ordinary outcome of nothing. Re-probed on 2026-09-05 over
+            # 200 `IN_EPMC:Y` records stratified the same way and addressed
+            # exactly as `_check_europepmc` addresses them, **81 of the 81
+            # non-200s were 404** — so the DEBUG level is measured on the
+            # whole of what this branch now takes, and 0 of 200 is the floor
+            # under the branch below.
             #
             # It is logged rather than dropped, though, because #184 lived a
             # whole release inside this silence: every request 404'd and
@@ -1845,7 +1926,74 @@ class TransparencyAnalyzer:
                 url,
             )
             return _FullTextFetch(None, FullTextStatus.NOT_SERVED)
+        if resp.status_code != 200:
+            # Issue #191. Every status that is neither the 200 below nor the
+            # 404 above: a 429, a 503, a 403. None of them is a statement
+            # about whether EuropePMC holds this article's full text, which is
+            # the one thing `NOT_SERVED` asserts — so `REQUEST_FAILED`.
+            #
+            # WARNING, and the asymmetry with the 404 is the measurement, not
+            # a preference. The 404's DEBUG rests on it being the ordinary
+            # majority outcome of the gate this module uses; this branch took
+            # 0 of 200 live probes (2026-09-05), so it fires on nothing in a
+            # healthy draw and a WARNING on it is not noise. It is the level
+            # the consequence needs, too: `cache_results` defaults True and
+            # there is no retry and no `Retry-After` handling anywhere in
+            # `transparency/`, so an outage window silently caches a corpus of
+            # absences, each having lost up to
+            # `SCORE_COI_DISCLOSED + SCORE_DATA_FULL_OPEN`, never re-attempted.
+            # The status is what makes that auditable afterwards; the WARNING
+            # is what makes it visible while it is happening.
+            #
+            # The URL rides along for the same reason the 404 line carries it:
+            # the louder branch must not say less than the quiet one.
+            logger.warning(
+                "EuropePMC answered HTTP %d for %s from %s, which is not an answer about "
+                "whether it holds this article; scanning the abstract instead",
+                resp.status_code,
+                subject,
+                url,
+            )
+            return _FullTextFetch(None, FullTextStatus.REQUEST_FAILED)
         served = resp.text
+        if not served:
+            # Issue #190, and it runs here rather than beside the other four
+            # because it is not a claim about a document's shape at all —
+            # nothing arrived to have a shape. Left to fall through, an empty
+            # body reached the *entirely nested* branch: `_strip_nested_
+            # articles("")` returns `""`, which is falsy but not `None`, so
+            # the unclosed-region check passes it and the emptiness check
+            # below claims everything served was nested. That logged the
+            # self-contradictory *"is entirely nested articles (0 bytes
+            # served)"* and stored `ENTIRELY_NESTED`, whose `is_refusal` is
+            # True — so the caller persisted *"full text served but not
+            # usable"* for a response that carried no document. Issue #161's
+            # own class of stored dishonesty, one branch it did not reach.
+            #
+            # **`not served`, not `not served.strip()`.** A body
+            # carrying bytes that strip to nothing did arrive, and is a
+            # document-shaped claim; moving the boundary there would make the
+            # entirely-nested branch unreachable for a document whose regions
+            # strip out leaving whitespace. Pinned both ways.
+            #
+            # Measured empty, so the guard is carried by the branch it lands
+            # in being wrong rather than by a rate: of 119 bodies served
+            # across 200 live probes stratified by source and year
+            # (2026-09-05), **none was empty** — the smallest was 2,622 bytes,
+            # the median 85,925. WARNING because 0 of 119 is the ordinary
+            # outcome of nothing, and because Europe PMC's own 404 carries
+            # `content-length: 0`, which makes a 200 that does the same at
+            # minimum anomalous. Whether they ever serve one is **not
+            # measured**, and the local corpora cannot answer it — the
+            # importer that built them may have discarded failures, issue
+            # #183's caveat.
+            logger.warning(
+                "EuropePMC answered HTTP 200 with an empty body for %s from %s; "
+                "scanning the abstract instead",
+                subject,
+                url,
+            )
+            return _FullTextFetch(None, FullTextStatus.REQUEST_FAILED)
         # Bytes, not `len(served)`: `resp.text` is the *decoded* string, so its
         # length under-reports any body carrying non-ASCII — routine in this
         # corpus — and the number exists to be compared against a
