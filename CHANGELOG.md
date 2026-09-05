@@ -6,7 +6,110 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **A refused full text now leaves a trace in the stored result** (issue #161,
+  from PR #159's own review). `FullTextStatus` — exported from
+  `bmlib.transparency` and carried on `TransparencyResult.full_text_status` —
+  records what became of the full-text attempt: `NOT_ATTEMPTED`, `NOT_SERVED`,
+  `ANALYZED`, or one of the four refusals (`TRUNCATED`,
+  `UNTERMINATED_MARKUP`, `UNCLOSED_REGION`, `ENTIRELY_NESTED`), with
+  `is_refusal` for the grouping rather than an enumeration at each call site.
+
+  Before it, several outcomes were indistinguishable in anything a caller
+  stored: a non-200, a document bmlib could not segment, and one that was
+  entirely nested articles all reached storage as `full_text_analyzed=False`
+  and the indicator `"COI disclosure status unknown (full text unavailable)"`
+  — **false** for the refusals, where Europe PMC answered HTTP 200 with a
+  document. Results are cacheable (`TransparencySettings.cache_results`) and
+  driven concurrently, so a refusal was stored, permanent and unmarked, while
+  the score lost up to `SCORE_COI_DISCLOSED + SCORE_DATA_FULL_OPEN` = 30
+  points — enough on its own to reach HIGH against the default
+  `score_threshold=40` and set `tier_downgrade_applied`. *"Which of my stored
+  results were computed without the full text I was served?"* was answerable
+  only by grepping logs and re-joining identifiers to a corpus. The same
+  argument `publications/` made for `FetchResult.note` -> `SyncReport.notes`.
+
+  The field mirrors `unknown_reason` throughout: **declared last** for
+  positional stability, serialised by value, and read defensively so results
+  persisted before it existed still load — while a present-but-unrecognised
+  value raises, since a member this version does not know about is a result it
+  cannot interpret. `None` means *not recorded*, never `NOT_ATTEMPTED`: a
+  legacy result may perfectly well carry `full_text_analyzed=True`, and
+  reading that back as a determinate "nothing was attempted" would be the
+  worse answer. `__post_init__` enforces the one direction it can — when the
+  status is set, `ANALYZED` if and only if `full_text_analyzed`.
+
+  The prose half moves with it: a served-and-refused document now reports
+  `"COI disclosure status unknown (full text served but not usable)"`. Plus
+  the two smaller things the issue names — `document_id` threaded into every
+  refusal WARNING, the only field joining a log line to a stored result, and
+  each message quantified with the bytes served (`len(resp.content)`, not
+  `len(resp.text)`: the latter is characters, and the number exists to be
+  compared against a `Content-Length`).
+
+  All three of the COI lines written while the status is undeterminable are
+  retracted together when PubMed supplies a `<CoiStatement>`, from one named
+  set (`_INDICATORS_RETRACTED_BY_PUBMED_COI`). The refused line was added to
+  the site that appends it and not to the site that retracts, so a
+  served-and-refused full text with a PubMed statement stored *"status
+  unknown"* beside *"disclosure found"* against `coi_disclosed=True` —
+  permanently, in a persisted field, which is this issue's own failure mode
+  inside the fix for it. `is_refusal`'s two sides are named sets and the
+  partition is asserted, so an eighth member cannot default to *not a
+  refusal*; and no path this version writes leaves `full_text_status` at
+  `None`, which is what keeps that value meaning *legacy row* alone.
+
+  A record claiming `inEPMC="Y"` and carrying no `source`/`pmcid` to address
+  it by now WARNs instead of passing silently as an ordinary closed-access
+  paper.
+
 ### Fixed
+
+- **A body truncated between tags was scanned as a complete article** (issue
+  #183, from PR #182's own review, and the half of issue #160 that fix does
+  not reach). Such a body opens no unterminated construct, leaves no region
+  open and empties nothing, so all three existing checks passed it. Scanned as
+  a whole article it yielded `coi_disclosed=False` with the indicator `"No COI
+  disclosure found in full text"` — for a disclosure that was in the lost tail
+  — which is the missing-COI HIGH downgrade fired on evidence that does not
+  exist, **with nothing logged at any level**. Where issue #160's half is loud
+  and merely costs the article its full text, this one was silent and scored
+  it wrong. It is now refused, WARNed, and fallen back from like every other
+  refusal, which leaves COI *unknown* rather than absent.
+
+  **The issue's own remedy is refuted by measurement.** It proposed
+  `xml.rstrip().endswith("</article>")`; trailing comments, PIs and whitespace
+  after the root are legal XML, and **1,727 of the 97,909 archive articles
+  (1.76%) and 23 of the 8,118 served ones (0.28%)** end
+  `</article><!--requester-ID …-->`, so that check refuses complete articles
+  at a real rate. Testing for the **presence** of the end tag instead is
+  cheaper and exact — a truncation removes the tail and the root's end tag is
+  in the tail — and refuses **0 of the 97,909 archive articles**. That zero is
+  of the archive half alone: the served draw is one concatenation split into
+  articles on `</article>`, so containment there is true by construction and
+  pooling the two into a single 106,027 would report a tautology as evidence.
+  The 1,727/23 counts above are unaffected, measuring the gap *between* one
+  article's end tag and the next article's opener. `</sub-article>` does not
+  contain the substring, so what the strip removes cannot affect it. It is still not a well-formedness check, which would be
+  the second parse PR #159 and PR #182 both declined.
+
+  **The four refusals are ordered most-specific-first, and the order is
+  load-bearing.** A truncated body can satisfy several at once — truncation is
+  the cause and the rest are symptoms — and each of the other three knows
+  something this one does not. Ahead of the lex it would make issue #160's
+  construct-and-offset message unreachable for the input that most often
+  produces it — a *corrupted* body still carries `</article>` and reaches the
+  lex; ahead of the entirely-nested report it would make that unreachable too,
+  a body of nothing but `<sub-article>` carrying no `</article>` either. Three
+  ordering tests pin it.
+
+  One residual is stated rather than implied: httpx raises on a Content-Length
+  or chunked-framing mismatch, so reaching this needs a proxy that truncates
+  *and* re-frames. Whether Europe PMC ever serves a legitimately partial body
+  at HTTP 200 is **not measured**, and the local served draw is not evidence
+  either way: its articles were split on `</article>`, and it was written by an
+  importer that may have discarded failures. Narrow, not zero.
 
 - **The nested-article lexer assumed well-formed input in two ways that cost
   the article, and enforced neither** (issue #160, from PR #159's own review).

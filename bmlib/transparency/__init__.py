@@ -23,6 +23,7 @@ registration compliance.
 
 from bmlib.transparency.analyzer import TransparencyAnalyzer
 from bmlib.transparency.models import (
+    FullTextStatus,
     TransparencyResult,
     TransparencyRisk,
     TransparencySettings,
@@ -31,6 +32,7 @@ from bmlib.transparency.models import (
 )
 
 __all__ = [
+    "FullTextStatus",
     "TransparencyAnalyzer",
     "TransparencyResult",
     "TransparencyRisk",

@@ -50,6 +50,119 @@ class TransparencyUnknownReason(Enum):
     UNREACHABLE = "unreachable"  # no external API answered
 
 
+class FullTextStatus(Enum):
+    """What became of this analysis's attempt to read the article's full text.
+
+    ``full_text_analyzed`` says whether the findings came from full text; this
+    says *why not* when they did not, which is a different question and the
+    one a stored result could not previously answer (issue #161). Several
+    outcomes used to be indistinguishable downstream — a non-200, a document
+    left unsegmentable, and one that was entirely nested articles all reached
+    storage as ``full_text_analyzed=False`` and the indicator *"COI disclosure
+    status unknown (full text unavailable)"*, which is **false** for the
+    latter two: Europe PMC served HTTP 200 with a document.
+
+    That matters because results are cacheable
+    (:attr:`TransparencySettings.cache_results`) and driven concurrently, so a
+    refusal is stored, permanent and unmarked, while the score silently loses
+    up to :data:`~bmlib.transparency.analyzer.SCORE_COI_DISCLOSED` +
+    :data:`~bmlib.transparency.analyzer.SCORE_DATA_FULL_OPEN` — enough on its
+    own to reach ``HIGH`` against the default ``score_threshold`` and set
+    ``tier_downgrade_applied``. *"Which of my stored results were computed
+    without the full text I was served?"* is the question, and it was
+    answerable only by grepping logs and re-joining identifiers to a corpus.
+    ``publications/`` added ``FetchResult.note`` -> ``SyncReport.notes`` for
+    the identical reason: permanent *and* invisible is the pair these rules
+    exist to break up.
+
+    Each refusal is its own member rather than one ``REFUSED``, because they
+    are different claims about what arrived and an operator acts on them
+    differently — the argument issue #160 made for raising on an unterminated
+    construct instead of folding it onto the ``None`` an unclosed region
+    already returned. Use :attr:`is_refusal` for the grouping rather than
+    enumerating the members at each call site; a member added later then has
+    to choose a side.
+    """
+
+    #: No request was made — Europe PMC never claimed to hold full text
+    #: (``inEPMC != "Y"``), there was no record to ask about, or the record
+    #: claimed full text and carried no address for it (which WARNs, being a
+    #: malformed record rather than an ordinary closed-access paper). Distinct
+    #: from a request that was made and answered with a non-200.
+    NOT_ATTEMPTED = "not_attempted"
+    #: Requested and not served: the request failed, or the response was not
+    #: HTTP 200. Together with :attr:`NOT_ATTEMPTED` — the dominant case, and
+    #: every paper Europe PMC holds no open-access full text for — this is an
+    #: outcome for which "full text unavailable" is true. The refusals below
+    #: are the ones for which it is false, which is what :attr:`is_refusal`
+    #: groups; neither of these two is "the only" such outcome.
+    NOT_SERVED = "not_served"
+    #: Served, segmented, and scanned as the article's own text.
+    ANALYZED = "analyzed"
+    #: Served, but the document did not arrive whole — it carries no
+    #: ``</article>``, so its tail was lost in transit (issue #183).
+    TRUNCATED = "truncated"
+    #: Served, but a comment, CDATA section, processing instruction, doctype
+    #: or nested-article tag opens and never closes (issue #160).
+    UNTERMINATED_MARKUP = "unterminated_markup"
+    #: Served, but a ``<sub-article>``/``<response>`` region is left open at
+    #: the end of the document, so the article's own text cannot be told from
+    #: a review round's (issue #119).
+    UNCLOSED_REGION = "unclosed_region"
+    #: Served, but nothing outside a nested-article region remained.
+    ENTIRELY_NESTED = "entirely_nested"
+
+    @property
+    def is_refusal(self) -> bool:
+        """Was full text served and then refused?
+
+        ``True`` for exactly the outcomes where Europe PMC answered HTTP 200
+        with a document that bmlib then declined to scan. ``False`` for
+        :attr:`ANALYZED`, and for :attr:`NOT_SERVED` and :attr:`NOT_ATTEMPTED`
+        — where nothing was served, so there is nothing to have refused.
+        """
+        return self in _REFUSED_FULL_TEXT_STATUSES
+
+
+#: Defined beside the enum rather than inside it. The obvious objection — that
+#: a plain set attribute in an ``Enum`` body becomes a member — is answered by
+#: ``enum.nonmember`` on the Python this package targets, so it is *not* the
+#: reason: members are not bound during class-body execution, so a frozenset
+#: written in the body would capture the raw **values** (``frozenset({'truncated',
+#: ...})``) and force ``self.value in ...``, throwing away member identity for
+#: no gain. Every other alternative (a nested class, a module-level function)
+#: puts the grouping further from the members it groups. Read only through
+#: :attr:`FullTextStatus.is_refusal`.
+_REFUSED_FULL_TEXT_STATUSES = frozenset(
+    {
+        FullTextStatus.TRUNCATED,
+        FullTextStatus.UNTERMINATED_MARKUP,
+        FullTextStatus.UNCLOSED_REGION,
+        FullTextStatus.ENTIRELY_NESTED,
+    }
+)
+
+#: The other side, named rather than left implicit — the whole of *"a member
+#: added later has to choose a side"*. Membership of the refused set alone
+#: leaves the rule enforced by prose: an eighth member omitted from it simply
+#: reads as ``is_refusal is False`` and routes into the *"full text
+#: unavailable"* indicator, which for a served document is the falsehood issue
+#: #161 exists to remove — so the silent default runs the wrong way. Naming
+#: both sides lets ``test_every_status_chooses_a_side`` assert the partition,
+#: which
+#: turns the eighth member into a red test instead. The same rule
+#: ``TestTheAuditNetIsComplete`` and ``TestEveryCounterIsInAGeneration`` make
+#: in ``fulltext/``, and for the same reason: a rule enforced by prose is not
+#: enforced.
+_NOT_REFUSED_FULL_TEXT_STATUSES = frozenset(
+    {
+        FullTextStatus.NOT_ATTEMPTED,
+        FullTextStatus.NOT_SERVED,
+        FullTextStatus.ANALYZED,
+    }
+)
+
+
 @dataclass
 class TransparencySettings:
     """User-configurable transparency thresholds and orchestration hints.
@@ -116,6 +229,18 @@ class TransparencyResult:
     # argument by one with no error raised anywhere.
     unknown_reason: TransparencyUnknownReason | None = None
 
+    # What became of the full-text attempt (issue #161). Declared last for the
+    # same positional-stability reason as `unknown_reason` above, and after it
+    # because it was added later — the rule is "append", not "sort".
+    #
+    # `None` means *not recorded*, never `NOT_ATTEMPTED`. Results persisted
+    # before the field existed load with the default, and one of those may
+    # perfectly well carry `full_text_analyzed=True`; reading that back as a
+    # determinate "nothing was attempted" would be a worse answer than
+    # admitting the field was not written. Same argument as `unknown_reason`'s
+    # defensive `.get()` in `from_dict`.
+    full_text_status: FullTextStatus | None = None
+
     def __post_init__(self) -> None:
         """Reject a reason on a result that is not ``UNKNOWN``.
 
@@ -124,11 +249,28 @@ class TransparencyResult:
         results persisted before the field existed load with ``None``, and
         refusing to construct those would make the field a breaking change
         rather than an additive one.
+
+        :attr:`full_text_status` is held to the matching pair of rules, and
+        for the matching reason. When it is recorded it must agree with
+        :attr:`full_text_analyzed` — that flag is what qualifies a stored
+        ``coi_disclosed=False`` as *scanned and absent* rather than
+        *undeterminable*, so a status disagreeing with it makes the pair
+        uninterpretable. When it is ``None`` nothing is imposed, since that is
+        every result written before the field existed.
         """
         if self.unknown_reason is not None and self.risk_level is not TransparencyRisk.UNKNOWN:
             raise ValueError(
                 f"unknown_reason={self.unknown_reason.value!r} is meaningless on a "
                 f"{self.risk_level.value!r} result; it is set only when risk_level is UNKNOWN"
+            )
+        if (
+            self.full_text_status is not None
+            and (self.full_text_status is FullTextStatus.ANALYZED) != self.full_text_analyzed
+        ):
+            raise ValueError(
+                f"full_text_status={self.full_text_status.value!r} contradicts "
+                f"full_text_analyzed={self.full_text_analyzed!r}; the flag is set if and "
+                f"only if the status is {FullTextStatus.ANALYZED.value!r}"
             )
 
     def to_dict(self) -> dict[str, Any]:
@@ -155,6 +297,11 @@ class TransparencyResult:
             "full_text_analyzed": self.full_text_analyzed,
             # Enum serialised by value, mirroring `risk_level`.
             "unknown_reason": self.unknown_reason.value if self.unknown_reason else None,
+            # Likewise. `full_text_analyzed` above says whether full text was
+            # read; this says what became of the attempt when it was not, so
+            # dropping it here would put the answer back in the log only —
+            # which is issue #161 exactly.
+            "full_text_status": self.full_text_status.value if self.full_text_status else None,
         }
 
     @classmethod
@@ -177,6 +324,14 @@ class TransparencyResult:
             TransparencyUnknownReason(unknown_reason_raw) if unknown_reason_raw else None
         )
 
+        # Read the same way and for the same reasons: absent from results
+        # persisted before the field existed, so the key is not indexed — but
+        # a present-but-unrecognised value still raises rather than loading as
+        # `None`, since a member this version does not know about is a result
+        # it cannot interpret, and `None` would report it as never recorded.
+        full_text_status_raw = data.get("full_text_status")
+        full_text_status = FullTextStatus(full_text_status_raw) if full_text_status_raw else None
+
         return cls(
             document_id=data["document_id"],
             transparency_score=data["transparency_score"],
@@ -194,6 +349,7 @@ class TransparencyResult:
             analyzer_version=data.get("analyzer_version", "1.0"),
             full_text_analyzed=data.get("full_text_analyzed", False),
             unknown_reason=unknown_reason,
+            full_text_status=full_text_status,
         )
 
 
