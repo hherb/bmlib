@@ -1,12 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-04. **0.10.0 is released and on PyPI**; twenty changes
-sit unreleased. All five version places agree at 0.10.0. Every unreleased
-ROADMAP row carries an `*(unreleased)*` marker._
+_Last updated: 2026-09-05. **0.10.0 is released and on PyPI**; twenty-one
+changes sit unreleased. All five version places agree at 0.10.0. Every
+unreleased ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Twenty changes, fourteen of them `fulltext` JATS fixes filed within days of
+Twenty-one changes, fourteen of them `fulltext` JATS fixes filed within days of
 each other — whoever cuts the next release should describe those together. Per-PR
 detail is in `CHANGELOG.md`; only the *data* answer is kept here, because the
 version number answers the API question and never that one.
@@ -29,8 +29,19 @@ measured by diffing a corpus rather than reasoned: over 880 local PMC articles /
 rebuilt, 958 emptied of an `<element-citation>` leak — `authors` for 502 in 14,
 rendered HTML for 576 in 23.
 
-**Five move stored *transparency* values, and all five are outside
-`fulltext`.** #112 admits `plc`/`pty` to `_INDUSTRY_WORDS`, so `"GSK plc"` now
+**Six move stored *transparency* values, and all six are outside
+`fulltext`.** **#184 is much the largest of them and the largest single move in
+this release**: every Europe PMC full-text fetch was 404ing, so every analysis
+ran on the abstract. Restoring it moved, over 48 real open-access analyses
+diffed against `main`, `coi_disclosed` in 32 (19 to `True`, 13 to `False`),
+`transparency_score` in 20 (+10 or +20, never negative), and `risk_level`
+HIGH→MEDIUM in 5 with `tier_downgrade_applied` 1→0 in the same five. Nothing
+was scored worse *in that draw* — but the missing-COI downgrade is now
+reachable at all, so a paper above `score_threshold` with no COI statement in
+its full text can be downgraded where before it could not. **Any downstream
+holding stored transparency results should recompute them.**
+
+The other five are smaller. #112 admits `plc`/`pty` to `_INDUSTRY_WORDS`, so `"GSK plc"` now
 sets `industry_funding_detected`, which feeds a HIGH-risk rule and a quality
 downgrade; neither token is in the labelled corpus, so **no measured figure
 moves** — which is why the omission sat unnoticed. #119 stops a reviewer's prose
@@ -119,88 +130,96 @@ a keyword that fired (#137, #142, #160) *and* two that did not (#147, #164, each
 closed by hand one session late). Also, a mutation harness
 restoring with `git checkout -- <file>` deletes whatever is uncommitted in it.
 
-## This session: #183 and #161
+## This session: #184
 
-Both from PR #182's and PR #159's reviews, and both the same question: what a
-stored result says about full text it could not use. The argument is in
-`CHANGELOG.md`, `ROADMAP.md` and at the call site; what a session repeats is:
+The Europe PMC full-text URL — `_fetch_europepmc_fulltext` built
+`.../rest/{source}/{ext_id}/fullTextXML`, Europe PMC serves the single-segment
+form, so **every fetch 404'd** and the module scored every open-access paper on
+its abstract. The argument is in `CHANGELOG.md`, `ROADMAP.md`, `CLAUDE.md` and
+at the call site; what a session repeats:
 
-- **An issue's own remedy is a hypothesis, and this one was refuted.** #183
-  proposed `rstrip().endswith("</article>")` — but trailing comments, PIs and
-  whitespace after the root are legal XML, and **1,727 of 97,909 archive
-  articles (1.76%) and 23 of 8,118 served ones (0.28%)** end
-  `</article><!--requester-ID …-->`. Testing **presence** rather than position
-  is cheaper and exact, and refuses **0 of the 97,909 archive articles** —
-  the archive half alone, the served draw being split on `</article>` and so
-  unable to answer it.
-- **Order the refusals most-specific-first, and pin the order.** A truncated
-  body satisfies several at once — truncation is the cause, the rest are
-  symptoms — so the completeness check runs *last*. Ahead of the lex it makes
-  #160's construct-and-offset message unreachable for the input that most
-  often produces it; ahead of the entirely-nested report it makes that unreachable
-  too, since a body of nothing but `<sub-article>` carries no `</article>`.
-- **A new field's `None` must mean *not recorded*, never a determinate
-  member.** `full_text_status` mirrors `unknown_reason` throughout; a legacy
-  result may carry `full_text_analyzed=True`, so loading it as `NOT_ATTEMPTED`
-  would be a false machine-readable claim. `__post_init__` enforces the one
-  direction it can.
+- **An article is addressed by its Europe PMC accession, which is not a PMCID.**
+  The obvious fix — reuse `fulltext/service.py`'s `_normalise_pmc_id`, since the
+  two modules disagreeing *is* the defect — loses every preprint: 75,760 of
+  12,220,678 `IN_EPMC:Y` records (0.62%, Europe PMC's own hit counts) carry no
+  `pmcid` and are addressed by a `PPR…` accession. The two modules agree on the
+  *base* and deliberately not on the identifier — by assertion, each keeping
+  its own literal, since importing across would be the runtime dependency
+  `transparency` does not have. `EUROPEPMC_REST_BASE` unified this module's own
+  two literals, which is where the drift was.
+- **The issue's own remedy for the silence was refuted, again.** #184 asked to
+  raise the non-200 log level, arguing a 404 under `inEPMC: Y` is Europe PMC
+  contradicting itself. It is not — `inEPMC` says they *hold* the text, while
+  `fullTextXML` serves the open-access subset: over 150 records, **0 of 53**
+  `isOpenAccess: N` served and 35 of 97 open-access ones still 404'd, so a
+  WARNING would fire on every closed-access paper.
+- **The remedy for a silent defect was a test, not a log line.**
+  `_FakeFullTextClient` matched `url.endswith("/fullTextXML")` and
+  `_RecordingClient` — the `analyze()`-level fake, so the end-to-end path — the
+  looser `"fullTextXML" in url`; *both* URL forms satisfy either, so tests that
+  looked like full-text tests asserted nothing about the path. Measured, each
+  number naming its tree: with the suffix match the defect passes **236 of
+  `main`'s 236**; with both fakes matching the whole URL it reddens **52 of
+  this branch's 249**, **43** of them pre-existing — the `parser_log` fixture's
+  trick one module over, a net that is free because existing tests become URL
+  checks. Tests passing `None` or `in_epmc="N"` never fetch and correctly stay
+  green, so it is not *every* test that reaches a fake.
+- **When a rule replaces a guard, ask what else the guard was holding.** The
+  fetch refused unless *both* `source` and `ext_id` were present; `source`
+  addresses nothing now, so that half would refuse a fetch that works.
 
-**18 of 18 mutants killed**, including the refuted remedy (caught by the
-trailing-comment negative control) and each of the three ordering moves.
+**Two things about the measurement itself**, both of which produced a
+confident wrong answer first. A cursor page is a contiguous block, so an
+unstratified draw of `IN_EPMC:Y` read 48% 404 where a year-stratified one read
+3%, and no preprints where a source-stratified one read a third — the
+population share had to come from `hitCount`, an instrument rather than a draw,
+and `HAS_PMCID` is **not** a field, so that clause returns the whole set and
+reads as a measurement. And running two live probes at once poisoned the first
+blast-radius run (#179's per-process pacer, self-inflicted): every MED analysis
+degraded to score 0 and pooled in as *"nothing moved"*. Excluding UNKNOWN
+results explicitly is what made the third run legible.
 
-**The review round then found three mutants that survived, and one live
-defect — and where they clustered is the lesson.** The mutants chosen the first
-time were all *inside* `_fetch_europepmc_fulltext` and `models.py`, where
-coverage was already strong; every survivor was at a **seam** between two
-units, which is exactly where a mutant is not thought of:
+**Filed rather than ridden along: #188** — a record with no PMC accession is
+still fetched by PMID, which never serves, and stores `NOT_SERVED` for a 404
+known in advance where `NOT_ATTEMPTED` is honest (#161's argument one case
+back, which #184 itself predicted).
 
-- **The third COI line escaped the retraction.** `_merge_pubmed_signals`
-  retracted the two older *"status undeterminable"* indicators and not the new
-  refused one, so a served-and-refused full text plus a PubMed
-  `<CoiStatement>` stored *"status unknown"* beside *"disclosure found"*
-  against `coi_disclosed=True` — permanently, in a persisted field, which is
-  #161's own failure mode inside its fix. The manual asserted the opposite in
-  the same diff. The three are now one named set,
-  `_INDICATORS_RETRACTED_BY_PUBMED_COI`.
-- **No `analyze()`-level test ever fetched full text**, because `_epmc_payload`
-  carried no `source`/`pmcid` and so short-circuited before the request. So
-  `full_text_status=ANALYZED if full_text_analyzed else NOT_ATTEMPTED` at the
-  result boundary — which discards every refusal distinction, i.e. the whole
-  change — passed the entire suite, and one pre-existing retraction test was
-  asserting the absence of an indicator that could never have been present.
-  `addressable=True` is the fixture flag; a full-text test that omits it tests
-  nothing.
-- **`document_id` was pinned only on the inner hop.** Deleting it from the
-  `analyze()` call site survived: the parameter defaults to `""`, the
-  `_stamp_source()` hazard one module over.
+**What this branch's own review then found**, and it is the same lesson twice:
+*the net stopped one level short, and the numbers describing it were of the
+wrong tree.*
 
-Three smaller ones came out of the same round. `is_refusal`'s *"a member added
-later has to choose a side"* was enforced by prose and by seven hand-written
-asserts, and the silent default runs the **wrong** way — both sides are named
-sets now and the partition is asserted. The three early returns wrote
-`full_text_status=None`, the value reserved for legacy rows, making this
-version's own output indistinguishable from one. And all four refusal WARNINGs
-reported `len(resp.text)` as *"bytes served"* — characters, on a number whose
-purpose is comparison against a `Content-Length`.
+- **The `analyze()`-level fake was left loose.** `_FakeFullTextClient` was
+  hardened to the whole URL and `_RecordingClient` — the fake reached through
+  `analyze()`, so the only end-to-end full-text path — kept the *looser*
+  `"fullTextXML" in url`. The one test asserting a full-text request at that
+  level asserted a substring both URL forms satisfy, so #184's own shape stayed
+  unpinned where it actually mattered. Fixing it moved the counterfactual from
+  44 red to 52.
+- **The most-argued claim had no test.** Every URL test called
+  `_fetch_europepmc_fulltext` directly, stepping over `record["pmcid"] or
+  record["id"]` in `_check_europepmc` — the *only* line that ever chooses a
+  `PPR…` accession. Deleting that fallback, which loses the address for all
+  75,760 preprints the docstrings argue about, **passed the whole suite**.
+  Pinned now in both directions.
+- **42 and 47 were of no tree.** Restated as measured, each naming its
+  population: 236 of `main`'s 236, 52 of this branch's 249, 43 of them
+  pre-existing. "Five tests" and "seven" were both wrong for a class that holds
+  thirteen.
+- **`subject` reproduced the defect's own shape** — `f"{source}/{ext_id}"` with
+  `source` newly allowed to be `None` printed `None/PMC123`, a two-segment path
+  beside the corrected single-segment URL, in the module whose signature defect
+  was a spurious two-segment path.
+- **Two tests claimed more than they checked**: the cross-module one never
+  evaluated `fulltext`'s URL, and the search one asserted the constant against
+  itself, so the drift its name promises to catch was the one thing it could
+  not.
 
-**Two were deferred as their own issues rather than ridden along**: **#186**,
-the unclosed-region refusal holds the element names in a stack and discards
-them at the return (naming one moves a heavily-argued return contract), and
-**#187**, the broad `except` around the request now returns the determinate
-`NOT_SERVED`, so a bmlib defect is stored as a Europe PMC absence (fixing it
-changes what a public `analyze()` may raise).
-
-**The measurement turned up #184, which is larger than either.** Fetching a
-live `fullTextXML` body to see what a served response looks like returned 404
-for every identifier: `_fetch_europepmc_fulltext` builds
-`.../rest/{source}/{ext_id}/fullTextXML`, and the form Europe PMC serves is the
-single-segment one `fulltext/service.py:1652` already uses. Four identifiers
-spanning 2012-2025, 200 on one form and 404 on the other. **`TransparencyAnalyzer`
-has lost full text entirely** — every analysis falls back to the abstract,
-`coi_disclosed` can never reach `False`, up to 30 points off every open-access
-paper — and it fails silently, a non-200 being the one outcome that
-deliberately does not warn. Not fixed here: it moves stored values broadly and
-wants its own blast radius.
+**Filed rather than folded in: #190 and #191.** #190 — an empty HTTP 200 body
+is stored as `ENTIRELY_NESTED`, a refusal that did not happen, and logs *"is
+entirely nested articles (0 bytes served)"*. #191 — the DEBUG level for a
+non-200 is measured on **404s** and applied to 429/503/403, which cache as
+permanent absences with no retry anywhere in the module. Both move a stored
+status value, which is #188's reason for being filed rather than ridden along.
 
 ## Current state
 
@@ -220,8 +239,8 @@ wants its own blast radius.
   previous release wrote is durable under #95's rule, so the whole window is
   re-fetched once. The two questions are independent, and a downstream reading
   only the number must still read this list.
-- **Tests: 3179 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
-  2026-09-05 on this branch, after the review round below). The PostgreSQL half has not been re-run since the
+- **Tests: 3188 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
+  2026-09-05 on this branch). The PostgreSQL half has not been re-run since the
   SQL last moved; the last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set
   is 2435 + 2 on the #105 branch. Of the 63 default skips, 61 are the PostgreSQL
   parameterisations, 1 is a PostgreSQL-only schema test, and 1 is
@@ -242,10 +261,10 @@ wants its own blast radius.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **83 are outstanding** — 35
-  `ROADMAP.md` rows and 48 spots across `docs/manual/fulltext.md` (18),
-  `transparency.md` (14), `publications.md` (13) and `templates.md` (3).
-  Recounted 2026-09-04 on this branch; the figure is measured, not maintained, so recount rather
+  `ROADMAP.md` are promoted at release time; **86 are outstanding** — 36
+  `ROADMAP.md` rows and 50 spots across `docs/manual/fulltext.md` (18),
+  `transparency.md` (16), `publications.md` (13) and `templates.md` (3).
+  Recounted 2026-09-05 on this branch; the figure is measured, not maintained, so recount rather
   than adjust it. Grep case-insensitively for `unreleased`, not for
   `(unreleased)`: three of 0.10.0's were spelled `*(unreleased, #99)*` and
   `(changed, unreleased — …)`. Write the marker bare, never with a guessed
@@ -262,47 +281,36 @@ wants its own blast radius.
 
 ### Open GitHub issues
 
-**Twenty-nine open** as this file is written, **twenty-seven once this branch
-merges** (`gh issue list`, 2026-09-05, after #160 was closed by hand — see the
-process rule above — and after this session filed **#184**, then **#186** and
-**#187** from this branch's own review round): #86, #92, #94,
-#103, #124, #128, #137, #142, #143, #144, #145, #150, #152, #154, #156, #157,
-#161, #172, #173, #174, #175, #177, #178, #179, #181, #183, #184, #186, #187.
-This branch answers #183 and #161. All but #184 were found by review or
-measurement rather than by a failing test, and **none loses records** — though **#184 loses every
-open-access paper's full text** from `transparency`, **#124** loses an
-exhibit's footnotes, **#150** renders a note-only reference as an empty bullet,
-and **#128** would lose every figure image in a document binding XLink to
-another prefix.
+**Thirty open** as this file is written, **twenty-nine once this branch
+merges** (`gh issue list`, 2026-09-05, after #183 and #161 were closed by hand
+— PR #185 named them in prose only, see the process rule above — and after this
+session filed **#188**, and this branch's own review filed **#190** and
+**#191**): #86, #92, #94, #103, #124, #128, #137, #142, #143,
+#144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178,
+#179, #181, #184, #186, #187, #188, #190, #191. This branch answers #184. Every one was
+found by review or measurement rather than by a failing test, and **none loses
+records** — though **#124** loses an exhibit's footnotes, **#150** renders a
+note-only reference as an empty bullet, and **#128** would lose every figure
+image in a document binding XLink to another prefix.
 
-**#184 is the one to do next, and it is not like the others.** It is the only
-open issue found against the *live* API rather than by reading code or a
-corpus, the only one costing a whole analysis input, and a one-line fix whose
-cost is entirely in the blast radius it needs — restoring full text to every
-open-access paper moves `coi_disclosed`, `data_availability_level`,
-`industry_funding*` and the score. Its remedy also has two halves the issue
-names: the URL, and a test that could have caught it, since every existing
-test mocks the client and matches any path ending `/fullTextXML`.
+**Nothing in the list is now urgent in the way #184 was**, so the next choice
+is a judgement rather than a forced move. #188 is its direct descendant and
+the cheapest of the group, but it moves a stored status value and wants its
+population measured first — and the instrument for that is unbuilt, `HAS_PMCID`
+having turned out not to be a Europe PMC field. #186 and #187 are the rest of
+PR #185's review and are small. #178 is the one open *question* rather than a
+defect.
 
 **Count them against the repo before trusting that number.** The line has been
 wrong in several sessions, and an issue closed as COMPLETED without being fixed
-is invisible to any such count. Provenance, since every open issue but five came
-out of a PR (released provenance is in `CHANGELOG.md`): **#73** → PR #102, filing
-**#103**; **#96** → PR #106; **#105**, **#107** → PR #114; **#109** → PR #113;
-**#110**, **#111** → PR #118, filing **#119**–**#121**; **#115**–**#117**,
-**#131** → PR #126, filing **#123**, **#124**, **#127**–**#130**; **#127** → PR
-#133, filing **#132**, **#134**, **#135**; **#123**, **#125**, **#130**, **#135**
-→ PR #136, filing **#137**, **#138**; **#121**, **#129**, **#134** → PR #139,
-filing **#140**; **#120**, **#140** → PR #141, filing **#142**–**#146**;
-**#146**, **#149** → PR #148, filing **#147**, **#149**–**#151**; **#151** → PR
-#153, filing **#152**; **#112** → PR #155, filing **#154**, **#156**, **#157**;
-**#119** → PR #159, filing **#158**, **#160**, **#161**; **#162** → PR #171,
-filing **#172**, **#173**; **#147** → PR #176, filing **#174**, **#175**,
-**#177**, **#178**; **#164** → PR #180, filing **#179** and **#181**; **#160** →
-PR #182, filing **#183**; **#183**, **#161** → this branch, filing **#184**
-(from measurement rather than review — see the session note above), **#186**
-and **#187** (from this branch's own review round). (#149 and #152 were filed and fixed inside one
-PR, so neither ever appeared as open work — read the per-PR list, not the total.)
+is invisible to any such count. Almost every open issue was filed *by* a PR
+reviewing an earlier fix, so the provenance is a chain rather than a list; the
+recent end of it is **#119** → PR #159, filing #158, #160, #161; **#160** → PR
+#182, filing #183; **#183**, **#161** → PR #185, filing #184, #186, #187;
+**#184** → this branch, filing #188, #190 and #191. For anything older, `gh issue view <n>`
+carries it, and released provenance is in `CHANGELOG.md`. (#149 and #152 were
+filed and fixed inside one PR, so neither ever appeared as open work — read the
+per-PR history, not the total.)
 
 Each issue carries its own argument on GitHub; what follows is only what a
 session needs to *choose* between them. Almost none is a drive-by.
@@ -371,9 +379,16 @@ them by `figures_with_graphic` — over its own population the recent window rea
 published figure says. One remedy restates a share cited in five files and the
 other needs both corpora redrawn, which would destroy #164's attribution.
 
-**#183 and #161 are answered by this branch** — see the session note above.
-What is left of that family is **#184**, which the same measurement turned up
-and which is larger than either.
+**#186, #187, #188, #190 and #191 are what is left of the full-text-refusal family**, all
+three small and all three in `_fetch_europepmc_fulltext`. #186: the
+unclosed-region refusal holds the element names in a stack and discards them at
+the return, so the WARNING cannot say which element was left open — naming one
+moves a heavily-argued return contract. #187: the broad `except` around the
+request returns the determinate `NOT_SERVED`, so a bmlib defect is stored as a
+Europe PMC absence; fixing it changes what a public `analyze()` may raise.
+#188 is described under the session note above. Doing all three together is
+probably right — they are three sentences in one method — but #188's half wants
+a population first.
 
 **#154, #156 and #157 are one job, and it is the funder corpus.** #154:
 `scripts/sample_funder_names.py` writes `tests/data/funder_names.raw.json`, which

@@ -66,6 +66,121 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **Every Europe PMC full-text fetch 404'd, so the module scored every
+  open-access paper on its abstract** (issue #184, found while measuring for
+  issue #183 rather than by review). `_fetch_europepmc_fulltext` built
+  `.../rest/{source}/{ext_id}/fullTextXML` — a two-segment path Europe PMC
+  answers with its own HTTP 404 (their CORS headers, `content-length: 0`, so
+  theirs and not a proxy's). The form that serves is the single-segment one
+  `bmlib.fulltext.service` has always used, so the two modules disagreed and
+  `transparency` was the broken one.
+
+  Measured against the live API rather than read off the documentation: the
+  single-segment form serves HTTP 200 for `PMC12900525`, `PMC3258128`,
+  `PMC10030002`, `PMC13426601` and six `PPR` accessions, while
+  `{source}/{ext_id}`, the bare numeric id and the PMID all 404 — as do the
+  sibling two-segment endpoints `textMinedTerms` and `supplementaryFiles`, so
+  it is the path *shape* and not one endpoint or one article. **An article is
+  addressed by its Europe PMC accession alone**, and that accession is **not a
+  PMCID**: 75,760 of Europe PMC's 12,220,678 `IN_EPMC:Y` records — 0.62%, from
+  their own hit counts rather than a draw — are preprints carrying no `pmcid`
+  at all, addressed by a `PPR…` accession that `fulltext`'s
+  `_normalise_pmc_id` would reject. So the two modules now **agree on the
+  base** and deliberately not on the identifier; a test pins the first and
+  would fail on the second. They agree by assertion, not by sharing: each
+  still holds its own literal (`transparency`'s `EUROPEPMC_REST_BASE`,
+  `fulltext`'s `EUROPE_PMC_BASE`), because importing across would be the
+  runtime dependency `transparency` deliberately does not have. What the one
+  new constant unified is this module's **own** two literals — the search call
+  and the full-text call, which is where the drift happened.
+
+  The guard beside it lost its `source` half at the same time. It refused to
+  fetch unless *both* `source` and `ext_id` were present, which was right
+  while the source was a path segment and is over-strict now that it addresses
+  nothing — a guard kept past its reason refuses a fetch that would work.
+  `source` still names the subject of every log line.
+
+  **Stored values are not comparable across this fix**, and the radius is
+  measured by diffing real analyses rather than argued from the call graph.
+  48 articles drawn `IN_EPMC:Y AND OPEN_ACCESS:Y AND HAS_DOI:Y`, stratified
+  across two sources and four publication years, each analysed twice in one
+  process — once as it is, once with the full-text step forced to the
+  `NOT_SERVED` that `main` produces once every request 404s, with every other
+  API hit for real both times. All 48 reached full text, and:
+
+  | field | moves | note |
+  |---|---|---|
+  | `full_text_analyzed`, `full_text_status`, `risk_indicators` | 48 (100%) | |
+  | `coi_disclosed` | 32 (67%) | `None` → `True` in 19, `None` → `False` in 13 |
+  | `transparency_score` | 20 (42%) | `+10` in 19, `+20` in 1; never negative |
+  | `risk_level` | 5 (10%) | HIGH → MEDIUM in all five |
+  | `tier_downgrade_applied` | 5 (10%) | `1` → `0` in all five |
+  | `data_availability_level` | 4 (8%) | `unknown` → `not_available` 3, → `full_open` 1 |
+  | `industry_funding_detected` / `_confidence` | 1 (2%) | |
+
+  No article in the draw was scored worse. **That is a property of the draw
+  and not a guarantee**: the fix makes the missing-COI downgrade *reachable*,
+  since `coi_disclosed` could never previously be set `False`, and a paper
+  scoring above `score_threshold` whose full text carries no COI statement can
+  now be downgraded where before it could not. Every one of the 13 that became
+  a determinate `False` here was already HIGH on score alone (15-20 against a
+  threshold of 40), so none of them moved. The five indicator lines that
+  appear or vanish are `"COI disclosure status unknown (full text
+  unavailable)"` (32), `"COI disclosure found in PubMed record"` (16), `"No
+  COI disclosure found in full text"` (13), `"Data explicitly not available"`
+  (3) and `"Industry ties disclosed in COI statement"` (1).
+
+  Because the draw requires an open-access record with a DOI, those are
+  per-article effects **over articles whose full text the fix restores** and
+  not rates over an arbitrary corpus. How large that population is depends on
+  the caller's own mix; probed separately over 150 `IN_EPMC:Y` records, no
+  `isOpenAccess: N` record served (0 of 53) and `isOpenAccess: Y` still 404'd
+  in 35 of 97.
+
+  **Traffic and per-analysis latency move too**, which is a consequence of
+  restoring the step rather than of any choice in it, and is not visible in
+  the table above. Every one of these requests used to be answered with a
+  0-byte 404; each now downloads a full JATS body and lexes it —
+  `PMC3258128`, `PMC10030002` and `PMC12900525` measure 94 kB, 99 kB and
+  164 kB. A caller analysing a large open-access corpus should expect roughly
+  100 kB per article where it previously paid nothing, plus one
+  `_strip_nested_articles` pass over it; the 0.35 s inter-request floor is
+  unchanged, so throughput is not.
+
+  **The test is the remedy for the silence, not the log line.** A non-200 is
+  the one outcome that deliberately does not warn, so the defect was invisible
+  for its whole life; issue #184 proposed raising that level, arguing a 404
+  under `inEPMC: Y` is Europe PMC contradicting itself. **That is refuted by
+  the measurement above**: `inEPMC` says Europe PMC *holds* the text where
+  `fullTextXML` serves the open-access subset of it, so a non-200 is the
+  ordinary majority outcome for the gate this module uses and a WARNING would
+  fire on every closed-access paper analysed. The URL is logged at DEBUG
+  instead — it is what named the defect — and the level is pinned in both
+  directions.
+
+  What could have caught it is a test, and there was none: `_FakeFullTextClient`
+  matched `url.endswith("/fullTextXML")` and `_RecordingClient` — the fake
+  reached through `analyze()`, so the end-to-end path — matched the looser
+  `"fullTextXML" in url`. **Both** URL forms satisfy either, so tests that each
+  looked like a full-text test asserted nothing about the path. Measured, and
+  each number says which tree it is of: with the suffix match, reintroducing
+  the defect passes **236 of `main`'s 236**; with both fakes matching the whole
+  URL it reddens **52 of this branch's 249**, of which **43 predate the
+  branch**. That is the `parser_log` fixture's trick one module over — a net
+  that costs nothing because existing tests become URL checks without being
+  rewritten — plus **thirteen** new tests: the URL literal, the source's
+  absence from it, a `PPR` accession passing through unnormalised, the
+  `record["pmcid"] or record["id"]` fallback in both directions, a record
+  naming no source and one naming no accession, the subject rendering in both
+  directions, the two modules' bases, the search endpoint, and the DEBUG line's
+  URL, level and absence of a warning.
+
+  Filed rather than folded in: **issue #188**, a record carrying no PMC
+  accession is still fetched by PMID — which never serves — and stores
+  `NOT_SERVED` for the guaranteed 404, where `NOT_ATTEMPTED` is the honest
+  value. The closed-access population above is recorded there too, both being
+  requests whose outcome is known before they are made.
+
 - **A body truncated between tags was scanned as a complete article** (issue
   #183, from PR #182's own review, and the half of issue #160 that fix does
   not reach). Such a body opens no unterminated construct, leaves no region
