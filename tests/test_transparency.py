@@ -19,13 +19,16 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import re
 import time
+import xml.etree.ElementTree as ET
 
 import pytest
 
 from bmlib.transparency.analyzer import (
+    _BUG_TYPES,
     _DATA_LEVEL_RANK,
     _DATA_PATTERNS,
     _DEPOSITION_DATABANK_LEVELS,
@@ -375,7 +378,8 @@ class TestTheFullTextUrlIsTheOneEuropePmcServes:
     Issue #184: the URL carried an extra ``{source}/`` segment
     (``.../rest/PMC/PMC13426601/fullTextXML``), which Europe PMC answers with
     its own HTTP 404 and ``content-length: 0``. Every fetch failed, silently —
-    a non-200 is the one outcome that deliberately does not warn — so the
+    a non-200 was then the one outcome that deliberately did not warn, since
+    narrowed to the 404 alone by #191 — so the
     module scored every open-access paper on its abstract alone, losing up to
     30 points and the ability to ever set ``coi_disclosed=False``.
 
@@ -578,14 +582,18 @@ class TestTheFullTextUrlIsTheOneEuropePmcServes:
         assert fetch.text is None
         assert fetch.status is FullTextStatus.NOT_ATTEMPTED
 
-    def test_a_non_200_names_the_url_at_debug(self, caplog):
+    def test_a_404_names_the_url_at_debug(self, caplog):
         """#184 lived a release inside this silence, so the URL is logged.
 
         DEBUG and not WARNING, and that level is measured: of 150
         ``IN_EPMC:Y`` records probed on 2026-09-05, no ``isOpenAccess: N``
         record served (0 of 53) and ``isOpenAccess: Y`` still 404'd in 35 of
-        97 — so a non-200 is the ordinary majority outcome for this module's
+        97 — so a 404 is the ordinary majority outcome for this module's
         gate, and warning on it would be noise on every closed-access paper.
+        The draw is of 404s and, since #191, so is the branch: every other
+        status WARNs, which
+        ``test_a_status_other_than_404_is_not_a_statement_about_this_article``
+        pins.
         The assertion is on the *URL* because the URL is the claim: ``HTTP
         %d`` would pass whatever address the module asked for, which is
         exactly how #184 stayed hidden.
@@ -606,8 +614,12 @@ class TestTheFullTextUrlIsTheOneEuropePmcServes:
         assert len(named) == 1
         assert named[0].levelno == logging.DEBUG
 
-    def test_a_non_200_does_not_warn(self, caplog):
-        """The other half of the level claim, and the half a mutant flips."""
+    def test_a_404_does_not_warn(self, caplog):
+        """The other half of the level claim, and the half a mutant flips.
+
+        A **404**, not any non-200: since #191 every other status WARNs, so
+        the old name gave the opposite answer to the test that pins it.
+        """
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient("<article>body</article>", ext_id="PMC123")
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
@@ -2361,12 +2373,18 @@ class _RecordingClient:
         pubmed: str | None = None,
         trial_has_results: bool = False,
         ext_id: str = "PMC123",
+        full_text_status_code: int = 200,
     ):
         self.crossref = crossref
         self.epmc = epmc
         self.full_text = full_text
         self.pubmed = pubmed
         self.trial_has_results = trial_has_results
+        #: What the full-text address answers with. Defaults to 200 so every
+        #: existing fixture is unchanged; issue #191 needs a 503 to reach
+        #: `analyze()`, and `_StatusClient` cannot — it is not a context
+        #: manager, so it cannot stand in for the client `analyze()` builds.
+        self.full_text_status_code = full_text_status_code
         #: The one address full text is served at. ``PMC123`` is the accession
         #: `_epmc_payload` and `_epmc_record` deposit, and the three literals
         #: have to agree — loudly, since a drift reddens every test that
@@ -2390,6 +2408,8 @@ class _RecordingClient:
         if url.endswith("/fullTextXML"):
             if self.full_text is None or url != self.full_text_url:
                 return _FakeResponse(status_code=404)
+            if self.full_text_status_code != 200:
+                return _FakeResponse(status_code=self.full_text_status_code)
             return _FakeResponse(status_code=200, text=self.full_text)
         if "europepmc" in url:
             if self.epmc is None:
@@ -3159,7 +3179,11 @@ class TestARefusedFullTextLeavesATrace:
     the pair these rules exist to break up.
     """
 
-    def test_a_non_200_is_the_only_outcome_that_is_really_unavailable(self):
+    def test_a_404_is_an_outcome_that_is_really_unavailable(self):
+        # Not *the only* one, which is what this was called until #191:
+        # `NOT_SERVED` and `REQUEST_FAILED` are both genuinely unavailable,
+        # and `NOT_ATTEMPTED` is a third. What is pinned here is that a 404
+        # takes the non-refusal indicator.
         analyzer = TransparencyAnalyzer()
         analysis = _Analysis()
         analyzer._check_europepmc(_FakeFullTextClient(None), _epmc_record(), analysis)
@@ -3170,7 +3194,8 @@ class TestARefusedFullTextLeavesATrace:
     def test_a_record_with_no_full_text_was_never_attempted(self):
         # `inEPMC != "Y"` means Europe PMC never claimed to hold full text, so
         # nothing was requested. Distinct from a request that was made and
-        # answered with a non-200, which is what `NOT_SERVED` records.
+        # answered with a 404, which is what `NOT_SERVED` records since #191
+        # — every other way of getting no document is `REQUEST_FAILED`.
         analyzer = TransparencyAnalyzer()
         analysis = _Analysis()
         analyzer._check_europepmc(_FakeFullTextClient(None), _epmc_record(in_epmc="N"), analysis)
@@ -3205,13 +3230,19 @@ class TestARefusedFullTextLeavesATrace:
 
     def test_every_status_chooses_a_side(self):
         # The rule the docstring states — "a member added later has to choose
-        # a side" — mechanised rather than asserted. Enumerating the seven
-        # above stays green when an eighth appears, and an eighth omitted from
-        # the refused set reads as `is_refusal is False`, which routes into
-        # the "full text unavailable" indicator: for a served document that is
+        # a side" — mechanised rather than asserted. Enumerating the members
+        # above stays green when another appears, and one omitted from the
+        # refused set reads as `is_refusal is False`, which routes into the
+        # "full text unavailable" indicator: for a served document that is
         # the falsehood issue #161 exists to remove, so the silent default
         # runs the wrong way. `TestTheAuditNetIsComplete`'s rule, applied to
         # an enum: a rule enforced by prose is not enforced.
+        #
+        # It has since collected one: `REQUEST_FAILED` (#187/#190/#191) is the
+        # eighth member, and this test is what made it choose a side rather
+        # than default into the wrong one. Written ordinal-free now, because
+        # the prose said "an eighth member" in four places after the eighth
+        # had arrived.
         assert (_REFUSED_FULL_TEXT_STATUSES | _NOT_REFUSED_FULL_TEXT_STATUSES) == set(
             FullTextStatus
         )
@@ -3482,3 +3513,402 @@ class TestFullTextStatusOnTheResult:
         # argument by one with no error raised anywhere — the reason
         # `unknown_reason` and `Publication.pmcid` are where they are.
         assert list(dataclasses.fields(TransparencyResult))[-1].name == "full_text_status"
+
+
+class _RaisingClient:
+    """A client whose ``get`` raises, so the request never produces a response.
+
+    Issue #187 is about what a raised exception is *stored* as, and the
+    exception type is the whole input: a ``ConnectError`` is the environment
+    and a ``TypeError`` is bmlib. Nothing else here varies.
+    """
+
+    def __init__(self, exc: BaseException):
+        self._exc = exc
+        self.calls = 0
+
+    def get(self, url, **kwargs):
+        self.calls += 1
+        raise self._exc
+
+
+class _StatusClient:
+    """A client that answers the full-text URL with one chosen status code.
+
+    :class:`_FakeFullTextClient` can only serve 200 or 404, which is why the
+    404-only draw in the suite was silent about every other code — the gap
+    issue #191 is. The URL is matched whole, for the reason that fake gives.
+    """
+
+    def __init__(self, status_code: int, text: str = "", ext_id: str = "PMC123"):
+        self._status_code = status_code
+        self._text = text
+        self._url = f"{EUROPEPMC_REST_BASE}/{ext_id}/fullTextXML"
+        self.served_urls: list[str] = []
+
+    def get(self, url, **kwargs):
+        self.served_urls.append(url)
+        if url == self._url:
+            return _FakeResponse(status_code=self._status_code, text=self._text)
+        return _FakeResponse(status_code=404)
+
+
+class TestAnAttemptThatGotNoAnswerSaysSo:
+    """Issues #187, #190 and #191 — three ways `NOT_SERVED` was a false claim.
+
+    ``NOT_SERVED`` is documented as *"Requested and not served"*, and issue
+    #161 made it a determinate, machine-readable, persisted value. Three
+    outcomes reached it that Europe PMC never asserted:
+
+    * a **bmlib defect** on the request line, swallowed at DEBUG and stored as
+      a Europe PMC absence (#187);
+    * a **429, 503 or 403**, stored identically to the 404 whose ordinariness
+      is the whole measured basis for the DEBUG level, and — with
+      ``cache_results`` on and no retry anywhere in the module — cached as a
+      permanent absence (#191);
+    * an **empty HTTP 200 body**, which reached the *entirely-nested* branch
+      and stored ``ENTIRELY_NESTED``, an ``is_refusal`` outcome, for a
+      response that carried no document at all (#190).
+
+    ``REQUEST_FAILED`` is the honest answer to all three: the attempt produced
+    no document **and Europe PMC did not say it holds none**, which is what a
+    404 says and nothing else here does.
+
+    **Measured**, 2026-09-05, 200 live probes of ``fullTextXML`` stratified by
+    source (MED/PMC/PPR) and publication year, built exactly as
+    ``_check_europepmc`` builds them: 119 served, 81 non-200, and **81 of the
+    81 were 404**. So a status other than 200 or 404 is the ordinary outcome
+    of nothing — 0 of the 81 non-200s, the eligible denominator rather than
+    0 of 200, and the floor the WARNING rests on, not a
+    proof that Europe PMC never emits one. Among the 119 served, **0 carried
+    an empty body**, the smallest being 2,622 bytes (median 85,925), so
+    #190's population measures empty too; the fix is not carried by a rate but
+    by the branch it lands in being wrong for it.
+    """
+
+    # ---- #191: a 404 is the measured outcome; nothing else is ----
+
+    def test_a_404_is_what_not_served_now_means(self, caplog):
+        # The narrowing's positive half, and the one case the DEBUG level was
+        # actually measured on: Europe PMC answered, and its answer is that it
+        # serves no open-access full text for this article.
+        analyzer = TransparencyAnalyzer()
+        client = _StatusClient(404)
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            fetch = analyzer._fetch_europepmc_fulltext(client, "PMC", "PMC123")
+        assert fetch.status is FullTextStatus.NOT_SERVED
+        named = [r for r in caplog.records if "HTTP 404" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.DEBUG
+        # The URL, because this was the one test in the class that #184's net
+        # did not reach for free: `_StatusClient` 404s every URL it does not
+        # recognise, so a wrong address produces the same 404 / `NOT_SERVED` /
+        # DEBUG this test asserts, and it passed with the two-segment form in
+        # place. Re-introducing that segment now reddens 16 of the class's 26
+        # tests, this one among them; without this line it was 15 of 26.
+        # `_StatusClient.served_urls` existed and was read by nothing until
+        # PR #192's review — a recorder nothing asserts on drifts.
+        assert client.served_urls == [f"{EUROPEPMC_REST_BASE}/PMC123/fullTextXML"]
+
+    @pytest.mark.parametrize("status_code", [403, 429, 500, 502, 503, 504])
+    def test_a_status_other_than_404_is_not_a_statement_about_this_article(
+        self, status_code, caplog
+    ):
+        # `inEPMC: Y` and a 503 says nothing whatever about whether Europe PMC
+        # holds this article's full text — which is exactly what `NOT_SERVED`
+        # claimed on its behalf.
+        analyzer = TransparencyAnalyzer()
+        client = _StatusClient(status_code)
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            fetch = analyzer._fetch_europepmc_fulltext(client, "PMC", "PMC123")
+        assert fetch.status is FullTextStatus.REQUEST_FAILED
+        assert fetch.status is not FullTextStatus.NOT_SERVED
+        named = [r for r in caplog.records if f"HTTP {status_code}" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+
+    def test_the_unmeasured_status_line_carries_the_url_the_404_line_carries(self, caplog):
+        # #184 lived a release inside this silence and the URL is what named
+        # it, so the louder branch must not carry less than the quiet one.
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            analyzer._fetch_europepmc_fulltext(_StatusClient(503), "PMC", "PMC123")
+        url = f"{EUROPEPMC_REST_BASE}/PMC123/fullTextXML"
+        assert [r for r in caplog.records if url in r.getMessage()]
+
+    # ---- #187: a raised request ----
+
+    def test_a_transport_error_is_not_a_europepmc_absence(self, caplog):
+        # The environment failed. Europe PMC asserted nothing, so storing
+        # "requested and not served" puts a claim in its mouth — and results
+        # are cached, so the claim is permanent.
+        analyzer = TransparencyAnalyzer()
+        client = _RaisingClient(OSError("connection reset"))
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            fetch = analyzer._fetch_europepmc_fulltext(client, "PMC", "PMC123")
+        assert fetch.status is FullTextStatus.REQUEST_FAILED
+        named = [r for r in caplog.records if "connection reset" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+        # The *type* as well as the message, which the ERROR branch beside
+        # this one already pins and this one did not: dropping
+        # `type(e).__name__` from the WARNING line survived the whole suite,
+        # leaving a `ConnectTimeout` and a `ReadTimeout` indistinguishable in
+        # an operator's log at exactly the moment the distinction is the
+        # question. `str(OSError("connection reset"))` does not contain
+        # "OSError", so this assertion cannot pass on the message alone.
+        assert "OSError" in named[0].getMessage()
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            TypeError("client is not what this code assumes"),
+            AttributeError("'NoneType' object has no attribute 'get'"),
+            NameError("name 'ext' is not defined"),
+            KeyError("params"),
+            IndexError("tuple index out of range"),
+        ],
+    )
+    def test_a_bmlib_defect_is_reported_as_one(self, exc, caplog):
+        # `fulltext/service.py`'s `_BUG_TYPES` rule, restated here: a type
+        # that can only mean bmlib is wrong must never be held at DEBUG.
+        # ERROR is the level the parse audit fixes for the same claim.
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            fetch = analyzer._fetch_europepmc_fulltext(_RaisingClient(exc), "PMC", "PMC123")
+        assert fetch.status is FullTextStatus.REQUEST_FAILED
+        errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert len(errors) == 1
+        assert type(exc).__name__ in errors[0].getMessage()
+
+    def test_a_bmlib_defect_does_not_cost_the_analysis(self):
+        # Re-raising was the issue's other option and is refused: every other
+        # step in `analyze()` swallows, `fulltext/service.py` — the precedent
+        # the issue itself cites — reports at ERROR and continues, and one
+        # defect must not lose a paper its abstract-level score.
+        analyzer = TransparencyAnalyzer()
+        analysis = _Analysis()
+        record = {
+            "resultList": {
+                "result": [
+                    {
+                        "abstractText": "The authors declare no competing interests.",
+                        "inEPMC": "Y",
+                        "pmcid": "PMC123",
+                    }
+                ]
+            }
+        }
+        analyzer._check_europepmc(_RaisingClient(TypeError("boom")), record, analysis)
+        assert analysis.full_text_status is FullTextStatus.REQUEST_FAILED
+        # The abstract was still scanned, which is the whole point of not raising.
+        assert analysis.coi_disclosed is True
+
+    def test_an_environment_failure_is_not_reported_as_a_bmlib_defect(self, caplog):
+        # The negative control the ERROR level needs: ERROR must mean only
+        # "bmlib is wrong", or it stops meaning anything. `OSError` is
+        # deliberately outside `_BUG_TYPES` — it is the environment — and
+        # `ValueError` carries `json.JSONDecodeError`, `SyntaxError` carries
+        # `ET.ParseError`, and `RuntimeError` carries `RecursionError`.
+        analyzer = TransparencyAnalyzer()
+        for exc in (OSError("down"), ValueError("bad json"), SyntaxError("bad xml")):
+            caplog.clear()
+            with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+                analyzer._fetch_europepmc_fulltext(_RaisingClient(exc), "PMC", "PMC123")
+            assert not [r for r in caplog.records if r.levelno == logging.ERROR]
+
+    # ---- #190: an empty HTTP 200 body ----
+
+    def test_an_empty_body_is_not_a_refusal_that_did_not_happen(self):
+        # `_strip_nested_articles("")` returns `""` — falsy but not `None` —
+        # so the unclosed-region branch does not fire and the emptiness check
+        # below it does, which is the branch meaning *everything served was
+        # nested*. Nothing was served, so nothing can have been nested.
+        analyzer = TransparencyAnalyzer()
+        fetch = analyzer._fetch_europepmc_fulltext(_StatusClient(200, ""), "PMC", "PMC123")
+        assert fetch.status is FullTextStatus.REQUEST_FAILED
+        assert fetch.status is not FullTextStatus.ENTIRELY_NESTED
+        assert not fetch.status.is_refusal
+
+    def test_an_empty_body_does_not_store_a_refusal_indicator(self):
+        # The half that reaches a stored result. `ENTIRELY_NESTED.is_refusal`
+        # is True, so the caller appended *"COI disclosure status unknown
+        # (full text served but not usable)"* into the persisted
+        # `risk_indicators` — a claim that Europe PMC served a document bmlib
+        # declined to scan, for a response carrying no document. Issue #161
+        # exists to remove exactly this, and did not reach it.
+        analyzer = TransparencyAnalyzer()
+        analysis = _Analysis()
+        record = {"resultList": {"result": [{"abstractText": "", "inEPMC": "Y", "id": "PMC123"}]}}
+        analyzer._check_europepmc(_StatusClient(200, ""), record, analysis)
+        assert analysis.full_text_status is FullTextStatus.REQUEST_FAILED
+        assert _INDICATOR_COI_UNKNOWN_REFUSED not in analysis.indicators
+        assert _INDICATOR_COI_UNKNOWN in analysis.indicators
+
+    def test_the_empty_body_line_does_not_contradict_itself(self, caplog):
+        # It logged *"is entirely nested articles (0 bytes served)"*. Both
+        # halves of that sentence cannot be true, and the parenthesis is the
+        # half that is.
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            analyzer._fetch_europepmc_fulltext(_StatusClient(200, ""), "PMC", "PMC123")
+        assert not [r for r in caplog.records if "nested" in r.getMessage()]
+        named = [r for r in caplog.records if "empty body" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+
+    def test_a_body_that_really_is_entirely_nested_still_says_so(self):
+        # The negative control the new guard needs. It runs ahead of three
+        # checks, so it has to be shown not to have swallowed the one whose
+        # branch it was landing in — a guard placed one line too high reports
+        # every nested-only document as an empty response.
+        analyzer = TransparencyAnalyzer()
+        client = _StatusClient(200, "<sub-article><p>Reviewer.</p></sub-article>")
+        fetch = analyzer._fetch_europepmc_fulltext(client, "PMC", "PMC123")
+        assert fetch.status is FullTextStatus.ENTIRELY_NESTED
+
+    def test_a_whitespace_only_body_is_still_entirely_nested_not_empty(self):
+        # The boundary the guard is deliberately drawn at, and **this test is
+        # the only thing holding it** — `test_an_empty_body_is_not_a_refusal_
+        # that_did_not_happen` cannot help, `""` stripping empty too. "Nothing
+        # arrived" is `served == ""`; a body carrying bytes that strip to
+        # nothing *did* arrive and is a document-shaped claim, so it belongs
+        # to the emptiness check below rather than to this one.
+        #
+        # The document is a **wholly-whitespace body**, and naming it exactly
+        # is the point: an earlier draft of the comment at the guard said
+        # `not served.strip()` would take *"a document whose regions strip out
+        # leaving whitespace"* out of the entirely-nested branch, and it would
+        # not — `"  <sub-article>…</sub-article>  "` has a truthy
+        # `served.strip()`, so both spellings reach that branch identically.
+        # Mutating the guard reddens exactly this test and no other.
+        analyzer = TransparencyAnalyzer()
+        fetch = analyzer._fetch_europepmc_fulltext(_StatusClient(200, "   \n  "), "PMC", "PMC123")
+        assert fetch.status is FullTextStatus.ENTIRELY_NESTED
+
+    def test_the_document_the_boundary_does_not_decide(self):
+        # The negative half of the comment above, so the corrected claim is
+        # measured rather than asserted: a body whose regions strip out
+        # leaving whitespace reaches `ENTIRELY_NESTED` under *either* spelling
+        # of the guard, because its own `.strip()` is truthy. Without this,
+        # the rationale at the guard is a sentence no test can contradict —
+        # which is how the wrong document survived into three files.
+        body = "  <sub-article><p>Reviewer.</p></sub-article>  "
+        assert body.strip()
+        analyzer = TransparencyAnalyzer()
+        fetch = analyzer._fetch_europepmc_fulltext(_StatusClient(200, body), "PMC", "PMC123")
+        assert fetch.status is FullTextStatus.ENTIRELY_NESTED
+
+    # ---- the partition ----
+
+    def test_the_new_member_is_not_a_refusal(self):
+        # Nothing was served, so there is nothing to have refused — the same
+        # side `NOT_SERVED` and `NOT_ATTEMPTED` are on. `test_every_status_
+        # chooses_a_side` is what forces the choice to be made at all; this
+        # records which way it went and why.
+        assert not FullTextStatus.REQUEST_FAILED.is_refusal
+        assert FullTextStatus.REQUEST_FAILED in _NOT_REFUSED_FULL_TEXT_STATUSES
+
+    def test_it_round_trips_by_value(self):
+        result = TransparencyResult(
+            "doc-1", 50, TransparencyRisk.MEDIUM, full_text_status=FullTextStatus.REQUEST_FAILED
+        )
+        payload = result.to_dict()
+        assert payload["full_text_status"] == "request_failed"
+        assert TransparencyResult.from_dict(payload).full_text_status is (
+            FullTextStatus.REQUEST_FAILED
+        )
+
+    # ---- the member has to survive to a stored result ----
+
+    @pytest.mark.parametrize(
+        ("kwargs", "issue"),
+        [
+            ({"full_text": "", "full_text_status_code": 200}, "190"),
+            ({"full_text": "<article/>", "full_text_status_code": 503}, "191"),
+        ],
+    )
+    def test_it_reaches_the_stored_result_as_itself(self, kwargs, issue, monkeypatch):
+        # `test_a_refusal_reaches_the_stored_result_as_that_refusal` one
+        # member on, and for its stated reason: what this member *adds* over
+        # `NOT_SERVED` is that a stored result can be audited for "would
+        # re-running change this?", and nothing asserted it on a
+        # `TransparencyResult` — only on the private `_Analysis` carrier,
+        # which never leaves the module. That precedent's own comment records
+        # this exact gap going undetected once already.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1", in_epmc="Y", addressable=True), **kwargs
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+        assert client.full_text_url in client.urls(), issue
+        assert result.full_text_status is FullTextStatus.REQUEST_FAILED
+        assert result.full_text_analyzed is False
+        # Not the refusal indicator, which is #190's whole complaint: nothing
+        # was served, so nothing can have been served-but-unusable.
+        assert _INDICATOR_COI_UNKNOWN_REFUSED not in result.risk_indicators
+        # And it survives the trip through storage as itself.
+        assert TransparencyResult.from_dict(result.to_dict()).full_text_status is (
+            FullTextStatus.REQUEST_FAILED
+        )
+
+
+class TestTheRestatedBugTypesMatchTheOtherModules:
+    """`_BUG_TYPES` is stated twice, so something must compare them.
+
+    `TestTheRestatedSetMatchesTheParsers`' argument, one constant over.
+    `bmlib.transparency` depends on nothing in `bmlib.fulltext`, so the
+    deny-list is restated rather than imported — and that leaves *"if the rule
+    changes, change both"* enforced by prose, which in this repo is not
+    enforced. A test may import both where the module may not.
+
+    Agreeing is the right relation here, unlike the sampler predicates that
+    must **differ** from the parser's: this is one claim about Python's
+    exception hierarchy — which types can only mean the caller is wrong — and
+    not a judgement about anyone's data. The drift that matters is one-sided:
+    a type added to `fulltext`'s copy alone goes on being held at DEBUG here.
+    """
+
+    def test_the_two_deny_lists_hold_the_same_types(self):
+        from bmlib.fulltext import service
+
+        assert set(_BUG_TYPES) == set(service._BUG_TYPES)
+
+    @pytest.mark.parametrize(
+        "excluded",
+        [
+            ValueError("bad json"),
+            json.JSONDecodeError("m", "d", 0),
+            SyntaxError("bad xml"),
+            ET.ParseError("not well-formed"),
+            RuntimeError("something"),
+            RecursionError("maximum recursion depth exceeded"),
+            OSError("down"),
+        ],
+    )
+    def test_the_exclusions_that_are_load_bearing_stay_excluded(self, excluded):
+        # Naming them, because all three pairs read as omissions and are not:
+        # `json.JSONDecodeError` IS a `ValueError` and every `resp.json()` on
+        # a malformed body raises one; `ET.ParseError` IS a `SyntaxError`;
+        # `RecursionError` IS a `RuntimeError`. Admitting any of the three
+        # would report a remote-data failure as a bmlib defect at ERROR,
+        # which is the level's own rule broken from the other side.
+        #
+        # **`isinstance`, never `not in _BUG_TYPES`**, and the difference is
+        # a mutant that survived the whole suite: replacing `KeyError,
+        # IndexError` with their shared base `LookupError` in *both* copies
+        # passed 3218 tests. A membership test sees only the names it was
+        # given, so a deny-list silently widened to every subclass of a base
+        # it does not name reads as unchanged — while the code decides by
+        # `isinstance`, which walks the hierarchy. Test the relation the code
+        # uses, not the one that is easier to write. Each concrete subclass is
+        # listed beside its base for the same reason: the base alone cannot
+        # detect a widening *to* that base.
+        assert not isinstance(excluded, _BUG_TYPES)
+
+    def test_the_deny_list_admits_no_type_beyond_the_five_it_names(self):
+        # The other end of the same mutant. Every entry must be one of the
+        # five named types exactly — not a subclass and not a base — so
+        # widening `KeyError, IndexError` to `LookupError` reddens here even
+        # though both copies agree and no excluded name moved.
+        assert set(_BUG_TYPES) == {TypeError, AttributeError, NameError, KeyError, IndexError}

@@ -88,15 +88,54 @@ class FullTextStatus(Enum):
     #: (``inEPMC != "Y"``), there was no record to ask about, or the record
     #: claimed full text and carried no address for it (which WARNs, being a
     #: malformed record rather than an ordinary closed-access paper). Distinct
-    #: from a request that was made and answered with a non-200.
+    #: from a request that was made and answered — with a 404, which is
+    #: :attr:`NOT_SERVED`, or any other way of producing no document, which
+    #: is :attr:`REQUEST_FAILED`.
     NOT_ATTEMPTED = "not_attempted"
-    #: Requested and not served: the request failed, or the response was not
-    #: HTTP 200. Together with :attr:`NOT_ATTEMPTED` — the dominant case, and
-    #: every paper Europe PMC holds no open-access full text for — this is an
-    #: outcome for which "full text unavailable" is true. The refusals below
-    #: are the ones for which it is false, which is what :attr:`is_refusal`
-    #: groups; neither of these two is "the only" such outcome.
+    #: Requested, and Europe PMC answered **HTTP 404**: it serves no
+    #: open-access full text for this article. Together with
+    #: :attr:`NOT_ATTEMPTED` — the dominant case, and every paper Europe PMC
+    #: holds no open-access full text for — this is an outcome for which
+    #: "full text unavailable" is true. The refusals below are the ones for
+    #: which it is false, which is what :attr:`is_refusal` groups; neither of
+    #: these two is "the only" such outcome.
+    #:
+    #: **Narrowed to the 404 in issue #191.** It used to mean any non-200 and
+    #: any raised request as well, which put a claim in Europe PMC's mouth
+    #: that only the 404 makes: a 503 says nothing whatever about whether they
+    #: hold this article. Everything else is :attr:`REQUEST_FAILED`.
     NOT_SERVED = "not_served"
+    #: The attempt produced no document **and Europe PMC did not say it holds
+    #: none** — the distinction from :attr:`NOT_SERVED`, which is exactly the
+    #: 404. **Four** ways in — one per distinguishable behaviour, which is
+    #: three ``return`` statements because two of them share a branch — and
+    #: they share a status because they share that claim, not because they
+    #: share a cause:
+    #:
+    #: * the request raised in the environment — a timeout, a reset, a DNS
+    #:   failure (issue #187);
+    #: * the request raised a bmlib defect, which also logs at ERROR and is
+    #:   the only one of the four that is bmlib's fault (issue #187);
+    #: * Europe PMC answered a non-404 non-200 — a 429, a 503, a 403, or a
+    #:   redirect, which is not followed (issue #191). One branch and one log
+    #:   line, so it is one way in and not two;
+    #: * Europe PMC answered 200 with an **empty body**, which used to reach
+    #:   the *entirely nested* branch and store a refusal that did not happen
+    #:   (issue #190).
+    #:
+    #: Counted as five until the review of PR #192, which split the third
+    #: bullet in two and so disagreed with every other statement of the same
+    #: set — a count is of what you looked for, and a status vocabulary is
+    #: counted by behaviour.
+    #:
+    #: "Full text unavailable" is true of it, so it is not a refusal. What it
+    #: adds over :attr:`NOT_SERVED` is that *"would re-running change this?"*
+    #: is answerable: results are cacheable
+    #: (:attr:`TransparencySettings.cache_results`) and there is no retry
+    #: anywhere in ``transparency/``, so without this member an outage window
+    #: caches absences indistinguishable from legitimately closed-access
+    #: papers, each having silently lost up to 30 points.
+    REQUEST_FAILED = "request_failed"
     #: Served, segmented, and scanned as the article's own text.
     ANALYZED = "analyzed"
     #: Served, but the document did not arrive whole — it carries no
@@ -118,8 +157,11 @@ class FullTextStatus(Enum):
 
         ``True`` for exactly the outcomes where Europe PMC answered HTTP 200
         with a document that bmlib then declined to scan. ``False`` for
-        :attr:`ANALYZED`, and for :attr:`NOT_SERVED` and :attr:`NOT_ATTEMPTED`
-        — where nothing was served, so there is nothing to have refused.
+        :attr:`ANALYZED`, and for :attr:`NOT_SERVED`, :attr:`REQUEST_FAILED`
+        and :attr:`NOT_ATTEMPTED` — where nothing was served, so there is
+        nothing to have refused. An HTTP 200 carrying an *empty* body is on
+        that side too, and is why :attr:`REQUEST_FAILED` exists: 200 alone is
+        not "a document arrived" (issue #190).
         """
         return self in _REFUSED_FULL_TEXT_STATUSES
 
@@ -144,13 +186,15 @@ _REFUSED_FULL_TEXT_STATUSES = frozenset(
 
 #: The other side, named rather than left implicit — the whole of *"a member
 #: added later has to choose a side"*. Membership of the refused set alone
-#: leaves the rule enforced by prose: an eighth member omitted from it simply
-#: reads as ``is_refusal is False`` and routes into the *"full text
+#: leaves the rule enforced by prose: a member added later and omitted from it
+#: simply reads as ``is_refusal is False`` and routes into the *"full text
 #: unavailable"* indicator, which for a served document is the falsehood issue
 #: #161 exists to remove — so the silent default runs the wrong way. Naming
 #: both sides lets ``test_every_status_chooses_a_side`` assert the partition,
-#: which
-#: turns the eighth member into a red test instead. The same rule
+#: which turns that member into a red test instead. It has since been
+#: collected: :attr:`FullTextStatus.REQUEST_FAILED` is the eighth member the
+#: rule was written against, and the partition test is what made it choose.
+#: Stated ordinal-free because the next one is the ninth. The same rule
 #: ``TestTheAuditNetIsComplete`` and ``TestEveryCounterIsInAGeneration`` make
 #: in ``fulltext/``, and for the same reason: a rule enforced by prose is not
 #: enforced.
@@ -158,6 +202,7 @@ _NOT_REFUSED_FULL_TEXT_STATUSES = frozenset(
     {
         FullTextStatus.NOT_ATTEMPTED,
         FullTextStatus.NOT_SERVED,
+        FullTextStatus.REQUEST_FAILED,
         FullTextStatus.ANALYZED,
     }
 )

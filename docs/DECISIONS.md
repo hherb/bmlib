@@ -141,6 +141,82 @@ must not be re-done.
   key of the ranking or `note_data_level()` raises by design; the deposition
   list deliberately excludes reference-only databases (dbSNP, OMIM, RefSeq…).
   Three tests in `test_transparency.py` pin it.
+- **A bmlib defect in the full-text request logs ERROR and does not raise**
+  (#187). `_fetch_europepmc_fulltext` classifies what `client.get` raised
+  against a restated `_BUG_TYPES` and logs a `TypeError`/`AttributeError`/
+  `NameError`/`KeyError`/`IndexError` at ERROR, since those can only mean
+  bmlib is wrong — but it still returns rather than propagating, which was the
+  issue's other option. Three reasons, and re-raising undoes all three: every
+  network step in the module swallows its own request, so one dead API cannot
+  cost an analysis (`analyze()` itself wraps nothing, which is why each step
+  must); `fulltext/service.py` — the precedent #187 itself cites — reports a
+  `_BUG_TYPES` member through `on_bug` and continues, rather than raising —
+  **at WARNING, not ERROR**: `on_bug` is `_warn_swallowed_bug`, which routes
+  through `_warn_once`, and that module has no `logger.error` at all, so it is
+  the precedent for continuing and `jats_parser` is the precedent for the
+  level (PR #192's review); and making *this* step alone fatal changes what
+  a public `analyze()` may raise while `_check_crossref`'s identical defect stays
+  swallowed one method away. The ERROR is what an operator acts on; the stored
+  `REQUEST_FAILED` is what the result is audited by afterwards. Tests:
+  `TestAnAttemptThatGotNoAnswerSaysSo::test_a_bmlib_defect_is_reported_as_one`
+  and `::test_a_bmlib_defect_does_not_cost_the_analysis`.
+- **`_BUG_TYPES` is restated here too, not imported from
+  `bmlib.fulltext.service`** (#187). The `_NESTED_ARTICLE_ELEMENTS` decision
+  above, one constant over, and for the same reason. Unlike the samplers'
+  predicates — which must *differ* from the code under test — the two copies
+  must **agree**: this is one claim about Python's exception hierarchy, not a
+  judgement about anyone's data, and the drift that matters is one-sided (a
+  type added to `fulltext`'s copy alone goes on being held at DEBUG here). So
+  it is pinned rather than left to prose:
+  `tests/test_transparency.py::TestTheRestatedBugTypesMatchTheOtherModules`.
+  What is load-bearing is what the list *excludes* — `ValueError` carries
+  `json.JSONDecodeError`, `SyntaxError` carries `ET.ParseError`,
+  `RuntimeError` carries `RecursionError`, and `OSError` is the environment —
+  so adding any of the four would report a remote-data failure as a bmlib
+  defect and break the ERROR level's meaning from the other side. **The
+  exclusions are pinned by `isinstance`, never by `not in _BUG_TYPES`**
+  (PR #192's review): a membership test sees only the names it was given,
+  so replacing `KeyError, IndexError` with their shared base `LookupError`
+  in *both* copies passed the whole suite — the agreement test saw two
+  edited copies agreeing and the exclusion test saw a name nobody had told
+  it about, while the deny-list had silently widened to every `LookupError`
+  subclass. Test the relation the code uses.
+- **`analyzer_version` is deliberately not bumped for the `NOT_SERVED`
+  narrowing** (#191, raised in PR #192's review). Narrowing a published
+  enum member's meaning is normally a migration problem: a stored
+  `not_served` written before the change may have been a 503, and after
+  it the member is documented as *"Europe PMC answered HTTP 404"*, so a
+  consumer joining an existing corpus would read legacy rows as 404s —
+  the failure mode `full_text_status=None` exists to prevent one field
+  up. It does not arise here, and the reason is release scope rather
+  than design: `FullTextStatus` was added by #161 in the **same
+  `[Unreleased]` block**, so no published version of bmlib has ever
+  written the field at all and the two meanings never ship apart. Only a
+  corpus written from unreleased `main` between #161 and #191 can hold
+  the old meaning, and nothing distinguishes it there. Do not re-open
+  this as a compatibility gap — but note that the argument expires the
+  moment `FullTextStatus` ships: a *later* narrowing of any member would
+  need the bump, and `analyzer_version` has never been moved off `1.0`.
+- **The empty-body guard is `not served`, never `not served.strip()`** (#190).
+  It sits at the status dispatch, above all four refusals, because an empty
+  body is not a claim about a document's shape — nothing arrived to have one.
+  Tightening it to `.strip()` looks like the same test and is not: a body of
+  whitespace *did* arrive, and moving the boundary makes the entirely-nested
+  branch unreachable for a document whose nested regions strip out leaving
+  whitespace. Pinned both ways —
+  `::test_an_empty_body_is_not_a_refusal_that_did_not_happen` and
+  `::test_a_whitespace_only_body_is_still_entirely_nested_not_empty` — and
+  the second is what a mutant flips.
+- **`NOT_SERVED` is the 404 and only the 404** (#191). It used to take every
+  non-200 and every raised request, which generalised the DEBUG level's own
+  measurement past what that measurement looked for. Do not re-widen it to
+  save a branch: a 429, a 503 or a 403 is not Europe PMC saying it holds no
+  full text for this article, and with `cache_results` defaulting `True` and
+  no retry anywhere in `transparency/`, an outage window that stores
+  `NOT_SERVED` caches absences indistinguishable from legitimately
+  closed-access papers. Measured 2026-09-05 over 200 stratified live probes:
+  81 of 81 non-200s were 404, so the quiet branch is measured over the whole
+  of what it now takes and the loud one fires on nothing in a healthy draw.
 - **Four more, each argued where it lives and each with a test naming it:**
   `TransparencySettings.filtering_enabled` / `max_concurrent_analyses` /
   `cache_results` are caller-owned orchestration hints, not dead code;

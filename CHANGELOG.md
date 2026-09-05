@@ -8,6 +8,104 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **An attempt that got no answer now says so, instead of blaming Europe PMC**
+  (issues #187, #190 and #191, all three from PR #185's and PR #189's reviews).
+  `FullTextStatus.REQUEST_FAILED` is a new member, and `NOT_SERVED` narrows to
+  exactly the HTTP 404.
+
+  `NOT_SERVED` is documented as *"Requested and not served"*, and since #161 it
+  is determinate, machine-readable and persisted — so each of three outcomes
+  reaching it stored a claim about Europe PMC that Europe PMC never made:
+
+  - a **bmlib defect** on the request line — a `TypeError` from a client that
+    is not what the code assumes, an `httpx.InvalidURL` from an `ext_id` that
+    arrived as a non-string — swallowed at DEBUG and filed as a Europe PMC
+    absence (#187);
+  - a **429, 503 or 403**, stored identically to the 404 whose ordinariness is
+    the entire measured basis for the DEBUG level. `cache_results` defaults
+    `True` and there is no retry or `Retry-After` handling anywhere in the
+    package, so an outage window cached a corpus of absences indistinguishable
+    from legitimately closed-access papers, each having silently lost up to 30
+    points (#191);
+  - an **empty HTTP 200 body**, which reached the *entirely nested* branch —
+    `_strip_nested_articles("")` returns `""`, falsy but not `None` — and
+    stored `ENTIRELY_NESTED`, an `is_refusal` outcome, logging the
+    self-contradictory *"is entirely nested articles (0 bytes served)"*. The
+    caller then persisted *"COI disclosure status unknown (full text served
+    but not usable)"* for a response that carried no document: #161's own
+    class of stored dishonesty, one branch it did not reach (#190).
+
+  `REQUEST_FAILED` is the honest answer to all three — the attempt produced no
+  document **and Europe PMC did not say it holds none**, which is what a 404
+  says and nothing else here does. Both are `is_refusal` `False`, nothing
+  having been served, so the two paths that used to read `NOT_SERVED` keep
+  the *"full text unavailable"* indicator unchanged. **The empty body does
+  not**, and that is the point of #190 rather than a side effect: it used to
+  read `ENTIRELY_NESTED`, whose `is_refusal` is `True`, so it carried *"full
+  text served but not usable"* — a claim about a response that carried no
+  document. `risk_indicators` is persisted, so this is a stored-value change
+  a downstream can see. ("The indicator is unchanged for every one of them"
+  stood here until PR #192's review; it was true of two paths of three.)
+  `test_every_status_chooses_a_side` is what forced the new member to pick a
+  side rather than defaulting into the wrong one.
+
+  **Measured, and each number names its draw.** 200 live probes of
+  `fullTextXML` on 2026-09-05, stratified by source (MED/PMC/PPR) and
+  publication year and addressed exactly as `_check_europepmc` addresses them
+  — a cursor page being a contiguous block, an unstratified draw of
+  `IN_EPMC:Y` read 48% 404 where a stratified one read 3% (PR #189). 119
+  served, 81 non-200, and **81 of the 81 were 404**: so the DEBUG level is now
+  measured over the whole of what its branch takes, where before it
+  generalised past its own draw, and a non-404 is the ordinary outcome of
+  nothing — 0 of the 81 non-200s, which is the eligible denominator (the
+  other 119 served, so they could not reach that branch); a floor rather than
+  a proof that Europe PMC never emits
+  one. Of the 119 served, **0 carried an empty body**, the smallest being
+  2,622 bytes and the median 85,925, so #190's fix is carried by the branch it
+  was landing in being wrong for it rather than by a rate. Whether Europe PMC
+  ever serves an empty 200 is **not measured**; the local corpora cannot
+  answer it, the importer that built them having possibly discarded failures
+  (#183's caveat).
+
+  Levels, each argued at its branch: DEBUG for the 404 alone; WARNING for a
+  non-404, a raised request and an empty body; **ERROR** for a request raising
+  a `_BUG_TYPES` member, which can only mean bmlib is wrong — the level
+  `fulltext/_parse_audit.py` fixes for the identical claim. It **does not
+  re-raise**, which was #187's other option: every network step in the module
+  swallows its own request so one dead API cannot cost an analysis (`analyze()`
+  itself wraps nothing, which is why each step must), `fulltext/service.py` —
+  the precedent #187 itself cites — reports a `_BUG_TYPES` member and
+  *continues* rather than raising, and making this step alone fatal would
+  change what a public `analyze()` may raise while `_check_crossref`'s
+  identical defect stayed swallowed. The ERROR level is `jats_parser`'s
+  precedent and **not** `fulltext/service.py`'s: four documents said that
+  module reports a `_BUG_TYPES` member *at ERROR*, and it does not —
+  `_warn_swallowed_bug` routes through `_warn_once`, which is
+  `logger.warning`, and the module contains no `logger.error` at all. It is
+  the precedent for reporting-and-continuing, which is what the argument
+  needs. Corrected in the review of PR #192.
+  `_BUG_TYPES` is restated rather than imported, as the
+  nested-article element set is, and the two copies are pinned as agreeing by
+  `TestTheRestatedBugTypesMatchTheOtherModules` — a rule enforced by prose is
+  not enforced.
+
+  **What it costs a downstream:** a stored result that used to read
+  `not_served` for a 503, a timeout or an empty body now reads
+  `request_failed`; one that used to read `entirely_nested` for an empty body
+  now reads `request_failed` and no longer carries the *"served but not
+  usable"* indicator. Nothing moves for a 404, which is 81 of 81 non-200s in
+  the draw above. No score, risk level or COI value moves on any path.
+
+  **No released corpus is affected.** `FullTextStatus` itself is unreleased —
+  #161 added it in this same `[Unreleased]` block — so no published version
+  of bmlib has ever written `full_text_status` at all, and the narrowing of
+  `not_served` to the 404 cannot be read back into anyone's stored data. The
+  two meanings never ship apart, which is why `analyzer_version` is not
+  bumped: only a corpus written from unreleased `main` between #161 and this
+  change can hold a `not_served` that meant a 503, and it is not
+  distinguishable from a 404 there. Raised in PR #192's review as a
+  migration question; this is the answer.
+
 - **A refused full text now leaves a trace in the stored result** (issue #161,
   from PR #159's own review). `FullTextStatus` — exported from
   `bmlib.transparency` and carried on `TransparencyResult.full_text_status` —
@@ -56,7 +154,7 @@ All notable changes to bmlib are documented here. The format is based on
   unknown"* beside *"disclosure found"* against `coi_disclosed=True` —
   permanently, in a persisted field, which is this issue's own failure mode
   inside the fix for it. `is_refusal`'s two sides are named sets and the
-  partition is asserted, so an eighth member cannot default to *not a
+  partition is asserted, so a member added later cannot default to *not a
   refusal*; and no path this version writes leaves `full_text_status` at
   `None`, which is what keeps that value meaning *legacy row* alone.
 
@@ -147,8 +245,9 @@ All notable changes to bmlib are documented here. The format is based on
   `_strip_nested_articles` pass over it; the 0.35 s inter-request floor is
   unchanged, so throughput is not.
 
-  **The test is the remedy for the silence, not the log line.** A non-200 is
-  the one outcome that deliberately does not warn, so the defect was invisible
+  **The test is the remedy for the silence, not the log line.** A non-200 was
+  then the one outcome that deliberately did not warn — narrowed to the 404
+  alone by #191, below — so the defect was invisible
   for its whole life; issue #184 proposed raising that level, arguing a 404
   under `inEPMC: Y` is Europe PMC contradicting itself. **That is refuted by
   the measurement above**: `inEPMC` says Europe PMC *holds* the text where
@@ -156,7 +255,8 @@ All notable changes to bmlib are documented here. The format is based on
   ordinary majority outcome for the gate this module uses and a WARNING would
   fire on every closed-access paper analysed. The URL is logged at DEBUG
   instead — it is what named the defect — and the level is pinned in both
-  directions.
+  directions. (That argument is of **404s**, and #191 below narrowed the
+  branch to match it: a 429, a 503 and a 403 now WARN.)
 
   What could have caught it is a test, and there was none: `_FakeFullTextClient`
   matched `url.endswith("/fullTextXML")` and `_RecordingClient` — the fake

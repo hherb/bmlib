@@ -87,10 +87,11 @@ elif result.unknown_reason is TransparencyUnknownReason.NO_IDENTIFIER:
 ```python
 class FullTextStatus(Enum):
     NOT_ATTEMPTED = "not_attempted"              # no request was made
-    NOT_SERVED = "not_served"                    # requested; failed or non-200
-    # "full text unavailable" is true of NOT_SERVED *and* NOT_ATTEMPTED —
-    # neither is "the only" such outcome; the refusals are the ones it is
-    # false of, which is what is_refusal groups.
+    NOT_SERVED = "not_served"                    # requested; EuropePMC answered 404
+    REQUEST_FAILED = "request_failed"            # no answer: raised, non-404, or empty 200
+    # "full text unavailable" is true of all three of those — none is "the
+    # only" such outcome; the refusals are the ones it is false of, which is
+    # what is_refusal groups.
     ANALYZED = "analyzed"                        # served, segmented, scanned
     TRUNCATED = "truncated"                      # served; no </article>, tail lost
     UNTERMINATED_MARKUP = "unterminated_markup"  # served; a construct never closes
@@ -111,7 +112,19 @@ if result.full_text_status is not None and result.full_text_status.is_refusal:
     requeue(result.document_id, reason=result.full_text_status.value)
 ```
 
-`is_refusal` is `True` for `TRUNCATED`, `UNTERMINATED_MARKUP`, `UNCLOSED_REGION` and `ENTIRELY_NESTED`; `False` for `ANALYZED`, and for `NOT_SERVED` and `NOT_ATTEMPTED`, where nothing was served and so there is nothing to have refused.
+`is_refusal` is `True` for `TRUNCATED`, `UNTERMINATED_MARKUP`, `UNCLOSED_REGION` and `ENTIRELY_NESTED`; `False` for `ANALYZED`, and for `NOT_SERVED`, `REQUEST_FAILED` and `NOT_ATTEMPTED`, where nothing was served and so there is nothing to have refused. An HTTP 200 carrying an *empty* body is on that side too, and is why `REQUEST_FAILED` exists: a 200 alone is not "a document arrived".
+
+**`is_refusal` answers "did a document arrive?", not "would re-running change this?"** — and the second question is the one `REQUEST_FAILED` was added for, so the snippet above deliberately does **not** retry it. Nothing in `transparency/` retries or honours `Retry-After`, and results are cacheable, so an outage window caches a corpus of absences unless the caller acts on this member itself:
+
+```python
+# The attempt produced no document and EuropePMC did not say it holds none:
+# a timeout, a 429/503/403, or a 200 with an empty body. Re-running may well
+# give a different answer, which is exactly what NOT_SERVED (a 404) rules out.
+if result.full_text_status is FullTextStatus.REQUEST_FAILED:
+    requeue_later(result.document_id)
+```
+
+One caveat the member cannot carry: a `REQUEST_FAILED` produced by a `_BUG_TYPES` exception is bmlib's own defect, and re-running loops until it is fixed. That one is distinguishable only by the ERROR line beside it, which is why the level is what it is.
 
 **`None` means *not recorded*, never `NOT_ATTEMPTED`.** Results persisted before the field existed load with the default, and one of those may perfectly well carry `full_text_analyzed=True`; reading that back as a determinate "nothing was attempted" would be a worse answer than admitting the field was not written. Branch on `is not None` first, as above.
 
@@ -119,7 +132,9 @@ Nothing this version writes carries `None` — every path out of `analyze()`, in
 
 **Invariant:** when the field is set, `full_text_status is FullTextStatus.ANALYZED` if and only if `full_text_analyzed` is `True`; `__post_init__` raises `ValueError` on a disagreement. That flag is what qualifies a stored `coi_disclosed=False` as *scanned and absent* rather than *undeterminable*, so a status contradicting it makes the pair uninterpretable. As with `unknown_reason`, a `None` status imposes nothing.
 
-Each refusal also logs one WARNING naming which it was, the `document_id` that joins the line to a stored result, and how many bytes were served. A non-200 does not warn — there is nothing there to report.
+Each refusal also logs one WARNING naming which it was, the `document_id` that joins the line to a stored result, and how many bytes were served.
+
+**Exactly one outcome is quiet, and it is the only one measured to be ordinary** *(unreleased — issues #187, #190, #191)*. A **404** logs the URL at DEBUG: Europe PMC answered, and its answer is that it serves no open-access full text for this article. Every other way of getting no document WARNs and stores `REQUEST_FAILED` rather than `NOT_SERVED`, because none of them is Europe PMC saying anything about this article — a raised request, a 429 or 503 or 403, and an HTTP 200 carrying an **empty body**, which used to reach the *entirely nested* branch and store a refusal that did not happen. The one exception to WARNING is upward: a request raising a `TypeError`, `AttributeError`, `NameError`, `KeyError` or `IndexError` logs **ERROR**, since those can only mean bmlib is wrong. It still does not raise — every step in `analyze()` swallows so one dead API cannot cost an analysis, and `bmlib.fulltext.service` reports the same class at ERROR and continues.
 
 ---
 
@@ -320,7 +335,7 @@ A DOI still unlocks more than a PMID — CrossRef and OpenAlex are queried **onl
 
 The PubMed step does not need `pmid` to be supplied: when only a `doi` is given, the PMID is taken from the Europe PMC record already fetched, so it costs no extra request. Only when neither source yields a PMID is the step skipped.
 
-Every network failure is swallowed and logged at `DEBUG` — a non-200 response, a timeout, or a connection error degrades the score rather than raising. Enable `logging.getLogger("bmlib.transparency.analyzer").setLevel(logging.DEBUG)` to see which calls failed.
+Every network failure is swallowed rather than raised — a non-200 response, a timeout, or a connection error degrades the score instead. **The level depends on the step.** The four search/metadata steps (CrossRef, the Europe PMC search, PubMed, OpenAlex) log at `DEBUG`, so enable `logging.getLogger("bmlib.transparency.analyzer").setLevel(logging.DEBUG)` to see which of those failed. The Europe PMC *full-text* step is the exception since #187/#190/#191: only its 404 is DEBUG — the ordinary outcome for a paper Europe PMC holds but does not serve open-access — while a 429/503/403, a raised request and an empty HTTP 200 body all `WARNING`, and a request raising a `_BUG_TYPES` member logs `ERROR` with a traceback, since that can only mean bmlib is wrong. Those carry a stored `full_text_status` as well as a log line.
 
 **Example:**
 
@@ -389,11 +404,11 @@ That is measured rather than read off the documentation. Probed on 2026-09-05, t
 
 **The accession is not a PMCID, and normalising it into one would lose a population.** 75,760 of Europe PMC's 12,220,678 `IN_EPMC:Y` records — 0.62%, from their own hit counts rather than a draw — are preprints carrying no `pmcid` at all, addressed by a `PPR…` accession. `bmlib.fulltext`'s `_normalise_pmc_id` would reject every one of them, so the two modules deliberately agree on the *base* URL and not on the identifier; a test pins the first and would fail on the second.
 
-**A non-200 here is ordinary, and is logged at DEBUG.** `inEPMC` says Europe PMC *holds* the full text; `fullTextXML` serves the open-access subset of it. Of 150 `IN_EPMC:Y` records probed across sources and publication years, no `isOpenAccess: N` record served — 0 of 53 — and `isOpenAccess: Y` still 404'd in 35 of 97. So warning on a non-200 would mean a warning on every closed-access paper analysed. Each of those cells is one cursor page rather than a random sample, so they are not population rates; the `0 of 53` is a floor, not a proof that no such record can serve.
+**A 404 here is ordinary, and is logged at DEBUG.** `inEPMC` says Europe PMC *holds* the full text; `fullTextXML` serves the open-access subset of it. Of 150 `IN_EPMC:Y` records probed across sources and publication years, no `isOpenAccess: N` record served — 0 of 53 — and `isOpenAccess: Y` still 404'd in 35 of 97. So warning on it would mean a warning on every closed-access paper analysed. Each of those cells is one cursor page rather than a random sample, so they are not population rates; the `0 of 53` is a floor, not a proof that no such record can serve.
 
-That draw is of **404s**, and the branch takes every status code: a 429, a 503 or a 403 is logged and stored the same way, and with `cache_results` on and no retry anywhere in the module, an outage caches absences that cannot be told from closed-access papers. The stored value stays honest either way — `full_text_status` is `NOT_SERVED`, whose `is_refusal` is `False`, so *"full text unavailable"* is true of a 503 — but *"would re-running change this?"* is not answerable from it. Issue #191 tracks splitting the branch; it needs a new status member and a level nobody has measured.
+**That draw is of 404s, and so is the branch** *(unreleased — issue #191)*. It used to take every status code, which generalised the measurement past what it looked for. A second probe on 2026-09-05 — 200 `IN_EPMC:Y` records, stratified the same way and addressed exactly as the analyzer addresses them — found 119 served and **81 of the 81 non-200s were 404**. So the DEBUG level is now measured over the whole of what its branch takes, and everything else is `REQUEST_FAILED` at WARNING: a 429, a 503 and a 403 are the ordinary outcome of nothing, 0 of 200, and with `cache_results` on and no retry anywhere in the module an outage would otherwise cache absences that cannot be told from closed-access papers. `is_refusal` stays `False` for both, so the *"full text unavailable"* indicator is unchanged; what the split adds is that *"would re-running change this?"* is answerable at all.
 
-**There is no committed instrument for the figures in this section.** Unlike the sampled populations elsewhere in this manual, the URL shapes and the 150-record probe were measured by hand against the live API on 2026-09-05 and no `scripts/sample_*.py` re-derives them. The hit counts (`IN_EPMC:Y`, `SRC:PPR AND IN_EPMC:Y`) are re-checkable in one request each and drift upward daily; the rest would need re-probing.
+**There is no committed instrument for the figures in this section.** Unlike the sampled populations elsewhere in this manual, the URL shapes, the 150-record probe and the 200-record probe behind #191 and #190 were all measured by hand against the live API on 2026-09-05 and no `scripts/sample_*.py` re-derives them. The hit counts (`IN_EPMC:Y`, `SRC:PPR AND IN_EPMC:Y`) are re-checkable in one request each and drift upward daily; the rest would need re-probing.
 
 #### The full text is the article's own
 
@@ -530,6 +545,12 @@ Six things worth knowing about the rule:
   refusal knows *which* element too — `_strip_nested_articles` holds them as a
   stack of names — but discards it at the return rather than reporting it;
   issue #186 tracks that, and the ordering argument does not rest on it.)
+  An **empty** body reaches none of the four: it is refused above them, at the
+  status dispatch, because nothing arrived to have a shape *(unreleased —
+  issue #190)*. That is `not served`, never `not served.strip()`: a body of
+  whitespace did arrive, and moving the boundary would make the
+  entirely-nested branch unreachable for a document whose regions strip out
+  leaving whitespace.
   Placed ahead of the lex it would make issue #160's message unreachable for
   the input that most often produces it — a body *corrupted* rather than
   truncated still carries `</article>` and reaches the lex, so "only" would

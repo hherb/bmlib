@@ -1,12 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-05. **0.10.0 is released and on PyPI**; twenty-one
+_Last updated: 2026-09-05. **0.10.0 is released and on PyPI**; twenty-two
 changes sit unreleased. All five version places agree at 0.10.0. Every
 unreleased ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Twenty-one changes, fourteen of them `fulltext` JATS fixes filed within days of
+Twenty-two changes, fourteen of them `fulltext` JATS fixes filed within days of
 each other — whoever cuts the next release should describe those together. Per-PR
 detail is in `CHANGELOG.md`; only the *data* answer is kept here, because the
 version number answers the API question and never that one.
@@ -29,7 +29,7 @@ measured by diffing a corpus rather than reasoned: over 880 local PMC articles /
 rebuilt, 958 emptied of an `<element-citation>` leak — `authors` for 502 in 14,
 rendered HTML for 576 in 23.
 
-**Six move stored *transparency* values, and all six are outside
+**Seven move stored *transparency* values, and all seven are outside
 `fulltext`.** **#184 is much the largest of them and the largest single move in
 this release**: every Europe PMC full-text fetch was 404ing, so every analysis
 ran on the abstract. Restoring it moved, over 48 real open-access analyses
@@ -41,22 +41,28 @@ reachable at all, so a paper above `score_threshold` with no COI statement in
 its full text can be downgraded where before it could not. **Any downstream
 holding stored transparency results should recompute them.**
 
-The other five are smaller. #112 admits `plc`/`pty` to `_INDUSTRY_WORDS`, so `"GSK plc"` now
-sets `industry_funding_detected`, which feeds a HIGH-risk rule and a quality
-downgrade; neither token is in the labelled corpus, so **no measured figure
-moves** — which is why the omission sat unnoticed. #119 stops a reviewer's prose
-answering for the article: 0.61% of PMC's `oa_comm` `PMC012xxxxxx` baseline
-package (97,909 articles) has at least one scan output move, dominated by
-`data_availability_level` (499 of 602). #160 moves **nothing** — measured, 0 of
-98,789 articles across both corpora. #183 moves nothing measurable either — a
-body truncated between tags is a network product, and 0 of 97,909 archive articles
-across both corpora is refused by the check — but where it *does* fire it
-turns a manufactured `coi_disclosed=False` into `None`, which is the
-difference between firing the missing-COI downgrade and not. #161 adds a
-field rather than moving one: `TransparencyResult.full_text_status`, plus an
-honest indicator string on the refusal paths, so a stored result that used to
-say *"full text unavailable"* for a document Europe PMC served now says
-*"served but not usable"*. A downstream matching that prose has to widen.
+The other six are smaller. **#112** admits `plc`/`pty` to `_INDUSTRY_WORDS`, so
+`"GSK plc"` now sets `industry_funding_detected`, feeding a HIGH-risk rule and a
+quality downgrade; neither token is in the labelled corpus, so **no measured
+figure moves** — which is why the omission sat unnoticed. **#119** stops a
+reviewer's prose answering for the article: 0.61% of the `oa_comm`
+`PMC012xxxxxx` baseline package (97,909 articles) has a scan output move,
+dominated by `data_availability_level` (499 of 602). **#160** moves **nothing**
+— 0 of 98,789 articles across both corpora. **#183** moves nothing measurable
+either (0 of 97,909 refused), but where it fires it turns a manufactured
+`coi_disclosed=False` into `None`, which is the difference between firing the
+missing-COI downgrade and not. **#161** adds a field rather than moving one —
+`TransparencyResult.full_text_status`, plus an honest indicator on the refusal
+paths, so a result that said *"full text unavailable"* for a served document
+now says *"served but not usable"*. **#187/#190/#191** move that same field and
+nothing else: `FullTextStatus` gains `REQUEST_FAILED` and `NOT_SERVED` narrows
+to the 404, so `not_served` for a 503, a timeout or an empty body becomes
+`request_failed`, and an empty body that read `entirely_nested` becomes
+`request_failed` and drops the *"served but not usable"* indicator it should
+never have carried. Nothing moves for a 404 (81 of 81 non-200s in the draw) and
+no score, risk level or COI value moves on any path. A downstream matching
+either prose, or branching on the member rather than on `is_refusal`, has to
+widen — which is what `is_refusal` is for.
 
 **The JATS fixes reach a bmlib path through the cached HTML**, a claim this file
 once had backwards twice: `_build_html` renders authors, figures, tables and both
@@ -78,7 +84,13 @@ refute, #183's was refuted by 1,750 articles that end in a legal trailing
 comment.
 **Measure the population the code actually reads**; prefer a corpus with a public
 name over one on your disk — and check that its *rendition* is the one the code
-is fed, which is the half #138 learned the hard way. **A share is of a
+is fed, which is the half #138 learned the hard way. **A live Europe PMC draw
+must be stratified by source and publication year**, a cursor page being a
+contiguous block of accessions: unstratified, `IN_EPMC:Y` read 48% 404 where a
+stratified draw read 3%, and no preprints where a source-stratified one read a
+third. Needed twice now (#184, #191). And **run one live probe at a time** —
+the per-host pacer is per-process (#179), so two concurrent runs poisoned
+#184's first blast-radius measurement into reading "nothing moved". **A share is of a
 denominator, and the rendition chooses the denominator** (#164's correction is 18
 figures or a quarter of the population, depending only on which bytes you count).
 A number in a comment goes stale silently and coherently —
@@ -101,7 +113,12 @@ wrong for #146). **Suppressing a merge does not empty a buffer** — only an
 accumulating child ever withheld anything.
 
 *Diagnostics and tests.* A diagnostic's *level* is a claim that has to be
-measured, and a detector must report what it *checked*, not what it concluded. A
+measured — **and the branch it sits on must be no wider than the draw**, which
+is #191: DEBUG was measured on 404s and applied to every status code. A
+detector must report what it *checked*, not what it concluded. **A status enum
+member is a stored claim**, so one covering several causes puts words in a
+third party's mouth (#187/#190/#191, `NOT_SERVED` for a bmlib bug, a 503 and
+an empty 200). A
 net needs its own false-positive net, and it must be free — the autouse
 `parser_log` fixture makes all 186 pre-existing fixtures one. Key a counter on
 *structure*, never on the routing it is checking, and **read the increment site,
@@ -130,96 +147,74 @@ a keyword that fired (#137, #142, #160) *and* two that did not (#147, #164, each
 closed by hand one session late). Also, a mutation harness
 restoring with `git checkout -- <file>` deletes whatever is uncommitted in it.
 
-## This session: #184
+## This session: #187, #190, #191
 
-The Europe PMC full-text URL — `_fetch_europepmc_fulltext` built
-`.../rest/{source}/{ext_id}/fullTextXML`, Europe PMC serves the single-segment
-form, so **every fetch 404'd** and the module scored every open-access paper on
-its abstract. The argument is in `CHANGELOG.md`, `ROADMAP.md`, `CLAUDE.md` and
-at the call site; what a session repeats:
+Three ways `FullTextStatus.NOT_SERVED` was a claim Europe PMC never made. It
+is documented *"requested and not served"*, and since #161 it is determinate,
+machine-readable and persisted — so a member covering several causes puts
+words in a third party's mouth, which is the whole lesson. `REQUEST_FAILED` is
+the new member; `NOT_SERVED` narrows to exactly the 404. Argument in
+`CHANGELOG.md`, `ROADMAP.md`, `CLAUDE.md`, `docs/DECISIONS.md` and at each
+branch; what a session repeats:
 
-- **An article is addressed by its Europe PMC accession, which is not a PMCID.**
-  The obvious fix — reuse `fulltext/service.py`'s `_normalise_pmc_id`, since the
-  two modules disagreeing *is* the defect — loses every preprint: 75,760 of
-  12,220,678 `IN_EPMC:Y` records (0.62%, Europe PMC's own hit counts) carry no
-  `pmcid` and are addressed by a `PPR…` accession. The two modules agree on the
-  *base* and deliberately not on the identifier — by assertion, each keeping
-  its own literal, since importing across would be the runtime dependency
-  `transparency` does not have. `EUROPEPMC_REST_BASE` unified this module's own
-  two literals, which is where the drift was.
-- **The issue's own remedy for the silence was refuted, again.** #184 asked to
-  raise the non-200 log level, arguing a 404 under `inEPMC: Y` is Europe PMC
-  contradicting itself. It is not — `inEPMC` says they *hold* the text, while
-  `fullTextXML` serves the open-access subset: over 150 records, **0 of 53**
-  `isOpenAccess: N` served and 35 of 97 open-access ones still 404'd, so a
-  WARNING would fire on every closed-access paper.
-- **The remedy for a silent defect was a test, not a log line.**
-  `_FakeFullTextClient` matched `url.endswith("/fullTextXML")` and
-  `_RecordingClient` — the `analyze()`-level fake, so the end-to-end path — the
-  looser `"fullTextXML" in url`; *both* URL forms satisfy either, so tests that
-  looked like full-text tests asserted nothing about the path. Measured, each
-  number naming its tree: with the suffix match the defect passes **236 of
-  `main`'s 236**; with both fakes matching the whole URL it reddens **52 of
-  this branch's 249**, **43** of them pre-existing — the `parser_log` fixture's
-  trick one module over, a net that is free because existing tests become URL
-  checks. Tests passing `None` or `in_epmc="N"` never fetch and correctly stay
-  green, so it is not *every* test that reaches a fake.
-- **When a rule replaces a guard, ask what else the guard was holding.** The
-  fetch refused unless *both* `source` and `ext_id` were present; `source`
-  addresses nothing now, so that half would refuse a fetch that works.
+- **A log level is measured, and a measurement is of what you looked for.**
+  #184's DEBUG rested on a draw of 404s and the branch took every status. A
+  fresh probe — 200 records, stratified by source and year, addressed exactly
+  as `_check_europepmc` addresses them (2026-09-05) — read 119 served and **81
+  of 81 non-200s were 404**. So DEBUG is now measured over the whole of what
+  its branch takes, and a non-404 fires on 0 of the 81 non-200s — the
+  eligible denominator, not 0 of 200 — a floor under the
+  WARNING, not a proof Europe PMC never emits one.
+- **`""` is falsy and is not `None`.** `_strip_nested_articles("")` returns
+  `""`, so an empty 200 body slipped past the `is None` check and landed in
+  the *entirely nested* branch — logging *"is entirely nested articles (0
+  bytes served)"*, a sentence whose two halves cannot both be true, and
+  storing an `is_refusal` member for a response carrying no document. **0 of
+  the 119 served bodies was empty** (smallest 2,622 bytes), so the fix is
+  carried by the branch being wrong for it and not by a rate.
+- **The re-raise was refused, on the precedent the issue itself cited.**
+  #187 offered ERROR-and-raise or a narrowed `except`; `fulltext/service.py`
+  reports a `_BUG_TYPES` member and *continues* (at WARNING, not ERROR — the
+  review of PR #192 found four documents claiming otherwise; the ERROR level
+  here rests on `jats_parser`, which does log ERROR for the identical claim),
+  every network step in the module swallows its own request so one dead API
+  cannot cost an analysis — `analyze()` itself wraps nothing — and making
+  this step alone fatal would change what a public `analyze()` may raise while
+  `_check_crossref`'s identical defect stayed swallowed one method away. Read
+  what a cited precedent actually does before quoting it.
+- **`_BUG_TYPES` is restated, not imported, and pinned as *agreeing*.** The
+  `_NESTED_ARTICLE_ELEMENTS` decision one constant over. Agreement is right
+  here and wrong for the samplers' predicates, and the distinction is whether
+  the thing is a judgement about data: this is one claim about Python's
+  exception hierarchy. What is load-bearing is what the list *excludes* —
+  `ValueError` carries `json.JSONDecodeError`, `SyntaxError` carries
+  `ET.ParseError`, `RuntimeError` carries `RecursionError`.
+- **Eleven mutants, all killed** — and PR #192's review found two more that
+  were **not**, both now closed. Widening `KeyError, IndexError` to their
+  shared base `LookupError` in *both* `_BUG_TYPES` copies passed the whole
+  suite, because a set comparison sees two edited copies agreeing and a
+  name-exclusion test sees a name nobody named; the exclusions are asserted
+  through `isinstance` now, which is the relation the code uses. And the
+  WARNING branch could drop `type(e).__name__` unnoticed, leaving a
+  `ConnectTimeout` and a `ReadTimeout` indistinguishable in a log — the
+  ERROR branch beside it was already pinned.
+- **A rationale must name the document it decides.** The empty-body boundary
+  was justified, in three files, by *"a document whose regions strip out
+  leaving whitespace"* — the wrong document: `"  <sub-article>…"` has a
+  truthy `.strip()`, so both spellings of the guard reach the
+  entirely-nested branch identically. Mutating it reddens exactly one test,
+  and it is the **wholly-whitespace** body. Measured, and now pinned from
+  both sides by `test_the_document_the_boundary_does_not_decide`.
 
-**Two things about the measurement itself**, both of which produced a
-confident wrong answer first. A cursor page is a contiguous block, so an
-unstratified draw of `IN_EPMC:Y` read 48% 404 where a year-stratified one read
-3%, and no preprints where a source-stratified one read a third — the
-population share had to come from `hitCount`, an instrument rather than a draw,
-and `HAS_PMCID` is **not** a field, so that clause returns the whole set and
-reads as a measurement. And running two live probes at once poisoned the first
-blast-radius run (#179's per-process pacer, self-inflicted): every MED analysis
-degraded to score 0 and pooled in as *"nothing moved"*. Excluding UNKNOWN
-results explicitly is what made the third run legible.
-
-**Filed rather than ridden along: #188** — a record with no PMC accession is
-still fetched by PMID, which never serves, and stores `NOT_SERVED` for a 404
-known in advance where `NOT_ATTEMPTED` is honest (#161's argument one case
-back, which #184 itself predicted).
-
-**What this branch's own review then found**, and it is the same lesson twice:
-*the net stopped one level short, and the numbers describing it were of the
-wrong tree.*
-
-- **The `analyze()`-level fake was left loose.** `_FakeFullTextClient` was
-  hardened to the whole URL and `_RecordingClient` — the fake reached through
-  `analyze()`, so the only end-to-end full-text path — kept the *looser*
-  `"fullTextXML" in url`. The one test asserting a full-text request at that
-  level asserted a substring both URL forms satisfy, so #184's own shape stayed
-  unpinned where it actually mattered. Fixing it moved the counterfactual from
-  44 red to 52.
-- **The most-argued claim had no test.** Every URL test called
-  `_fetch_europepmc_fulltext` directly, stepping over `record["pmcid"] or
-  record["id"]` in `_check_europepmc` — the *only* line that ever chooses a
-  `PPR…` accession. Deleting that fallback, which loses the address for all
-  75,760 preprints the docstrings argue about, **passed the whole suite**.
-  Pinned now in both directions.
-- **42 and 47 were of no tree.** Restated as measured, each naming its
-  population: 236 of `main`'s 236, 52 of this branch's 249, 43 of them
-  pre-existing. "Five tests" and "seven" were both wrong for a class that holds
-  thirteen.
-- **`subject` reproduced the defect's own shape** — `f"{source}/{ext_id}"` with
-  `source` newly allowed to be `None` printed `None/PMC123`, a two-segment path
-  beside the corrected single-segment URL, in the module whose signature defect
-  was a spurious two-segment path.
-- **Two tests claimed more than they checked**: the cross-module one never
-  evaluated `fulltext`'s URL, and the search one asserted the constant against
-  itself, so the drift its name promises to catch was the one thing it could
-  not.
-
-**Filed rather than folded in: #190 and #191.** #190 — an empty HTTP 200 body
-is stored as `ENTIRELY_NESTED`, a refusal that did not happen, and logs *"is
-entirely nested articles (0 bytes served)"*. #191 — the DEBUG level for a
-non-200 is measured on **404s** and applied to 429/503/403, which cache as
-permanent absences with no retry anywhere in the module. Both move a stored
-status value, which is #188's reason for being filed rather than ridden along.
+**#193 was filed from this branch**, out of its own review. The four
+`_query_*` helpers and `_check_trial_results` drop a non-200 with **no log
+line at any level** — the `except` catches only raises — and swallow a
+`_BUG_TYPES` member at DEBUG, which is #187 unfixed in five more places.
+`_query_europepmc`'s copy is the one that matters: it *gates* this branch's
+fix, so in a Europe PMC outage the search 503s, `_check_europepmc` is never
+called, and the result stores `NOT_ATTEMPTED` — *"No request was made"* —
+silently, at HIGH with a tier downgrade. **Do not read this branch's ROADMAP
+row as closing the family.** #186 and #188 also remain and predate it.
 
 ## Current state
 
@@ -239,7 +234,7 @@ status value, which is #188's reason for being filed rather than ridden along.
   previous release wrote is durable under #95's rule, so the whole window is
   re-fetched once. The two questions are independent, and a downstream reading
   only the number must still read this list.
-- **Tests: 3188 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
+- **Tests: 3218 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
   2026-09-05 on this branch). The PostgreSQL half has not been re-run since the
   SQL last moved; the last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set
   is 2435 + 2 on the #105 branch. Of the 63 default skips, 61 are the PostgreSQL
@@ -261,10 +256,12 @@ status value, which is #188's reason for being filed rather than ridden along.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **86 are outstanding** — 36
-  `ROADMAP.md` rows and 50 spots across `docs/manual/fulltext.md` (18),
-  `transparency.md` (16), `publications.md` (13) and `templates.md` (3).
-  Recounted 2026-09-05 on this branch; the figure is measured, not maintained, so recount rather
+  `ROADMAP.md` are promoted at release time; **90 lines carry one** — 37
+  `ROADMAP.md` rows and 53 spots across `docs/manual/transparency.md` (19),
+  `fulltext.md` (18), `publications.md` (13) and `templates.md` (3).
+  Recounted 2026-09-05 on this branch as
+  `grep -ric unreleased ROADMAP.md docs/manual/*.md`, so it counts *lines* and
+  not markers; the figure is measured, not maintained, so recount rather
   than adjust it. Grep case-insensitively for `unreleased`, not for
   `(unreleased)`: three of 0.10.0's were spelled `*(unreleased, #99)*` and
   `(changed, unreleased — …)`. Write the marker bare, never with a guessed
@@ -281,49 +278,46 @@ status value, which is #188's reason for being filed rather than ridden along.
 
 ### Open GitHub issues
 
-**Thirty open** as this file is written, **twenty-nine once this branch
-merges** (`gh issue list`, 2026-09-05, after #183 and #161 were closed by hand
-— PR #185 named them in prose only, see the process rule above — and after this
-session filed **#188**, and this branch's own review filed **#190** and
-**#191**): #86, #92, #94, #103, #124, #128, #137, #142, #143,
-#144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178,
-#179, #181, #184, #186, #187, #188, #190, #191. This branch answers #184. Every one was
-found by review or measurement rather than by a failing test, and **none loses
-records** — though **#124** loses an exhibit's footnotes, **#150** renders a
-note-only reference as an empty bullet, and **#128** would lose every figure
-image in a document binding XLink to another prefix.
+**Twenty-nine open** as this file is written, **twenty-six once this branch
+merges** (`gh issue list`, 2026-09-05): #86, #92, #94, #103, #124, #128, #137,
+#142, #143, #144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175,
+#177, #178, #179, #181, #186, #187, #188, #190, #191. This branch answers
+**#187, #190 and #191**. **#184 was closed by hand at the start of this
+session** — PR #189 merged and named it in prose only, which is the process
+rule below catching its fifth instance; #183 and #161 went the same way one
+session earlier. Every open issue was found by review or measurement rather
+than by a failing test, and **none loses records** — though **#124** loses an
+exhibit's footnotes, **#150** renders a note-only reference as an empty
+bullet, and **#128** would lose every figure image in a document binding XLink
+to another prefix.
 
-**Nothing in the list is now urgent in the way #184 was**, so the next choice
-is a judgement rather than a forced move. #188 is its direct descendant and
-the cheapest of the group, but it moves a stored status value and wants its
-population measured first — and the instrument for that is unbuilt, `HAS_PMCID`
-having turned out not to be a Europe PMC field. #186 and #187 are the rest of
-PR #185's review and are small. #178 is the one open *question* rather than a
-defect.
+**Nothing in the list is urgent in the way #184 was**, so the next choice is a
+judgement rather than a forced move. #186 and #188 are the last of the
+full-text-refusal family and both are decisions rather than fixes (below);
+#178 is the one open *question* rather than a defect.
 
 **Count them against the repo before trusting that number.** The line has been
 wrong in several sessions, and an issue closed as COMPLETED without being fixed
 is invisible to any such count. Almost every open issue was filed *by* a PR
-reviewing an earlier fix, so the provenance is a chain rather than a list; the
-recent end of it is **#119** → PR #159, filing #158, #160, #161; **#160** → PR
-#182, filing #183; **#183**, **#161** → PR #185, filing #184, #186, #187;
-**#184** → this branch, filing #188, #190 and #191. For anything older, `gh issue view <n>`
-carries it, and released provenance is in `CHANGELOG.md`. (#149 and #152 were
-filed and fixed inside one PR, so neither ever appeared as open work — read the
-per-PR history, not the total.)
+reviewing an earlier fix, so the provenance is a chain: **#119** → PR #159,
+filing #158/#160/#161; **#160** → PR #182, filing #183; **#183**/**#161** → PR
+#185, filing #184/#186/#187; **#184** → PR #189, filing #188/#190/#191, which
+this branch answers — and it filed nothing. Older provenance is in `gh issue
+view <n>` and `CHANGELOG.md`. (#149 and #152 were filed and fixed inside one
+PR, so neither ever appeared as open work.)
 
 Each issue carries its own argument on GitHub; what follows is only what a
 session needs to *choose* between them. Almost none is a drive-by.
 
-**The JATS corpus redraw is done** (#132, #138, #158 answered), so #142, #143 and
-#150 have a population — and **all three measure empty**, which blocks them on a
-stratified draw rather than on effort. Both corpora are 1,000-article draws at
-`seed 0`, recent from `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`
-(2023-2025, 997 served) and back-filled from `…PMC002xxxxxx…` (1996-1998, 1,000
-served). The sample is drawn from the package and the bytes measured from Europe
-PMC's `fullTextXML`, because the two renditions disagree on exactly the cited
-populations — `last_is_thumb` differs in 156 of 300 compared articles, and where
-it differs the archive measures 0 against 781 served.
+**The JATS corpus redraw is done** (#132, #138, #158 answered), so #142, #143
+and #150 have a population — and **all three measure empty**, which blocks them
+on a stratified draw rather than on effort. Both corpora are 1,000-article draws
+at `seed 0`: recent from `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`
+(2023-2025, 997 served), back-filled from `…PMC002xxxxxx…` (1996-1998, 1,000).
+The sample is drawn from the package and the bytes measured from Europe PMC's
+`fullTextXML`, the two renditions disagreeing on exactly the cited populations
+(`last_is_thumb` differs in 156 of 300 compared articles, the archive measuring
+0 against 781 served where it does).
 
 **Three issues lose content the document carries, and each is blocked on a
 modelling decision.** **#124**: neither exhibit model has a `footnotes` field, so
@@ -345,14 +339,13 @@ dropped, so one caption's halves go different ways. The sampler records the
 `<title>`'s parent but not the `<caption>`'s owner, so the population is not yet
 derivable.
 
-**#152 — neither half of `<article-id>`'s reachability guard is pinned, and they
-are not equivalent.** `parent == "article-meta" or self.in_front` decides whether
-the identifier is read at all, and each half deletes on its own with the whole
-suite green. For valid markup `<article-meta>` is inside `<front>`, so the parent
-test can only fire on markup JATS does not admit, while `in_front` admits an
-`<article-id>` in `<notes>` as the article's own DOI. Unmeasured, so it pairs with
-a draw. No behaviour is known to be wrong today; it matters because this is where
-#109 was — carefully argued rules behind an unpinned guard.
+**#152 — neither half of `<article-id>`'s reachability guard is pinned, and
+they are not equivalent.** `parent == "article-meta" or self.in_front`, and each
+half deletes on its own with the suite green: for valid markup `<article-meta>`
+is inside `<front>`, so the parent test can only fire on markup JATS does not
+admit, while `in_front` admits an `<article-id>` in `<notes>` as the article's
+own DOI. Unmeasured, so it pairs with a draw. Nothing is known to be wrong
+today; it matters because this is where #109 was.
 
 **#128 is weaker than filed**: all 13,624 `<graphic>` hrefs in the two corpora use
 the `xlink` prefix bound to the XLink namespace, so the literal-prefix match is
@@ -379,16 +372,24 @@ them by `figures_with_graphic` — over its own population the recent window rea
 published figure says. One remedy restates a share cited in five files and the
 other needs both corpora redrawn, which would destroy #164's attribution.
 
-**#186, #187, #188, #190 and #191 are what is left of the full-text-refusal family**, all
-three small and all three in `_fetch_europepmc_fulltext`. #186: the
-unclosed-region refusal holds the element names in a stack and discards them at
-the return, so the WARNING cannot say which element was left open — naming one
-moves a heavily-argued return contract. #187: the broad `except` around the
-request returns the determinate `NOT_SERVED`, so a bmlib defect is stored as a
-Europe PMC absence; fixing it changes what a public `analyze()` may raise.
-#188 is described under the session note above. Doing all three together is
-probably right — they are three sentences in one method — but #188's half wants
-a population first.
+**#186 and #188 are the last of the full-text-refusal family**, both in
+`_fetch_europepmc_fulltext` and both a decision rather than a fix — which is why
+#187/#190/#191 were taken first. **#186**: the unclosed-region refusal holds the
+element names in a stack and discards them at the return, so neither the WARNING
+nor the stored `UNCLOSED_REGION` says whether a `<sub-article>` or a `<response>`
+was left open — different deposits. Naming one moves a heavily-argued return
+contract: `_strip_nested_articles` returns `str | None` and the `None` *is* the
+signal, so it wants a small result type or a dedicated exception, the shape #160
+chose one case over (*"will not segment"* ≠ *"did not arrive"*). **#188**: a
+`MED` record carrying no `pmcid` is addressed by `record["id"]`, a bare PMID, so
+the request is made and its 404 is known before it leaves; `NOT_SERVED` is now
+precisely right about *what happened*, and `NOT_ATTEMPTED` is the honest thing
+to store for a question not worth asking. It wants the population first — how
+many `IN_EPMC:Y` records carry no `pmcid`, and `HAS_PMCID` is not a field, so it
+needs a draw; this session's probe script already records each record's
+`source`. The `PPR` fallback is load-bearing and pinned (deleting it loses the
+address for all 75,760 preprints), so the test cannot be *"is it a PMCID?"* —
+the record's own `source` is what distinguishes them.
 
 **#154, #156 and #157 are one job, and it is the funder corpus.** #154:
 `scripts/sample_funder_names.py` writes `tests/data/funder_names.raw.json`, which
