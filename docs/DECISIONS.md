@@ -217,6 +217,44 @@ must not be re-done.
   closed-access papers. Measured 2026-09-05 over 200 stratified live probes:
   81 of 81 non-200s were 404, so the quiet branch is measured over the whole
   of what it now takes and the loud one fires on nothing in a healthy draw.
+- **The five `_ORDINARY_STATUSES` sets are empty as a measurement, not as a
+  placeholder** (#193). A status is quiet only where a draw measured it to be
+  that endpoint's ordinary outcome, which is #191's rule stated forward
+  instead of backward. `scripts/sample_api_failures.py` read 0 non-200s at
+  all five endpoints over 240 drawn records (2026-09-06; upper bounds
+  2.1%–6.8%), so nothing has earned one and every non-200 warns. Do not
+  populate a set to quieten a log — run the sampler.
+  `::test_no_endpoint_claims_an_ordinary_status_today` is the gate, and the
+  mechanism is exercised separately so five empty sets are not mistaken for
+  wiring that does not work.
+- **`_check_trial_results` still answers two questions with one `bool`, and
+  that is deliberate here** (#193, #194). "No results posted" and "the API did
+  not answer" both come back `False`. Widening it is the `FullTextStatus`
+  argument from #161 one endpoint over and would be a real improvement — but
+  it is a stored-value change of its own, and #194 was fixed by correcting the
+  header rather than by reshaping the return. The refusal is no longer silent,
+  which is what made the defect survive a release.
+- **`_user_agent` appends `python-httpx`, and it is not decoration** (#194).
+  ClinicalTrials.gov's edge refuses every other header shape measured —
+  `curl`, `python-requests`, `Python-urllib`, `Go-http-client`,
+  `PostmanRuntime` and a browser string included — with a bare 134-byte 403.
+  Do not "tidy" the token out: it is the whole reason step 6 of the pipeline
+  works at all. It is appended to bmlib's identification rather than
+  replacing it, since CrossRef and NCBI both ask a caller to name itself, and
+  it is true — bmlib *is* httpx here. **No test can hold this**, every test in
+  the suite mocking its client, which is exactly why the 403 survived a whole
+  release; the sampler is the guard, and the unit tests only stop the token
+  being dropped by a tidy-up.
+- **The sampler imports the analyzer's URLs and header, against the rule its
+  siblings follow** (#193). Every other live runner in `scripts/` is forbidden
+  from importing the predicate it measures, because a corpus labelled by the
+  rule under test can only confirm that rule. Neither import here is such a
+  predicate: this script's subject *is* the request, so a restated literal
+  would measure somebody else's endpoint — which is precisely how #184 lived a
+  release, and #194 the same thing in a header.
+  `TestTheSamplerProbesWhatTheAnalyzerRequests` drives both and diffs, rather
+  than asserting that a constant was imported, which a restated literal
+  passes.
 - **Four more, each argued where it lives and each with a test naming it:**
   `TransparencySettings.filtering_enabled` / `max_concurrent_analyses` /
   `cache_results` are caller-owned orchestration hints, not dead code;

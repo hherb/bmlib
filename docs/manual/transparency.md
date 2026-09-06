@@ -86,10 +86,11 @@ elif result.unknown_reason is TransparencyUnknownReason.NO_IDENTIFIER:
 
 ```python
 class FullTextStatus(Enum):
-    NOT_ATTEMPTED = "not_attempted"              # no request was made
+    NOT_ATTEMPTED = "not_attempted"              # no request; EuropePMC's answer is why
+    SEARCH_FAILED = "search_failed"              # no request; the search never answered
     NOT_SERVED = "not_served"                    # requested; EuropePMC answered 404
     REQUEST_FAILED = "request_failed"            # no answer: raised, non-404, or empty 200
-    # "full text unavailable" is true of all three of those — none is "the
+    # "full text unavailable" is true of all four of those — none is "the
     # only" such outcome; the refusals are the ones it is false of, which is
     # what is_refusal groups.
     ANALYZED = "analyzed"                        # served, segmented, scanned
@@ -112,7 +113,9 @@ if result.full_text_status is not None and result.full_text_status.is_refusal:
     requeue(result.document_id, reason=result.full_text_status.value)
 ```
 
-`is_refusal` is `True` for `TRUNCATED`, `UNTERMINATED_MARKUP`, `UNCLOSED_REGION` and `ENTIRELY_NESTED`; `False` for `ANALYZED`, and for `NOT_SERVED`, `REQUEST_FAILED` and `NOT_ATTEMPTED`, where nothing was served and so there is nothing to have refused. An HTTP 200 carrying an *empty* body is on that side too, and is why `REQUEST_FAILED` exists: a 200 alone is not "a document arrived".
+`is_refusal` is `True` for `TRUNCATED`, `UNTERMINATED_MARKUP`, `UNCLOSED_REGION` and `ENTIRELY_NESTED`; `False` for `ANALYZED`, and for `NOT_SERVED`, `REQUEST_FAILED`, `NOT_ATTEMPTED` and `SEARCH_FAILED`, where nothing was served and so there is nothing to have refused. An HTTP 200 carrying an *empty* body is on that side too, and is why `REQUEST_FAILED` exists: a 200 alone is not "a document arrived".
+
+**`NOT_ATTEMPTED` and `SEARCH_FAILED` are two different claims** *(unreleased)*. `NOT_ATTEMPTED` says no request was made **and Europe PMC's own answer is the reason** — it does not hold open-access full text for this article (`inEPMC != "Y"`), or it answered with no record for the identifier. `SEARCH_FAILED` says the step was never reached because the *search* that gates it produced no answer at all: a non-200, or a request that raised. They were one member until issue #193, so a result computed during a Europe PMC outage stored a claim Europe PMC never made — the same defect as issue #191, one step up the call chain. That path matters more than it looks: the analysis still completes on whatever other APIs answered, the score silently loses everything full text would have contributed, and the result can reach HIGH with `tier_downgrade_applied` set. A partial outage now also appends `"COI disclosure status unknown (EuropePMC lookup failed)"` to `risk_indicators`, which was empty on that path before.
 
 **`is_refusal` answers "did a document arrive?", not "would re-running change this?"** — and the second question is the one `REQUEST_FAILED` was added for, so the snippet above deliberately does **not** retry it. Nothing in `transparency/` retries or honours `Retry-After`, and results are cacheable, so an outage window caches a corpus of absences unless the caller acts on this member itself:
 
@@ -379,7 +382,9 @@ assert empty.risk_indicators == ["No PMID or DOI provided"]
 
 ## Analysis Pipeline
 
-All requests go through one `httpx.Client` with a 15-second timeout and the header `User-Agent: bmlib/{version} (mailto:{email})`, where `{version}` is `bmlib.__version__`. Five endpoint families are queried, in this order:
+All requests go through one `httpx.Client` with a 15-second timeout and the header `User-Agent: bmlib/{version} (mailto:{email}) python-httpx/{httpx_version}`, where `{version}` is `bmlib.__version__`. Five endpoint families are queried, in this order:
+
+**The trailing `python-httpx` token is load-bearing** *(unreleased)*. ClinicalTrials.gov's edge refuses everything else with a bare 403 — measured over thirteen header shapes, `curl`, `python-requests`, `Python-urllib`, `Go-http-client`, `PostmanRuntime` and a browser string included — so step 6 below had *never once succeeded*, `SCORE_RESULTS_POSTED` had never been awarded to any paper, and `"Registered trial without posted results"` was stored as a false claim about every registered trial (issue #194). The token is appended to bmlib's own identification rather than replacing it, since CrossRef and NCBI both ask a caller to say who it is; it is not a fiction, bmlib being httpx here. This is a live-only property that **no test can hold** — every test mocks its client, which is why it went unseen — so `scripts/sample_api_failures.py` is the guard. Run it before changing the header.
 
 | Step | API | Endpoint | Requires | Used for |
 |------|-----|----------|----------|----------|
@@ -391,6 +396,17 @@ All requests go through one `httpx.Client` with a 15-second timeout and the head
 | 6 | ClinicalTrials.gov v2 | `https://clinicaltrials.gov/api/v2/studies/{nct_id}` (`fields=hasResults`) | an NCT id from step 4, else one credited in step 2's abstract | Posted-results check. |
 
 The step-2 search is issued **once** per document: the record is threaded into the PubMed and trial-registration steps rather than re-queried, halving Europe PMC traffic compared to earlier releases.
+
+**Every way of not getting an answer is logged** *(unreleased)*. Until issue #193 each of these steps dropped a non-200 with no line at any level — the handler caught only raises — so an outage was invisible and a component silently scored zero. What to expect in a log now:
+
+| outcome | level | line says |
+|---|---|---|
+| non-200 | `WARNING` | the API, the status, the subject, the URL, and that the component is not scored |
+| the request raised | `WARNING` | the API, the subject, the exception **type** and its message |
+| the request raised a bmlib defect (`TypeError`, `AttributeError`, `NameError`, `KeyError`, `IndexError`) | `ERROR` + traceback | that this can only mean bmlib is wrong |
+| HTTP 200 whose body will not decode | `WARNING` | that the body is not JSON, with the decoder's own message |
+
+The step-3 full-text 404 is the one deliberate exception and stays at `DEBUG`: it is the ordinary majority outcome there (81 of 81 non-200s in a stratified draw), which is what earns a quiet level. **Nothing else has earned one.** `scripts/sample_api_failures.py` measured 0 non-200s across all five endpoints over 240 drawn records (upper bounds 2.1%–6.8% depending on the endpoint), so no status is treated as ordinary and every non-200 warns. None of these steps re-raises: `analyze()` wraps none of them, so each swallows its own request rather than letting one dead API cost the analysis.
 
 Step 3 is the difference between a real data-availability reading and a guess. COI and data-availability statements live in a paper's full text, never its abstract, so when `inEPMC != "Y"` (no open-access full text at Europe PMC) the analyzer falls back to scanning the abstract, `full_text_analyzed` stays `False`, and industry-COI detection does not run at all. COI *disclosure* and data availability are two exceptions: step 4 can establish either — a COI statement, or a `<DataBankList>` deposition accession — from PubMed's structured metadata whether or not full text was reachable.
 
@@ -837,11 +853,13 @@ When ClinicalTrials.gov ids are credited, `trial_registered` is `True` and 20 po
 
 Because the request is narrowed to that one field, `hasResults` is the only key the response can carry. A missing key means the API did not answer the question and is reported as "no posted results". (A `resultsSection` fallback existed until 0.4.0 but was unreachable for exactly this reason, and was removed rather than left implying a robustness it did not provide.)
 
+**Until the fix noted under [Analysis Pipeline](#analysis-pipeline), this step had never once succeeded** *(unreleased)*. ClinicalTrials.gov refused bmlib's `User-Agent` with a 403, and a refused request is `False` here — which in a `bool` is indistinguishable from *"this trial posted no results"*, so `SCORE_RESULTS_POSTED` was never awarded to any paper and the indicator below was stored as a false claim about every registered trial (issue #194). The header is corrected and the refusal is no longer silent, but note the shape of the residual: this method still answers two questions with one bit. Read `"Registered trial without posted results"` as *"asked, and got a no or got nothing"*, and watch the log for a warning naming the accession.
+
 ---
 
 ## Unreachable-API Guard
 
-`analyze()` tracks whether any external API returned HTTP 200 during the run. The flag is set by the four record helpers — CrossRef, the Europe PMC search, PubMed, and OpenAlex — and is reset at the start of every `analyze()` call.
+`analyze()` tracks whether any external API returned HTTP 200 during the run. The flag is set by every helper that makes a request — CrossRef, the Europe PMC search, PubMed, OpenAlex and, since the shared request helper landed, ClinicalTrials.gov *(unreleased)* — and is reset at the start of every `analyze()` call.
 
 If nothing answered, the analyzer returns early, **before** scoring and before `calculate_risk_level()` is consulted:
 
@@ -868,7 +886,7 @@ elif result.risk_level is TransparencyRisk.HIGH:
 
 **The guard is all-or-nothing, not per-API.** *Partial* reachability still scores: if CrossRef answers but Europe PMC is down, the run proceeds with whatever it measured, and the missing signals simply score zero. A DOI-only paper whose Europe PMC lookup fails can still land below `score_threshold` and be reported HIGH. The guard rules out the total-outage case — it does not certify that the score is complete. Use `full_text_analyzed` and the `risk_indicators` list to judge how much evidence a given score actually rests on.
 
-The full-text fetch and the ClinicalTrials.gov query do not set the flag, which is harmless: neither is reached without a prior Europe PMC 200.
+The full-text fetch does not set the flag, which is harmless: it is not reached without a prior Europe PMC 200. *(unreleased)* The ClinicalTrials.gov query now does set it, having moved onto the shared request helper — unobservably, for the same reason: every path to it needs an accession that came from a PubMed or Europe PMC record, so a 200 has already been seen. What changed is that the rule now reads *any external API that answered*, with no exception a reader would have had to derive from the code.
 
 ---
 

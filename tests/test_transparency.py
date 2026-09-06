@@ -3997,6 +3997,30 @@ class TestTheUserAgentIsOneClinicalTrialsGovAccepts:
         )
 
 
+class _VerbatimResponse:
+    """A response whose ``json()`` returns exactly what it was handed.
+
+    **Not `_FakeResponse`**, which does ``json_data or {}`` — so a test
+    passing a JSON *list* or an empty object gets a non-empty dict instead,
+    and an assertion about either is vacuous. Two mutants survived the whole
+    suite on that: `not isinstance(data, dict)` weakened to `data is None`,
+    and `epmc is None` weakened to `not epmc`. Ask which line of the fixture
+    the assertion depends on.
+    """
+
+    def __init__(self, status_code: int = 200, payload: object = None, text: str = ""):
+        self.status_code = status_code
+        self._payload = payload
+        self.text = text
+
+    @property
+    def content(self) -> bytes:
+        return self.text.encode("utf-8")
+
+    def json(self):
+        return self._payload
+
+
 class _AnsweringClient:
     """Answers every request with one status, recording what was asked.
 
@@ -4010,9 +4034,15 @@ class _AnsweringClient:
         self.text = text
         self.urls: list[str] = []
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
     def get(self, url, **kwargs):
         self.urls.append(url)
-        return _FakeResponse(status_code=self.status_code, json_data=self.payload, text=self.text)
+        return _VerbatimResponse(status_code=self.status_code, payload=self.payload, text=self.text)
 
 
 class _UndecodableClient:
@@ -4151,6 +4181,10 @@ class TestADroppedResponseGetsALine:
         assert named[0].levelno == logging.WARNING
 
     def test_a_trial_body_that_is_not_an_object_is_not_a_finding(self):
+        # The fixture matters here more than the assertion: `_FakeResponse`
+        # coerces a falsy `json_data` to `{}`, so an earlier version of this
+        # test sent a dict while claiming to send a list, and weakening the
+        # guard to `data is None` survived the whole suite.
         # `_check_trial_results` used to do `.get()` inside its own `try`, so
         # a JSON list came back as `False` — "no posted results", a finding —
         # through an `AttributeError` swallowed at DEBUG. It is still `False`,
@@ -4199,6 +4233,15 @@ class TestAnOutageIsNotAnAnswer:
     def test_a_search_that_never_answered_says_so(self, monkeypatch):
         result = self._analyze_with(monkeypatch, _EveryRequestFails(503))
         assert result.full_text_status is FullTextStatus.SEARCH_FAILED
+
+    def test_a_search_that_answered_with_an_empty_body_is_not_an_outage(self, monkeypatch):
+        # `is None`, not falsiness — and this is the test that separates them,
+        # because an envelope carrying an empty result *list* is still a
+        # truthy dict. A 200 whose whole body is `{}` is EuropePMC answering,
+        # so the full-text step was skipped for its answer and not for its
+        # absence. Mutate the old half of a condition you extend.
+        result = self._analyze_with(monkeypatch, _AnsweringClient(200, payload={}))
+        assert result.full_text_status is FullTextStatus.NOT_ATTEMPTED
 
     def test_a_search_that_answered_with_no_record_still_reads_not_attempted(self, monkeypatch):
         # The distinction the split exists for, from the other side: here
