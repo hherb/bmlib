@@ -217,6 +217,71 @@ must not be re-done.
   closed-access papers. Measured 2026-09-05 over 200 stratified live probes:
   81 of 81 non-200s were 404, so the quiet branch is measured over the whole
   of what it now takes and the loud one fires on nothing in a healthy draw.
+- **The five `_ORDINARY_STATUSES` sets are empty as a measurement, not as a
+  placeholder** (#193). A status is quiet only where a draw measured it to be
+  that endpoint's ordinary outcome, which is #191's rule stated forward
+  instead of backward. `scripts/sample_api_failures.py` read 0 non-200s at
+  all five endpoints over 240 drawn records (2026-09-06; upper bounds
+  2.1%–6.8%), so nothing has earned one and every non-200 warns. Do not
+  populate a set to quieten a log — run the sampler.
+  `::test_no_endpoint_claims_an_ordinary_status_today` is the gate, and the
+  mechanism is exercised separately so five empty sets are not mistaken for
+  wiring that does not work.
+- **`TransparencyResult.trial_results_compliant` is a bare `bool` and `False`
+  covers two claims; the *step* no longer does** (#193, #194, and PR #195's
+  review, which reopened this entry). It first read that
+  `_check_trial_results`' own `bool` was a deliberate residual because #194
+  had been fixed by correcting the header. That was wrong on its own terms:
+  correcting the header narrowed the false claim from *always* to *whenever
+  ClinicalTrials.gov does not answer* and left the conflation intact, so a
+  404, a 403 or an unusable body still made the caller store *"Registered
+  trial without posted results"* — a persisted claim about the trial that
+  bmlib has no evidence for. The remedy cost six lines and needed no new
+  vocabulary, `_INDICATOR_RESULTS_NOT_CHECKABLE` having existed all along for
+  the other-registry case, so the deferral was resting on a cost comparison
+  ("the `FullTextStatus` argument one endpoint over") that overstated it.
+  `_check_trial_results` is now `True` / `False` / `None`, and the caller
+  reports three outcomes.
+
+  What genuinely remains is one level up and is **not** worth a schema change
+  today: `trial_results_compliant` is `False` both for *"asked and answered
+  no"* and for *"could not be checked"*, exactly as it already was for a
+  registration in another registry. `risk_indicators` distinguishes them —
+  read the indicator, not the flag — and every stored result already needed
+  that read for the other-registry case, so no downstream is newly wrong.
+  Widening the public field is the `FullTextStatus` change from #161 on a
+  second field and wants its own issue, filed rather than left here.
+- **The sampler uses the analyzer's client, not a sampler one** (PR #195's
+  review). It opened with `timeout=45.0, follow_redirects=True` where
+  `analyze()` uses `_HTTP_TIMEOUT_SECONDS` and httpx's default `False`, so a
+  3xx — which `FullTextStatus.REQUEST_FAILED` names explicitly as an outcome —
+  was a 200 to the sampler and a dropped response to bmlib, and a slow reply
+  succeeded here and timed out there. A measurement taken under a laxer
+  transport policy than the code uses is a measurement of a different client,
+  which is the same failure as measuring a different URL or a different
+  header. `follow_redirects=False` is written out rather than left to the
+  default, because here it is a decision.
+- **`_user_agent` appends `python-httpx`, and it is not decoration** (#194).
+  ClinicalTrials.gov's edge refuses every other header shape measured —
+  `curl`, `python-requests`, `Python-urllib`, `Go-http-client`,
+  `PostmanRuntime` and a browser string included — with a bare 134-byte 403.
+  Do not "tidy" the token out: it is the whole reason step 6 of the pipeline
+  works at all. It is appended to bmlib's identification rather than
+  replacing it, since CrossRef and NCBI both ask a caller to name itself, and
+  it is true — bmlib *is* httpx here. **No test can hold this**, every test in
+  the suite mocking its client, which is exactly why the 403 survived a whole
+  release; the sampler is the guard, and the unit tests only stop the token
+  being dropped by a tidy-up.
+- **The sampler imports the analyzer's URLs and header, against the rule its
+  siblings follow** (#193). Every other live runner in `scripts/` is forbidden
+  from importing the predicate it measures, because a corpus labelled by the
+  rule under test can only confirm that rule. Neither import here is such a
+  predicate: this script's subject *is* the request, so a restated literal
+  would measure somebody else's endpoint — which is precisely how #184 lived a
+  release, and #194 the same thing in a header.
+  `TestTheSamplerProbesWhatTheAnalyzerRequests` drives both and diffs, rather
+  than asserting that a constant was imported, which a restated literal
+  passes.
 - **Four more, each argued where it lives and each with a test naming it:**
   `TransparencySettings.filtering_enabled` / `max_concurrent_analyses` /
   `cache_results` are caller-owned orchestration hints, not dead code;
