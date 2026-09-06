@@ -29,12 +29,16 @@ import pytest
 
 from bmlib.transparency.analyzer import (
     _BUG_TYPES,
+    _CLINICALTRIALS_ORDINARY_STATUSES,
+    _CROSSREF_ORDINARY_STATUSES,
     _DATA_LEVEL_RANK,
     _DATA_PATTERNS,
     _DEPOSITION_DATABANK_LEVELS,
+    _EUROPEPMC_SEARCH_ORDINARY_STATUSES,
     _INDICATOR_COI_IN_PUBMED,
     _INDICATOR_COI_UNKNOWN,
     _INDICATOR_COI_UNKNOWN_REFUSED,
+    _INDICATOR_COI_UNKNOWN_SEARCH_FAILED,
     _INDICATOR_DATA_DEPOSITED_PREFIX,
     _INDICATOR_DATA_NOT_AVAILABLE,
     _INDICATOR_INDUSTRY_COI,
@@ -45,6 +49,8 @@ from bmlib.transparency.analyzer import (
     _NESTED_ARTICLE_ALTERNATION,
     _NESTED_ARTICLE_ELEMENTS,
     _NESTED_ARTICLE_TOKEN_RE,
+    _OPENALEX_ORDINARY_STATUSES,
+    _PUBMED_ORDINARY_STATUSES,
     _TRIAL_REGISTRY_NAMES,
     _UNTERMINATED_OPENER_NAMES,
     DEFAULT_INDUSTRY_CONFIDENCE,
@@ -64,6 +70,7 @@ from bmlib.transparency.analyzer import (
     _score_data_availability,
     _strip_nested_articles,
     _UnterminatedMarkupError,
+    _user_agent,
 )
 from bmlib.transparency.models import (
     _NOT_REFUSED_FULL_TEXT_STATUSES,
@@ -3912,3 +3919,485 @@ class TestTheRestatedBugTypesMatchTheOtherModules:
         # widening `KeyError, IndexError` to `LookupError` reddens here even
         # though both copies agree and no excluded name moved.
         assert set(_BUG_TYPES) == {TypeError, AttributeError, NameError, KeyError, IndexError}
+
+
+class TestTheUserAgentIsOneClinicalTrialsGovAccepts:
+    """Issue #194 — ClinicalTrials.gov refused the header ``analyze()`` sent.
+
+    `analyze()` builds one client for the whole analysis and sets a
+    ``User-Agent`` on it, which overrides the one httpx would have sent. That
+    header is refused at ClinicalTrials.gov's edge with a bare 134-byte
+    ``403 Forbidden`` page, so `_check_trial_results` returned ``False`` for
+    every trial bmlib ever asked about — indistinguishable, in a ``bool``,
+    from *"this trial posted no results"*. The cost was
+    ``SCORE_RESULTS_POSTED`` never awarded to any paper and the indicator
+    *"Registered trial without posted results"* persisted as a false claim
+    about the trial.
+
+    **Measured, not read off a doc** (2026-09-06, alternating User-Agents
+    against ``/api/v2/studies/{nct}?fields=hasResults``): six alternating
+    rounds of bmlib's header and httpx's default gave 403/200 six times of
+    six, four accessions all 403'd on bmlib's, and of thirteen header shapes
+    tried only the five carrying the token ``python-httpx`` served 200 —
+    ``curl``, ``python-requests``, ``Python-urllib``, ``Go-http-client``,
+    ``PostmanRuntime`` and a browser string were all refused. So the rule is
+    the token, and the token can sit anywhere in the header.
+
+    **What is pinned here is the token and nothing about the edge.** No test
+    can hold a remote allow-list; every one of the 3,227 mocks its client,
+    which is exactly why a live-only policy went unseen. The guard is
+    ``scripts/sample_api_failures.py``, and these tests only stop the token
+    being dropped from the header by someone tidying it.
+    """
+
+    def test_the_header_carries_the_token_the_edge_admits(self):
+        assert "python-httpx" in _user_agent("who@example.org", "0.28.1")
+
+    def test_the_header_still_identifies_bmlib_and_a_contact_address(self):
+        # The token is *added to* bmlib's identification, never substituted
+        # for it: CrossRef and NCBI both ask a caller to say who it is, and
+        # answering "python-httpx" would trade one API's policy for two
+        # others'.
+        header = _user_agent("who@example.org", "0.28.1")
+        assert "bmlib/" in header
+        assert "who@example.org" in header
+
+    def test_the_httpx_version_is_the_real_one_not_a_literal(self):
+        # The version is passed in from the caller's own `httpx.__version__`
+        # rather than written here, so the header stays true as httpx moves.
+        # A bare `python-httpx` also serves 200, so this is honesty rather
+        # than necessity — and the reason it is worth a test is that a
+        # hard-coded version is a lie that never fails loudly.
+        assert "python-httpx/9.9.9" in _user_agent("who@example.org", "9.9.9")
+
+    def test_analyze_sends_it(self, monkeypatch):
+        # End to end, because the header is only load-bearing where
+        # `analyze()` actually installs it — the module could hold a perfect
+        # `_user_agent` and pass something else to the client. `#184`'s whole
+        # lesson: pin the value at the level a caller exercises.
+        import httpx
+
+        from bmlib.transparency import analyzer as analyzer_mod
+
+        captured: dict = {}
+
+        client = _RecordingClient(epmc=_epmc_payload())
+
+        def _capture(*args, **kwargs):
+            captured.update(kwargs)
+            return client
+
+        monkeypatch.setattr(analyzer_mod, "_MIN_REQUEST_INTERVAL_SECONDS", 0.0)
+        monkeypatch.setattr(httpx, "Client", _capture)
+
+        TransparencyAnalyzer(email="who@example.org").analyze("doc", pmid="1")
+
+        assert captured["headers"]["User-Agent"] == _user_agent(
+            "who@example.org", httpx.__version__
+        )
+
+
+class _AnsweringClient:
+    """Answers every request with one status, recording what was asked.
+
+    Deliberately not `_StatusClient`: that one is shaped for the full-text
+    path, and these five helpers are addressed by five different hosts.
+    """
+
+    def __init__(self, status_code: int = 200, payload: object = None, text: str = ""):
+        self.status_code = status_code
+        self.payload = payload
+        self.text = text
+        self.urls: list[str] = []
+
+    def get(self, url, **kwargs):
+        self.urls.append(url)
+        return _FakeResponse(status_code=self.status_code, json_data=self.payload, text=self.text)
+
+
+class _UndecodableClient:
+    """Answers 200 with a body that will not parse — a remote's failure, not ours."""
+
+    def get(self, url, **kwargs):
+        class _Resp:
+            status_code = 200
+
+            @property
+            def text(self):
+                return "{"
+
+            def json(self):
+                raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+        return _Resp()
+
+
+def _call_helper(analyzer, name, client):
+    """Invoke one of the five dropped-response helpers by name."""
+    return {
+        "crossref": lambda: analyzer._query_crossref(client, "10.1/x"),
+        "europepmc": lambda: analyzer._query_europepmc(client, 'DOI:"10.1/x"'),
+        "pubmed": lambda: analyzer._query_pubmed(client, "123"),
+        "openalex": lambda: analyzer._query_openalex(client, "10.1/x"),
+        "trials": lambda: analyzer._check_trial_results(client, "NCT00000001"),
+    }[name]()
+
+
+#: The five, named once. Every test below is parametrised over this rather
+#: than over a list written per test, because issue #193 was one fix applied
+#: to one of five copies of a shape — and a sixth helper added to the module
+#: and not here would be exactly as unexamined as these five were.
+_DROPPED_RESPONSE_HELPERS = ("crossref", "europepmc", "pubmed", "openalex", "trials")
+
+
+class TestADroppedResponseGetsALine:
+    """Issue #193 — five helpers threw a response away without saying so.
+
+    Each wrapped its request in ``except Exception`` -> ``logger.debug`` ->
+    ``return None``, which leaves two silences of different kinds:
+
+    * a :data:`_BUG_TYPES` member — bmlib being wrong — held at a level
+      nobody enables, which is issue #187 unfixed in five more places;
+    * **a non-200 falling off the end with no line at any level**, since the
+      ``except`` catches only raises. Not a level problem but an absence:
+      there was no DEBUG line to turn on.
+
+    ``_query_europepmc``'s copy is the one that gated the rest. ``analyze()``
+    calls ``_check_europepmc`` only when the search returned a record, so in
+    an outage the search 503s, the full-text step is never reached, and the
+    result stores ``NOT_ATTEMPTED`` — *"No request was made"* — at HIGH with a
+    tier downgrade, from zero log lines. That half is
+    :class:`TestAnOutageIsNotAnAnswer`.
+    """
+
+    @pytest.mark.parametrize("helper", _DROPPED_RESPONSE_HELPERS)
+    def test_a_non_200_is_no_longer_silent(self, helper, caplog):
+        # The absence itself. Before this, *nothing* was emitted at any level
+        # for a 500 — so there was no line to raise the level of, and no
+        # amount of enabling DEBUG would have shown an operator an outage.
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            _call_helper(analyzer, helper, _AnsweringClient(500))
+        assert [r for r in caplog.records if "500" in r.getMessage()]
+
+    @pytest.mark.parametrize("helper", _DROPPED_RESPONSE_HELPERS)
+    def test_a_non_200_warns_unless_the_draw_earned_it_quiet(self, helper, caplog):
+        # A 500 is nobody's ordinary outcome, so it warns everywhere. The
+        # statuses that *are* ordinary are named per endpoint and tested
+        # below; this is the branch they are the exception to.
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            _call_helper(analyzer, helper, _AnsweringClient(500))
+        named = [r for r in caplog.records if "500" in r.getMessage()]
+        assert named
+        assert all(r.levelno == logging.WARNING for r in named)
+
+    @pytest.mark.parametrize("helper", _DROPPED_RESPONSE_HELPERS)
+    def test_a_bmlib_defect_is_reported_as_one(self, helper, caplog):
+        # Issue #187's rule, extended to the five places it was not applied.
+        # A `TypeError` out of a request is bmlib being wrong about its own
+        # client, and holding that at DEBUG is what `fulltext/service.py`
+        # keeps `_BUG_TYPES` for. ERROR is `jats_parser`'s level for the
+        # identical claim.
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            _call_helper(analyzer, helper, _RaisingClient(TypeError("not a client")))
+        named = [r for r in caplog.records if "not a client" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.ERROR
+        # The traceback, which is the whole of what an operator can act on:
+        # without it the report is "bmlib logged a TypeError".
+        assert named[0].exc_info is not None
+
+    @pytest.mark.parametrize("helper", _DROPPED_RESPONSE_HELPERS)
+    def test_an_environment_failure_is_not_reported_as_a_bmlib_defect(self, helper, caplog):
+        # The other side of the same rule, and the one that keeps ERROR
+        # meaning only "bmlib is wrong": a reset connection is the network,
+        # and an ERROR on it would make the level useless for the case above.
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            _call_helper(analyzer, helper, _RaisingClient(OSError("connection reset")))
+        named = [r for r in caplog.records if "connection reset" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+        # The type as well as the message — `str(OSError("connection reset"))`
+        # does not contain "OSError", so this cannot pass on the message
+        # alone. Dropping it leaves a `ConnectTimeout` and a `ReadTimeout`
+        # indistinguishable in a log, the mutant PR #192's review found one
+        # method over.
+        assert "OSError" in named[0].getMessage()
+
+    @pytest.mark.parametrize("helper", _DROPPED_RESPONSE_HELPERS)
+    def test_nothing_is_raised_out_of_any_of_them(self, helper):
+        # `analyze()` wraps none of these, so a helper that starts raising
+        # costs the whole analysis. Reporting and continuing is the module's
+        # rule, argued at `_fetch_europepmc_fulltext`'s own handler.
+        analyzer = TransparencyAnalyzer()
+        for client in (_RaisingClient(TypeError("x")), _RaisingClient(OSError("y"))):
+            assert _call_helper(analyzer, helper, client) in (None, False)
+
+    @pytest.mark.parametrize("helper", ["crossref", "europepmc", "openalex", "trials"])
+    def test_a_body_that_will_not_decode_is_reported_and_not_dropped(self, helper, caplog):
+        # A 200 carrying something that is not JSON is the remote's failure,
+        # not ours — `json.JSONDecodeError` is a `ValueError` and deliberately
+        # outside `_BUG_TYPES` — so it WARNs rather than ERRORing, and it says
+        # what happened instead of reading as "the query failed".
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            result = _call_helper(analyzer, helper, _UndecodableClient())
+        assert result in (None, False)
+        named = [r for r in caplog.records if "Expecting value" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+
+    def test_a_trial_body_that_is_not_an_object_is_not_a_finding(self):
+        # `_check_trial_results` used to do `.get()` inside its own `try`, so
+        # a JSON list came back as `False` — "no posted results", a finding —
+        # through an `AttributeError` swallowed at DEBUG. It is still `False`,
+        # because the API did not answer the question, but it is no longer an
+        # `AttributeError` that a `_BUG_TYPES` branch would now call a bmlib
+        # defect.
+        analyzer = TransparencyAnalyzer()
+        assert analyzer._check_trial_results(_AnsweringClient(200, payload=[]), "NCT1") is False
+
+    def test_a_200_still_marks_an_api_reachable(self):
+        # The property `analyze()` reports UNKNOWN from. Set on the 200 and
+        # before the body is read, exactly as before: a remote that answered
+        # and then sent something unreadable was still reachable, and
+        # demoting the whole analysis to UNKNOWN over a malformed body would
+        # be a larger claim than the evidence supports.
+        analyzer = TransparencyAnalyzer()
+        analyzer._query_crossref(_UndecodableClient(), "10.1/x")
+        assert analyzer._api_reachable is True
+
+
+class TestAnOutageIsNotAnAnswer:
+    """Issue #193's other half — ``NOT_ATTEMPTED`` covered two different claims.
+
+    ``analyze()`` reaches the full-text step only when the EuropePMC *search*
+    returned a record, so an outage skipped it entirely and the result stored
+    ``NOT_ATTEMPTED``, documented *"No request was made — EuropePMC never
+    claimed to hold full text … or there was no record to ask about"*. Both
+    halves of that sentence are claims about EuropePMC's answer, and in an
+    outage there was no answer: one member covering two causes puts words in a
+    third party's mouth, which is issues #187/#190/#191 exactly, one step up
+    the call chain.
+
+    ``SEARCH_FAILED`` is the split. It is not a refusal — nothing was served —
+    and ``test_every_status_chooses_a_side`` is what made it pick.
+    """
+
+    def _analyze_with(self, monkeypatch, client, **ids) -> TransparencyResult:
+        import httpx
+
+        from bmlib.transparency import analyzer as analyzer_mod
+
+        monkeypatch.setattr(analyzer_mod, "_MIN_REQUEST_INTERVAL_SECONDS", 0.0)
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: client)
+        return TransparencyAnalyzer().analyze("doc-1", **(ids or {"pmid": "123"}))
+
+    def test_a_search_that_never_answered_says_so(self, monkeypatch):
+        result = self._analyze_with(monkeypatch, _EveryRequestFails(503))
+        assert result.full_text_status is FullTextStatus.SEARCH_FAILED
+
+    def test_a_search_that_answered_with_no_record_still_reads_not_attempted(self, monkeypatch):
+        # The distinction the split exists for, from the other side: here
+        # EuropePMC *did* answer, and its answer was that it has nothing for
+        # this identifier. "No request was made" is then true of the full-text
+        # step and nothing is being claimed on anyone's behalf.
+        client = _RecordingClient(epmc={"resultList": {"result": []}})
+        result = self._analyze_with(monkeypatch, client)
+        assert result.full_text_status is FullTextStatus.NOT_ATTEMPTED
+
+    def test_it_is_not_a_refusal(self):
+        # Nothing was served, so there is nothing to have refused — and the
+        # caller must not persist "full text served but not usable" for a
+        # request that produced no response at all, which is issue #190's
+        # defect one step up.
+        assert FullTextStatus.SEARCH_FAILED.is_refusal is False
+
+    def test_the_result_carries_an_indicator_a_reader_can_act_on(self, monkeypatch):
+        # **A partial outage, which is the scenario issue #193 measured** —
+        # CrossRef answering and EuropePMC not. It is the one that matters,
+        # because a *total* outage already reports UNKNOWN/UNREACHABLE and
+        # says so; here the analysis completes, is scored, and reaches HIGH
+        # with a tier downgrade, and `risk_indicators` was empty. The status
+        # is the machine-readable half; this is the half a human reads, and
+        # it is persisted.
+        result = self._analyze_with(monkeypatch, _CrossRefOnlyClient(), doi="10.1/x")
+        assert _INDICATOR_COI_UNKNOWN_SEARCH_FAILED in result.risk_indicators
+        assert result.full_text_status is FullTextStatus.SEARCH_FAILED
+        # Not UNKNOWN: an API answered, so the result is a real verdict —
+        # which is exactly why the reason has to be carried on it.
+        assert result.risk_level is not TransparencyRisk.UNKNOWN
+
+    def test_a_total_outage_still_records_which_step_never_ran(self, monkeypatch):
+        # The early UNREACHABLE return substitutes its own indicator, and
+        # rightly — UNKNOWN already says nothing was measured. But it reads
+        # `full_text_status` off the carrier rather than restating a
+        # constant, so the finer answer survives into the stored result.
+        result = self._analyze_with(monkeypatch, _EveryRequestFails(503))
+        assert result.unknown_reason is TransparencyUnknownReason.UNREACHABLE
+        assert result.full_text_status is FullTextStatus.SEARCH_FAILED
+
+    def test_that_indicator_is_retracted_when_pubmed_supplies_a_coi_statement(self):
+        # The fourth line, and the rule `_INDICATORS_RETRACTED_BY_PUBMED_COI`
+        # was written for: it claims the COI status is undeterminable, so a
+        # structured `<CoiStatement>` refutes it, and a line added to the
+        # appending site and not to the retracting one stores "status
+        # unknown" beside "disclosure found" — issue #161's own failure mode
+        # inside its fix.
+        assert _INDICATOR_COI_UNKNOWN_SEARCH_FAILED in _INDICATORS_RETRACTED_BY_PUBMED_COI
+
+    def test_the_search_failure_is_logged_where_the_analysis_can_see_it(self, monkeypatch, caplog):
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            self._analyze_with(monkeypatch, _EveryRequestFails(503))
+        assert [r for r in caplog.records if "503" in r.getMessage()]
+
+    def test_a_search_that_raised_reads_the_same(self, monkeypatch):
+        # The status is about the *answer*, not about how it failed to
+        # arrive: a transport failure and a 503 both leave EuropePMC having
+        # said nothing.
+        result = self._analyze_with(monkeypatch, _EveryRequestRaises(OSError("reset")))
+        assert result.full_text_status is FullTextStatus.SEARCH_FAILED
+
+
+class _EveryRequestFails:
+    """A client whose every request answers one non-200 status."""
+
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def get(self, url, **kwargs):
+        return _FakeResponse(status_code=self.status_code)
+
+
+class _EveryRequestRaises:
+    """A client whose every request raises."""
+
+    def __init__(self, error: Exception):
+        self.error = error
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def get(self, url, **kwargs):
+        raise self.error
+
+
+class _CrossRefOnlyClient:
+    """CrossRef answers; every other API is down.
+
+    The shape issue #193 was measured with, and the one that produces a
+    scored, non-UNKNOWN verdict out of a failure — ``_api_reachable`` is set
+    by the one API that answered, so the analysis completes at
+    ``SCORE_FUNDER_INFO`` alone and reaches ``HIGH``.
+    """
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def get(self, url, **kwargs):
+        if "crossref" in url:
+            return _FakeResponse(
+                status_code=200,
+                json_data={"message": {"funder": [{"name": "Some University"}]}},
+            )
+        return _FakeResponse(status_code=503)
+
+
+class TestAQuietStatusIsOneADrawEarned:
+    """The mechanism, and the claim that nothing has earned it yet.
+
+    ``_request`` takes a per-endpoint set of statuses that log at DEBUG rather
+    than WARNING. All five sets are empty, and that is a *measurement* — 366
+    probes over 240 records on 2026-09-06 returned 0 non-200s at any of the
+    five endpoints — not a placeholder. Both halves need pinning: an empty set
+    that no test exercises is indistinguishable from a mechanism that does not
+    work, and an emptiness nothing asserts is one a later session fills in
+    without a draw.
+    """
+
+    _SETS = {
+        "CrossRef": _CROSSREF_ORDINARY_STATUSES,
+        "EuropePMC search": _EUROPEPMC_SEARCH_ORDINARY_STATUSES,
+        "PubMed": _PUBMED_ORDINARY_STATUSES,
+        "OpenAlex": _OPENALEX_ORDINARY_STATUSES,
+        "ClinicalTrials.gov": _CLINICALTRIALS_ORDINARY_STATUSES,
+    }
+
+    def test_a_status_the_draw_measured_ordinary_would_be_quiet(self, caplog):
+        # The mechanism, exercised directly rather than through an endpoint,
+        # because no endpoint names a status today. Without this the five
+        # empty sets would be untested wiring, and the first session to
+        # measure one ordinary would be the first to find out whether it
+        # works.
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            analyzer._request(
+                _AnsweringClient(404),
+                "https://example.org/x",
+                api="Somewhere",
+                subject="x",
+                quiet_statuses=frozenset({404}),
+            )
+        named = [r for r in caplog.records if "404" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.DEBUG
+
+    def test_a_status_beside_a_quiet_one_still_warns(self, caplog):
+        # The branch must be no wider than the draw — issue #191 in one
+        # assertion. A set naming 404 says nothing about 503.
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            analyzer._request(
+                _AnsweringClient(503),
+                "https://example.org/x",
+                api="Somewhere",
+                subject="x",
+                quiet_statuses=frozenset({404}),
+            )
+        named = [r for r in caplog.records if "503" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+
+    @pytest.mark.parametrize("endpoint", sorted(_SETS))
+    def test_no_endpoint_claims_an_ordinary_status_today(self, endpoint):
+        # The measured claim, pinned so that populating one of these needs a
+        # fresh run of `scripts/sample_api_failures.py` and a red test to
+        # explain — not a judgement call in a review. The draw's own numbers
+        # are in the comment above the sets; what they support is an upper
+        # bound (2.1%–6.8% depending on the endpoint), and a bound is not a
+        # licence to call any particular status ordinary.
+        assert self._SETS[endpoint] == frozenset()
+
+    def test_the_log_line_names_the_url(self):
+        # Issue #184 lived a whole release inside a silence, and the URL is
+        # what named it. Asserted on the message rather than on the call, so
+        # a line that stops interpolating it reddens.
+        analyzer = TransparencyAnalyzer()
+        client = _AnsweringClient(500)
+        import logging as _logging
+
+        records: list[_logging.LogRecord] = []
+        handler = _logging.Handler()
+        handler.emit = records.append  # type: ignore[method-assign]
+        logger_ = _logging.getLogger("bmlib.transparency.analyzer")
+        logger_.addHandler(handler)
+        try:
+            analyzer._request(client, "https://example.org/thing", api="X", subject="s")
+        finally:
+            logger_.removeHandler(handler)
+        assert any("https://example.org/thing" in r.getMessage() for r in records)

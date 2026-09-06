@@ -84,14 +84,38 @@ class FullTextStatus(Enum):
     to choose a side.
     """
 
-    #: No request was made — Europe PMC never claimed to hold full text
-    #: (``inEPMC != "Y"``), there was no record to ask about, or the record
-    #: claimed full text and carried no address for it (which WARNs, being a
-    #: malformed record rather than an ordinary closed-access paper). Distinct
-    #: from a request that was made and answered — with a 404, which is
-    #: :attr:`NOT_SERVED`, or any other way of producing no document, which
-    #: is :attr:`REQUEST_FAILED`.
+    #: No request was made, **and Europe PMC's own answer is why** — it never
+    #: claimed to hold full text (``inEPMC != "Y"``), it answered with no
+    #: record for this identifier, or the record claimed full text and carried
+    #: no address for it (which WARNs, being a malformed record rather than an
+    #: ordinary closed-access paper). Distinct from a request that was made
+    #: and answered — with a 404, which is :attr:`NOT_SERVED`, or any other
+    #: way of producing no document, which is :attr:`REQUEST_FAILED`.
+    #:
+    #: **Narrowed in issue #193**, which is the same defect as #191 one step
+    #: up the call chain: it also covered the case where the search that
+    #: *gates* the full-text step never answered at all, so a stored result
+    #: read "Europe PMC told us there is nothing here" for an outage in which
+    #: Europe PMC told us nothing. That is :attr:`SEARCH_FAILED`.
     NOT_ATTEMPTED = "not_attempted"
+    #: No full-text request was made because the Europe PMC **search** that
+    #: gates it produced no answer — a non-200, or a request that raised.
+    #:
+    #: Every other member of this enum describes what became of the full-text
+    #: request; this one says that step was never reached, and why. It exists
+    #: because the alternative is worse than a gap: ``analyze()`` calls
+    #: ``_check_europepmc`` only when the search returned a record, so during
+    #: an outage the whole full-text path is skipped, the score loses up to
+    #: :data:`~bmlib.transparency.analyzer.SCORE_COI_DISCLOSED` +
+    #: :data:`~bmlib.transparency.analyzer.SCORE_DATA_FULL_OPEN`, and the
+    #: result can reach ``HIGH`` with ``tier_downgrade_applied`` set — while
+    #: storing a status a reader takes as *"we had no reason to ask"*.
+    #:
+    #: Not a refusal: nothing was served. *"Would re-running change this?"* is
+    #: ``yes`` here, as it is for :attr:`REQUEST_FAILED`, and that is the
+    #: question the two of them exist to make answerable — results are
+    #: cacheable and nothing in ``transparency/`` retries.
+    SEARCH_FAILED = "search_failed"
     #: Requested, and Europe PMC answered **HTTP 404**: it serves no
     #: open-access full text for this article. Together with
     #: :attr:`NOT_ATTEMPTED` — the dominant case, and every paper Europe PMC
@@ -192,15 +216,19 @@ _REFUSED_FULL_TEXT_STATUSES = frozenset(
 #: #161 exists to remove — so the silent default runs the wrong way. Naming
 #: both sides lets ``test_every_status_chooses_a_side`` assert the partition,
 #: which turns that member into a red test instead. It has since been
-#: collected: :attr:`FullTextStatus.REQUEST_FAILED` is the eighth member the
-#: rule was written against, and the partition test is what made it choose.
-#: Stated ordinal-free because the next one is the ninth. The same rule
+#: collected twice: :attr:`FullTextStatus.REQUEST_FAILED` was the first member
+#: the rule was written against, and :attr:`FullTextStatus.SEARCH_FAILED` the
+#: next, each made to choose by the partition test. Stated ordinal-free —
+#: an earlier draft called ``REQUEST_FAILED`` "the eighth member" and the
+#: next one "the ninth", which was one more count to keep in step for no
+#: gain. The same rule
 #: ``TestTheAuditNetIsComplete`` and ``TestEveryCounterIsInAGeneration`` make
 #: in ``fulltext/``, and for the same reason: a rule enforced by prose is not
 #: enforced.
 _NOT_REFUSED_FULL_TEXT_STATUSES = frozenset(
     {
         FullTextStatus.NOT_ATTEMPTED,
+        FullTextStatus.SEARCH_FAILED,
         FullTextStatus.NOT_SERVED,
         FullTextStatus.REQUEST_FAILED,
         FullTextStatus.ANALYZED,

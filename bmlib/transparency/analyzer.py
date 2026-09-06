@@ -310,6 +310,122 @@ _INDUSTRY_COI_KEYWORDS = [
 #: deliberately not on the identifier.
 EUROPEPMC_REST_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 
+# ---- The other three endpoints ----
+#: Named constants rather than f-strings inside the methods, for the reason
+#: :data:`EUROPEPMC_REST_BASE` was extracted: a URL buried in a method body is
+#: a URL nothing can pin, and issue #184 was one of those wrong for a whole
+#: release. What they buy here is that ``scripts/sample_api_failures.py`` —
+#: the draw the log levels below are set from — probes *these* strings, so the
+#: measurement cannot be of an endpoint bmlib does not call. Pinned by
+#: ``TestTheSamplerProbesWhatTheAnalyzerRequests``.
+#:
+#: The identifier is interpolated with ``str.format``, which reads braces in
+#: the *template* only, so a DOI carrying one is passed through unharmed.
+CROSSREF_WORKS_URL = "https://api.crossref.org/works/{doi}"
+OPENALEX_WORKS_URL = "https://api.openalex.org/works/doi:{doi}"
+CLINICALTRIALS_STUDY_URL = "https://clinicaltrials.gov/api/v2/studies/{nct_id}"
+
+
+def _user_agent(email: str, httpx_version: str) -> str:
+    """The ``User-Agent`` every request from this module carries.
+
+    Extracted from :meth:`TransparencyAnalyzer.analyze` for the reason the
+    URLs above were: it is a value the remote ends judge us by, and one
+    written inline in a method body is one nothing can pin — while
+    ``scripts/sample_api_failures.py`` has to send the *same* header or it is
+    not measuring what bmlib does. That is the header half of issue #184's
+    lesson, and issue #194 is what it cost.
+
+    **The trailing ``python-httpx`` token is load-bearing and is not
+    decoration.** ClinicalTrials.gov's edge refuses bmlib's identification
+    with a bare 134-byte ``403 Forbidden`` page, so every
+    :meth:`_check_trial_results` call ever made was declined — returning
+    ``False``, which in a ``bool`` is indistinguishable from *"this trial
+    posted no results"*. ``SCORE_RESULTS_POSTED`` was therefore never awarded
+    to any paper and *"Registered trial without posted results"* was stored
+    as a false claim about every registered trial (issue #194).
+
+    Measured 2026-09-06 against ``/api/v2/studies/{nct}?fields=hasResults``:
+    six alternating rounds of bmlib's header against httpx's own default gave
+    403/200 six times of six, and four accessions all 403'd on bmlib's. Of
+    thirteen header shapes, the five carrying ``python-httpx`` — including
+    ``python-httpx`` bare, and the token appended *after* bmlib's own
+    identification — served 200, while ``curl/8.7.1``,
+    ``python-requests/2.31.0``, ``Python-urllib/3.11``, ``Go-http-client/2.0``,
+    ``PostmanRuntime/7.37.0`` and a browser string were all refused. So it is
+    an allow-list on that one token, and its position does not matter.
+
+    The token is **appended to** bmlib's identification rather than replacing
+    it: CrossRef and NCBI both ask a caller to say who it is and where to
+    write, and answering ``python-httpx`` alone would trade one API's policy
+    for two others'. And it is not a fiction — bmlib *is* httpx here, so this
+    says exactly what httpx would have said about itself before this module
+    overrode it. The version comes from the caller's own ``httpx.__version__``
+    for the same reason.
+
+    This is a live-only property that **no test can hold**: every test in the
+    suite mocks its client, which is precisely why the 403 went unseen
+    through a whole release. ``scripts/sample_api_failures.py`` is the guard —
+    run it before touching this string.
+
+    Args:
+        email: The analyzer's contact address.
+        httpx_version: ``httpx.__version__``, passed in because httpx is an
+            optional dependency this module imports only inside ``analyze()``.
+
+    Returns:
+        The header value.
+    """
+    return f"bmlib/{__version__} (mailto:{email}) python-httpx/{httpx_version}"
+
+
+#: Statuses that log at DEBUG rather than WARNING, **per endpoint**, because a
+#: draw measured them to be that endpoint's ordinary outcome. Issue #191's
+#: rule: a level is a claim, and the branch it sits on must be no wider than
+#: the draw that earned it — DEBUG measured on 404s and applied to every
+#: status is what that issue was.
+#:
+#: The evidence is ``scripts/sample_api_failures.py``. **Run it before
+#: changing any of these**, and read the run's own report rather than these
+#: comments, which are a snapshot of one draw.
+#:
+#: **Every one of them is empty, and that is the measurement rather than a
+#: default.** 180 records drawn 2026-09-06, stratified over source × year
+#: (MED/PMC/PPR × 2024/2014/2004, preprints 2024/2019/2014), plus 60 drawn
+#: separately for the trial population, every request addressed and headed
+#: exactly as this module addresses and heads it:
+#:
+#: ===================  =======  ========  ==================
+#: endpoint             probed   non-200   95% CI on non-200
+#: ===================  =======  ========  ==================
+#: CrossRef                  73         0  [0.0%, 5.0%]
+#: EuropePMC search         180         0  [0.0%, 2.1%]
+#: PubMed efetch             60         0  [0.0%, 6.0%]
+#: OpenAlex                  73         0  [0.0%, 5.0%]
+#: ClinicalTrials.gov        53         0  [0.0%, 6.8%]
+#: ===================  =======  ========  ==================
+#:
+#: So no status has been measured ordinary at any of these endpoints, and
+#: every non-200 warns. Read those as **upper bounds and not as proof**: a
+#: zero says the ordinary outcome is a 200, not that a 404 cannot happen. The
+#: contrast with ``_fetch_europepmc_fulltext``'s 404 is the whole point —
+#: there, 81 of 81 non-200s were 404 and the majority outcome of the gate the
+#: module uses, which is what earns DEBUG. Nothing here has that.
+#:
+#: The population is *identifiers bmlib is handed*, which come from indexed
+#: records — a caller passing a malformed or invented DOI is outside the draw,
+#: and a 404 is presumably ordinary for one. That is a claim about the caller,
+#: not about the endpoint, and it is **not measured**.
+#:
+#: The ClinicalTrials.gov row is also the live confirmation of issue #194: the
+#: same draw against the header this module used to send is 403 for every
+#: probe, and 53 of 53 serve under the corrected one.
+_CROSSREF_ORDINARY_STATUSES: frozenset[int] = frozenset()
+_EUROPEPMC_SEARCH_ORDINARY_STATUSES: frozenset[int] = frozenset()
+_PUBMED_ORDINARY_STATUSES: frozenset[int] = frozenset()
+_OPENALEX_ORDINARY_STATUSES: frozenset[int] = frozenset()
+_CLINICALTRIALS_ORDINARY_STATUSES: frozenset[int] = frozenset()
+
 # ---- PubMed E-utilities ----
 EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 # NCBI asks every E-utilities caller to identify itself; `email` comes from the
@@ -418,6 +534,13 @@ _INDICATOR_COI_UNKNOWN = "COI disclosure status unknown (full text unavailable)"
 # `FullTextStatus` sits beside it as the machine-readable form (issue #161,
 # and the argument `unknown_reason` made for issue #21).
 _INDICATOR_COI_UNKNOWN_REFUSED = "COI disclosure status unknown (full text served but not usable)"
+# The same finding again, for the outage in which the full-text step was never
+# reached at all (issue #193). "Unavailable" would be a claim about EuropePMC
+# and "served but not usable" a claim about a document, and neither happened:
+# the search that gates the step produced no answer. Before this line the path
+# appended nothing, so a HIGH verdict with a tier downgrade carried an empty
+# `risk_indicators` and no stated reason.
+_INDICATOR_COI_UNKNOWN_SEARCH_FAILED = "COI disclosure status unknown (EuropePMC lookup failed)"
 _INDICATOR_COI_IN_PUBMED = "COI disclosure found in PubMed record"
 #: The COI lines written before PubMed is consulted, every one of which claims
 #: the status is undeterminable — so a `<CoiStatement>` arriving afterwards
@@ -428,12 +551,15 @@ _INDICATOR_COI_IN_PUBMED = "COI disclosure found in PubMed record"
 #: enumeration, so a served-and-refused full text with a PubMed statement
 #: stored "status unknown" beside "disclosure found" — permanently, in a
 #: persisted field, which is issue #161's own failure mode inside its fix.
-#: A fourth line now has one place to be declared and one to be forgotten.
+#: A fourth line now has one place to be declared and one to be forgotten —
+#: and issue #193 added exactly that fourth line, which is why the set is
+#: worth more than the tuple it replaced.
 _INDICATORS_RETRACTED_BY_PUBMED_COI = frozenset(
     {
         _INDICATOR_NO_COI_IN_FULLTEXT,
         _INDICATOR_COI_UNKNOWN,
         _INDICATOR_COI_UNKNOWN_REFUSED,
+        _INDICATOR_COI_UNKNOWN_SEARCH_FAILED,
     }
 )
 _INDICATOR_INDUSTRY_COI = "Industry ties disclosed in COI statement"
@@ -1510,7 +1636,7 @@ class TransparencyAnalyzer:
 
         with httpx.Client(
             timeout=_HTTP_TIMEOUT_SECONDS,
-            headers={"User-Agent": f"bmlib/{__version__} (mailto:{self.email})"},
+            headers={"User-Agent": _user_agent(self.email, httpx.__version__)},
         ) as client:
             # --- CrossRef (funder info) ---
             if doi:
@@ -1518,7 +1644,22 @@ class TransparencyAnalyzer:
 
             # --- EuropePMC (full text / abstract, COI, data availability) ---
             epmc = self._fetch_europepmc(client, pmid, doi)
-            if epmc:
+            if epmc is None:
+                # The search produced no answer, so the whole full-text step
+                # below is skipped — and it used to be skipped in silence,
+                # storing `NOT_ATTEMPTED`, whose documented meaning is that
+                # EuropePMC's own answer is the reason (issue #193).
+                #
+                # `is None` and not falsiness. A 200 carrying an empty object
+                # is EuropePMC answering, and answering with no record for
+                # this identifier is exactly what `NOT_ATTEMPTED` is for; only
+                # `_query_europepmc` returning `None` means no answer arrived.
+                # Reaching here at all implies a request was made, because
+                # `analyze()` has already refused the no-identifier case
+                # above and `_fetch_europepmc` queries on either one.
+                analysis.full_text_status = FullTextStatus.SEARCH_FAILED
+                analysis.indicators.append(_INDICATOR_COI_UNKNOWN_SEARCH_FAILED)
+            elif epmc:
                 self._check_europepmc(client, epmc, analysis, document_id)
 
             # --- PubMed (structured COI, trial registration, grants) ---
@@ -2216,35 +2357,232 @@ class TransparencyAnalyzer:
                 time.sleep(_MIN_REQUEST_INTERVAL_SECONDS - elapsed)
             self._last_request = time.time()
 
-    def _query_crossref(self, client: Any, doi: str) -> dict | None:
-        """Query the CrossRef API for a DOI."""
+    def _request(
+        self,
+        client: Any,
+        url: str,
+        *,
+        api: str,
+        subject: str,
+        params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+        quiet_statuses: frozenset[int] = frozenset(),
+    ) -> Any | None:
+        """Make one paced request and return the 200 response, or ``None``.
+
+        **One helper, because the shape it replaces had been got wrong in five
+        copies** (issue #193). Each was ``try`` -> ``if status == 200: return``
+        -> ``except Exception: logger.debug`` -> ``return None``, which is two
+        silences of different kinds:
+
+        * a :data:`_BUG_TYPES` member — bmlib being wrong about its own client
+          — held at a level nobody enables. That is issue #187, whose fix
+          landed at ``_fetch_europepmc_fulltext`` and in none of these five.
+        * **a non-200 falling off the end with no line at any level.** Not a
+          level problem but an absence: the ``except`` catches only raises, so
+          a 429, a 503 or a 403 simply reached ``return None`` and there was
+          no DEBUG line for an operator to enable. Measured that way, with
+          every API but CrossRef answering 503: zero lines, a ``HIGH``
+          verdict, and a tier downgrade.
+
+        It does **not** re-raise, for the reason argued at
+        :meth:`_fetch_europepmc_fulltext`'s own handler: ``analyze()`` wraps
+        none of these, so every step must swallow its own request or one dead
+        API costs the analysis.
+
+        **The response is returned rather than the decoded body**, and the
+        decode lives in :meth:`_request_json` / :meth:`_request_text` above
+        the same reporting boundary. A body that will not parse is the
+        remote's failure — ``json.JSONDecodeError`` is a ``ValueError`` and so
+        deliberately outside ``_BUG_TYPES`` — and moving the decode outside
+        any handler would let it escape a public ``analyze()``.
+
+        Args:
+            client: An ``httpx``-shaped client; only ``get`` is used.
+            url: The URL, from this module's own constants.
+            api: The remote's name, for the log lines.
+            subject: What was being asked about — a DOI, a PMID, an
+                accession — so a line can be joined to a stored result.
+            params: Query parameters, if any.
+            headers: Per-request headers, if any. The ``User-Agent`` is set
+                once on the client (see :func:`_user_agent`) and is not one
+                of these.
+            quiet_statuses: Statuses that log at DEBUG rather than WARNING
+                for this endpoint, because a draw measured them ordinary.
+                **Per endpoint and per status**, which is issue #191's rule:
+                a level is a claim, and the branch it sits on must be no
+                wider than the draw that earned it. Empty means every non-200
+                warns, which is the safe default for an endpoint nothing has
+                measured.
+
+        Returns:
+            The response when it was 200, else ``None`` — having logged, in
+            every case, exactly what happened.
+        """
         self._rate_limit()
         try:
-            resp = client.get(
-                f"https://api.crossref.org/works/{doi}",
-                headers={"Accept": "application/json"},
-            )
-            if resp.status_code == 200:
-                self._api_reachable = True
-                return resp.json()
+            resp = client.get(url, params=params, headers=headers)
         except Exception as e:
-            logger.debug("CrossRef query failed for %s: %s", doi, e)
+            if isinstance(e, _BUG_TYPES):
+                # bmlib is wrong: a `TypeError` from a client that is not what
+                # this code assumes, an `AttributeError` from one that arrived
+                # as `None`. ERROR is `jats_parser`'s level for the identical
+                # claim, and `exc_info` is the whole of what an operator can
+                # act on — without it the report is "bmlib logged a
+                # TypeError". (`fulltext/service.py` reports its own
+                # `_BUG_TYPES` member at WARNING, so it is the precedent for
+                # continuing rather than for the level; four documents said
+                # otherwise until PR #192's review.)
+                logger.error(
+                    "%s request for %s raised %s, which can only mean a bmlib defect: %s",
+                    api,
+                    subject,
+                    type(e).__name__,
+                    e,
+                    exc_info=True,
+                )
+            else:
+                # The environment. WARNING rather than DEBUG because results
+                # are cacheable and nothing here retries, so a transport
+                # failure held at DEBUG is a scoring gap stored for ever. The
+                # *type* is named as well as the message: `str(OSError(...))`
+                # does not contain "OSError", and a `ConnectTimeout` and a
+                # `ReadTimeout` are the same line without it.
+                logger.warning(
+                    "%s request for %s failed (%s: %s)", api, subject, type(e).__name__, e
+                )
+            return None
+        if resp.status_code == 200:
+            # Set here rather than after the body is read, which is where it
+            # was: a remote that answered 200 and then sent something
+            # unreadable *was* reachable, and demoting the whole analysis to
+            # UNKNOWN over a malformed body claims more than the evidence
+            # supports.
+            #
+            # `_check_trial_results` now marks reachability too, where it did
+            # not before. That is unobservable and deliberate: every path to
+            # it needs an accession, which comes either from a PubMed record
+            # or from a EuropePMC one, so a 200 has already been seen by the
+            # time it runs. What changes is the rule, which now reads "any
+            # external API that answered" without an exception nobody could
+            # have derived from the code.
+            self._api_reachable = True
+            return resp
+        level = logging.DEBUG if resp.status_code in quiet_statuses else logging.WARNING
+        logger.log(
+            level,
+            "%s answered HTTP %d for %s from %s; that component is not scored",
+            api,
+            resp.status_code,
+            subject,
+            url,
+        )
         return None
+
+    def _request_json(
+        self,
+        client: Any,
+        url: str,
+        *,
+        api: str,
+        subject: str,
+        params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+        quiet_statuses: frozenset[int] = frozenset(),
+    ) -> Any | None:
+        """:meth:`_request`, decoded as JSON, reporting a body that will not parse.
+
+        A 200 carrying something that is not JSON used to be logged as
+        *"query failed"* at DEBUG, which names the wrong stage: the request
+        succeeded and the body is what is wrong. WARNING rather than ERROR
+        because it is the remote's output and not bmlib's — the same side of
+        the line ``_BUG_TYPES`` puts ``ValueError`` on, deliberately, since
+        ``json.JSONDecodeError`` is one.
+        """
+        resp = self._request(
+            client,
+            url,
+            api=api,
+            subject=subject,
+            params=params,
+            headers=headers,
+            quiet_statuses=quiet_statuses,
+        )
+        if resp is None:
+            return None
+        try:
+            return resp.json()
+        except Exception as e:
+            logger.warning(
+                "%s answered 200 for %s with a body that is not JSON (%s: %s)",
+                api,
+                subject,
+                type(e).__name__,
+                e,
+            )
+            return None
+
+    def _request_text(
+        self,
+        client: Any,
+        url: str,
+        *,
+        api: str,
+        subject: str,
+        params: dict[str, str] | None = None,
+        quiet_statuses: frozenset[int] = frozenset(),
+    ) -> str | None:
+        """:meth:`_request`, read as text.
+
+        Separate from :meth:`_request_json` rather than a flag on it, because
+        the two return different types and a caller that got the wrong one
+        would find out at a ``.get()`` several frames away. The body read is
+        inside a handler for :meth:`_request`'s own reason: it is the remote's
+        bytes, and nothing here may escape into a public ``analyze()``.
+        """
+        resp = self._request(
+            client,
+            url,
+            api=api,
+            subject=subject,
+            params=params,
+            quiet_statuses=quiet_statuses,
+        )
+        if resp is None:
+            return None
+        try:
+            return str(resp.text)
+        except Exception as e:
+            logger.warning(
+                "%s answered 200 for %s with a body that could not be read (%s: %s)",
+                api,
+                subject,
+                type(e).__name__,
+                e,
+            )
+            return None
+
+    def _query_crossref(self, client: Any, doi: str) -> dict | None:
+        """Query the CrossRef API for a DOI."""
+        return self._request_json(
+            client,
+            CROSSREF_WORKS_URL.format(doi=doi),
+            api="CrossRef",
+            subject=doi,
+            headers={"Accept": "application/json"},
+            quiet_statuses=_CROSSREF_ORDINARY_STATUSES,
+        )
 
     def _query_europepmc(self, client: Any, query: str) -> dict | None:
         """Query the EuropePMC search API."""
-        self._rate_limit()
-        try:
-            resp = client.get(
-                f"{EUROPEPMC_REST_BASE}/search",
-                params={"query": query, "format": "json", "resultType": "core"},
-            )
-            if resp.status_code == 200:
-                self._api_reachable = True
-                return resp.json()
-        except Exception as e:
-            logger.debug("EuropePMC query failed: %s", e)
-        return None
+        return self._request_json(
+            client,
+            f"{EUROPEPMC_REST_BASE}/search",
+            api="EuropePMC",
+            subject=query,
+            params={"query": query, "format": "json", "resultType": "core"},
+            quiet_statuses=_EUROPEPMC_SEARCH_ORDINARY_STATUSES,
+        )
 
     def _query_pubmed(self, client: Any, pmid: str) -> str | None:
         """Fetch a single PubMed record as XML via E-utilities ``efetch``.
@@ -2264,30 +2602,25 @@ class TransparencyAnalyzer:
         if self.pubmed_api_key:
             params["api_key"] = self.pubmed_api_key
 
-        self._rate_limit()
-        try:
-            resp = client.get(EFETCH_URL, params=params)
-            if resp.status_code == 200:
-                self._api_reachable = True
-                return resp.text
-        except Exception as e:
-            logger.debug("PubMed query failed for %s: %s", pmid, e)
-        return None
+        return self._request_text(
+            client,
+            EFETCH_URL,
+            api="PubMed",
+            subject=pmid,
+            params=params,
+            quiet_statuses=_PUBMED_ORDINARY_STATUSES,
+        )
 
     def _query_openalex(self, client: Any, doi: str) -> dict | None:
         """Query the OpenAlex API for a DOI."""
-        self._rate_limit()
-        try:
-            resp = client.get(
-                f"https://api.openalex.org/works/doi:{doi}",
-                headers={"Accept": "application/json"},
-            )
-            if resp.status_code == 200:
-                self._api_reachable = True
-                return resp.json()
-        except Exception as e:
-            logger.debug("OpenAlex query failed for %s: %s", doi, e)
-        return None
+        return self._request_json(
+            client,
+            OPENALEX_WORKS_URL.format(doi=doi),
+            api="OpenAlex",
+            subject=doi,
+            headers={"Accept": "application/json"},
+            quiet_statuses=_OPENALEX_ORDINARY_STATUSES,
+        )
 
     def _find_trial_ids(
         self,
@@ -2352,15 +2685,31 @@ class TransparencyAnalyzer:
         the response can carry; a missing key means the API did not answer
         the question and is reported as "no posted results" rather than
         guessed at from a payload that was never requested.
+
+        **The ``bool`` cannot distinguish "no results posted" from "not
+        answered", and that is what made issue #194 silent**: the edge refused
+        bmlib's ``User-Agent`` with a 403, this returned ``False``, and the
+        caller stored *"Registered trial without posted results"* — a false
+        claim about the trial — for every registered trial bmlib ever
+        analysed. The header is fixed at :func:`_user_agent` and the refusal
+        is no longer silent, but the return type still carries one bit for two
+        questions; widening it is the ``FullTextStatus`` argument from issue
+        #161 one endpoint over, and it is not made here.
         """
-        self._rate_limit()
-        try:
-            resp = client.get(
-                f"https://clinicaltrials.gov/api/v2/studies/{nct_id}",
-                params={"fields": "hasResults"},
-            )
-            if resp.status_code == 200:
-                return bool(resp.json().get("hasResults"))
-        except Exception as e:
-            logger.debug("ClinicalTrials.gov query failed for %s: %s", nct_id, e)
-        return False
+        data = self._request_json(
+            client,
+            CLINICALTRIALS_STUDY_URL.format(nct_id=nct_id),
+            api="ClinicalTrials.gov",
+            subject=nct_id,
+            params={"fields": "hasResults"},
+            quiet_statuses=_CLINICALTRIALS_ORDINARY_STATUSES,
+        )
+        if not isinstance(data, dict):
+            # A JSON body that is not an object answers the question no more
+            # than a 404 does. It used to reach `.get()` inside this method's
+            # own `try` and come back as `False` through an `AttributeError`
+            # logged as "query failed" — a finding manufactured out of a
+            # swallowed type error, which the `_BUG_TYPES` branch would now
+            # report as a bmlib defect it is not.
+            return False
+        return bool(data.get("hasResults"))
