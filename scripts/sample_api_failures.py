@@ -85,7 +85,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -110,11 +110,13 @@ from _sampling import (
 )
 
 from bmlib.transparency.analyzer import (
+    _HTTP_TIMEOUT_SECONDS,
     CLINICALTRIALS_STUDY_URL,
     CROSSREF_WORKS_URL,
     EFETCH_URL,
     EUROPEPMC_REST_BASE,
     EUTILS_TOOL_NAME,
+    JSON_ACCEPT_HEADERS,
     MAX_TRIAL_IDS_TO_CHECK,
     OPENALEX_WORKS_URL,
     TransparencyAnalyzer,
@@ -161,12 +163,21 @@ DRAW_STRATA = (
     ("PPR", 2019),
     ("PPR", 2014),
 )
-#: Records to draw in total, spread evenly over the strata. 150 measured
-#: probes settle "is a non-200 the ordinary outcome here?" to within a Wilson
-#: half-width of about ±4% at a true 5%, which is the resolution the level
-#: decision needs — the same reasoning `sample_free_pdf_urls.py` records for
-#: its own 150.
-DEFAULT_TARGET = 150
+#: Records to draw in total, spread evenly over the strata — 20 per stratum,
+#: so the default *is* the draw the committed numbers were taken at. 150
+#: measured probes settle "is a non-200 the ordinary outcome here?" to within
+#: a Wilson half-width of about ±4% at a true 5%, which is the resolution the
+#: level decision needs — the same reasoning `sample_free_pdf_urls.py` records
+#: for its own 150 — and 180 is the next multiple of the nine strata above it.
+#:
+#: **It was 150, which nine strata cannot spread evenly**: the floor made the
+#: real draw 144 while every table in the repository reported 180, and the
+#: invocation that produced 180 was recorded nowhere, so a reader re-running
+#: the documented command got a third number (PR #195's review). The rule the
+#: sibling samplers follow is that a committed figure must be re-derivable
+#: from what is written down (issues #132/#138); making the default the
+#: measured draw is the cheapest way to hold it.
+DEFAULT_TARGET = 180
 
 #: The ClinicalTrials.gov population is drawn separately, and that is forced by
 #: what the population *is*. Every other table's denominator is requests over
@@ -236,12 +247,41 @@ class ProbeOutcome:
     ``sample_free_pdf_urls.py`` gives: two fields describing one event can be
     constructed disagreeing, and the disagreement would silently move the very
     rate a log level is set from.
+
+    **That argument was applied to the derived field and not to the three
+    stored ones it is derived from** (PR #195's review), and the three do
+    re-encode each other — so ``__post_init__`` asserts the equivalences. It
+    is not defensive: the test helper was building two impossible outcomes
+    (``status=None`` with ``cause="http-404"``, and a success with no status),
+    neither of which :func:`probe` can produce, and reachable states include
+    ``measured=True`` with an ``unmeasured-`` bucket, which would put a
+    throttled probe *inside* the denominator every log level is set from.
     """
 
     endpoint: str
     status: int | None
     cause: str | None
     measured: bool = True
+
+    def __post_init__(self) -> None:
+        """Refuse an outcome that describes no event :func:`probe` can produce."""
+        if self.cause is None:
+            if self.status != 200:
+                raise ValueError(f"a served outcome must carry status 200, not {self.status!r}")
+            if not self.measured:
+                raise ValueError("a served outcome was measured by definition")
+            return
+        kind, _, tail = self.cause.partition("-")
+        if kind == "exception":
+            if self.status is not None:
+                raise ValueError(f"a raised request has no status, but carries {self.status!r}")
+        elif kind in {"http", "unmeasured"}:
+            if str(self.status) != tail:
+                raise ValueError(f"cause {self.cause!r} disagrees with status {self.status!r}")
+        else:
+            raise ValueError(f"unknown cause bucket {self.cause!r}")
+        if self.measured == (kind == "unmeasured"):
+            raise ValueError(f"cause {self.cause!r} disagrees with measured={self.measured!r}")
 
     @property
     def ok(self) -> bool:
@@ -270,6 +310,21 @@ class DrawnRecord:
     pmid: str | None
     raw: dict[str, Any]
 
+    def __post_init__(self) -> None:
+        """Refuse a record bmlib could not analyse.
+
+        ``analyze()`` returns ``UNKNOWN`` without a request for a record
+        carrying neither identifier, and :func:`summarise_draw` prints "a
+        record carrying neither reaches no endpoint here" — but
+        :func:`probe_record` built ``EXT_ID:None`` from one and probed it into
+        the Europe PMC denominator, which is a request bmlib would never make
+        entering the population that sets that endpoint's log level. The
+        sampler's own cardinal sin, so it raises here rather than being
+        skipped quietly at the probe (PR #195's review).
+        """
+        if not self.doi and not self.pmid:
+            raise ValueError("a drawn record must carry a DOI or a PMID; bmlib analyses neither")
+
 
 @dataclass
 class Draw:
@@ -281,16 +336,33 @@ class Draw:
             than logged and forgotten, because a stratum missing from the draw
             is a hole in the stratification the tables rest on — the reader
             has to be told the sample is not the one the header claims.
+        unusable_records: Records the search returned that carry neither a DOI
+            nor a PMID, so bmlib would analyse none of them. Reported for the
+            same reason: the draw is then smaller than its target, and a
+            reader shown only the total cannot tell that from a smaller
+            ``--target``.
     """
 
     records: list[DrawnRecord] = field(default_factory=list)
     failed_strata: list[str] = field(default_factory=list)
+    unusable_records: int = 0
 
 
 def probe(
-    client: Any, endpoint: str, url: str, params: dict[str, str] | None = None
+    client: Any,
+    endpoint: str,
+    url: str,
+    params: dict[str, str] | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> ProbeOutcome:
     """Make one request and classify what came back.
+
+    *headers* is per-request, as the analyzer sends them. Omitting it was a
+    real gap rather than a tidiness one: CrossRef and OpenAlex are both sent
+    ``Accept: application/json``, so without it this script measured two of
+    the five endpoints under a header shape bmlib never presents — the same
+    class of error as issue #194, which was a ``User-Agent`` (PR #195's
+    review).
 
     A 429 or 503 is retried rather than reported: that status means the probe
     could not be made, not that bmlib's request would have failed, and a
@@ -302,7 +374,8 @@ def probe(
         client: An HTTP client with ``get(url, params=...)``.
         endpoint: Which population this probe belongs to.
         url: The URL, built from ``analyzer.py``'s own constants.
-        params: Query parameters, for the two endpoints that take them.
+        params: Query parameters, for the endpoints that take them.
+        headers: Per-request headers, from ``analyzer.py``'s own constant.
 
     Returns:
         The outcome. ``measured`` is ``False`` only when every attempt ended in
@@ -310,7 +383,7 @@ def probe(
     """
     for attempt in range(1, MAX_PROBE_ATTEMPTS + 1):
         try:
-            resp = client.get(url, params=params)
+            resp = client.get(url, params=params, headers=headers)
         except Exception as exc:
             return ProbeOutcome(
                 endpoint=endpoint, status=None, cause=f"exception-{type(exc).__name__}"
@@ -333,14 +406,28 @@ def probe(
     raise AssertionError("unreachable: the loop above always returns")  # pragma: no cover
 
 
-def _search_params(query: str, page_size: int) -> dict[str, str]:
-    """Europe PMC search parameters, in the shape ``_query_europepmc`` sends."""
-    return {
-        "query": query,
-        "format": "json",
-        "resultType": "core",
-        "pageSize": str(page_size),
-    }
+def _search_params(query: str) -> dict[str, str]:
+    """The Europe PMC search parameters ``_query_europepmc`` sends — all of them.
+
+    **No ``pageSize``.** The analyzer sends none, and this helper used to add
+    one while its docstring claimed to be "in the shape ``_query_europepmc``
+    sends" — so the probe asked a question bmlib does not ask, on the endpoint
+    whose failure gates issue #193's whole fix (PR #195's review). The draw
+    needs a page size and adds its own at :func:`_draw_params`, where it is
+    the draw's parameter rather than a restated one.
+    """
+    return {"query": query, "format": "json", "resultType": "core"}
+
+
+def _draw_params(query: str, page_size: int) -> dict[str, str]:
+    """:func:`_search_params` plus the page size the *draw* needs.
+
+    Separate because the draw is not a probe: it is the stratified page query
+    that builds the population, where the probe is the single-record lookup
+    ``_fetch_europepmc`` builds. Keeping them apart is what stops a draw-only
+    parameter leaking into the measurement.
+    """
+    return {**_search_params(query), "pageSize": str(page_size)}
 
 
 def draw_records(
@@ -364,11 +451,19 @@ def draw_records(
             same request against the same field.
 
     Returns:
-        The :class:`Draw`. A stratum whose page did not answer contributes no
-        records and is named in ``failed_strata`` — never back-filled from
-        another stratum, which would re-weight the sample without saying so.
+        The :class:`Draw`, holding *at least* *target* records when every
+        stratum answers — the per-stratum count is rounded up, so the total
+        may exceed *target* by up to ``len(strata) - 1``. A stratum whose page
+        did not answer contributes no records and is named in
+        ``failed_strata`` — never back-filled from another stratum, which
+        would re-weight the sample without saying so.
     """
-    per_stratum = max(1, target // len(strata))
+    # Round **up**, as `sample_jats_exhibits.py` does: `150 // 9` is 16, so a
+    # floor made the default draw 144 records while every comment reasoned
+    # from 150 and `--target`'s help said "in total" (PR #195's review). "Up
+    # to" is the honest contract, and a draw short of its own target is the
+    # one direction that quietly weakens every interval below.
+    per_stratum = max(1, -(-target // len(strata)))
     draw = Draw()
     url = f"{EUROPEPMC_REST_BASE}/search"
     for source, year in strata:
@@ -376,7 +471,7 @@ def draw_records(
         query = f"SRC:{source} AND PUB_YEAR:{year}{query_suffix}"
         pace(url)
         try:
-            resp = client.get(url, params=_search_params(query, per_stratum))
+            resp = client.get(url, params=_draw_params(query, per_stratum))
         except Exception as exc:
             print(f"  draw {label}: request raised {type(exc).__name__}: {exc}", file=sys.stderr)
             draw.failed_strata.append(label)
@@ -399,14 +494,18 @@ def draw_records(
             draw.failed_strata.append(label)
             continue
         for result in results:
+            doi = result.get("doi") or None
+            pmid = result.get("pmid") or None
+            if not doi and not pmid:
+                # Counted, not raised: one unusable record must not cost the
+                # stratum, and it must not be invisible either — a draw
+                # quietly shorter than its target weakens every interval
+                # below without saying so.
+                print(f"  draw {label}: a record carries no DOI and no PMID", file=sys.stderr)
+                draw.unusable_records += 1
+                continue
             draw.records.append(
-                DrawnRecord(
-                    source=source,
-                    year=year,
-                    doi=result.get("doi") or None,
-                    pmid=result.get("pmid") or None,
-                    raw=result,
-                )
+                DrawnRecord(source=source, year=year, doi=doi, pmid=pmid, raw=result)
             )
     return draw
 
@@ -485,14 +584,15 @@ def probe_record(
     if record.doi:
         url = CROSSREF_WORKS_URL.format(doi=record.doi)
         pace(url)
-        outcomes.append(probe(client, "crossref", url))
+        outcomes.append(probe(client, "crossref", url, headers=JSON_ACCEPT_HEADERS))
 
     # The single-record lookup, which is what `_fetch_europepmc` builds — not
-    # the stratified page query the draw used.
+    # the stratified page query the draw used, and with no `pageSize`, which
+    # the analyzer does not send.
     query = f'DOI:"{record.doi}"' if record.doi else f"EXT_ID:{record.pmid}"
     search_url = f"{EUROPEPMC_REST_BASE}/search"
     pace(search_url)
-    outcomes.append(probe(client, "europepmc_search", search_url, _search_params(query, 25)))
+    outcomes.append(probe(client, "europepmc_search", search_url, _search_params(query)))
 
     if record.pmid:
         pace(EFETCH_URL)
@@ -503,7 +603,7 @@ def probe_record(
     if record.doi:
         url = OPENALEX_WORKS_URL.format(doi=record.doi)
         pace(url)
-        outcomes.append(probe(client, "openalex", url))
+        outcomes.append(probe(client, "openalex", url, headers=JSON_ACCEPT_HEADERS))
 
     return outcomes
 
@@ -514,6 +614,7 @@ def probe_trials(
     record: DrawnRecord,
     email: str,
     pace: Callable[[str], None],
+    population_failures: list[str] | None = None,
 ) -> list[ProbeOutcome]:
     """Probe ClinicalTrials.gov for every accession bmlib would ask about.
 
@@ -529,20 +630,56 @@ def probe_trials(
         record: A record from the trial-enriched draw.
         email: The contact address NCBI asks for.
         pace: The per-host pacer.
+        population_failures: Appended to when the population-building efetch
+            does not answer, so :func:`main` can report — and exit non-zero on
+            — a trial population that was reshaped by something other than the
+            draw. Optional so the function stays callable on its own.
 
     Returns:
         One outcome per accession, up to bmlib's own cap. A record for which
         no accession could be found contributes nothing — which is right: for
-        such a record bmlib makes no request either.
+        such a record bmlib makes no request either, *provided the efetch
+        succeeded*. When it did not, the record is not "one bmlib would not
+        ask about" but one this script could not classify, which is why those
+        are counted separately rather than read as an absence.
     """
+    if population_failures is None:
+        population_failures = []
     efetch_xml: str | None = None
     if record.pmid:
         pace(EFETCH_URL)
         try:
             resp = client.get(EFETCH_URL, params=_efetch_params(record.pmid, email))
-            efetch_xml = resp.text if resp.status_code == 200 else None
-        except Exception as exc:  # pragma: no cover - live-only path
-            print(f"  trial draw: efetch for {record.pmid} raised {exc}", file=sys.stderr)
+        except Exception as exc:
+            # The **type** as well as the message, which `draw_records` above
+            # already gets right and this did not: `str(OSError(...))` does
+            # not contain "OSError", and the analyzer's own handler argues the
+            # point at length.
+            print(
+                f"  trial draw: efetch for {record.pmid} raised {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
+            population_failures.append(f"efetch {record.pmid}: {type(exc).__name__}")
+        else:
+            if resp.status_code == 200:
+                efetch_xml = resp.text
+            else:
+                # **Reported and counted, where it used to be neither.** This
+                # efetch builds the population rather than measuring it, so it
+                # enters no table — but a failure silently demotes the record
+                # from the structured-accession route to the abstract
+                # heuristic, or drops it from the population altogether, and
+                # `trial_ids_for` argues that measuring the fallback alone
+                # "would overstate the 404 rate". An unreported failure
+                # therefore introduces exactly the bias that function balances,
+                # and the headline share could not be told from a population
+                # thinned this way (PR #195's review). It is also the one
+                # request here that `probe()` does not retry.
+                print(
+                    f"  trial draw: efetch for {record.pmid} answered HTTP {resp.status_code}",
+                    file=sys.stderr,
+                )
+                population_failures.append(f"efetch {record.pmid}: HTTP {resp.status_code}")
 
     outcomes: list[ProbeOutcome] = []
     for nct_id in trial_ids_for(analyzer, record, efetch_xml):
@@ -601,9 +738,14 @@ def summarise(name: str, outcomes: list[ProbeOutcome]) -> list[str]:
     m = len(measured)
     failures = [o for o in measured if not o.ok]
     lo, hi = wilson(len(failures), m)
+    # "not served", not "non-200": `failures` includes the `exception-*`
+    # bucket, whose outcomes have no status at all, so the old label named a
+    # narrower thing than it counted. Every count is 0 today, so it has never
+    # printed wrongly — but a label is a claim about what was counted, which
+    # is this repository's own rule (PR #195's review).
     lines = [
         f"{name:<18} {m:>4} probed   "
-        f"{len(failures):>4} non-200 = {100 * len(failures) / m:5.1f}%   "
+        f"{len(failures):>4} not served = {100 * len(failures) / m:5.1f}%   "
         f"95% CI [{100 * lo:.1f}%, {100 * hi:.1f}%]"
     ]
     if unmeasured:
@@ -644,8 +786,13 @@ def summarise_draw(name: str, draw: Draw) -> list[str]:
     with_pmid = sum(1 for r in draw.records if r.pmid)
     lines.append(
         f"{'':<18}   {with_doi} carry a DOI, {with_pmid} carry a PMID "
-        "(a record carrying neither reaches no endpoint here)"
+        "(a record carrying neither is refused by `DrawnRecord` and not drawn)"
     )
+    if draw.unusable_records:
+        lines.append(
+            f"{'':<18}   {draw.unusable_records} returned record(s) carried neither and "
+            "were skipped; the draw is that much smaller than its target"
+        )
     return lines
 
 
@@ -675,10 +822,12 @@ def main() -> int:
     """Draw, probe every endpoint, and print the tables.
 
     Returns:
-        ``1`` if the draw lost a stratum or any population printed ``ERROR``
-        instead of a distribution, else ``0``. A scheduled re-run is judged by
-        the exit code, and "nothing could be measured" must not read as
-        "measured, and nothing was wrong".
+        ``1`` if the draw lost a stratum, any population printed ``ERROR``
+        instead of a distribution, or a population-building request did not
+        answer, else ``0``. A scheduled re-run is judged by the exit code, and
+        "nothing could be measured" must not read as "measured, and nothing
+        was wrong" — nor, since PR #195's review, may "measured over a
+        population something else reshaped".
     """
     args = _build_arg_parser().parse_args()
 
@@ -692,8 +841,22 @@ def main() -> int:
     pace = _make_pacer(args.per_host_interval)
     analyzer = TransparencyAnalyzer(email=args.email)
     by_endpoint: dict[str, list[ProbeOutcome]] = {name: [] for name in ENDPOINTS}
+    #: Requests that build the ClinicalTrials.gov population rather than
+    #: measure it, and did not answer. They enter no table and would enter no
+    #: exit code either, which is what made them invisible.
+    population_failures: list[str] = []
 
-    with httpx.Client(timeout=45.0, headers=headers, follow_redirects=True) as client:
+    # **The analyzer's transport policy, not a sampler one.** A sampler that
+    # follows redirects and waits three times as long turns two of bmlib's
+    # failures into successes: a 3xx is a non-200 to `_request` — which
+    # `FullTextStatus.REQUEST_FAILED` names explicitly as an outcome — and a
+    # 20-second response is a `ReadTimeout`. Measuring under a laxer policy
+    # than the code uses makes the zeroes below zeroes about a different
+    # client (PR #195's review). `follow_redirects=False` is httpx's default
+    # and is written out because it is a decision here, not an omission.
+    with httpx.Client(
+        timeout=_HTTP_TIMEOUT_SECONDS, headers=headers, follow_redirects=False
+    ) as client:
         draw = draw_records(client, args.target, pace)
         for index, record in enumerate(draw.records, start=1):
             if index % 10 == 0:
@@ -704,7 +867,9 @@ def main() -> int:
         for index, record in enumerate(trial_draw.records, start=1):
             if index % 10 == 0:
                 print(f"  probed {index}/{len(trial_draw.records)} trial records", file=sys.stderr)
-            for outcome in probe_trials(client, analyzer, record, args.email, pace):
+            for outcome in probe_trials(
+                client, analyzer, record, args.email, pace, population_failures
+            ):
                 by_endpoint[outcome.endpoint].append(outcome)
 
     print("\nStatus distribution per dropped-response endpoint\n")
@@ -717,10 +882,17 @@ def main() -> int:
         for line in summarise(name, by_endpoint[name]):
             print(line)
 
+    if population_failures:
+        print(
+            f"\n{'trial population':<18}   ERROR — {len(population_failures)} "
+            "population-building efetch(es) did not answer, so the accessions probed "
+            f"below are not the ones bmlib would ask about: {', '.join(population_failures)}"
+        )
+
     reportable = all(is_reportable(by_endpoint[name]) for name in ENDPOINTS)
     drawn = bool(draw.records) and bool(trial_draw.records)
     lost = bool(draw.failed_strata) or bool(trial_draw.failed_strata)
-    return 0 if reportable and drawn and not lost else 1
+    return 0 if reportable and drawn and not lost and not population_failures else 1
 
 
 if __name__ == "__main__":

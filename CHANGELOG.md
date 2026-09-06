@@ -44,9 +44,11 @@ All notable changes to bmlib are documented here. The format is based on
   Beside it, a fourth COI indicator — *"COI disclosure status unknown
   (EuropePMC lookup failed)"* — goes into `_INDICATORS_RETRACTED_BY_PUBMED_COI`,
   the set written for exactly the hazard of a fourth line being added to the
-  appending site and not the retracting one. `risk_indicators` was empty on
-  this path, so a HIGH verdict with a downgrade carried no stated reason at
-  all.
+  appending site and not the retracting one. `risk_indicators` carried **no
+  COI line at all** on this path, so a HIGH verdict with a downgrade carried no
+  stated reason for the finding that drove it. (Not "was empty": CrossRef and
+  PubMed can both append on the same path, and the reproduction recorded above
+  is one in which CrossRef answered — corrected in PR #195's review.)
 
   **ClinicalTrials.gov has been refusing bmlib since it first asked** (issue
   #194). `analyze()` sets a `User-Agent` on its client, overriding httpx's,
@@ -64,7 +66,7 @@ All notable changes to bmlib are documented here. The format is based on
   six times of six. `_user_agent` now **appends** httpx's own token to bmlib's
   identification rather than replacing it: CrossRef and NCBI both ask a caller
   to say who it is, and it is not a fiction — bmlib *is* httpx here. That is a
-  live-only property **no test can hold**, which is why all 3,227 tests missed
+  live-only property **no test can hold**, which is why the whole suite missed
   it; `scripts/sample_api_failures.py` is the guard.
 
   **The levels are measured, and the measurement is what earns them.** The new
@@ -79,11 +81,19 @@ All notable changes to bmlib are documented here. The format is based on
   default — pinned by `test_no_endpoint_claims_an_ordinary_status_today`, with
   the mechanism itself exercised separately so five empty sets are not untested
   wiring. The contrast is `_fetch_europepmc_fulltext`'s 404, where 81 of 81
-  non-200s were 404 and DEBUG is earned. Read the zeroes as upper bounds, not
+  non-200s were 404, and the 404 is separately the majority outcome of that
+  module's own gate (88 of 150 in a stratified draw) — two denominators, both
+  needed, neither implying the other; over the 200-probe draw the 81 are
+  40.5%. That is what earns DEBUG. Read the zeroes as upper bounds, not
   as proof: the population is *identifiers bmlib is handed*, which come from
   indexed records, and a caller passing an invented DOI is outside the draw.
-  The ClinicalTrials.gov row is also the live confirmation of #194 — the same
-  draw against the old header is 403 for every probe.
+  The ClinicalTrials.gov row is also the live confirmation of #194: 53 of 53
+  serve under the corrected header, against **ten probes** on the old one — six
+  alternating rounds and four accessions, all 403. Those ten are the whole of
+  what was measured on the old header; an earlier draft said "the same draw
+  against the old header is 403 for every probe", which claims 53 probes
+  nobody took and which the sampler has no switch to take (PR #195's
+  review).
 
   Levels: **ERROR** for a `_BUG_TYPES` member, with `exc_info`, since that can
   only mean bmlib is wrong (`jats_parser`'s level for the identical claim);
@@ -96,12 +106,111 @@ All notable changes to bmlib are documented here. The format is based on
   Two smaller corrections ride along. `_check_trial_results` used to reach
   `.get()` on a JSON body that might not be an object, so a list came back as
   `False` — a *finding* — through an `AttributeError` swallowed at DEBUG; it
-  now tests the type, and the outcome is still `False` because the API did not
-  answer the question. And the CrossRef, OpenAlex and ClinicalTrials.gov URLs
+  now tests the type. And the CrossRef, OpenAlex and ClinicalTrials.gov URLs
   are module constants (`CROSSREF_WORKS_URL`, `OPENALEX_WORKS_URL`,
-  `CLINICALTRIALS_STUDY_URL`) beside `EUROPEPMC_REST_BASE`, so the sampler
-  provably probes what the analyzer requests rather than a restated literal —
-  which is how issue #184 lived a whole release.
+  `CLINICALTRIALS_STUDY_URL`) beside `EUROPEPMC_REST_BASE`, together with the
+  `Accept` header (`JSON_ACCEPT_HEADERS`), so the sampler provably probes what
+  the analyzer requests rather than a restated literal — which is how issue
+  #184 lived a whole release.
+
+  **PR #195's review found four things the above did not reach, and they are
+  part of this entry rather than a follow-up.**
+
+  *Correcting the header did not make issue #194 honest.* It narrowed the
+  false claim from *always* to *whenever ClinicalTrials.gov does not answer*,
+  because `_check_trial_results` still returned a `bool` and its caller turned
+  `False` into `"Registered trial without posted results"` — a persisted claim
+  about the trial — for a 404, a 403, or a body that would not decode.
+  Reproduced three ways: one accession 404ing, and a two-accession mix in
+  which the refused one is the one *with* results. It is now a tri-state
+  (`True` / `False` / `None`), and the caller distinguishes three outcomes:
+  results posted, asked-and-answered-no, and **not one accession answered**,
+  which gets `"Trial registration found; posted-results status could not be
+  checked"` — the line a registration in another registry already gets,
+  because the claim is identical and it puts nothing in ClinicalTrials.gov's
+  mouth. **This moves stored values again**: a paper whose ClinicalTrials.gov
+  requests all fail now carries the second indicator instead of the first.
+  `TransparencyResult.trial_results_compliant` is still a bare `bool`, so it
+  is `False` for both — read the indicator, not the flag. Recorded in
+  `docs/DECISIONS.md`.
+
+  *The fix for issue #187 was reproduced, one layer above itself.*
+  `_request_json` and `_request_text` each kept a bare `except Exception`
+  around the decode and WARNed unconditionally, so a response object bmlib was
+  wrong about — no `.json` at all — printed as *"CrossRef answered 200 with a
+  body that is not JSON"*: a `_BUG_TYPES` member dressed as a claim about the
+  remote, which is exactly the defect `_request` was given the two-level split
+  to prevent. All three sites now share one `_report_swallowed_exception`,
+  because the second copy of a rule is the second place to get it wrong.
+
+  *PubMed was the one endpoint of five whose unusable 200 stayed invisible.*
+  `_request_text` returns `""` for a 200 carrying nothing and `_check_pubmed`'s
+  falsy test could not tell that from a request already reported, so an empty
+  body was dropped in silence; a body that was not parsable XML logged at
+  DEBUG, the level `_request_json`'s own docstring argues "names the wrong
+  stage". Both WARN now. Not cosmetic: empty signals mean no `<CoiStatement>`,
+  so nothing in `_INDICATORS_RETRACTED_BY_PUBMED_COI` is retracted and the
+  missing-COI downgrade can fire — issue #193's own justification, applied to
+  the path it did not take.
+
+  *The non-200 line claimed a consequence it could not know.* It ended "that
+  component is not scored", which was true for CrossRef and OpenAlex and wrong
+  for the rest — a refused ClinicalTrials.gov request *manufactured* a scored
+  finding, and a failed Europe PMC search gates the whole full-text step. The
+  shared helper now reports the request only, and `analyze()` states what the
+  outage cost, naming `document_id` and the points.
+
+  And several comments were corrected against the code they describe. The
+  unreachable-API early return still said `NOT_ATTEMPTED` was the only status
+  reachable there, which this very change falsified and its own test refutes —
+  dangerous less as a wrong claim than as a licence to substitute the literal
+  and reinstate #193 on the one path the issue opens with. `_request`'s
+  reachability comment said the flag used to be set *after* the body was read,
+  which `git show main` refutes: all four helpers already set it before.
+  `is_refusal`'s docstring enumerates the non-refusal side by hand and was not
+  updated when `SEARCH_FAILED` joined the frozenset, while the manual was —
+  now pinned by `test_the_docstring_names_every_non_refusal`.
+
+- **`scripts/sample_api_failures.py` measured a request bmlib does not make,
+  and its draw was not the one its numbers describe** (PR #195's review). Four
+  corrections, all of which weaken or move the evidence the log levels rest
+  on:
+
+  - **Two of five endpoints were probed bare.** `probe()` had no `headers`
+    parameter, so CrossRef and OpenAlex never received the
+    `Accept: application/json` the analyzer sends — the same class of error as
+    issue #194, one header over. And `_search_params` added a `pageSize` the
+    analyzer never sends, on the endpoint whose failure gates issue #193's
+    whole fix, while its docstring claimed to be "in the shape
+    `_query_europepmc` sends". The draw's page size is now `_draw_params`,
+    where it belongs to the draw.
+  - **The client was not the analyzer's.** `timeout=45.0` and
+    `follow_redirects=True` against the analyzer's 15.0 and httpx's default
+    `False`, so a 3xx — which `FullTextStatus.REQUEST_FAILED` names explicitly
+    as an outcome — was a 200 to the sampler and a dropped response to bmlib,
+    and a 20-second response was a success here and a `ReadTimeout` there. The
+    script could not observe the one status class the module documents.
+  - **The default draw was 144 records and every table says 180.** `150 // 9`
+    is 16, the invocation that produced 180 was recorded nowhere, and a reader
+    re-running the documented command got a third number. `DEFAULT_TARGET` is
+    180, the per-stratum count rounds up as `sample_jats_exhibits.py`'s does,
+    and the default is now the committed draw.
+  - **The trial population could be reshaped in silence.** `probe_trials`'
+    efetch *builds* the ClinicalTrials.gov population rather than measuring
+    it, and a non-200 there printed nothing, counted nothing and could not
+    reach the exit code — so the headline share could not be told from a
+    population thinned by NCBI throttling, which is the bias `trial_ids_for`
+    exists to balance. It is reported and counted now, and `main` exits
+    non-zero on it.
+
+  Two type invariants close the rest. `ProbeOutcome` refuses an outcome
+  `probe()` cannot produce — the test file was building two of them, including
+  a success carrying no status — and `DrawnRecord` refuses a record with
+  neither identifier, which `probe_record` used to turn into the literal
+  `EXT_ID:None` and probe into the Europe PMC denominator, a request bmlib
+  would never make entering the population that sets that endpoint's level.
+  The headline label reads "not served" rather than "non-200", since the count
+  includes exception outcomes that carry no status.
 
   **What it costs a downstream.** A stored result computed during a Europe PMC
   outage read `not_attempted` and now reads `search_failed`, and carries a COI

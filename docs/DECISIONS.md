@@ -227,13 +227,40 @@ must not be re-done.
   `::test_no_endpoint_claims_an_ordinary_status_today` is the gate, and the
   mechanism is exercised separately so five empty sets are not mistaken for
   wiring that does not work.
-- **`_check_trial_results` still answers two questions with one `bool`, and
-  that is deliberate here** (#193, #194). "No results posted" and "the API did
-  not answer" both come back `False`. Widening it is the `FullTextStatus`
-  argument from #161 one endpoint over and would be a real improvement — but
-  it is a stored-value change of its own, and #194 was fixed by correcting the
-  header rather than by reshaping the return. The refusal is no longer silent,
-  which is what made the defect survive a release.
+- **`TransparencyResult.trial_results_compliant` is a bare `bool` and `False`
+  covers two claims; the *step* no longer does** (#193, #194, and PR #195's
+  review, which reopened this entry). It first read that
+  `_check_trial_results`' own `bool` was a deliberate residual because #194
+  had been fixed by correcting the header. That was wrong on its own terms:
+  correcting the header narrowed the false claim from *always* to *whenever
+  ClinicalTrials.gov does not answer* and left the conflation intact, so a
+  404, a 403 or an unusable body still made the caller store *"Registered
+  trial without posted results"* — a persisted claim about the trial that
+  bmlib has no evidence for. The remedy cost six lines and needed no new
+  vocabulary, `_INDICATOR_RESULTS_NOT_CHECKABLE` having existed all along for
+  the other-registry case, so the deferral was resting on a cost comparison
+  ("the `FullTextStatus` argument one endpoint over") that overstated it.
+  `_check_trial_results` is now `True` / `False` / `None`, and the caller
+  reports three outcomes.
+
+  What genuinely remains is one level up and is **not** worth a schema change
+  today: `trial_results_compliant` is `False` both for *"asked and answered
+  no"* and for *"could not be checked"*, exactly as it already was for a
+  registration in another registry. `risk_indicators` distinguishes them —
+  read the indicator, not the flag — and every stored result already needed
+  that read for the other-registry case, so no downstream is newly wrong.
+  Widening the public field is the `FullTextStatus` change from #161 on a
+  second field and wants its own issue, filed rather than left here.
+- **The sampler uses the analyzer's client, not a sampler one** (PR #195's
+  review). It opened with `timeout=45.0, follow_redirects=True` where
+  `analyze()` uses `_HTTP_TIMEOUT_SECONDS` and httpx's default `False`, so a
+  3xx — which `FullTextStatus.REQUEST_FAILED` names explicitly as an outcome —
+  was a 200 to the sampler and a dropped response to bmlib, and a slow reply
+  succeeded here and timed out there. A measurement taken under a laxer
+  transport policy than the code uses is a measurement of a different client,
+  which is the same failure as measuring a different URL or a different
+  header. `follow_redirects=False` is written out rather than left to the
+  default, because here it is a decision.
 - **`_user_agent` appends `python-httpx`, and it is not decoration** (#194).
   ClinicalTrials.gov's edge refuses every other header shape measured —
   `curl`, `python-requests`, `Python-urllib`, `Go-http-client`,

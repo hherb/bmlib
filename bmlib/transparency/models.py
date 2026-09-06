@@ -181,9 +181,16 @@ class FullTextStatus(Enum):
 
         ``True`` for exactly the outcomes where Europe PMC answered HTTP 200
         with a document that bmlib then declined to scan. ``False`` for
-        :attr:`ANALYZED`, and for :attr:`NOT_SERVED`, :attr:`REQUEST_FAILED`
-        and :attr:`NOT_ATTEMPTED` — where nothing was served, so there is
-        nothing to have refused. An HTTP 200 carrying an *empty* body is on
+        :attr:`ANALYZED`, and for :attr:`NOT_SERVED`, :attr:`REQUEST_FAILED`,
+        :attr:`SEARCH_FAILED` and :attr:`NOT_ATTEMPTED` — where nothing was
+        served, so there is nothing to have refused. (That enumeration is
+        prose beside a mechanised partition, and it went stale the first time
+        a member was added — issue #193's, missed here while
+        ``docs/manual/transparency.md`` was updated. The authority is
+        :data:`_REFUSED_FULL_TEXT_STATUSES`, which
+        ``test_every_status_chooses_a_side`` pins; this list is a reader's
+        convenience and ``test_the_docstring_names_every_non_refusal`` is what
+        stops it drifting again.) An HTTP 200 carrying an *empty* body is on
         that side too, and is why :attr:`REQUEST_FAILED` exists: 200 alone is
         not "a document arrived" (issue #190).
         """

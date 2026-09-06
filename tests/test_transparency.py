@@ -61,6 +61,8 @@ from bmlib.transparency.analyzer import (
     SCORE_DATA_ON_REQUEST,
     SCORE_FUNDER_INFO,
     SCORE_OPEN_ACCESS,
+    SCORE_RESULTS_POSTED,
+    SCORE_TRIAL_REGISTERED,
     TEXT_INDUSTRY_CONFIDENCE,
     TransparencyAnalyzer,
     _Analysis,
@@ -2381,12 +2383,18 @@ class _RecordingClient:
         trial_has_results: bool = False,
         ext_id: str = "PMC123",
         full_text_status_code: int = 200,
+        trial_status_code: int = 200,
     ):
         self.crossref = crossref
         self.epmc = epmc
         self.full_text = full_text
         self.pubmed = pubmed
         self.trial_has_results = trial_has_results
+        #: What ClinicalTrials.gov answers with. Defaults to 200 so every
+        #: existing fixture is unchanged; PR #195's review needs a non-200 to
+        #: reach `_check_trial_registration`, which is where issue #194's
+        #: false claim was actually stored.
+        self.trial_status_code = trial_status_code
         #: What the full-text address answers with. Defaults to 200 so every
         #: existing fixture is unchanged; issue #191 needs a 503 to reach
         #: `analyze()`, and `_StatusClient` cannot — it is not a context
@@ -2427,6 +2435,8 @@ class _RecordingClient:
                 return _FakeResponse(status_code=404)
             return _FakeResponse(status_code=200, text=self.pubmed)
         if "clinicaltrials" in url:
+            if self.trial_status_code != 200:
+                return _FakeResponse(status_code=self.trial_status_code)
             return _FakeResponse(status_code=200, json_data={"hasResults": self.trial_has_results})
         return _FakeResponse(status_code=404)
 
@@ -3944,7 +3954,7 @@ class TestTheUserAgentIsOneClinicalTrialsGovAccepts:
     the token, and the token can sit anywhere in the header.
 
     **What is pinned here is the token and nothing about the edge.** No test
-    can hold a remote allow-list; every one of the 3,227 mocks its client,
+    can hold a remote allow-list; no test in this suite makes a live request,
     which is exactly why a live-only policy went unseen. The guard is
     ``scripts/sample_api_failures.py``, and these tests only stop the token
     being dropped from the header by someone tidying it.
@@ -4043,6 +4053,61 @@ class _AnsweringClient:
     def get(self, url, **kwargs):
         self.urls.append(url)
         return _VerbatimResponse(status_code=self.status_code, payload=self.payload, text=self.text)
+
+
+class _NoDecoderClient:
+    """Answers 200 with an object that has no ``json`` — *bmlib* being wrong.
+
+    The other side of `_UndecodableClient`: there the remote sent something
+    unparseable, here bmlib is holding a response object it is wrong about.
+    Both used to print the same WARNING about the remote's body.
+    """
+
+    def get(self, url, **kwargs):
+        class _Resp:
+            status_code = 200
+            text = ""
+
+        return _Resp()
+
+
+class _UnreadableTextClient:
+    """Answers 200 with a body whose ``.text`` raises — `_request_text`'s branch."""
+
+    def get(self, url, **kwargs):
+        class _Resp:
+            status_code = 200
+
+            @property
+            def text(self):
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+        return _Resp()
+
+
+class _TrialListBodyClient:
+    """Serves a registered trial whose ClinicalTrials.gov body is a JSON list.
+
+    Enough of `analyze()`'s pipeline to reach `_check_trial_registration` with
+    one accession: PubMed supplies it through `<DataBankList>`, which is the
+    route that wins over the abstract heuristic.
+    """
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def get(self, url, **kwargs):
+        if "clinicaltrials" in url:
+            return _VerbatimResponse(status_code=200, payload=[{"hasResults": True}])
+        if "eutils" in url:
+            return _VerbatimResponse(
+                status_code=200,
+                text=_pubmed_xml(databanks=(("ClinicalTrials.gov", ("NCT00000001",)),)),
+            )
+        return _VerbatimResponse(status_code=200, payload={"resultList": {"result": []}})
 
 
 class _UndecodableClient:
@@ -4164,9 +4229,15 @@ class TestADroppedResponseGetsALine:
         # rule, argued at `_fetch_europepmc_fulltext`'s own handler.
         analyzer = TransparencyAnalyzer()
         for client in (_RaisingClient(TypeError("x")), _RaisingClient(OSError("y"))):
-            assert _call_helper(analyzer, helper, client) in (None, False)
+            # `is None` for all five, not `in (None, False)`: since PR #195's
+            # review `_check_trial_results` is a tri-state, so every one of
+            # them spells "no answer" the same way. The looser assertion
+            # accepted two contracts and so could not see that change.
+            assert _call_helper(analyzer, helper, client) is None
 
-    @pytest.mark.parametrize("helper", ["crossref", "europepmc", "openalex", "trials"])
+    _JSON_HELPERS = ("crossref", "europepmc", "openalex", "trials")
+
+    @pytest.mark.parametrize("helper", _JSON_HELPERS)
     def test_a_body_that_will_not_decode_is_reported_and_not_dropped(self, helper, caplog):
         # A 200 carrying something that is not JSON is the remote's failure,
         # not ours — `json.JSONDecodeError` is a `ValueError` and deliberately
@@ -4175,24 +4246,83 @@ class TestADroppedResponseGetsALine:
         analyzer = TransparencyAnalyzer()
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
             result = _call_helper(analyzer, helper, _UndecodableClient())
-        assert result in (None, False)
+        assert result is None
         named = [r for r in caplog.records if "Expecting value" in r.getMessage()]
         assert len(named) == 1
         assert named[0].levelno == logging.WARNING
 
-    def test_a_trial_body_that_is_not_an_object_is_not_a_finding(self):
-        # The fixture matters here more than the assertion: `_FakeResponse`
-        # coerces a falsy `json_data` to `{}`, so an earlier version of this
-        # test sent a dict while claiming to send a list, and weakening the
-        # guard to `data is None` survived the whole suite.
-        # `_check_trial_results` used to do `.get()` inside its own `try`, so
-        # a JSON list came back as `False` — "no posted results", a finding —
-        # through an `AttributeError` swallowed at DEBUG. It is still `False`,
-        # because the API did not answer the question, but it is no longer an
-        # `AttributeError` that a `_BUG_TYPES` branch would now call a bmlib
-        # defect.
+    @pytest.mark.parametrize("helper", _JSON_HELPERS)
+    def test_a_decode_that_raises_a_bug_type_is_reported_as_a_bmlib_defect(self, helper, caplog):
+        # **The decode layer had its own copy of the shape issue #187 is
+        # about** (PR #195's review). It wrapped `resp.json()` in a bare
+        # `except Exception` and WARNed unconditionally, so a response object
+        # bmlib was wrong about — one with no `.json` at all — was reported as
+        # *"the remote answered 200 with a body that is not JSON"*: a
+        # `_BUG_TYPES` member dressed as a claim about CrossRef. That is #187
+        # inside the fix for it, one layer up, and the level is now read from
+        # the type by `_report_swallowed_exception` at all three sites.
         analyzer = TransparencyAnalyzer()
-        assert analyzer._check_trial_results(_AnsweringClient(200, payload=[]), "NCT1") is False
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            result = _call_helper(analyzer, helper, _NoDecoderClient())
+        assert result is None
+        named = [r for r in caplog.records if "bmlib defect" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.ERROR
+        assert named[0].exc_info is not None
+        # And it must not also be reported as the remote's malformed body,
+        # which is the line it used to get instead.
+        assert not [r for r in caplog.records if "not JSON" in r.getMessage()]
+
+    def test_a_text_body_that_cannot_be_read_is_reported(self, caplog):
+        # `_request_text`'s own handler, which no test reached — `"pubmed"`
+        # was dropped from the parametrisation above with no comment, so the
+        # branch was 0% covered and its level and wording were unpinned. It is
+        # the step that supplies the `<CoiStatement>` the retraction set
+        # depends on, so losing it silently is not cosmetic.
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            result = analyzer._query_pubmed(_UnreadableTextClient(), "123")
+        assert result is None
+        named = [r for r in caplog.records if "could not be read" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+        assert "UnicodeDecodeError" in named[0].getMessage()
+
+    def test_a_trial_body_that_is_not_an_object_is_not_a_finding(self):
+        # **The fixture matters here more than the assertion**, and the first
+        # one chose the single payload that could not tell the guard from its
+        # own mutant: `payload=[]` is falsy, so weakening
+        # `not isinstance(data, dict)` to `not data` survived the whole suite
+        # (PR #195's review). A *non-empty* list separates them — and under
+        # that mutant it reaches `.get()`, which now sits outside every
+        # handler on this path and escapes the public `analyze()`.
+        #
+        # The answer is `None` and no longer `False`: a body that is not a
+        # JSON object answers the question no more than a 404 does, and
+        # `False` is a finding. That was issue #194's conflation surviving its
+        # own fix.
+        analyzer = TransparencyAnalyzer()
+        client = _AnsweringClient(200, payload=[{"hasResults": True}])
+        assert analyzer._check_trial_results(client, "NCT1") is None
+
+    def test_such_a_body_does_not_escape_analyze(self, monkeypatch):
+        # The other half, at the level a caller exercises. Under the mutant
+        # above, `.get()` on a list raises `AttributeError` out of
+        # `_check_trial_registration`, which `analyze()` wraps nowhere — so
+        # the whole analysis is lost to a body one endpoint sent. The unit
+        # test cannot see that; this one does.
+        import httpx
+
+        from bmlib.transparency import analyzer as analyzer_mod
+
+        monkeypatch.setattr(analyzer_mod, "_MIN_REQUEST_INTERVAL_SECONDS", 0.0)
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: _TrialListBodyClient())
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="123")
+        assert result.trial_registered is True
+        # Asked, and the answer was unusable — so "could not be checked", and
+        # emphatically not "without posted results".
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE in result.risk_indicators
+        assert _INDICATOR_NO_POSTED_RESULTS not in result.risk_indicators
 
     def test_a_200_still_marks_an_api_reachable(self):
         # The property `analyze()` reports UNKNOWN from. Set on the 200 and
@@ -4273,6 +4403,12 @@ class TestAnOutageIsNotAnAnswer:
         # Not UNKNOWN: an API answered, so the result is a real verdict —
         # which is exactly why the reason has to be carried on it.
         assert result.risk_level is not TransparencyRisk.UNKNOWN
+        # And the harm the docstring names, asserted rather than described:
+        # without these two lines the test passes for a LOW-risk result, which
+        # would not need an indicator at all.
+        assert result.risk_level is TransparencyRisk.HIGH
+        # An `int`, not a flag — the number of tiers a consumer should drop.
+        assert result.tier_downgrade_applied >= 1
 
     def test_a_total_outage_still_records_which_step_never_ran(self, monkeypatch):
         # The early UNREACHABLE return substitutes its own indicator, and
@@ -4293,9 +4429,37 @@ class TestAnOutageIsNotAnAnswer:
         assert _INDICATOR_COI_UNKNOWN_SEARCH_FAILED in _INDICATORS_RETRACTED_BY_PUBMED_COI
 
     def test_the_search_failure_is_logged_where_the_analysis_can_see_it(self, monkeypatch, caplog):
+        # **Unique to the line.** `"503" in message` was satisfied by any of
+        # the three endpoints this fixture fails, so suppressing the EuropePMC
+        # line entirely left the test green (PR #195's review) — which is this
+        # repo's standing rule about a log assertion that a neighbouring line
+        # already satisfies. The API and the search URL together name one.
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
             self._analyze_with(monkeypatch, _EveryRequestFails(503))
-        assert [r for r in caplog.records if "503" in r.getMessage()]
+        named = [
+            r
+            for r in caplog.records
+            if "503" in r.getMessage()
+            and "EuropePMC" in r.getMessage()
+            and f"{EUROPEPMC_REST_BASE}/search" in r.getMessage()
+        ]
+        assert named
+        assert all(r.levelno == logging.WARNING for r in named)
+
+    def test_the_analysis_reports_what_the_outage_cost_it(self, monkeypatch, caplog):
+        # `_request` reports the *request* and deliberately claims no
+        # consequence — it is shared by five call sites whose consequences
+        # differ, and its old tail ("that component is not scored") was wrong
+        # for this one, the search gating the whole full-text step rather than
+        # one component. So `analyze()` states the cost, joined to the stored
+        # result by `document_id` (issue #161's field).
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            self._analyze_with(monkeypatch, _CrossRefOnlyClient(), doi="10.1/x")
+        named = [r for r in caplog.records if "no full-text request" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+        assert "doc-1" in named[0].getMessage()
+        assert str(SCORE_COI_DISCLOSED + SCORE_DATA_FULL_OPEN) in named[0].getMessage()
 
     def test_a_search_that_raised_reads_the_same(self, monkeypatch):
         # The status is about the *answer*, not about how it failed to
@@ -4303,6 +4467,276 @@ class TestAnOutageIsNotAnAnswer:
         # said nothing.
         result = self._analyze_with(monkeypatch, _EveryRequestRaises(OSError("reset")))
         assert result.full_text_status is FullTextStatus.SEARCH_FAILED
+
+
+class TestTheProseAgreesWithThePartition:
+    """``is_refusal``'s docstring enumerates the non-refusal side, and it went stale.
+
+    The partition itself is mechanised — ``test_every_status_chooses_a_side``
+    makes a new member choose — but the *docstring* lists the members by hand,
+    and issue #193's was added to the frozenset and not to the prose, while
+    ``docs/manual/transparency.md`` was updated (PR #195's review). It is the
+    docstring a downstream reads off the public API, so a list that omits a
+    member is a wrong answer given confidently.
+
+    ``TestTheAuditNetIsComplete``'s rule, applied to prose: a rule enforced by
+    prose is not enforced, so enforce the prose.
+    """
+
+    def test_the_docstring_names_every_non_refusal(self):
+        doc = FullTextStatus.is_refusal.__doc__ or ""
+        missing = [m.name for m in _NOT_REFUSED_FULL_TEXT_STATUSES if m.name not in doc]
+        assert not missing, f"is_refusal's docstring does not name {missing}"
+
+    def test_it_names_no_refusal_among_them(self):
+        # The converse, so the remedy cannot be "paste every member in": the
+        # docstring's list is of the ``False`` side, and a refusal appearing
+        # in it would be a wrong answer rather than a missing one.
+        doc = FullTextStatus.is_refusal.__doc__ or ""
+        wrongly_named = [m.name for m in _REFUSED_FULL_TEXT_STATUSES if m.name in doc]
+        assert not wrongly_named, f"is_refusal's docstring lists {wrongly_named} as not refusals"
+
+
+class TestEveryDroppedResponseHelperIsUnderTest:
+    """The "sixth helper" claim was prose, in the comment that made it.
+
+    ``_DROPPED_RESPONSE_HELPERS`` says in its own comment that *"a sixth
+    helper added to the module and not here would be exactly as unexamined as
+    these five were"* — and then leaves that to whoever adds one. Issue #193
+    was one fix applied to one of five copies of a shape, so the failure mode
+    is exactly a request-making helper nobody enumerated.
+
+    The remedy is this repository's own, from ``TestTheAuditNetIsComplete``
+    and ``TestOnlyAnAccumulatingElementReadsTheBuffer``: walk the module and
+    fail on a method the list does not cover.
+    """
+
+    def _helpers_that_make_a_request(self) -> set[str]:
+        import ast
+        import inspect
+
+        from bmlib.transparency import analyzer as analyzer_mod
+
+        tree = ast.parse(inspect.getsource(analyzer_mod))
+        classes = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+        analyzer = next((c for c in classes if c.name == "TransparencyAnalyzer"), None)
+        # Fails closed: "no class found" would turn this green.
+        assert analyzer is not None, "TransparencyAnalyzer not found in the module source"
+        found = set()
+        for node in analyzer.body:
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            for call in ast.walk(node):
+                if not isinstance(call, ast.Call):
+                    continue
+                func = call.func
+                if isinstance(func, ast.Attribute) and func.attr in {
+                    "_request_json",
+                    "_request_text",
+                }:
+                    found.add(node.name)
+        assert found, "the walk found no request-making helper at all"
+        return found
+
+    def test_the_list_covers_every_helper_that_makes_a_request(self):
+        covered = {
+            "crossref": "_query_crossref",
+            "europepmc": "_query_europepmc",
+            "pubmed": "_query_pubmed",
+            "openalex": "_query_openalex",
+            "trials": "_check_trial_results",
+        }
+        assert set(covered) == set(_DROPPED_RESPONSE_HELPERS)
+        unexamined = self._helpers_that_make_a_request() - set(covered.values())
+        assert not unexamined, (
+            f"{sorted(unexamined)} call `_request_json`/`_request_text` and are not in "
+            "`_DROPPED_RESPONSE_HELPERS`, so none of the level, silence or "
+            "return-contract tests above cover them"
+        )
+
+    def test_the_walk_would_notice_a_sixth(self):
+        # The negative control the rule needs: a walk that found nothing, or
+        # that could not fail, would make the assertion above vacuous.
+        assert len(self._helpers_that_make_a_request()) == len(_DROPPED_RESPONSE_HELPERS)
+
+
+class TestPubMedsUnusable200IsNoLongerTheQuietOne:
+    """PubMed was the one endpoint of five where *"answered, and unusably"* left no line.
+
+    ``_request_text`` returns ``None`` having already logged, but it returns
+    ``""`` for a 200 carrying nothing — and ``_check_pubmed``'s falsy test
+    could not tell the two apart, so an empty body was dropped in silence
+    while the four JSON endpoints WARNed for the identical situation. A body
+    that was not parsable XML logged at DEBUG, which is the level
+    ``_request_json``'s own docstring argues "names the wrong stage".
+
+    Not cosmetic: empty signals mean no ``<CoiStatement>``, so nothing in
+    :data:`_INDICATORS_RETRACTED_BY_PUBMED_COI` is retracted, *"COI disclosure
+    status unknown"* stands, and the missing-COI downgrade can fire — which is
+    the sentence issue #193 justifies itself with, applied to the path it did
+    not take. Issue #190 one endpoint over (PR #195's review).
+    """
+
+    def test_an_empty_body_is_reported(self, caplog):
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            signals = analyzer._check_pubmed(_AnsweringClient(200, text=""), "123")
+        assert signals == _PubMedSignals()
+        named = [r for r in caplog.records if "empty body" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+        # The PMID, so the line joins to a stored result.
+        assert "123" in named[0].getMessage()
+
+    def test_a_body_that_is_not_xml_is_reported(self, caplog):
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            analyzer._check_pubmed(_AnsweringClient(200, text="<not-xml"), "123")
+        named = [r for r in caplog.records if "not parsable XML" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+
+    def test_a_request_that_already_reported_is_not_reported_twice(self, caplog):
+        # `is None` and not falsiness, for `_check_europepmc`'s reason one
+        # module section over: a non-200 has been logged by `_request`
+        # already, and a second line about an "empty body" would name a body
+        # that never arrived.
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            analyzer._check_pubmed(_AnsweringClient(503), "123")
+        assert not [r for r in caplog.records if "empty body" in r.getMessage()]
+
+
+class TestAnUnansweredTrialIsNotAFinding:
+    """Issue #194's other half — correcting the header did not make the ``bool`` honest.
+
+    ``_check_trial_results`` returned ``bool``, and ``False`` meant both
+    *"ClinicalTrials.gov says no results are posted"* and *"ClinicalTrials.gov
+    did not answer"*. The caller turned the second into the first: it appended
+    *"Registered trial without posted results"*, a **false claim about the
+    trial**, into ``risk_indicators`` — which is persisted — and withheld
+    ``SCORE_RESULTS_POSTED``.
+
+    That is what made #194 invisible for a release. The edge 403'd every
+    request, so every registered trial bmlib ever analysed was published as
+    non-compliant, and two downstreams rendered it: BioMedicalNews's reading
+    pane and bmlibrarian_lite's risk badge both print *"results not posted"*
+    straight off ``trial_results_compliant``.
+
+    **Correcting the ``User-Agent`` narrowed that from "always" to "whenever
+    ClinicalTrials.gov does not answer" and left the conflation in place**, so
+    a 404, a 403 or an unusable body still manufactured the same false
+    finding. The tri-state is the fix (PR #195's review), and
+    ``_INDICATOR_RESULTS_NOT_CHECKABLE`` — already defined, already used one
+    branch over for a registration in another registry — is the honest line
+    that was unreachable from the failure path.
+    """
+
+    def _registration(self, client, ids=("NCT00000001",)) -> _Analysis:
+        analysis = _Analysis()
+        TransparencyAnalyzer()._check_trial_registration(
+            client,
+            "1",
+            None,
+            analysis,
+            epmc=None,
+            pubmed=_PubMedSignals(trial_accessions=tuple(ids)),
+        )
+        return analysis
+
+    @pytest.mark.parametrize("status", [403, 404, 500])
+    def test_a_refused_request_is_not_a_missing_result(self, status):
+        # The three scenarios reproduced in the review, one per status. Before
+        # the tri-state each of these stored the false claim.
+        analysis = self._registration(_AnsweringClient(status))
+        assert analysis.trial_registered is True
+        assert _INDICATOR_NO_POSTED_RESULTS not in analysis.indicators
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE in analysis.indicators
+        assert analysis.results_compliant is False
+
+    def test_an_answered_no_is_still_a_finding(self):
+        # The other side, and the one that keeps the fix from being a blanket
+        # softening: ClinicalTrials.gov *did* answer, and said no. That is a
+        # real finding and must keep its indicator.
+        analysis = self._registration(_AnsweringClient(200, payload={"hasResults": False}))
+        assert _INDICATOR_NO_POSTED_RESULTS in analysis.indicators
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE not in analysis.indicators
+
+    def test_posted_results_are_scored(self):
+        # **`SCORE_RESULTS_POSTED` was awarded by no test in the suite** and,
+        # because of #194, by no analysis in production either — so the branch
+        # this PR exists to make reachable had nothing asserting it works.
+        # A regression sending `_check_trial_results` back to a constant
+        # falsehood reproduces #194 in full with the suite green.
+        analysis = self._registration(_AnsweringClient(200, payload={"hasResults": True}))
+        assert analysis.results_compliant is True
+        assert analysis.score == SCORE_TRIAL_REGISTERED + SCORE_RESULTS_POSTED
+        assert _INDICATOR_NO_POSTED_RESULTS not in analysis.indicators
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE not in analysis.indicators
+
+    def test_one_refusal_does_not_hide_another_trials_posted_results(self):
+        # The mix the review found: the accession that *has* results is the
+        # one refused. `any()` over a `bool` could not tell that from "neither
+        # has results", so the paper lost 15 points and gained a false line.
+        client = _PerAccessionClient(
+            {"NCT00000001": (403, None), "NCT00000002": (200, {"hasResults": False})}
+        )
+        analysis = self._registration(client, ids=("NCT00000001", "NCT00000002"))
+        # One accession answered, and its answer was "no" — so the finding
+        # stands, but it is now a finding about the trial that answered.
+        assert _INDICATOR_NO_POSTED_RESULTS in analysis.indicators
+
+    def test_none_answering_across_several_accessions_is_not_checkable(self):
+        client = _PerAccessionClient({"NCT00000001": (403, None), "NCT00000002": (503, None)})
+        analysis = self._registration(client, ids=("NCT00000001", "NCT00000002"))
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE in analysis.indicators
+        assert _INDICATOR_NO_POSTED_RESULTS not in analysis.indicators
+
+    def test_the_search_stops_at_the_first_posted_result(self):
+        # The `any()`'s short-circuit, kept: a posted result is final, so the
+        # remaining accessions are not requested. Only that answer may stop
+        # the loop — a `None` must not, since a later accession may be the one
+        # that answers.
+        client = _PerAccessionClient(
+            {"NCT00000001": (200, {"hasResults": True}), "NCT00000002": (200, {"hasResults": True})}
+        )
+        self._registration(client, ids=("NCT00000001", "NCT00000002"))
+        assert client.asked == ["NCT00000001"]
+
+    def test_a_refusal_does_not_stop_the_loop(self):
+        client = _PerAccessionClient(
+            {"NCT00000001": (403, None), "NCT00000002": (200, {"hasResults": True})}
+        )
+        analysis = self._registration(client, ids=("NCT00000001", "NCT00000002"))
+        assert client.asked == ["NCT00000001", "NCT00000002"]
+        assert analysis.results_compliant is True
+
+    def test_the_refusal_is_not_silent(self, caplog):
+        # It reaches a stored result as "could not be checked", and it reaches
+        # an operator as a line naming the accession — issue #193's rule, at
+        # the endpoint issue #194 was about.
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            self._registration(_AnsweringClient(403))
+        named = [
+            r for r in caplog.records if "403" in r.getMessage() and "NCT00000001" in r.getMessage()
+        ]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+
+
+class _PerAccessionClient:
+    """Answers ClinicalTrials.gov per accession, recording the order asked."""
+
+    def __init__(self, table: dict[str, tuple[int, object]]):
+        self.table = table
+        self.asked: list[str] = []
+
+    def get(self, url, **kwargs):
+        for nct, (status, payload) in self.table.items():
+            if nct in url:
+                self.asked.append(nct)
+                return _VerbatimResponse(status_code=status, payload=payload)
+        raise AssertionError(f"unexpected url {url!r}")
 
 
 class _EveryRequestFails:
@@ -4425,6 +4859,83 @@ class TestAQuietStatusIsOneADrawEarned:
         # bound (2.1%–6.8% depending on the endpoint), and a bound is not a
         # licence to call any particular status ordinary.
         assert self._SETS[endpoint] == frozenset()
+
+    #: Which constant each helper must be wired to, and how to call it.
+    _WIRING = (
+        ("crossref", "_CROSSREF_ORDINARY_STATUSES"),
+        ("europepmc", "_EUROPEPMC_SEARCH_ORDINARY_STATUSES"),
+        ("pubmed", "_PUBMED_ORDINARY_STATUSES"),
+        ("openalex", "_OPENALEX_ORDINARY_STATUSES"),
+        ("trials", "_CLINICALTRIALS_ORDINARY_STATUSES"),
+    )
+
+    @pytest.mark.parametrize(("helper", "constant"), _WIRING)
+    def test_each_helper_is_wired_to_its_own_constant(self, helper, constant, monkeypatch, caplog):
+        # **The mechanism above and the constants beside it were pinned; the
+        # wire between them was not** (PR #195's review). Deleting all five
+        # `quiet_statuses=` kwargs passed the entire suite, because every set
+        # is empty and an empty set is also the parameter's default — so the
+        # day a draw fills one in, the endpoint would keep WARNING while five
+        # documents said DEBUG. That is issue #191's silence with the fix
+        # installed.
+        #
+        # A status no endpoint will ever measure ordinary (418) keeps this
+        # from ever agreeing with a real future set by luck.
+        from bmlib.transparency import analyzer as analyzer_mod
+
+        monkeypatch.setattr(analyzer_mod, constant, frozenset({418}))
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            _call_helper(analyzer, helper, _AnsweringClient(418))
+        named = [r for r in caplog.records if "418" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.DEBUG
+
+    @pytest.mark.parametrize(("helper", "constant"), _WIRING)
+    def test_no_helper_reads_another_endpoints_constant(
+        self, helper, constant, monkeypatch, caplog
+    ):
+        # The other half: a call site handed the *wrong* one of five
+        # identically-typed constants is undetectable while all five are
+        # empty. Fill every set except this helper's, and it must still warn.
+        from bmlib.transparency import analyzer as analyzer_mod
+
+        for _, other in self._WIRING:
+            if other != constant:
+                monkeypatch.setattr(analyzer_mod, other, frozenset({418}))
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            _call_helper(analyzer, helper, _AnsweringClient(418))
+        named = [r for r in caplog.records if "418" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+
+    def test_every_request_is_paced(self, monkeypatch):
+        # `_rate_limit` moved from five call sites into one, and nothing
+        # noticed when it was deleted — the whole suite passed, 12.1s faster
+        # (PR #195's review). It is bmlib's only politeness control across
+        # five APIs, and this repository has already shipped one sampler run
+        # that hit a host 300 times in 300 seconds.
+        analyzer = TransparencyAnalyzer()
+        calls: list[int] = []
+        monkeypatch.setattr(TransparencyAnalyzer, "_rate_limit", lambda self: calls.append(1))
+        analyzer._request(_AnsweringClient(200), "https://example.org/x", api="A", subject="x")
+        assert len(calls) == 1
+
+    def test_per_request_headers_reach_the_client(self):
+        # `headers=headers` in `_request`'s `client.get` was deletable with
+        # the whole suite green, which would silently drop the
+        # `Accept: application/json` CrossRef and OpenAlex are sent. The
+        # `params` half was already pinned; this is its twin.
+        seen: dict = {}
+
+        class _Client:
+            def get(self, url, **kwargs):
+                seen.update(kwargs)
+                return _VerbatimResponse(status_code=200, payload={})
+
+        TransparencyAnalyzer()._query_crossref(_Client(), "10.1/x")
+        assert seen["headers"] == {"Accept": "application/json"}
 
     def test_the_log_line_names_the_url(self):
         # Issue #184 lived a whole release inside a silence, and the URL is

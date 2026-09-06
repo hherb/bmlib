@@ -29,7 +29,7 @@ measured by diffing a corpus rather than reasoned: over 880 local PMC articles /
 rebuilt, 958 emptied of an `<element-citation>` leak — `authors` for 502 in 14,
 rendered HTML for 576 in 23.
 
-**Eight move stored *transparency* values, and all eight are outside
+**Nine move stored *transparency* values, and all nine are outside
 `fulltext`.** **#184 is the largest *measured* one** — #194 may well be larger
 and nobody has counted it, see below —: every Europe PMC full-text fetch was 404ing, so every analysis
 ran on the abstract. Restoring it moved, over 48 real open-access analyses
@@ -54,7 +54,7 @@ diff; it is a *class* of paper rather than a rate. **Any downstream holding
 stored transparency results for papers with registered trials should recompute
 them.**
 
-The other six are smaller. **#112** admits `plc`/`pty` to `_INDUSTRY_WORDS`, so
+The other seven are smaller. **#112** admits `plc`/`pty` to `_INDUSTRY_WORDS`, so
 `"GSK plc"` now sets `industry_funding_detected`, feeding a HIGH-risk rule and a
 quality downgrade — but neither token is in the labelled corpus, so **no
 measured figure moves**, which is why the omission sat unnoticed. **#119** stops
@@ -69,11 +69,27 @@ downgrade and not. **#161** adds a field rather than moving one —
 paths. **#187/#190/#191** move that field and nothing else: `REQUEST_FAILED`
 joins the enum, `NOT_SERVED` narrows to the 404, and an empty body that read
 `entirely_nested` drops the *"served but not usable"* indicator it should never
-have carried. **#193** likewise moves that field alone: `SEARCH_FAILED` splits
-a Europe PMC outage out of `not_attempted`, and adds a COI indicator on a path
-that carried none. A downstream matching either prose, or branching on the
+have carried. **#193** moves **two** fields: `SEARCH_FAILED` splits
+a Europe PMC outage out of `not_attempted`, *and* it adds a COI indicator to
+`risk_indicators`, which is persisted — so "moves that field alone" was wrong
+here in the same shorthand PR #192's review already corrected once (PR #195's
+review). A downstream matching either prose, or branching on the
 member rather than on `is_refusal`, has to widen — which is what `is_refusal`
-is for.
+is for; and one pinned to an older bmlib does not merely miss the member, it
+raises out of `from_dict` on a row this version writes.
+
+**#194 moves a second field, and correcting the header was not the whole fix**
+(PR #195's review). The `bool` stood, so a 404, a 403 or an unusable body still
+made the caller store *"Registered trial without posted results"* — the false
+claim narrowed from *always* to *whenever CT.gov does not answer*, which is a
+smaller population and the same lie. `_check_trial_results` is a tri-state now
+and the caller reports three outcomes, so a paper whose CT.gov requests all
+failed swaps that line for *"Trial registration found; posted-results status
+could not be checked"*. Both downstreams render the flag rather than the
+indicator — BioMedicalNews's `reading_pane.html`, bmlibrarian_lite's risk badge
+— so **a downstream holding stored transparency results for papers with
+registered trials should recompute them**, and #198 is the public field that
+still cannot tell the two apart.
 
 **The JATS fixes reach a bmlib path through the cached HTML**, a claim this file
 once had backwards twice: `_build_html` renders authors, figures, tables and both
@@ -149,8 +165,8 @@ because a redraw moves the sample, the bytes and the walk at once.
 
 *Live behaviour.* **A property only a real remote can refute needs a real
 probe.** #194 — ClinicalTrials.gov 403ing bmlib's `User-Agent`, so no paper had
-ever been credited with posted results — was invisible to every one of 3,227
-tests because all of them mock the client, and it surfaced the first time an
+ever been credited with posted results — was invisible to the whole suite because
+**no test in it makes a live request**, and it surfaced the first time an
 instrument presented bmlib's own identity to the live endpoint. **A sampler
 must address *and head* requests exactly as the code does**: #184's lesson is
 usually told about URLs, and the header is the same lesson.
@@ -193,9 +209,23 @@ repeated here; three things a next session should know concretely:
   one; `_VerbatimResponse` beside it is what a test about a falsy body must
   use.
 
-**#193 does not close the family**: #186 and #188 remain, and
-`_check_trial_results` still answers *"no results posted"* and *"not answered"*
-with one `bool` — recorded in `docs/DECISIONS.md` as a deliberate residual.
+**#193 does not close the family**: #186 and #188 remain. The
+`_check_trial_results` residual recorded here as deliberate was **taken rather
+than kept** — PR #195's review showed it was still storing a false claim
+whenever CT.gov did not answer, and that the remedy cost six lines. What
+remains of it is #198, one level up: `trial_results_compliant` is a bare `bool`
+for three claims that `risk_indicators` distinguishes.
+
+**PR #195's review filed eight follow-ups, #196-#203**, none urgent and several
+worth a decision rather than a patch: #196 a second `User-Agent` built inline
+in `publications/sync.py`, outside `_user_agent` and outside any sampler;
+#197 the retryability grouping `FullTextStatus` names as the reason two members
+exist and mechanises nowhere; #199 four JSON consumers calling `.get()` on an
+unchecked shape, so a JSON list escapes the public `analyze()`; #202 a failed
+Europe PMC search re-issued by `_find_trial_ids` against its own docstring;
+and #203 a PubMed `<CoiStatement>` retracting the search-failure line, so a
+HIGH verdict with a downgrade can carry only a COI *success* — #193's own
+complaint reintroduced through the retraction set. #200 and #201 are shape.
 
 ## Current state
 
@@ -275,9 +305,11 @@ lose every figure image in a document binding XLink to another prefix.
 **Nothing in the list is urgent in the way #184 and #194 were**, so the next
 choice is a judgement rather than a forced move. #186 and #188 are the last of
 the full-text-refusal family and both are decisions rather than fixes (below);
-#178 is the one open *question* rather than a defect. **The lesson of #194 is
+#178 is the one open *question* rather than a defect, and #196-#203 are PR
+#195's review, of which #203 and #198 are the two that touch what a reader of a
+stored result can reconstruct. **The lesson of #194 is
 worth acting on rather than only recording**: it was a live-only defect that
-every one of 3,227 mocked-client tests missed, found the first time an
+the whole suite missed — no test in it makes a live request — found the first time an
 instrument presented bmlib's real identity to a real remote. Nothing else in
 `transparency/` or `fulltext/` has ever been probed that way, so the *class*
 is open even though the instance is closed.
