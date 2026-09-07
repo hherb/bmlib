@@ -41,6 +41,7 @@ from bmlib.transparency.models import (
     TransparencyRisk,
     TransparencySettings,
     TransparencyUnknownReason,
+    TrialResultsStatus,
     calculate_risk_level,
 )
 
@@ -547,42 +548,99 @@ _DEPOSITION_DATABANK_LEVELS: dict[str, str] = {
 # `coi_disclosed=True`. They are named once, in
 # `_INDICATORS_RETRACTED_BY_PUBMED_COI` below.
 _INDICATOR_NO_COI_IN_FULLTEXT = "No COI disclosure found in full text"
-_INDICATOR_COI_UNKNOWN = "COI disclosure status unknown (full text unavailable)"
-# The same finding for a document that *was* served. "Unavailable" is a claim
-# about EuropePMC, and on a refusal path it is false: HTTP 200 with a document
-# that bmlib then declined to scan. `risk_indicators` is persisted, so this
-# reaches a stored result — but as prose for humans, which is why
-# `FullTextStatus` sits beside it as the machine-readable form (issue #161,
-# and the argument `unknown_reason` made for issue #21).
-_INDICATOR_COI_UNKNOWN_REFUSED = "COI disclosure status unknown (full text served but not usable)"
-# The same finding again, for the outage in which the full-text step was never
-# reached at all (issue #193). "Unavailable" would be a claim about EuropePMC
-# and "served but not usable" a claim about a document, and neither happened:
-# the search that gates the step produced no answer. Before this line the path
-# appended nothing, so a HIGH verdict with a tier downgrade carried an empty
-# `risk_indicators` and no stated reason.
-_INDICATOR_COI_UNKNOWN_SEARCH_FAILED = "COI disclosure status unknown (EuropePMC lookup failed)"
+# **One claim, and it used to be three lines carrying two each** (issue #203).
+# The text was `"… unknown (full text unavailable)"`, with siblings reading
+# `"(full text served but not usable)"` (issue #161) and `"(EuropePMC lookup
+# failed)"` (issue #193). Each parenthetical said what became of the full text
+# — and all three sat in `_INDICATORS_RETRACTED_BY_PUBMED_COI`, so a PubMed
+# `<CoiStatement>` refuting the COI half took the provenance with it and a
+# HIGH verdict with a tier downgrade could carry a COI *success* as its only
+# human-readable line. That is issue #193's own complaint reintroduced through
+# the retraction set.
+#
+# So the COI claim is one line, and what became of the full text is a
+# **provenance** line from `_FULL_TEXT_PROVENANCE_INDICATORS` below — which
+# also makes the parentheticals honest, `"(full text unavailable)"` having
+# been a claim about EuropePMC that is false for `REQUEST_FAILED` (issue
+# #191's defect, surviving in the prose half).
+_INDICATOR_COI_UNKNOWN = "COI disclosure status unknown"
 _INDICATOR_COI_IN_PUBMED = "COI disclosure found in PubMed record"
 #: The COI lines written before PubMed is consulted, every one of which claims
-#: the status is undeterminable — so a `<CoiStatement>` arriving afterwards
-#: refutes all of them at once and they are retracted together (see
-#: :func:`_merge_pubmed_signals`). A set rather than a tuple spelled out at the
-#: one call site, for `FullTextStatus.is_refusal`'s reason one module over: the
-#: third member was added with the refusal indicator and *not* added to the
-#: enumeration, so a served-and-refused full text with a PubMed statement
-#: stored "status unknown" beside "disclosure found" — permanently, in a
-#: persisted field, which is issue #161's own failure mode inside its fix.
-#: A fourth line now has one place to be declared and one to be forgotten —
-#: and issue #193 added exactly that fourth line, which is why the set is
-#: worth more than the tuple it replaced.
+#: the status is undeterminable and **nothing else** — so a `<CoiStatement>`
+#: arriving afterwards refutes all of them at once and they are retracted
+#: together (see :func:`_merge_pubmed_signals`). A set rather than a tuple
+#: spelled out at the one call site, for `FullTextStatus.is_refusal`'s reason
+#: one module over: a third member was once added at the appending site and
+#: not here, so a served-and-refused full text with a PubMed statement stored
+#: "status unknown" beside "disclosure found" — permanently, in a persisted
+#: field, which is issue #161's own failure mode inside its fix.
+#:
+#: It held four lines until issue #203 showed the set was the wrong place to
+#: solve that: three of them also said what became of the full text, and a
+#: retraction is all-or-nothing. Splitting the claims shrank it to two, and
+#: what a line must satisfy to belong here is now stated rather than implied —
+#: it asserts something about the COI status and nothing else.
 _INDICATORS_RETRACTED_BY_PUBMED_COI = frozenset(
     {
         _INDICATOR_NO_COI_IN_FULLTEXT,
         _INDICATOR_COI_UNKNOWN,
-        _INDICATOR_COI_UNKNOWN_REFUSED,
-        _INDICATOR_COI_UNKNOWN_SEARCH_FAILED,
     }
 )
+#: What became of the full text, in prose, keyed on the status that decided it
+#: (issue #203). One line per outcome, and the mapping is the point: the three
+#: parentheticals it replaces were written on three branches, so they could
+#: only ever be as fine-grained as the branch, and `REQUEST_FAILED` shared
+#: *"full text unavailable"* with the 404 it was split away from (issue #191).
+#: Keyed on the enum, the prose is exactly as precise as the machine-readable
+#: half and cannot silently stop describing it — every member must appear
+#: here or in :data:`_STATUSES_WITH_NO_PROVENANCE_LINE`, which
+#: ``test_every_status_says_what_happened`` pins. The
+#: ``TestTheAuditNetIsComplete`` rule one package over: a rule enforced by
+#: prose is not enforced.
+#:
+#: These lines are **never retracted**, which is what issue #203 is about.
+#: That is enforced structurally rather than by keeping them out of
+#: :data:`_INDICATORS_RETRACTED_BY_PUBMED_COI`: :func:`_note_full_text_provenance`
+#: runs after every step, so there is no window in which a retraction could
+#: reach them. ``test_no_provenance_line_is_retractable`` is the belt to that
+#: brace, since a future line appended earlier would be silently retractable.
+#:
+#: None of them states the score cost. Each says one thing — what happened —
+#: and the points lost are on the result and in the WARNING that names the
+#: step; a number restated in prose is a number that goes stale.
+_FULL_TEXT_PROVENANCE_INDICATORS: dict[FullTextStatus, str] = {
+    FullTextStatus.NOT_ATTEMPTED: (
+        "Full text not scanned (EuropePMC holds no open-access full text for this article)"
+    ),
+    FullTextStatus.SEARCH_FAILED: (
+        "Full text not scanned (the EuropePMC search produced no answer)"
+    ),
+    FullTextStatus.NOT_SERVED: "Full text not scanned (EuropePMC served none for this article)",
+    FullTextStatus.REQUEST_FAILED: (
+        "Full text not scanned (the request to EuropePMC produced no answer)"
+    ),
+    FullTextStatus.TRUNCATED: (
+        "Full text not scanned (served, but the document did not arrive whole)"
+    ),
+    FullTextStatus.UNTERMINATED_MARKUP: (
+        "Full text not scanned (served, but its markup does not terminate)"
+    ),
+    FullTextStatus.UNCLOSED_REGION: (
+        "Full text not scanned (served, but a nested-article region is left open)"
+    ),
+    FullTextStatus.ENTIRELY_NESTED: (
+        "Full text not scanned (served, but nothing outside a nested-article region remained)"
+    ),
+}
+
+#: The other side of the same partition, named rather than defaulted. Only
+#: :attr:`FullTextStatus.ANALYZED` belongs: the text was scanned, so there is
+#: nothing to explain, and a line here would be noise on every successful
+#: analysis. A member added later and listed in neither collection is a red
+#: test rather than a silent omission — which matters because the silent
+#: omission is invisible, the result simply carrying one line fewer.
+_STATUSES_WITH_NO_PROVENANCE_LINE = frozenset({FullTextStatus.ANALYZED})
+
 _INDICATOR_INDUSTRY_COI = "Industry ties disclosed in COI statement"
 _INDICATOR_DATA_NOT_AVAILABLE = "Data explicitly not available"
 # A prefix, completed with the repository names. `data_availability_level`
@@ -970,6 +1028,12 @@ class _Analysis:
             text scanned, none found), ``None`` (undeterminable).
         trial_registered: A trial registration was established.
         results_compliant: Posted results were found for a registered trial.
+        trial_results_status: What became of the posted-results check — see
+            :class:`~bmlib.transparency.models.TrialResultsStatus`. Defaults
+            to ``NOT_REGISTERED``, which is what an analysis that never
+            establishes a registration should carry, and like
+            ``full_text_status`` it is never ``None`` here: the carrier is
+            built fresh by every analysis, so *"not recorded"* cannot arise.
         full_text_analyzed: Findings came from full text, not just an abstract.
         full_text_status: What became of the full-text attempt — see
             :class:`~bmlib.transparency.models.FullTextStatus`. Defaults to
@@ -1001,6 +1065,7 @@ class _Analysis:
     coi_disclosed: bool | None = None
     trial_registered: bool = False
     results_compliant: bool = False
+    trial_results_status: TrialResultsStatus = TrialResultsStatus.NOT_REGISTERED
     full_text_analyzed: bool = False
     funder_info_scored: bool = False
     full_text_status: FullTextStatus = FullTextStatus.NOT_ATTEMPTED
@@ -1067,6 +1132,83 @@ class _Analysis:
         """
         if _DATA_LEVEL_RANK[level] > _DATA_LEVEL_RANK[self.data_level]:
             self.data_level = level
+
+
+def _find_trial_ids(epmc: dict | None) -> list[str]:
+    """Return NCT ids that identify *this* paper's own registered trial.
+
+    The abstract is scanned for ``NCT`` accession numbers, but a match is only
+    credited as the paper's own registration when it appears next to
+    registration language (see :data:`_REGISTRATION_CUE_RE`). Abstracts that
+    list three or more distinct ids are treated as citation lists — e.g. a
+    systematic review or pooled analysis enumerating its constituent trials —
+    and return nothing, so a review is not credited for registrations that
+    belong to studies it merely cites.
+
+    *epmc* is the record ``analyze()`` already fetched, and this reads it
+    rather than fetching anything: no client, and **no fallback query**. It
+    was a method taking a client, documented as *"falling back to a fresh
+    query only if it was not supplied, so the same search is not issued twice
+    per document"* — decided with ``if data is None``, which is exactly what a
+    **failed** search returns, so during an outage the identical failing
+    search went out twice and (since the failure gained a log line) was
+    reported twice for one document (issue #202).
+
+    A sentinel telling the two ``None``s apart would have fixed that. Deleting
+    the fallback fixes it structurally, and is available because ``analyze()``
+    is the only caller and has always had the record in hand: a trial id
+    scraped out of an abstract bmlib never received is not a thing that can
+    happen. ``None`` therefore returns nothing, quietly — the outage has
+    already been reported where it happened.
+    """
+    if not epmc:
+        return []
+
+    results = epmc.get("resultList", {}).get("result", [])
+    if not results:
+        return []
+
+    # Strip XML/HTML markup so cue detection is not thrown off by tags.
+    abstract = _TAG_RE.sub(" ", results[0].get("abstractText") or "")
+
+    # Deduplicate while preserving order, normalizing to the canonical
+    # upper-case form ClinicalTrials.gov uses.
+    distinct_ids = list(dict.fromkeys(m.upper() for m in _NCT_ID_RE.findall(abstract)))
+    if not distinct_ids or len(distinct_ids) > _MAX_OWN_TRIAL_IDS:
+        return []
+
+    for match in _NCT_ID_RE.finditer(abstract):
+        window = abstract[
+            max(0, match.start() - _REGISTRATION_CUE_WINDOW) : match.end()
+            + _REGISTRATION_CUE_WINDOW
+        ]
+        if _REGISTRATION_CUE_RE.search(window):
+            return distinct_ids
+
+    return []
+
+
+def _note_full_text_provenance(analysis: _Analysis) -> None:
+    """Record what became of the full text, as prose that cannot be retracted.
+
+    A module-level function for :func:`_merge_pubmed_signals`' reason — it
+    needs no HTTP client — and called from ``analyze()`` **after every step
+    has run**, which is the whole design rather than an ordering detail. The
+    defect issue #203 is about is that this information used to be a
+    parenthetical inside a COI line, which
+    :data:`_INDICATORS_RETRACTED_BY_PUBMED_COI` removes wholesale when PubMed
+    supplies a ``<CoiStatement>``; appending here puts it structurally beyond
+    that retraction, where keeping it out of the set would leave the rule
+    enforced by set membership — and membership is exactly what went wrong
+    twice already (issues #161 and #193).
+
+    Silent for :attr:`FullTextStatus.ANALYZED`, the one member with nothing to
+    explain. Every other member must have a line: see
+    :data:`_FULL_TEXT_PROVENANCE_INDICATORS`.
+    """
+    line = _FULL_TEXT_PROVENANCE_INDICATORS.get(analysis.full_text_status)
+    if line is not None:
+        analysis.indicators.append(line)
 
 
 def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
@@ -1696,6 +1838,9 @@ class TransparencyAnalyzer:
                 # this version's own output indistinguishable from a legacy
                 # row, which is the discrimination the field exists to give.
                 full_text_status=FullTextStatus.NOT_ATTEMPTED,
+                # And the same, for the same reason (issue #198): a disabled
+                # analyzer establishes no registration, so nothing was asked.
+                trial_results_status=TrialResultsStatus.NOT_REGISTERED,
             )
 
         try:
@@ -1715,6 +1860,14 @@ class TransparencyAnalyzer:
                 unknown_reason=TransparencyUnknownReason.NO_IDENTIFIER,
                 # Likewise: no identifier, so no request was made.
                 full_text_status=FullTextStatus.NOT_ATTEMPTED,
+                # A literal here and read off the carrier at the UNREACHABLE
+                # return below, because there is no carrier yet — the same
+                # split `full_text_status` makes on the line above. Recorded
+                # rather than left `None` so that `None` keeps meaning *this
+                # result predates the field*: a version that leaves it unset
+                # on any path makes a current row indistinguishable from a
+                # legacy one, which is the rule issue #161 established.
+                trial_results_status=TrialResultsStatus.NOT_REGISTERED,
             )
 
         self._api_reachable = False
@@ -1744,7 +1897,12 @@ class TransparencyAnalyzer:
                 # `analyze()` has already refused the no-identifier case
                 # above and `_fetch_europepmc` queries on either one.
                 analysis.full_text_status = FullTextStatus.SEARCH_FAILED
-                analysis.indicators.append(_INDICATOR_COI_UNKNOWN_SEARCH_FAILED)
+                # The COI claim only. What became of the full text is the
+                # provenance line `_note_full_text_provenance` appends after
+                # every step, from this very status — which is what keeps the
+                # outage on the record when PubMed supplies a `<CoiStatement>`
+                # and the COI line is retracted (issue #203).
+                analysis.indicators.append(_INDICATOR_COI_UNKNOWN)
                 # The step that was lost, named where it was lost. `_request`
                 # reports the request and deliberately does not claim a
                 # consequence, because it is shared by five call sites whose
@@ -1774,9 +1932,7 @@ class TransparencyAnalyzer:
 
             # --- ClinicalTrials.gov (trial registration) ---
             if doi or pmid:
-                self._check_trial_registration(
-                    client, pmid, doi, analysis, epmc=epmc, pubmed=pubmed
-                )
+                self._check_trial_registration(client, analysis, epmc=epmc, pubmed=pubmed)
 
         # If not one external API responded, we measured nothing: report the
         # result as UNKNOWN rather than letting an all-zero score read as HIGH
@@ -1803,7 +1959,24 @@ class TransparencyAnalyzer:
                 # path the issue opens with.
                 # Pinned by `test_a_total_outage_still_records_which_step_never_ran`.
                 full_text_status=analysis.full_text_status,
+                # Read from the carrier for the same reason. In a total outage
+                # this is `NOT_REGISTERED` — nothing was established, because
+                # nothing answered — which is a weaker claim than it looks
+                # beside `risk_level=UNKNOWN` and `unknown_reason`. What it
+                # buys is that every path this version writes records the
+                # field (issue #198).
+                trial_results_status=analysis.trial_results_status,
             )
+
+        # After every step, and deliberately after `_merge_pubmed_signals`:
+        # this line says what became of the full text, which a PubMed
+        # `<CoiStatement>` refutes no part of, so it must be out of reach of
+        # the retraction rather than merely absent from its set (issue #203).
+        # Placed after the UNREACHABLE return above because that result
+        # substitutes its own indicator — an UNKNOWN verdict reports no
+        # findings at all, and `full_text_status` carries the finer answer
+        # there.
+        _note_full_text_provenance(analysis)
 
         # Awarded here rather than by the step that found the level: two
         # sources nominate one, and the component is worth its points once.
@@ -1829,6 +2002,7 @@ class TransparencyAnalyzer:
             coi_disclosed=analysis.coi_disclosed,
             trial_registered=analysis.trial_registered,
             trial_results_compliant=analysis.results_compliant,
+            trial_results_status=analysis.trial_results_status,
             risk_indicators=analysis.indicators,
             full_text_analyzed=analysis.full_text_analyzed,
             full_text_status=analysis.full_text_status,
@@ -1935,13 +2109,16 @@ class TransparencyAnalyzer:
             # Full text inspected and no COI statement found -> explicitly absent.
             analysis.coi_disclosed = False
             analysis.indicators.append(_INDICATOR_NO_COI_IN_FULLTEXT)
-        elif analysis.full_text_status.is_refusal:
-            # Served, and refused. "Unavailable" would be a false claim about
-            # EuropePMC, and this line is persisted in `risk_indicators`
-            # (issue #161). The status beside it carries which refusal it was.
-            analysis.indicators.append(_INDICATOR_COI_UNKNOWN_REFUSED)
         else:
-            # Could not inspect full text; status is genuinely unknown.
+            # Could not inspect full text; the COI status is genuinely
+            # unknown — and that is the whole of what this line says. It used
+            # to fork on `full_text_status.is_refusal` to append one of two
+            # strings whose parentheticals said *why* the text was not
+            # scanned, which made a single line carry two claims and put the
+            # provenance inside the reach of the PubMed retraction (issue
+            # #203). The why is `_note_full_text_provenance`'s, keyed on the
+            # status rather than on this branch, so it distinguishes eight
+            # outcomes where the fork distinguished two.
             analysis.indicators.append(_INDICATOR_COI_UNKNOWN)
 
         # Data availability. The level is found into a local and nominated
@@ -2424,8 +2601,6 @@ class TransparencyAnalyzer:
     def _check_trial_registration(
         self,
         client: Any,
-        pmid: str | None,
-        doi: str | None,
         analysis: _Analysis,
         *,
         epmc: dict | None = None,
@@ -2443,10 +2618,13 @@ class TransparencyAnalyzer:
         registry, or a ClinicalTrials.gov entry with an unusable accession —
         counts as registered, but no claim is made about posted results either
         way.
+
+        Takes no ``pmid``/``doi``: they existed only to let the heuristic
+        re-issue the EuropePMC search, which is what issue #202 removed.
         """
         pubmed = pubmed or _PubMedSignals()
 
-        ct_ids = list(pubmed.trial_accessions) or self._find_trial_ids(client, pmid, doi, epmc=epmc)
+        ct_ids = list(pubmed.trial_accessions) or _find_trial_ids(epmc)
         if ct_ids or pubmed.registration_not_checkable:
             analysis.trial_registered = True
             analysis.score += SCORE_TRIAL_REGISTERED
@@ -2483,19 +2661,31 @@ class TransparencyAnalyzer:
                     break
             if compliant:
                 analysis.results_compliant = True
+                analysis.trial_results_status = TrialResultsStatus.POSTED
                 analysis.score += SCORE_RESULTS_POSTED
             elif answered:
+                analysis.trial_results_status = TrialResultsStatus.NOT_POSTED
                 analysis.indicators.append(_INDICATOR_NO_POSTED_RESULTS)
             else:
                 # Asked, and not one accession answered. The same line the
                 # other-registry case gets, because the claim is identical —
                 # *"could not be checked"* — and it puts nothing in
                 # ClinicalTrials.gov's mouth, which is the whole distinction
-                # issues #187/#190/#191 drew. The two causes are not split
-                # because nothing downstream could act on the difference;
-                # what one *can* act on is that this is not a finding.
+                # issues #187/#190/#191 drew. The two causes are not split in
+                # *prose* because nothing downstream could act on the
+                # difference in a sentence; what one can act on is that this
+                # is not a finding.
+                #
+                # The **status** does split them, and that is not a
+                # disagreement (issue #198): *"would re-running change this?"*
+                # is `yes` here and `no` for the other-registry case below,
+                # which is the question `FullTextStatus.REQUEST_FAILED`
+                # exists to answer one endpoint over and the one results
+                # being cacheable makes worth storing.
+                analysis.trial_results_status = TrialResultsStatus.REQUEST_FAILED
                 analysis.indicators.append(_INDICATOR_RESULTS_NOT_CHECKABLE)
         elif pubmed.registration_not_checkable:
+            analysis.trial_results_status = TrialResultsStatus.NOT_CHECKABLE
             analysis.indicators.append(_INDICATOR_RESULTS_NOT_CHECKABLE)
 
     # --- API query helpers ---
@@ -2786,58 +2976,6 @@ class TransparencyAnalyzer:
             headers=JSON_ACCEPT_HEADERS,
             quiet_statuses=_OPENALEX_ORDINARY_STATUSES,
         )
-
-    def _find_trial_ids(
-        self,
-        client: Any,
-        pmid: str | None,
-        doi: str | None,
-        *,
-        epmc: dict | None = None,
-    ) -> list[str]:
-        """Return NCT ids that identify *this* paper's own registered trial.
-
-        The abstract is scanned for ``NCT`` accession numbers, but a match is
-        only credited as the paper's own registration when it appears next to
-        registration language (see :data:`_REGISTRATION_CUE_RE`). Abstracts that
-        list three or more distinct ids are treated as citation lists — e.g. a
-        systematic review or pooled analysis enumerating its constituent trials —
-        and return nothing, so a review is not credited for registrations that
-        belong to studies it merely cites.
-
-        Reuses the EuropePMC record already fetched by :meth:`analyze` when
-        available, falling back to a fresh query only if it was not supplied,
-        so the same search is not issued twice per document.
-        """
-        data = epmc
-        if data is None:
-            query = f'DOI:"{doi}"' if doi else f"EXT_ID:{pmid}"
-            data = self._query_europepmc(client, query)
-        if not data:
-            return []
-
-        results = data.get("resultList", {}).get("result", [])
-        if not results:
-            return []
-
-        # Strip XML/HTML markup so cue detection is not thrown off by tags.
-        abstract = _TAG_RE.sub(" ", results[0].get("abstractText") or "")
-
-        # Deduplicate while preserving order, normalizing to the canonical
-        # upper-case form ClinicalTrials.gov uses.
-        distinct_ids = list(dict.fromkeys(m.upper() for m in _NCT_ID_RE.findall(abstract)))
-        if not distinct_ids or len(distinct_ids) > _MAX_OWN_TRIAL_IDS:
-            return []
-
-        for match in _NCT_ID_RE.finditer(abstract):
-            window = abstract[
-                max(0, match.start() - _REGISTRATION_CUE_WINDOW) : match.end()
-                + _REGISTRATION_CUE_WINDOW
-            ]
-            if _REGISTRATION_CUE_RE.search(window):
-                return distinct_ids
-
-        return []
 
     def _check_trial_results(self, client: Any, nct_id: str) -> bool | None:
         """Check if a ClinicalTrials.gov trial has posted results.

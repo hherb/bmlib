@@ -28,6 +28,7 @@ from bmlib.transparency.models import (
     TransparencyRisk,
     TransparencySettings,
     TransparencyUnknownReason,
+    TrialResultsStatus,
     calculate_risk_level,
 )
 
@@ -38,5 +39,6 @@ __all__ = [
     "TransparencyRisk",
     "TransparencySettings",
     "TransparencyUnknownReason",
+    "TrialResultsStatus",
     "calculate_risk_level",
 ]

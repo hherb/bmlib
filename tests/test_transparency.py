@@ -35,10 +35,9 @@ from bmlib.transparency.analyzer import (
     _DATA_PATTERNS,
     _DEPOSITION_DATABANK_LEVELS,
     _EUROPEPMC_SEARCH_ORDINARY_STATUSES,
+    _FULL_TEXT_PROVENANCE_INDICATORS,
     _INDICATOR_COI_IN_PUBMED,
     _INDICATOR_COI_UNKNOWN,
-    _INDICATOR_COI_UNKNOWN_REFUSED,
-    _INDICATOR_COI_UNKNOWN_SEARCH_FAILED,
     _INDICATOR_DATA_DEPOSITED_PREFIX,
     _INDICATOR_DATA_NOT_AVAILABLE,
     _INDICATOR_INDUSTRY_COI,
@@ -51,6 +50,7 @@ from bmlib.transparency.analyzer import (
     _NESTED_ARTICLE_TOKEN_RE,
     _OPENALEX_ORDINARY_STATUSES,
     _PUBMED_ORDINARY_STATUSES,
+    _STATUSES_WITH_NO_PROVENANCE_LINE,
     _TRIAL_REGISTRY_NAMES,
     _UNTERMINATED_OPENER_NAMES,
     DEFAULT_INDUSTRY_CONFIDENCE,
@@ -66,6 +66,7 @@ from bmlib.transparency.analyzer import (
     TEXT_INDUSTRY_CONFIDENCE,
     TransparencyAnalyzer,
     _Analysis,
+    _find_trial_ids,
     _merge_pubmed_signals,
     _parse_pubmed_signals,
     _PubMedSignals,
@@ -75,13 +76,16 @@ from bmlib.transparency.analyzer import (
     _user_agent,
 )
 from bmlib.transparency.models import (
+    _ANSWERED_TRIAL_RESULTS_STATUSES,
     _NOT_REFUSED_FULL_TEXT_STATUSES,
     _REFUSED_FULL_TEXT_STATUSES,
+    _UNANSWERED_TRIAL_RESULTS_STATUSES,
     FullTextStatus,
     TransparencyResult,
     TransparencyRisk,
     TransparencySettings,
     TransparencyUnknownReason,
+    TrialResultsStatus,
     calculate_risk_level,
 )
 
@@ -1262,11 +1266,13 @@ class TestANestedArticleIsNotThisArticles:
             analyzer._check_europepmc(client, _epmc_record(), analysis)
         assert analysis.full_text_analyzed is False
         assert analysis.coi_disclosed is None
-        # Served and refused, so the line says so (issue #161). "Unavailable"
-        # is a claim about EuropePMC and it is false here: HTTP 200 with a
-        # document bmlib then declined to scan.
-        assert _INDICATOR_COI_UNKNOWN_REFUSED in analysis.indicators
-        assert _INDICATOR_COI_UNKNOWN not in analysis.indicators
+        # Served and refused, so the *status* says so (issue #161) and the
+        # provenance line `analyze()` appends from it says so in prose (issue
+        # #203). This step's COI line makes the COI claim and nothing else: it
+        # used to carry "(full text served but not usable)" inside it, and the
+        # PubMed retraction then took that away with the COI half.
+        assert analysis.full_text_status is FullTextStatus.UNCLOSED_REGION
+        assert _INDICATOR_COI_UNKNOWN in analysis.indicators
         # The level is asserted, not just the message: `at_level(WARNING)`
         # admits ERROR, and ERROR is the level this module reserves for "bmlib
         # is wrong" — the distinction this test's own comment turns on.
@@ -1288,8 +1294,8 @@ class TestANestedArticleIsNotThisArticles:
             analyzer._check_europepmc(client, _epmc_record(), analysis)
         assert analysis.full_text_analyzed is False
         assert analysis.coi_disclosed is None
-        assert _INDICATOR_COI_UNKNOWN_REFUSED in analysis.indicators
-        assert _INDICATOR_COI_UNKNOWN not in analysis.indicators
+        assert analysis.full_text_status is FullTextStatus.UNTERMINATED_MARKUP
+        assert _INDICATOR_COI_UNKNOWN in analysis.indicators
         matching = [r for r in caplog.records if "is not well-formed" in r.getMessage()]
         assert len(matching) == 1
         assert matching[0].levelno == logging.WARNING
@@ -1708,72 +1714,63 @@ class TestFindTrialIds:
     EuropePMC abstracts)."""
 
     def test_registered_rct_clinicaltrials_gov_phrasing_credited(self):
-        analyzer = TransparencyAnalyzer()
         epmc = _epmc_record(
             "Funded by the National Institutes of Health; ClinicalTrials.gov number, NCT01206062."
         )
-        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == ["NCT01206062"]
+        assert _find_trial_ids(epmc) == ["NCT01206062"]
 
     def test_registered_rct_label_form_credited(self):
         # "NCT number: NCT..." / "(NCT) Identified Number: NCT..." label forms.
-        analyzer = TransparencyAnalyzer()
         epmc = _epmc_record(
             "Trial registration National Clinical Trial (NCT) Identified Number: NCT04088331."
         )
-        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == ["NCT04088331"]
+        assert _find_trial_ids(epmc) == ["NCT04088331"]
 
     def test_two_linked_own_trials_credited(self):
         # A paper reporting its own two linked registrations (e.g. ROMANA 1/2).
-        analyzer = TransparencyAnalyzer()
         epmc = _epmc_record(
             "Trial registration NCT identifiers: ROMANA 1: NCT01387269; ROMANA 2: NCT01387282."
         )
-        result = analyzer._find_trial_ids(None, None, None, epmc=epmc)
+        result = _find_trial_ids(epmc)
         assert result == ["NCT01387269", "NCT01387282"]
 
     def test_review_listing_many_trials_not_credited(self):
         # A pooled analysis / review enumerating its constituent trials.
-        analyzer = TransparencyAnalyzer()
         epmc = _epmc_record(
             "Trial registry name and numbers: ASCEND (NCT01416181), "
             "ADVANCE (NCT00906399), DECIDE (NCT01064401)."
         )
-        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == []
+        assert _find_trial_ids(epmc) == []
 
     def test_review_prose_listing_included_trials_not_credited(self):
-        analyzer = TransparencyAnalyzer()
         epmc = _epmc_record(
             "We included five randomized controlled trials (NCT01111111, "
             "NCT02222222, NCT03333333, NCT04444444, NCT05555555) in the analysis."
         )
-        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == []
+        assert _find_trial_ids(epmc) == []
 
     def test_bare_nct_without_registration_language_not_credited(self):
         # A single NCT mentioned with no registration cue is ambiguous; the
         # conservative choice is not to credit it as the paper's registration.
-        analyzer = TransparencyAnalyzer()
         epmc = _epmc_record("Outcomes were compared across 20 high-volume centers (NCT03461341).")
-        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == []
+        assert _find_trial_ids(epmc) == []
 
     def test_registration_cue_after_id_credited(self):
         # The cue may follow the id: "NCT…; registered at ClinicalTrials.gov".
-        analyzer = TransparencyAnalyzer()
         epmc = _epmc_record(
             "This study (NCT01234567, registered at ClinicalTrials.gov) enrolled 400 patients."
         )
-        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == ["NCT01234567"]
+        assert _find_trial_ids(epmc) == ["NCT01234567"]
 
     def test_lowercase_nct_id_credited_and_normalized(self):
         # NCT ids are conventionally upper-case but must match regardless of
         # case, and be returned in the canonical upper-case form.
-        analyzer = TransparencyAnalyzer()
         epmc = _epmc_record("Trial registration: nct01206062.")
-        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == ["NCT01206062"]
+        assert _find_trial_ids(epmc) == ["NCT01206062"]
 
     def test_no_nct_returns_empty(self):
-        analyzer = TransparencyAnalyzer()
         epmc = _epmc_record("No trials here.")
-        assert analyzer._find_trial_ids(None, None, None, epmc=epmc) == []
+        assert _find_trial_ids(epmc) == []
 
 
 class TestCheckTrialRegistration:
@@ -1790,7 +1787,7 @@ class TestCheckTrialRegistration:
 
         epmc = _epmc_record("We included three trials (NCT01111111, NCT02222222, NCT03333333).")
         analysis = _Analysis()
-        analyzer._check_trial_registration(_Client(), "123", None, analysis, epmc=epmc)
+        analyzer._check_trial_registration(_Client(), analysis, epmc=epmc)
         assert analysis.trial_registered is False
         assert analysis.results_compliant is False
         assert analysis.score == 0
@@ -1804,7 +1801,7 @@ class TestCheckTrialRegistration:
 
         epmc = _epmc_record("ClinicalTrials.gov number, NCT01206062.")
         analysis = _Analysis()
-        analyzer._check_trial_registration(_Client(), "123", None, analysis, epmc=epmc)
+        analyzer._check_trial_registration(_Client(), analysis, epmc=epmc)
         assert analysis.trial_registered is True
         assert analysis.score == 20  # SCORE_TRIAL_REGISTERED
 
@@ -1822,7 +1819,7 @@ class TestCheckTrialRegistration:
 
         epmc = _epmc_record("ClinicalTrials.gov number, NCT01206062.")
         analysis = _Analysis(results_compliant=True)
-        analyzer._check_trial_registration(_Client(), "123", None, analysis, epmc=epmc)
+        analyzer._check_trial_registration(_Client(), analysis, epmc=epmc)
         assert _INDICATOR_NO_POSTED_RESULTS in analysis.indicators
 
 
@@ -3200,13 +3197,15 @@ class TestARefusedFullTextLeavesATrace:
         # Not *the only* one, which is what this was called until #191:
         # `NOT_SERVED` and `REQUEST_FAILED` are both genuinely unavailable,
         # and `NOT_ATTEMPTED` is a third. What is pinned here is that a 404
-        # takes the non-refusal indicator.
+        # reaches the status whose prose says EuropePMC served none — the
+        # claim that used to be a parenthetical on the COI line and is a
+        # provenance line keyed on the member since issue #203.
         analyzer = TransparencyAnalyzer()
         analysis = _Analysis()
         analyzer._check_europepmc(_FakeFullTextClient(None), _epmc_record(), analysis)
         assert analysis.full_text_status is FullTextStatus.NOT_SERVED
         assert _INDICATOR_COI_UNKNOWN in analysis.indicators
-        assert _INDICATOR_COI_UNKNOWN_REFUSED not in analysis.indicators
+        assert "served none" in _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.NOT_SERVED]
 
     def test_a_record_with_no_full_text_was_never_attempted(self):
         # `inEPMC != "Y"` means Europe PMC never claimed to hold full text, so
@@ -3222,6 +3221,9 @@ class TestARefusedFullTextLeavesATrace:
         # The prose half. `risk_indicators` is persisted, so this reaches a
         # stored result too — but as prose for humans, which is exactly why
         # the enum beside it exists (the `unknown_reason` argument, issue #21).
+        # Since issue #203 that prose is the provenance line keyed on the
+        # status, not a parenthetical on the COI line: same claim, out of
+        # reach of the PubMed retraction that used to remove it.
         analyzer = TransparencyAnalyzer()
         client = _FakeFullTextClient(
             "<article><body><p>Ours.</p><sub-article><p>Theirs.</p></article>"
@@ -3229,8 +3231,8 @@ class TestARefusedFullTextLeavesATrace:
         analysis = _Analysis()
         analyzer._check_europepmc(client, _epmc_record(), analysis)
         assert analysis.full_text_status is FullTextStatus.UNCLOSED_REGION
-        assert _INDICATOR_COI_UNKNOWN_REFUSED in analysis.indicators
-        assert _INDICATOR_COI_UNKNOWN not in analysis.indicators
+        assert "served" in _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.UNCLOSED_REGION]
+        assert _INDICATOR_COI_UNKNOWN in analysis.indicators
 
     def test_every_refusal_is_a_refusal_and_the_other_two_are_not(self):
         # The grouping the issue's own question needs — "which of my stored
@@ -3375,7 +3377,7 @@ class TestARefusedFullTextLeavesATrace:
         assert client.full_text_url in client.urls()
         assert result.full_text_status is FullTextStatus.TRUNCATED
         assert result.full_text_analyzed is False
-        assert _INDICATOR_COI_UNKNOWN_REFUSED in result.risk_indicators
+        assert _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.TRUNCATED] in result.risk_indicators
         # And it round-trips, since the point is that a *stored* result answers.
         assert (
             TransparencyResult.from_dict(result.to_dict()).full_text_status
@@ -3388,6 +3390,10 @@ class TestARefusedFullTextLeavesATrace:
         # <CoiStatement> stored "status unknown" beside "disclosure found",
         # against `coi_disclosed=True` — permanently, in a persisted field,
         # which is issue #161's own failure mode inside the fix for it.
+        #
+        # There is one COI line now, and what it *stopped* carrying is the
+        # provenance: `TestAProvenanceLineIsNotACoiClaim` is where the other
+        # half of this scenario is asserted (issue #203).
         client = _RecordingClient(
             epmc=_epmc_payload(pmid="1", in_epmc="Y", addressable=True),
             full_text="<article><body><p>Ours.</p><sub-article><p>Theirs.</p></article>",
@@ -3398,16 +3404,20 @@ class TestARefusedFullTextLeavesATrace:
         assert result.full_text_status is FullTextStatus.UNCLOSED_REGION
         assert result.coi_disclosed is True
         assert _INDICATOR_COI_IN_PUBMED in result.risk_indicators
-        assert _INDICATOR_COI_UNKNOWN_REFUSED not in result.risk_indicators
+        assert _INDICATOR_COI_UNKNOWN not in result.risk_indicators
 
     def test_every_coi_line_written_before_pubmed_is_retracted_by_it(self):
         # The rule itself, rather than one instance of it: every indicator the
         # COI branch can append while the status is undeterminable has to be in
         # the retraction set, or the next one added escapes it the way this one
-        # did. Both branches of `_check_europepmc`'s undeterminable arm are
-        # named here, so a third cannot be added without this failing.
+        # did.
+        #
+        # It was three lines, and issue #203 made it two — not by dropping a
+        # claim but by taking the *provenance* out of two of them, since a
+        # retraction is all-or-nothing and those two also said what became of
+        # the full text. What must be in the set is a line asserting something
+        # about the COI status and nothing else.
         assert _INDICATOR_COI_UNKNOWN in _INDICATORS_RETRACTED_BY_PUBMED_COI
-        assert _INDICATOR_COI_UNKNOWN_REFUSED in _INDICATORS_RETRACTED_BY_PUBMED_COI
         assert _INDICATOR_NO_COI_IN_FULLTEXT in _INDICATORS_RETRACTED_BY_PUBMED_COI
         # And the line PubMed puts in their place is not itself retracted.
         assert _INDICATOR_COI_IN_PUBMED not in _INDICATORS_RETRACTED_BY_PUBMED_COI
@@ -3524,12 +3534,20 @@ class TestFullTextStatusOnTheResult:
         TransparencyResult("doc-1", 50, TransparencyRisk.MEDIUM, full_text_analyzed=True)
         TransparencyResult("doc-1", 50, TransparencyRisk.MEDIUM, full_text_analyzed=False)
 
-    def test_the_field_is_declared_last(self):
+    def test_the_field_is_appended_rather_than_sorted(self):
         # Downstream projects construct this dataclass positionally, so a new
         # field beside its logical neighbours would shift every following
         # argument by one with no error raised anywhere — the reason
         # `unknown_reason` and `Publication.pmcid` are where they are.
-        assert list(dataclasses.fields(TransparencyResult))[-1].name == "full_text_status"
+        #
+        # The rule is "append", not "sort", so this pins the *tail order*
+        # rather than which field happens to be last: asserting the latter
+        # made a correctly-appended fourth field (issue #198's
+        # `trial_results_status`) look like a violation while an insertion
+        # *between* two of these — the actual defect — would have passed
+        # whenever it was not at the very end.
+        names = [f.name for f in dataclasses.fields(TransparencyResult)]
+        assert names[-3:] == ["unknown_reason", "full_text_status", "trial_results_status"]
 
 
 class _RaisingClient:
@@ -3759,8 +3777,11 @@ class TestAnAttemptThatGotNoAnswerSaysSo:
         record = {"resultList": {"result": [{"abstractText": "", "inEPMC": "Y", "id": "PMC123"}]}}
         analyzer._check_europepmc(_StatusClient(200, ""), record, analysis)
         assert analysis.full_text_status is FullTextStatus.REQUEST_FAILED
-        assert _INDICATOR_COI_UNKNOWN_REFUSED not in analysis.indicators
         assert _INDICATOR_COI_UNKNOWN in analysis.indicators
+        # The claim itself, which since issue #203 is the provenance line the
+        # status selects: nothing was served, so nothing can read as
+        # served-but-unusable.
+        assert "served, but" not in _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.REQUEST_FAILED]
 
     def test_the_empty_body_line_does_not_contradict_itself(self, caplog):
         # It logged *"is entirely nested articles (0 bytes served)"*. Both
@@ -3861,9 +3882,15 @@ class TestAnAttemptThatGotNoAnswerSaysSo:
         assert client.full_text_url in client.urls(), issue
         assert result.full_text_status is FullTextStatus.REQUEST_FAILED
         assert result.full_text_analyzed is False
-        # Not the refusal indicator, which is #190's whole complaint: nothing
-        # was served, so nothing can have been served-but-unusable.
-        assert _INDICATOR_COI_UNKNOWN_REFUSED not in result.risk_indicators
+        # Not a refusal's line, which is #190's whole complaint: nothing was
+        # served, so nothing can have been served-but-unusable. Asserted over
+        # the whole refused side rather than against one string, since issue
+        # #203 replaced the single refusal line with one per member.
+        assert not [
+            line
+            for line in result.risk_indicators
+            if line in {_FULL_TEXT_PROVENANCE_INDICATORS[st] for st in _REFUSED_FULL_TEXT_STATUSES}
+        ]
         # And it survives the trip through storage as itself.
         assert TransparencyResult.from_dict(result.to_dict()).full_text_status is (
             FullTextStatus.REQUEST_FAILED
@@ -4398,7 +4425,9 @@ class TestAnOutageIsNotAnAnswer:
         # is the machine-readable half; this is the half a human reads, and
         # it is persisted.
         result = self._analyze_with(monkeypatch, _CrossRefOnlyClient(), doi="10.1/x")
-        assert _INDICATOR_COI_UNKNOWN_SEARCH_FAILED in result.risk_indicators
+        assert _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.SEARCH_FAILED] in (
+            result.risk_indicators
+        )
         assert result.full_text_status is FullTextStatus.SEARCH_FAILED
         # Not UNKNOWN: an API answered, so the result is a real verdict —
         # which is exactly why the reason has to be carried on it.
@@ -4420,13 +4449,21 @@ class TestAnOutageIsNotAnAnswer:
         assert result.full_text_status is FullTextStatus.SEARCH_FAILED
 
     def test_that_indicator_is_retracted_when_pubmed_supplies_a_coi_statement(self):
-        # The fourth line, and the rule `_INDICATORS_RETRACTED_BY_PUBMED_COI`
-        # was written for: it claims the COI status is undeterminable, so a
-        # structured `<CoiStatement>` refutes it, and a line added to the
+        # The COI claim this branch appends is retracted by a structured
+        # `<CoiStatement>`, which refutes it — and a line added to the
         # appending site and not to the retracting one stores "status
-        # unknown" beside "disclosure found" — issue #161's own failure mode
+        # unknown" beside "disclosure found", issue #161's own failure mode
         # inside its fix.
-        assert _INDICATOR_COI_UNKNOWN_SEARCH_FAILED in _INDICATORS_RETRACTED_BY_PUBMED_COI
+        #
+        # It was a *fourth* line saying two things at once until issue #203,
+        # and the half that must **not** be retracted — that the search
+        # produced no answer — is now the provenance line, asserted in
+        # `TestAProvenanceLineIsNotACoiClaim`.
+        assert _INDICATOR_COI_UNKNOWN in _INDICATORS_RETRACTED_BY_PUBMED_COI
+        assert (
+            _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.SEARCH_FAILED]
+            not in _INDICATORS_RETRACTED_BY_PUBMED_COI
+        )
 
     def test_the_search_failure_is_logged_where_the_analysis_can_see_it(self, monkeypatch, caplog):
         # **Unique to the line.** `"503" in message` was satisfied by any of
@@ -4636,8 +4673,6 @@ class TestAnUnansweredTrialIsNotAFinding:
         analysis = _Analysis()
         TransparencyAnalyzer()._check_trial_registration(
             client,
-            "1",
-            None,
             analysis,
             epmc=None,
             pubmed=_PubMedSignals(trial_accessions=tuple(ids)),
@@ -4778,7 +4813,14 @@ class _CrossRefOnlyClient:
     scored, non-UNKNOWN verdict out of a failure — ``_api_reachable`` is set
     by the one API that answered, so the analysis completes at
     ``SCORE_FUNDER_INFO`` alone and reaches ``HIGH``.
+
+    ``urls`` records every request, which is how issue #202 is asserted: the
+    duplicate search it is about is invisible in the *result*, and visible
+    only in what went out.
     """
+
+    def __init__(self):
+        self.urls: list[str] = []
 
     def __enter__(self):
         return self
@@ -4787,6 +4829,7 @@ class _CrossRefOnlyClient:
         return False
 
     def get(self, url, **kwargs):
+        self.urls.append(url)
         if "crossref" in url:
             return _FakeResponse(
                 status_code=200,
@@ -4955,3 +4998,354 @@ class TestAQuietStatusIsOneADrawEarned:
         finally:
             logger_.removeHandler(handler)
         assert any("https://example.org/thing" in r.getMessage() for r in records)
+
+
+class TestTheTrialIdScanReadsTheRecordAnalyzeAlreadyFetched:
+    """Issue #202 — a failed EuropePMC search was re-issued, against a docstring.
+
+    ``_find_trial_ids`` documented that it *"reuses the EuropePMC record
+    already fetched by ``analyze``, falling back to a fresh query only if it
+    was not supplied, so the same search is not issued twice per document"* —
+    and decided that with ``if data is None``, which is exactly what a
+    **failed** search returns. So during an outage the identical failing
+    search went out twice, and since PR #195 gave the failure a log line, an
+    operator counting Europe PMC failures double-counted every document.
+
+    The fix is not a sentinel distinguishing the two ``None``s: it is that the
+    scan has no business making a request at all. ``analyze()`` has already
+    fetched the record and is the only caller, so the parameter is mandatory
+    and the promise is structural rather than documented. A trial id scraped
+    out of an abstract bmlib never received is not a thing that can happen.
+    """
+
+    def test_the_scan_makes_no_request_of_its_own(self):
+        # Structural, and the whole of the fix: no client to make one with.
+        # A record that never arrived yields nothing, and quietly — there is
+        # no second request to fail and no second line to log.
+        assert _find_trial_ids(None) == []
+        assert _find_trial_ids(_epmc_record("ClinicalTrials.gov number, NCT01206062.")) == [
+            "NCT01206062"
+        ]
+
+    def test_a_failed_search_is_not_issued_twice(self, monkeypatch):
+        # The measurement in the issue, asserted: one document, one search.
+        # `_CrossRefOnlyClient` is the partial outage — CrossRef answers, so
+        # the analysis completes and is scored, which is the case where the
+        # duplicate was reachable at all.
+        client = _CrossRefOnlyClient()
+        _install_fake_client(monkeypatch, client)
+        TransparencyAnalyzer().analyze("doc-1", doi="10.1/x")
+        searches = [u for u in client.urls if u.startswith(f"{EUROPEPMC_REST_BASE}/search")]
+        assert len(searches) == 1
+
+    def test_the_outage_is_reported_once_per_document(self, monkeypatch, caplog):
+        # The cost the issue ranks second, and the one a human sees: two
+        # identical WARNINGs for one document, so an operator counting
+        # EuropePMC failures counts each document twice.
+        client = _CrossRefOnlyClient()
+        _install_fake_client(monkeypatch, client)
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            TransparencyAnalyzer().analyze("doc-1", doi="10.1/x")
+        named = [
+            r
+            for r in caplog.records
+            if "EuropePMC" in r.getMessage() and f"{EUROPEPMC_REST_BASE}/search" in r.getMessage()
+        ]
+        assert len(named) == 1
+
+    def test_a_pubmed_accession_is_still_checked_when_the_search_failed(self, monkeypatch):
+        # The half that must **not** change. PubMed's `<DataBankList>`
+        # accession does not come from the EuropePMC record, so a document
+        # whose search failed still has a followable registration — and
+        # skipping the abstract heuristic must not skip the results check
+        # with it.
+        client = _RecordingClient(
+            epmc=None,
+            pubmed=_pubmed_xml(databanks=(("ClinicalTrials.gov", ("NCT01206062",)),)),
+            trial_has_results=True,
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="123")
+        assert result.full_text_status is FullTextStatus.SEARCH_FAILED
+        assert result.trial_registered is True
+        assert result.trial_results_compliant is True
+
+
+class TestAProvenanceLineIsNotACoiClaim:
+    """Issue #203 — one string carried two claims, and the retraction took both.
+
+    Three branches wrote a *"COI disclosure status unknown (…)"* line whose
+    parenthetical said what became of the full text, and all three sat in
+    ``_INDICATORS_RETRACTED_BY_PUBMED_COI``. A PubMed ``<CoiStatement>``
+    refutes the COI half and says nothing whatever about the other, so a
+    result could reach ``HIGH`` with a tier downgrade whose only
+    human-readable line was a COI **success** — issue #193's own complaint,
+    reintroduced through the retraction set.
+
+    The issue names the search-failure branch. The other two have the same
+    shape and the same consequence, which is this repo's standing rule: the
+    guard written on one branch is the guard the others need. So the COI claim
+    is one line for all three, and what became of the full text is a
+    **provenance** line keyed on :class:`FullTextStatus` — appended once,
+    after every step has run, which puts it structurally beyond the retraction
+    rather than merely absent from a set.
+    """
+
+    def test_every_status_says_what_happened(self):
+        # `TestTheAuditNetIsComplete`'s rule, one module over: a member added
+        # later must choose, or the prose silently stops describing the enum.
+        # An exclusion is *named*, not defaulted.
+        covered = set(_FULL_TEXT_PROVENANCE_INDICATORS) | _STATUSES_WITH_NO_PROVENANCE_LINE
+        assert covered == set(FullTextStatus)
+        assert not set(_FULL_TEXT_PROVENANCE_INDICATORS) & _STATUSES_WITH_NO_PROVENANCE_LINE
+
+    def test_no_two_statuses_share_a_line(self):
+        # A copy-paste makes two outcomes indistinguishable in the one half a
+        # human reads, which is the defect this whole family is about.
+        lines = list(_FULL_TEXT_PROVENANCE_INDICATORS.values())
+        assert len(set(lines)) == len(lines)
+
+    def test_no_provenance_line_is_retractable(self):
+        # The rule itself, mechanised. Membership of the retraction set is
+        # what took the provenance away, so a provenance line landing in it
+        # is issue #203 verbatim — and it would land there silently, since
+        # nothing else compares the two collections.
+        assert not (
+            set(_FULL_TEXT_PROVENANCE_INDICATORS.values()) & _INDICATORS_RETRACTED_BY_PUBMED_COI
+        )
+
+    def test_a_pubmed_statement_does_not_retract_the_outage_line(self, monkeypatch):
+        # The case the issue ran: EuropePMC down, PubMed serving a
+        # <CoiStatement>. The COI claim goes, the outage stays.
+        client = _RecordingClient(epmc=None, pubmed=_pubmed_xml(coi="Dr X consults for Y."))
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="123")
+        assert result.full_text_status is FullTextStatus.SEARCH_FAILED
+        assert result.coi_disclosed is True
+        assert _INDICATOR_COI_IN_PUBMED in result.risk_indicators
+        assert _INDICATOR_COI_UNKNOWN not in result.risk_indicators
+        assert _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.SEARCH_FAILED] in (
+            result.risk_indicators
+        )
+
+    def test_a_pubmed_statement_does_not_retract_the_refusal_line(self, monkeypatch):
+        # The second branch, which the issue does not name and which has the
+        # same consequence: a document EuropePMC *served* and bmlib declined
+        # to scan, whose only record of that was the retracted line.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1", in_epmc="Y", addressable=True),
+            full_text="<article><body><p>Ours.</p><sub-article><p>Theirs.</p></article>",
+            pubmed=_pubmed_xml(coi="Dr X consults for Y."),
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+        assert result.full_text_status is FullTextStatus.UNCLOSED_REGION
+        assert _INDICATOR_COI_IN_PUBMED in result.risk_indicators
+        assert _INDICATOR_COI_UNKNOWN not in result.risk_indicators
+        assert _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.UNCLOSED_REGION] in (
+            result.risk_indicators
+        )
+
+    def test_a_pubmed_statement_does_not_retract_the_unavailable_line(self, monkeypatch):
+        # The third branch — the commonest of the three by a wide margin,
+        # every closed-access paper reaching it.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1", in_epmc="N"),
+            pubmed=_pubmed_xml(coi="Dr X consults for Y."),
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+        assert result.full_text_status is FullTextStatus.NOT_ATTEMPTED
+        assert _INDICATOR_COI_IN_PUBMED in result.risk_indicators
+        assert _INDICATOR_COI_UNKNOWN not in result.risk_indicators
+        assert _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.NOT_ATTEMPTED] in (
+            result.risk_indicators
+        )
+
+    def test_a_scanned_document_gets_no_provenance_line(self, monkeypatch):
+        # The negative control the named exclusion needs: `ANALYZED` is
+        # excluded because there is nothing to explain, so a line appearing
+        # here would be noise on every successful analysis — and a test that
+        # only ever asserts presence cannot tell an unconditional append from
+        # a conditional one.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1", in_epmc="Y", addressable=True),
+            full_text="<article><body><p>Competing interests: none declared.</p></body></article>",
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+        assert result.full_text_status is FullTextStatus.ANALYZED
+        assert not [
+            line
+            for line in result.risk_indicators
+            if line in set(_FULL_TEXT_PROVENANCE_INDICATORS.values())
+        ]
+
+    def test_the_coi_claim_is_one_line_for_all_three(self, monkeypatch):
+        # Three parentheticals became one claim, so the retraction set holds
+        # what it says it holds: COI claims. The distinction they carried is
+        # not lost — it moved to the provenance line, where it is not a COI
+        # claim and cannot be retracted.
+        client = _RecordingClient(epmc=_epmc_payload(pmid="1", in_epmc="N"))
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+        assert _INDICATOR_COI_UNKNOWN in result.risk_indicators
+        assert result.coi_disclosed is None
+
+
+class TestTrialResultsStatus:
+    """Issue #198 — a bare ``bool`` answered three different questions.
+
+    ``trial_results_compliant`` is ``False`` for a trial ClinicalTrials.gov
+    said has no posted results, for one nobody managed to ask about, for a
+    registration in a registry that has no answer to give, and for a paper
+    with no registered trial at all. ``risk_indicators`` distinguishes the
+    middle two from the first, and both downstreams render the flag rather
+    than the indicator — so the field that is easiest to read is the one that
+    cannot be read correctly.
+
+    :class:`FullTextStatus`'s argument (issue #161) one endpoint over, and
+    held to the same rules: a grouping property so no call site enumerates
+    members, a mechanised partition so one added later must choose a side,
+    serialisation by value, and ``None`` meaning *not recorded* rather than
+    any determinate outcome.
+    """
+
+    def test_every_status_chooses_a_side(self):
+        # The partition, exactly as `_REFUSED_FULL_TEXT_STATUSES` is pinned:
+        # a member omitted from both sets is a red test rather than a silent
+        # default, and the silent default here runs the wrong way — an
+        # unlisted member would read as *not answered*, which is the safe
+        # side for a reader and the wrong side for a finding.
+        assert _ANSWERED_TRIAL_RESULTS_STATUSES | _UNANSWERED_TRIAL_RESULTS_STATUSES == set(
+            TrialResultsStatus
+        )
+        assert not _ANSWERED_TRIAL_RESULTS_STATUSES & _UNANSWERED_TRIAL_RESULTS_STATUSES
+
+    def test_only_an_answer_counts_as_answered(self):
+        assert TrialResultsStatus.POSTED.is_answered is True
+        assert TrialResultsStatus.NOT_POSTED.is_answered is True
+        assert TrialResultsStatus.REQUEST_FAILED.is_answered is False
+        assert TrialResultsStatus.NOT_CHECKABLE.is_answered is False
+        assert TrialResultsStatus.NOT_REGISTERED.is_answered is False
+
+    def test_results_posted_is_recorded(self, monkeypatch):
+        client = _RecordingClient(
+            epmc=_epmc_payload(abstract="ClinicalTrials.gov number, NCT01206062.", pmid="1"),
+            trial_has_results=True,
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+        assert result.trial_results_status is TrialResultsStatus.POSTED
+        assert result.trial_results_compliant is True
+
+    def test_an_answered_no_is_distinguishable_from_an_unanswered_one(self, monkeypatch):
+        # The distinction the whole issue is about, asserted as a pair rather
+        # than one at a time: both store `trial_results_compliant=False`, and
+        # a downstream rendering that flag says "results not posted" for both.
+        epmc = _epmc_payload(abstract="ClinicalTrials.gov number, NCT01206062.", pmid="1")
+        answered = _RecordingClient(epmc=epmc, trial_has_results=False)
+        _install_fake_client(monkeypatch, answered)
+        said_no = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+
+        refused = _RecordingClient(epmc=epmc, trial_status_code=403)
+        _install_fake_client(monkeypatch, refused)
+        never_answered = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+
+        assert said_no.trial_results_compliant is never_answered.trial_results_compliant is False
+        assert said_no.trial_results_status is TrialResultsStatus.NOT_POSTED
+        assert never_answered.trial_results_status is TrialResultsStatus.REQUEST_FAILED
+
+    def test_a_registry_with_no_answer_to_give_is_its_own_member(self, monkeypatch):
+        # Registration established in another registry: ClinicalTrials.gov was
+        # never asked and could not have answered, so *"would re-running
+        # change this?"* is `no` — which is the question that separates this
+        # from `REQUEST_FAILED`, and the reason the indicator they share is
+        # not enough on its own.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1"),
+            pubmed=_pubmed_xml(databanks=(("ISRCTN", ("ISRCTN12345678",)),)),
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+        assert result.trial_registered is True
+        assert result.trial_results_status is TrialResultsStatus.NOT_CHECKABLE
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE in result.risk_indicators
+
+    def test_a_paper_with_no_trial_says_there_was_nothing_to_ask(self, monkeypatch):
+        client = _RecordingClient(epmc=_epmc_payload(pmid="1"))
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+        assert result.trial_registered is False
+        assert result.trial_results_status is TrialResultsStatus.NOT_REGISTERED
+
+    def test_the_flag_and_the_status_cannot_disagree(self):
+        # The pair `full_text_status`/`full_text_analyzed` is held to, for the
+        # same reason: the flag is the compatibility field, so a stored result
+        # where the two disagree is uninterpretable whichever one is believed.
+        with pytest.raises(ValueError, match="trial_results_status"):
+            TransparencyResult(
+                document_id="d",
+                transparency_score=50,
+                risk_level=TransparencyRisk.MEDIUM,
+                trial_results_compliant=False,
+                trial_results_status=TrialResultsStatus.POSTED,
+            )
+
+    def test_a_result_that_never_recorded_it_loads_as_not_recorded(self):
+        # `None` is *not recorded*, never `NOT_REGISTERED`: a result persisted
+        # before the field existed may perfectly well carry
+        # `trial_results_compliant=True`, and reading that back as a
+        # determinate "no registration" would be a worse answer than admitting
+        # the field was not written.
+        legacy = {
+            "document_id": "d",
+            "transparency_score": 50,
+            "risk_level": "medium",
+            "trial_registered": True,
+            "trial_results_compliant": True,
+        }
+        assert TransparencyResult.from_dict(legacy).trial_results_status is None
+
+    def test_it_round_trips_by_value(self):
+        result = TransparencyResult(
+            document_id="d",
+            transparency_score=50,
+            risk_level=TransparencyRisk.MEDIUM,
+            trial_registered=True,
+            trial_results_compliant=False,
+            trial_results_status=TrialResultsStatus.REQUEST_FAILED,
+        )
+        payload = result.to_dict()
+        assert payload["trial_results_status"] == "request_failed"
+        assert TransparencyResult.from_dict(payload).trial_results_status is (
+            TrialResultsStatus.REQUEST_FAILED
+        )
+
+    def test_a_member_this_version_does_not_know_raises(self):
+        # `unknown_reason` and `full_text_status` both refuse rather than
+        # loading `None`: a member from a later bmlib is a result this one
+        # cannot interpret, and `None` would report it as never recorded.
+        with pytest.raises(ValueError):
+            TransparencyResult.from_dict(
+                {
+                    "document_id": "d",
+                    "transparency_score": 50,
+                    "risk_level": "medium",
+                    "trial_results_status": "witnessed_by_a_notary",
+                }
+            )
+
+    def test_every_path_this_version_writes_records_it(self, monkeypatch):
+        # The rule `full_text_status` established: if any current path left it
+        # `None`, a current row would be indistinguishable from a legacy one
+        # and the *not recorded* reading would be worthless. The two early
+        # returns are the ones that would forget.
+        assert TransparencyAnalyzer().analyze("doc-1").trial_results_status is (
+            TrialResultsStatus.NOT_REGISTERED
+        )
+        client = _EveryRequestFails(503)
+        _install_fake_client(monkeypatch, client)
+        outage = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+        assert outage.unknown_reason is TransparencyUnknownReason.UNREACHABLE
+        assert outage.trial_results_status is not None

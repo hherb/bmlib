@@ -285,9 +285,7 @@ class TestTheTwoDrawsStayApart:
         # not.
         client = _ScriptedClient(*[_FakeResponse(200, {}) for _ in range(4)])
         record = sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid="1", raw={})
-        outcomes = sampler.probe_record(
-            client, TransparencyAnalyzer(email="a@b.c"), record, "a@b.c", _pace
-        )
+        outcomes = sampler.probe_record(client, record, "a@b.c", _pace)
         assert "clinicaltrials" not in {o.endpoint for o in outcomes}
         assert not any("clinicaltrials" in url for url in client.urls())
 
@@ -308,9 +306,7 @@ class TestTheTwoDrawsStayApart:
         )
         client = _ScriptedClient(efetch, _FakeResponse(200, {"hasResults": True}))
         record = sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid="1", raw={})
-        outcomes = sampler.probe_trials(
-            client, TransparencyAnalyzer(email="a@b.c"), record, "a@b.c", _pace
-        )
+        outcomes = sampler.probe_trials(client, record, "a@b.c", _pace)
         assert [o.endpoint for o in outcomes] == ["clinicaltrials"]
         assert any("clinicaltrials" in url for url in client.urls())
 
@@ -322,9 +318,7 @@ class TestTheTwoDrawsStayApart:
         record = sampler.DrawnRecord(
             source="MED", year=2024, doi="10.1/x", pmid="1", raw={"abstractText": "no ids here"}
         )
-        outcomes = sampler.probe_trials(
-            client, TransparencyAnalyzer(email="a@b.c"), record, "a@b.c", _pace
-        )
+        outcomes = sampler.probe_trials(client, record, "a@b.c", _pace)
         assert outcomes == []
 
 
@@ -457,9 +451,7 @@ class TestThePopulationBuildingRequestIsNotSilent:
     def test_a_non_200_efetch_is_counted(self, capsys):
         failures: list[str] = []
         client = _ScriptedClient(_FakeResponse(503), _FakeResponse(200, {"hasResults": True}))
-        sampler.probe_trials(
-            client, TransparencyAnalyzer(email="a@b.c"), self._record(), "a@b.c", _pace, failures
-        )
+        sampler.probe_trials(client, self._record(), "a@b.c", _pace, failures)
         assert failures == ["efetch 1: HTTP 503"]
         assert "HTTP 503" in capsys.readouterr().err
 
@@ -469,9 +461,7 @@ class TestThePopulationBuildingRequestIsNotSilent:
         # already followed.
         failures: list[str] = []
         client = _ScriptedClient(OSError("reset"), _FakeResponse(200, {"hasResults": True}))
-        sampler.probe_trials(
-            client, TransparencyAnalyzer(email="a@b.c"), self._record(), "a@b.c", _pace, failures
-        )
+        sampler.probe_trials(client, self._record(), "a@b.c", _pace, failures)
         assert failures == ["efetch 1: OSError"]
         assert "OSError" in capsys.readouterr().err
 
@@ -480,9 +470,7 @@ class TestThePopulationBuildingRequestIsNotSilent:
         client = _ScriptedClient(
             _FakeResponse(200, text="<PubmedArticleSet/>"), _FakeResponse(200, {"hasResults": True})
         )
-        sampler.probe_trials(
-            client, TransparencyAnalyzer(email="a@b.c"), self._record(), "a@b.c", _pace, failures
-        )
+        sampler.probe_trials(client, self._record(), "a@b.c", _pace, failures)
         assert failures == []
 
 
@@ -641,7 +629,7 @@ class TestTheSamplerProbesWhatTheAnalyzerRequests:
     def _sampler_client(self, doi: str, pmid: str) -> _ScriptedClient:
         record = sampler.DrawnRecord(source="MED", year=2024, doi=doi, pmid=pmid, raw={})
         client = _ScriptedClient(*[_FakeResponse(200, {}) for _ in range(4)])
-        sampler.probe_record(client, TransparencyAnalyzer(email="a@b.c"), record, "a@b.c", _pace)
+        sampler.probe_record(client, record, "a@b.c", _pace)
         return client
 
     def test_every_request_carries_the_parameters_and_headers_the_analyzer_sends(self):
@@ -672,7 +660,6 @@ class TestTheSamplerProbesWhatTheAnalyzerRequests:
         )
         sampler.probe_trials(
             trial_client,
-            TransparencyAnalyzer(email="a@b.c"),
             sampler.DrawnRecord(
                 source="MED",
                 year=2024,
@@ -704,13 +691,12 @@ class TestTheSamplerProbesWhatTheAnalyzerRequests:
         doi, pmid = "10.1/x", "1"
         record = sampler.DrawnRecord(source="MED", year=2024, doi=doi, pmid=pmid, raw={})
         client = _ScriptedClient(*[_FakeResponse(200, {}) for _ in range(4)])
-        sampler.probe_record(client, TransparencyAnalyzer(email="a@b.c"), record, "a@b.c", _pace)
+        sampler.probe_record(client, record, "a@b.c", _pace)
         trial_client = _ScriptedClient(
             _FakeResponse(200, text="<PubmedArticleSet/>"), _FakeResponse(200, {})
         )
         sampler.probe_trials(
             trial_client,
-            TransparencyAnalyzer(email="a@b.c"),
             sampler.DrawnRecord(
                 source="MED",
                 year=2024,
@@ -734,7 +720,7 @@ class TestTheSamplerProbesWhatTheAnalyzerRequests:
         doi, pmid = "10.1/x", "1"
         record = sampler.DrawnRecord(source="MED", year=2024, doi=doi, pmid=pmid, raw={})
         client = _ScriptedClient(*[_FakeResponse(200, {}) for _ in range(4)])
-        sampler.probe_record(client, TransparencyAnalyzer(email="a@b.c"), record, "a@b.c", _pace)
+        sampler.probe_record(client, record, "a@b.c", _pace)
         probed = set(client.urls()) | {
             sampler.CLINICALTRIALS_STUDY_URL.format(nct_id="NCT00000001")
         }
