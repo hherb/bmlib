@@ -677,6 +677,20 @@ _INDICATOR_RESULTS_NOT_CHECKABLE = (
     "Trial registration found; posted-results status could not be checked"
 )
 
+#: CrossRef holds no funder information for this DOI — an absent ``funder``
+#: key, or one present with an empty array. Both are CrossRef *answering*, so
+#: the line is a claim about the record and it is true.
+_INDICATOR_NO_FUNDER_INFO = "No funder information in CrossRef"
+#: CrossRef sent a ``funder`` this module cannot read — an object, a string, a
+#: number. Split out of the line above by PR #208's review, which is issue
+#: #191's rule applied one endpoint over: a body that *was* served must not be
+#: reported as one that carried nothing, because "CrossRef has no funders for
+#: this paper" is a claim about the paper and this is a claim about the
+#: exchange. The distinction is the same one `_INDICATOR_RESULTS_NOT_CHECKABLE`
+#: draws above, and it is stated here rather than shared with that line only
+#: because the component differs; the grammar is deliberately identical.
+_INDICATOR_FUNDERS_NOT_READABLE = "Funder information could not be read from CrossRef's response"
+
 # ---- Rate limiting ----
 _MIN_REQUEST_INTERVAL_SECONDS = 0.35
 
@@ -1159,16 +1173,36 @@ class _Analysis:
 # :meth:`TransparencyAnalyzer._request_json` guarantees the body is a JSON
 # *object*, and that is the whole of what a boundary can promise: every value
 # inside it is still whatever the remote chose to send. Reading one as a
-# mapping, a string or a number is therefore an assumption, and each of the
-# three below was measured escaping a public ``analyze()`` as a
-# :data:`_BUG_TYPES` member — ``.get()`` on a list, ``.lower()`` on an object,
-# ``>`` between a string and an int (issue #199).
+# mapping, a string or a number is therefore an assumption, and three of the
+# four generic coercers below were measured escaping a public ``analyze()`` as
+# a :data:`_BUG_TYPES` member — ``.get()`` on a list, ``.lower()`` on an
+# object, ``>`` between a string and an int (issue #199).
+#
+# :func:`_json_bool` is the fourth and was measured differently, which is why
+# it is worth naming separately: a wrong-typed boolean **raises nothing**, so
+# no contract net can see it. ``bool("no")`` is ``True``, and that read
+# published *"results posted"* for a ClinicalTrials.gov body stating the
+# opposite — a false claim about a trial at the one site issue #194 had
+# already made one for a release (PR #208's review).
+#
+# :func:`_epmc_records` below them is not a generic coercer at all but a
+# domain walk, and it carries a rule of its own about *rank* that none of
+# these four needs.
 #
 # They are coercers rather than guards on purpose: the caller's next line is a
-# read, and there is nothing useful to report — a value of the wrong type is
-# the *absence* of the value that was asked for, which is what the readers
-# already do with an absent key. The request itself has been reported at
-# :meth:`_request_json`, so nothing is being thrown away silently.
+# read, and a value of the wrong type is the *absence* of the value that was
+# asked for, which is what the readers already do with an absent key.
+#
+# **They are silent, and that is a choice rather than a consequence.** An
+# earlier draft justified it with *"the request itself has been reported at
+# :meth:`_request_json`"*, which is false for exactly the case they exist to
+# handle: a 200 carrying a well-formed object whose *value* is wrong is
+# reported nowhere, at no level (PR #208's review). What rules out a line
+# *here* is that it would fire per field of every malformed body; what
+# ``jats_parser`` does with that shape is count and report once per article,
+# and the equivalent for this module — a coercion tally on :class:`_Analysis`
+# reported once per :meth:`analyze` — is filed as issue #209 rather than
+# argued away.
 
 
 def _json_object(value: object) -> dict[str, Any]:
@@ -1206,25 +1240,63 @@ def _json_count(value: object) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
-def _epmc_records(epmc: object) -> list[dict[str, Any]]:
-    """The result records of a EuropePMC search body, dropping any that are not objects.
+def _json_bool(value: object) -> bool | None:
+    """*value* if it is a JSON boolean, else ``None``.
 
-    ``epmc["resultList"]["result"]`` is walked by two readers —
-    :func:`_find_trial_ids` and
+    ``None`` and not ``False``, because both callers need *"the remote did not
+    say"* to be a third answer rather than a negative one. This is the only
+    coercer whose absent value is not falsy, and the reason is that the other
+    three replace a read that **raised**: a wrong-typed boolean raises
+    nothing, so the defect it prevents is a value read *wrongly* and stored,
+    which no contract net can see (PR #208's review).
+
+    Measured, at both call sites: ``{"hasResults": "no"}`` scored
+    :data:`SCORE_RESULTS_POSTED` and stored
+    :attr:`TrialResultsStatus.POSTED` with ``trial_results_compliant=True``
+    — ClinicalTrials.gov stating *no results* published as *results posted* —
+    and ``{"is_oa": "false"}`` awarded :data:`SCORE_OPEN_ACCESS`. Both are
+    truthy strings, so ``bool()`` inverts the remote's answer rather than
+    merely losing it, which is worse than the absence it looks like.
+    """
+    return value if isinstance(value, bool) else None
+
+
+def _epmc_records(epmc: object) -> list[dict[str, Any]]:
+    """The leading run of object records in a EuropePMC search body.
+
+    ``epmc["resultList"]["result"]`` is walked by **three** readers —
+    :func:`_find_trial_ids`, :func:`_pmid_from_epmc` and
     :meth:`TransparencyAnalyzer._check_europepmc` — which each hand-rolled it,
     and every level of it is a value the remote chose: ``resultList`` may be
     an array, ``result`` may be an object (``result[0]`` then raised
-    ``KeyError``, which is the one escape in issue #199 that no ``.get()``
-    guard reaches), and a record may be a bare string.
+    ``KeyError``), and a record may be a bare string.
 
-    A third copy is this repository's threshold for a helper, and here it also
-    puts the two readers on one answer: they used to agree by being written
-    the same way.
+    Three copies is well past this repository's threshold for a helper, and
+    here it also puts the readers on one answer: they used to agree by being
+    written the same way. PR #208's review found the third — the count in this
+    docstring said *two*, and :func:`_pmid_from_epmc` was left hand-rolled in
+    the commit that wrote the sentence, so four ``_BUG_TYPES`` members still
+    escaped :meth:`TransparencyAnalyzer.analyze` on any DOI-only analysis.
+
+    **The list is truncated at the first non-object, never filtered** (PR
+    #208's review). EuropePMC returns best-match-first and every reader takes
+    ``records[0]`` as *this paper*, so an index is a rank: dropping a
+    malformed record promotes the one behind it, and a filter whose head was
+    bad silently made a **different article** the subject — its trial
+    accession, its PMID sent on to efetch, its abstract scanned for COI. That
+    is worse than the ``KeyError`` it replaced, which at least said so.
+    Stopping keeps every record at its own index, which is the invariant a
+    later reader of ``records[1]`` would need too.
     """
     result = _json_object(_json_object(epmc).get("resultList")).get("result")
     if not isinstance(result, list):
         return []
-    return [record for record in result if isinstance(record, dict)]
+    records: list[dict[str, Any]] = []
+    for record in result:
+        if not isinstance(record, dict):
+            break
+        records.append(record)
+    return records
 
 
 def _find_trial_ids(epmc: dict | None) -> list[str]:
@@ -1840,14 +1912,34 @@ def _pmid_from_epmc(epmc: dict | None) -> str | None:
 
     Lets a DOI-only analysis reach PubMed without spending an extra request to
     resolve the identifier.
+
+    **This was the third hand-rolled walk of ``resultList.result``, and the
+    one issue #199's fix missed** (PR #208's review). It is reached from
+    :meth:`TransparencyAnalyzer.analyze` as ``pmid or _pmid_from_epmc(epmc)``,
+    so it runs only when the caller passed no PMID — which is exactly the path
+    the issue's end-to-end net never drove, every row of it supplying one. Four
+    shapes a remote can legally answer 200 with still escaped a public
+    ``analyze()`` here: ``AttributeError`` for a ``resultList`` that is an
+    array or a present ``null``, ``KeyError: 0`` for a ``result`` that is an
+    object, and ``TypeError`` for one that is a scalar. Going through
+    :func:`_epmc_records` closes all four and is what makes the module's claim
+    true of the DOI-only path as well.
+
+    The identifier is type-checked rather than ``str()``-ed for a smaller
+    reason that is the same shape: ``str({"a": 1})`` is truthy and would be
+    sent to NCBI's efetch as the literal ``"{'a': 1}"``. An ``int`` is still
+    accepted — EuropePMC serves the field as a string, and refusing a number
+    would narrow behaviour on well-formed input for no gain.
     """
-    if not epmc:
+    records = _epmc_records(epmc)
+    if not records:
         return None
-    results = epmc.get("resultList", {}).get("result", [])
-    if not results:
+    pmid = records[0].get("pmid")
+    if isinstance(pmid, bool):
         return None
-    pmid = results[0].get("pmid")
-    return str(pmid) if pmid else None
+    if isinstance(pmid, int):
+        return str(pmid)
+    return _json_text(pmid) or None
 
 
 class TransparencyAnalyzer:
@@ -2130,12 +2222,19 @@ class TransparencyAnalyzer:
                     name = _json_text(_json_object(funder).get("name"))
                     if _is_industry_funder(name):
                         analysis.note_industry_funder(name)
+            elif funders is None or funders == []:
+                # CrossRef answered and holds nothing — the only two shapes
+                # that mean that, and the only two this line may claim.
+                analysis.indicators.append(_INDICATOR_NO_FUNDER_INFO)
             else:
-                # A `funder` that is not a list is CrossRef carrying no usable
-                # funder information, which is what this indicator says — the
-                # request itself was reported at `_request_json` if it failed,
-                # so this branch is never standing in for an outage.
-                analysis.indicators.append("No funder information in CrossRef")
+                # CrossRef sent *something* under `funder` that this module
+                # cannot read. Reporting that as "no funder information" is a
+                # false claim about the record — measured: a `funder` arriving
+                # as `{"name": "Acme Pharmaceuticals Inc"}` stored "CrossRef
+                # has none" for a body naming an industry funder (PR #208's
+                # review). Issue #191's rule, one endpoint over: what was
+                # served must not be reported as what was not.
+                analysis.indicators.append(_INDICATOR_FUNDERS_NOT_READABLE)
 
     def _fetch_europepmc(
         self,
@@ -2189,10 +2288,17 @@ class TransparencyAnalyzer:
         # abstract. EuropePMC serves full text for open-access records.
         search_text = abstract_text
         if record.get("inEPMC") == "Y":
+            # Both coerced: a mistyped accession is truthy, so it used to be
+            # interpolated into the URL (`.../{'a': 1}/fullTextXML`), spend a
+            # rate-limited request, and store the resulting 404 as
+            # `FullTextStatus.NOT_SERVED` — a claim in EuropePMC's mouth for a
+            # URL bmlib mangled, at the quiet level the 404 earned from a draw
+            # of well-formed requests. Empty is the true answer, and the guard
+            # inside already reads it as `NOT_ATTEMPTED` (PR #208's review).
             fetch = self._fetch_europepmc_fulltext(
                 client,
-                record.get("source"),
-                record.get("pmcid") or record.get("id"),
+                _json_text(record.get("source")) or None,
+                _json_text(record.get("pmcid")) or _json_text(record.get("id")) or None,
                 document_id,
             )
             analysis.full_text_status = fetch.status
@@ -2696,7 +2802,12 @@ class TransparencyAnalyzer:
         """Fold open-access status and citation count from OpenAlex into *analysis*."""
         oa = self._query_openalex(client, doi)
         if oa:
-            if _json_object(oa.get("open_access")).get("is_oa"):
+            # `_json_bool` and not truthiness: `{"is_oa": "false"}` is a
+            # truthy string, so the bare read awarded `SCORE_OPEN_ACCESS` for
+            # a body stating the opposite (PR #208's review). `None` — the
+            # remote did not say — is not open access, which is what the
+            # existing absent-key behaviour already was.
+            if _json_bool(_json_object(oa.get("open_access")).get("is_oa")):
                 analysis.score += SCORE_OPEN_ACCESS
             if _json_count(oa.get("cited_by_count")) > 0:
                 analysis.score += SCORE_CITED
@@ -2951,12 +3062,17 @@ class TransparencyAnalyzer:
 
         **It promises an object, not merely valid JSON** (issue #199). JSON's
         top level may be an array, a string, a number, ``true`` or ``null``,
-        and every caller here reads the body with ``.get()`` — so a 200
-        carrying any of those raised ``AttributeError`` out of a public
-        :meth:`analyze`, which wraps none of its steps. That is a
-        ``_BUG_TYPES`` member escaping over a body the remote chose, and the
-        three ``_query_*`` helpers above already annotate ``dict | None``:
-        the annotation was **false**, and invisible to mypy only because this
+        and every caller here reads the body with ``.get()``. A **truthy**
+        non-object therefore raised ``AttributeError`` out of a public
+        :meth:`analyze`, which wraps none of its steps — truthy because
+        ``null``, ``[]``, ``false`` and ``0`` are refused a step earlier by
+        the callers' own ``if cr:`` / ``elif epmc:`` / ``if oa:``, which is
+        why the measured population is 12 and not 24 (PR #208's review
+        corrected the blanket "any of those"). That is a ``_BUG_TYPES`` member
+        escaping over a body the remote chose, and the three ``_query_*``
+        helpers — :meth:`_query_crossref`, :meth:`_query_europepmc` and
+        :meth:`_query_openalex` — already annotate ``dict | None``: the
+        annotation was **false**, and invisible to mypy only because this
         method returned ``Any``. Narrowing it here makes those three true
         rather than adding a claim.
 
@@ -3001,11 +3117,12 @@ class TransparencyAnalyzer:
             # the other half of issue #193 — the type is named, since "not an
             # object" does not say whether an array or a bare string arrived.
             logger.warning(
-                "%s for %s: answered 200 with JSON that is not an object (%s); "
-                "that request produced no answer",
+                "%s for %s: answered 200 with JSON that is not an object (%s) "
+                "from %s; that request produced no answer",
                 api,
                 subject,
                 type(data).__name__,
+                url,
             )
             return None
         return data
@@ -3186,7 +3303,34 @@ class TransparencyAnalyzer:
             # body did not merely raise but *published a false finding about a
             # trial* for a whole release (issue #194) — the redundancy issue
             # #203 argues for, at the place with the worst measured cost.
-            # Testing it with an *empty* list cannot tell the guard from its
-            # own truthiness mutant, which is how one survived the suite.
+            # No test can now separate this guard from a `data is None`
+            # narrowing *through* `_request_json`, that path being closed —
+            # `test_an_unusable_body_is_refused_at_this_site_too` calls the
+            # method with the boundary stubbed, which is the only way left to
+            # exercise what it defends (PR #208's review).
             return None
-        return bool(data.get("hasResults"))
+        # `_json_bool` and not `bool()`. This is the value the guard above
+        # never covered: `bool("no")` is `True`, so ClinicalTrials.gov stating
+        # *no results* was stored as `POSTED` with `trial_results_compliant`
+        # set and `SCORE_RESULTS_POSTED` awarded — a false claim in the
+        # affirmative about a trial, at the site issue #194 already made one
+        # for a release (PR #208's review). `None` here is *"did not answer"*,
+        # which `_check_trial_registration` already routes to
+        # `REQUEST_FAILED` + `_INDICATOR_RESULTS_NOT_CHECKABLE`, so the
+        # tri-state absorbs it with no new vocabulary.
+        #
+        # **An absent key keeps its old answer, deliberately.** `.get()`
+        # returning `None` here is CrossRef's… no — it is ClinicalTrials.gov
+        # omitting a field this request narrowed to, which
+        # `test_missing_has_results_is_false` has pinned as `False` since
+        # before the tri-state existed. Routing it to `None` with the
+        # wrong-typed values would move a stored value for a **well-formed**
+        # body, which this change is otherwise careful not to do, and the
+        # question is genuinely open — the existing comment says "an absent
+        # key means unanswered" and then reports a finding, which is the
+        # conflation issues #195/#198 removed everywhere else. Filed as issue
+        # #210 rather than settled in passing.
+        has_results = data.get("hasResults")
+        if has_results is None:
+            return False
+        return _json_bool(has_results)

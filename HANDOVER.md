@@ -97,15 +97,27 @@ naming what became of the full text. **A downstream string-matching any of
 those three strings breaks**, and the remedy is to read `full_text_status`
 instead — which is what it is for.
 
-**#199 is the eleventh transparency change and the only one that moves
-nothing.** Before it, 23 JSON bodies a remote can legally answer HTTP 200 with
-escaped the public `analyze()` as a `_BUG_TYPES` member — 18 `AttributeError`,
-4 `TypeError`, 1 `KeyError` — breaking the contract that a misbehaving API
-costs a *component* and not the analysis. It is pre-existing and unmeasured
-against the live APIs: no draw has seen one of these endpoints answer 200 with
-a non-object, so **no stored value changes** and no downstream has to
-recompute for it. What changes is that a body which used to abort an analysis
-now costs the one component that could not read it.
+**#199 is the eleventh transparency change and it moves less than the others,
+not nothing.** Before it, JSON bodies a remote can legally answer HTTP 200
+with escaped the public `analyze()` as `_BUG_TYPES` members — **48 of the 86
+rows the suite now commits, 24 in each identifier column**, 40
+`AttributeError`, 6 `TypeError`, 2 `KeyError` — breaking the contract that a
+misbehaving API costs a *component* and not the analysis. (A first cut of this
+paragraph said *23, 18/4/1*; no committed instrument re-derived it and the
+`.get()` count had been carried into the exception tally. The figures above
+are what the suite reproduces.)
+
+**For a well-formed body one stored value moves**: `_json_count` refuses a
+`true` or a fractional `cited_by_count`, both of which are well-formed JSON
+objects that did not raise, so such a paper scores 5 points lower. The
+*"nothing moves"* this file first claimed rested on *"no draw has seen a
+non-object body"* — an argument that reaches only the twelve top-level
+escapes, the value-level ones being objects by construction. For a malformed
+body, stored values move at every site the change touches, which is the point.
+
+**And no draw has looked.** Nothing in this repo measures the *shape* of a 200
+body — `ProbeOutcome` carries HTTP statuses only — so "unmeasured against the
+live APIs" is a count of what nobody counted, filed as #211.
 
 **The JATS fixes reach a bmlib path through the cached HTML**, a claim this file
 once had backwards twice: `_build_html` renders authors, figures, tables and both
@@ -198,7 +210,7 @@ per row**, because a redraw moves the sample, the bytes and the walk at once.
 **A contract net is blind to a value read *wrongly* without raising** (#199): a
 test asking *"did the analysis survive?"* passes over a body that silently
 credits CrossRef with 15 points of funder information it never sent, and that
-mutant survived all 459 tests in the file. Assert what the run **concluded**,
+mutant survived every test in the file. Assert what the run **concluded**,
 not that it finished — and expect the net to need a second kind of assertion
 beside it, not a wider net. **Pick the fixture that separates the guard from its
 own mutant**: only a *scalar* tells `isinstance(x, list)` from `x is None`,
@@ -241,20 +253,48 @@ the rest are precision, shape, or blocked on an unmeasured population. What a
 next session should know concretely:
 
 - **The measurement reframed the issue before any code was written.** Driving
-  `analyze()` end to end with hostile bodies found **23 escapes**, where the
-  issue describes one class. Eighteen are the `.get()` the title names; the
-  other five are two `.lower()` calls, two `>` comparisons and `result[0]`
-  raising `KeyError: 0` — so fixing every `.get()` in the module, which is
-  what the issue asks for, leaves five. **Probe the contract, not the
-  expression the reporter noticed.**
+  `analyze()` end to end with hostile bodies found **24 escapes per identifier
+  column**, where the issue describes one class. Eighteen are the `.get()` the
+  title names; the other **six** are two `.lower()` calls, two `>` comparisons
+  and `result[0]` raising `KeyError` for an object and `TypeError` for a
+  scalar — so fixing every `.get()` in the module, which is what the issue
+  asks for, leaves six. **Probe the contract, not the expression the reporter
+  noticed.**
 - **Two guards, because the escapes divide by where a guard can go.** Twelve
   are the body not being a JSON object, which `_request_json` now refuses —
   and that placement is `_request`'s own rule read backwards: the
-  *consequence* goes to the caller because five callers lose different things,
-  while the *body* is already that layer's subject. Eleven are a value *inside*
-  the object, which no boundary reaches, so they are coerced where they are
-  read. Deciding "one guard or four" as the issue frames it would have got
-  either half wrong.
+  *consequence* goes to the caller because the callers lose different things,
+  while the *body* is already that layer's subject. Twelve are a value
+  *inside* the object, which no boundary reaches, so they are coerced where
+  they are read. Deciding "one guard or four" as the issue frames it would
+  have got either half wrong.
+- **A number quoted in six files was re-derivable from none of them.** The
+  *23 = 18 + 4 + 1* above survived into `CHANGELOG`, `CLAUDE.md`, `ROADMAP`,
+  this file, the manual and a test docstring before PR #208's review re-ran
+  the committed corpus and got 24 = 20 + 3 + 1 per column. The `18` was right
+  about what it counted — `.get()` escapes — and had been carried into the
+  exception tally. **Record the invocation, or the number is a story.**
+- **A rule stated in a docstring slipped in the commit that wrote it.**
+  `_epmc_records` was added to put the readers of `resultList.result` on one
+  answer and its docstring said there were *two*; there were three, and
+  `_pmid_from_epmc` kept its hand-rolled copy — so the PR's headline claim was
+  false on every DOI-only analysis. It is mechanised now
+  (`TestOnlyTheHelperWalksTheEuropePMCResultList`, an `ast` walk). *A rule
+  enforced by prose is not enforced* — the third time this repo has learned
+  it, after `TestTheAuditNetIsComplete` and
+  `TestOnlyAnAccumulatingElementReadsTheBuffer`.
+- **An anti-vacuity assertion is only as wide as the axis it is on.** The net
+  asserted the *endpoint* was requested and every row supplied a PMID, so a
+  whole reader — reached only when the caller supplies none — never ran, and
+  38 rows passed green over it. Ask what the fixture holds *constant*, not
+  just what it varies.
+- **A contract net cannot see a value read wrongly without raising, and the
+  fixture can hide it too.** `bool("no")` is `True`: CT.gov stating *no
+  results* was stored as results posted, at the exact site #194 published a
+  false finding for a release. The net had a row for that endpoint — with
+  `{"hasResults": "yes"}`, the one string whose truthiness coincides with the
+  right answer. **Pick the fixture that separates the guard from its own
+  mutant**, which is PR #195's lesson and was not applied to its own new rows.
 - **The narrowed return type made three existing annotations true rather than
   adding a claim.** `_query_crossref`, `_query_europepmc` and `_query_openalex`
   already said `dict | None` and could all return a list; mypy could not see it
@@ -303,8 +343,9 @@ nowhere; #200 and #201 are shape. **#199 was the loudest and is closed.**
   previous release wrote is durable under #95's rule, so the whole window is
   re-fetched once. The two questions are independent, and a downstream reading
   only the number must still read this list.
-- **Tests: 3451 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
-  2026-09-07 on this branch; `main` at PR #205's merge read 3399 + 63).
+- **Tests: 3513 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
+  2026-09-08 on this branch after its own review; `main` at PR #205's merge
+  read 3399 + 63, and this branch's first cut read 3451 + 63).
   **The PostgreSQL half was not re-run for this branch and did not need to be**
   — it touches `transparency/` only, which carries no SQL. The PostgreSQL half has not been re-run since the
   SQL last moved; the last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set
@@ -330,7 +371,7 @@ nowhere; #200 and #201 are shape. **#199 was the loudest and is closed.**
   `ROADMAP.md` are promoted at release time; **109 lines carry one** — 40
   `ROADMAP.md` rows and 69 spots across `docs/manual/transparency.md` (35),
   `fulltext.md` (18), `publications.md` (13) and `templates.md` (3).
-  Recounted 2026-09-07 on this branch as
+  Recounted 2026-09-08 on this branch as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md`, so it counts *lines* and
   not markers; the figure is measured, not maintained, so recount rather
   than adjust it. Grep case-insensitively for `unreleased`, not for
@@ -349,11 +390,15 @@ nowhere; #200 and #201 are shape. **#199 was the loudest and is closed.**
 
 ### Open GitHub issues
 
-**Thirty-four open** as this file is written, **thirty-three once this branch
-merges** (`gh issue list`, 2026-09-07): #86, #92, #94, #103, #124, #128, #137,
+**Thirty-seven open** as this file is written, **thirty-six once this branch
+merges** (`gh issue list`, 2026-09-08): #86, #92, #94, #103, #124, #128, #137,
 #142, #143, #144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175,
 #177, #178, #179, #181, #186, #188, #196, #197, #199, #200, #201, #204, #206,
-#207. This branch answers **#199** and filed nothing. **#198, #202 and #203
+#207, #209, #210, #211. This branch answers **#199** and filed **#209, #210
+and #211** from its own review — a coercion tally so a wrong-typed value is
+not silently dropped, the absent-`hasResults` semantics it deliberately left
+alone, and a body-*shape* counter for the sampler, without which "no draw has
+seen a non-object body" is a count of what nobody looked for. **#198, #202 and #203
 were closed by hand at the start of this session** — PR #205 merged and named
 them in prose only, the process rule below catching its **ninth, tenth and
 eleventh** instances; #193/#194, #187/#190/#191, #184, #183 and #161 went the
