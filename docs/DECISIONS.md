@@ -243,14 +243,54 @@ must not be re-done.
   `_check_trial_results` is now `True` / `False` / `None`, and the caller
   reports three outcomes.
 
-  What genuinely remains is one level up and is **not** worth a schema change
-  today: `trial_results_compliant` is `False` both for *"asked and answered
-  no"* and for *"could not be checked"*, exactly as it already was for a
-  registration in another registry. `risk_indicators` distinguishes them —
-  read the indicator, not the flag — and every stored result already needed
-  that read for the other-registry case, so no downstream is newly wrong.
-  Widening the public field is the `FullTextStatus` change from #161 on a
-  second field and wants its own issue, filed rather than left here.
+  **The residual was taken too, one session later** (#198). It was recorded
+  here as *"not worth a schema change today"* — `trial_results_compliant` is
+  `False` for *"asked and answered no"* and for *"could not be checked"*
+  alike, `risk_indicators` distinguishes them, and no downstream was newly
+  wrong. Two things overturned that. The read it asks of a downstream is one
+  neither known downstream makes (both render the flag), which is precisely
+  how #194 published a false claim for a release; and the schema was already
+  moving in the same unreleased batch, so the recompute a downstream owes for
+  #184 and #194 covers this field for free, where after a release it would
+  cost a second one. **The cost of a schema addition is not a constant — it
+  depends on what else is unreleased beside it**, and this entry priced it as
+  though it were.
+- **`_find_trial_ids` takes the record and cannot fetch, and the fallback is
+  not coming back** (#202). It was a method taking a client, falling back to
+  its own Europe PMC search when no record was passed — which reads as
+  convenience and was in fact a defect, since `epmc is None` is what a
+  *failed* search returns, so an outage issued the identical failing search
+  twice per document and (after PR #195) reported it twice. Restoring the
+  fallback restores that: the two `None`s are indistinguishable at the
+  signature, and no sentinel is needed once the parameter is mandatory.
+  `analyze()` is the only caller and has always had the record in hand. A
+  trial id scraped out of an abstract bmlib never received is not a thing that
+  can happen.
+- **The provenance line is appended after every step, not where the status is
+  decided** (#203). It reads like misplaced code — the status is set deep in
+  the full-text path and the line is appended near the end of `analyze()` —
+  and moving it is what reintroduces the defect. `_merge_pubmed_signals`
+  retracts indicators, so a line appended before it is inside the retraction
+  window and protected only by staying out of
+  `_INDICATORS_RETRACTED_BY_PUBMED_COI` — set membership, which is exactly
+  what went wrong in #161 and again in #193. Appending afterwards makes the
+  protection structural. Measured, and stated per edit rather than in the
+  aggregate (PR #205's review): both single-edit mutants are *behaviourally*
+  equivalent, but only one is unobserved — moving the append above
+  `_merge_pubmed_signals` survives all 411 of `test_transparency.py`, while
+  putting a provenance line into the retraction set reddens 2. Never appending
+  it at all reddens 5, and breaking both protections together reddens the 3
+  written for it.
+- **`REQUEST_FAILED` and `NOT_CHECKABLE` share one indicator string and are
+  still two enum members** (#198). It looks like the vocabulary disagreeing
+  with itself. The prose deliberately does not split them — *"posted-results
+  status could not be checked"* is the identical claim and puts nothing in
+  ClinicalTrials.gov's mouth, and nothing downstream can act on the difference
+  in a sentence — while the enum must, because *"would re-running change
+  this?"* is `yes` for one and `no` for the other, results are cacheable, and
+  nothing in `transparency/` retries. Prose is for a human deciding what a
+  score means; the enum is for a caller deciding what to re-run. The same
+  division `FullTextStatus` makes between `NOT_SERVED` and `REQUEST_FAILED`.
 - **The sampler uses the analyzer's client, not a sampler one** (PR #195's
   review). It opened with `timeout=45.0, follow_redirects=True` where
   `analyze()` uses `_HTTP_TIMEOUT_SECONDS` and httpx's default `False`, so a

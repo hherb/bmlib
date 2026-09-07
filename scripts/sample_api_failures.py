@@ -119,7 +119,7 @@ from bmlib.transparency.analyzer import (
     JSON_ACCEPT_HEADERS,
     MAX_TRIAL_IDS_TO_CHECK,
     OPENALEX_WORKS_URL,
-    TransparencyAnalyzer,
+    _find_trial_ids,
     _parse_pubmed_signals,
     _user_agent,
 )
@@ -521,9 +521,7 @@ def _efetch_params(pmid: str, email: str) -> dict[str, str]:
     }
 
 
-def trial_ids_for(
-    analyzer: TransparencyAnalyzer, record: DrawnRecord, efetch_xml: str | None
-) -> list[str]:
+def trial_ids_for(record: DrawnRecord, efetch_xml: str | None) -> list[str]:
     """The NCT accessions bmlib would ask ClinicalTrials.gov about for *record*.
 
     Mirrors ``_check_trial_registration``: PubMed's own ``DataBankList``
@@ -533,8 +531,6 @@ def trial_ids_for(
     resolve — and measuring only the structured ones would understate it.
 
     Args:
-        analyzer: Supplies ``_find_trial_ids``; no request is made, since the
-            record it would search for is passed in.
         record: The drawn record.
         efetch_xml: The PubMed record's XML, when the efetch probe served one.
 
@@ -545,15 +541,16 @@ def trial_ids_for(
         accessions = list(_parse_pubmed_signals(efetch_xml).trial_accessions)
         if accessions:
             return accessions[:MAX_TRIAL_IDS_TO_CHECK]
-    found = analyzer._find_trial_ids(
-        None, record.pmid, record.doi, epmc={"resultList": {"result": [record.raw]}}
-    )
+    # A module function since issue #202, and one that makes no request of
+    # its own — so this reads the drawn record and cannot reach the network,
+    # which is what the "no request is made" line above used to have to
+    # promise on the caller's behalf.
+    found = _find_trial_ids({"resultList": {"result": [record.raw]}})
     return found[:MAX_TRIAL_IDS_TO_CHECK]
 
 
 def probe_record(
     client: Any,
-    analyzer: TransparencyAnalyzer,
     record: DrawnRecord,
     email: str,
     pace: Callable[[str], None],
@@ -566,8 +563,6 @@ def probe_record(
 
     Args:
         client: The HTTP client.
-        analyzer: Unused here, and kept in the signature so this and
-            :func:`probe_trials` are called the same way by ``main``.
         record: The drawn record.
         email: The contact address NCBI asks for.
         pace: The per-host pacer.
@@ -578,7 +573,6 @@ def probe_record(
         record with no PMID nothing to the PubMed one, which is exactly what
         bmlib does with them.
     """
-    del analyzer
     outcomes: list[ProbeOutcome] = []
 
     if record.doi:
@@ -610,7 +604,6 @@ def probe_record(
 
 def probe_trials(
     client: Any,
-    analyzer: TransparencyAnalyzer,
     record: DrawnRecord,
     email: str,
     pace: Callable[[str], None],
@@ -626,7 +619,6 @@ def probe_trials(
 
     Args:
         client: The HTTP client.
-        analyzer: Supplies the trial-id extraction.
         record: A record from the trial-enriched draw.
         email: The contact address NCBI asks for.
         pace: The per-host pacer.
@@ -682,7 +674,7 @@ def probe_trials(
                 population_failures.append(f"efetch {record.pmid}: HTTP {resp.status_code}")
 
     outcomes: list[ProbeOutcome] = []
-    for nct_id in trial_ids_for(analyzer, record, efetch_xml):
+    for nct_id in trial_ids_for(record, efetch_xml):
         url = CLINICALTRIALS_STUDY_URL.format(nct_id=nct_id)
         pace(url)
         outcomes.append(probe(client, "clinicaltrials", url, {"fields": "hasResults"}))
@@ -839,7 +831,6 @@ def main() -> int:
     # that found #194.
     headers = {"User-Agent": _user_agent(args.email, httpx.__version__)}
     pace = _make_pacer(args.per_host_interval)
-    analyzer = TransparencyAnalyzer(email=args.email)
     by_endpoint: dict[str, list[ProbeOutcome]] = {name: [] for name in ENDPOINTS}
     #: Requests that build the ClinicalTrials.gov population rather than
     #: measure it, and did not answer. They enter no table and would enter no
@@ -861,15 +852,13 @@ def main() -> int:
         for index, record in enumerate(draw.records, start=1):
             if index % 10 == 0:
                 print(f"  probed {index}/{len(draw.records)} records", file=sys.stderr)
-            for outcome in probe_record(client, analyzer, record, args.email, pace):
+            for outcome in probe_record(client, record, args.email, pace):
                 by_endpoint[outcome.endpoint].append(outcome)
         trial_draw = draw_records(client, args.trial_target, pace, TRIAL_STRATA, TRIAL_QUERY_SUFFIX)
         for index, record in enumerate(trial_draw.records, start=1):
             if index % 10 == 0:
                 print(f"  probed {index}/{len(trial_draw.records)} trial records", file=sys.stderr)
-            for outcome in probe_trials(
-                client, analyzer, record, args.email, pace, population_failures
-            ):
+            for outcome in probe_trials(client, record, args.email, pace, population_failures):
                 by_endpoint[outcome.endpoint].append(outcome)
 
     print("\nStatus distribution per dropped-response endpoint\n")

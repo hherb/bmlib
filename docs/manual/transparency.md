@@ -10,9 +10,9 @@ Multi-API transparency analyzer for biomedical publications. Queries external AP
 | Submodule | Contents | Public? |
 |-----------|----------|---------|
 | `analyzer` | `TransparencyAnalyzer`, scoring-weight constants | `TransparencyAnalyzer` only |
-| `models` | `TransparencyRisk`, `TransparencyUnknownReason`, `TransparencySettings`, `TransparencyResult`, `calculate_risk_level()` | Yes — all five |
+| `models` | `TransparencyRisk`, `TransparencyUnknownReason`, `TransparencySettings`, `TransparencyResult`, `FullTextStatus`, `TrialResultsStatus`, `calculate_risk_level()` | Yes — all seven |
 
-The list of six names below is the complete `bmlib.transparency.__all__`. Everything else in `analyzer` — the scoring weights, the detection patterns, and all analysis sub-steps — is either a module-level constant or underscore-private; import constants from the submodule if you need them:
+The list below is the complete `bmlib.transparency.__all__`, and is checked against it by `test_the_manual_lists_every_exported_name`. Everything else in `analyzer` — the scoring weights, the detection patterns, and all analysis sub-steps — is either a module-level constant or underscore-private; import constants from the submodule if you need them:
 
 ```python
 from bmlib.transparency.analyzer import MAX_TRANSPARENCY_SCORE, SCORE_TRIAL_REGISTERED
@@ -37,6 +37,7 @@ from bmlib.transparency import (
     TransparencyRisk,
     TransparencySettings,
     TransparencyUnknownReason,
+    TrialResultsStatus,  # unreleased
     calculate_risk_level,
 )
 ```
@@ -102,7 +103,7 @@ class FullTextStatus(Enum):
 
 `full_text_analyzed` says *whether* findings came from full text; this says **why not** when they did not, carried on [`TransparencyResult.full_text_status`](#transparencyresult).
 
-Before it existed, several outcomes were indistinguishable in anything a caller stored: a non-200, a document bmlib could not segment, and one that was entirely nested articles all reached storage as `full_text_analyzed=False` and the indicator `"COI disclosure status unknown (full text unavailable)"` — which is **false** for the refusals, where Europe PMC answered HTTP 200 with a document. Since results are cacheable ([`cache_results`](#transparencysettings)) and driven concurrently, a refusal was stored, permanent and unmarked, while the score lost up to `SCORE_COI_DISCLOSED + SCORE_DATA_FULL_OPEN` = 30 points — enough on its own to reach HIGH against the default `score_threshold=40` and set `tier_downgrade_applied`.
+Before it existed, several outcomes were indistinguishable in anything a caller stored: a non-200, a document bmlib could not segment, and one that was entirely nested articles all reached storage as `full_text_analyzed=False` and the indicator `"COI disclosure status unknown (full text unavailable)"` — which is **false** for the refusals, where Europe PMC answered HTTP 200 with a document. (That parenthetical is gone since issue #203; the prose half is now a [provenance line](#what-became-of-the-full-text-in-prose) keyed on this enum.) Since results are cacheable ([`cache_results`](#transparencysettings)) and driven concurrently, a refusal was stored, permanent and unmarked, while the score lost up to `SCORE_COI_DISCLOSED + SCORE_DATA_FULL_OPEN` = 30 points — enough on its own to reach HIGH against the default `score_threshold=40` and set `tier_downgrade_applied`.
 
 **`is_refusal` is the grouping to branch on**, rather than enumerating members at each call site — a member added later then has to choose a side:
 
@@ -115,7 +116,7 @@ if result.full_text_status is not None and result.full_text_status.is_refusal:
 
 `is_refusal` is `True` for `TRUNCATED`, `UNTERMINATED_MARKUP`, `UNCLOSED_REGION` and `ENTIRELY_NESTED`; `False` for `ANALYZED`, and for `NOT_SERVED`, `REQUEST_FAILED`, `NOT_ATTEMPTED` and `SEARCH_FAILED`, where nothing was served and so there is nothing to have refused. An HTTP 200 carrying an *empty* body is on that side too, and is why `REQUEST_FAILED` exists: a 200 alone is not "a document arrived".
 
-**`NOT_ATTEMPTED` and `SEARCH_FAILED` are two different claims** *(unreleased)*. `NOT_ATTEMPTED` says no request was made **and Europe PMC's own answer is the reason** — it does not hold open-access full text for this article (`inEPMC != "Y"`), or it answered with no record for the identifier. `SEARCH_FAILED` says the step was never reached because the *search* that gates it produced no answer at all: a non-200, or a request that raised. They were one member until issue #193, so a result computed during a Europe PMC outage stored a claim Europe PMC never made — the same defect as issue #191, one step up the call chain. That path matters more than it looks: the analysis still completes on whatever other APIs answered, the score silently loses everything full text would have contributed, and the result can reach HIGH with `tier_downgrade_applied` set. A partial outage now also appends `"COI disclosure status unknown (EuropePMC lookup failed)"` to `risk_indicators`, which carried **no COI line at all** on that path before. (Not "was empty": CrossRef and PubMed can both append on the same path, and the reproduction issue #193 records is one in which CrossRef answered. Corrected in PR #195's review.)
+**`NOT_ATTEMPTED` and `SEARCH_FAILED` are two different claims** *(unreleased)*. `NOT_ATTEMPTED` says no request was made **and Europe PMC's own answer is the reason** — it does not hold open-access full text for this article (`inEPMC != "Y"`), or it answered with no record for the identifier. `SEARCH_FAILED` says the step was never reached because the *search* that gates it produced no answer at all: a non-200, or a request that raised. They were one member until issue #193, so a result computed during a Europe PMC outage stored a claim Europe PMC never made — the same defect as issue #191, one step up the call chain. That path matters more than it looks: the analysis still completes on whatever other APIs answered, the score silently loses everything full text would have contributed, and the result can reach HIGH with `tier_downgrade_applied` set. A partial outage now also appends a COI line to `risk_indicators`, which carried **no COI line at all** on that path before, plus the [provenance line](#what-became-of-the-full-text-in-prose) naming the outage. (Not "was empty": CrossRef and PubMed can both append on the same path, and the reproduction issue #193 records is one in which CrossRef answered. Corrected in PR #195's review.) The two were **one string** until issue #203 — `"COI disclosure status unknown (EuropePMC lookup failed)"` — and the whole of it was retracted when PubMed supplied a `<CoiStatement>`, so a HIGH verdict with a tier downgrade could carry a COI *success* as its only human-readable line.
 
 **`is_refusal` answers "did a document arrive?", not "would re-running change this?"** — and the second question is the one `REQUEST_FAILED` was added for, so the snippet above deliberately does **not** retry it. Nothing in `transparency/` retries or honours `Retry-After`, and results are cacheable, so an outage window caches a corpus of absences unless the caller acts on this member itself:
 
@@ -134,6 +135,33 @@ One caveat the member cannot carry: a `REQUEST_FAILED` produced by a `_BUG_TYPES
 Nothing this version writes carries `None` — every path out of `analyze()`, including the three early returns for a disabled analyzer, a missing identifier and an unreachable network, records a determinate status. That is what keeps `None` meaning *legacy row* and nothing else; a current-version path leaving the default behind would make the two indistinguishable and defeat the discrimination the field exists to give.
 
 **Invariant:** when the field is set, `full_text_status is FullTextStatus.ANALYZED` if and only if `full_text_analyzed` is `True`; `__post_init__` raises `ValueError` on a disagreement. That flag is what qualifies a stored `coi_disclosed=False` as *scanned and absent* rather than *undeterminable*, so a status contradicting it makes the pair uninterpretable. As with `unknown_reason`, a `None` status imposes nothing.
+
+#### What became of the full text, in prose
+
+*(unreleased — issue #203)*
+
+`full_text_status` is the machine-readable half. Beside it, every **determinate** analysis that did not scan full text appends one line to `risk_indicators` saying why — one per member of the enum, keyed on the member rather than written per branch:
+
+| Status | Line |
+|--------|------|
+| `NOT_ATTEMPTED` | `"Full text not scanned (no EuropePMC full-text request was made)"` |
+| `SEARCH_FAILED` | `"Full text not scanned (the EuropePMC search produced no answer)"` |
+| `NOT_SERVED` | `"Full text not scanned (EuropePMC served none for this article)"` |
+| `REQUEST_FAILED` | `"Full text not scanned (the request to EuropePMC produced no answer)"` |
+| `TRUNCATED` | `"Full text not scanned (served, but the document did not arrive whole)"` |
+| `UNTERMINATED_MARKUP` | `"Full text not scanned (served, but its markup does not terminate)"` |
+| `UNCLOSED_REGION` | `"Full text not scanned (served, but a nested-article region is left open)"` |
+| `ENTIRELY_NESTED` | `"Full text not scanned (served, but nothing outside a nested-article region remained)"` |
+| `ANALYZED` | *(none — the text was scanned, so there is nothing to explain)* |
+
+**This is a change to what a stored result says**, and it replaces three parentheticals on the COI line. Those said two things at once — that the COI status is unknown, *and* what became of the full text — and all three were retracted when PubMed supplied a `<CoiStatement>`, which refutes only the first. A result could therefore reach HIGH with a tier downgrade whose only human-readable line was a COI **success**, with up to 30 points missing and nothing saying why: issue #193's own complaint, reintroduced through the retraction set.
+
+Two things follow, and both are deliberate:
+
+- **The COI line is now one string, `"COI disclosure status unknown"`**, for all three paths. The distinction the parentheticals carried is not lost — it moved here, where it is not a COI claim and cannot be retracted, and where it distinguishes eight outcomes rather than three. It is also more honest: `"(full text unavailable)"` was a claim about Europe PMC, and false for `REQUEST_FAILED` — issue #191's defect surviving in the prose half.
+- **A provenance line is appended after every step has run**, so it is structurally beyond the retraction rather than merely absent from its set. Membership is what went wrong twice already (issues #161 and #193); the two protections are independent, so no single edit reintroduces the defect.
+
+A **string-matching** downstream should read the machine-readable field instead: `full_text_status` carries the same distinction with none of the fragility.
 
 Each refusal also logs one WARNING naming which it was, the `document_id` that joins the line to a stored result, and how many bytes were served.
 
@@ -178,6 +206,42 @@ class TransparencySettings:
 
 ---
 
+### `TrialResultsStatus`
+
+*(unreleased — issue #198)*
+
+```python
+class TrialResultsStatus(Enum):
+    NOT_REGISTERED = "not_registered"    # no registration established; nothing was asked
+    POSTED = "posted"                    # ClinicalTrials.gov answered: results are posted
+    NOT_POSTED = "not_posted"            # ClinicalTrials.gov answered: none posted
+    REQUEST_FAILED = "request_failed"    # asked, and not one accession answered
+    NOT_CHECKABLE = "not_checkable"      # a registration it has no answer to give for
+```
+
+`trial_results_compliant` says *whether* results were posted; this says what was established, and `False` was four different claims. `POSTED` and `NOT_POSTED` are the findings about the trial; `REQUEST_FAILED` and `NOT_CHECKABLE` are findings about bmlib's ability to ask, and `NOT_REGISTERED` says there was nothing to ask. That middle pair is the distinction issue #194 turned out to rest on: ClinicalTrials.gov's edge refused every request for a release, and a bare `False` published that as *"Registered trial without posted results"* about every registered trial.
+
+**`is_answered` is the grouping to branch on**, rather than enumerating members — a member added later then has to choose a side:
+
+```python
+if result.trial_results_status is not None and not result.trial_results_status.is_answered:
+    # `trial_results_compliant` is False because nothing was established,
+    # not because the trial fell short. Do not render "results not posted".
+    show_unknown(result.document_id)
+```
+
+`is_answered` is `True` for exactly `POSTED` and `NOT_POSTED`.
+
+**`REQUEST_FAILED` and `NOT_CHECKABLE` share an indicator string and are separate members**, which is not a disagreement: *"would re-running change this?"* is `yes` for the first and `no` for the second, and results are cacheable with no retry anywhere in `transparency/`. The prose does not split them because nothing downstream can act on the difference in a sentence — the same division of labour `FullTextStatus` makes one endpoint over.
+
+**`None` means *not recorded*, never `NOT_REGISTERED`.** A result persisted before the field existed may carry `trial_results_compliant=True`, and reading that back as a determinate "no registration" would answer a question that was never asked. Nothing this version writes leaves it `None`, including the three early returns, which is what keeps `None` meaning *legacy row*.
+
+**Invariant:** when the field is set, `trial_results_status is TrialResultsStatus.POSTED` if and only if `trial_results_compliant` is `True`; `__post_init__` raises `ValueError` on a disagreement.
+
+One ambiguity this member inherits rather than adds: `trial_registered` is `False` both for a paper with no trial and for one whose sources never answered, so `NOT_REGISTERED` covers both too. That is a pre-existing gap in `trial_registered` itself, tracked as issue #204 — and the population is unmeasured, which is the part of it that does not exist yet.
+
+---
+
 ### `TransparencyResult`
 
 Result of a transparency analysis for a single document.
@@ -205,9 +269,10 @@ class TransparencyResult:
     full_text_analyzed: bool = False
     unknown_reason: TransparencyUnknownReason | None = None
     full_text_status: FullTextStatus | None = None
+    trial_results_status: TrialResultsStatus | None = None
 ```
 
-> **`unknown_reason` and `full_text_status` are declared last on purpose.** Downstream projects construct this dataclass positionally, so placing it beside its logical neighbours (`risk_level`, `risk_indicators`) would shift every following argument by one with nothing raised anywhere. The same rule governs `Publication.pmcid` and `BaseAgent`'s `embedding_model`. `full_text_status` was added later and sits after it: the rule is *append*, not *sort*. *(unreleased)*
+> **The last three fields are declared last on purpose.** Downstream projects construct this dataclass positionally, so placing one beside its logical neighbours (`risk_level`, `risk_indicators`, `trial_results_compliant`) would shift every following argument by one with nothing raised anywhere. The same rule governs `Publication.pmcid` and `BaseAgent`'s `embedding_model`. Each was added after the one before it and sits after it: the rule is *append*, not *sort*. *(unreleased)*
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -219,7 +284,7 @@ class TransparencyResult:
 | `data_availability_level` | `str` | One of `"full_open"`, `"on_request"`, `"not_available"`, `"unknown"`. |
 | `coi_disclosed` | `bool \| None` | **Tri-state** — see below. |
 | `trial_registered` | `bool` | Whether *this paper's own* trial registration was found — in any registry PubMed records, not only ClinicalTrials.gov. |
-| `trial_results_compliant` | `bool` | Whether the registered trial has posted results. `False` also covers "could not be checked" — a registration in another registry, or every ClinicalTrials.gov request refused. `risk_indicators` tells the two apart; see [Trial Registration Detection](#trial-registration-detection). |
+| `trial_results_compliant` | `bool` | Whether the registered trial has posted results. `False` also covers "could not be checked" — a registration in another registry, or every ClinicalTrials.gov request refused, or no registration at all. **Branch on `trial_results_status` instead** *(unreleased)*; this stays as the compatibility field. |
 | `outcome_switching_detected` | `bool` | Always `False` — no detection is implemented; the field is reserved. |
 | `risk_indicators` | `list[str]` | Human-readable list of risk factors found. |
 | `tier_downgrade_applied` | `int` | `settings.tier_downgrade_amount` when `risk_level` is HIGH, otherwise `0`. |
@@ -228,6 +293,7 @@ class TransparencyResult:
 | `full_text_analyzed` | `bool` | Whether Europe PMC full text was retrieved and scanned, rather than only the abstract. |
 | `unknown_reason` | `TransparencyUnknownReason \| None` | Why the result is `UNKNOWN`; `None` on every determinate result. |
 | `full_text_status` | `FullTextStatus \| None` | What became of the full-text attempt — see [`FullTextStatus`](#fulltextstatus). `None` means *not recorded*, which is every result persisted before the field existed and nothing this version writes. *(unreleased)* |
+| `trial_results_status` | `TrialResultsStatus \| None` | What became of the posted-results check — see [`TrialResultsStatus`](#trialresultsstatus). `None` means *not recorded*, on the same terms. *(unreleased)* |
 
 #### Tri-state `coi_disclosed`
 
@@ -237,7 +303,7 @@ class TransparencyResult:
 |-------|---------|------------------------|
 | `True` | A COI/disclosure statement was found. A statement that there is nothing to declare counts as disclosed. | *(none, or `"COI disclosure found in PubMed record"`)* |
 | `False` | Full text **was** retrieved and scanned, it contains no COI statement, and PubMed carries none either. | `"No COI disclosure found in full text"` |
-| `None` | Undeterminable — full text was not usable, the abstract carried no COI signal, and PubMed carried no statement. | `"COI disclosure status unknown (full text unavailable)"`, or `"… (full text served but not usable)"` when Europe PMC answered HTTP 200 and bmlib refused the document *(unreleased)* |
+| `None` | Undeterminable — full text was not usable, the abstract carried no COI signal, and PubMed carried no statement. | `"COI disclosure status unknown"`, beside a [provenance line](#what-became-of-the-full-text-in-prose) saying what became of the full text *(unreleased)* |
 
 A statement is found by any of three routes:
 
@@ -259,8 +325,8 @@ Note that the dataclass **default** is `True`, as is the `from_dict()` fallback 
 
 | Method | Description |
 |--------|-------------|
-| `to_dict() -> dict[str, Any]` | Serialise to a JSON-safe dictionary. `risk_level`, `unknown_reason` and `full_text_status` become their `.value` strings (the last two are `None` when unset); `analyzed_at` becomes an ISO 8601 string. |
-| `from_dict(data: dict) -> TransparencyResult` | Deserialise. `document_id`, `transparency_score`, and `risk_level` are required keys; a missing or empty `analyzed_at` defaults to now; a missing or null `unknown_reason` or `full_text_status` defaults to `None`, so results persisted before either field existed still load. A **present but unrecognised** value for either raises, exactly as `risk_level` does: a member this version does not know about is a result it cannot interpret. |
+| `to_dict() -> dict[str, Any]` | Serialise to a JSON-safe dictionary. `risk_level`, `unknown_reason`, `full_text_status` and `trial_results_status` become their `.value` strings (the last three are `None` when unset); `analyzed_at` becomes an ISO 8601 string. |
+| `from_dict(data: dict) -> TransparencyResult` | Deserialise. `document_id`, `transparency_score`, and `risk_level` are required keys; a missing or empty `analyzed_at` defaults to now; a missing or null `unknown_reason`, `full_text_status` or `trial_results_status` defaults to `None`, so results persisted before any of those fields existed still load. A **present but unrecognised** value for any of them raises, exactly as `risk_level` does: a member this version does not know about is a result it cannot interpret. |
 
 The round trip is lossless — every field, including `full_text_analyzed`, survives:
 
@@ -833,7 +899,7 @@ When the PubMed record lists a trial-registry databank, that is the publisher as
 
 Two consequences worth knowing:
 
-- **Registration outside ClinicalTrials.gov now counts.** `trial_registered` is `True` and 20 points are awarded, but posted results cannot be looked up — ClinicalTrials.gov has no answer for an ISRCTN number. The result says so with `"Trial registration found; posted-results status could not be checked"` rather than the misleading `"Registered trial without posted results"`. `trial_results_compliant` is `False` in both cases, so read the indicator, not the flag, to tell "checked and absent" from "not checkable".
+- **Registration outside ClinicalTrials.gov now counts.** `trial_registered` is `True` and 20 points are awarded, but posted results cannot be looked up — ClinicalTrials.gov has no answer for an ISRCTN number. The result says so with `"Trial registration found; posted-results status could not be checked"` rather than the misleading `"Registered trial without posted results"`. `trial_results_compliant` is `False` in both cases, so read [`trial_results_status`](#trialresultsstatus) — `NOT_POSTED` against `NOT_CHECKABLE` — to tell "checked and absent" from "not checkable" *(unreleased)*.
 - **Accessions are validated before use.** Only a well-formed `NCT\d{8}` id is carried forward, because it is publisher-supplied text that would otherwise be interpolated into a ClinicalTrials.gov URL path unchecked. A ClinicalTrials.gov entry whose accession is missing or malformed still counts as a registration — it just falls into the not-checkable case above.
 
   This is why that indicator names the *consequence* and not the registry: it covers both a genuine non-ClinicalTrials.gov registration and a ClinicalTrials.gov one whose accession was unusable, and "registered outside ClinicalTrials.gov" would be simply false in the second case. The distinction is logged at `DEBUG`, not carried on the result — nothing scores differently on it.
@@ -861,7 +927,7 @@ Because the request is narrowed to that one field, `hasResults` is the only key 
 
 **Correcting the header narrowed that from "always" to "whenever ClinicalTrials.gov does not answer" and left the conflation in place**, so a 404, a 403 or an unusable body still manufactured the same false finding. `_check_trial_results` is now a tri-state — `True`, `False`, or `None` for *"did not answer"* — and the caller distinguishes the three outcomes above (PR #195's review). `"Registered trial without posted results"` now means what it says: at least one accession was asked and answered no.
 
-The residual is on the public model and not in this step: `trial_results_compliant` is still a bare `bool`, so it is `False` for both *"answered no"* and *"could not be checked"*. **Read the indicator, not the flag**, exactly as for a registration in another registry.
+**And the model followed** *(unreleased — issue #198)*. The residual PR #195 left was that `trial_results_compliant` is a bare `bool`, `False` for *"answered no"*, *"could not be checked"*, *"nobody answered"* and *"no trial at all"* alike — with `risk_indicators` distinguishing three of the four in prose a downstream has to string-match, which both known downstreams do not. [`TrialResultsStatus`](#trialresultsstatus) is the machine-readable half; the flag stays as the compatibility field.
 
 ---
 

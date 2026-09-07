@@ -120,9 +120,11 @@ class FullTextStatus(Enum):
     #: open-access full text for this article. Together with
     #: :attr:`NOT_ATTEMPTED` — the dominant case, and every paper Europe PMC
     #: holds no open-access full text for — this is an outcome for which
-    #: "full text unavailable" is true. The refusals below are the ones for
+    #: *no document arrived* is true. The refusals below are the ones for
     #: which it is false, which is what :attr:`is_refusal` groups; neither of
-    #: these two is "the only" such outcome.
+    #: these two is "the only" such outcome. (Phrased as *"full text
+    #: unavailable"* until PR #205's review, after issue #203 deleted the
+    #: indicator string that carried it.)
     #:
     #: **Narrowed to the 404 in issue #191.** It used to mean any non-200 and
     #: any raised request as well, which put a claim in Europe PMC's mouth
@@ -218,9 +220,14 @@ _REFUSED_FULL_TEXT_STATUSES = frozenset(
 #: The other side, named rather than left implicit — the whole of *"a member
 #: added later has to choose a side"*. Membership of the refused set alone
 #: leaves the rule enforced by prose: a member added later and omitted from it
-#: simply reads as ``is_refusal is False`` and routes into the *"full text
-#: unavailable"* indicator, which for a served document is the falsehood issue
-#: #161 exists to remove — so the silent default runs the wrong way. Naming
+#: simply reads as ``is_refusal is False``, and the silent default runs the
+#: wrong way — it reports a served-and-refused document as one that never
+#: arrived, which is the falsehood issue #161 exists to remove. (It used to
+#: say *"routes into the 'full text unavailable' indicator"*. Issue #203
+#: deleted that routing and that string, and left no in-library reader of
+#: :attr:`FullTextStatus.is_refusal` at all — the property is public API for
+#: downstreams now, which is who the wrong answer would be given to. Corrected
+#: in PR #205's review.) Naming
 #: both sides lets ``test_every_status_chooses_a_side`` assert the partition,
 #: which turns that member into a red test instead. It has since been
 #: collected twice: :attr:`FullTextStatus.REQUEST_FAILED` was the first member
@@ -239,6 +246,109 @@ _NOT_REFUSED_FULL_TEXT_STATUSES = frozenset(
         FullTextStatus.NOT_SERVED,
         FullTextStatus.REQUEST_FAILED,
         FullTextStatus.ANALYZED,
+    }
+)
+
+
+class TrialResultsStatus(Enum):
+    """What became of this analysis's attempt to establish posted results.
+
+    ``trial_results_compliant`` answers *"were results posted?"* with a bare
+    ``bool``, and ``False`` was four different things (issue #198): the trial
+    was asked about and has none posted, nobody managed to ask, the
+    registration is somewhere ClinicalTrials.gov has no answer to give, or
+    there is no registered trial at all. ``risk_indicators`` distinguishes
+    three of those in prose — but prose is a list a downstream has to
+    string-match, and both known downstreams render the flag instead, so the
+    field that is easiest to read is the one that cannot be read correctly.
+
+    :class:`FullTextStatus`'s argument (issue #161) one endpoint over, and
+    the rules come with it. Use :attr:`is_answered` for the grouping rather
+    than enumerating the members at each call site, so a member added later
+    has to choose a side. Members that share an indicator string are still
+    separate here: :attr:`REQUEST_FAILED` and :attr:`NOT_CHECKABLE` answer
+    *"would re-running change this?"* differently, which is the question
+    results being cacheable makes worth storing, and the prose deliberately
+    does not distinguish them because nothing downstream can act on the
+    difference in a sentence.
+    """
+
+    #: No registration was established, so ClinicalTrials.gov was never asked
+    #: — the ordinary case, every paper that reports no trial. Read with
+    #: ``trial_registered``, which is the field that says whether a
+    #: registration was found; this one says only that no accession was
+    #: followed up. Note that ``trial_registered`` is itself ``False`` both
+    #: for a paper with no trial and for one whose sources never answered
+    #: (issue #204) — this member inherits that ambiguity and does not add
+    #: to it.
+    NOT_REGISTERED = "not_registered"
+    #: ClinicalTrials.gov was asked and reports posted results. The only
+    #: member for which ``trial_results_compliant`` is ``True``.
+    POSTED = "posted"
+    #: ClinicalTrials.gov was asked about every accession it answered for, and
+    #: none reports posted results. **With :attr:`POSTED`, one of the two
+    #: members that are findings about the trial**; :attr:`REQUEST_FAILED` and
+    #: :attr:`NOT_CHECKABLE` are findings about bmlib's ability to ask, which
+    #: is the whole distinction issue #194 turned out to rest on — the edge
+    #: refused every request for a release, and a bare ``False`` published
+    #: that as *"Registered trial without posted results"*. (Read *"the only
+    #: member that is a finding about the trial"*, which is false of
+    #: :attr:`POSTED`, and named the other two positionally — the ordinal
+    #: construction :data:`_NOT_REFUSED_FULL_TEXT_STATUSES` retracts above.
+    #: Corrected in PR #205's review.)
+    #:
+    #: It is a finding about the accessions that **answered**, and the loop
+    #: reaching it stops asking after ``MAX_TRIAL_IDS_TO_CHECK``
+    #: accessions and treats one answer as enough, so an accession that never
+    #: answered is not represented here. Filed as issue #206 rather than
+    #: hedged away in this sentence.
+    NOT_POSTED = "not_posted"
+    #: Accessions were asked about and not one answered — a refusal, a 404, an
+    #: unusable body, or a request that raised. *"Would re-running change
+    #: this?"* is ``yes``, and results are cacheable with no retry anywhere in
+    #: ``transparency/``, so an outage window otherwise caches absences
+    #: indistinguishable from real ones. :attr:`FullTextStatus.REQUEST_FAILED`
+    #: exists for that reason and this member is its twin.
+    REQUEST_FAILED = "request_failed"
+    #: A registration ClinicalTrials.gov cannot be asked about: it belongs to
+    #: another registry, or it is a ClinicalTrials.gov entry whose accession is
+    #: missing or malformed. Deliberately not named *"registered elsewhere"*,
+    #: which would be a plain falsehood in the second case — the same reason
+    #: the indicator string it shares with :attr:`REQUEST_FAILED` names no
+    #: registry. *"Would re-running change this?"* is ``no``.
+    NOT_CHECKABLE = "not_checkable"
+
+    @property
+    def is_answered(self) -> bool:
+        """Did ClinicalTrials.gov answer about this paper's trial?
+
+        ``True`` for exactly :attr:`POSTED` and :attr:`NOT_POSTED`, which are
+        the outcomes where ``trial_results_compliant`` means what it says.
+        For the rest the flag is ``False`` because nothing was established,
+        not because the trial fell short — the read both downstreams get
+        wrong today. The authority is :data:`_ANSWERED_TRIAL_RESULTS_STATUSES`
+        and the partition is pinned by ``test_every_status_chooses_a_side``.
+        """
+        return self in _ANSWERED_TRIAL_RESULTS_STATUSES
+
+
+#: Both sides named, for :data:`_REFUSED_FULL_TEXT_STATUSES`' reason: a member
+#: added later and omitted from the answered set would simply read as *not
+#: answered*, which is the plausible-looking default, so the rule would be
+#: enforced by prose alone. Naming both makes the omission a red test.
+_ANSWERED_TRIAL_RESULTS_STATUSES = frozenset(
+    {
+        TrialResultsStatus.POSTED,
+        TrialResultsStatus.NOT_POSTED,
+    }
+)
+
+#: The other side. See :data:`_ANSWERED_TRIAL_RESULTS_STATUSES`.
+_UNANSWERED_TRIAL_RESULTS_STATUSES = frozenset(
+    {
+        TrialResultsStatus.NOT_REGISTERED,
+        TrialResultsStatus.REQUEST_FAILED,
+        TrialResultsStatus.NOT_CHECKABLE,
     }
 )
 
@@ -321,6 +431,16 @@ class TransparencyResult:
     # defensive `.get()` in `from_dict`.
     full_text_status: FullTextStatus | None = None
 
+    # What became of the posted-results check (issue #198). Appended for the
+    # positional-stability reason above — the rule is "append", not "sort" —
+    # and `None` means *not recorded* here too, never `NOT_REGISTERED`: a
+    # result persisted before the field existed may carry
+    # `trial_results_compliant=True`, and reading that back as "no
+    # registration" would be a determinate answer to a question that was
+    # never asked. `trial_results_compliant` stays as the compatibility
+    # field; this is the one to branch on.
+    trial_results_status: TrialResultsStatus | None = None
+
     def __post_init__(self) -> None:
         """Reject a reason on a result that is not ``UNKNOWN``.
 
@@ -337,6 +457,13 @@ class TransparencyResult:
         *undeterminable*, so a status disagreeing with it makes the pair
         uninterpretable. When it is ``None`` nothing is imposed, since that is
         every result written before the field existed.
+
+        :attr:`trial_results_status` is the third of the same shape, against
+        :attr:`trial_results_compliant`. The flag is the compatibility field a
+        downstream already renders, so a result where the two disagree is
+        uninterpretable whichever one is believed — and only
+        :attr:`TrialResultsStatus.POSTED` supports the flag, every other
+        member describing an outcome in which nothing was established.
         """
         if self.unknown_reason is not None and self.risk_level is not TransparencyRisk.UNKNOWN:
             raise ValueError(
@@ -351,6 +478,16 @@ class TransparencyResult:
                 f"full_text_status={self.full_text_status.value!r} contradicts "
                 f"full_text_analyzed={self.full_text_analyzed!r}; the flag is set if and "
                 f"only if the status is {FullTextStatus.ANALYZED.value!r}"
+            )
+        if (
+            self.trial_results_status is not None
+            and (self.trial_results_status is TrialResultsStatus.POSTED)
+            != self.trial_results_compliant
+        ):
+            raise ValueError(
+                f"trial_results_status={self.trial_results_status.value!r} contradicts "
+                f"trial_results_compliant={self.trial_results_compliant!r}; the flag is set "
+                f"if and only if the status is {TrialResultsStatus.POSTED.value!r}"
             )
 
     def to_dict(self) -> dict[str, Any]:
@@ -382,6 +519,13 @@ class TransparencyResult:
             # dropping it here would put the answer back in the log only —
             # which is issue #161 exactly.
             "full_text_status": self.full_text_status.value if self.full_text_status else None,
+            # Likewise again. `trial_results_compliant` above says whether
+            # results were posted; this says what was established, and for
+            # every member but `POSTED` the flag is `False` for a reason the
+            # flag cannot carry (issue #198).
+            "trial_results_status": (
+                self.trial_results_status.value if self.trial_results_status else None
+            ),
         }
 
     @classmethod
@@ -395,10 +539,16 @@ class TransparencyResult:
 
         # Absent from results persisted before the field existed, and null on
         # every determinate result, so the *key* is read defensively rather
-        # than indexed. A present-but-unrecognised value still raises, exactly
-        # as `risk_level` does: a member this version does not know about is a
-        # result it cannot interpret, and inventing `None` for it would report
-        # a determinate analysis.
+        # than indexed. A present, **non-empty** and unrecognised value still
+        # raises, exactly as `risk_level` does: a member this version does not
+        # know about is a result it cannot interpret, and inventing `None` for
+        # it would report a determinate analysis. The empty string is the one
+        # present value that reads as `None` instead, and belongs there on the
+        # same argument — it names no member, so there is no determinate
+        # analysis to misreport, and a NOT NULL text column defaulting to `''`
+        # is exactly a row that never recorded the field. The comment claimed
+        # every present value raises until PR #205's review; all three of
+        # these reads have always behaved this way.
         unknown_reason_raw = data.get("unknown_reason")
         unknown_reason = (
             TransparencyUnknownReason(unknown_reason_raw) if unknown_reason_raw else None
@@ -406,11 +556,18 @@ class TransparencyResult:
 
         # Read the same way and for the same reasons: absent from results
         # persisted before the field existed, so the key is not indexed — but
-        # a present-but-unrecognised value still raises rather than loading as
-        # `None`, since a member this version does not know about is a result
-        # it cannot interpret, and `None` would report it as never recorded.
+        # a present, non-empty and unrecognised value still raises rather than
+        # loading as `None`, since a member this version does not know about
+        # is a result it cannot interpret, and `None` would report it as never
+        # recorded.
         full_text_status_raw = data.get("full_text_status")
         full_text_status = FullTextStatus(full_text_status_raw) if full_text_status_raw else None
+
+        # And the same again, for the same three reasons.
+        trial_results_status_raw = data.get("trial_results_status")
+        trial_results_status = (
+            TrialResultsStatus(trial_results_status_raw) if trial_results_status_raw else None
+        )
 
         return cls(
             document_id=data["document_id"],
@@ -430,6 +587,7 @@ class TransparencyResult:
             full_text_analyzed=data.get("full_text_analyzed", False),
             unknown_reason=unknown_reason,
             full_text_status=full_text_status,
+            trial_results_status=trial_results_status,
         )
 
 

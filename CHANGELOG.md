@@ -8,6 +8,88 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **A stored result now says what happened, once per claim** (issues #198,
+  #202 and #203, all three from PR #195's review).
+  `TransparencyResult.trial_results_status` is a new field carrying a new
+  public enum, `TrialResultsStatus`; `risk_indicators` gains a provenance line
+  and loses two indicator strings.
+
+  **The posted-results flag was a bare `bool` for four claims** (issue #198).
+  `trial_results_compliant` is `False` when ClinicalTrials.gov said no results
+  are posted, when every request for the paper's accessions was refused, when
+  the registration is in a registry ClinicalTrials.gov has no answer for, and
+  when there is no registered trial at all. `risk_indicators` distinguishes
+  three of those in prose — but prose is a list a downstream string-matches,
+  and both known downstreams render the flag instead, which is how issue #194
+  published *"Registered trial without posted results"* about every registered
+  trial for a release.
+
+  `TrialResultsStatus` is `FullTextStatus`'s argument (issue #161) one endpoint
+  over: `POSTED` / `NOT_POSTED` are ClinicalTrials.gov's own answers,
+  `REQUEST_FAILED` is nobody answering, `NOT_CHECKABLE` is a registration it
+  has no answer to give for, and `NOT_REGISTERED` is nothing to ask. The
+  grouping to branch on is `is_answered`, mechanised as a partition over two
+  named sets so a member added later must choose a side. The last two share an
+  indicator string and stay separate members because *"would re-running change
+  this?"* differs, which is what results being cacheable makes worth storing.
+  The flag stays as the compatibility field, `__post_init__` holds the pair to
+  agreeing, and `None` means *not recorded* — no path this version writes
+  leaves it unset, so `None` keeps meaning *legacy row*.
+
+  **One indicator string carried two claims, and the retraction took both**
+  (issue #203). Three branches wrote *"COI disclosure status unknown (…)"*
+  whose parenthetical said what became of the full text — *"(full text
+  unavailable)"*, *"(full text served but not usable)"*, *"(EuropePMC lookup
+  failed)"* — and all three were in `_INDICATORS_RETRACTED_BY_PUBMED_COI`. A
+  PubMed `<CoiStatement>` refutes the COI half and says nothing about the
+  other, so a result could reach HIGH with a tier downgrade whose only
+  human-readable line was a COI **success**, up to 30 points missing and
+  nothing saying why. That is issue #193's own complaint, reintroduced through
+  the retraction set.
+
+  The issue names the outage branch; the other two have the same shape and the
+  same consequence, so all three are split. The COI claim is now one line,
+  *"COI disclosure status unknown"*, and what became of the full text is a
+  **provenance line keyed on `FullTextStatus`** — one per member, appended
+  once after every step has run, which puts it structurally beyond the
+  retraction rather than merely absent from its set. Keying it on the enum
+  also makes the prose as precise as the machine-readable half: *"(full text
+  unavailable)"* was a claim about Europe PMC and false for `REQUEST_FAILED`,
+  issue #191's defect surviving in the prose. Every member must have a line or
+  be a named exclusion (`ANALYZED` is the exclusion), which
+  `test_every_status_says_what_happened` pins — and the lookup is
+  **subscripted**, so a member listed in neither collection raises rather than
+  costing the result one line in silence.
+
+  `NOT_ATTEMPTED`'s line says only that **no full-text request was made**. It
+  read *"EuropePMC holds no open-access full text for this article"*, which
+  that member's own third cause — a record carrying `inEPMC == "Y"` and no
+  address for the text — contradicts outright, so the fix had reintroduced
+  issues #187/#190/#191's defect in its own prose half. Keyed on the enum the
+  line can only be as precise as the member, so a member covering three causes
+  gets the claim true of all three; splitting the third out is issue #207.
+
+  **This moves stored `risk_indicators` for every analysis that did not scan
+  full text** — a much larger population than the outage case, since it
+  includes every closed-access paper: the COI line's text changes and a
+  provenance line is added. A downstream matching either string has to be
+  updated, and should read `full_text_status` instead.
+
+  **A failed Europe PMC search was re-issued** (issue #202). `_find_trial_ids`
+  documented that it reuses the record `analyze()` already fetched *"so the
+  same search is not issued twice per document"*, and decided that with
+  `if data is None` — which is exactly what a **failed** search returns. So
+  during an outage the identical failing search went out twice, and since the
+  failure gained a log line in PR #195, an operator counting Europe PMC
+  failures double-counted every document. Rather than thread a sentinel
+  distinguishing the two `None`s, the fallback is deleted: `_find_trial_ids`
+  is a module-level function over the record, with no client, so the promise
+  is structural — a trial id scraped out of an abstract bmlib never received
+  is not a thing that can happen. PubMed's `<DataBankList>` accessions are
+  untouched, so a record with a structured accession still gets its results
+  check during an outage. `scripts/sample_api_failures.py` follows it to
+  module level and loses the analyzer instance it held only for this.
+
 - **Every dropped API response now leaves a line, and an outage no longer
   looks like an answer** (issue #193, from PR #192's review, plus issue #194,
   found while measuring for it). `FullTextStatus.SEARCH_FAILED` is a new
@@ -44,7 +126,9 @@ All notable changes to bmlib are documented here. The format is based on
   Beside it, a fourth COI indicator — *"COI disclosure status unknown
   (EuropePMC lookup failed)"* — goes into `_INDICATORS_RETRACTED_BY_PUBMED_COI`,
   the set written for exactly the hazard of a fourth line being added to the
-  appending site and not the retracting one. `risk_indicators` carried **no
+  appending site and not the retracting one. (Issue #203, above, then split
+  that line in two: the parenthetical is a claim a `<CoiStatement>` does not
+  refute, so retracting the whole of it took the outage off the record.) `risk_indicators` carried **no
   COI line at all** on this path, so a HIGH verdict with a downgrade carried no
   stated reason for the finding that drove it. (Not "was empty": CrossRef and
   PubMed can both append on the same path, and the reproduction recorded above
@@ -130,9 +214,10 @@ All notable changes to bmlib are documented here. The format is based on
   because the claim is identical and it puts nothing in ClinicalTrials.gov's
   mouth. **This moves stored values again**: a paper whose ClinicalTrials.gov
   requests all fail now carries the second indicator instead of the first.
-  `TransparencyResult.trial_results_compliant` is still a bare `bool`, so it
-  is `False` for both — read the indicator, not the flag. Recorded in
-  `docs/DECISIONS.md`.
+  `TransparencyResult.trial_results_compliant` is still a bare `bool` at this
+  point, so it is `False` for both — recorded in `docs/DECISIONS.md` as a
+  deliberate residual, and taken as issue #198 above, in the entry at the top
+  of this section.
 
   *The fix for issue #187 was reproduced, one layer above itself.*
   `_request_json` and `_request_text` each kept a bare `except Exception`
