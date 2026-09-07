@@ -1154,6 +1154,79 @@ class _Analysis:
             self.data_level = level
 
 
+# ---- Reading a decoded JSON body ----
+#
+# :meth:`TransparencyAnalyzer._request_json` guarantees the body is a JSON
+# *object*, and that is the whole of what a boundary can promise: every value
+# inside it is still whatever the remote chose to send. Reading one as a
+# mapping, a string or a number is therefore an assumption, and each of the
+# three below was measured escaping a public ``analyze()`` as a
+# :data:`_BUG_TYPES` member — ``.get()`` on a list, ``.lower()`` on an object,
+# ``>`` between a string and an int (issue #199).
+#
+# They are coercers rather than guards on purpose: the caller's next line is a
+# read, and there is nothing useful to report — a value of the wrong type is
+# the *absence* of the value that was asked for, which is what the readers
+# already do with an absent key. The request itself has been reported at
+# :meth:`_request_json`, so nothing is being thrown away silently.
+
+
+def _json_object(value: object) -> dict[str, Any]:
+    """*value* if it is a JSON object, else an empty one.
+
+    Replaces ``x.get("k", {})``, which returns the default only for an
+    **absent** key — a key present with ``null``, or with an array, hands the
+    caller the wrong type and the next ``.get()`` raises. That exact defect is
+    already recorded against ``fulltext``'s ``_extract_free_pdf_url`` one
+    package over, which is why it is worth a named helper rather than an
+    ``isinstance`` at each of the four sites.
+    """
+    return value if isinstance(value, dict) else {}
+
+
+def _json_text(value: object) -> str:
+    """*value* if it is a JSON string, else ``""``.
+
+    ``(x.get("k") or "")`` looks like this and is not: it rescues ``null`` and
+    passes an object or an array straight through to the ``.lower()`` or the
+    regex that follows.
+    """
+    return value if isinstance(value, str) else ""
+
+
+def _json_count(value: object) -> int:
+    """*value* if it is a JSON integer, else ``0``.
+
+    ``bool`` is excluded although it is an ``int`` in Python: a
+    ``"cited_by_count": true`` would otherwise compare greater than zero and
+    award :data:`SCORE_CITED` on a body that stated no count at all. Floats
+    are excluded too — a count is not fractional, and accepting one would make
+    the helper's name a lie about what it validated.
+    """
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _epmc_records(epmc: object) -> list[dict[str, Any]]:
+    """The result records of a EuropePMC search body, dropping any that are not objects.
+
+    ``epmc["resultList"]["result"]`` is walked by two readers —
+    :func:`_find_trial_ids` and
+    :meth:`TransparencyAnalyzer._check_europepmc` — which each hand-rolled it,
+    and every level of it is a value the remote chose: ``resultList`` may be
+    an array, ``result`` may be an object (``result[0]`` then raised
+    ``KeyError``, which is the one escape in issue #199 that no ``.get()``
+    guard reaches), and a record may be a bare string.
+
+    A third copy is this repository's threshold for a helper, and here it also
+    puts the two readers on one answer: they used to agree by being written
+    the same way.
+    """
+    result = _json_object(_json_object(epmc).get("resultList")).get("result")
+    if not isinstance(result, list):
+        return []
+    return [record for record in result if isinstance(record, dict)]
+
+
 def _find_trial_ids(epmc: dict | None) -> list[str]:
     """Return NCT ids that identify *this* paper's own registered trial.
 
@@ -1181,15 +1254,12 @@ def _find_trial_ids(epmc: dict | None) -> list[str]:
     happen. ``None`` therefore returns nothing, quietly — the outage has
     already been reported where it happened.
     """
-    if not epmc:
-        return []
-
-    results = epmc.get("resultList", {}).get("result", [])
-    if not results:
+    records = _epmc_records(epmc)
+    if not records:
         return []
 
     # Strip XML/HTML markup so cue detection is not thrown off by tags.
-    abstract = _TAG_RE.sub(" ", results[0].get("abstractText") or "")
+    abstract = _TAG_RE.sub(" ", _json_text(records[0].get("abstractText")))
 
     # Deduplicate while preserving order, normalizing to the canonical
     # upper-case form ClinicalTrials.gov uses.
@@ -2053,14 +2123,18 @@ class TransparencyAnalyzer:
         """
         cr = self._query_crossref(client, doi)
         if cr:
-            funders = cr.get("message", {}).get("funder", [])
-            if funders:
+            funders = _json_object(cr.get("message")).get("funder")
+            if isinstance(funders, list) and funders:
                 analysis.award_funder_info()
                 for funder in funders:
-                    name = funder.get("name") or ""
+                    name = _json_text(_json_object(funder).get("name"))
                     if _is_industry_funder(name):
                         analysis.note_industry_funder(name)
             else:
+                # A `funder` that is not a list is CrossRef carrying no usable
+                # funder information, which is what this indicator says — the
+                # request itself was reported at `_request_json` if it failed,
+                # so this branch is never standing in for an outage.
                 analysis.indicators.append("No funder information in CrossRef")
 
     def _fetch_europepmc(
@@ -2104,12 +2178,12 @@ class TransparencyAnalyzer:
         the confidence that belongs to a prose signal is the method's business
         rather than the caller's.
         """
-        result_list = epmc.get("resultList", {}).get("result", [])
-        if not result_list:
+        records = _epmc_records(epmc)
+        if not records:
             return
 
-        record = result_list[0]
-        abstract_text = (record.get("abstractText") or "").lower()
+        record = records[0]
+        abstract_text = _json_text(record.get("abstractText")).lower()
 
         # Prefer full text — COI / data-availability statements are not in the
         # abstract. EuropePMC serves full text for open-access records.
@@ -2622,10 +2696,9 @@ class TransparencyAnalyzer:
         """Fold open-access status and citation count from OpenAlex into *analysis*."""
         oa = self._query_openalex(client, doi)
         if oa:
-            oa_info = oa.get("open_access", {})
-            if oa_info.get("is_oa"):
+            if _json_object(oa.get("open_access")).get("is_oa"):
                 analysis.score += SCORE_OPEN_ACCESS
-            if oa.get("cited_by_count", 0) > 0:
+            if _json_count(oa.get("cited_by_count")) > 0:
                 analysis.score += SCORE_CITED
 
     def _check_trial_registration(
@@ -2860,8 +2933,8 @@ class TransparencyAnalyzer:
         params: dict[str, str] | None = None,
         headers: Mapping[str, str] | None = None,
         quiet_statuses: frozenset[int] = frozenset(),
-    ) -> Any | None:
-        """:meth:`_request`, decoded as JSON, reporting a body that will not parse.
+    ) -> dict[str, Any] | None:
+        """:meth:`_request`, decoded as a JSON **object**, or ``None``.
 
         A 200 carrying something that is not JSON used to be logged as
         *"query failed"* at DEBUG, which names the wrong stage: the request
@@ -2875,6 +2948,28 @@ class TransparencyAnalyzer:
         remote sent a body that is not JSON"* is issue #187's defect inside
         the fix for it, so the call goes through
         :func:`_report_swallowed_exception`, which reads the type.
+
+        **It promises an object, not merely valid JSON** (issue #199). JSON's
+        top level may be an array, a string, a number, ``true`` or ``null``,
+        and every caller here reads the body with ``.get()`` — so a 200
+        carrying any of those raised ``AttributeError`` out of a public
+        :meth:`analyze`, which wraps none of its steps. That is a
+        ``_BUG_TYPES`` member escaping over a body the remote chose, and the
+        three ``_query_*`` helpers above already annotate ``dict | None``:
+        the annotation was **false**, and invisible to mypy only because this
+        method returned ``Any``. Narrowing it here makes those three true
+        rather than adding a claim.
+
+        **The refusal belongs at this layer and not at the caller**, by
+        :meth:`_request`'s own rule read the other way round: that helper
+        pushes the *consequence* out to the caller because five call sites
+        lose different things, while the *body* is this layer's subject
+        already — it is what the line above reports. One step finer is the
+        same claim, so it is stated once here instead of four times.
+
+        A future endpoint whose 200 legitimately carries an array wants its
+        own helper, not a flag on this one — :meth:`_request_text`'s rule
+        about ``headers``, one method down: add it when a second one arrives.
         """
         resp = self._request(
             client,
@@ -2888,7 +2983,7 @@ class TransparencyAnalyzer:
         if resp is None:
             return None
         try:
-            return resp.json()
+            data = resp.json()
         except Exception as e:
             _report_swallowed_exception(
                 e,
@@ -2898,6 +2993,22 @@ class TransparencyAnalyzer:
                 ordinary="answered 200 with a body that is not JSON",
             )
             return None
+        if not isinstance(data, dict):
+            # WARNING for the reason a body that will not parse warns: the
+            # remote answered and sent a shape no reader here can use, which
+            # is the remote's failure and not bmlib's. Reported rather than
+            # dropped quietly, because a response thrown away with no line is
+            # the other half of issue #193 — the type is named, since "not an
+            # object" does not say whether an array or a bare string arrived.
+            logger.warning(
+                "%s for %s: answered 200 with JSON that is not an object (%s); "
+                "that request produced no answer",
+                api,
+                subject,
+                type(data).__name__,
+            )
+            return None
+        return data
 
     def _request_text(
         self,
@@ -3065,9 +3176,17 @@ class TransparencyAnalyzer:
             # `.get()` inside this method's own `try` and come back as `False`
             # through an `AttributeError` logged as "query failed", which the
             # `_BUG_TYPES` branch would now report as a bmlib defect it is
-            # not. `data is None` already covers every way `_request_json`
-            # reports no answer, so this branch is only the 200-carrying-a-
-            # list case; testing it with an *empty* list cannot tell the two
-            # apart, which is how a truthiness mutant survived the suite.
+            # not.
+            #
+            # **Since issue #199 this branch is reached only for `None`**, the
+            # non-object body being refused a layer down at `_request_json`,
+            # which every reader in the module needed and not this one alone.
+            # It is kept rather than narrowed to `data is None`, as the second
+            # of two independent protections at the one site where an unusable
+            # body did not merely raise but *published a false finding about a
+            # trial* for a whole release (issue #194) — the redundancy issue
+            # #203 argues for, at the place with the worst measured cost.
+            # Testing it with an *empty* list cannot tell the guard from its
+            # own truthiness mutant, which is how one survived the suite.
             return None
         return bool(data.get("hasResults"))

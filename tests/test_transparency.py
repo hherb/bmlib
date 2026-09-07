@@ -67,7 +67,11 @@ from bmlib.transparency.analyzer import (
     TEXT_INDUSTRY_CONFIDENCE,
     TransparencyAnalyzer,
     _Analysis,
+    _epmc_records,
     _find_trial_ids,
+    _json_count,
+    _json_object,
+    _json_text,
     _merge_pubmed_signals,
     _note_full_text_provenance,
     _parse_pubmed_signals,
@@ -5530,3 +5534,303 @@ class TestTheManualListsEveryExportedName:
         text = self.MANUAL.read_text(encoding="utf-8")
         stale = re.search(r"list of \w+ names below is the complete", text)
         assert stale is None, f"the manual states a count again: {stale.group(0)!r}"
+
+
+class _MalformedBodyClient:
+    """A fake client that serves one endpoint a hostile body and the rest good ones.
+
+    Every JSON endpoint answers HTTP 200 throughout, because a non-200 is
+    already reported and already returns ``None`` — the whole subject here is
+    a remote that *answered* and sent a shape the reader did not expect.
+    ``requested`` is what makes the net non-vacuous: a hostile body served at
+    an endpoint ``analyze()`` never asks for asserts nothing at all.
+    """
+
+    #: A well-formed payload per endpoint, so exactly one thing is wrong at a
+    #: time and the analysis has something left to score.
+    GOOD = {
+        "crossref": {"message": {"funder": [{"name": "Acme Pharmaceuticals Inc"}]}},
+        "epmc": {
+            "resultList": {
+                "result": [
+                    {
+                        "id": "PMC123",
+                        "pmcid": "PMC123",
+                        "source": "PMC",
+                        "inEPMC": "N",
+                        "abstractText": ("Trial registration: NCT01234567 (ClinicalTrials.gov)."),
+                        "isOpenAccess": "Y",
+                    }
+                ]
+            }
+        },
+        "openalex": {"open_access": {"is_oa": True}, "cited_by_count": 3},
+        "trial": {"hasResults": True},
+    }
+
+    def __init__(self, endpoint: str | None = None, body=None):
+        self.bodies = dict(self.GOOD)
+        if endpoint is not None:
+            self.bodies[endpoint] = body
+        self.requested: list[str] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def get(self, url, **kwargs):
+        for name, fragment in (
+            ("crossref", "crossref"),
+            ("epmc", "europepmc"),
+            ("openalex", "openalex"),
+            ("trial", "clinicaltrials"),
+        ):
+            if fragment in url and not url.endswith("/fullTextXML"):
+                self.requested.append(name)
+                return _FakeResponse(status_code=200, json_data=self.bodies[name])
+        # Full text and PubMed are read as text, not JSON, and are a different
+        # layer; they 404 so this net stays about the JSON readers.
+        return _FakeResponse(status_code=404)
+
+
+#: Bodies a remote can legally send at HTTP 200 that are not the shape the
+#: reader assumes. Two kinds, and they are guarded at two different places:
+#: the body itself not being a JSON object, which `_request_json` refuses; and
+#: a *value inside* an object having the wrong type, which no boundary guard
+#: can reach because the object did arrive.
+_NON_OBJECT_BODIES = [
+    ("list-of-one", [{"a": 1}]),
+    ("empty-list", []),
+    ("string", "nope"),
+    ("number", 7),
+    ("true", True),
+    ("null", None),
+]
+
+_WRONG_TYPED_VALUES = [
+    ("crossref", "message-is-list", {"message": []}),
+    ("crossref", "funder-is-object", {"message": {"funder": {"name": "x"}}}),
+    ("crossref", "funder-item-is-string", {"message": {"funder": ["Acme"]}}),
+    ("crossref", "funder-name-is-object", {"message": {"funder": [{"name": {"a": 1}}]}}),
+    ("epmc", "resultList-is-list", {"resultList": []}),
+    ("epmc", "result-is-object", {"resultList": {"result": {"id": "PMC1"}}}),
+    ("epmc", "record-is-string", {"resultList": {"result": ["PMC1"]}}),
+    ("epmc", "result-is-number", {"resultList": {"result": 7}}),
+    (
+        "epmc",
+        "abstractText-is-object",
+        {"resultList": {"result": [{"id": "PMC1", "abstractText": {"x": 1}}]}},
+    ),
+    (
+        "epmc",
+        "inEPMC-is-object",
+        {"resultList": {"result": [{"id": "PMC1", "inEPMC": {"x": 1}}]}},
+    ),
+    ("openalex", "open_access-is-list", {"open_access": [], "cited_by_count": 1}),
+    (
+        "openalex",
+        "cited_by_count-is-string",
+        {"open_access": {"is_oa": True}, "cited_by_count": "3"},
+    ),
+    (
+        "openalex",
+        "cited_by_count-is-null",
+        {"open_access": {"is_oa": True}, "cited_by_count": None},
+    ),
+    ("trial", "hasResults-is-string", {"hasResults": "yes"}),
+]
+
+_HOSTILE_BODIES = [
+    (endpoint, f"top:{label}", body)
+    for endpoint in ("crossref", "epmc", "openalex", "trial")
+    for label, body in _NON_OBJECT_BODIES
+] + _WRONG_TYPED_VALUES
+
+
+class TestNoShapeARemoteSendsEscapesAnalyze:
+    """``analyze()`` survives every JSON shape a remote can answer 200 with.
+
+    Issue #199. ``analyze()``'s documented contract is that a dead or
+    misbehaving API costs a *component* and not the analysis — and it wraps
+    none of its steps, so anything a reader raises leaves a public method.
+    Measured before the fix, **23 of these bodies escaped**: 18
+    ``AttributeError``, 4 ``TypeError`` and 1 ``KeyError``, every one of them
+    a :data:`_BUG_TYPES` member, so had they been caught one layer down they
+    would have been reported as a bmlib defect they are not.
+
+    **Five of the 23 are not a ``.get()`` at all** — two ``.lower()`` calls,
+    two ``>`` comparisons and ``result[0]`` raising ``KeyError`` when
+    ``result`` is an object — so the guard the issue describes, applied to
+    every ``.get()`` in the module, still leaves them. That is why the net is
+    written over ``analyze()`` rather than over the four readers: it is keyed
+    on the contract, not on the expression that happened to break it.
+    """
+
+    def _analyze(self, monkeypatch, client):
+        import httpx
+
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: client)
+        # The pacer is not what this net is about, and at four requests a row
+        # it would cost the suite roughly a minute of sleeping.
+        monkeypatch.setattr(TransparencyAnalyzer, "_rate_limit", lambda self: None)
+        analyzer = TransparencyAnalyzer(settings=TransparencySettings(), email="t@example.com")
+        return analyzer.analyze("doc1", doi="10.1/x", pmid="1")
+
+    @pytest.mark.parametrize(
+        ("endpoint", "label", "body"),
+        [pytest.param(e, la, b, id=f"{e}-{la}") for e, la, b in _HOSTILE_BODIES],
+    )
+    def test_a_hostile_body_costs_its_component_and_not_the_analysis(
+        self, monkeypatch, endpoint, label, body
+    ):
+        client = _MalformedBodyClient(endpoint, body)
+        result = self._analyze(monkeypatch, client)
+
+        assert isinstance(result, TransparencyResult)
+        # The contract's second half, and the one a bare "did not raise" would
+        # miss: the other three components still ran, so the analysis was not
+        # demoted to UNKNOWN by one remote's malformed answer.
+        assert result.risk_level is not TransparencyRisk.UNKNOWN
+        # Anti-vacuity: a hostile body served at an endpoint `analyze()` never
+        # asks for asserts nothing. Without this, deleting a whole request
+        # would turn its rows green.
+        assert endpoint in client.requested
+
+    def test_a_funder_that_is_not_a_list_scores_nothing_and_says_so(self, monkeypatch):
+        # **The net above cannot see this one**, and that is the point of
+        # writing it separately: `funder` arriving as an object is truthy and
+        # iterates into its keys, so nothing raises — CrossRef is simply
+        # credited with funder information it did not send. Dropping the
+        # `isinstance` and keeping the truthiness test survived all 459 tests
+        # in this file until this assertion existed.
+        #
+        # A contract test asks "did the analysis survive?"; this asks "what
+        # did it conclude?", which is the half a `_BUG_TYPES` net is blind to.
+        client = _MalformedBodyClient("crossref", {"message": {"funder": {"name": "x"}}})
+        result = self._analyze(monkeypatch, client)
+
+        assert "No funder information in CrossRef" in result.risk_indicators
+        assert result.industry_funding_detected is False
+
+    def test_a_real_funder_list_still_scores(self, monkeypatch):
+        # The negative control for the row above: a guard that refused every
+        # funder list would satisfy it while deleting the component.
+        client = _MalformedBodyClient()
+        result = self._analyze(monkeypatch, client)
+
+        assert "No funder information in CrossRef" not in result.risk_indicators
+        assert result.industry_funding_detected is True
+
+    def test_the_good_bodies_reach_every_endpoint_this_net_serves(self, monkeypatch):
+        # The net's own negative control. Each row above is only as strong as
+        # the request behind it, and three of the four endpoints are reached
+        # conditionally — so if a future change stopped `analyze()` asking one
+        # of them, that endpoint's rows would pass while testing nothing.
+        client = _MalformedBodyClient()
+        self._analyze(monkeypatch, client)
+        assert set(client.requested) == {"crossref", "epmc", "openalex", "trial"}
+
+
+class TestReadingADecodedJSONBody:
+    """The coercers' own rules, where the end-to-end net cannot separate them.
+
+    The net above asserts a contract — that nothing escapes ``analyze()`` —
+    so it is blind to a value that is read *wrongly* without raising. These
+    are those cases.
+    """
+
+    def test_a_json_true_is_not_a_count(self):
+        # `True` is an `int` in Python, so the obvious `isinstance(value, int)`
+        # accepts it and `True > 0` awards SCORE_CITED for a body that stated
+        # no count at all. Nothing raises, so no contract test can see it.
+        assert _json_count(True) == 0
+        assert _json_count(False) == 0
+
+    def test_a_real_count_survives(self):
+        # The negative control for the row above: a guard that refused
+        # everything would satisfy it while removing the signal entirely.
+        assert _json_count(3) == 3
+
+    def test_a_value_that_cannot_be_compared_is_no_count(self):
+        # These two are what raised `TypeError: '>' not supported` out of
+        # `analyze()`; `None` is the one a `.get(k, 0)` default cannot rescue,
+        # since the key is present.
+        assert _json_count("3") == 0
+        assert _json_count(None) == 0
+
+    def test_a_fractional_count_is_refused(self):
+        # Not a hazard — `3.5 > 0` is fine — but the return type says `int`,
+        # so accepting one would make the annotation false rather than the
+        # comparison unsafe.
+        assert _json_count(3.5) == 0
+
+    def test_a_present_null_does_not_reach_the_reader(self):
+        # `x.get("k", {})` and `(x.get("k") or "")` both look like these and
+        # are not: the first returns the default only for an *absent* key, and
+        # the second rescues `null` while passing an object straight through.
+        assert _json_object(None) == {}
+        assert _json_object([]) == {}
+        assert _json_text(None) == ""
+        assert _json_text({"a": 1}) == ""
+
+    def test_a_well_formed_value_is_returned_unchanged(self):
+        # The coercers must not be silently emptying good bodies, which every
+        # assertion above would tolerate.
+        assert _json_object({"a": 1}) == {"a": 1}
+        assert _json_text("x") == "x"
+
+    def test_a_record_that_is_not_an_object_is_dropped_and_the_rest_kept(self):
+        # Dropping the whole list on one bad record would lose the records
+        # that are fine; keeping the bad one is what raised in `analyze()`.
+        body = {"resultList": {"result": ["PMC1", {"id": "PMC2"}]}}
+        assert _epmc_records(body) == [{"id": "PMC2"}]
+
+    def test_a_result_that_is_not_a_list_yields_no_records(self):
+        # `result` arriving as an object is the one escape in issue #199 that
+        # no `.get()` guard reaches: `result[0]` raised `KeyError: 0`.
+        assert _epmc_records({"resultList": {"result": {"id": "PMC1"}}}) == []
+        assert _epmc_records({"resultList": []}) == []
+        assert _epmc_records(None) == []
+
+    def test_a_result_that_is_a_scalar_yields_no_records(self):
+        # **This row is what makes the list test a list test.** An object, a
+        # string and an absent key all iterate — or do not — into the same
+        # empty answer, so weakening `isinstance(result, list)` to
+        # `result is None` survived every other assertion here. A number does
+        # not iterate at all, and is the shape that separates them.
+        assert _epmc_records({"resultList": {"result": 7}}) == []
+        assert _epmc_records({"resultList": {"result": True}}) == []
+
+
+class TestANonObjectBodyIsReported:
+    """A response thrown away leaves a line — issue #193's rule, one shape on."""
+
+    def test_it_warns_once_and_names_the_type(self, caplog):
+        analyzer = TransparencyAnalyzer()
+        client = _AnsweringClient(200, payload=[{"hasResults": True}])
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            result = analyzer._request_json(
+                client, "https://example.test/x", api="CrossRef", subject="10.1/x"
+            )
+        assert result is None
+        named = [r for r in caplog.records if "not an object" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+        # The type is named because "not an object" does not say whether an
+        # array or a bare string arrived, and those are different remotes
+        # misbehaving in different ways.
+        assert "list" in named[0].getMessage()
+
+    def test_it_is_not_reported_as_a_bmlib_defect(self, caplog):
+        # A body the remote chose is the remote's failure. ERROR is reserved
+        # for a `_BUG_TYPES` member, which can only mean bmlib is wrong —
+        # reporting this at that level is issue #187 inside the fix for it.
+        analyzer = TransparencyAnalyzer()
+        client = _AnsweringClient(200, payload="nope")
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            analyzer._request_json(
+                client, "https://example.test/x", api="CrossRef", subject="10.1/x"
+            )
+        assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
