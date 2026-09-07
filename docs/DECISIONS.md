@@ -274,9 +274,13 @@ must not be re-done.
   window and protected only by staying out of
   `_INDICATORS_RETRACTED_BY_PUBMED_COI` — set membership, which is exactly
   what went wrong in #161 and again in #193. Appending afterwards makes the
-  protection structural. Measured: the two protections are independent, so
-  each single-edit mutant is *equivalent* — never appending it reddens 5
-  tests, and breaking both together reddens the 3 written for it.
+  protection structural. Measured, and stated per edit rather than in the
+  aggregate (PR #205's review): both single-edit mutants are *behaviourally*
+  equivalent, but only one is unobserved — moving the append above
+  `_merge_pubmed_signals` survives all 411 of `test_transparency.py`, while
+  putting a provenance line into the retraction set reddens 2. Never appending
+  it at all reddens 5, and breaking both protections together reddens the 3
+  written for it.
 - **`REQUEST_FAILED` and `NOT_CHECKABLE` share one indicator string and are
   still two enum members** (#198). It looks like the vocabulary disagreeing
   with itself. The prose deliberately does not split them — *"posted-results

@@ -120,9 +120,11 @@ class FullTextStatus(Enum):
     #: open-access full text for this article. Together with
     #: :attr:`NOT_ATTEMPTED` — the dominant case, and every paper Europe PMC
     #: holds no open-access full text for — this is an outcome for which
-    #: "full text unavailable" is true. The refusals below are the ones for
+    #: *no document arrived* is true. The refusals below are the ones for
     #: which it is false, which is what :attr:`is_refusal` groups; neither of
-    #: these two is "the only" such outcome.
+    #: these two is "the only" such outcome. (Phrased as *"full text
+    #: unavailable"* until PR #205's review, after issue #203 deleted the
+    #: indicator string that carried it.)
     #:
     #: **Narrowed to the 404 in issue #191.** It used to mean any non-200 and
     #: any raised request as well, which put a claim in Europe PMC's mouth
@@ -218,9 +220,14 @@ _REFUSED_FULL_TEXT_STATUSES = frozenset(
 #: The other side, named rather than left implicit — the whole of *"a member
 #: added later has to choose a side"*. Membership of the refused set alone
 #: leaves the rule enforced by prose: a member added later and omitted from it
-#: simply reads as ``is_refusal is False`` and routes into the *"full text
-#: unavailable"* indicator, which for a served document is the falsehood issue
-#: #161 exists to remove — so the silent default runs the wrong way. Naming
+#: simply reads as ``is_refusal is False``, and the silent default runs the
+#: wrong way — it reports a served-and-refused document as one that never
+#: arrived, which is the falsehood issue #161 exists to remove. (It used to
+#: say *"routes into the 'full text unavailable' indicator"*. Issue #203
+#: deleted that routing and that string, and left no in-library reader of
+#: :attr:`FullTextStatus.is_refusal` at all — the property is public API for
+#: downstreams now, which is who the wrong answer would be given to. Corrected
+#: in PR #205's review.) Naming
 #: both sides lets ``test_every_status_chooses_a_side`` assert the partition,
 #: which turns that member into a red test instead. It has since been
 #: collected twice: :attr:`FullTextStatus.REQUEST_FAILED` was the first member
@@ -279,11 +286,22 @@ class TrialResultsStatus(Enum):
     #: member for which ``trial_results_compliant`` is ``True``.
     POSTED = "posted"
     #: ClinicalTrials.gov was asked about every accession it answered for, and
-    #: none reports posted results. **This is the only member that is a
-    #: finding about the trial**; the two below are findings about bmlib's
-    #: ability to ask, which is the whole distinction issue #194 turned out to
-    #: rest on — the edge refused every request for a release, and a bare
-    #: ``False`` published that as *"Registered trial without posted results"*.
+    #: none reports posted results. **With :attr:`POSTED`, one of the two
+    #: members that are findings about the trial**; :attr:`REQUEST_FAILED` and
+    #: :attr:`NOT_CHECKABLE` are findings about bmlib's ability to ask, which
+    #: is the whole distinction issue #194 turned out to rest on — the edge
+    #: refused every request for a release, and a bare ``False`` published
+    #: that as *"Registered trial without posted results"*. (Read *"the only
+    #: member that is a finding about the trial"*, which is false of
+    #: :attr:`POSTED`, and named the other two positionally — the ordinal
+    #: construction :data:`_NOT_REFUSED_FULL_TEXT_STATUSES` retracts above.
+    #: Corrected in PR #205's review.)
+    #:
+    #: It is a finding about the accessions that **answered**, and the loop
+    #: reaching it stops asking after ``MAX_TRIAL_IDS_TO_CHECK``
+    #: accessions and treats one answer as enough, so an accession that never
+    #: answered is not represented here. Filed as issue #206 rather than
+    #: hedged away in this sentence.
     NOT_POSTED = "not_posted"
     #: Accessions were asked about and not one answered — a refusal, a 404, an
     #: unusable body, or a request that raised. *"Would re-running change
@@ -521,10 +539,16 @@ class TransparencyResult:
 
         # Absent from results persisted before the field existed, and null on
         # every determinate result, so the *key* is read defensively rather
-        # than indexed. A present-but-unrecognised value still raises, exactly
-        # as `risk_level` does: a member this version does not know about is a
-        # result it cannot interpret, and inventing `None` for it would report
-        # a determinate analysis.
+        # than indexed. A present, **non-empty** and unrecognised value still
+        # raises, exactly as `risk_level` does: a member this version does not
+        # know about is a result it cannot interpret, and inventing `None` for
+        # it would report a determinate analysis. The empty string is the one
+        # present value that reads as `None` instead, and belongs there on the
+        # same argument — it names no member, so there is no determinate
+        # analysis to misreport, and a NOT NULL text column defaulting to `''`
+        # is exactly a row that never recorded the field. The comment claimed
+        # every present value raises until PR #205's review; all three of
+        # these reads have always behaved this way.
         unknown_reason_raw = data.get("unknown_reason")
         unknown_reason = (
             TransparencyUnknownReason(unknown_reason_raw) if unknown_reason_raw else None
@@ -532,9 +556,10 @@ class TransparencyResult:
 
         # Read the same way and for the same reasons: absent from results
         # persisted before the field existed, so the key is not indexed — but
-        # a present-but-unrecognised value still raises rather than loading as
-        # `None`, since a member this version does not know about is a result
-        # it cannot interpret, and `None` would report it as never recorded.
+        # a present, non-empty and unrecognised value still raises rather than
+        # loading as `None`, since a member this version does not know about
+        # is a result it cannot interpret, and `None` would report it as never
+        # recorded.
         full_text_status_raw = data.get("full_text_status")
         full_text_status = FullTextStatus(full_text_status_raw) if full_text_status_raw else None
 

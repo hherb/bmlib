@@ -24,6 +24,7 @@ import logging
 import re
 import time
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 import pytest
 
@@ -68,6 +69,7 @@ from bmlib.transparency.analyzer import (
     _Analysis,
     _find_trial_ids,
     _merge_pubmed_signals,
+    _note_full_text_provenance,
     _parse_pubmed_signals,
     _PubMedSignals,
     _score_data_availability,
@@ -3231,7 +3233,13 @@ class TestARefusedFullTextLeavesATrace:
         analysis = _Analysis()
         analyzer._check_europepmc(client, _epmc_record(), analysis)
         assert analysis.full_text_status is FullTextStatus.UNCLOSED_REGION
-        assert "served" in _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.UNCLOSED_REGION]
+        # The substring has to be unique to this member's line: `"served"`
+        # alone, which this asserted until PR #205's review, occurs in five of
+        # the eight and so passed on any other refusal's wording.
+        assert (
+            "nested-article region is left open"
+            in _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.UNCLOSED_REGION]
+        )
         assert _INDICATOR_COI_UNKNOWN in analysis.indicators
 
     def test_every_refusal_is_a_refusal_and_the_other_two_are_not(self):
@@ -5099,6 +5107,34 @@ class TestAProvenanceLineIsNotACoiClaim:
         assert covered == set(FullTextStatus)
         assert not set(_FULL_TEXT_PROVENANCE_INDICATORS) & _STATUSES_WITH_NO_PROVENANCE_LINE
 
+    @pytest.mark.parametrize("status", list(FullTextStatus))
+    def test_every_status_reaches_the_result_as_its_own_line(self, status):
+        # The partition test above compares two collections and says nothing
+        # about the **append**, so suppressing the line for four of the eight
+        # members left the whole suite green, as did appending it twice (PR
+        # #205's review). Only five members had an `analyze()`-level assertion,
+        # and the four without included issue #191's 404 — the commonest
+        # non-200 the sampler measured, 81 of 81.
+        #
+        # Exact list equality rather than membership, since that is what makes
+        # one assertion cover both mutants at once.
+        analysis = _Analysis(full_text_status=status)
+        _note_full_text_provenance(analysis)
+        expected = _FULL_TEXT_PROVENANCE_INDICATORS.get(status)
+        assert analysis.indicators == ([] if expected is None else [expected])
+
+    def test_a_status_in_neither_collection_raises(self, monkeypatch):
+        # The fail-closed half, which is what makes the exclusion set
+        # load-bearing at runtime instead of documentation. A `.get()` here
+        # dropped the line in silence, and what it drops is invisible — the
+        # result simply carries one line fewer — so the red test above was the
+        # only protection. Deleting an entry stands in for the real hazard,
+        # a member added to the enum and to neither collection.
+        monkeypatch.delitem(_FULL_TEXT_PROVENANCE_INDICATORS, FullTextStatus.NOT_SERVED)
+        analysis = _Analysis(full_text_status=FullTextStatus.NOT_SERVED)
+        with pytest.raises(KeyError):
+            _note_full_text_provenance(analysis)
+
     def test_no_two_statuses_share_a_line(self):
         # A copy-paste makes two outcomes indistinguishable in the one half a
         # human reads, which is the defect this whole family is about.
@@ -5222,6 +5258,25 @@ class TestTrialResultsStatus:
         )
         assert not _ANSWERED_TRIAL_RESULTS_STATUSES & _UNANSWERED_TRIAL_RESULTS_STATUSES
 
+    def test_the_docstring_names_every_answered_member(self):
+        # `TestTheProseAgreesWithThePartition`'s guard, brought across with the
+        # precedent it copies (PR #205's review). `is_answered`'s docstring
+        # enumerates the `True` side by hand, and that is the read a downstream
+        # gets off the public API — the same list that went stale for
+        # `is_refusal` when issue #193 added a member to the frozenset and not
+        # to the prose. A sixth member joining the answered set is otherwise
+        # silent: the partition test still passes, and so does the enumeration
+        # below, which names only the members it knows.
+        doc = TrialResultsStatus.is_answered.__doc__ or ""
+        missing = [m.name for m in _ANSWERED_TRIAL_RESULTS_STATUSES if m.name not in doc]
+        assert not missing, f"is_answered's docstring does not name {missing}"
+
+    def test_the_docstring_names_no_unanswered_member_among_them(self):
+        # The converse, so the remedy cannot be "paste every member in".
+        doc = TrialResultsStatus.is_answered.__doc__ or ""
+        wrongly_named = [m.name for m in _UNANSWERED_TRIAL_RESULTS_STATUSES if m.name in doc]
+        assert not wrongly_named, f"is_answered's docstring lists {wrongly_named} as answered"
+
     def test_only_an_answer_counts_as_answered(self):
         assert TrialResultsStatus.POSTED.is_answered is True
         assert TrialResultsStatus.NOT_POSTED.is_answered is True
@@ -5283,7 +5338,13 @@ class TestTrialResultsStatus:
         # The pair `full_text_status`/`full_text_analyzed` is held to, for the
         # same reason: the flag is the compatibility field, so a stored result
         # where the two disagree is uninterpretable whichever one is believed.
-        with pytest.raises(ValueError, match="trial_results_status"):
+        #
+        # **Both directions**, as `test_analyzed_and_the_flag_must_agree` does.
+        # Asserted from the `POSTED` side alone, `!=` weakens to `and not` with
+        # the whole suite green (PR #205's review) — and the direction that
+        # drops is a non-`POSTED` status beside a `True` flag, which is exactly
+        # the shape an in-place upgrade of a legacy row produces.
+        with pytest.raises(ValueError, match="if and only if"):
             TransparencyResult(
                 document_id="d",
                 transparency_score=50,
@@ -5291,6 +5352,20 @@ class TestTrialResultsStatus:
                 trial_results_compliant=False,
                 trial_results_status=TrialResultsStatus.POSTED,
             )
+        with pytest.raises(ValueError, match="if and only if"):
+            TransparencyResult(
+                document_id="d",
+                transparency_score=50,
+                risk_level=TransparencyRisk.MEDIUM,
+                trial_results_compliant=True,
+                trial_results_status=TrialResultsStatus.NOT_POSTED,
+            )
+
+    def test_it_defaults_to_not_recorded(self):
+        # `None` is the default, so a result this version does not fill in is
+        # a legacy row's equal — which is what the "every path records it"
+        # test below exists to make unreachable in practice.
+        assert TransparencyResult("d", 50, TransparencyRisk.MEDIUM).trial_results_status is None
 
     def test_a_result_that_never_recorded_it_loads_as_not_recorded(self):
         # `None` is *not recorded*, never `NOT_REGISTERED`: a result persisted
@@ -5306,6 +5381,25 @@ class TestTrialResultsStatus:
             "trial_results_compliant": True,
         }
         assert TransparencyResult.from_dict(legacy).trial_results_status is None
+
+    def test_not_registered_round_trips_and_does_not_collapse_to_none(self):
+        # `full_text_status`'s own rule, and it matters more here: this is the
+        # default, the value all three early returns write, and the value every
+        # paper without a trial carries. Pinned only from the `None` side, a
+        # `to_dict` writing `None` for it is invisible and undoes the whole
+        # *"every path this version writes records it"* guarantee at
+        # serialisation — measured green against the suite (PR #205's review).
+        result = TransparencyResult(
+            "d",
+            50,
+            TransparencyRisk.MEDIUM,
+            trial_results_status=TrialResultsStatus.NOT_REGISTERED,
+        )
+        payload = result.to_dict()
+        assert payload["trial_results_status"] == "not_registered"
+        assert TransparencyResult.from_dict(payload).trial_results_status is (
+            TrialResultsStatus.NOT_REGISTERED
+        )
 
     def test_it_round_trips_by_value(self):
         result = TransparencyResult(
@@ -5326,7 +5420,14 @@ class TestTrialResultsStatus:
         # `unknown_reason` and `full_text_status` both refuse rather than
         # loading `None`: a member from a later bmlib is a result this one
         # cannot interpret, and `None` would report it as never recorded.
-        with pytest.raises(ValueError):
+        #
+        # **`match=` is load-bearing**, exactly as it is for `full_text_status`
+        # one class up. Without it a `from_dict` mapping an unrecognised value
+        # onto `POSTED` still passes: the `ValueError` then comes from
+        # `__post_init__`, the default `trial_results_compliant=False`
+        # contradicting it, and the test reports an enum lookup it never
+        # reached (measured green, PR #205's review).
+        with pytest.raises(ValueError, match="witnessed_by_a_notary"):
             TransparencyResult.from_dict(
                 {
                     "document_id": "d",
@@ -5339,13 +5440,93 @@ class TestTrialResultsStatus:
     def test_every_path_this_version_writes_records_it(self, monkeypatch):
         # The rule `full_text_status` established: if any current path left it
         # `None`, a current row would be indistinguishable from a legacy one
-        # and the *not recorded* reading would be worthless. The two early
-        # returns are the ones that would forget.
-        assert TransparencyAnalyzer().analyze("doc-1").trial_results_status is (
-            TrialResultsStatus.NOT_REGISTERED
+        # and the *not recorded* reading would be worthless.
+        #
+        # **Three early returns, and this covered two** (PR #205's review):
+        # dropping the field from the disabled return was green. Both fields
+        # are asserted on each, since `full_text_status` had the same hole on
+        # the disabled path — issue #161's own rule, unpinned at one of the
+        # three returns it names.
+        disabled = TransparencyAnalyzer(settings=TransparencySettings(enabled=False)).analyze(
+            "doc-1", pmid="1"
         )
+        assert disabled.unknown_reason is TransparencyUnknownReason.DISABLED
+        assert disabled.trial_results_status is TrialResultsStatus.NOT_REGISTERED
+        assert disabled.full_text_status is FullTextStatus.NOT_ATTEMPTED
+
+        no_identifier = TransparencyAnalyzer().analyze("doc-1")
+        assert no_identifier.unknown_reason is TransparencyUnknownReason.NO_IDENTIFIER
+        assert no_identifier.trial_results_status is TrialResultsStatus.NOT_REGISTERED
+        assert no_identifier.full_text_status is FullTextStatus.NOT_ATTEMPTED
         client = _EveryRequestFails(503)
         _install_fake_client(monkeypatch, client)
         outage = TransparencyAnalyzer().analyze("doc-1", pmid="1")
         assert outage.unknown_reason is TransparencyUnknownReason.UNREACHABLE
         assert outage.trial_results_status is not None
+
+
+class TestTheManualListsEveryExportedName:
+    """The manual's import block declared itself complete and was not checked.
+
+    It read *"The list of six names below is the complete
+    ``bmlib.transparency.__all__``"* over a block of seven, while ``__all__``
+    held eight: issue #198's :class:`TrialResultsStatus` was exported and never
+    added, so a downstream copying that block does not get the enum the whole
+    change is about (PR #205's review). The count had been stale since
+    :class:`FullTextStatus` as well, which is what makes it a drift rather than
+    one slip — and the manual is the copy a downstream reads, so the guard
+    written on the source is the guard the manual needs
+    (``TestTheStatedCountsAreWhatTheCorpusHolds``' rule one file over).
+
+    It **fails closed**: a block that has moved or been reformatted out of
+    recognition raises rather than passing over nothing.
+    """
+
+    MANUAL = Path(__file__).resolve().parents[1] / "docs" / "manual" / "transparency.md"
+
+    #: The canonical block, scoped to the `## Imports` section. The manual also
+    #: shows deliberately partial imports in usage snippets — one names three
+    #: of the eight — so an unscoped search either finds two blocks or, worse,
+    #: checks the wrong one.
+    SECTION_RE = re.compile(r"^## Imports$(?P<body>.*?)^---$", re.MULTILINE | re.DOTALL)
+    BLOCK_RE = re.compile(
+        r"^from bmlib\.transparency import \(\n(?P<names>.*?)^\)$",
+        re.MULTILINE | re.DOTALL,
+    )
+
+    def _listed_names(self) -> set[str]:
+        section = self.SECTION_RE.search(self.MANUAL.read_text(encoding="utf-8"))
+        if section is None:
+            raise AssertionError(f"no `## Imports` section found in {self.MANUAL.name}")
+        blocks = self.BLOCK_RE.findall(section["body"])
+        if len(blocks) != 1:
+            raise AssertionError(
+                f"expected exactly one parenthesised `from bmlib.transparency import` "
+                f"block in {self.MANUAL.name}'s `## Imports` section, found {len(blocks)}"
+            )
+        names = {
+            stripped
+            for line in blocks[0].splitlines()
+            if (stripped := line.split("#", 1)[0].strip().rstrip(","))
+        }
+        if not names:
+            raise AssertionError("the manual's import block lists no names")
+        return names
+
+    def test_the_manual_lists_every_exported_name(self):
+        from bmlib.transparency import __all__ as exported
+
+        listed = self._listed_names()
+        assert listed == set(exported), (
+            f"manual lists {sorted(listed)}; __all__ is {sorted(exported)}"
+        )
+
+    def test_the_manual_states_no_count_of_them(self):
+        # The count is what went stale, twice, while the list beside it was
+        # only one name short. A prose number over a list a test already checks
+        # is a second thing to keep in step for no gain — the ordinal-free rule
+        # `_NOT_REFUSED_FULL_TEXT_STATUSES` states for enum members, applied to
+        # the manual.
+        text = self.MANUAL.read_text(encoding="utf-8")
+        stale = re.search(r"list of \w+ names below is the complete", text)
+        assert stale is None, f"the manual states a count again: {stale.group(0)!r}"

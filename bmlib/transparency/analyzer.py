@@ -609,9 +609,21 @@ _INDICATORS_RETRACTED_BY_PUBMED_COI = frozenset(
 #: and the points lost are on the result and in the WARNING that names the
 #: step; a number restated in prose is a number that goes stale.
 _FULL_TEXT_PROVENANCE_INDICATORS: dict[FullTextStatus, str] = {
-    FullTextStatus.NOT_ATTEMPTED: (
-        "Full text not scanned (EuropePMC holds no open-access full text for this article)"
-    ),
+    # **Says only that no request was made, which is the member's own name.**
+    # It read *"EuropePMC holds no open-access full text for this article"*
+    # until PR #205's review, and `NOT_ATTEMPTED` has three causes of which
+    # the third contradicts that outright: a record carrying `inEPMC == "Y"`
+    # and no address for the text (`_fetch_europepmc_fulltext`'s first guard)
+    # is EuropePMC positively claiming to hold it. `risk_indicators` is
+    # persisted, so that reached storage — the #187/#190/#191 defect, a claim
+    # in EuropePMC's mouth that only one of the causes makes, reintroduced in
+    # the prose half by the fix whose own argument is that *"(full text
+    # unavailable)"* was false for `REQUEST_FAILED`.
+    #
+    # Keyed on the enum the prose can only be as precise as the member, so a
+    # member conflating three causes gets the line true of all three. Making
+    # the third its own member is filed rather than taken here.
+    FullTextStatus.NOT_ATTEMPTED: "Full text not scanned (no EuropePMC full-text request was made)",
     FullTextStatus.SEARCH_FAILED: (
         "Full text not scanned (the EuropePMC search produced no answer)"
     ),
@@ -653,6 +665,14 @@ _INDICATOR_NO_POSTED_RESULTS = "Registered trial without posted results"
 # registry *and* a ClinicalTrials.gov registration whose accession was missing
 # or malformed; saying "registered outside ClinicalTrials.gov" would be a plain
 # falsehood in the second case.
+#
+# **Three appending sites, two enum members** (issue #198, and the comment said
+# two until PR #205's review). Both causes above are `NOT_CHECKABLE`; the third
+# site is `REQUEST_FAILED` — asked, and not one accession answered — which
+# shares this string because the claim a human can act on is identical and
+# neither puts anything in ClinicalTrials.gov's mouth. The difference a caller
+# *can* act on is *"would re-running change this?"*, and that is the enum's to
+# carry, not this line's. See `TrialResultsStatus` and `docs/DECISIONS.md`.
 _INDICATOR_RESULTS_NOT_CHECKABLE = (
     "Trial registration found; posted-results status could not be checked"
 )
@@ -1206,9 +1226,19 @@ def _note_full_text_provenance(analysis: _Analysis) -> None:
     explain. Every other member must have a line: see
     :data:`_FULL_TEXT_PROVENANCE_INDICATORS`.
     """
-    line = _FULL_TEXT_PROVENANCE_INDICATORS.get(analysis.full_text_status)
-    if line is not None:
-        analysis.indicators.append(line)
+    # **Subscripted, and the exclusion set is what guards it** — the
+    # `_DEPOSITION_DATABANK_LEVELS` idiom in `_merge_pubmed_signals` below,
+    # for its reason: a
+    # `.get()` here is silent for a member listed in neither collection, and
+    # what it drops is invisible, the result simply carrying one line fewer
+    # (PR #205's review). Subscripting makes the partition load-bearing at
+    # runtime, so `test_every_status_says_what_happened` becomes the second
+    # protection rather than the only one. A `KeyError` out of `analyze()` is
+    # the right cost: it can only mean a member was added to the enum and to
+    # neither collection, which is a defect in this module.
+    if analysis.full_text_status in _STATUSES_WITH_NO_PROVENANCE_LINE:
+        return
+    analysis.indicators.append(_FULL_TEXT_PROVENANCE_INDICATORS[analysis.full_text_status])
 
 
 def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
@@ -3009,11 +3039,15 @@ class TransparencyAnalyzer:
             JSON object. Every one of those is *"we do not know"*, and
             :meth:`_check_trial_registration` reports it as that.
 
-            The residual is on the public model, not here:
-            ``TransparencyResult.trial_results_compliant`` is still a bare
-            ``bool``, so a downstream reading it without
-            ``_INDICATOR_RESULTS_NOT_CHECKABLE`` beside it cannot tell "no"
-            from "unknown". Recorded in ``docs/DECISIONS.md``.
+            The public model carries the same three-way answer since issue
+            #198: :attr:`TransparencyResult.trial_results_status` is what a
+            downstream branches on, and this tri-state is what it is built
+            from: ``None`` from *every* accession becomes ``REQUEST_FAILED``
+            there, while one ``None`` beside one ``False`` becomes
+            ``NOT_POSTED`` — see issue #206 on that. Until then
+            the residual was recorded in ``docs/DECISIONS.md`` as *"not worth
+            a schema change today"*, and that entry now says why it was.
+            ``trial_results_compliant`` stays as the compatibility field.
         """
         data = self._request_json(
             client,

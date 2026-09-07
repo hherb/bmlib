@@ -167,10 +167,15 @@ assertion depends on**. **Mutate the *old* half of a condition you extend**, and
 give a fixture prose *after* the close as well as before it — two survivors hid
 that way in PR #126. **An equivalent mutant is not an untested guard**: where
 two independent protections cover one defect (#203's — the line is out of the
-retraction's set *and* appended after it), every single edit survives and only
-breaking both reddens anything. Read that as the redundancy working, and say
-which pair you broke. **When you re-scope a counter, keep both readings per row**,
-because a redraw moves the sample, the bytes and the walk at once.
+retraction's set *and* appended after it), no single edit changes behaviour.
+Read that as the redundancy working, and say which pair you broke — **and
+which edit you actually made**, because "behaviourally equivalent" and
+"survives the suite" are different claims and the first does not imply the
+second. Measured (PR #205's review): moving the append inside the retraction
+window survives all 411 of `test_transparency.py`, while putting a provenance
+line *into* the retraction set reddens 2 — both are equivalent, and one is
+caught by a structural test. **When you re-scope a counter, keep both readings
+per row**, because a redraw moves the sample, the bytes and the walk at once.
 
 *Live behaviour.* **A property only a real remote can refute needs a real
 probe.** #194 — ClinicalTrials.gov 403ing bmlib's `User-Agent`, so no paper had
@@ -229,15 +234,52 @@ each branch. What a next session should know concretely:
   `_check_trial_registration` lost `pmid`/`doi`, and the sampler lost the
   analyzer instance it held only for this.
 - **Six mutants killed, and the seventh taught something.** Adding a provenance
-  line to the retraction set survives the whole suite — because the append
-  happens after the retraction, so the mutant is *equivalent*. Two independent
-  protections mean no single edit can reintroduce #203; breaking both together
-  reddens exactly the three tests written for it. Do not read an equivalent
-  mutant as an untested guard, and do not read it as a redundant one either.
+  line to the retraction set is *behaviourally* equivalent — the append happens
+  after the retraction — but it is **not** unobserved: it reddens 2 tests,
+  `test_no_provenance_line_is_retractable` and the pre-existing
+  `test_that_indicator_is_retracted_when_pubmed_supplies_a_coi_statement`. The
+  edit that genuinely survives the file's 411 is the other one, moving the
+  append above `_merge_pubmed_signals`. (This bullet, HANDOVER's own lesson above and
+  `CLAUDE.md` all said "survives the whole suite" until PR #205's review
+  measured it.) Two independent protections still mean no single edit can
+  reintroduce #203; breaking both reddens exactly the three tests written for
+  it. Do not read an equivalent mutant as an untested guard, and do not read it
+  as a redundant one either.
 - **#204 was filed from the work**: `trial_registered` is `False` both for a
   paper with no trial and for one whose sources never answered, which
   `NOT_REGISTERED` inherits. Its population is unmeasured and that is the
   blocking half.
+- **The PR's own review found the fix reintroducing the defect it fixes, in
+  the prose half.** `NOT_ATTEMPTED`'s provenance line read *"EuropePMC holds
+  no open-access full text for this article"* — and that member has three
+  causes, of which one (`inEPMC == "Y"` with no address for the text) is
+  EuropePMC positively claiming the opposite. A persisted false claim about
+  the remote, which is #187/#190/#191 exactly, arrived through the fix whose
+  own argument is that *"(full text unavailable)"* was false for
+  `REQUEST_FAILED`. **Keyed on an enum, the prose is only as precise as the
+  member** — so the line now says just that no request was made, and the
+  member split is #207. Ask what a keyed line asserts *on every cause of its
+  key*, not on the one that motivated it.
+- **A `.get()` on a mapping keyed by an enum fails open, and the partition
+  test was the only guard.** Four of eight provenance lines could be
+  suppressed with the suite green, and so could a double append. The lookup is
+  subscripted now (`_DEPOSITION_DATABANK_LEVELS`' idiom) and the exclusion set
+  decides — two protections, matching the argument the append ordering already
+  made. **A named exclusion set no production path reads is documentation.**
+- **The manual's import block declared itself complete and nothing checked
+  it**: *"The list of six names below is the complete `__all__`"* over seven,
+  while `__all__` held eight, `TrialResultsStatus` being the omission. A
+  downstream copying that block does not get the enum the change is about.
+  `TestTheManualListsEveryExportedName` parses the block and diffs it against
+  `__all__`, and refuses a restated count — the count is what went stale, and
+  twice. **When prose states a number over a list, delete the number.**
+- **Two more filed from the review**: #206 a partly-answered results check
+  stored as a finding (one reachable *"no"* outvotes any number of unreachable
+  accessions, and `MAX_TRIAL_IDS_TO_CHECK` truncates an unbounded PubMed
+  accession list in silence), and #207 above. With #204 they are one family —
+  a status member standing in for *"we did not look"* — and all three are
+  blocked on the same unmeasured population, which one
+  `scripts/sample_api_failures.py` run could size.
 
 **Five of PR #195's follow-ups remain**: #196 a second `User-Agent` built
 inline in `publications/sync.py`, outside `_user_agent` and outside any
@@ -265,8 +307,9 @@ belongs at `_request_json`'s boundary; #200 and #201 are shape.
   previous release wrote is durable under #95's rule, so the whole window is
   re-fetched once. The two questions are independent, and a downstream reading
   only the number must still read this list.
-- **Tests: 3383 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
-  2026-09-07 on this branch; `main` at PR #195's merge read 3360 + 63). The PostgreSQL half has not been re-run since the
+- **Tests: 3399 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
+  2026-09-07 on this branch after its own review round; `main` at PR #195's
+  merge read 3360 + 63). The PostgreSQL half has not been re-run since the
   SQL last moved; the last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set
   is 2435 + 2 on the #105 branch. Of the 63 default skips, 61 are the PostgreSQL
   parameterisations, 1 is a PostgreSQL-only schema test, and 1 is
@@ -287,8 +330,8 @@ belongs at `_request_json`'s boundary; #200 and #201 are shape.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **105 lines carry one** — 39
-  `ROADMAP.md` rows and 66 spots across `docs/manual/transparency.md` (32),
+  `ROADMAP.md` are promoted at release time; **106 lines carry one** — 39
+  `ROADMAP.md` rows and 67 spots across `docs/manual/transparency.md` (33),
   `fulltext.md` (18), `publications.md` (13) and `templates.md` (3).
   Recounted 2026-09-07 on this branch as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md`, so it counts *lines* and
@@ -309,12 +352,12 @@ belongs at `_request_json`'s boundary; #200 and #201 are shape.
 
 ### Open GitHub issues
 
-**Thirty-five open** as this file is written, **thirty-two once this branch
+**Thirty-seven open** as this file is written, **thirty-four once this branch
 merges** (`gh issue list`, 2026-09-07): #86, #92, #94, #103, #124, #128, #137,
 #142, #143, #144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175,
 #177, #178, #179, #181, #186, #188, #196, #197, #198, #199, #200, #201, #202,
-#203, #204. This branch answers **#198, #202 and #203**, and filed **#204**
-from the work. **#193 and #194 were closed by hand at the start of this
+#203, #204, #206, #207. This branch answers **#198, #202 and #203**, and filed
+**#204** from the work plus **#206** and **#207** from its own review. **#193 and #194 were closed by hand at the start of this
 session** — PR #195 merged and named them in prose only, the process rule
 below catching its **seventh and eighth** instances; #187/#190/#191, #184,
 #183 and #161 went the same way in the sessions before. Every open issue was

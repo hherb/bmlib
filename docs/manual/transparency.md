@@ -10,9 +10,9 @@ Multi-API transparency analyzer for biomedical publications. Queries external AP
 | Submodule | Contents | Public? |
 |-----------|----------|---------|
 | `analyzer` | `TransparencyAnalyzer`, scoring-weight constants | `TransparencyAnalyzer` only |
-| `models` | `TransparencyRisk`, `TransparencyUnknownReason`, `TransparencySettings`, `TransparencyResult`, `calculate_risk_level()` | Yes — all five |
+| `models` | `TransparencyRisk`, `TransparencyUnknownReason`, `TransparencySettings`, `TransparencyResult`, `FullTextStatus`, `TrialResultsStatus`, `calculate_risk_level()` | Yes — all seven |
 
-The list of six names below is the complete `bmlib.transparency.__all__`. Everything else in `analyzer` — the scoring weights, the detection patterns, and all analysis sub-steps — is either a module-level constant or underscore-private; import constants from the submodule if you need them:
+The list below is the complete `bmlib.transparency.__all__`, and is checked against it by `test_the_manual_lists_every_exported_name`. Everything else in `analyzer` — the scoring weights, the detection patterns, and all analysis sub-steps — is either a module-level constant or underscore-private; import constants from the submodule if you need them:
 
 ```python
 from bmlib.transparency.analyzer import MAX_TRANSPARENCY_SCORE, SCORE_TRIAL_REGISTERED
@@ -37,6 +37,7 @@ from bmlib.transparency import (
     TransparencyRisk,
     TransparencySettings,
     TransparencyUnknownReason,
+    TrialResultsStatus,  # unreleased
     calculate_risk_level,
 )
 ```
@@ -139,11 +140,11 @@ Nothing this version writes carries `None` — every path out of `analyze()`, in
 
 *(unreleased — issue #203)*
 
-`full_text_status` is the machine-readable half. Beside it, every analysis that did **not** scan full text appends one line to `risk_indicators` saying why — one per member of the enum, keyed on the member rather than written per branch:
+`full_text_status` is the machine-readable half. Beside it, every **determinate** analysis that did not scan full text appends one line to `risk_indicators` saying why — one per member of the enum, keyed on the member rather than written per branch:
 
 | Status | Line |
 |--------|------|
-| `NOT_ATTEMPTED` | `"Full text not scanned (EuropePMC holds no open-access full text for this article)"` |
+| `NOT_ATTEMPTED` | `"Full text not scanned (no EuropePMC full-text request was made)"` |
 | `SEARCH_FAILED` | `"Full text not scanned (the EuropePMC search produced no answer)"` |
 | `NOT_SERVED` | `"Full text not scanned (EuropePMC served none for this article)"` |
 | `REQUEST_FAILED` | `"Full text not scanned (the request to EuropePMC produced no answer)"` |
@@ -218,7 +219,7 @@ class TrialResultsStatus(Enum):
     NOT_CHECKABLE = "not_checkable"      # a registration it has no answer to give for
 ```
 
-`trial_results_compliant` says *whether* results were posted; this says what was established, and `False` was four different claims. Only `NOT_POSTED` is a finding about the trial — the other two non-`POSTED` members are findings about bmlib's ability to ask, which is what issue #194 turned out to rest on: ClinicalTrials.gov's edge refused every request for a release, and a bare `False` published that as *"Registered trial without posted results"* about every registered trial.
+`trial_results_compliant` says *whether* results were posted; this says what was established, and `False` was four different claims. `POSTED` and `NOT_POSTED` are the findings about the trial; `REQUEST_FAILED` and `NOT_CHECKABLE` are findings about bmlib's ability to ask, and `NOT_REGISTERED` says there was nothing to ask. That middle pair is the distinction issue #194 turned out to rest on: ClinicalTrials.gov's edge refused every request for a release, and a bare `False` published that as *"Registered trial without posted results"* about every registered trial.
 
 **`is_answered` is the grouping to branch on**, rather than enumerating members — a member added later then has to choose a side:
 

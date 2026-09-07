@@ -57,7 +57,17 @@ All notable changes to bmlib are documented here. The format is based on
   unavailable)"* was a claim about Europe PMC and false for `REQUEST_FAILED`,
   issue #191's defect surviving in the prose. Every member must have a line or
   be a named exclusion (`ANALYZED` is the exclusion), which
-  `test_every_status_says_what_happened` pins.
+  `test_every_status_says_what_happened` pins — and the lookup is
+  **subscripted**, so a member listed in neither collection raises rather than
+  costing the result one line in silence.
+
+  `NOT_ATTEMPTED`'s line says only that **no full-text request was made**. It
+  read *"EuropePMC holds no open-access full text for this article"*, which
+  that member's own third cause — a record carrying `inEPMC == "Y"` and no
+  address for the text — contradicts outright, so the fix had reintroduced
+  issues #187/#190/#191's defect in its own prose half. Keyed on the enum the
+  line can only be as precise as the member, so a member covering three causes
+  gets the claim true of all three; splitting the third out is issue #207.
 
   **This moves stored `risk_indicators` for every analysis that did not scan
   full text** — a much larger population than the outage case, since it
