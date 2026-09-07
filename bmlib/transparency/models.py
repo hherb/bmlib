@@ -272,8 +272,8 @@ class TrialResultsStatus(Enum):
     #: registration was found; this one says only that no accession was
     #: followed up. Note that ``trial_registered`` is itself ``False`` both
     #: for a paper with no trial and for one whose sources never answered
-    #: (issue filed separately) — this member inherits that ambiguity and
-    #: does not add to it.
+    #: (issue #204) — this member inherits that ambiguity and does not add
+    #: to it.
     NOT_REGISTERED = "not_registered"
     #: ClinicalTrials.gov was asked and reports posted results. The only
     #: member for which ``trial_results_compliant`` is ``True``.

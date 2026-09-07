@@ -1,12 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-07. **0.10.0 is released and on PyPI**; twenty-three
+_Last updated: 2026-09-07. **0.10.0 is released and on PyPI**; twenty-four
 changes sit unreleased. All five version places agree at 0.10.0. Every
 unreleased ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Twenty-three changes, fourteen of them `fulltext` JATS fixes filed within days of
+Twenty-four changes, fourteen of them `fulltext` JATS fixes filed within days of
 each other — whoever cuts the next release should describe those together. Per-PR
 detail is in `CHANGELOG.md`; only the *data* answer is kept here, because the
 version number answers the API question and never that one.
@@ -29,7 +29,7 @@ measured by diffing a corpus rather than reasoned: over 880 local PMC articles /
 rebuilt, 958 emptied of an `<element-citation>` leak — `authors` for 502 in 14,
 rendered HTML for 576 in 23.
 
-**Nine move stored *transparency* values, and all nine are outside
+**Ten move stored *transparency* values, and all ten are outside
 `fulltext`.** **#184 is the largest *measured* one** — #194 may well be larger
 and nobody has counted it, see below —: every Europe PMC full-text fetch was 404ing, so every analysis
 ran on the abstract. Restoring it moved, over 48 real open-access analyses
@@ -54,42 +54,47 @@ diff; it is a *class* of paper rather than a rate. **Any downstream holding
 stored transparency results for papers with registered trials should recompute
 them.**
 
-The other seven are smaller. **#112** admits `plc`/`pty` to `_INDUSTRY_WORDS`, so
-`"GSK plc"` now sets `industry_funding_detected`, feeding a HIGH-risk rule and a
-quality downgrade — but neither token is in the labelled corpus, so **no
-measured figure moves**, which is why the omission sat unnoticed. **#119** stops
-a reviewer's prose answering for the article (0.61% of the `oa_comm`
-`PMC012xxxxxx` package's 97,909 articles have a scan output move, dominated by
-`data_availability_level`, 499 of 602). **#160** moves **nothing** — 0 of 98,789
-articles across both corpora. **#183** moves nothing measurable either (0 of
-97,909 refused), but where it fires it turns a manufactured
-`coi_disclosed=False` into `None`, the difference between firing the missing-COI
-downgrade and not. **#161** adds a field rather than moving one —
-`TransparencyResult.full_text_status`, plus an honest indicator on the refusal
-paths. **#187/#190/#191** move that field and nothing else: `REQUEST_FAILED`
-joins the enum, `NOT_SERVED` narrows to the 404, and an empty body that read
-`entirely_nested` drops the *"served but not usable"* indicator it should never
-have carried. **#193** moves **two** fields: `SEARCH_FAILED` splits
-a Europe PMC outage out of `not_attempted`, *and* it adds a COI indicator to
-`risk_indicators`, which is persisted — so "moves that field alone" was wrong
-here in the same shorthand PR #192's review already corrected once (PR #195's
-review). A downstream matching either prose, or branching on the
-member rather than on `is_refusal`, has to widen — which is what `is_refusal`
-is for; and one pinned to an older bmlib does not merely miss the member, it
-raises out of `from_dict` on a row this version writes.
+The other seven are smaller, and the *data* answer is all this file keeps —
+`CHANGELOG.md` has each argument. **#112** (`plc`/`pty` admitted to
+`_INDUSTRY_WORDS`) moves no *measured* figure, neither token being in the
+labelled corpus, which is why the omission sat unnoticed; it still flips
+`industry_funding_detected` for a `"… plc"` funder, feeding a HIGH-risk rule.
+**#119** moves a scan output for 0.61% of the `oa_comm` `PMC012xxxxxx`
+package's 97,909 articles, dominated by `data_availability_level` (499 of 602).
+**#160** moves **nothing** (0 of 98,789 across both corpora) and **#183**
+nothing measurable (0 of 97,909 refused) — but where #183 fires it turns a
+manufactured `coi_disclosed=False` into `None`, which is the missing-COI
+downgrade firing or not. **#161** adds `TransparencyResult.full_text_status`
+rather than moving anything, plus an honest indicator on the refusal paths;
+**#187/#190/#191** move that field alone; **#193** moves it *and* adds a COI
+indicator to the persisted `risk_indicators` — "moves that field alone" was
+wrong here in the shorthand PR #192's review had already corrected once. A
+downstream matching that prose, or branching on a member rather than on
+`is_refusal`, has to widen; one pinned to an older bmlib raises out of
+`from_dict` on a row this version writes.
 
-**#194 moves a second field, and correcting the header was not the whole fix**
-(PR #195's review). The `bool` stood, so a 404, a 403 or an unusable body still
-made the caller store *"Registered trial without posted results"* — the false
-claim narrowed from *always* to *whenever CT.gov does not answer*, which is a
-smaller population and the same lie. `_check_trial_results` is a tri-state now
-and the caller reports three outcomes, so a paper whose CT.gov requests all
-failed swaps that line for *"Trial registration found; posted-results status
-could not be checked"*. Both downstreams render the flag rather than the
-indicator — BioMedicalNews's `reading_pane.html`, bmlibrarian_lite's risk badge
-— so **a downstream holding stored transparency results for papers with
-registered trials should recompute them**, and #198 is the public field that
-still cannot tell the two apart.
+Correcting the header was **not** the whole of #194 (PR #195's review): the
+`bool` stood, so a 404, a 403 or an unusable body still stored *"Registered
+trial without posted results"* — the same lie over a smaller population.
+`_check_trial_results` is a tri-state now and the caller reports three
+outcomes, so a paper whose CT.gov requests all failed swaps that line for
+*"Trial registration found; posted-results status could not be checked"*. Both
+downstreams render the flag rather than the indicator — BioMedicalNews's
+`reading_pane.html`, bmlibrarian_lite's risk badge — which is what #198 below
+is for.
+
+**#198/#202/#203 is the tenth, and #203's half is the widest population in the
+transparency list.** #198 adds `TransparencyResult.trial_results_status`
+(`TrialResultsStatus`), so the flag both downstreams render stops being the
+only readable answer — it moves no existing value, being a field. #202 moves
+nothing stored at all: one fewer request and one fewer log line per document
+during a Europe PMC outage. **#203 moves `risk_indicators` for every analysis
+that did not scan full text**, which is every closed-access paper, not only the
+outage case: *"COI disclosure status unknown (full text unavailable)"* and its
+two siblings become *"COI disclosure status unknown"* plus a provenance line
+naming what became of the full text. **A downstream string-matching any of
+those three strings breaks**, and the remedy is to read `full_text_status`
+instead — which is what it is for.
 
 **The JATS fixes reach a bmlib path through the cached HTML**, a claim this file
 once had backwards twice: `_build_html` renders authors, figures, tables and both
@@ -160,7 +165,11 @@ denominator too. **A zero over an absent population is not a clean result.** Tel
 a vacuous green from one asserting silence: **ask which line of the fixture the
 assertion depends on**. **Mutate the *old* half of a condition you extend**, and
 give a fixture prose *after* the close as well as before it — two survivors hid
-that way in PR #126. **When you re-scope a counter, keep both readings per row**,
+that way in PR #126. **An equivalent mutant is not an untested guard**: where
+two independent protections cover one defect (#203's — the line is out of the
+retraction's set *and* appended after it), every single edit survives and only
+breaking both reddens anything. Read that as the redundancy working, and say
+which pair you broke. **When you re-scope a counter, keep both readings per row**,
 because a redraw moves the sample, the bytes and the walk at once.
 
 *Live behaviour.* **A property only a real remote can refute needs a real
@@ -170,6 +179,13 @@ ever been credited with posted results — was invisible to the whole suite beca
 instrument presented bmlib's own identity to the live endpoint. **A sampler
 must address *and head* requests exactly as the code does**: #184's lesson is
 usually told about URLs, and the header is the same lesson.
+
+*Cost.* **The cost of a schema addition is not a constant — it depends on what
+else is unreleased beside it.** #198 was deferred in `docs/DECISIONS.md` as
+wanting "its own release note and a downstream recompute", which was true and
+already paid for: #184 and #194 force that recompute anyway, so the field was
+free before the release and a second recompute after it. Ask what the batch
+already costs before pricing a change against zero.
 
 *Process.* An issue can be closed as COMPLETED without being fixed, and **a
 closing keyword in prose has closed one nobody decided — four times**, the fourth
@@ -185,47 +201,51 @@ a keyword that fired (#137, #142, #160) *and* four that did not (#147, #164,
 harness restoring with `git checkout -- <file>` deletes whatever is uncommitted
 in it.
 
-## This session: #193 and #194
+## This session: #198, #202 and #203
 
-#193 was the last of the full-text-status family PR #192 could not close; #194
-came out of building the instrument for it and is the larger defect. The
+Three of PR #195's eight follow-ups, taken together because they are one
+question — what a stored result says about itself — and taken **now** because
+the answer to that question is free while the batch is unreleased. The
 arguments are in `CHANGELOG.md`, `ROADMAP.md`, `CLAUDE.md`,
-`docs/manual/transparency.md`, four new `docs/DECISIONS.md` entries and at each
-branch. What is *new* is folded into "Rules carried forward" above rather than
-repeated here; three things a next session should know concretely:
+`docs/manual/transparency.md`, three new `docs/DECISIONS.md` entries and at
+each branch. What a next session should know concretely:
 
-- **`scripts/sample_api_failures.py` is new**, the sixth live runner and the
-  evidence for the five `_ORDINARY_STATUSES` sets. Its first run (2026-09-06,
-  180 + 60 records) read 0 non-200s at all five endpoints, so every set is
-  empty *as a measurement*. It is also the only sampler that deliberately
-  imports the analyzer's URLs and header — its subject is the request itself,
-  so a restated literal measures somebody else's endpoint.
-- **#194 was found, filed and fixed on this branch.** Filed as soon as it was
-  confirmed rather than carried to the end, since a load-bearing citation to
-  an unfiled defect is how one stays unfixed.
-- **16 mutants, all killed** — two only after their fixtures were repaired.
-  `_FakeResponse` does `json_data or {}`, so a test claiming to send a JSON
-  list sent a dict and a test about an empty search envelope sent a truthy
-  one; `_VerbatimResponse` beside it is what a test about a falsy body must
-  use.
+- **The ordering was the decision, not the code.** `TransparencyResult`'s
+  schema is already moving unreleased (#161 added `full_text_status`, #184 and
+  #194 already force a downstream recompute), so #198's *"wants its own release
+  note and a downstream recompute"* — the reason PR #195 deferred it — costs
+  nothing here and a second recompute after a release. **The cost of a schema
+  addition is not a constant**; `docs/DECISIONS.md`'s own entry had priced it
+  as one, and that is the correction worth carrying forward.
+- **#203 was taken wider than filed, deliberately.** The issue names the
+  search-failure branch; the other two COI-unknown lines have the same shape
+  and the same consequence, so all three were split. That is the standing rule
+  — the guard written on one branch is the guard the others need — and the
+  cost is stated rather than discovered: it moves stored `risk_indicators` for
+  every analysis that did not scan full text.
+- **#202's fix is a deletion.** The issue offers a sentinel or a skip; the
+  parameter being mandatory beats both, because `analyze()` was always the only
+  caller and had the record in hand. Two other things followed from it —
+  `_check_trial_registration` lost `pmid`/`doi`, and the sampler lost the
+  analyzer instance it held only for this.
+- **Six mutants killed, and the seventh taught something.** Adding a provenance
+  line to the retraction set survives the whole suite — because the append
+  happens after the retraction, so the mutant is *equivalent*. Two independent
+  protections mean no single edit can reintroduce #203; breaking both together
+  reddens exactly the three tests written for it. Do not read an equivalent
+  mutant as an untested guard, and do not read it as a redundant one either.
+- **#204 was filed from the work**: `trial_registered` is `False` both for a
+  paper with no trial and for one whose sources never answered, which
+  `NOT_REGISTERED` inherits. Its population is unmeasured and that is the
+  blocking half.
 
-**#193 does not close the family**: #186 and #188 remain. The
-`_check_trial_results` residual recorded here as deliberate was **taken rather
-than kept** — PR #195's review showed it was still storing a false claim
-whenever CT.gov did not answer, and that the remedy cost six lines. What
-remains of it is #198, one level up: `trial_results_compliant` is a bare `bool`
-for three claims that `risk_indicators` distinguishes.
-
-**PR #195's review filed eight follow-ups, #196-#203**, none urgent and several
-worth a decision rather than a patch: #196 a second `User-Agent` built inline
-in `publications/sync.py`, outside `_user_agent` and outside any sampler;
-#197 the retryability grouping `FullTextStatus` names as the reason two members
-exist and mechanises nowhere; #199 four JSON consumers calling `.get()` on an
-unchecked shape, so a JSON list escapes the public `analyze()`; #202 a failed
-Europe PMC search re-issued by `_find_trial_ids` against its own docstring;
-and #203 a PubMed `<CoiStatement>` retracting the search-failure line, so a
-HIGH verdict with a downgrade can carry only a COI *success* — #193's own
-complaint reintroduced through the retraction set. #200 and #201 are shape.
+**Five of PR #195's follow-ups remain**: #196 a second `User-Agent` built
+inline in `publications/sync.py`, outside `_user_agent` and outside any
+sampler; #197 the retryability grouping `FullTextStatus` names as the reason
+two members exist and mechanises nowhere; #199 four JSON consumers calling
+`.get()` on an unchecked shape, so a JSON list escapes the public `analyze()`
+— the loudest of the five, and it wants a decision about whether the guard
+belongs at `_request_json`'s boundary; #200 and #201 are shape.
 
 ## Current state
 
@@ -245,8 +265,8 @@ complaint reintroduced through the retraction set. #200 and #201 are shape.
   previous release wrote is durable under #95's rule, so the whole window is
   re-fetched once. The two questions are independent, and a downstream reading
   only the number must still read this list.
-- **Tests: 3302 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
-  2026-09-07 on this branch). The PostgreSQL half has not been re-run since the
+- **Tests: 3383 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
+  2026-09-07 on this branch; `main` at PR #195's merge read 3360 + 63). The PostgreSQL half has not been re-run since the
   SQL last moved; the last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set
   is 2435 + 2 on the #105 branch. Of the 63 default skips, 61 are the PostgreSQL
   parameterisations, 1 is a PostgreSQL-only schema test, and 1 is
@@ -267,8 +287,8 @@ complaint reintroduced through the retraction set. #200 and #201 are shape.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **97 lines carry one** — 38
-  `ROADMAP.md` rows and 59 spots across `docs/manual/transparency.md` (25),
+  `ROADMAP.md` are promoted at release time; **105 lines carry one** — 39
+  `ROADMAP.md` rows and 66 spots across `docs/manual/transparency.md` (32),
   `fulltext.md` (18), `publications.md` (13) and `templates.md` (3).
   Recounted 2026-09-07 on this branch as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md`, so it counts *lines* and
@@ -289,25 +309,30 @@ complaint reintroduced through the retraction set. #200 and #201 are shape.
 
 ### Open GitHub issues
 
-**Twenty-eight open** as this file is written, **twenty-six once this branch
+**Thirty-five open** as this file is written, **thirty-two once this branch
 merges** (`gh issue list`, 2026-09-07): #86, #92, #94, #103, #124, #128, #137,
 #142, #143, #144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175,
-#177, #178, #179, #181, #186, #188, #193, #194. This branch answers **#193 and
-#194**, the second filed from this branch and fixed on it. **#187, #190 and
-#191 were closed by hand at the start of this session** — PR #192 merged and
-named them in prose only, the process rule below catching its sixth instance;
-#184, #183 and #161 went the same way in the two sessions before. Every open
-issue was found by review or measurement rather than by a failing test, and
-**none loses records** — though **#124** loses an exhibit's footnotes,
-**#150** renders a note-only reference as an empty bullet, and **#128** would
-lose every figure image in a document binding XLink to another prefix.
+#177, #178, #179, #181, #186, #188, #196, #197, #198, #199, #200, #201, #202,
+#203, #204. This branch answers **#198, #202 and #203**, and filed **#204**
+from the work. **#193 and #194 were closed by hand at the start of this
+session** — PR #195 merged and named them in prose only, the process rule
+below catching its **seventh and eighth** instances; #187/#190/#191, #184,
+#183 and #161 went the same way in the sessions before. Every open issue was
+found by review or measurement rather than by a failing test, and **none loses
+records** — though **#124** loses an exhibit's footnotes, **#150** renders a
+note-only reference as an empty bullet, and **#128** would lose every figure
+image in a document binding XLink to another prefix.
 
 **Nothing in the list is urgent in the way #184 and #194 were**, so the next
 choice is a judgement rather than a forced move. #186 and #188 are the last of
 the full-text-refusal family and both are decisions rather than fixes (below);
-#178 is the one open *question* rather than a defect, and #196-#203 are PR
-#195's review, of which #203 and #198 are the two that touch what a reader of a
-stored result can reconstruct. **The lesson of #194 is
+#178 is the one open *question* rather than a defect; and of PR #195's review
+**#199 is the loudest survivor** — a 200 carrying a JSON list raises
+`AttributeError` out of the public `analyze()`, whose whole contract is that a
+misbehaving API costs a component and not the analysis. It is unmeasured and
+pre-existing, and it wants a decision about where the guard belongs: four call
+sites, or one validation at `_request_json`'s boundary, which changes what that
+helper promises. **The lesson of #194 is
 worth acting on rather than only recording**: it was a live-only defect that
 the whole suite missed — no test in it makes a live request — found the first time an
 instrument presented bmlib's real identity to a real remote. Nothing else in
@@ -401,13 +426,6 @@ records carry no `pmcid`, and `HAS_PMCID` is not a field, so it needs a draw.
 The `PPR` fallback is load-bearing and pinned (deleting it loses the address
 for all 75,760 preprints), so the test cannot be *"is it a PMCID?"* — the
 record's own `source` is what distinguishes them.
-
-**#193's residual is named, not open as an issue**: `_check_trial_results`
-answers *"no results posted"* and *"the API did not answer"* with one `bool`,
-so the indicator still cannot tell them apart. That is `FullTextStatus`'s
-argument (#161) one endpoint over, it is a stored-value change of its own, and
-`docs/DECISIONS.md` records it as a deliberate residual — file it if a
-downstream needs the distinction rather than treating it as a found defect.
 
 **#154, #156 and #157 are one job, and it is the funder corpus.** #154:
 `scripts/sample_funder_names.py` writes `tests/data/funder_names.raw.json`,
