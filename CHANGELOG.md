@@ -465,6 +465,81 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **No JSON shape a remote can send escapes the public `analyze()`** (issue
+  #199, from PR #195's review). `analyze()` documents that a dead or
+  misbehaving API costs a *component* and not the analysis, and it wraps none
+  of its steps — so anything a reader raises leaves a public method. Driven
+  end to end before the fix, **23 bodies a remote can legally answer HTTP 200
+  with escaped it**: 18 `AttributeError`, 4 `TypeError` and 1 `KeyError`,
+  every one of them a `_BUG_TYPES` member, so had they been caught one layer
+  down they would have been reported as a bmlib defect they are not.
+  Pre-existing and unmeasured against the live APIs — no draw has seen one of
+  these endpoints answer 200 with a non-object — so **nothing stored moves**;
+  what changes is that a body which used to abort an analysis now costs the
+  one component that could not read it.
+
+  **The issue names four consumers calling `.get()` on an undecoded body, and
+  that is 18 of the 23.** Five are not a `.get()` at all — two `.lower()`
+  calls, two `>` comparisons, and `result[0]` raising `KeyError: 0` when
+  `result` arrives as an object — so the guard as filed, applied to every
+  `.get()` in the module, leaves them. They divide by *where* a guard can go
+  rather than by the expression that broke.
+
+  **Twelve: the body is not a JSON object.** JSON's top level may be an
+  array, a string, a number, `true` or `null`. `_request_json` promises an
+  object now — `dict[str, Any] | None` — and reports a non-object 200 at
+  WARNING, naming the type, in the voice it already uses for a body that will
+  not parse. The refusal belongs at that layer by `_request`'s own rule read
+  the other way round: that helper pushes the *consequence* out to its five
+  callers because each loses something different, while the *body* is this
+  layer's subject already, so one step finer is the same claim stated once
+  instead of four times. It also makes `_query_crossref`, `_query_europepmc`
+  and `_query_openalex`'s existing `dict | None` annotations **true** — they
+  were false, and invisible to mypy only because `_request_json` returned
+  `Any`. An endpoint whose 200 legitimately carries an array wants its own
+  helper rather than a flag on this one, which is `_request_text`'s rule
+  about `headers` one method down: add it when a second one arrives.
+
+  **Eleven: a value inside the object has the wrong type.** No boundary guard
+  reaches these — the object arrived and a value is wrong — so they are read
+  through coercers at the point of use. `_json_object` replaces
+  `x.get("k", {})`, which returns its default only for an **absent** key: a
+  key present with `null`, or with an array, hands the reader the wrong type
+  and the next `.get()` raises, which is the defect already recorded against
+  `fulltext`'s `_extract_free_pdf_url` one package over. `_json_text`
+  replaces `(x.get("k") or "")`, which rescues `null` and passes an object
+  straight through to the `.lower()` after it. `_json_count` excludes `bool`
+  although it is an `int` in Python, or `"cited_by_count": true` awards
+  `SCORE_CITED` for a body that stated no count at all. `_epmc_records`
+  serves the `resultList.result` walk that `_check_europepmc` and
+  `_find_trial_ids` each hand-rolled — a third copy being this repository's
+  threshold for a helper, and here it also puts the two readers on one answer
+  where they used to agree by being written the same way.
+
+  `_check_trial_results`' own `isinstance(data, dict)` is reached only for
+  `None` now, and is **kept rather than narrowed**: the second of two
+  independent protections at the one site where an unusable body did not
+  merely raise but published a false finding about a trial for a whole
+  release (issue #194) — the redundancy issue #203 argues for, at the place
+  with the worst measured cost.
+
+  **The net is the deliverable, not the guards.** It drives `analyze()` with
+  every one of these bodies at every endpoint and asserts the contract, so it
+  is keyed on what must hold rather than on the expression that happened to
+  break — with an anti-vacuity assertion that the endpoint was actually
+  requested, since a hostile body served at an endpoint `analyze()` never
+  asks for asserts nothing.
+
+  **A contract net is blind to a value read *wrongly* without raising**, and
+  mutation testing found that rather than review: dropping the `isinstance`
+  on CrossRef's `funder` credits CrossRef with funder information it did not
+  send — 15 points, silently — because an object is truthy and iterates into
+  its keys, and it survived all 459 tests in the file. Two survivors of ten,
+  both killed by assertions on what the analysis *concluded* rather than on
+  whether it finished. The other showed that only a **scalar** `result`
+  separates `isinstance(result, list)` from `result is None`: an object, a
+  string and an absent key all reduce to the same empty answer either way.
+
 - **Every Europe PMC full-text fetch 404'd, so the module scored every
   open-access paper on its abstract** (issue #184, found while measuring for
   issue #183 rather than by review). `_fetch_europepmc_fulltext` built

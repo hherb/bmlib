@@ -471,12 +471,20 @@ The step-2 search is issued **once** per document: the record is threaded into t
 | the request raised | `WARNING` | the API, the subject, the exception **type** and its message |
 | a bmlib defect (`TypeError`, `AttributeError`, `NameError`, `KeyError`, `IndexError`), from the request **or from reading the response** | `ERROR` + traceback | which step raised it, and that this can only mean bmlib is wrong |
 | HTTP 200 whose body will not decode | `WARNING` | that the body is not JSON (steps 1, 2, 5, 6) or could not be read (step 4), with the decoder's own message |
+| HTTP 200 carrying JSON that is **not an object** | `WARNING` | that the body is not an object, naming the type that arrived *(unreleased — issue #199)* |
 | step 4 answering 200 with an empty or non-XML body | `WARNING` | that PubMed answered unusably, and that no COI, registration or grant signal is available |
 | step 2 producing no answer at all | `WARNING` | that no full-text request was made, and how many points are not scored |
 
 The line for a non-200 deliberately does **not** claim a consequence: the helper is shared by five steps whose consequences differ, and the step that knows says so itself — which is why step 2's failure gets its own line above. *(Corrected from "that the component is not scored" in PR #195's review, which was true for steps 1 and 5 and wrong for the rest.)*
 
 The step-3 full-text 404 is the one deliberate exception and stays at `DEBUG`. Two figures support that and they are of two different denominators: **81 of 81** non-200s were 404 in the 200-probe draw, and the 404 is the majority outcome of the gate that module uses (**88 of 150** in a separate stratified draw). Exhaustive *and* ordinary; neither figure implies the other, and over the 200-probe draw the 81 are 40.5%. **Nothing else has earned a quiet level.** `scripts/sample_api_failures.py` measured 0 non-200s across all five endpoints over 240 drawn records (upper bounds 2.1%–6.8% depending on the endpoint), so no status is treated as ordinary and every non-200 warns. None of these steps re-raises: `analyze()` wraps none of them, so each swallows its own request rather than letting one dead API cost the analysis.
+
+**No shape a remote can send escapes `analyze()`** *(unreleased — issue #199)*. `analyze()` wraps none of the six steps, so a reader that raises leaves the public method — and driven end to end, **23 bodies a remote can legally answer HTTP 200 with used to do exactly that**: 18 `AttributeError`, 4 `TypeError` and 1 `KeyError`. Two guards, at the two places a guard can go:
+
+- **`_request_json` now returns a JSON *object* or nothing.** JSON's top level may be an array, a string, a number, `true` or `null`; any of those is dropped with the WARNING above rather than handed to a reader that will call `.get()` on it.
+- **A value *inside* the object is coerced where it is read.** No boundary guard can reach these, the object having arrived — so a `funder` that is an object, an `abstractText` that is an array, a `cited_by_count` that is a string, and a `resultList.result` that is not a list all cost the value they were read for and nothing more.
+
+The effect on a caller is the contract this page already states, made true: **a misbehaving API costs its component, not the analysis.** Nothing stored changes — no draw has seen one of these endpoints answer 200 with a non-object, so this is a contract repair rather than a scoring change.
 
 Step 3 is the difference between a real data-availability reading and a guess. COI and data-availability statements live in a paper's full text, never its abstract, so when `inEPMC != "Y"` (no open-access full text at Europe PMC) the analyzer falls back to scanning the abstract, `full_text_analyzed` stays `False`, and industry-COI detection does not run at all. COI *disclosure* and data availability are two exceptions: step 4 can establish either — a COI statement, or a `<DataBankList>` deposition accession — from PubMed's structured metadata whether or not full text was reachable.
 

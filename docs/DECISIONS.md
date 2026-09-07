@@ -333,6 +333,38 @@ must not be re-done.
   validation still counts as registered — registration is separate from
   followability.
 
+- **`_check_trial_results` keeps its `isinstance(data, dict)` although
+  `_request_json` now guarantees one** (#199). Since `_request_json` returns
+  `dict[str, Any] | None`, that branch is reachable only for `None`, so it
+  reads as dead code a `data is None` would say more plainly. It is kept as
+  the second of two independent protections at the one site in the module
+  where an unusable body did not merely raise but **published a false finding
+  about a trial for a whole release** (#194) — the redundancy #203 argues for,
+  placed where the measured cost of getting it wrong is worst. The comment at
+  the site was rewritten when the guard moved; do not narrow it back on the
+  grounds that mypy proves it redundant, because what it defends against is a
+  future change to `_request_json`'s promise, which mypy would happily accept.
+
+- **`_request_json` promises a JSON *object*, and an endpoint that legitimately
+  serves an array must get its own helper rather than a flag on this one**
+  (#199). All five endpoints the module calls answer with objects, and every
+  reader here uses `.get()`, so narrowing the return type made three existing
+  `dict | None` annotations true rather than adding a claim. Widening it back
+  to `Any` — or adding an `allow_array=` parameter — reopens the 12 escapes
+  the narrowing closed, for every caller and not only the new one. This is
+  `_request_text`'s rule about `headers` one method up: add the second helper
+  when the second endpoint arrives, not before.
+
+- **The JSON coercers are coercers and not reporting guards** (#199).
+  `_json_object`, `_json_text`, `_json_count` and `_epmc_records` return an
+  empty value rather than logging, which reads as swallowing. The request
+  itself has already been reported at `_request_json`, and a value of the
+  wrong type is the *absence* of the value that was asked for — exactly what
+  every reader here already does with an absent key. Adding a line per
+  coerced value would emit one per field of every malformed body, which is
+  the 200-identical-lines shape `jats_parser` settled by reporting once per
+  article.
+
 ## Repository process
 
 - **Squash, rebase and merge commits are all enabled on purpose — do not
