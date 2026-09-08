@@ -40,8 +40,10 @@ No network: every test drives the script through a fake client.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -133,7 +135,15 @@ def _outcome(cause: str | None) -> sampler.ProbeOutcome:
     event that never happens, and cannot silently disagree with the probe.
     """
     if cause is None:
-        return sampler.ProbeOutcome(endpoint="crossref", status=200, cause=None)
+        # A served outcome carries a shape, since `probe` observes every body it
+        # serves — the summary tests below are about the status table, so the
+        # shape is the least interesting one a body can have.
+        return sampler.ProbeOutcome(
+            endpoint="crossref",
+            status=200,
+            cause=None,
+            shape=sampler.BodyShape(endpoint="crossref", top="object"),
+        )
     kind, _, tail = cause.partition("-")
     status = None if kind == "exception" else int(tail)
     return sampler.ProbeOutcome(
@@ -267,11 +277,11 @@ class TestADrawnStratumIsNeverQuietlyReplaced:
 
     def test_the_report_names_the_missing_cells(self):
         _client, draw = self._draw(_FakeResponse(503), self._page("a"))
-        lines = sampler.summarise_draw("draw", draw)
+        lines = sampler.summarise_draw("draw", draw, 20, 1)
         assert any("ERROR" in line and "MED/2024" in line for line in lines)
 
     def test_a_draw_that_got_nothing_is_an_error_not_a_table(self):
-        [line] = sampler.summarise_draw("draw", sampler.Draw())
+        [line] = sampler.summarise_draw("draw", sampler.Draw(), 20, 1)
         assert "ERROR" in line
 
 
@@ -375,6 +385,60 @@ class TestAnOutcomeCannotDescribeAnImpossibleEvent:
         assert not throttled.measured
 
 
+class TestTheDrawReadsTheEnvelopeTheWayTheAnalyzerDoes:
+    """``.get("resultList", {}).get("result", [])`` carried two of the defects
+    this instrument exists to measure one module over (PR #213's review).
+
+    A key present with ``null`` returns the *value*, not the default — the
+    idiom ``_json_object`` was written to replace — so a ``resultList: null``
+    raised ``AttributeError`` into a handler that printed *"unreadable body"*,
+    a false claim about a body that decoded perfectly. And a wrong-typed
+    *element* was guarded nowhere at all: the record loop sits outside the
+    ``try``, so a string in ``result`` raised out of ``main`` and discarded
+    every paced request the run had already spent.
+    """
+
+    def _draw_one(self, payload):
+        client = _ScriptedClient(_FakeResponse(200, payload))
+        return sampler.draw_records(client, 1, _pace, (("MED", 2024),), "")
+
+    @pytest.mark.parametrize(
+        "payload",
+        [{"resultList": None}, {"resultList": {"result": None}}, {"resultList": []}, {}],
+        ids=["null-resultList", "null-result", "array-resultList", "empty"],
+    )
+    def test_a_null_or_wrong_typed_envelope_is_an_empty_stratum_not_an_unreadable_body(
+        self, payload, capsys
+    ):
+        draw = self._draw_one(payload)
+        assert draw.records == []
+        assert draw.failed_strata == ["MED/2024"]
+        err = capsys.readouterr().err
+        assert "no records" in err
+        assert "unreadable" not in err
+
+    def test_a_wrong_typed_record_does_not_escape_the_draw(self):
+        # It used to raise `AttributeError` out of `main` — after the whole
+        # main draw had already been probed, so the run lost everything.
+        draw = self._draw_one({"resultList": {"result": ["not-an-object"]}})
+        assert draw.records == []
+        assert draw.failed_strata == ["MED/2024"]
+
+    def test_a_mistyped_identifier_is_not_probed(self):
+        # Coerced for the reason PR #208 coerced `source` and the accession:
+        # a mistyped identifier is truthy, and would be interpolated into
+        # `DOI:"{...}"` and probed — a request bmlib would never make entering
+        # the denominator that sets that endpoint's log level.
+        draw = self._draw_one({"resultList": {"result": [{"doi": {"a": 1}, "pmid": ["x"]}]}})
+        assert draw.records == []
+        assert draw.unusable_records == 1
+
+    def test_a_well_formed_page_still_draws(self):
+        # The anti-vacuity control: every assertion above is about a refusal.
+        draw = self._draw_one({"resultList": {"result": [{"doi": "10.1/a", "pmid": "1"}]}})
+        assert [(r.doi, r.pmid) for r in draw.records] == [("10.1/a", "1")]
+
+
 class TestTheDrawIsWhatItSaysItIs:
     """The draw's own honesty: its size, and what it refuses to put in a denominator."""
 
@@ -425,7 +489,9 @@ class TestTheDrawIsWhatItSaysItIs:
             records=[sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid=None, raw={})],
             unusable_records=3,
         )
-        assert any("3 returned record(s)" in line for line in sampler.summarise_draw("draw", draw))
+        assert any(
+            "3 returned record(s)" in line for line in sampler.summarise_draw("draw", draw, 20, 1)
+        )
 
 
 class TestThePopulationBuildingRequestIsNotSilent:
@@ -564,9 +630,15 @@ class _AlwaysClient:
         probe_status=200,
         fail_draws=frozenset(),
         fail_efetches=frozenset(),
+        fail_probe_hosts=frozenset(),
     ):
         self.page = page
         self.probe_status = probe_status
+        #: Substrings of the probe URLs to fail, so **one** endpoint can be
+        #: made to serve nothing while every other population stays healthy.
+        #: `probe_status` alone fails all five at once, which makes several
+        #: exit-code terms fire together and hides a dropped one.
+        self.fail_probe_hosts = fail_probe_hosts
         #: Indices of efetch calls to fail. Indexed across the whole run, so a
         #: caller can pick out one of the *trial* draw's rather than one of
         #: the main draw's probes.
@@ -597,6 +669,8 @@ class _AlwaysClient:
             if index in self.fail_draws:
                 return _FakeResponse(503)
             return _FakeResponse(200, self.page)
+        if any(host in url for host in self.fail_probe_hosts):
+            return _FakeResponse(404)
         return _FakeResponse(self.probe_status, self.page)
 
 
@@ -744,3 +818,1371 @@ class TestTheSamplerProbesWhatTheAnalyzerRequests:
         assert "_user_agent(args.email, httpx.__version__)" in source
         assert "bmlib-sampler/" not in source
         assert "python-httpx" in _user_agent("a@b.c", "1.0")
+
+
+class TestABodyShapeIsWhatTheAnalyzerWouldHaveRead:
+    """Issue #211: the sampler measured HTTP statuses and never a 200's *shape*.
+
+    Every claim PR #208 made about how often its coercers fire rested on "no
+    draw has seen a non-object body", which no instrument here could support —
+    a count of what nobody looked for, which is this repository's own
+    recurring finding. These are the tests for the counter that looks.
+
+    The vocabulary is JSON's own, with two additions the transport forces:
+    ``empty`` for a 200 carrying nothing and ``not-json`` for one whose body
+    will not decode. bmlib reports those two identically (``_request_json``
+    logs one line for both), so the instrument is *finer* than the code here
+    and deliberately — whether any of these endpoints ever serves an empty 200
+    is the standing unmeasured question behind issue #190.
+    """
+
+    @pytest.mark.parametrize(
+        ("value", "kind"),
+        [
+            ({}, "object"),
+            ({"a": 1}, "object"),
+            ([], "array"),
+            ("x", "string"),
+            (1, "number"),
+            (1.5, "number"),
+            (None, "null"),
+        ],
+    )
+    def test_each_json_type_is_named_by_its_own_name(self, value, kind):
+        assert sampler._kind(value) == kind
+
+    @pytest.mark.parametrize("value", [True, False])
+    def test_a_boolean_is_a_boolean_and_not_a_number(self, value):
+        # `bool` is an `int` in Python, which is the trap `_json_count`
+        # already documents: tested before `int`, or `{"is_oa": true}` is
+        # counted as a number and the row that would show a wrong-typed
+        # boolean shows nothing at all.
+        assert sampler._kind(value) == "boolean"
+
+    def test_the_top_level_type_of_a_served_body_is_recorded(self):
+        shape = sampler.observe_body("openalex", _FakeResponse(200, {"cited_by_count": 3}))
+        assert shape.top == "object"
+
+    def test_a_body_that_is_not_an_object_is_recorded_as_what_it_is(self):
+        # The twelve top-level escapes PR #208 measured are exactly this
+        # shape, and nothing has ever counted how often a remote sends one.
+        assert sampler.observe_body("crossref", _FakeResponse(200, [])).top == "array"
+
+    def test_a_200_whose_body_will_not_decode_is_not_json(self):
+        assert sampler.observe_body("crossref", _FakeResponse(200, text="<html>")).top == "not-json"
+
+    def test_an_empty_200_is_kept_apart_from_one_that_will_not_decode(self):
+        # bmlib cannot tell these apart; the instrument can, and the question
+        # of whether an empty 200 is ever served is why it should.
+        assert sampler.observe_body("crossref", _FakeResponse(200, text="")).top == "empty"
+
+
+class TestAFieldIsObservedWhereTheAnalyzerReadsIt:
+    """The per-field half, and the two ways an element can be reached.
+
+    ``_check_crossref`` iterates every funder; every ``_epmc_records`` caller
+    takes ``records[0]``. So the step sentinels are two — ``[*]`` and ``[0]``
+    — because an instrument that aggregated over a list bmlib never looks past
+    the head of would report a shape bmlib never sees, and one that read only
+    the head of a list bmlib iterates would miss the shape that breaks it.
+    """
+
+    def test_a_fields_type_is_recorded_under_its_rendered_path(self):
+        shape = sampler.observe_body("openalex", _FakeResponse(200, {"cited_by_count": 3}))
+        assert dict(shape.fields)["cited_by_count"] == "number"
+
+    def test_a_nested_field_is_reached_through_its_parent(self):
+        shape = sampler.observe_body(
+            "openalex", _FakeResponse(200, {"open_access": {"is_oa": True}})
+        )
+        assert dict(shape.fields)["open_access.is_oa"] == "boolean"
+
+    def test_a_key_the_body_omits_is_absent_rather_than_unrecorded(self):
+        # Issue #210 is exactly this row: an absent `hasResults` is stored as
+        # a finding, and whether ClinicalTrials.gov ever omits it is what
+        # settles that issue.
+        shape = sampler.observe_body("clinicaltrials", _FakeResponse(200, {}))
+        assert dict(shape.fields)["hasResults"] == "absent"
+
+    def test_a_field_whose_parent_is_the_wrong_type_is_not_observed_at_all(self):
+        # Not "absent": the question was never reachable, so putting it in the
+        # denominator would report a body that could not be asked as one that
+        # answered no. A share is of a denominator.
+        shape = sampler.observe_body("openalex", _FakeResponse(200, {"open_access": "yes"}))
+        fields = dict(shape.fields)
+        assert fields["open_access"] == "string"
+        assert "open_access.is_oa" not in fields
+
+    def test_every_element_is_read_where_the_analyzer_iterates(self):
+        body = {"message": {"funder": [{"name": "A"}, {"name": 1}]}}
+        shape = sampler.observe_body("crossref", _FakeResponse(200, body))
+        assert dict(shape.fields)["message.funder[].name"] == "mixed"
+
+    def test_a_homogeneous_iterated_list_reports_the_one_kind(self):
+        body = {"message": {"funder": [{"name": "A"}, {"name": "B"}]}}
+        shape = sampler.observe_body("crossref", _FakeResponse(200, body))
+        assert dict(shape.fields)["message.funder[].name"] == "string"
+
+    def test_only_the_head_is_read_where_the_analyzer_reads_the_head(self):
+        # `records[0]`, so a second record's wrong-typed abstract is a shape
+        # bmlib never sees and must not enter this table.
+        body = {"resultList": {"result": [{"abstractText": "a"}, {"abstractText": 7}]}}
+        shape = sampler.observe_body("europepmc_search", _FakeResponse(200, body))
+        assert dict(shape.fields)["resultList.result[0].abstractText"] == "string"
+
+    def test_an_empty_object_still_reports_its_fields_as_absent(self):
+        # Wider than the code, and deliberately. `_check_crossref` and
+        # `_check_openalex` guard on truthiness (`if cr:`), so an empty object
+        # body reaches no field read at all — while the walker treats it as a
+        # reachable parent whose every key is absent. The cost is confined to
+        # a first-level field's `absent` count, which is therefore an upper
+        # bound; and the body is visible in its own right, an empty object
+        # being the one that shows `object` at the top with every field
+        # absent. Narrowing it would mean restating each caller's guard here,
+        # which is the restated literal issue #184 argues against.
+        shape = sampler.observe_body("crossref", _FakeResponse(200, {}))
+        assert dict(shape.fields)["message"] == "absent"
+
+    def test_an_empty_list_reaches_no_element_field(self):
+        body = {"resultList": {"result": []}}
+        shape = sampler.observe_body("europepmc_search", _FakeResponse(200, body))
+        fields = dict(shape.fields)
+        assert fields["resultList.result"] == "array"
+        assert "resultList.result[0].abstractText" not in fields
+
+
+#: Which endpoint's body each of ``analyzer.py``'s JSON-reading functions is
+#: reading. Every literal ``.get()`` in that module must fall under one of
+#: these or the walk below raises: a read in a function named nowhere is
+#: exactly how a field would slip out of :data:`sampler.FIELD_PATHS` unseen,
+#: and "I found nothing" must not be an answer a net can return.
+_READERS_BY_ENDPOINT = {
+    "_check_crossref": "crossref",
+    "_epmc_records": "europepmc_search",
+    "_check_europepmc": "europepmc_search",
+    "_pmid_from_epmc": "europepmc_search",
+    "_find_trial_ids": "europepmc_search",
+    "_check_openalex": "openalex",
+    "_check_trial_results": "clinicaltrials",
+}
+
+
+def _analyzer_reads(source: str) -> set[tuple[str, str]]:
+    """Every ``(endpoint, key)`` the given ``analyzer.py`` source reads out of a body.
+
+    A literal ``.get("k")`` is the whole of how this module reads a decoded
+    body, and — measured over the real file — there is no other kind of
+    literal ``.get()`` in it: ``_UNTERMINATED_OPENER_NAMES.get(opener, "tag")``
+    takes a name, and ``client.get(url)`` takes one too, so both fall outside
+    without needing to be excused. That is what lets this walk be strict.
+
+    Raises:
+        AssertionError: If a read appears in a function
+            :data:`_READERS_BY_ENDPOINT` does not name.
+    """
+    tree = ast.parse(source)
+    parents: dict[ast.AST, ast.AST] = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+
+    def enclosing(node: ast.AST) -> str:
+        cursor = parents.get(node)
+        while cursor is not None:
+            if isinstance(cursor, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                return cursor.name
+            cursor = parents.get(cursor)
+        return "<module>"
+
+    reads: set[tuple[str, str]] = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            continue
+        if node.func.attr != "get" or not node.args:
+            continue
+        key = node.args[0]
+        if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
+            continue
+        owner = enclosing(node)
+        assert owner in _READERS_BY_ENDPOINT, (
+            f"{owner}() reads {key.value!r} out of a body and is named by no endpoint; "
+            "add it to _READERS_BY_ENDPOINT (and its field to FIELD_PATHS) or the "
+            "sampler measures a body bmlib reads and this net does not"
+        )
+        reads.add((_READERS_BY_ENDPOINT[owner], key.value))
+    return reads
+
+
+class TestTheFieldListIsEveryFieldTheAnalyzerReads:
+    """Issue #211's own rule: the field list must not be a restated literal.
+
+    It was written as one in the issue and was **already stale** — ``source``
+    has been read by ``_check_europepmc`` since PR #208 coerced it before
+    building the full-text URL, and the issue lists it nowhere. A restated
+    literal is how issue #184 lived a release; a rule enforced by prose is not
+    enforced (``TestTheAuditNetIsComplete``,
+    ``TestOnlyTheHelperWalksTheEuropePMCResultList``). So the relation is
+    *equality*, checked by walking the module.
+    """
+
+    @property
+    def _reads(self) -> set[tuple[str, str]]:
+        return _analyzer_reads(
+            (
+                Path(sampler.__file__).resolve().parent.parent / "bmlib/transparency/analyzer.py"
+            ).read_text()
+        )
+
+    def _listed(self) -> set[tuple[str, str]]:
+        return {
+            (endpoint, steps[-1])
+            for endpoint, paths in sampler.FIELD_PATHS.items()
+            for steps in paths
+            if steps[-1] not in {"[*]", "[0]"}
+        }
+
+    def test_the_walk_finds_the_reads_at_all(self):
+        # The anti-vacuity assertion. A walk that silently matched nothing
+        # would turn both directions below green at once, which is the shape
+        # `TestTheAuditNetIsComplete` fails closed against.
+        reads = self._reads
+        assert len(reads) >= 15, reads
+        assert ("clinicaltrials", "hasResults") in reads
+
+    def test_every_field_the_analyzer_reads_is_in_the_sampler_list(self):
+        assert self._reads - self._listed() == set()
+
+    def test_the_sampler_lists_no_field_the_analyzer_does_not_read(self):
+        # The other direction, and not symmetry for its own sake: a row for a
+        # field bmlib never reads is a population in the table that no
+        # decision rests on, and a reader cannot tell it from one that does.
+        assert self._listed() - self._reads == set()
+
+    def test_a_read_in_a_function_the_net_does_not_name_fails_closed(self):
+        with pytest.raises(AssertionError, match="named by no endpoint"):
+            _analyzer_reads("def _check_newthing(body):\n    return body.get('surprise')\n")
+
+    def test_a_get_that_is_not_a_body_read_is_not_counted(self):
+        # `.get(opener, "tag")` and `client.get(url)` both take a name, which
+        # is what lets the walk above be strict without an excuse list.
+        assert _analyzer_reads("def _check_crossref(c, u):\n    return c.get(u)\n") == set()
+
+
+#: One body per JSON endpoint, shaped as that API actually answers — the
+#: minimum that makes every declared path reachable.
+_REPRESENTATIVE_BODIES: dict[str, dict] = {
+    "crossref": {"message": {"funder": [{"name": "Wellcome Trust"}]}},
+    "europepmc_search": {
+        "resultList": {
+            "result": [
+                {
+                    "abstractText": "…",
+                    "inEPMC": "Y",
+                    "source": "MED",
+                    "pmcid": "PMC4154587",
+                    "id": "24895382",
+                    "pmid": "24895382",
+                }
+            ]
+        }
+    },
+    "openalex": {"open_access": {"is_oa": True}, "cited_by_count": 7},
+    "clinicaltrials": {"hasResults": True},
+}
+
+
+class TestEveryDeclaredPathIsReachableInARepresentativeBody:
+    """The nesting, which the ``ast`` net above structurally cannot check.
+
+    That net holds ``{(endpoint, leaf key)}`` equal in both directions, so
+    **mis-nesting leaves the key unchanged and passes**: rewriting
+    ``("resultList", "result", "[0]", "pmid")`` as ``("resultList", "pmid")``
+    was measured to survive the entire suite, as were the same edits to
+    ``source``, ``pmcid``, ``id`` and ``message.funder`` — five of the sixteen
+    declared paths, and four of them are exactly issues #188's and #207's
+    evidence (PR #213's review).
+
+    A mis-nested path renders ``NO POPULATION HERE`` for every body, which is
+    the row a reader is meant to read as a *finding about the remote*. So the
+    failure mode is not merely uncaught, it prints as its opposite.
+
+    The nesting cannot be derived from ``analyzer.py``: it is a fact about the
+    document each API serves, and the reads that establish it run through
+    local variables (``record = records[0]``, ``for funder in …``) that no
+    static walk resolves. So it is pinned **behaviourally** instead — against
+    a body shaped the way the API answers, every declared path must be
+    reachable. That is a fixture, which this suite is built from throughout,
+    rather than a restated literal of the module's source.
+    """
+
+    @pytest.mark.parametrize("endpoint", sorted(_REPRESENTATIVE_BODIES))
+    def test_a_representative_body_answers_every_declared_path(self, endpoint):
+        # **The discriminator is `absent`, not reachability.** Comparing the
+        # observed path set against the declared one is vacuous — both sides
+        # are derived from `FIELD_PATHS`, so a mis-nesting moves them
+        # together, and the first cut of this test passed all five mutants
+        # (measured). What a mis-nesting cannot fake is the *answer*: the
+        # representative body carries every field the analyzer reads, so a
+        # correctly-nested path finds a value and a mis-nested one lands on an
+        # object that does not carry the key and reads `absent`.
+        shape = sampler.observe_body(endpoint, _FakeResponse(200, _REPRESENTATIVE_BODIES[endpoint]))
+        declared = {sampler.render_path(steps) for steps in sampler.FIELD_PATHS[endpoint]}
+        observed = dict(shape.fields)
+        assert set(observed) == declared
+        assert [path for path, kind in observed.items() if kind == "absent"] == []
+
+    def test_every_json_endpoint_has_a_representative_body(self):
+        # Anti-vacuity: a body missing from the mapping would silently take
+        # its endpoint's paths out of the check above.
+        assert set(_REPRESENTATIVE_BODIES) == set(sampler.FIELD_PATHS)
+
+    def test_a_mis_nested_path_reads_the_wrong_answer(self):
+        # The negative control, and the mutation that survived the whole
+        # suite: the leaf key is unchanged, so the `ast` net is satisfied.
+        #
+        # What the mis-nesting produces is worse than the `NO POPULATION HERE`
+        # first supposed. `resultList` is itself an object, so the shortened
+        # path is *reachable* and reports `absent` — a field row asserting
+        # that bmlib asked EuropePMC for a PMID and was given nothing, over
+        # every body in the draw. A row that reads as a finding, for a
+        # question never asked.
+        body = _REPRESENTATIVE_BODIES["europepmc_search"]
+        assert sampler._kind_at(body, ("resultList", "result", "[0]", "pmid")) == "string"
+        assert sampler._kind_at(body, ("resultList", "pmid")) == "absent"
+
+    def test_the_rendered_path_set_is_what_separates_them(self):
+        # And this is why the check above is on the rendered set rather than
+        # on kinds: the two paths render differently, so a mis-nesting cannot
+        # satisfy `test_a_representative_body_reaches_every_declared_path`
+        # whether it is reachable or not.
+        assert sampler.render_path(("resultList", "result", "[0]", "pmid")) != sampler.render_path(
+            ("resultList", "pmid")
+        )
+
+
+class TestOnlyAServedBodyHasAShape:
+    """A shape is a fact about a body, so an outcome that carried none has none.
+
+    ``ProbeOutcome``'s own rule, applied to the field added for issue #211:
+    two fields describing one event can be constructed disagreeing, and here
+    the disagreement would put a shape row under a request that never
+    returned a body — inventing a population out of the endpoint's failures,
+    which is the exact direction ``measured`` already guards.
+    """
+
+    def test_a_served_probe_carries_the_shape_of_what_it_served(self):
+        outcome = sampler.probe(_ScriptedClient(_FakeResponse(200, {})), "crossref", "u")
+        assert outcome.shape is not None
+        assert outcome.shape.top == "object"
+
+    def test_a_non_200_carries_no_shape(self):
+        assert sampler.probe(_ScriptedClient(_FakeResponse(404)), "crossref", "u").shape is None
+
+    def test_a_raised_request_carries_no_shape(self):
+        assert sampler.probe(_ScriptedClient(OSError("x")), "crossref", "u").shape is None
+
+    def test_a_throttled_probe_carries_no_shape(self):
+        throttled = sampler.probe(
+            _ScriptedClient(*[_FakeResponse(429) for _ in range(3)]), "crossref", "u"
+        )
+        assert throttled.shape is None
+
+    def test_an_outcome_that_served_nothing_cannot_be_given_a_shape(self):
+        with pytest.raises(ValueError, match="only a served outcome"):
+            sampler.ProbeOutcome(
+                endpoint="crossref",
+                status=404,
+                cause="http-404",
+                shape=sampler.BodyShape(endpoint="crossref", top="object"),
+            )
+
+    def test_a_served_outcome_without_one_is_refused_too(self):
+        # The other direction, and the one a hand-built test fixture reaches:
+        # `probe()` observes every body it serves, so a served outcome with no
+        # shape describes no event, and a summary built from such outcomes
+        # would report an endpoint as having served nothing readable.
+        with pytest.raises(ValueError, match="served outcome carries a shape"):
+            sampler.ProbeOutcome(endpoint="crossref", status=200, cause=None)
+
+    def test_a_retried_status_is_never_a_measured_outcome(self):
+        # The clause keyed on the status rather than on the bucket. `probe`
+        # retries every `_THROTTLE_STATUSES` member and can only ever report
+        # one as `unmeasured-`, so an `http-429` describes no event it
+        # produces — and it satisfied every other clause, putting a throttled
+        # probe into the failure share as a *failure*, which is the exact
+        # hazard `measured` exists to prevent (PR #213's review).
+        for status in sorted(sampler._THROTTLE_STATUSES):
+            with pytest.raises(ValueError, match="is retried"):
+                sampler.ProbeOutcome(endpoint="crossref", status=status, cause=f"http-{status}")
+
+    def test_the_retried_statuses_are_the_ones_probe_retries(self):
+        # One set, so the guard above and the retry loop cannot disagree about
+        # which statuses mean the sampler was throttled.
+        for status in sorted(sampler._THROTTLE_STATUSES):
+            outcome = sampler.probe(
+                _ScriptedClient(*[_FakeResponse(status) for _ in range(4)]), "crossref", "u"
+            )
+            assert outcome.measured is False
+            assert outcome.cause == f"unmeasured-{status}"
+
+    def test_a_body_this_script_cannot_read_is_not_the_remotes_fault(self):
+        # A response object carrying *valid* JSON that this script cannot call
+        # `.json()` on: reported as `not-json`, that is a `_BUG_TYPES` member
+        # dressed as a claim about the remote — `analyzer.py`'s own
+        # `_report_swallowed_exception` defect one layer up, and it would print
+        # a healthy endpoint as serving undecodable bodies 100% of the time,
+        # in the table the whole run is quoted from (PR #213's review).
+        class _NoJson:
+            status_code = 200
+            text = '{"message": {"funder": [{"name": "X"}]}}'
+
+        shape = sampler.observe_body("crossref", _NoJson())
+        assert shape.top.startswith(sampler._INSTRUMENT_KIND_PREFIX)
+        assert "AttributeError" in shape.top
+        assert shape.top != "not-json"
+
+    def test_a_body_that_is_genuinely_not_json_still_reads_as_that(self):
+        # The other side of the split, so it is not simply "report everything
+        # as the instrument's fault".
+        assert sampler.observe_body("crossref", _FakeResponse(200, text="<html>")).top == "not-json"
+
+    def test_an_unreadable_body_reaches_the_exit_code(self):
+        outcome = sampler.ProbeOutcome(
+            endpoint="crossref",
+            status=200,
+            cause=None,
+            shape=sampler.BodyShape(endpoint="crossref", top="instrument-AttributeError"),
+        )
+        assert sampler.instrument_defects([outcome]) == 1
+        assert sampler.instrument_defects([_served("crossref", {})]) == 0
+
+    def test_a_shape_from_another_endpoint_is_refused(self):
+        with pytest.raises(ValueError, match="shape for 'openalex'"):
+            sampler.ProbeOutcome(
+                endpoint="crossref",
+                status=200,
+                cause=None,
+                shape=sampler.BodyShape(endpoint="openalex", top="object"),
+            )
+
+
+#: An ``efetch`` body carrying the element ``_parse_pubmed_signals`` looks for.
+_PUBMED_WITH_CITATION = (
+    "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article/>"
+    "</MedlineCitation></PubmedArticle></PubmedArticleSet>"
+)
+#: One that parses and carries none — NCBI's error envelope, served at 200.
+_PUBMED_EUTILS_ERROR = "<eFetchResult><ERROR>Empty id list</ERROR></eFetchResult>"
+#: And the other population that reaches the same branch: a Bookshelf PMID,
+#: which ``_parse_pubmed_signals`` declines by name.
+_PUBMED_BOOK_ARTICLE = (
+    "<PubmedArticleSet><PubmedBookArticle><BookDocument/></PubmedBookArticle></PubmedArticleSet>"
+)
+
+
+class TestThePubMedBodyIsShapedToo:
+    """``efetch`` serves XML, so its shape question is whether bmlib can read it.
+
+    Not a JSON row, and it earns its place for the same reason the JSON ones
+    do: ``_check_pubmed`` WARNs on an empty 200 and ``_parse_pubmed_signals``
+    WARNs on a body that is not parsable XML, and **neither level was ever
+    measured** — issue #193's draw settled statuses. Every branch ends with
+    empty signals, which means no ``<CoiStatement>``, nothing retracted from
+    the COI indicators, and the missing-COI downgrade free to fire.
+    """
+
+    def test_a_parsable_document_carrying_a_citation_is_xml(self):
+        served = _FakeResponse(200, text=_PUBMED_WITH_CITATION)
+        assert sampler.observe_body("pubmed_efetch", served).top == "xml"
+
+    def test_an_empty_body_is_its_own_answer(self):
+        assert sampler.observe_body("pubmed_efetch", _FakeResponse(200, text="")).top == "empty"
+
+    def test_a_body_that_will_not_parse_is_not_xml(self):
+        served = _FakeResponse(200, text="<PubmedArticleSet>")
+        assert sampler.observe_body("pubmed_efetch", served).top == "not-xml"
+
+    @pytest.mark.parametrize(
+        "body",
+        [_PUBMED_EUTILS_ERROR, _PUBMED_BOOK_ARTICLE, "<PubmedArticleSet/>"],
+        ids=["eutils-error", "book-article", "empty-set"],
+    )
+    def test_a_document_carrying_no_citation_is_its_own_kind(self, body):
+        # The branch that was folded into `xml`, and the only silent one of the
+        # four: the other three each WARN, while this one returns empty signals
+        # with no line at any level. Both named bodies are live populations —
+        # NCBI serves the error envelope at 200 under load, and issue #188's own
+        # finding is that every `id-only` `MED` record in a 150-record spot draw
+        # was a Bookshelf chapter, so they are in the drawn population.
+        assert sampler.observe_body("pubmed_efetch", _FakeResponse(200, text=body)).top == (
+            "no-citation"
+        )
+
+    def test_the_xml_kind_agrees_with_what_the_analyzer_reads(self):
+        # The restated XPath, driven rather than compared as source: for each
+        # body, "did bmlib get a citation?" must match "did this call it xml?".
+        for body in (_PUBMED_WITH_CITATION, _PUBMED_EUTILS_ERROR, _PUBMED_BOOK_ARTICLE):
+            root = ET.fromstring(body)
+            analyzer_found = root.find(".//PubmedArticle/MedlineCitation") is not None
+            assert (sampler._xml_kind(body) == "xml") is analyzer_found, body
+
+    def test_the_xml_endpoint_has_no_field_rows(self):
+        served = _FakeResponse(200, text=_PUBMED_WITH_CITATION)
+        assert sampler.observe_body("pubmed_efetch", served).fields == ()
+
+
+def _served_shape(endpoint: str) -> sampler.BodyShape:
+    """A minimal shape for a body *endpoint* served, valid for that endpoint.
+
+    ``europepmc_search`` needs a category: since PR #213's review a decoded
+    object body always carries one, so a bare ``top="object"`` there describes
+    a body :func:`observe_body` cannot produce.
+    """
+    if endpoint == "europepmc_search":
+        return sampler.BodyShape(endpoint=endpoint, top="object", addressability="no-record")
+    return sampler.BodyShape(endpoint=endpoint, top="object")
+
+
+def _epmc_body(**record: object) -> dict:
+    """One EuropePMC search body carrying one record."""
+    return {"resultList": {"result": [record]}}
+
+
+class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
+    """The rider populations: issues #207 and #188, on the body already fetched.
+
+    ``FullTextStatus.NOT_ATTEMPTED`` is documented *"no request was made, and
+    EuropePMC's own answer is why"* and covers three causes, one of which is a
+    record claiming ``inEPMC: Y`` and carrying nothing to address the text by
+    — a malformed record, not a closed-access paper, and the one cause for
+    which that sentence is false. #207 asks for a fourth member and was filed
+    rather than taken because its population is unmeasured. #188 is the
+    neighbouring split: a record addressed by its bare ``id`` rather than a
+    ``pmcid``, which for a ``MED`` record is a request whose 404 is known
+    before it leaves and for a ``PPR`` one is the only address there is.
+
+    Both are counted here rather than reasoned about, and the categories are
+    finer than ``FullTextStatus`` — which is the finding, not a mismatch.
+    """
+
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            ({"resultList": {"result": []}}, "no-record"),
+            ({}, "no-record"),
+            (_epmc_body(id="1", pmcid="PMC1"), "not-claimed"),
+            (_epmc_body(inEPMC="N", pmcid="PMC1"), "not-claimed"),
+            (_epmc_body(inEPMC="Y", pmcid="PMC1", id="1"), "pmcid"),
+            (_epmc_body(inEPMC="Y", id="PPR123"), "id-only"),
+            (_epmc_body(inEPMC="Y", pmcid="", id="PPR123"), "id-only"),
+            (_epmc_body(inEPMC="Y"), "unaddressable"),
+            (_epmc_body(inEPMC="Y", pmcid="", id=""), "unaddressable"),
+        ],
+    )
+    def test_each_record_falls_in_the_category_bmlib_would_act_on(self, body, expected):
+        shape = sampler.observe_body("europepmc_search", _FakeResponse(200, body))
+        assert shape.addressability == expected
+
+    def test_the_records_own_source_is_kept_beside_it(self):
+        # #188 turns on it: a `PPR` record's `id` is the only address there
+        # is, while a `MED` record's is a bare PMID that never serves.
+        shape = sampler.observe_body(
+            "europepmc_search", _FakeResponse(200, _epmc_body(inEPMC="Y", id="PPR1", source="PPR"))
+        )
+        assert shape.address_source == "PPR"
+
+    def test_a_body_that_did_not_decode_is_not_categorised(self):
+        shape = sampler.observe_body("europepmc_search", _FakeResponse(200, text="<html>"))
+        assert shape.addressability is None
+
+    @pytest.mark.parametrize("body", [[], ["x"], "s", 7, True], ids=str)
+    def test_a_body_that_is_not_an_object_is_not_categorised_either(self, body):
+        # `_epmc_records` funnels through `_json_object`, which answers `{}`
+        # for anything that is not a dict — so every one of these came back
+        # `no-record`, a category documented as EuropePMC answering and
+        # holding nothing. What bmlib does with such a body is refuse it at
+        # `_request_json` and store `FullTextStatus.SEARCH_FAILED`: a WARNING
+        # and up to 30 unscored points. The table reported a loud failure as a
+        # quiet absence, inside the denominator issues #207 and #188 are
+        # decided on (PR #213's review).
+        shape = sampler.observe_body("europepmc_search", _FakeResponse(200, body))
+        assert shape.addressability is None
+        assert shape.top != "object"
+
+    @pytest.mark.parametrize(
+        ("body", "text"),
+        [({}, ""), ([], ""), ("s", ""), (None, "<html>")],
+        ids=["object", "array", "string", "undecodable"],
+    )
+    def test_a_body_is_categorised_exactly_when_the_analyzer_can_read_one(self, body, text):
+        # Driven against the real boundary rather than argued: whatever
+        # `_request_json` refuses, `analyze()` reaches its `epmc is None`
+        # branch for and stores `SEARCH_FAILED` — so this script must decline
+        # to categorise exactly those bodies and no others. The comparison is
+        # what a restated rule does not survive.
+        resp = _FakeResponse(200, body, text=text)
+        analyzer = TransparencyAnalyzer(email="a@b.c")
+        readable = (
+            analyzer._request_json(_ScriptedClient(resp), "u", api="EuropePMC", subject="x")
+            is not None
+        )
+        shape = sampler.observe_body("europepmc_search", resp)
+        assert (shape.addressability is not None) is readable
+
+    def test_every_address_category_chooses_a_side(self):
+        # This repository's own `FullTextStatus.is_refusal` rule: both sides
+        # are named sets and a test asserts the partition, because a sixth
+        # category omitted from `ADDRESSED_CATEGORIES` would default to *"no
+        # request would be made"* and silently move the headline figure two
+        # issues are blocked on. `ADDRESSED_CATEGORIES` was a positive set
+        # with no named complement (PR #213's review).
+        assert not (sampler.ADDRESSED_CATEGORIES & sampler.UNADDRESSED_CATEGORIES)
+        assert (
+            sampler.ADDRESSED_CATEGORIES | sampler.UNADDRESSED_CATEGORIES
+        ) == sampler.ALL_ADDRESS_CATEGORIES
+
+    def test_every_category_the_code_can_return_is_in_the_partition(self):
+        # And the partition is held against what `_addressability` actually
+        # produces, not against a restated list — otherwise a new category
+        # could be added to both the function and one set and still be wrong.
+        produced = {
+            sampler.observe_body("europepmc_search", _FakeResponse(200, body)).addressability
+            for body in (
+                {"resultList": {"result": []}},
+                _epmc_body(id="1", pmcid="PMC1"),
+                _epmc_body(inEPMC="Y", pmcid="PMC1"),
+                _epmc_body(inEPMC="Y", id="PPR1"),
+                _epmc_body(inEPMC="Y"),
+            )
+        }
+        assert produced == sampler.ALL_ADDRESS_CATEGORIES
+
+    def test_a_category_outside_the_partition_is_refused(self):
+        with pytest.raises(ValueError, match="unknown address category"):
+            sampler.BodyShape(endpoint="europepmc_search", top="object", addressability="invented")
+
+    def test_a_decoded_object_body_always_carries_one(self):
+        # The direction that keeps `None` from acquiring a second meaning: an
+        # uncategorised object body would be dropped by `_addressed_shapes`
+        # and shrink issue #207's denominator with no line printed.
+        with pytest.raises(ValueError, match="always categorised"):
+            sampler.BodyShape(endpoint="europepmc_search", top="object")
+
+    def test_a_source_without_a_category_is_refused_on_another_endpoint(self):
+        # The other half of the endpoint guard, which was written as
+        # `addressability or address_source` and tested only through the
+        # first: narrowing it to `addressability` alone survived the suite.
+        with pytest.raises(ValueError, match="only a EuropePMC record"):
+            sampler.BodyShape(endpoint="crossref", top="object", address_source="PPR")
+
+    def test_no_other_endpoint_carries_a_category(self):
+        assert sampler.observe_body("crossref", _FakeResponse(200, {})).addressability is None
+
+    def test_a_category_on_another_endpoint_is_refused(self):
+        with pytest.raises(ValueError, match="only a EuropePMC record"):
+            sampler.BodyShape(endpoint="crossref", top="object", addressability="pmcid")
+
+
+class TestTheAddressCategoryAgreesWithWhatTheAnalyzerDoes:
+    """Driven against ``_check_europepmc`` itself, not read off its source.
+
+    The category restates one literal the sampler cannot import — the
+    ``inEPMC == "Y"`` gate is inline in that method — so the relation is
+    pinned the way ``TestTheSamplerProbesWhatTheAnalyzerRequests`` pins the
+    URLs: drive both over the same bodies and compare. A restated literal is
+    what passes an import check and fails a live remote (issue #184).
+
+    What is compared is what the analyzer *observably* does: whether it asks
+    EuropePMC for full text, and which accession it asks with. It cannot
+    distinguish ``not-claimed`` from ``unaddressable`` — both make no request
+    and both store ``NOT_ATTEMPTED`` — and that indistinguishability **is**
+    issue #207.
+    """
+
+    @pytest.mark.parametrize(
+        ("body", "expected_accession"),
+        [
+            ({"resultList": {"result": []}}, None),
+            (_epmc_body(id="1", pmcid="PMC1"), None),
+            (_epmc_body(inEPMC="N", pmcid="PMC1"), None),
+            (_epmc_body(inEPMC="Y", pmcid="PMC1", id="1"), "PMC1"),
+            (_epmc_body(inEPMC="Y", id="PPR123"), "PPR123"),
+            (_epmc_body(inEPMC="Y"), None),
+        ],
+    )
+    def test_a_request_is_made_exactly_where_the_category_says_it_would_be(
+        self, body, expected_accession
+    ):
+        from bmlib.transparency.analyzer import _Analysis
+
+        client = _ScriptedClient(*[_FakeResponse(404) for _ in range(2)])
+        TransparencyAnalyzer(email="a@b.c")._check_europepmc(client, body, _Analysis(), "d")
+        full_text_urls = [url for url in client.urls() if url.endswith("/fullTextXML")]
+
+        category = sampler.observe_body("europepmc_search", _FakeResponse(200, body)).addressability
+        asked = category in sampler.ADDRESSED_CATEGORIES
+
+        assert asked == bool(full_text_urls)
+        if expected_accession is not None:
+            expected_url = f"{sampler.EUROPEPMC_REST_BASE}/{expected_accession}/fullTextXML"
+            assert full_text_urls == [expected_url]
+
+    def test_the_categories_that_ask_are_not_all_of_them(self):
+        # The anti-vacuity half: were `ADDRESSED_CATEGORIES` every category,
+        # `asked` would be constant and the comparison above would pass over
+        # a sampler that agreed with nothing.
+        assert sampler.ADDRESSED_CATEGORIES == frozenset({"pmcid", "id-only"})
+
+
+def _efetch_with(*accessions: str) -> _FakeResponse:
+    """A PubMed record whose ``DataBankList`` names *accessions*."""
+    numbers = "".join(f"<AccessionNumber>{a}</AccessionNumber>" for a in accessions)
+    return _FakeResponse(
+        200,
+        text=(
+            "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article>"
+            "<DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName>"
+            f"<AccessionNumberList>{numbers}</AccessionNumberList></DataBank></DataBankList>"
+            "</Article></MedlineCitation></PubmedArticle></PubmedArticleSet>"
+        ),
+    )
+
+
+class TestTheResultsCheckSaysWhatItCouldAskAndWhatAnswered:
+    """Issue #206's population, on the draw that already probes these accessions.
+
+    Two silences, one per half. ``MAX_TRIAL_IDS_TO_CHECK`` slices an
+    **unbounded** list — ``_parse_pubmed_signals`` extends over every
+    ``<AccessionNumberList>`` entry — so a pooled report's fourth accession is
+    dropped with no log line, no indicator and no test. And ``answered`` goes
+    ``True`` on the *first* accession that replies, so one reachable *"no
+    results"* outvotes any number of unreachable ones and the paper stores
+    *"Registered trial without posted results"*: issue #194's class of false
+    claim, narrowed by the tri-state rather than removed.
+
+    Neither can be decided without knowing how often a paper carries more than
+    three accessions, and how often a check is partly answered. Both are
+    counted here.
+    """
+
+    def _check(self, *responses, accessions=("NCT00000001",)):
+        client = _ScriptedClient(_efetch_with(*accessions), *responses)
+        record = sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid="1", raw={})
+        checks: list[sampler.TrialCheck] = []
+        sampler.probe_trials(client, record, "a@b.c", _pace, checks=checks)
+        return checks
+
+    def test_every_accession_is_counted_before_the_cap_is_applied(self):
+        [check] = self._check(
+            *[_FakeResponse(200, {"hasResults": True}) for _ in range(3)],
+            accessions=("NCT00000001", "NCT00000002", "NCT00000003", "NCT00000004", "NCT00000005"),
+        )
+        assert check.found == 5
+
+    def test_only_the_accessions_bmlib_would_ask_about_are_probed(self):
+        [check] = self._check(
+            *[_FakeResponse(200, {"hasResults": True}) for _ in range(3)],
+            accessions=("NCT00000001", "NCT00000002", "NCT00000003", "NCT00000004", "NCT00000005"),
+        )
+        assert check.probed == sampler.MAX_TRIAL_IDS_TO_CHECK
+        assert check.truncated
+
+    def test_a_record_within_the_cap_is_not_truncated(self):
+        [check] = self._check(_FakeResponse(200, {"hasResults": True}))
+        assert (check.found, check.probed, check.truncated) == (1, 1, False)
+
+    @pytest.mark.parametrize(
+        "body",
+        [{"hasResults": "no"}, {"hasResults": 1}, [1, 2]],
+        ids=["wrong-typed-string", "wrong-typed-number", "not-an-object"],
+    )
+    def test_a_200_bmlib_could_not_read_did_not_answer(self, body):
+        # `answered` counted HTTP 200 where bmlib counts *"did the method
+        # return non-`None`"* — and since PR #208 routed the value through
+        # `_json_bool` it returns `None` for a non-object body and for a
+        # wrong-typed `hasResults`. Counting 200s inflated `complete` and
+        # deflated `partial` and `unanswered`, the two rows issue #206 turns
+        # on. It is also the wrong-typed-boolean shape `_json_bool`'s own
+        # docstring says no contract net can see, which makes this the one
+        # population that ought to see it (PR #213's review).
+        [check] = self._check(_FakeResponse(200, body))
+        assert check.answered == 0
+        assert check.verdict == "unanswered"
+
+    @pytest.mark.parametrize(
+        "body", [{"hasResults": True}, {"hasResults": False}, {}], ids=["true", "false", "absent"]
+    )
+    def test_a_200_bmlib_could_read_did_answer(self, body):
+        # The other side, and the `absent` case is deliberate: an absent key
+        # keeps the `False` that `test_missing_has_results_is_false` has
+        # pinned since before the tri-state existed (issue #210, which this
+        # sampler's own first run settled at 0 of 55).
+        [check] = self._check(_FakeResponse(200, body))
+        assert check.answered == 1
+        assert check.verdict == "complete"
+
+    def test_the_answer_test_agrees_with_the_analyzer(self):
+        # Driven against `_check_trial_results` itself rather than restated:
+        # for each body, "would bmlib have had an answer?" must match what
+        # this script counted.
+        analyzer = TransparencyAnalyzer(email="a@b.c")
+        for body in ({"hasResults": True}, {"hasResults": "no"}, {}, [1, 2], "s"):
+            resp = _FakeResponse(200, body)
+            bmlib_answered = (
+                analyzer._check_trial_results(_ScriptedClient(resp), "NCT00000001") is not None
+            )
+            outcome = sampler.probe(_ScriptedClient(resp), "clinicaltrials", "u")
+            assert sampler.trial_answered(outcome) is bmlib_answered, body
+
+    def test_a_check_every_accession_answered_is_complete(self):
+        [check] = self._check(
+            _FakeResponse(200, {"hasResults": True}),
+            _FakeResponse(200, {"hasResults": False}),
+            accessions=("NCT00000001", "NCT00000002"),
+        )
+        assert check.verdict == "complete"
+
+    def test_a_check_one_accession_did_not_answer_is_partial(self):
+        # The stored finding says "without posted results"; the accession that
+        # did not answer may be the trial that has them.
+        [check] = self._check(
+            _FakeResponse(200, {"hasResults": False}),
+            _FakeResponse(404),
+            accessions=("NCT00000001", "NCT00000002"),
+        )
+        assert check.verdict == "partial"
+
+    def test_a_check_nothing_answered_is_its_own_verdict(self):
+        [check] = self._check(_FakeResponse(404))
+        assert check.verdict == "unanswered"
+
+    def test_a_throttled_probe_leaves_the_check_unclassifiable(self):
+        # The sampler was throttled, not ClinicalTrials.gov, so this record
+        # enters no verdict denominator — the rule every other population here
+        # follows.
+        [check] = self._check(*[_FakeResponse(429) for _ in range(sampler.MAX_PROBE_ATTEMPTS)])
+        assert check.verdict == "unmeasured"
+
+    def test_a_record_with_no_accession_records_no_check(self):
+        client = _ScriptedClient(_efetch_with(), _FakeResponse(200, {}))
+        record = sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid="1", raw={})
+        checks: list[sampler.TrialCheck] = []
+        sampler.probe_trials(client, record, "a@b.c", _pace, checks=checks)
+        assert checks == []
+
+    def test_the_accession_list_itself_is_uncapped(self):
+        # `trial_ids_for` reports what the record carries; the cap belongs
+        # where bmlib applies it, or the count above could never be taken.
+        record = sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid="1", raw={})
+        efetch = _efetch_with("NCT00000001", "NCT00000002", "NCT00000003", "NCT00000004")
+        found = sampler.trial_ids_for(record, efetch.text)
+        assert len(found) == 4
+
+
+class TestWhetherAnyRegistrationSourceAnsweredAtAll:
+    """Issue #204's population, derived from probes the run already makes.
+
+    ``TransparencyResult.trial_registered`` is a bare ``bool``, ``False`` both
+    for a paper reporting no registered trial and for one whose sources never
+    answered — and after issue #202 the second is *structurally* reachable
+    rather than incidental, ``_find_trial_ids`` returning ``[]`` for a record
+    that never arrived. Whether that deserves a fourth status enum, a derived
+    read, or a recorded residual turns on how big the second case is, and the
+    issue's own third option says so: *"defensible only if the population is
+    small, which nobody has measured"*.
+
+    Two sources feed the check: the EuropePMC record, whose abstract the
+    heuristic scans, and PubMed's ``<DataBankList>``. A record for which
+    neither answered is one where ``False`` is a claim about bmlib rather than
+    about the paper.
+    """
+
+    def _outcomes(self, *pairs):
+        return [
+            sampler.ProbeOutcome(
+                endpoint=endpoint,
+                status=200 if ok else 404,
+                cause=None if ok else "http-404",
+                shape=_served_shape(endpoint) if ok else None,
+            )
+            for endpoint, ok in pairs
+        ]
+
+    def test_both_sources_answering_is_the_ordinary_case(self):
+        outcomes = self._outcomes(("europepmc_search", True), ("pubmed_efetch", True))
+        assert sampler.source_reach(outcomes) == "both"
+
+    def test_only_europepmc_answering_is_named(self):
+        outcomes = self._outcomes(("europepmc_search", True), ("pubmed_efetch", False))
+        assert sampler.source_reach(outcomes) == "epmc-only"
+
+    def test_only_pubmed_answering_is_named(self):
+        outcomes = self._outcomes(("europepmc_search", False), ("pubmed_efetch", True))
+        assert sampler.source_reach(outcomes) == "pubmed-only"
+
+    def test_neither_answering_is_the_population_the_issue_asks_for(self):
+        outcomes = self._outcomes(("europepmc_search", False), ("pubmed_efetch", False))
+        assert sampler.source_reach(outcomes) == "neither"
+
+    def test_a_record_with_no_pmid_has_no_pubmed_source_when_the_search_failed(self):
+        # No efetch is made, and no PMID can be recovered from a search that
+        # did not answer — so bmlib reaches the registration check with
+        # nothing, which is the same population by a different route.
+        assert sampler.source_reach(self._outcomes(("europepmc_search", False))) == "neither"
+
+    def test_a_record_with_no_pmid_still_counts_the_search_that_answered(self):
+        assert sampler.source_reach(self._outcomes(("europepmc_search", True))) == "epmc-only"
+
+    def test_a_throttled_probe_leaves_the_record_unclassifiable(self):
+        outcomes = [
+            sampler.ProbeOutcome(
+                endpoint="europepmc_search", status=429, cause="unmeasured-429", measured=False
+            ),
+            *self._outcomes(("pubmed_efetch", True)),
+        ]
+        assert sampler.source_reach(outcomes) == "unmeasured"
+
+    def test_the_other_endpoints_do_not_decide_it(self):
+        # CrossRef and OpenAlex feed no registration signal, so a run in which
+        # both answered says nothing about whether a trial could be found.
+        outcomes = self._outcomes(
+            ("crossref", True), ("openalex", True), ("europepmc_search", False)
+        )
+        assert sampler.source_reach(outcomes) == "neither"
+
+
+def _served(endpoint: str, body: object) -> sampler.ProbeOutcome:
+    """One served outcome carrying the shape of *body*."""
+    return sampler.probe(_ScriptedClient(_FakeResponse(200, body)), endpoint, "u")
+
+
+class TestTheShapeTableFollowsTheRulesEveryTableHereFollows:
+    """A shape population is a population, so it obeys the same three rules.
+
+    A body that could not be fetched enters no denominator; a population past
+    ``UNMEASURED_SHARE_ERROR_THRESHOLD`` reports ERROR rather than a share;
+    and a zero over an absent population is not a clean result — nothing
+    served and nothing malformed must not print alike, because a healthy
+    endpoint is exactly what an unsampled one looks like.
+    """
+
+    def test_nothing_served_is_an_error_and_not_a_clean_distribution(self):
+        [line] = sampler.summarise_shapes("crossref", [_outcome("http-404")])
+        assert "ERROR" in line
+
+    def test_an_empty_population_is_an_error_too(self):
+        [line] = sampler.summarise_shapes("crossref", [])
+        assert "ERROR" in line
+
+    def test_a_throttled_population_is_an_error_here_as_well(self):
+        # Delegated to `is_reportable`, so the shape table cannot report a
+        # distribution the status table above it refused to report.
+        outcomes = [_outcome("unmeasured-429") for _ in range(5)] + [_outcome(None)]
+        assert any("ERROR" in line for line in sampler.summarise_shapes("crossref", outcomes))
+
+    def test_the_top_level_distribution_names_each_kind_it_saw(self):
+        outcomes = [_served("crossref", {}), _served("crossref", []), _served("crossref", {})]
+        text = "\n".join(sampler.summarise_shapes("crossref", outcomes))
+        assert "object" in text and "array" in text
+
+    def test_a_fields_denominator_is_the_bodies_it_could_be_asked_of(self):
+        # `open_access.is_oa` is reachable in one of these two bodies, so its
+        # row is over one — not over two, which would report a question that
+        # could not be asked as an answer.
+        outcomes = [
+            _served("openalex", {"open_access": {"is_oa": True}}),
+            _served("openalex", {"open_access": "yes"}),
+        ]
+        rows = {
+            line.split()[0]: line for line in sampler.summarise_shapes("openalex", outcomes)[1:]
+        }
+        assert " 1 " in rows["open_access.is_oa"]
+        assert " 2 " in rows["open_access"]
+
+    def test_a_fields_row_names_the_kinds_it_actually_saw(self):
+        # **Issue #211's own deliverable**, and it was pinned by nothing:
+        # replacing the kind breakdown with a constant passed the whole suite
+        # (measured). The denominator above is what a mis-declared path moves;
+        # *this* is the cell the run's headline — "0 non-object at all five
+        # endpoints", "`hasResults` absent in 0 of 55" — is read out of.
+        outcomes = [
+            _served("openalex", {"open_access": {"is_oa": True}}),
+            _served("openalex", {"open_access": {"is_oa": "false"}}),
+            _served("openalex", {"open_access": {}}),
+        ]
+        rows = {
+            line.split()[0]: line for line in sampler.summarise_shapes("openalex", outcomes)[1:]
+        }
+        # The wrong-typed boolean is the shape `_json_bool` exists for, and
+        # the one no contract net can see, so the row has to name it.
+        assert "boolean=1" in rows["open_access.is_oa"]
+        assert "string=1" in rows["open_access.is_oa"]
+        assert "absent=1" in rows["open_access.is_oa"]
+
+    def test_a_top_level_row_carries_its_interval(self):
+        # The status table has carried one all along; without it here a bare
+        # `100.0%` over four bodies and over four hundred read identically,
+        # and these are the rows that get quoted.
+        outcomes = [_served("crossref", {}) for _ in range(4)]
+        rows = sampler.summarise_shapes("crossref", outcomes)
+        assert "95% CI" in rows[1], rows
+
+    def test_a_shape_population_thinned_by_failures_is_an_error(self):
+        # `bool(shapes)` was the whole floor, so one served body out of many
+        # printed `100.0%` with no interval while the status table above
+        # honestly reported the endpoint failing almost every probe. A non-200
+        # is the measurement for that table and a hole for this one.
+        outcomes = [_served("crossref", {})] + [
+            sampler.ProbeOutcome(endpoint="crossref", status=404, cause="http-404")
+            for _ in range(20)
+        ]
+        assert sampler.shapes_reportable(outcomes) is False
+        assert any("too few to report" in line for line in sampler.summarise_shapes("cr", outcomes))
+
+    def test_a_shape_population_that_mostly_served_is_reported(self):
+        # The other edge, so the floor is not simply "any failure at all".
+        outcomes = [_served("crossref", {}) for _ in range(19)] + [
+            sampler.ProbeOutcome(endpoint="crossref", status=404, cause="http-404")
+        ]
+        assert sampler.shapes_reportable(outcomes) is True
+
+    def test_a_field_no_served_body_could_be_asked_says_so_rather_than_vanishing(self):
+        # Otherwise "never wrong-typed" and "never reachable" print alike,
+        # and the second is what a mis-declared path looks like.
+        outcomes = [_served("openalex", [])]
+        rows = "\n".join(sampler.summarise_shapes("openalex", outcomes))
+        assert "cited_by_count" in rows
+        assert "NO POPULATION" in rows
+
+
+class TestTheRiderTablesRefuseAnAbsentPopulation:
+    """The three counters carried for issues #204, #206, #207 and #188.
+
+    Each is a population in its own right with its own denominator, so each
+    reports ERROR rather than a share when it has none — the failure mode
+    every one of these issues is blocked on is a *number*, and a zero over an
+    absent population would answer them wrongly rather than not at all.
+    """
+
+    def test_no_addressed_record_is_an_error(self):
+        assert any("ERROR" in line for line in sampler.summarise_addressing([]))
+
+    def test_an_address_table_reports_each_category_it_saw(self):
+        outcomes = [
+            _served("europepmc_search", _epmc_body(inEPMC="Y", pmcid="PMC1")),
+            _served("europepmc_search", _epmc_body(inEPMC="Y", id="X", source="PPR")),
+        ]
+        text = "\n".join(sampler.summarise_addressing(outcomes))
+        assert "pmcid" in text and "id-only" in text
+
+    def test_the_table_says_how_many_records_a_request_would_be_made_for(self):
+        # The denominator of the full-text fetch population, and what makes
+        # `ADDRESSED_CATEGORIES` load-bearing in the report rather than a
+        # constant only a test reads.
+        outcomes = [
+            _served("europepmc_search", _epmc_body(inEPMC="Y", pmcid="PMC1")),
+            _served("europepmc_search", _epmc_body(inEPMC="N")),
+            _served("europepmc_search", _epmc_body(inEPMC="Y")),
+        ]
+        text = "\n".join(sampler.summarise_addressing(outcomes))
+        assert "1 of 3" in text
+
+    def test_the_id_only_records_are_split_by_source(self):
+        # Issue #188 turns on exactly this: a `PPR` accession is the only
+        # address a preprint has, and a `MED` record's bare id never serves.
+        outcomes = [
+            _served("europepmc_search", _epmc_body(inEPMC="Y", id="X", source="PPR")),
+            _served("europepmc_search", _epmc_body(inEPMC="Y", id="9", source="MED")),
+        ]
+        text = "\n".join(sampler.summarise_addressing(outcomes))
+        assert "PPR" in text and "MED" in text
+
+    def test_a_population_that_found_none_of_its_own_records_is_an_error(self):
+        # Every drawn record came from this same API, so a population that is
+        # wholly `no-record` cannot be a fact about the corpus — it is this
+        # script's single-record lookup having stopped working. It used to
+        # print "a full-text request would be made for 0 of N" at exit 0: a
+        # spectacular finding about bmlib manufactured out of a broken lookup.
+        outcomes = [_served("europepmc_search", {"resultList": {"result": []}}) for _ in range(5)]
+        assert sampler.addressing_reportable(outcomes) is False
+        lines = sampler.summarise_addressing(outcomes)
+        assert any("found none of the records it drew" in line for line in lines)
+        assert not any("would be made for" in line for line in lines)
+
+    def test_one_real_record_is_enough_to_report(self):
+        # The other edge: `no-record` is a genuine bmlib outcome, so a
+        # population merely containing some must still report.
+        outcomes = [
+            _served("europepmc_search", {"resultList": {"result": []}}),
+            _served("europepmc_search", _epmc_body(inEPMC="N")),
+        ]
+        assert sampler.addressing_reportable(outcomes) is True
+        assert any("re-find" in line for line in sampler.summarise_addressing(outcomes))
+
+    def test_a_body_that_carried_no_record_is_not_an_addressed_shape(self):
+        # The filter is load-bearing, not tidiness: `summarise_addressing`
+        # formats the category into a fixed-width field, so an uncategorised
+        # shape reaching it raises `TypeError` on `None`. That body is issue
+        # #184's exact live failure — EuropePMC answering 200 with HTML.
+        outcomes = [
+            _served("europepmc_search", _epmc_body(inEPMC="N")),
+            sampler.ProbeOutcome(
+                endpoint="europepmc_search",
+                status=200,
+                cause=None,
+                shape=sampler.observe_body("europepmc_search", _FakeResponse(200, text="<html>")),
+            ),
+        ]
+        lines = sampler.summarise_addressing(outcomes)
+        assert any("1 records categorised" in line for line in lines)
+
+    def test_no_trial_check_is_an_error(self):
+        assert any("ERROR" in line for line in sampler.summarise_trial_checks([]))
+
+    def test_an_absent_population_is_never_reportable(self):
+        # `_population_reportable`'s own first clause, which nothing exercised:
+        # inverting it made both predicates below answer True while their
+        # summarisers printed ERROR — the disagreement they exist to prevent.
+        assert sampler.checks_reportable([]) is False
+        assert sampler.reach_reportable([]) is False
+
+    def test_a_wholly_unmeasured_check_population_is_an_error(self):
+        checks = [sampler.TrialCheck(found=1, probed=1, answered=0, unmeasured=1)]
+        assert any("ERROR" in line for line in sampler.summarise_trial_checks(checks))
+
+    def test_a_check_whose_counters_contradict_each_other_is_refused(self):
+        # The ordering `found >= probed >= answered + unmeasured >= 0` is the
+        # whole meaning of the type and lived only in prose. The same argument
+        # was accepted for `ProbeOutcome` in this PR, where two impossible
+        # outcomes were being built by test helpers.
+        with pytest.raises(ValueError, match="exceeds"):
+            sampler.TrialCheck(found=1, probed=1, answered=2, unmeasured=0)
+        with pytest.raises(ValueError, match="exceeds the"):
+            sampler.TrialCheck(found=1, probed=2, answered=0, unmeasured=0)
+        with pytest.raises(ValueError, match="no count is negative"):
+            sampler.TrialCheck(found=1, probed=1, answered=-1, unmeasured=0)
+        with pytest.raises(ValueError, match="bmlib's own cap"):
+            sampler.TrialCheck(
+                found=99, probed=sampler.MAX_TRIAL_IDS_TO_CHECK + 1, answered=0, unmeasured=0
+            )
+
+    def test_the_trial_table_reports_the_truncated_share_too(self):
+        checks = [
+            sampler.TrialCheck(found=5, probed=3, answered=3, unmeasured=0),
+            sampler.TrialCheck(found=1, probed=1, answered=1, unmeasured=0),
+        ]
+        text = "\n".join(sampler.summarise_trial_checks(checks))
+        assert "truncated" in text and "complete" in text
+
+    def test_no_reach_verdict_is_an_error(self):
+        assert any("ERROR" in line for line in sampler.summarise_source_reach([]))
+
+    def test_a_wholly_unmeasured_reach_population_is_an_error(self):
+        assert any("ERROR" in line for line in sampler.summarise_source_reach(["unmeasured"]))
+
+    def test_the_reach_table_reports_the_population_the_issue_asks_for(self):
+        text = "\n".join(sampler.summarise_source_reach(["both", "both", "neither"]))
+        assert "neither" in text
+
+
+class TestTheNewTablesReachTheReportAndTheExitCode:
+    """A table nothing prints and no exit code reads is not an instrument.
+
+    ``main`` is where issue #211's counters become evidence, and this
+    repository has already been caught with a counter registered and never
+    read (``_FORMULA_ROUTING_COUNTERS``, which printed a population nothing
+    had counted). Both halves are pinned: the tables are printed, and each
+    one's absent population is carried into the exit code, since a scheduled
+    re-run is judged by that alone.
+    """
+
+    def _run(self, monkeypatch, client, argv=("--email", "a@b.c", "--target", "9")):
+        import httpx
+
+        monkeypatch.setattr(sys, "argv", ["sample_api_failures.py", *argv])
+        monkeypatch.setattr(sampler, "_make_pacer", lambda _interval: _pace)
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: _ContextClient(client))
+        return sampler.main()
+
+    def _page(self, n=1):
+        return {"resultList": {"result": [{"doi": f"10.1/{i}", "pmid": str(i)} for i in range(n)]}}
+
+    def test_a_clean_run_prints_every_new_table(self, monkeypatch, capsys):
+        assert self._run(monkeypatch, _AlwaysClient(self._page())) == 0
+        out = capsys.readouterr().out
+        assert "bodies served" in out
+        assert "records categorised" in out
+        assert "papers with at least one accession" in out
+        assert "records with a source outcome" in out
+
+    def test_the_field_rows_reach_the_report(self, monkeypatch, capsys):
+        assert self._run(monkeypatch, _AlwaysClient(self._page())) == 0
+        out = capsys.readouterr().out
+        assert "resultList.result[0].inEPMC" in out
+        assert "hasResults" in out
+
+    def test_the_registration_verdicts_reach_the_report(self, monkeypatch, capsys):
+        # The **wire**, and the one of the three that was open: replacing
+        # `source_reach(record_outcomes)` in `main` with the constant `"both"`
+        # passed the entire suite, so issue #204 would have been answered by a
+        # table that could only ever say one thing (PR #213's review).
+        # `source_reach` itself is covered above; what this drives is that
+        # `main` asks it. A run whose EuropePMC probe fails cannot report
+        # `both`, and its status population stays reportable because a 404 is
+        # an answer.
+        # Matched against the URL; the draw page is answered earlier, by its
+        # `pageSize`, so only the single-record probe fails.
+        client = _AlwaysClient(self._page(), fail_probe_hosts={"europepmc"})
+        self._run(monkeypatch, client)
+        out = capsys.readouterr().out
+        table = out.split("records with a source outcome")[-1]
+        assert "pubmed-only" in table, out
+        assert "both" not in table
+
+    def test_a_body_this_script_could_not_read_exits_non_zero(self, monkeypatch, capsys):
+        # The `sound` term, isolated. A response this script cannot decode
+        # still *records a shape*, so the endpoint counts as having served a
+        # body and `shaped` stays True — which is exactly why the defect
+        # needed a term of its own rather than riding on an existing one. One
+        # endpoint only, so nothing else fires alongside it.
+        import httpx
+
+        class _Unreadable:
+            status_code = 200
+            text = '{"message": {"funder": []}}'
+
+        class _BrokenCrossref(_AlwaysClient):
+            def get(self, url, params=None, headers=None, **kwargs):
+                if "crossref" in url:
+                    return _Unreadable()
+                return super().get(url, params, headers, **kwargs)
+
+        client = _BrokenCrossref(self._page())
+        monkeypatch.setattr(sys, "argv", ["s", "--email", "a@b.c", "--target", "9"])
+        monkeypatch.setattr(sampler, "_make_pacer", lambda _interval: _pace)
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: _ContextClient(client))
+        assert sampler.main() == 1
+        captured = capsys.readouterr()
+        assert "AttributeError" in captured.err
+        assert "not the remote" in captured.err
+        # And the other tables are untouched, which is the point of isolating it.
+        assert "records categorised" in captured.out
+
+    def test_an_endpoint_that_served_no_body_exits_non_zero(self, monkeypatch, capsys):
+        # **One** endpoint, and one whose body feeds no rider table. Its
+        # status population is perfectly reportable — `is_reportable` is about
+        # throttling, and a 404 is an answer — the draw lost no stratum, and
+        # the address, registration and results-check tables all have their
+        # populations. So the exit code is carrying the shape term alone.
+        #
+        # Failing *every* probe instead, which is what this test did first,
+        # empties the rider populations too: their terms then fire together
+        # and deleting the shape term leaves the whole suite green (measured).
+        # Pick the fixture that separates the guard from its own mutant.
+        client = _AlwaysClient(self._page(), fail_probe_hosts={"crossref"})
+        assert self._run(monkeypatch, client) == 1
+        out = capsys.readouterr().out
+        assert "no body was served" in out
+        # The tables that are fine are fine, which is the whole point.
+        assert "records categorised" in out
+        assert "papers with at least one accession" in out
+
+    @pytest.mark.parametrize(
+        "predicate", ["addressing_reportable", "reach_reportable", "checks_reportable"]
+    )
+    def test_each_rider_populations_verdict_reaches_the_exit_code(self, monkeypatch, predicate):
+        # The wire, pinned directly, because no fixture separates these three
+        # from the probe-level `is_reportable` above them: a run in which no
+        # paper names an accession also has an empty ClinicalTrials.gov status
+        # population, and one in which every record is throttled has an
+        # unreportable endpoint too. They are not the same predicate —
+        # `checks_reportable` and `reach_reportable` count *records* where
+        # `is_reportable` counts *probes*, and a record is unmeasured if any
+        # one of its accessions was — so the terms are kept, and what needed
+        # pinning is that `main` consults them at all. A counter registered
+        # and never read is this repository's own scar
+        # (`_FORMULA_ROUTING_COUNTERS`, which printed a population nothing
+        # had counted).
+        assert self._run(monkeypatch, _AlwaysClient(self._page())) == 0
+        monkeypatch.setattr(sampler, predicate, lambda *args: False)
+        assert self._run(monkeypatch, _AlwaysClient(self._page())) == 1
+
+
+class TestAStratumThatContributedNothingIsAHoleToo:
+    """Found by this script's own first run with the shape tables (2026-09-08).
+
+    Two of the nine strata answered with twenty records apiece and contributed
+    **none**: every ``SRC:PMC`` record in them carried neither a DOI nor a
+    PMID, so ``DrawnRecord`` refused them all. The draw line then read *"124
+    records over 7 strata"*, ``failed_strata`` was empty, and the run exited
+    ``0`` — reporting a source-and-year spread the sample does not have, which
+    is the exact thing ``summarise_draw`` exists to prevent and the reason a
+    page returning *no* records is already a hole.
+
+    A stratum whose records are all unusable is as absent as one whose page
+    did not answer. The existing guard could not see it because it tests the
+    page, and the loss happens one level down.
+    """
+
+    def _draw(self, *responses):
+        client = _ScriptedClient(*responses)
+        return sampler.draw_records(client, 2, _pace, strata=(("MED", 2024), ("PMC", 2024)))
+
+    def _page(self, *records):
+        return _FakeResponse(200, {"resultList": {"result": list(records)}})
+
+    def test_a_stratum_whose_records_are_all_unusable_is_named(self):
+        draw = self._draw(self._page({"doi": "10.1/a"}), self._page({"title": "no identifier"}))
+        assert "PMC/2024" in draw.unusable_strata
+        assert "MED/2024" not in draw.unusable_strata
+
+    def test_a_stratum_that_lost_only_some_records_is_not_a_hole(self):
+        # The negative control: losing one record of two thins the stratum
+        # without emptying it, which `unusable_records` already reports.
+        draw = self._draw(self._page({"doi": "10.1/a"}), self._page({"doi": "10.1/b"}, {}))
+        assert draw.unusable_strata == []
+        assert draw.unusable_records == 1
+
+    def test_the_report_says_the_sample_is_not_the_one_the_header_claims(self):
+        draw = self._draw(self._page({"doi": "10.1/a"}), self._page({}))
+        lines = sampler.summarise_draw("draw", draw, 20, 1)
+        assert any("ERROR" in line and "PMC/2024" in line for line in lines)
+
+    def test_such_a_draw_exits_non_zero(self, monkeypatch):
+        import httpx
+
+        class _PartlyUnusable(_AlwaysClient):
+            def get(self, url, params=None, headers=None, **kwargs):
+                if "europepmc" in url and "pageSize" in (params or {}):
+                    self.draws += 1
+                    if self.draws == 1:
+                        return _FakeResponse(200, {"resultList": {"result": [{"title": "x"}]}})
+                return super().get(url, params, headers, **kwargs)
+
+        client = _PartlyUnusable({"resultList": {"result": [{"doi": "10.1/a", "pmid": "1"}]}})
+        monkeypatch.setattr(sys, "argv", ["s", "--email", "a@b.c", "--target", "9"])
+        monkeypatch.setattr(sampler, "_make_pacer", lambda _interval: _pace)
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: _ContextClient(client))
+        assert sampler.main() == 1
+
+    def test_a_thinned_draw_exits_non_zero_too(self, monkeypatch, capsys):
+        # `unusable_records` short of emptying a stratum is the same loss,
+        # only smaller — and it entered no exit-code term, so a draw could
+        # fall to a fraction of its target and still go green while every
+        # interval below was read against the target it never reached (PR
+        # #213's review). Every stratum here contributes, so `unusable_strata`
+        # and `failed_strata` are both empty and this term is carrying it
+        # alone.
+        import httpx
+
+        page = {
+            "resultList": {"result": [{"doi": "10.1/a", "pmid": "1"}, {"title": "no identifier"}]}
+        }
+        client = _AlwaysClient(page)
+        monkeypatch.setattr(sys, "argv", ["s", "--email", "a@b.c", "--target", "9"])
+        monkeypatch.setattr(sampler, "_make_pacer", lambda _interval: _pace)
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: _ContextClient(client))
+        assert sampler.main() == 1
+        out = capsys.readouterr().out
+        assert "returned record(s) carried neither" in out
+        assert "of 9 requested records" in out

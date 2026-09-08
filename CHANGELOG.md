@@ -3021,6 +3021,162 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Internal
 
+- **The sampler now reads the *shape* of a 200 body, not only its status**
+  (issue #211, from PR #208's review, with rider counters for issues #204,
+  #206, #207, #210 and #188). `scripts/sample_api_failures.py` only: no
+  library code changes and **nothing stored moves**. What it produced is a
+  measurement, and it moved four open decisions and found a fifth defect.
+
+  **The claim had no instrument.** PR #208 added four coercers to
+  `transparency/analyzer.py` and priced them with *"no draw has seen these
+  endpoints answer 200 with a non-object"*. Nothing here could support that:
+  `ProbeOutcome` carried `endpoint`, `status`, `cause` and `measured` — HTTP
+  statuses alone — and had never decoded a body, so the sentence was a count
+  of what nobody looked for.
+
+  `BodyShape` records each served body's top-level JSON type and, for every
+  field the analyzer reads, that field's type over the bodies where its parent
+  made it reachable. **The field list is derived, not restated**:
+  `TestTheFieldListIsEveryFieldTheAnalyzerReads` walks `analyzer.py` with
+  `ast` and holds the two sets *equal*, because the list written into issue
+  #211's own text was already missing `source`, read by `_check_europepmc`
+  since PR #208 coerced it into the full-text URL. The walk fails closed on a
+  literal `.get()` in a function no endpoint claims, and carries an
+  anti-vacuity floor. **Two element steps and not one**, because the module
+  does two different things with a list: `_check_crossref` iterates every
+  funder where all three `_epmc_records` callers take `records[0]`, so one
+  sentinel would be wider than the code on one endpoint and narrower on the
+  other. A field reachable in no served body says so rather than vanishing, or
+  *"never wrong-typed"* and *"never asked"* print alike. `pubmed_efetch` is
+  shaped too — `xml` / `empty` / `not-xml` — those being the two branches
+  whose WARNING levels issue #193's status draw could not speak to.
+
+  Four decisions blocked on a count ride on the same bodies at no extra
+  request, and `trial_ids_for` now returns every accession with
+  `probe_trials` applying `MAX_TRIAL_IDS_TO_CHECK` where bmlib applies it —
+  capped at both ends, issue #206's count could never be taken. The address
+  category restates the one literal it cannot import, the `inEPMC == "Y"` gate
+  inline in `_check_europepmc`, so
+  `TestTheAddressCategoryAgreesWithWhatTheAnalyzerDoes` drives both over the
+  same bodies and compares which accession each would ask with; it cannot
+  separate `not-claimed` from `unaddressable`, both making no request and both
+  storing `NOT_ATTEMPTED`, and that indistinguishability **is** issue #207.
+
+  **The first run (2026-09-08, 124 + 60 records) found every served body
+  well-formed** — 0 non-object and 0 undecodable across the four JSON
+  endpoints, 0 `not-xml` at `efetch`, and 0 empty at all five (CrossRef 74,
+  EuropePMC 124, PubMed efetch 60, OpenAlex 74, ClinicalTrials.gov 55 bodies
+  served; `pubmed_efetch` is XML, so "non-object" is not a category it has) — so no coercer added by PR #208 was observed to fire, and its
+  *"nothing stored moves for a well-formed body"* is now measured rather than
+  assumed. Read every share below with issue #212: two `SRC:PMC` strata
+  contributed no record and a third kept 4 of 20, so the draw is MED+PPR plus
+  four `PMC/2014` records — 60 + 60 + 4.
+
+  Also measured: `hasResults` absent in **0 of 55** CT.gov bodies, which
+  settles issue #210 in favour of the existing `False`; `unaddressable` **0 of
+  124** and `neither` source answering **0 of 124**, which are issues #207's
+  and #204's own populations and argue against both schema changes; the
+  accession cap truncating **8 of the 30** papers in the 60-record trial draw
+  that named an accession, against a partly-answered check of **1 of 30**, which are issue #206's two halves and reverse its emphasis; and
+  the first non-200 this sampler has ever recorded, a single CT.gov 404 of 56
+  probes, leaving every `_ORDINARY_STATUSES` set empty as before.
+
+  **The largest finding is issue #188's, which was blocked on exactly this
+  draw**: 43 of 124 records (34.7%), and 43 of the 53 claiming `inEPMC: Y`
+  (81%), carry no `pmcid` and are addressed by the record's bare `id` — a URL
+  that 404s, three of three probed, against a `pmcid` address serving 53 kB.
+  All 84 such records in a 150-record `SRC:MED` draw are NCBI Bookshelf
+  chapters, and a `bookid` is not addressable through `fullTextXML` either
+  (three of three), so there is no full text to recover and the remedy is to
+  stop asking. The `PPR` half of the same expression is confirmed
+  load-bearing: 75,841 `SRC:PPR AND IN_EPMC:Y` records (2026-09-08; the 75,760
+  quoted for #184 is the earlier draw of the same population), 50 of 50 sampled
+  carrying no `pmcid`, and their `id` serves.
+
+  Every new population reports ERROR rather than a share when it has none and
+  can **flip the exit code on its own**, which is what
+  `test_each_rider_populations_verdict_reaches_the_exit_code` pins — they are
+  ANDed into two names rather than six. The shape term's first test
+  passed for the wrong reason — with every probe 404ing the rider terms fire
+  together — so its fixture now fails one endpoint only; the three
+  record-level terms no fixture separates from the probe-level `is_reportable`
+  are pinned on the wire instead.
+
+  **PR #213's own review found the instrument reproducing three defects it
+  exists to measure, and four guards pinned by nothing.** Every one is now
+  mutation-verified — 24 edits, 24 killed.
+
+  *Reported as the remote's fault when it was the script's.* A non-object
+  EuropePMC 200 came back `no-record`, a category documented as EuropePMC
+  answering and holding nothing, where bmlib refuses such a body at
+  `_request_json` and stores `FullTextStatus.SEARCH_FAILED` — a loud failure
+  read as a quiet absence, inside the denominator #207 and #188 are decided
+  on. `observe_body` wrapped `resp.json()` in a bare `except Exception`, so a
+  response object the script was wrong about printed a **valid** JSON body as
+  `not-json`: `_report_swallowed_exception`'s defect one layer up, now split
+  the same way, with the instrument's own kind, an ERROR line and an
+  exit-code term. And `draw_records` read the envelope through
+  `.get("resultList", {}).get("result", [])` — the idiom `_json_object`
+  replaces, which printed *"unreadable body"* for a `resultList: null` that
+  decoded perfectly — with the record loop outside the `try`, so a
+  wrong-typed element raised out of `main` and discarded every paced request
+  the run had already spent. It reads through `_epmc_records` now, and
+  coerces each identifier, a mistyped one having been truthy enough to probe.
+
+  *Measured on a population that was not there.* `shapes_reportable`'s whole
+  floor was `bool(shapes)`, so one served body out of 180 printed `100.0%`
+  with no interval while the status table above honestly reported the
+  endpoint failing 99.4% of its probes — a non-200 is the measurement for
+  that table and a hole for this one, so the module's own threshold now
+  applies to it, and each top-level row carries its Wilson interval.
+  `addressing_reportable` accepted a wholly `no-record` population, printing
+  *"a full-text request would be made for 0 of 180"* at exit 0 — every drawn
+  record came from that same API, so that is the lookup failing, not a
+  finding. `_xml_kind` folded into `xml` the one efetch branch that is
+  **silent** — a body that parses and carries no `PubmedArticle`, which is
+  NCBI's error envelope and every Bookshelf PMID, so #188's own population —
+  and it is now `no-citation`. `TrialCheck.answered` counted HTTP 200 where
+  bmlib counts *"did `_check_trial_results` return non-`None`"*, inflating
+  `complete` and deflating the two rows #206 turns on, and it is the
+  wrong-typed-boolean shape `_json_bool` exists for. A draw thinned short of
+  emptying a stratum reached no exit-code term at all.
+
+  *Types.* `UNADDRESSED_CATEGORIES` names the complement so a sixth category
+  must choose a side — `FullTextStatus.is_refusal`'s rule, which
+  `ADDRESSED_CATEGORIES` was not following; `UNMEASURED` replaces a literal
+  decided at seven sites across two vocabularies; `_THROTTLE_STATUSES` is
+  shared with `probe`, an `http-429` having satisfied every clause and put a
+  throttled probe into the failure share as a *failure*; `TrialCheck` gained
+  the counter ordering that was its whole meaning in prose; `BodyShape`
+  builds `fields` through a dict, and refuses a decoded object body carrying
+  no category.
+
+  *Prose.* Four claims were factually wrong and are corrected here and in
+  `CLAUDE.md`, `HANDOVER.md`, `ROADMAP.md` and the manual: the draw is 60 MED
+  + 60 PPR + **4 `PMC/2014`**, not "MED+PPR", which the report's own "7
+  strata" says; `DEFAULT_TARGET`'s comment claimed the default *is* the
+  measured draw when the run kept 124 of 180 — the invocation is
+  re-derivable and the count is not, and EuropePMC's live search makes the
+  draw itself unrepeatable either way; `draw_records`' contract promised at
+  least `target` records "when every stratum answers", which that run had;
+  and the module docstring's exit contract did not say a clean run now exits
+  1. *"Every count is 0 today"* beside the not-served label was made false by
+  this run's single CT.gov 404.
+
+- **A stratum that answers and contributes no record is a hole too** (issue
+  #212, found by the run above). `DrawnRecord` refuses a record carrying
+  neither a DOI nor a PMID, correctly — `analyze()` accepts nothing else — and
+  a `SRC:PMC` record carries neither, its only identifier being the PMCID. So
+  `PMC/2024` and `PMC/2004` drew twenty records apiece and kept none, while
+  the report read *"124 records over 7 strata"* with `failed_strata` empty and
+  the run exited `0`: a source-and-year spread the sample does not have, which
+  is the thing `summarise_draw` exists to prevent. The existing guard could
+  not see it because it tests the *page*, and the loss happens one level down.
+  `Draw.unusable_strata` names such a stratum, `summarise_draw` reports it as
+  an ERROR, and the exit code carries it — so **the script now exits non-zero
+  on a clean run** until issue #212's choice of population is made, which is
+  honest and is the reason it is worth making.
+
 - `_atomic_write` is promoted out of `fulltext/cache.py` into a new
   top-level private module, `bmlib/_atomic.py`, and is now
   `atomic_write` — the leading underscore moves to the module, matching
