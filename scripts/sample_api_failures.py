@@ -36,7 +36,15 @@ over identifiers shaped like the ones bmlib is handed, and the levels in
 
     uv run python scripts/sample_api_failures.py --email you@example.org
 
-Exits non-zero if any population printed ``ERROR`` instead of a distribution.
+Exits non-zero if any population printed ``ERROR`` instead of a distribution,
+or if the draw lost records it had asked for. **Today that is every run**: the
+three ``SRC:PMC`` strata yield records carrying neither a DOI nor a PMID, which
+``DrawnRecord`` refuses because ``analyze()`` accepts nothing else, so those
+strata are reported as holes. Issue #212 is the choice of population that ends
+it — drop those strata, condition each query on the record being analysable, or
+page until each contributes its quota — and the red is deliberate until it is
+made, because the alternative is a header claiming a source spread the sample
+does not have.
 
 ## What the population is, and why the draw is stratified
 
@@ -102,7 +110,14 @@ blocked on a count and none of them costs a request:
   unreachable ones.
 
 Each is its own population with its own denominator, reports ERROR rather than
-a share when it has none, and carries its own term in the exit code.
+a share when it has none, and can flip the exit code on its own.
+
+A ``200`` this script cannot read is reported as **this script** being wrong
+rather than as the remote's malformed body: ``json`` raises ``ValueError`` for
+a body that is not JSON, and anything else is a ``_BUG_TYPES`` member, which
+reported as ``not-json`` would print a *valid* body as an undecodable one at
+the top of the table the whole run is quoted from. That is ``analyzer.py``'s
+own ``_report_swallowed_exception`` split, one layer up.
 
 Companion to ``scripts/sample_databank_names.py``,
 ``scripts/sample_free_pdf_urls.py`` and ``scripts/sample_efetch_paging.py``,
@@ -200,8 +215,7 @@ DRAW_STRATA = (
     ("PPR", 2019),
     ("PPR", 2014),
 )
-#: Records to draw in total, spread evenly over the strata — 20 per stratum,
-#: so the default *is* the draw the committed numbers were taken at. 150
+#: Records to **request**, spread evenly over the strata — 20 per stratum. 150
 #: measured probes settle "is a non-200 the ordinary outcome here?" to within
 #: a Wilson half-width of about ±4% at a true 5%, which is the resolution the
 #: level decision needs — the same reasoning `sample_free_pdf_urls.py` records
@@ -212,8 +226,19 @@ DRAW_STRATA = (
 #: invocation that produced 180 was recorded nowhere, so a reader re-running
 #: the documented command got a third number (PR #195's review). The rule the
 #: sibling samplers follow is that a committed figure must be re-derivable
-#: from what is written down (issues #132/#138); making the default the
-#: measured draw is the cheapest way to hold it.
+#: from what is written down (issues #132/#138).
+#:
+#: **What that rule buys here is the invocation and not the count**, and this
+#: comment claimed both until PR #213's review. The 2026-09-08 run requested
+#: 180 and kept **124**: two ``SRC:PMC`` strata contributed no analysable
+#: record at all and a third contributed four, which is issue #212. So the
+#: default is the command the committed numbers were taken at; their
+#: *denominator* is 124, and no endpoint but EuropePMC reaches the 150 probes
+#: the resolution argument above is written for — CrossRef and OpenAlex saw
+#: 74, PubMed 60, ClinicalTrials.gov 55. Nor is the draw itself re-derivable
+#: the way `sample_jats_exhibits.py`'s is: EuropePMC's search is live and
+#: unseeded, so a re-run samples different records. Settling #212 is what
+#: would let the stated target and the measured draw agree again.
 DEFAULT_TARGET = 180
 
 #: The ClinicalTrials.gov population is drawn separately, and that is forced by
@@ -312,6 +337,29 @@ FIELD_PATHS: dict[str, tuple[tuple[str, ...], ...]] = {
 #: about which strings are steps into a list rather than object keys.
 _EVERY_ELEMENT = "[*]"
 _HEAD_ELEMENT = "[0]"
+
+#: The verdict two different populations use for *"the sampler failed, not the
+#: remote"* — :func:`source_reach`'s and :class:`TrialCheck`'s. One constant
+#: rather than a literal decided at seven sites across those two vocabularies,
+#: where a misspelling in any ``==``/``!=`` would move a published share and
+#: redden no test (PR #213's review).
+UNMEASURED = "unmeasured"
+
+#: Prefix of the top-level kind recorded when reading a body raised something
+#: that is not a decode failure — this script being wrong, never the remote.
+#: It is a prefix rather than one kind so the exception's own type name is on
+#: the row: "which defect" is the whole content of such a line.
+_INSTRUMENT_KIND_PREFIX = "instrument-"
+
+#: The statuses :func:`probe` retries rather than reports. Shared with
+#: :meth:`ProbeOutcome.__post_init__` so the two cannot disagree about which
+#: statuses mean *the sampler was throttled*: spelled as an inline literal in
+#: one place only, an outcome carrying ``status=429`` with an ``http-`` bucket
+#: satisfied every clause and put a throttled probe inside the denominator
+#: every log level is set from — the exact hazard the ``measured`` clause
+#: beside it exists to prevent, reached through a different spelling (PR
+#: #213's review).
+_THROTTLE_STATUSES = frozenset({429, 503})
 
 #: A key the body does not carry. Distinct from every JSON value, since
 #: ``None`` is one — a key present with ``null`` and a key that is not there
@@ -412,18 +460,29 @@ def _kind_at(body: object, steps: tuple[str, ...]) -> str | None:
     return kinds.pop() if len(kinds) == 1 else "mixed"
 
 
-#: The address categories for which bmlib *makes* a full-text request. The
-#: other three make none, and issue #207 is that ``FullTextStatus`` cannot
-#: tell them apart: ``not-claimed`` is an ordinary closed-access paper,
-#: ``no-record`` is EuropePMC not knowing the identifier, and
-#: ``unaddressable`` is a record claiming ``inEPMC: Y`` and then carrying
+#: The address categories for which bmlib *makes* a full-text request.
+ADDRESSED_CATEGORIES = frozenset({"pmcid", "id-only"})
+#: The categories for which it makes none, and issue #207 is that
+#: ``FullTextStatus`` cannot tell them apart: ``not-claimed`` is an ordinary
+#: closed-access paper, ``no-record`` is EuropePMC answering with no record,
+#: and ``unaddressable`` is a record claiming ``inEPMC: Y`` and then carrying
 #: nothing to address the text by — which the member's own documented meaning
 #: (*"EuropePMC's own answer is why"*) contradicts. All three store
 #: ``NOT_ATTEMPTED`` today.
-ADDRESSED_CATEGORIES = frozenset({"pmcid", "id-only"})
+#:
+#: **Named as a set rather than left to be the complement**, which is this
+#: repository's own rule about ``FullTextStatus.is_refusal``: a sixth category
+#: added to :func:`_addressability` and omitted from
+#: :data:`ADDRESSED_CATEGORIES` would default to *"no request would be made"*
+#: and silently move the headline figure two issues are blocked on.
+#: ``test_every_address_category_chooses_a_side`` asserts the partition, so a
+#: new member has to choose (PR #213's review).
+UNADDRESSED_CATEGORIES = frozenset({"no-record", "not-claimed", "unaddressable"})
+#: Every category :func:`_addressability` may return, as a partition.
+ALL_ADDRESS_CATEGORIES = ADDRESSED_CATEGORIES | UNADDRESSED_CATEGORIES
 
 
-def _addressability(body: object) -> tuple[str, str | None]:
+def _addressability(body: object) -> tuple[str | None, str | None]:
     """How bmlib would address this record's full text, and what source it is.
 
     ``_epmc_records`` and ``_json_text`` are **imported**, for this script's
@@ -438,13 +497,30 @@ def _addressability(body: object) -> tuple[str, str | None]:
         body: The decoded EuropePMC search body.
 
     Returns:
-        The category — one of ``no-record``, ``not-claimed``, ``pmcid``,
-        ``id-only``, ``unaddressable`` — and the record's own ``source``,
-        which is what tells issue #188's two halves apart: a ``PPR``
-        accession is the only address a preprint has, while a ``MED``
-        record's bare ``id`` is a PMID whose 404 is known before the request
-        leaves.
+        The category — one of :data:`ALL_ADDRESS_CATEGORIES` — and the
+        record's own ``source``, which is what tells issue #188's two halves
+        apart: a ``PPR`` accession is the only address a preprint has, while a
+        ``MED`` record's bare ``id`` is a PMID whose 404 is known before the
+        request leaves. ``(None, None)`` for a body that is **not a JSON
+        object**, which is not a category at all.
+
+    **A non-object body is refused rather than categorised** (PR #213's
+    review). ``_epmc_records`` funnels its argument through ``_json_object``,
+    which answers ``{}`` for anything that is not a ``dict`` — so ``[]``,
+    ``["x"]``, ``"s"``, ``7`` and ``true`` all used to come back
+    ``no-record``, a category whose documented meaning is that EuropePMC
+    answered and held nothing. What bmlib does with such a body is refuse it
+    at ``_request_json`` and store ``FullTextStatus.SEARCH_FAILED`` — a
+    WARNING and up to 30 unscored points — so the table reported a loud
+    failure as a quiet absence, inside the denominator issues #207 and #188
+    are decided on. It is refused *here* rather than at the caller because
+    this is where the body's type is already being read; the caller then
+    treats it exactly as it already treats an undecodable body, which
+    ``_request_json`` also answers ``None`` for. The two are the same outcome
+    for bmlib and are now the same outcome here.
     """
+    if not isinstance(body, dict):
+        return None, None
     records = _epmc_records(body)
     if not records:
         return "no-record", None
@@ -476,7 +552,14 @@ class BodyShape:
             entries the body made reachable. A path that was not reachable is
             **absent from this tuple** rather than carrying a kind, so each
             field's denominator is the bodies in which the question could be
-            asked.
+            asked. At most one row per path — built through a ``dict`` in
+            :func:`observe_body` so a path repeated in :data:`FIELD_PATHS`
+            cannot double that field's denominator in a table whose whole
+            subject is that a share is of a denominator.
+        addressability: For ``europepmc_search`` alone: how bmlib would
+            address the record's full text, or ``None`` where the body was
+            not a JSON object and so carries no record to categorise.
+        address_source: The record's own ``source``, beside it.
     """
 
     endpoint: str
@@ -486,40 +569,73 @@ class BodyShape:
     address_source: str | None = None
 
     def __post_init__(self) -> None:
-        """Refuse a shape carrying a judgement about an endpoint it is not of."""
+        """Refuse a shape that describes no body :func:`observe_body` can read."""
         if self.endpoint != "europepmc_search" and (self.addressability or self.address_source):
             raise ValueError(
                 f"only a EuropePMC record is addressed, and this shape is {self.endpoint!r}"
             )
+        if self.addressability is not None and self.addressability not in ALL_ADDRESS_CATEGORIES:
+            raise ValueError(f"unknown address category {self.addressability!r}")
+        # The other direction, and the one that keeps `None` from acquiring a
+        # second meaning: `_addressability` returns a category for every JSON
+        # *object*, so an uncategorised object body would be dropped by
+        # `_addressed_shapes` and shrink issue #207's denominator with no line
+        # printed — `FullTextStatus`'s own rule that `None` must mean *not
+        # recorded* and never a determinate answer (PR #213's review).
+        if self.endpoint == "europepmc_search" and self.top == "object" and not self.addressability:
+            raise ValueError("a decoded EuropePMC object body is always categorised")
 
 
 #: Endpoints whose body is not JSON. ``efetch`` serves XML, so its shape
-#: question is not "which JSON type" but "does it parse" — the two branches
-#: that end in empty ``_PubMedSignals`` and a WARNING, whose levels issue
-#: #193's status draw could not speak to.
+#: question is not "which JSON type" but "does it parse, and does it carry a
+#: record" — the three branches that end in empty ``_PubMedSignals``, whose
+#: levels issue #193's status draw could not speak to.
 _TEXT_ENDPOINTS = frozenset({"pubmed_efetch"})
+
+#: What ``_parse_pubmed_signals`` looks for once the document parses. Restated
+#: from ``analyzer.py`` because it is an XPath in the middle of a function and
+#: not a module constant; ``test_the_xml_kind_agrees_with_what_the_analyzer_reads``
+#: drives both over the same bodies, which is what a restated literal does not
+#: survive.
+_PUBMED_CITATION_PATH = ".//PubmedArticle/MedlineCitation"
 
 
 def _xml_kind(text: str) -> str:
     """Whether *text* is the XML document ``_parse_pubmed_signals`` would read.
 
-    Mirrors that function exactly — ``ET.fromstring`` and ``ET.ParseError`` —
-    rather than testing for a root element or a prefix, because what bmlib
-    does with a body is the only thing worth counting here.
+    Mirrors that function rather than testing for a root element or a prefix,
+    because what bmlib does with a body is the only thing worth counting here.
 
     Args:
         text: The served body.
 
     Returns:
         ``empty`` for a 200 carrying nothing, ``not-xml`` for a body that will
-        not parse, else ``xml``.
+        not parse, ``no-citation`` for one that parses and carries no
+        ``PubmedArticle``, else ``xml``.
+
+    **``no-citation`` is the branch that was missing, and it is the only
+    silent one** (PR #213's review). ``_parse_pubmed_signals`` WARNs on a body
+    that will not parse and ``_check_pubmed`` WARNs on an empty one — but a
+    document that parses and whose ``PubmedArticle/MedlineCitation`` is absent
+    returns empty signals with **no line at any level**, so no
+    ``<CoiStatement>``, nothing retracted from the COI indicators, and the
+    missing-COI downgrade free to fire. Two populations reach it and neither
+    is hypothetical: NCBI serves ``<eFetchResult><ERROR>…`` at HTTP 200, and a
+    ``<PubmedBookArticle>`` set is declined by name — which is what a
+    Bookshelf PMID returns, and issue #188's own finding is that every
+    ``id-only`` ``MED`` record in a 150-record spot draw was a Bookshelf
+    chapter. Folding those into ``xml`` reported the endpoint as wholly
+    healthy over bodies that gave bmlib nothing.
     """
     if not text:
         return "empty"
     try:
-        ET.fromstring(text)
+        root = ET.fromstring(text)
     except ET.ParseError:
         return "not-xml"
+    if root.find(_PUBMED_CITATION_PATH) is None:
+        return "no-citation"
     return "xml"
 
 
@@ -536,33 +652,58 @@ def observe_body(endpoint: str, resp: Any) -> BodyShape:
         caller reads a field out of it.
 
     **One place this is wider than the code, and it is confined.**
-    ``_check_crossref`` and ``_check_openalex`` guard on truthiness (``if
-    cr:``), so an **empty object** body reaches no field read at all, while
-    the walk treats it as a reachable parent whose every key is absent. So a
-    first-level field's ``absent`` count is an upper bound. Narrowing it would
-    mean restating each caller's own guard here, which is the restated literal
-    issue #184 argues against — and the body is visible in its own right,
-    since an empty object is the one showing ``object`` at the top with every
-    field absent.
+    ``_check_crossref``, ``_check_europepmc`` and ``_check_openalex`` are each
+    reached under a truthiness guard — ``if cr:`` / ``elif epmc:`` / ``if
+    oa:``, the three ``_request_json``'s own docstring names — so an **empty
+    object** body reaches no field read at all, while the walk treats it as a
+    reachable parent whose every key is absent. So a first-level field's
+    ``absent`` count is an upper bound. Narrowing it would mean restating each
+    caller's own guard here, which is the restated literal issue #184 argues
+    against — and the body is visible in its own right, since an empty object
+    is the one showing ``object`` at the top with every field absent. *The
+    EuropePMC guard was omitted from this list while it carries nine of the
+    seventeen field rows* (PR #213's review).
+
+    **A decode that fails for bmlib's reasons is not a claim about the
+    remote.** ``json.JSONDecodeError`` and ``UnicodeDecodeError`` are both
+    ``ValueError`` and both say the body is not JSON; anything else — a
+    response object this script is wrong about, carrying no ``.json`` at all —
+    is a ``_BUG_TYPES`` member, and reporting it as ``not-json`` would print a
+    *valid* JSON body as an undecodable one, at the top of the table this
+    whole run is quoted from. That is ``analyzer.py``'s own
+    ``_report_swallowed_exception`` defect reproduced one layer up, so it is
+    split the same way: the remote's malformed body keeps its kind, and the
+    instrument's own defect gets a kind of its own, an ERROR line naming the
+    exception, and a term in the exit code (PR #213's review).
     """
     if endpoint in _TEXT_ENDPOINTS:
         return BodyShape(endpoint=endpoint, top=_xml_kind(resp.text))
     try:
         body = resp.json()
-    except Exception:
+    except ValueError:
         return BodyShape(endpoint=endpoint, top="empty" if not resp.text else "not-json")
-    fields = []
+    except Exception as exc:
+        print(
+            f"  {endpoint}: ERROR — reading the body raised {type(exc).__name__}: {exc}; "
+            "that is this script being wrong, not the remote",
+            file=sys.stderr,
+        )
+        return BodyShape(endpoint=endpoint, top=f"{_INSTRUMENT_KIND_PREFIX}{type(exc).__name__}")
+    # A dict, so a path repeated in `FIELD_PATHS` yields one row rather than
+    # two — `summarise_shapes` sums the rows to get that field's denominator,
+    # so a duplicate would double it silently.
+    fields: dict[str, str] = {}
     for steps in FIELD_PATHS.get(endpoint, ()):
         kind = _kind_at(body, steps)
         if kind is not None:
-            fields.append((render_path(steps), kind))
+            fields[render_path(steps)] = kind
     addressability, address_source = (
         _addressability(body) if endpoint == "europepmc_search" else (None, None)
     )
     return BodyShape(
         endpoint=endpoint,
         top=_kind(body),
-        fields=tuple(fields),
+        fields=tuple(fields.items()),
         addressability=addressability,
         address_source=address_source,
     )
@@ -634,6 +775,13 @@ class ProbeOutcome:
             raise ValueError(f"unknown cause bucket {self.cause!r}")
         if self.measured == (kind == "unmeasured"):
             raise ValueError(f"cause {self.cause!r} disagrees with measured={self.measured!r}")
+        # Keyed on the status as well as on the bucket. `probe` retries every
+        # `_THROTTLE_STATUSES` member and can only ever report one as
+        # `unmeasured-`, so an `http-429` describes no event it produces —
+        # and it is the one spelling that slipped past the clause above,
+        # putting a throttled probe into the failure share as a *failure*.
+        if self.status in _THROTTLE_STATUSES and self.measured:
+            raise ValueError(f"status {self.status!r} is retried, so it is never measured")
 
     @property
     def ok(self) -> bool:
@@ -748,7 +896,7 @@ def probe(
             return ProbeOutcome(
                 endpoint=endpoint, status=None, cause=f"exception-{type(exc).__name__}"
             )
-        if resp.status_code in (429, 503):
+        if resp.status_code in _THROTTLE_STATUSES:
             if attempt == MAX_PROBE_ATTEMPTS:
                 return ProbeOutcome(
                     endpoint=endpoint,
@@ -813,12 +961,22 @@ def draw_records(
             same request against the same field.
 
     Returns:
-        The :class:`Draw`, holding *at least* *target* records when every
-        stratum answers — the per-stratum count is rounded up, so the total
-        may exceed *target* by up to ``len(strata) - 1``. A stratum whose page
-        did not answer contributes no records and is named in
-        ``failed_strata`` — never back-filled from another stratum, which
-        would re-weight the sample without saying so.
+        The :class:`Draw`. It holds at least *target* records only when every
+        stratum answers **and every record it returns carries an identifier**
+        — the per-stratum count is rounded up, so on that path the total may
+        exceed *target* by up to ``len(strata) - 1``.
+
+        Neither half is idle. A stratum whose page did not answer contributes
+        no records and is named in ``failed_strata``, never back-filled from
+        another stratum, which would re-weight the sample without saying so.
+        And a page that *did* answer may still contribute nothing:
+        :class:`DrawnRecord` refuses a record carrying neither a DOI nor a
+        PMID, so the draw can be far short of *target* with ``failed_strata``
+        empty — which is what the 2026-09-08 run did, keeping 124 of 180
+        (issue #212). Those are counted in ``unusable_records`` and, where a
+        stratum is emptied outright, named in ``unusable_strata``. The
+        contract said "when every stratum answers" while that run had every
+        stratum answer (PR #213's review).
     """
     # Round **up**, as `sample_jats_exhibits.py` does: `150 // 9` is 16, so a
     # floor made the default draw 144 records while every comment reasoned
@@ -842,10 +1000,33 @@ def draw_records(
             print(f"  draw {label}: HTTP {resp.status_code}", file=sys.stderr)
             draw.failed_strata.append(label)
             continue
+        # `_epmc_records`, not `.get("resultList", {}).get("result", [])`.
+        # Two defects in that one line, both of them the ones this instrument
+        # exists to measure in `analyzer.py` (PR #213's review). A key present
+        # with `null` returns the *value*, not the default, so `resultList:
+        # null` raised `AttributeError` into the handler below and printed
+        # "unreadable body" — a false claim about a body that decoded
+        # perfectly, which is exactly the rule `_INDICATOR_FUNDERS_NOT_READABLE`
+        # states one module over. And a wrong-typed *element* was never
+        # guarded at all: the record loop is outside the `try`, so `result` as
+        # a string raised out of `main` and discarded every paced request the
+        # run had already spent. The imported reader answers `[]` for both,
+        # and it is what the analyzer reads the same envelope with — it
+        # truncates at the first non-object rather than filtering, so a
+        # malformed tail shows as a thinner stratum in the report's own
+        # per-stratum counts rather than as a different article.
         try:
-            results = resp.json().get("resultList", {}).get("result", [])
+            results = _epmc_records(resp.json())
+        except ValueError as exc:
+            print(f"  draw {label}: body is not JSON ({exc})", file=sys.stderr)
+            draw.failed_strata.append(label)
+            continue
         except Exception as exc:
-            print(f"  draw {label}: unreadable body ({type(exc).__name__})", file=sys.stderr)
+            print(
+                f"  draw {label}: ERROR — reading the body raised {type(exc).__name__}: {exc}; "
+                "that is this script being wrong, not the remote",
+                file=sys.stderr,
+            )
             draw.failed_strata.append(label)
             continue
         if not results:
@@ -857,8 +1038,13 @@ def draw_records(
             continue
         kept_here = 0
         for result in results:
-            doi = result.get("doi") or None
-            pmid = result.get("pmid") or None
+            # Coerced, for the reason PR #208 coerced `source` and the
+            # accession one module over: a mistyped identifier is truthy, and
+            # it would be interpolated into `DOI:"{...}"` or `EXT_ID:{...}`
+            # and probed — a request bmlib would never make entering the
+            # denominator that sets that endpoint's log level.
+            doi = _json_text(result.get("doi")) or None
+            pmid = _json_text(result.get("pmid")) or None
             if not doi and not pmid:
                 # Counted, not raised: one unusable record must not cost the
                 # stratum, and it must not be invisible either — a draw
@@ -990,8 +1176,13 @@ class TrialCheck:
     Attributes:
         found: Accessions the record named, **before** the cap.
         probed: Accessions actually asked about — the cap, applied where bmlib
-            applies it.
-        answered: Of those, how many ClinicalTrials.gov answered.
+            applies it. bmlib may ask **fewer**, stopping at the first
+            accession reporting posted results; that early exit is
+            deliberately not mirrored, for the reason :func:`probe_trials`
+            gives.
+        answered: Of those, how many ClinicalTrials.gov gave bmlib an answer
+            for — which is **not** how many served HTTP 200; see
+            :func:`trial_answered`.
         unmeasured: Of those, how many were throttled out. A record with one
             enters no verdict denominator: the sampler failed, not the remote.
     """
@@ -1001,10 +1192,47 @@ class TrialCheck:
     answered: int
     unmeasured: int
 
+    def __post_init__(self) -> None:
+        """Refuse counters that describe no check :func:`probe_trials` can run.
+
+        The ordering ``found >= probed >= answered + unmeasured >= 0`` is the
+        whole meaning of the type and lived only in the prose above. The same
+        argument was accepted for :class:`ProbeOutcome` in this PR — where two
+        impossible outcomes were being built by test helpers — so declining it
+        here would be inconsistent rather than pragmatic (PR #213's review).
+        """
+        if min(self.found, self.probed, self.answered, self.unmeasured) < 0:
+            raise ValueError("a check counts requests, so no count is negative")
+        if self.answered + self.unmeasured > self.probed:
+            raise ValueError(
+                f"{self.answered} answered + {self.unmeasured} unmeasured exceeds "
+                f"{self.probed} probed"
+            )
+        if self.probed > self.found:
+            raise ValueError(f"{self.probed} probed exceeds the {self.found} accessions found")
+        if self.probed > MAX_TRIAL_IDS_TO_CHECK:
+            raise ValueError(
+                f"{self.probed} probed exceeds bmlib's own cap of {MAX_TRIAL_IDS_TO_CHECK}"
+            )
+
     @property
     def truncated(self) -> bool:
         """Whether bmlib would have dropped accessions the record named."""
         return self.found > self.probed
+
+    @property
+    def is_unmeasured(self) -> bool:
+        """Whether the sampler, rather than the remote, is why this has no verdict.
+
+        Asked of the type rather than by comparing :attr:`verdict` against a
+        string literal, which four call sites were doing across two unrelated
+        vocabularies: a misspelling at any one of them silently moved a
+        published share — a ``*_reportable`` predicate excluding the throttled
+        checks while its own summariser divided by a denominator that included
+        them, which is the disagreement those predicates exist to prevent (PR
+        #213's review).
+        """
+        return bool(self.unmeasured)
 
     @property
     def verdict(self) -> str:
@@ -1014,11 +1242,46 @@ class TrialCheck:
         an answer for some accessions and not others, and the finding bmlib
         stores does not say so.
         """
-        if self.unmeasured:
-            return "unmeasured"
+        if self.is_unmeasured:
+            return UNMEASURED
         if self.answered == self.probed:
             return "complete"
         return "partial" if self.answered else "unanswered"
+
+
+#: What ``hasResults`` may be for ``_check_trial_results`` to still have given
+#: bmlib an answer. ``_json_bool`` answers ``None`` for every other type, and
+#: an **absent** key (or one present with ``null``) keeps the ``False`` that
+#: `test_missing_has_results_is_false` has pinned since before the tri-state
+#: existed — issue #210, which this sampler's own first run settled at 0 of 55.
+_ANSWERING_HAS_RESULTS_KINDS = frozenset({"boolean", "absent", "null"})
+
+
+def trial_answered(outcome: ProbeOutcome) -> bool:
+    """Whether ``_check_trial_results`` would have returned an answer for *outcome*.
+
+    **Not ``outcome.ok``**, which is HTTP 200 (PR #213's review). bmlib sets
+    its own ``answered`` flag only when that method returns non-``None``, and
+    since PR #208 routed the value through ``_json_bool`` it returns ``None``
+    for a 200 whose body is not an object *and* for one whose ``hasResults``
+    is wrong-typed. Counting 200s instead inflated ``complete`` and deflated
+    ``partial`` and ``unanswered`` — the two rows issue #206 turns on, and the
+    ones that decide whether *"Registered trial without posted results"* is
+    being stored over an accession nobody answered. It is also precisely the
+    wrong-typed-boolean shape ``_json_bool``'s docstring says no contract net
+    can see, which makes this the one population that ought to see it.
+
+    Args:
+        outcome: One ClinicalTrials.gov probe outcome.
+
+    Returns:
+        Whether bmlib would have had an answer. Read off the shape already
+        recorded, so it costs no extra request.
+    """
+    if outcome.shape is None or outcome.shape.top != "object":
+        return False
+    kinds = dict(outcome.shape.fields)
+    return kinds.get("hasResults", "absent") in _ANSWERING_HAS_RESULTS_KINDS
 
 
 #: The two endpoints a trial registration can be found through. CrossRef and
@@ -1055,7 +1318,7 @@ def source_reach(outcomes: list[ProbeOutcome]) -> str:
         if outcome.endpoint not in _REGISTRATION_SOURCES:
             continue
         if not outcome.measured:
-            return "unmeasured"
+            return UNMEASURED
         if outcome.ok:
             served.add(outcome.endpoint)
     if len(served) == 2:
@@ -1160,7 +1423,7 @@ def probe_trials(
             TrialCheck(
                 found=len(found),
                 probed=len(outcomes),
-                answered=sum(1 for o in outcomes if o.ok),
+                answered=sum(1 for o in outcomes if trial_answered(o)),
                 unmeasured=sum(1 for o in outcomes if not o.measured),
             )
         )
@@ -1218,9 +1481,11 @@ def summarise(name: str, outcomes: list[ProbeOutcome]) -> list[str]:
     lo, hi = wilson(len(failures), m)
     # "not served", not "non-200": `failures` includes the `exception-*`
     # bucket, whose outcomes have no status at all, so the old label named a
-    # narrower thing than it counted. Every count is 0 today, so it has never
-    # printed wrongly — but a label is a claim about what was counted, which
-    # is this repository's own rule (PR #195's review).
+    # narrower thing than it counted — and a label is a claim about what was
+    # counted, which is this repository's own rule (PR #195's review). The
+    # note that stood here, "every count is 0 today, so it has never printed
+    # wrongly", was made false by the run this instrument was written for: the
+    # 2026-09-08 draw recorded one ClinicalTrials.gov 404 in 56 probes.
     lines = [
         f"{name:<18} {m:>4} probed   "
         f"{len(failures):>4} not served = {100 * len(failures) / m:5.1f}%   "
@@ -1261,13 +1526,57 @@ def _shapes_of(outcomes: list[ProbeOutcome]) -> list[BodyShape]:
     return [o.shape for o in outcomes if o.shape is not None]
 
 
-def shapes_reportable(name: str, outcomes: list[ProbeOutcome]) -> bool:
-    """Whether *name*'s shape table is a distribution rather than an ERROR.
+def instrument_defects(outcomes: list[ProbeOutcome]) -> int:
+    """How many served bodies this script was itself unable to read.
 
-    Delegates the throttling half to :func:`is_reportable`, so a shape table
-    can never report a distribution the status table above it refused.
+    See :func:`observe_body` — a ``_BUG_TYPES`` member raised while decoding is
+    recorded under its own kind rather than as the remote's malformed body,
+    and it is counted here so it reaches the exit code instead of printing as
+    one row among the findings.
     """
-    return is_reportable(outcomes) and bool(_shapes_of(outcomes))
+    return sum(1 for s in _shapes_of(outcomes) if s.top.startswith(_INSTRUMENT_KIND_PREFIX))
+
+
+def shapes_reportable(outcomes: list[ProbeOutcome]) -> bool:
+    """Whether this endpoint's shape table is a distribution rather than an ERROR.
+
+    Two rules, both of them the module's own, applied to the population the
+    shape table actually has (PR #213's review).
+
+    The first is :func:`is_reportable`'s, delegated so a shape table can never
+    report a distribution the status table above it refused.
+
+    The second is that rule read once more, with the right denominator: *"an
+    attempt that never reached an answer enters no denominator, and a
+    population past ``UNMEASURED_SHARE_ERROR_THRESHOLD`` reports ERROR rather
+    than a share"*. For the **status** table a non-200 is the measurement; for
+    the **shape** table it is a probe that reached no body, which is exactly
+    as uninformative as a throttled one. ``bool(shapes)`` was the whole floor,
+    so one served body out of 180 printed ``100.0%`` — with no interval, in
+    the table whose figures are quoted as *"0 non-object at all five
+    endpoints"* — while the status table above it honestly reported 99.4% not
+    served.
+
+    The stated cost: an endpoint failing more than
+    ``UNMEASURED_SHARE_ERROR_THRESHOLD`` of its probes reports no shape
+    distribution at all. That is deliberate — the shape claim is the one that
+    gets quoted, so it is the one that must not rest on a remnant — and it is
+    comfortably clear today, the whole 2026-09-08 draw having recorded a
+    single non-200 in 56 CT.gov probes and none anywhere else.
+
+    The parameter it no longer takes was the endpoint's name, which it never
+    read while its docstring promised the answer depended on it.
+
+    Args:
+        outcomes: The endpoint's probe outcomes.
+
+    Returns:
+        Whether the shape distribution may be printed as a share.
+    """
+    if not is_reportable(outcomes):
+        return False
+    measured = [o for o in outcomes if o.measured]
+    return _population_reportable(len(measured), len(measured) - len(_shapes_of(outcomes)))
 
 
 def summarise_shapes(name: str, outcomes: list[ProbeOutcome]) -> list[str]:
@@ -1283,25 +1592,51 @@ def summarise_shapes(name: str, outcomes: list[ProbeOutcome]) -> list[str]:
         outcomes: Its probe outcomes.
 
     Returns:
-        The lines — the top-level kind distribution, then one row per declared
-        field with **its own** denominator, since a field is only counted in
-        the bodies where it could be asked about. A field no served body could
-        be asked is said to have no population rather than omitted: otherwise
-        *"never wrong-typed"* and *"never reachable"* print alike, and the
-        second is what a mis-declared path looks like.
+        The lines — the top-level kind distribution with a Wilson interval per
+        kind, then one row per declared field with **its own** denominator,
+        since a field is only counted in the bodies where it could be asked
+        about. A field no served body could be asked is said to have no
+        population rather than omitted: otherwise *"never wrong-typed"* and
+        *"never reachable"* print alike.
+
+    A no-population row is a **reader's** finding and not a run's, which is
+    the one thing about it that changed in PR #213's review. It used to be
+    described as what a mis-declared path looks like while nothing could tell
+    that from a field the remote simply never carries — and a mis-declared
+    path is now caught outright by
+    ``test_every_declared_path_is_reachable_in_a_representative_body``, which
+    reddens on the mis-nesting the ``ast`` net cannot see because that net
+    compares leaf keys. So the row is left to the reader rather than given an
+    exit-code term that a draw with no funded CrossRef record would trip
+    honestly.
+
+    The interval is printed because these are the rows that get quoted. A
+    bare ``100.0%`` over four bodies and over four hundred read identically,
+    and the status table directly above has carried its interval all along.
     """
-    if not is_reportable(outcomes):
+    if not shapes_reportable(outcomes):
+        measured = [o for o in outcomes if o.measured]
+        served = len(_shapes_of(outcomes))
+        if not is_reportable(outcomes):
+            return [
+                f"{name:<18} ERROR — the status population above was not reportable; "
+                "no body shape is reported"
+            ]
+        if not served:
+            return [f"{name:<18} ERROR — no body was served; no shape distribution is reported"]
         return [
-            f"{name:<18} ERROR — the status population above was not reportable; "
-            "no body shape is reported"
+            f"{name:<18} ERROR — only {served}/{len(measured)} probes served a body; "
+            "too few to report a shape distribution"
         ]
     shapes = _shapes_of(outcomes)
-    if not shapes:
-        return [f"{name:<18} ERROR — no body was served; no shape distribution is reported"]
     served = len(shapes)
     lines = [f"{name:<18} {served:>4} bodies served"]
     for kind, count in sorted(Counter(shape.top for shape in shapes).items()):
-        lines.append(f"{'':<18}   {kind:<34} {count:>4}   {100 * count / served:5.1f}%")
+        lo, hi = wilson(count, served)
+        lines.append(
+            f"{'':<18}   {kind:<34} {count:>4}   {100 * count / served:5.1f}%   "
+            f"95% CI [{100 * lo:.1f}%, {100 * hi:.1f}%]"
+        )
     for steps in FIELD_PATHS.get(name, ()):
         path = render_path(steps)
         kinds = Counter(k for shape in shapes for observed, k in shape.fields if observed == path)
@@ -1318,13 +1653,38 @@ def summarise_shapes(name: str, outcomes: list[ProbeOutcome]) -> list[str]:
 
 
 def _addressed_shapes(outcomes: list[ProbeOutcome]) -> list[BodyShape]:
-    """The EuropePMC bodies that were categorised — see :func:`_addressability`."""
+    """The EuropePMC bodies that were categorised — see :func:`_addressability`.
+
+    The filter is load-bearing, not tidiness: a body that did not decode, and
+    since PR #213's review one that decoded to something other than an object,
+    carries no category, and ``summarise_addressing`` formats the category
+    into a fixed-width field — so an uncategorised shape reaching it raises
+    ``TypeError`` on ``None``. That body shape is issue #184's exact live
+    failure, EuropePMC answering 200 with an HTML error page.
+    """
     return [shape for shape in _shapes_of(outcomes) if shape.addressability]
 
 
 def addressing_reportable(outcomes: list[ProbeOutcome]) -> bool:
-    """Whether the address table has a population at all."""
-    return bool(_addressed_shapes(outcomes))
+    """Whether the address table is a distribution rather than an ERROR.
+
+    Two ways it is not. There may be no categorised body at all; or **every**
+    categorised body may be ``no-record``, which is a real bmlib outcome —
+    EuropePMC answers, holds nothing, and ``_check_europepmc`` returns before
+    any address is built — but is *also* what this script looks like when its
+    own single-record lookup has stopped working. Every drawn record came from
+    EuropePMC, so a population that is wholly ``no-record`` cannot be a fact
+    about the corpus, and it used to print ``a full-text request would be made
+    for 0 of 180`` at exit ``0``: a spectacular finding about bmlib
+    manufactured out of a broken lookup (PR #213's review).
+
+    No threshold is invented between those two: what share of ``no-record`` is
+    ordinary here has never been measured, and a guess would be the
+    permanently-red hazard issue #94 records one instrument over. The count is
+    printed on its own line instead, so a reader can see it move.
+    """
+    shapes = _addressed_shapes(outcomes)
+    return bool(shapes) and any(s.addressability != "no-record" for s in shapes)
 
 
 def summarise_addressing(outcomes: list[ProbeOutcome]) -> list[str]:
@@ -1346,6 +1706,11 @@ def summarise_addressing(outcomes: list[ProbeOutcome]) -> list[str]:
     shapes = _addressed_shapes(outcomes)
     if not shapes:
         return [f"{'addressing':<18} ERROR — no EuropePMC record was served; nothing to categorise"]
+    if not addressing_reportable(outcomes):
+        return [
+            f"{'addressing':<18} ERROR — all {len(shapes)} categorised bodies held no record, "
+            "so this lookup found none of the records it drew; nothing is reported"
+        ]
     total = len(shapes)
     asked = sum(1 for s in shapes if s.addressability in ADDRESSED_CATEGORIES)
     lines = [
@@ -1354,6 +1719,16 @@ def summarise_addressing(outcomes: list[ProbeOutcome]) -> list[str]:
     ]
     for category, count in sorted(Counter(s.addressability for s in shapes).items()):
         lines.append(f"{'':<18}   {category:<34} {count:>4}   {100 * count / total:5.1f}%")
+    # Called out beside the distribution rather than left as one row among
+    # five: every drawn record came from this same API, so a `no-record` is
+    # this script failing to re-find its own draw and not the corpus
+    # answering. The share is what a reader needs to judge the rest by.
+    no_record = sum(1 for s in shapes if s.addressability == "no-record")
+    if no_record:
+        lines.append(
+            f"{'':<18}   of which {no_record} were re-drawn records this lookup did not "
+            "re-find, which is an instrument result rather than a corpus one"
+        )
     by_source = Counter(
         s.address_source or "(no source)" for s in shapes if s.addressability == "id-only"
     )
@@ -1364,7 +1739,7 @@ def summarise_addressing(outcomes: list[ProbeOutcome]) -> list[str]:
 
 def checks_reportable(checks: list[TrialCheck]) -> bool:
     """Whether the results-check table is a distribution rather than an ERROR."""
-    return _population_reportable(len(checks), sum(1 for c in checks if c.verdict == "unmeasured"))
+    return _population_reportable(len(checks), sum(1 for c in checks if c.is_unmeasured))
 
 
 def summarise_trial_checks(checks: list[TrialCheck]) -> list[str]:
@@ -1382,12 +1757,12 @@ def summarise_trial_checks(checks: list[TrialCheck]) -> list[str]:
     if not checks:
         return [f"{'results checks':<18} ERROR — no paper named an accession; nothing to report"]
     if not checks_reportable(checks):
-        unmeasured = sum(1 for c in checks if c.verdict == "unmeasured")
+        unmeasured = sum(1 for c in checks if c.is_unmeasured)
         return [
             f"{'results checks':<18} ERROR — {unmeasured}/{len(checks)} checks were throttled; "
             "no distribution is reported"
         ]
-    classified = [c for c in checks if c.verdict != "unmeasured"]
+    classified = [c for c in checks if not c.is_unmeasured]
     total = len(classified)
     lines = [f"{'results checks':<18} {total:>4} papers with at least one accession"]
     for verdict, count in sorted(Counter(c.verdict for c in classified).items()):
@@ -1402,7 +1777,7 @@ def summarise_trial_checks(checks: list[TrialCheck]) -> list[str]:
 
 def reach_reportable(verdicts: list[str]) -> bool:
     """Whether the registration-source table is a distribution rather than an ERROR."""
-    return _population_reportable(len(verdicts), verdicts.count("unmeasured"))
+    return _population_reportable(len(verdicts), verdicts.count(UNMEASURED))
 
 
 def summarise_source_reach(verdicts: list[str]) -> list[str]:
@@ -1423,7 +1798,7 @@ def summarise_source_reach(verdicts: list[str]) -> list[str]:
             f"{'registration':<18} ERROR — {verdicts.count('unmeasured')}/{len(verdicts)} "
             "records were throttled; no distribution is reported"
         ]
-    classified = [v for v in verdicts if v != "unmeasured"]
+    classified = [v for v in verdicts if v != UNMEASURED]
     total = len(classified)
     lines = [f"{'registration':<18} {total:>4} records with a source outcome"]
     for verdict, count in sorted(Counter(classified).items()):
@@ -1431,7 +1806,7 @@ def summarise_source_reach(verdicts: list[str]) -> list[str]:
     return lines
 
 
-def summarise_draw(name: str, draw: Draw) -> list[str]:
+def summarise_draw(name: str, draw: Draw, target: int, strata: int) -> list[str]:
     """Report one sample: how it was stratified, and where it is not.
 
     A stratum that failed is named. The tables below rest on the draw being
@@ -1443,12 +1818,22 @@ def summarise_draw(name: str, draw: Draw) -> list[str]:
             they are two populations, and a reader who is shown one figure for
             both cannot tell which denominator a share belongs to.
         draw: The sample.
+        target: How many records were requested, printed beside the kept count
+            so the shortfall is visible without the reader having to know the
+            default. Without it a draw at a twentieth of its target read as an
+            ordinary header line (PR #213's review).
+
+    Returns:
+        The lines to print. A stratum that failed is named, and so is one that
+        answered and kept nothing — the loss `failed_strata` cannot see,
+        because it tests the page and the refusal happens one level down.
     """
     if not draw.records:
         return [f"{name:<18} ERROR — no records were drawn; its table below is empty"]
     by_stratum = Counter(f"{r.source}/{r.year}" for r in draw.records)
     lines = [
-        f"{name:<18} {len(draw.records)} records over {len(by_stratum)} strata "
+        f"{name:<18} {len(draw.records)} of {target} requested records, over "
+        f"{len(by_stratum)} of {strata} strata "
         f"({', '.join(f'{k}={v}' for k, v in sorted(by_stratum.items()))})"
     ]
     if draw.failed_strata:
@@ -1481,7 +1866,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--email", required=True, help="Contact address NCBI asks callers for.")
     parser.add_argument(
-        "--target", type=int, default=DEFAULT_TARGET, help="Records to draw in total."
+        "--target",
+        type=int,
+        default=DEFAULT_TARGET,
+        help="Records to request in total; the draw keeps only those bmlib could analyse.",
     )
     parser.add_argument(
         "--trial-target",
@@ -1561,9 +1949,9 @@ def main() -> int:
                 by_endpoint[outcome.endpoint].append(outcome)
 
     print("\nStatus distribution per dropped-response endpoint\n")
-    for line in summarise_draw("draw", draw):
+    for line in summarise_draw("draw", draw, args.target, len(DRAW_STRATA)):
         print(line)
-    for line in summarise_draw("trial draw", trial_draw):
+    for line in summarise_draw("trial draw", trial_draw, args.trial_target, len(TRIAL_STRATA)):
         print(line)
     print()
     for name in ENDPOINTS:
@@ -1591,27 +1979,45 @@ def main() -> int:
         )
 
     reportable = all(is_reportable(by_endpoint[name]) for name in ENDPOINTS)
-    # Each table added for issue #211 carries its own term, for the reason
-    # `is_reportable` gives about its own: the exit code is judged by what was
-    # printed, and every one of these populations can be absent while every
-    # status distribution above it is perfectly healthy — a run in which every
-    # probe 404s measures no body at all and would otherwise go green.
-    shaped = all(shapes_reportable(name, by_endpoint[name]) for name in ENDPOINTS)
+    # Each table added for issue #211 can flip the exit code on its own, for
+    # the reason `is_reportable` gives about its own: the exit code is judged
+    # by what was printed, and every one of these populations can be absent
+    # while every status distribution above it is perfectly healthy — a run in
+    # which every probe 404s measures no body at all and would otherwise go
+    # green. They are ANDed into two names rather than six, and
+    # `test_each_rider_populations_verdict_reaches_the_exit_code` is what
+    # holds each of them individually load-bearing.
+    shaped = all(shapes_reportable(by_endpoint[name]) for name in ENDPOINTS)
     sized = (
         addressing_reportable(by_endpoint["europepmc_search"])
         and reach_reportable(reach_verdicts)
         and checks_reportable(trial_checks)
     )
+    # A body this script could not read is bmlib's caller being wrong, never
+    # the remote — reported at the point it happens and counted here, or the
+    # kind sits in the distribution as though it were a finding.
+    sound = not any(instrument_defects(by_endpoint[name]) for name in ENDPOINTS)
+    # `drawn` is subsumed today — an empty draw empties every per-record
+    # population, so `reportable` is already False — and is kept as the
+    # statement of the rule rather than as a live guard.
     drawn = bool(draw.records) and bool(trial_draw.records)
-    lost = (
-        bool(draw.failed_strata)
-        or bool(trial_draw.failed_strata)
-        or bool(draw.unusable_strata)
-        or bool(trial_draw.unusable_strata)
+    # `unusable_records` joins the two stratum lists: a record the page
+    # returned and `DrawnRecord` refused is a hole in the draw exactly as an
+    # emptied stratum is, only smaller, and the draw is then shorter than the
+    # target every interval below is read against. Without it a draw could
+    # fall to a single record per stratum and still exit 0 (PR #213's review).
+    lost = any(
+        d.failed_strata or d.unusable_strata or d.unusable_records for d in (draw, trial_draw)
     )
     return (
         0
-        if reportable and shaped and sized and drawn and not lost and not population_failures
+        if reportable
+        and shaped
+        and sized
+        and sound
+        and drawn
+        and not lost
+        and not population_failures
         else 1
     )
 

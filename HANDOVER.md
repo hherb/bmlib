@@ -66,7 +66,8 @@ the point — 48 of 86 committed rows escaped the public `analyze()` on `main`,
 2026-09-08): every served body was well-formed at all five endpoints — 0
 non-object, 0 undecodable, 0 empty — so no coercer was *observed* to fire, and
 "unmeasured" is now an upper bound of a few percent. Read it with #212: that
-draw is MED+PPR, two `SRC:PMC` strata having contributed no record.
+draw is MED+PPR plus four `PMC/2014` records (60 + 60 + 4): two `SRC:PMC`
+strata contributed no record and the third kept 4 of 20.
 
 ## Rules carried forward
 
@@ -188,7 +189,8 @@ instrument is wider than the code, say so at the site and bound the cost** —
 level down**: a stratum that answered and kept none of its records read as a
 stratum that was there (#212). And **a measured-empty population is an argument
 for closing an issue, not for building it** — #204, #207 and #210 each measure
-0 and each had a schema change waiting on them.
+0; #204 and #207 had a schema change waiting on them, and #210 a semantics
+question (its remedy is the comment, not the stored value).
 
 *Cost.* **The cost of a schema addition is not a constant — it depends on what
 else is unreleased beside it.** #198 was deferred in `docs/DECISIONS.md` as
@@ -241,7 +243,10 @@ should know concretely:
 **What the run measured** (2026-09-08, `--email … ` at the defaults, 124 + 60
 records; the invocation is the default so the draw is re-derivable):
 
-- **Every served body was well-formed at all five endpoints** — 0 non-object,
+- **Every served body was well-formed** — 0 non-object and 0 undecodable
+  across the four JSON endpoints, 0 `not-xml` at the XML one, and 0 empty at
+  all five, over CrossRef 74, EuropePMC 124, PubMed efetch 60, OpenAlex 74 and
+  ClinicalTrials.gov 55 bodies served —
   0 undecodable, 0 empty. So no coercer #199 added was observed to fire.
 - **#210 is settled**: `hasResults` absent in **0 of 55** bodies. Keep the
   `False`; what needs changing is the comment, which states the conflation and
@@ -252,7 +257,8 @@ records; the invocation is the default so the draw is re-derivable):
 - **#204's is empty too**: `neither` registration source answering **0 of
   124**. Its own option 3 (a recorded residual) is the one the evidence
   supports.
-- **#206's emphasis is reversed**: a partly-answered check is **1 of 30**, but
+- **#206's emphasis is reversed**, over the 30 papers in the 60-record trial
+  draw that named an accession: a partly-answered check is **1 of 30**, but
   the silent accession cap truncates **8 of 30** (26.7%). The half with the
   large population is the one whose fix is a single WARNING line.
 - **#188 is the big one, and it is confirmed live.** 43 of 124 records
@@ -262,7 +268,8 @@ records; the invocation is the default so the draw is re-derivable):
   `SRC:MED` draw are NCBI Bookshelf chapters; and a `bookid` is not
   addressable through `fullTextXML` either (three of three), so **there is no
   full text to recover and the remedy is to stop asking**. The `PPR` half of
-  the same expression is confirmed load-bearing — 75,841 records, 50 of 50
+  the same expression is confirmed load-bearing — 75,841 `SRC:PPR AND
+  IN_EPMC:Y` records (2026-09-08; 75,760 elsewhere is the earlier draw), 50 of 50
   sampled carrying no `pmcid`, their `id` serving — so the fix is scoped by
   `source`, never a deletion.
 - One CT.gov 404 of 56 probes: the **first non-200 this sampler has ever
