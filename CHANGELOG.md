@@ -3021,6 +3021,95 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Internal
 
+- **The sampler now reads the *shape* of a 200 body, not only its status**
+  (issue #211, from PR #208's review, with rider counters for issues #204,
+  #206, #207, #210 and #188). `scripts/sample_api_failures.py` only: no
+  library code changes and **nothing stored moves**. What it produced is a
+  measurement, and it moved four open decisions and found a fifth defect.
+
+  **The claim had no instrument.** PR #208 added four coercers to
+  `transparency/analyzer.py` and priced them with *"no draw has seen these
+  endpoints answer 200 with a non-object"*. Nothing here could support that:
+  `ProbeOutcome` carried `endpoint`, `status`, `cause` and `measured` — HTTP
+  statuses alone — and had never decoded a body, so the sentence was a count
+  of what nobody looked for.
+
+  `BodyShape` records each served body's top-level JSON type and, for every
+  field the analyzer reads, that field's type over the bodies where its parent
+  made it reachable. **The field list is derived, not restated**:
+  `TestTheFieldListIsEveryFieldTheAnalyzerReads` walks `analyzer.py` with
+  `ast` and holds the two sets *equal*, because the list written into issue
+  #211's own text was already missing `source`, read by `_check_europepmc`
+  since PR #208 coerced it into the full-text URL. The walk fails closed on a
+  literal `.get()` in a function no endpoint claims, and carries an
+  anti-vacuity floor. **Two element steps and not one**, because the module
+  does two different things with a list: `_check_crossref` iterates every
+  funder where all three `_epmc_records` callers take `records[0]`, so one
+  sentinel would be wider than the code on one endpoint and narrower on the
+  other. A field reachable in no served body says so rather than vanishing, or
+  *"never wrong-typed"* and *"never asked"* print alike. `pubmed_efetch` is
+  shaped too — `xml` / `empty` / `not-xml` — those being the two branches
+  whose WARNING levels issue #193's status draw could not speak to.
+
+  Four decisions blocked on a count ride on the same bodies at no extra
+  request, and `trial_ids_for` now returns every accession with
+  `probe_trials` applying `MAX_TRIAL_IDS_TO_CHECK` where bmlib applies it —
+  capped at both ends, issue #206's count could never be taken. The address
+  category restates the one literal it cannot import, the `inEPMC == "Y"` gate
+  inline in `_check_europepmc`, so
+  `TestTheAddressCategoryAgreesWithWhatTheAnalyzerDoes` drives both over the
+  same bodies and compares which accession each would ask with; it cannot
+  separate `not-claimed` from `unaddressable`, both making no request and both
+  storing `NOT_ATTEMPTED`, and that indistinguishability **is** issue #207.
+
+  **The first run (2026-09-08, 124 + 60 records) found every served body
+  well-formed** — 0 non-object bodies, 0 undecodable, 0 empty, at all five
+  endpoints — so no coercer added by PR #208 was observed to fire, and its
+  *"nothing stored moves for a well-formed body"* is now measured rather than
+  assumed. Read every share below with issue #212: two `SRC:PMC` strata
+  contributed no record, so the draw is MED+PPR.
+
+  Also measured: `hasResults` absent in **0 of 55** CT.gov bodies, which
+  settles issue #210 in favour of the existing `False`; `unaddressable` **0 of
+  124** and `neither` source answering **0 of 124**, which are issues #207's
+  and #204's own populations and argue against both schema changes; the
+  accession cap truncating **8 of 30** papers and a partly-answered check
+  **1 of 30**, which are issue #206's two halves and reverse its emphasis; and
+  the first non-200 this sampler has ever recorded, a single CT.gov 404 of 56
+  probes, leaving every `_ORDINARY_STATUSES` set empty as before.
+
+  **The largest finding is issue #188's, which was blocked on exactly this
+  draw**: 43 of 124 records (34.7%), and 43 of the 53 claiming `inEPMC: Y`
+  (81%), carry no `pmcid` and are addressed by the record's bare `id` — a URL
+  that 404s, three of three probed, against a `pmcid` address serving 53 kB.
+  All 84 such records in a 150-record `SRC:MED` draw are NCBI Bookshelf
+  chapters, and a `bookid` is not addressable through `fullTextXML` either
+  (three of three), so there is no full text to recover and the remedy is to
+  stop asking. The `PPR` half of the same expression is confirmed
+  load-bearing: 75,841 `SRC:PPR AND IN_EPMC:Y` records, 50 of 50 sampled
+  carrying no `pmcid`, and their `id` serves.
+
+  Every new population reports ERROR rather than a share when it has none and
+  carries **its own term** in the exit code. The shape term's first test
+  passed for the wrong reason — with every probe 404ing the rider terms fire
+  together — so its fixture now fails one endpoint only; the three
+  record-level terms no fixture separates from the probe-level `is_reportable`
+  are pinned on the wire instead.
+
+- **A stratum that answers and contributes no record is a hole too** (issue
+  #212, found by the run above). `DrawnRecord` refuses a record carrying
+  neither a DOI nor a PMID, correctly — `analyze()` accepts nothing else — and
+  a `SRC:PMC` record carries neither, its only identifier being the PMCID. So
+  `PMC/2024` and `PMC/2004` drew twenty records apiece and kept none, while
+  the report read *"124 records over 7 strata"* with `failed_strata` empty and
+  the run exited `0`: a source-and-year spread the sample does not have, which
+  is the thing `summarise_draw` exists to prevent. The existing guard could
+  not see it because it tests the *page*, and the loss happens one level down.
+  `Draw.unusable_strata` names such a stratum, `summarise_draw` reports it as
+  an ERROR, and the exit code carries it — so **the script now exits non-zero
+  on a clean run** until issue #212's choice of population is made, which is
+  honest and is the reason it is worth making.
+
 - `_atomic_write` is promoted out of `fulltext/cache.py` into a new
   top-level private module, `bmlib/_atomic.py`, and is now
   `atomic_write` — the leading underscore moves to the module, matching

@@ -1,129 +1,72 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-07. **0.10.0 is released and on PyPI**; twenty-five
-changes sit unreleased. All five version places agree at 0.10.0. Every
-unreleased ROADMAP row carries an `*(unreleased)*` marker._
+_Last updated: 2026-09-08. **0.10.0 is released and on PyPI**; twenty-seven
+changes sit unreleased, the last two of them instrument-only. All five version
+places agree at 0.10.0. Every unreleased ROADMAP row carries an
+`*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Twenty-five changes, fourteen of them `fulltext` JATS fixes filed within days of
-each other — whoever cuts the next release should describe those together. Per-PR
-detail is in `CHANGELOG.md`; only the *data* answer is kept here, because the
-version number answers the API question and never that one.
+Twenty-seven changes, fourteen of them `fulltext` JATS fixes filed within days
+of each other — whoever cuts the next release should describe those together.
+**Per-PR argument is in `CHANGELOG.md`; only the *data* answer is kept here**,
+because the version number answers the API question and never that one. The
+last two (#211, #212) touch `scripts/` alone and cost a downstream nothing.
 
-**Most move what a caller of `JATSParser` gets, and each of those moves what a
-bmlib *sync* stores.** #111 populates an author list that was empty for the
-majority of open-access articles; #115/#117 change `JATSArticle.figures` and
-`.tables` (missing figures appear, and roughly half of `graphic_url` changes
-from a thumbnail to the full image); #127 fills the new
-`JATSTableInfo.graphic_url`; #123/#125/#130 move `body_sections` for roughly one
-recent article in ten; #120/#140 collect a contributor whose name arrived
-undivided (3.3% of 1,025 articles lost at least one); #129 recovers an article
-lost to a malformed `colspan`; #162 stops an exhibit the publisher did not
-number being given one, moving cached HTML for 83 of every 997 recent articles;
-#147 puts a formula back into the prose that contains it, moving prose and
-cached HTML for 68 of 880 local articles and taking a LaTeX preamble out of
-every table cell that held one. **#146/#149 is the largest** and the only one
-measured by diffing a corpus rather than reasoned: over 880 local PMC articles /
-20,770 references, `citation` moves for 4,499 (21.7%) in 191 articles — 3,541
-rebuilt, 958 emptied of an `<element-citation>` leak — `authors` for 502 in 14,
-rendered HTML for 576 in 23.
+**The JATS fixes move what a caller of `JATSParser` gets, and each of those
+moves what a bmlib *sync* stores** — reaching a bmlib path through the cached
+HTML, since `_build_html` renders authors, figures, tables and both section
+lists into the string `FullTextService` caches. Nothing *structured* is
+stored, so a downstream holding cached full text should re-fetch, not only one
+calling `JATSParser` itself. The largest is **#146/#149**, the only one
+measured by diffing a corpus rather than reasoned: over 880 local PMC articles
+/ 20,770 references, `citation` moves for 4,499 (21.7%) in 191 articles —
+3,541 rebuilt, 958 emptied of an `<element-citation>` leak — `authors` for 502
+in 14, rendered HTML for 576 in 23. Then **#111** (an author list that was
+empty for the majority of open-access articles), **#115/#117** (`figures` and
+`.tables`; roughly half of `graphic_url` moves from a thumbnail to the full
+image), **#147** (prose and cached HTML for 68 of 880 articles, and a LaTeX
+preamble out of every table cell), **#162** (cached HTML for 83 of every 997
+recent articles), **#123/#125/#130** (`body_sections`, about one recent
+article in ten), **#127**, **#120/#140**, **#129**.
 
-**Ten move stored *transparency* values, and all ten are outside
-`fulltext`** — an eleventh transparency change, #199, moves nothing stored and
-is described at the end of this section. **#184 is the largest *measured* one** — #194 may well be larger
-and nobody has counted it, see below —: every Europe PMC full-text fetch was 404ing, so every analysis
-ran on the abstract. Restoring it moved, over 48 real open-access analyses
-diffed against `main`, `coi_disclosed` in 32 (19 to `True`, 13 to `False`),
-`transparency_score` in 20 (+10 or +20, never negative), and `risk_level`
-HIGH→MEDIUM in 5 with `tier_downgrade_applied` 1→0 in the same five. Nothing
-was scored worse *in that draw* — but the missing-COI downgrade is now
-reachable at all, so a paper above `score_threshold` with no COI statement in
-its full text can be downgraded where before it could not. **Any downstream
-holding stored transparency results should recompute them.**
+**Eleven move stored *transparency* values.** Two are large enough that **any
+downstream holding stored transparency results should recompute them**:
 
-**#194 is the other one that moves points, and its population is unmeasured.**
-ClinicalTrials.gov had been refusing bmlib's own `User-Agent` with a 403 since
-the endpoint was first called, so `_check_trial_results` always returned
-`False`, `SCORE_RESULTS_POSTED` (15) had never been awarded to any paper, and
-*"Registered trial without posted results"* was stored as a false claim about
-every registered trial. With the header corrected, any paper whose registered
-trial has posted results gains 15 points and loses that indicator, so
-`transparency_score` and `risk_level` both move — favourably. **How many papers
-that is has not been measured**, so this is not comparable with #184's 48-analysis
-diff; it is a *class* of paper rather than a rate. **Any downstream holding
-stored transparency results for papers with registered trials should recompute
-them.**
+- **#184** — every Europe PMC full-text fetch was 404ing, so every analysis
+  ran on the abstract. Over 48 real open-access analyses diffed against
+  `main`: `coi_disclosed` moved in 32, `transparency_score` in 20 (+10 or +20,
+  never negative), `risk_level` HIGH→MEDIUM in 5. Nothing scored worse *in
+  that draw*, but the missing-COI downgrade is now reachable at all.
+- **#194** — ClinicalTrials.gov had been refusing bmlib's own `User-Agent`
+  with a 403 since the endpoint was first called, so `SCORE_RESULTS_POSTED`
+  (15) had never been awarded to any paper and *"Registered trial without
+  posted results"* was stored about every registered trial. **How many papers
+  gain those 15 points is unmeasured** — a class of paper, not a rate.
 
-The other seven are smaller, and the *data* answer is all this file keeps —
-`CHANGELOG.md` has each argument. **#112** (`plc`/`pty` admitted to
-`_INDUSTRY_WORDS`) moves no *measured* figure, neither token being in the
-labelled corpus, which is why the omission sat unnoticed; it still flips
-`industry_funding_detected` for a `"… plc"` funder, feeding a HIGH-risk rule.
-**#119** moves a scan output for 0.61% of the `oa_comm` `PMC012xxxxxx`
-package's 97,909 articles, dominated by `data_availability_level` (499 of 602).
-**#160** moves **nothing** (0 of 98,789 across both corpora) and **#183**
-nothing measurable (0 of 97,909 refused) — but where #183 fires it turns a
-manufactured `coi_disclosed=False` into `None`, which is the missing-COI
-downgrade firing or not. **#161** adds `TransparencyResult.full_text_status`
-rather than moving anything, plus an honest indicator on the refusal paths;
-**#187/#190/#191** move that field alone; **#193** moves it *and* adds a COI
-indicator to the persisted `risk_indicators` — "moves that field alone" was
-wrong here in the shorthand PR #192's review had already corrected once. A
-downstream matching that prose, or branching on a member rather than on
-`is_refusal`, has to widen; one pinned to an older bmlib raises out of
-`from_dict` on a row this version writes.
+The rest, briefly. **#203 has the widest population**: `risk_indicators` moves
+for every analysis that did not scan full text, i.e. every closed-access
+paper, and **a downstream string-matching *"COI disclosure status unknown
+(full text unavailable)"* or its two siblings breaks** — read `full_text_status`
+instead. **#161/#198** add fields (`full_text_status`, `trial_results_status`)
+rather than moving values, and a downstream pinned to an older bmlib raises
+out of `from_dict` on a row this version writes. **#193** moves
+`full_text_status` and adds a COI indicator; **#187/#190/#191** move that
+field alone; **#195**'s tri-state swaps one CT.gov indicator for another.
+**#112** flips `industry_funding_detected` for a `"… plc"` funder. **#119**
+moves a scan output for 0.61% of 97,909 articles. **#160** and **#183** move
+nothing measurable. **#202** moves nothing at all.
 
-Correcting the header was **not** the whole of #194 (PR #195's review): the
-`bool` stood, so a 404, a 403 or an unusable body still stored *"Registered
-trial without posted results"* — the same lie over a smaller population.
-`_check_trial_results` is a tri-state now and the caller reports three
-outcomes, so a paper whose CT.gov requests all failed swaps that line for
-*"Trial registration found; posted-results status could not be checked"*. Both
-downstreams render the flag rather than the indicator — BioMedicalNews's
-`reading_pane.html`, bmlibrarian_lite's risk badge — which is what #198 below
-is for.
-
-**#198/#202/#203 is the tenth, and #203's half is the widest population in the
-transparency list.** #198 adds `TransparencyResult.trial_results_status`
-(`TrialResultsStatus`), so the flag both downstreams render stops being the
-only readable answer — it moves no existing value, being a field. #202 moves
-nothing stored at all: one fewer request and one fewer log line per document
-during a Europe PMC outage. **#203 moves `risk_indicators` for every analysis
-that did not scan full text**, which is every closed-access paper, not only the
-outage case: *"COI disclosure status unknown (full text unavailable)"* and its
-two siblings become *"COI disclosure status unknown"* plus a provenance line
-naming what became of the full text. **A downstream string-matching any of
-those three strings breaks**, and the remedy is to read `full_text_status`
-instead — which is what it is for.
-
-**#199 is the eleventh transparency change and it moves less than the others,
-not nothing.** Before it, JSON bodies a remote can legally answer HTTP 200
-with escaped the public `analyze()` as `_BUG_TYPES` members — **48 of the 86
-rows the suite now commits, 24 in each identifier column**, 40
-`AttributeError`, 6 `TypeError`, 2 `KeyError` — breaking the contract that a
-misbehaving API costs a *component* and not the analysis. (A first cut of this
-paragraph said *23, 18/4/1*; no committed instrument re-derived it and the
-`.get()` count had been carried into the exception tally. The figures above
-are what the suite reproduces.)
-
-**For a well-formed body one stored value moves**: `_json_count` refuses a
-`true` or a fractional `cited_by_count`, both of which are well-formed JSON
-objects that did not raise, so such a paper scores 5 points lower. The
-*"nothing moves"* this file first claimed rested on *"no draw has seen a
-non-object body"* — an argument that reaches only the twelve top-level
-escapes, the value-level ones being objects by construction. For a malformed
-body, stored values move at every site the change touches, which is the point.
-
-**And no draw has looked.** Nothing in this repo measures the *shape* of a 200
-body — `ProbeOutcome` carries HTTP statuses only — so "unmeasured against the
-live APIs" is a count of what nobody counted, filed as #211.
-
-**The JATS fixes reach a bmlib path through the cached HTML**, a claim this file
-once had backwards twice: `_build_html` renders authors, figures, tables and both
-section lists into one string that `FullTextService` caches via
-`parse_with_html()`. Nothing *structured* is stored, but a downstream holding
-cached full text should re-fetch, not only one calling `JATSParser` itself.
+**#199 moves one value for a well-formed body**: `_json_count` refuses a
+`true` or a fractional `cited_by_count`, so such a paper scores 5 points
+lower. For a malformed body it moves values at every site it touches, which is
+the point — 48 of 86 committed rows escaped the public `analyze()` on `main`,
+24 in each identifier column (40 `AttributeError`, 6 `TypeError`, 2
+`KeyError`). **A draw has now looked at how often that fires** (#211,
+2026-09-08): every served body was well-formed at all five endpoints — 0
+non-object, 0 undecodable, 0 empty — so no coercer was *observed* to fire, and
+"unmeasured" is now an upper bound of a few percent. Read it with #212: that
+draw is MED+PPR, two `SRC:PMC` strata having contributed no record.
 
 ## Rules carried forward
 
@@ -215,7 +158,13 @@ not that it finished — and expect the net to need a second kind of assertion
 beside it, not a wider net. **Pick the fixture that separates the guard from its
 own mutant**: only a *scalar* tells `isinstance(x, list)` from `x is None`,
 since an object, a string and an absent key all reduce to the same empty
-answer. That is the empty-list lesson of PR #195 in a second shape.
+answer. That is the empty-list lesson of PR #195 in a second shape. **Where no
+fixture separates two guards, pin the wire and say why** — with every probe
+404ing, four exit-code terms fire together and deleting one leaves the suite
+green; three of #211's are record-level where `is_reportable` is probe-level,
+so nothing natural separates them. **And a malformed fixture reads as a
+measurement**: `NCT01` is refused by `_NCT_ID_RE.fullmatch`, so the
+accession-cap tests were measuring "no accession found".
 
 *Live behaviour.* **A property only a real remote can refute needs a real
 probe.** #194 — ClinicalTrials.gov 403ing bmlib's `User-Agent`, so no paper had
@@ -224,6 +173,22 @@ ever been credited with posted results — was invisible to the whole suite beca
 instrument presented bmlib's own identity to the live endpoint. **A sampler
 must address *and head* requests exactly as the code does**: #184's lesson is
 usually told about URLs, and the header is the same lesson.
+
+*Instruments.* **A list an instrument declares must be derived from the code it
+measures, not restated** — #211's own field list was stale on the day it was
+written, and an `ast` walk holding the two *equal* is what catches that; the
+same rule that gave `TestTheAuditNetIsComplete` and
+`TestOnlyTheHelperWalksTheEuropePMCResultList` their reason. **One declared
+list can hide two rules**: `_check_crossref` iterates every funder where every
+`_epmc_records` caller takes `records[0]`, so a single element sentinel would
+be wider than the code on one endpoint and narrower on the other. **Where an
+instrument is wider than the code, say so at the site and bound the cost** —
+`if cr:` means an empty object body reaches no field read, so a first-level
+`absent` count is an upper bound. **A guard on the page cannot see a loss one
+level down**: a stratum that answered and kept none of its records read as a
+stratum that was there (#212). And **a measured-empty population is an argument
+for closing an issue, not for building it** — #204, #207 and #210 each measure
+0 and each had a schema change waiting on them.
 
 *Cost.* **The cost of a schema addition is not a constant — it depends on what
 else is unreleased beside it.** #198 was deferred in `docs/DECISIONS.md` as
@@ -246,84 +211,81 @@ a keyword that fired (#137, #142, #160) *and* four that did not (#147, #164,
 harness restoring with `git checkout -- <file>` deletes whatever is uncommitted
 in it.
 
-## This session: #199
+## This session: #211, and #212 which it found
 
-One issue, taken because it was the only *defect* left in PR #195's leavings —
-the rest are precision, shape, or blocked on an unmeasured population. What a
-next session should know concretely:
+One issue, chosen because it was the *blocking* half of a family: #204, #206,
+#207, #210 and #188 were each waiting on a population nobody had drawn, and one
+run of `scripts/sample_api_failures.py` could size them all. The instrument
+landed, the run happened, and it moved every one of them. What a next session
+should know concretely:
 
-- **The measurement reframed the issue before any code was written.** Driving
-  `analyze()` end to end with hostile bodies found **24 escapes per identifier
-  column**, where the issue describes one class. Eighteen are the `.get()` the
-  title names; the other **six** are two `.lower()` calls, two `>` comparisons
-  and `result[0]` raising `KeyError` for an object and `TypeError` for a
-  scalar — so fixing every `.get()` in the module, which is what the issue
-  asks for, leaves six. **Probe the contract, not the expression the reporter
-  noticed.**
-- **Two guards, because the escapes divide by where a guard can go.** Twelve
-  are the body not being a JSON object, which `_request_json` now refuses —
-  and that placement is `_request`'s own rule read backwards: the
-  *consequence* goes to the caller because the callers lose different things,
-  while the *body* is already that layer's subject. Twelve are a value
-  *inside* the object, which no boundary reaches, so they are coerced where
-  they are read. Deciding "one guard or four" as the issue frames it would
-  have got either half wrong.
-- **A number quoted in six files was re-derivable from none of them.** The
-  *23 = 18 + 4 + 1* above survived into `CHANGELOG`, `CLAUDE.md`, `ROADMAP`,
-  this file, the manual and a test docstring before PR #208's review re-ran
-  the committed corpus and got 24 = 20 + 3 + 1 per column. The `18` was right
-  about what it counted — `.get()` escapes — and had been carried into the
-  exception tally. **Record the invocation, or the number is a story.**
-- **A rule stated in a docstring slipped in the commit that wrote it.**
-  `_epmc_records` was added to put the readers of `resultList.result` on one
-  answer and its docstring said there were *two*; there were three, and
-  `_pmid_from_epmc` kept its hand-rolled copy — so the PR's headline claim was
-  false on every DOI-only analysis. It is mechanised now
-  (`TestOnlyTheHelperWalksTheEuropePMCResultList`, an `ast` walk). *A rule
-  enforced by prose is not enforced* — the third time this repo has learned
-  it, after `TestTheAuditNetIsComplete` and
-  `TestOnlyAnAccumulatingElementReadsTheBuffer`.
-- **An anti-vacuity assertion is only as wide as the axis it is on.** The net
-  asserted the *endpoint* was requested and every row supplied a PMID, so a
-  whole reader — reached only when the caller supplies none — never ran, and
-  38 rows passed green over it. Ask what the fixture holds *constant*, not
-  just what it varies.
-- **A contract net cannot see a value read wrongly without raising, and the
-  fixture can hide it too.** `bool("no")` is `True`: CT.gov stating *no
-  results* was stored as results posted, at the exact site #194 published a
-  false finding for a release. The net had a row for that endpoint — with
-  `{"hasResults": "yes"}`, the one string whose truthiness coincides with the
-  right answer. **Pick the fixture that separates the guard from its own
-  mutant**, which is PR #195's lesson and was not applied to its own new rows.
-- **The narrowed return type made three existing annotations true rather than
-  adding a claim.** `_query_crossref`, `_query_europepmc` and `_query_openalex`
-  already said `dict | None` and could all return a list; mypy could not see it
-  because `_request_json` returned `Any`. Worth remembering as a smell: an
-  `Any`-returning helper launders every annotation above it.
-- **A contract net is blind to a value read *wrongly* without raising**, and
-  mutation testing found that where review did not. Two survivors of ten: the
-  CrossRef one credits CrossRef with 15 points of funder information it never
-  sent (an object is truthy and iterates into its keys) and survived all 459
-  tests in the file; the `_epmc_records` one showed that only a **scalar**
-  `result` separates `isinstance(result, list)` from `result is None`, since an
-  object, a string and an absent key all reduce to the same empty answer. Both
-  killed by asserting what the analysis *concluded*, not that it finished.
-- **`_check_trial_results`' local `isinstance` is reached only for `None` now
-  and was kept deliberately** — the second of two independent protections at
-  the one site where an unusable body did not merely raise but published a
-  false finding about a trial for a whole release (#194). Its comment was
-  rewritten, because the old one claimed the branch was "only the
-  200-carrying-a-list case", which the fix made false. **A guard whose reason
-  moves needs its comment moved with it.**
-- **The 0.35s pacer is per request**, so an end-to-end net costs the suite a
-  minute of sleeping unless `_rate_limit` is stubbed. The file already had the
-  idiom; it is not obvious from the test that needs it.
+- **The issue's own field list was stale on the day it was written** — #211
+  omits `source`, read by `_check_europepmc` since PR #208 coerced it into the
+  full-text URL. So the list is **derived**: an `ast` walk holding the two sets
+  *equal* and failing closed on a literal `.get()` in a function no endpoint
+  claims. The walk also found that *every* literal `.get()` in that module is a
+  body read, which is what let the net be strict rather than carry an excuse
+  list.
+- **Two element steps, because the module does two things with a list.**
+  `_check_crossref` iterates every funder; all three `_epmc_records` callers
+  take `records[0]`. One sentinel would be wider than the code on one endpoint
+  and narrower on the other.
+- **Mutation testing found the exit-code test passing for the wrong reason.**
+  With *every* probe 404ing the rider terms fire together, so deleting the
+  shape term left the suite green; the fixture now fails one endpoint only, and
+  three terms no fixture separates from the probe-level `is_reportable` are
+  pinned on the wire instead. Beside it, a fixture can be wrong in a way that
+  reads as green: the cap tests used `NCT01`, which `_NCT_ID_RE.fullmatch`
+  refuses, so they were measuring "no accession found".
 
-**Four of PR #195's follow-ups remain**: #196 a second `User-Agent` built
-inline in `publications/sync.py`, outside `_user_agent` and outside any
-sampler — the #194 class at a site nothing probes; #197 the retryability
-grouping `FullTextStatus` names as the reason two members exist and mechanises
-nowhere; #200 and #201 are shape. **#199 was the loudest and is closed.**
+**What the run measured** (2026-09-08, `--email … ` at the defaults, 124 + 60
+records; the invocation is the default so the draw is re-derivable):
+
+- **Every served body was well-formed at all five endpoints** — 0 non-object,
+  0 undecodable, 0 empty. So no coercer #199 added was observed to fire.
+- **#210 is settled**: `hasResults` absent in **0 of 55** bodies. Keep the
+  `False`; what needs changing is the comment, which states the conflation and
+  then performs it.
+- **#207's own population is empty**: `unaddressable` **0 of 124**. Its fourth
+  `FullTextStatus` member has no measured benefit, which is the count it was
+  filed to wait for.
+- **#204's is empty too**: `neither` registration source answering **0 of
+  124**. Its own option 3 (a recorded residual) is the one the evidence
+  supports.
+- **#206's emphasis is reversed**: a partly-answered check is **1 of 30**, but
+  the silent accession cap truncates **8 of 30** (26.7%). The half with the
+  large population is the one whose fix is a single WARNING line.
+- **#188 is the big one, and it is confirmed live.** 43 of 124 records
+  (34.7%), and 43 of the 53 claiming `inEPMC: Y` (81%), carry no `pmcid` and
+  are addressed by the record's bare `id`. That URL 404s three of three where
+  a `pmcid` address serves 53 kB; all 84 such records in a 150-record
+  `SRC:MED` draw are NCBI Bookshelf chapters; and a `bookid` is not
+  addressable through `fullTextXML` either (three of three), so **there is no
+  full text to recover and the remedy is to stop asking**. The `PPR` half of
+  the same expression is confirmed load-bearing — 75,841 records, 50 of 50
+  sampled carrying no `pmcid`, their `id` serving — so the fix is scoped by
+  `source`, never a deletion.
+- One CT.gov 404 of 56 probes: the **first non-200 this sampler has ever
+  recorded**, and far from ordinary, so every `_ORDINARY_STATUSES` set stays
+  empty.
+
+**#212 is what the run exposed about the instrument itself**, and it qualifies
+every share above. `DrawnRecord` refuses a record carrying neither a DOI nor a
+PMID — correctly, `analyze()` accepting nothing else — and a `SRC:PMC` record
+carries neither, its only identifier being the PMCID. So `PMC/2024` and
+`PMC/2004` drew twenty records apiece and kept none, while the report read
+*"124 records over 7 strata"* with `failed_strata` empty at exit `0`. The
+existing guard tests the **page**; the loss happens one level down. It is now
+named, reported as an ERROR and carried into the exit code — **so the script
+exits non-zero on a clean run** until the population question is decided. Three
+options, three different populations: drop the PMC strata, condition each
+query on the record being analysable, or page each stratum until it fills.
+Also worth noting: `--target 180` yields about 124, which is the *"144 where
+every table says 180"* defect PR #195 found once in this same script, in a
+different place.
+
+**Nothing here changes library code**, so no downstream recompute is owed for
+these two.
 
 ## Current state
 
@@ -343,11 +305,11 @@ nowhere; #200 and #201 are shape. **#199 was the loudest and is closed.**
   previous release wrote is durable under #95's rule, so the whole window is
   re-fetched once. The two questions are independent, and a downstream reading
   only the number must still read this list.
-- **Tests: 3513 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
-  2026-09-08 on this branch after its own review; `main` at PR #205's merge
-  read 3399 + 63, and this branch's first cut read 3451 + 63).
+- **Tests: 3614 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
+  2026-09-08 on this branch; `main` at PR #208's merge read 3513 + 63, so this
+  branch adds 101, all in `tests/test_api_failure_sampler.py`).
   **The PostgreSQL half was not re-run for this branch and did not need to be**
-  — it touches `transparency/` only, which carries no SQL. The PostgreSQL half has not been re-run since the
+  — it touches `scripts/` only, which carries no SQL. The PostgreSQL half has not been re-run since the
   SQL last moved; the last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set
   is 2435 + 2 on the #105 branch. Of the 63 default skips, 61 are the PostgreSQL
   parameterisations, 1 is a PostgreSQL-only schema test, and 1 is
@@ -390,37 +352,46 @@ nowhere; #200 and #201 are shape. **#199 was the loudest and is closed.**
 
 ### Open GitHub issues
 
-**Thirty-seven open** as this file is written, **thirty-six once this branch
+**Thirty-six open** as this file is written, **thirty-five once this branch
 merges** (`gh issue list`, 2026-09-08): #86, #92, #94, #103, #124, #128, #137,
 #142, #143, #144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175,
-#177, #178, #179, #181, #186, #188, #196, #197, #199, #200, #201, #204, #206,
-#207, #209, #210, #211. This branch answers **#199** and filed **#209, #210
-and #211** from its own review — a coercion tally so a wrong-typed value is
-not silently dropped, the absent-`hasResults` semantics it deliberately left
-alone, and a body-*shape* counter for the sampler, without which "no draw has
-seen a non-object body" is a count of what nobody looked for. **#198, #202 and #203
-were closed by hand at the start of this session** — PR #205 merged and named
-them in prose only, the process rule below catching its **ninth, tenth and
-eleventh** instances; #193/#194, #187/#190/#191, #184, #183 and #161 went the
-same way in the sessions before. Every open issue was
-found by review or measurement rather than by a failing test, and **none loses
+#177, #178, #179, #181, #186, #188, #196, #197, #200, #201, #204, #206, #207,
+#209, #210, #211, #212. This branch answers **#211** and filed **#212** from
+its own live run. **#199 was closed by hand at the start of this session** —
+PR #208 merged and named it in prose only, the process rule below catching its
+**twelfth** instance; #198/#202/#203, #193/#194, #187/#190/#191, #184, #183
+and #161 went the same way in the sessions before. Every open issue was found
+by review or measurement rather than by a failing test, and **none loses
 records** — though **#124** loses an exhibit's footnotes, **#150** renders a
 note-only reference as an empty bullet, and **#128** would lose every figure
 image in a document binding XLink to another prefix.
 
-**Nothing in the list is urgent in the way #184 and #194 were**, so the next
-choice is a judgement rather than a forced move. #186 and #188 are the last of
-the full-text-refusal family and both are decisions rather than fixes (below);
-#178 is the one open *question* rather than a defect; and of PR #195's review
-**#199 was the loudest survivor and is now closed**, which leaves that group
-without a defect in it — #196 is a latent second site for the #194 class,
-#197 mechanises a grouping that exists in prose, and #200/#201 are shape.
-**#204, #206 and #207 are one family** — a status member standing in for
-*"we did not look"* — and all three are blocked on the same unmeasured
-population, which **one `scripts/sample_api_failures.py` run would size**.
-#207's half is time-sensitive on this repo's own rule that a schema addition's
-cost is not a constant: it is a `TransparencyResult` change, free while the
-batch is unreleased and a second downstream recompute after. **The lesson of #194 is
+**Five of them now have their population**, which is what this session was
+for: #204 and #207 measure **empty** (0 of 124 each) and should be closed as
+recorded residuals rather than built; #210 measures empty (0 of 55) and needs
+a comment, not a behaviour change; #206's two halves measure 1 of 30 and **8
+of 30**, so the silent cap is the half worth fixing; and **#188 is confirmed
+live and large** — 43 of 124 records addressed by a bare `id` that never
+serves, all of them NCBI Bookshelf chapters, with no full text recoverable, so
+the fix is to stop asking, scoped by `source` because the `PPR` half of the
+same expression is load-bearing. **#188 is the obvious next piece of work**:
+it has a measured population, a confirmed remedy, and it moves stored values
+(`NOT_SERVED` → whatever is chosen) for about a third of analysed records
+while removing a wasted rate-limited request per record. **#212 blocks nothing
+but qualifies every share above** — decide the strata and the sampler goes
+green again.
+
+**#188 is now the one item with a measured population and a confirmed
+remedy**, so it is no longer a judgement call the way the rest are. Of the
+others: #186 is the last of the full-text-refusal family and is a decision
+rather than a fix (below); #178 is the one open *question*; #196 is a latent
+second site for the #194 class; #197 mechanises a grouping that exists in
+prose; #200/#201 are shape. **#204, #206, #207 and #210 are no longer blocked**
+— the run sized all four, and three of them measure empty, which is an
+argument for closing rather than building. Note that #207's time-sensitivity
+argument (a schema addition being free while the batch is unreleased) now
+points the other way: free is not a reason to add a member whose population is
+zero. **The lesson of #194 is
 worth acting on rather than only recording**: it was a live-only defect that
 the whole suite missed — no test in it makes a live request — found the first time an
 instrument presented bmlib's real identity to a real remote. Nothing else in
@@ -432,9 +403,12 @@ wrong in several sessions, and an issue closed as COMPLETED without being fixed
 is invisible to any such count. Almost every open issue was filed *by* a PR
 reviewing an earlier fix, so the provenance is a chain: **#119** → PR #159,
 filing #158/#160/#161; **#160** → PR #182, filing #183; **#183**/**#161** → PR
-#185, filing #184/#186/#187; **#184** → PR #189, filing #188/#190/#191; **#193/#194** → PR #195, filing
-#196-#203, of which this branch answers **#199** — and it filed nothing. Older provenance is in `gh issue
-view <n>` and `CHANGELOG.md`. (#149 and #152 were filed and fixed inside one
+#185, filing #184/#186/#187; **#184** → PR #189, filing #188/#190/#191;
+**#193/#194** → PR #195, filing #196-#203; **#199** → PR #208, filing
+#209/#210/#211 — of which this branch answers **#211**, and it filed **#212**
+not from review but from the instrument's own first live run, which is a new
+link in the chain. Older provenance is in `gh issue view <n>` and
+`CHANGELOG.md`. (#149 and #152 were filed and fixed inside one
 PR, so neither ever appeared as open work.)
 
 Each issue carries its own argument on GitHub; what follows is only what a
@@ -466,36 +440,29 @@ with no separator, #145 is `<aff>` resolution through `@id`.
 **#137 has been auto-closed twice without being decided** — a section-level
 `<caption>`'s `<p>` children reach `body_sections` while its `<title>` is
 dropped, and the sampler records the `<title>`'s parent but not the
-`<caption>`'s owner, so the population is not derivable yet.
-
-**#152** — `<article-id>`'s reachability guard is `parent == "article-meta" or
-self.in_front`, and each half deletes on its own with the suite green: the
-parent test can only fire on markup JATS does not admit, while `in_front`
-admits an `<article-id>` in `<notes>` as the article's own DOI. Unmeasured, so
-it pairs with a draw; nothing is known to be wrong today, but this is where
-#109 was.
-
-**#128 is weaker than filed** — all 13,624 `<graphic>` hrefs in the two corpora
-use the `xlink` prefix bound to the XLink namespace, so the literal-prefix
-match is safe on measured evidence. Downgrade rather than close.
+`<caption>`'s owner, so the population is not derivable yet. **#152** —
+`<article-id>`'s reachability guard is `parent == "article-meta" or
+self.in_front` and each half deletes on its own with the suite green; nothing
+is known to be wrong today, but this is where #109 was. **#128 is weaker than
+filed** — all 13,624 `<graphic>` hrefs in the two corpora use the `xlink`
+prefix bound to the XLink namespace, so the literal match is safe on measured
+evidence; downgrade rather than close.
 
 **#172–#181 are PR #171's, #176's and #180's leavings.** #178 is the group's
 open *question*: whether LaTeX should win for a both-encoding inline formula at
 all, replacing prose already correct in 20,046 formulas to recover 205. #177
 routes a display formula reaching no section, caption or cell (192 in 23 of
-97,909); #174 is MathML flattening losing spacing and brackets, now reaching
-far more prose than before #147; #175 is a formula deposited as an image, which
-no field carries; #172 is the cache having no version stamp to invalidate it
-when a rendering change moves the HTML; #173 is a figure's `alt` duplicating
-its own `figcaption`. #179 — the per-host pacer is per-process, so two
-concurrent sampler runs double the rate against one host (103 and 98 articles
-lost to refusals against 3 sequentially). #181 — `last_is_thumb` increments
-only inside `len(graphics) > 1`, so its population is `figures_multi_graphic`
-while the report and five files divide it by `figures_with_graphic`; over its
-own population the recent window reads **99.3%**, not 57.3%, which makes #117's
-rule far more load-bearing than the published figure says. One remedy restates
-a share cited in five files and the other needs both corpora redrawn, which
-would destroy #164's attribution.
+97,909); #174 is MathML flattening losing spacing and brackets; #175 is a
+formula deposited as an image, which no field carries; #172 is the cache
+having no version stamp; #173 is a figure's `alt` duplicating its own
+`figcaption`; #179 is the per-host pacer being per-process, so two concurrent
+sampler runs double the rate against one host. **#181 is the sharpest of
+them**: `last_is_thumb` increments only inside `len(graphics) > 1`, so its
+population is `figures_multi_graphic` while the report and five files divide
+it by `figures_with_graphic` — over its own population the recent window reads
+**99.3%**, not 57.3%, which makes #117's rule far more load-bearing than the
+published figure says. One remedy restates a share cited in five files and the
+other needs both corpora redrawn, destroying #164's attribution.
 
 **#186 and #188 are the last of the full-text-refusal family**, both in
 `_fetch_europepmc_fulltext` and both a decision rather than a fix — which is
@@ -505,15 +472,9 @@ neither the WARNING nor the stored `UNCLOSED_REGION` says whether a
 `<sub-article>` or a `<response>` was left open. Naming one moves a
 heavily-argued return contract — `_strip_nested_articles` returns `str | None`
 and the `None` *is* the signal — so it wants a small result type or a dedicated
-exception, the shape #160 chose one case over. **#188**: a `MED` record with no
-`pmcid` is addressed by `record["id"]`, a bare PMID, so the request is made and
-its 404 is known before it leaves; `NOT_SERVED` is now precisely right about
-*what happened*, and `NOT_ATTEMPTED` is the honest thing to store for a
-question not worth asking. It wants the population first — how many `IN_EPMC:Y`
-records carry no `pmcid`, and `HAS_PMCID` is not a field, so it needs a draw.
-The `PPR` fallback is load-bearing and pinned (deleting it loses the address
-for all 75,760 preprints), so the test cannot be *"is it a PMCID?"* — the
-record's own `source` is what distinguishes them.
+exception, the shape #160 chose one case over. **#188 is no longer one of them** — it has its draw and its
+remedy is confirmed; the measurement is in the session section above, and it
+is the obvious next piece of work.
 
 **#154, #156 and #157 are one job, and it is the funder corpus.** #154:
 `scripts/sample_funder_names.py` writes `tests/data/funder_names.raw.json`,
@@ -618,11 +579,8 @@ there, not here — this file is for what still needs doing.
 
 ## Conventions and gotchas for the next session
 
-- Coding rules live in `CLAUDE.md` — pure functions with the DB-API connection as
-  first argument, type hints and docstrings on everything public, AGPL-3 header
-  on every source file, dataclass models with `to_dict()`/`from_dict()` where they
-  persist, explicit SQL (no ORM), optional dependencies guarded with a helpful
-  `ImportError`.
+- Coding rules live in `CLAUDE.md` under *Coding Conventions* — read them there
+  rather than from a copy that can drift.
 - `uv` only (never pip). Tests: `uv run pytest tests/ -v`.
 - **Lint with the CI-pinned ruff, not the one in `.venv`** — CI pins **0.15.20**
   (`.github/workflows/ci.yml`), while `.venv` holds an older one that false-flags
