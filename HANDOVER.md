@@ -352,8 +352,10 @@ these two.
 
 ### Open GitHub issues
 
-**Thirty-six open** as this file is written, **thirty-five once this branch
-merges** (`gh issue list`, 2026-09-08): #86, #92, #94, #103, #124, #128, #137,
+**Thirty-seven open** as this file is written, **thirty-six once this branch
+merges** (`gh issue list --state open --limit 200`, 2026-09-08 — the limit
+matters, `gh` pages at 30 and the bare command reports a page size as a
+total): #86, #92, #94, #103, #124, #128, #137,
 #142, #143, #144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175,
 #177, #178, #179, #181, #186, #188, #196, #197, #200, #201, #204, #206, #207,
 #209, #210, #211, #212. This branch answers **#211** and filed **#212** from
