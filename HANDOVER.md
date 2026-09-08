@@ -359,17 +359,27 @@ these two.
 
 ### Open GitHub issues
 
-**Thirty-seven open** as this file is written, **thirty-six once this branch
-merges** (`gh issue list --state open --limit 200`, 2026-09-08 — the limit
-matters, `gh` pages at 30 and the bare command reports a page size as a
-total): #86, #92, #94, #103, #124, #128, #137,
+**Forty open** as this file is written (`gh issue list --state open --limit
+200`, 2026-09-09 — the limit matters, `gh` pages at 30 and the bare command
+reports a page size as a total): #86, #92, #94, #103, #124, #128, #137,
 #142, #143, #144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175,
 #177, #178, #179, #181, #186, #188, #196, #197, #200, #201, #204, #206, #207,
-#209, #210, #211, #212. This branch answers **#211** and filed **#212** from
-its own live run. **#199 was closed by hand at the start of this session** —
-PR #208 merged and named it in prose only, the process rule below catching its
-**twelfth** instance; #198/#202/#203, #193/#194, #187/#190/#191, #184, #183
-and #161 went the same way in the sessions before. Every open issue was found
+#209, #210, #212, #214, #215, #216, #217. **#211 was closed by hand at the
+start of this session** — PR #213 answered it, said in its own body that it
+wanted closing by hand, and merged without anyone doing so; the process rule
+below caught its **thirteenth** instance. #199, #198/#202/#203, #193/#194,
+#187/#190/#191, #184, #183 and #161 went the same way in the sessions before.
+
+**#214–#217 are PR #213's review**, all four about the instrument rather than
+the library: **#216** is the sharpest and it qualifies #188 — the sampler
+categorises how bmlib *would* address each record's full text and never builds
+that URL, so *"404 three of three"* is a hand-taken spot check beside a
+committed table. **#214** is the sampler's PubMed population omitting the
+efetch `analyze()` makes for a DOI-only record; **#215** buckets a
+sampler-side exception into the rate a log level is set from; **#217** is
+`ProbeOutcome.cause` being stored and then re-parsed by its own invariant.
+
+Every open issue was found
 by review or measurement rather than by a failing test, and **none loses
 records** — though **#124** loses an exhibit's footnotes, **#150** renders a
 note-only reference as an empty bullet, and **#128** would lose every figure
@@ -391,7 +401,11 @@ but qualifies every share above** — decide the strata and the sampler goes
 green again.
 
 **#188 is now the one item with a measured population and a confirmed
-remedy**, so it is no longer a judgement call the way the rest are. Of the
+remedy** — but read that with **#216**, which says the *confirmation* half is
+a spot check nobody can re-take: the sampler builds no `fullTextXML` URL at
+all, so *"that address 404s, three of three"* sits beside the committed table
+rather than in it. Its option 1 (probe the address the table categorises) is
+one extra request per addressed record and is what makes #188 decidable. Of the
 others: #186 is the last of the full-text-refusal family and is a decision
 rather than a fix (below); #178 is the one open *question*; #196 is a latent
 second site for the #194 class; #197 mechanises a grouping that exists in
