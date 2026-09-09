@@ -124,6 +124,57 @@ def _pace(_url: str) -> None:
     """A pacer that does nothing, so tests do not sit through the interval."""
 
 
+def _as(outcomes: list, endpoint: str) -> list:
+    """The same outcomes at another endpoint, for comparing a per-endpoint rule."""
+    return [
+        sampler.ProbeOutcome(
+            endpoint=endpoint,
+            status=o.status,
+            cause=o.cause,
+            measured=o.measured,
+            shape=(sampler.BodyShape(endpoint=endpoint, top=o.shape.top) if o.shape else None),
+        )
+        for o in outcomes
+    ]
+
+
+def _epmc_body(**record: object) -> dict:
+    """One EuropePMC search body carrying one record."""
+    return {"resultList": {"result": [record]}}
+
+
+def _draw_page(n: int = 1) -> dict:
+    """A draw page of *n* analysable records, each offering a full-text address.
+
+    ``inEPMC`` and ``pmcid`` are load-bearing rather than decoration: without
+    them no record offers an address, `probe_record` probes none, and the
+    full-text table added for issue #216 reports an absent population — so
+    every `main` test would exit 1 for a reason that has nothing to do with
+    what it asserts. `_AlwaysClient` answers the single-record lookup with
+    this same body, which is what makes one fixture serve both.
+    """
+    return {
+        "resultList": {
+            "result": [
+                {
+                    "doi": f"10.1/{i}",
+                    "pmid": str(i),
+                    "source": "MED",
+                    "inEPMC": "Y",
+                    "isOpenAccess": "Y",
+                    "pmcid": f"PMC{i}",
+                }
+                for i in range(n)
+            ]
+        }
+    }
+
+
+def _probe_record(client, record, *, email: str = "a@b.c") -> list:
+    """Drive ``probe_record`` where the address population is not the subject."""
+    return sampler.probe_record(client, record, email, _pace, [])
+
+
 def _outcome(cause: str | None) -> sampler.ProbeOutcome:
     """One outcome for the summary tests, built from its bucket alone.
 
@@ -295,7 +346,7 @@ class TestTheTwoDrawsStayApart:
         # not.
         client = _ScriptedClient(*[_FakeResponse(200, {}) for _ in range(4)])
         record = sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid="1", raw={})
-        outcomes = sampler.probe_record(client, record, "a@b.c", _pace)
+        outcomes = _probe_record(client, record)
         assert "clinicaltrials" not in {o.endpoint for o in outcomes}
         assert not any("clinicaltrials" in url for url in client.urls())
 
@@ -560,7 +611,7 @@ class TestTheExitCodeMeansWhatAScheduledRunReadsIt:
         return sampler.main()
 
     def _page(self, n=1):
-        return {"resultList": {"result": [{"doi": f"10.1/{i}", "pmid": str(i)} for i in range(n)]}}
+        return _draw_page(n)
 
     def test_a_clean_run_exits_zero(self, monkeypatch, capsys):
         client = _AlwaysClient(self._page())
@@ -685,13 +736,36 @@ class TestTheSamplerProbesWhatTheAnalyzerRequests:
     header a remote judged us by — so the comparison is made by driving both
     and diffing, not by checking that a constant was imported, which a
     restated literal passes.
+
+    **The subset relation is conditional on the record's category, and since
+    issue #188 that is not a technicality** (PR #219's review). The sampler
+    probes :data:`~sample_api_failures.PROBED_CATEGORIES` and the analyzer
+    asks with :data:`~sample_api_failures.ADDRESSED_CATEGORIES`, so for an
+    ``id-not-an-address`` record the sampler probes a URL the analyzer does
+    not — by design, and asserted from the other side by
+    ``test_an_address_bmlib_refuses_is_still_probed``. The assertions below
+    hold because ``_RECORD`` carries a ``pmcid``. Parametrising it over the
+    categories would redden them, and the wrong repair is narrowing
+    ``PROBED_CATEGORIES``, which undoes issue #216.
     """
 
+    #: The one record body both sides are driven over. It claims full text and
+    #: offers an accession, so the **sixth** endpoint — the full-text fetch —
+    #: is inside the comparison rather than beside it. With a bare ``{}`` the
+    #: analyzer builds no full-text URL and the sampler probes no address, so
+    #: every assertion below passed over an endpoint neither side reached:
+    #: exactly the silence issue #216 is about, in the test written to prevent
+    #: it.
+    _RECORD = _epmc_body(inEPMC="Y", pmcid="PMC1", id="1", source="MED")
+
     def _analyzer_client(self, doi: str, pmid: str) -> _ScriptedClient:
-        client = _ScriptedClient(*[_FakeResponse(200, {}) for _ in range(4)])
+        from bmlib.transparency.analyzer import _Analysis
+
+        client = _ScriptedClient(*[_FakeResponse(200, {}) for _ in range(5)])
         analyzer = TransparencyAnalyzer(email="a@b.c")
         analyzer._query_crossref(client, doi)
         analyzer._query_europepmc(client, f'DOI:"{doi}"')
+        analyzer._check_europepmc(client, self._RECORD, _Analysis(), "d")
         analyzer._query_pubmed(client, pmid)
         analyzer._query_openalex(client, doi)
         analyzer._check_trial_results(client, "NCT00000001")
@@ -702,8 +776,14 @@ class TestTheSamplerProbesWhatTheAnalyzerRequests:
 
     def _sampler_client(self, doi: str, pmid: str) -> _ScriptedClient:
         record = sampler.DrawnRecord(source="MED", year=2024, doi=doi, pmid=pmid, raw={})
-        client = _ScriptedClient(*[_FakeResponse(200, {}) for _ in range(4)])
-        sampler.probe_record(client, record, "a@b.c", _pace)
+        # The EuropePMC search answers with the record above, so the sampler
+        # reads an address off it and probes it, as `probe_record` does live.
+        client = _ScriptedClient(
+            _FakeResponse(200, {}),
+            _FakeResponse(200, self._RECORD),
+            *[_FakeResponse(200, {}) for _ in range(3)],
+        )
+        _probe_record(client, record)
         return client
 
     def test_every_request_carries_the_parameters_and_headers_the_analyzer_sends(self):
@@ -763,9 +843,7 @@ class TestTheSamplerProbesWhatTheAnalyzerRequests:
 
     def test_every_url_the_sampler_probes_is_one_the_analyzer_requests(self):
         doi, pmid = "10.1/x", "1"
-        record = sampler.DrawnRecord(source="MED", year=2024, doi=doi, pmid=pmid, raw={})
-        client = _ScriptedClient(*[_FakeResponse(200, {}) for _ in range(4)])
-        sampler.probe_record(client, record, "a@b.c", _pace)
+        client = self._sampler_client(doi, pmid)
         trial_client = _ScriptedClient(
             _FakeResponse(200, text="<PubmedArticleSet/>"), _FakeResponse(200, {})
         )
@@ -787,18 +865,25 @@ class TestTheSamplerProbesWhatTheAnalyzerRequests:
         assert probed <= self._analyzer_urls(doi, pmid)
 
     def test_the_sampler_reaches_every_endpoint_the_analyzer_has(self):
-        # The other direction, and the one that goes stale silently: a sixth
-        # dropped response added to the module and not to `ENDPOINTS` would
-        # simply never be measured, and the level for it would be chosen the
-        # way all five were before this script existed.
+        # The other direction, and the one that goes stale silently: a
+        # response the analyzer drops, added to the module and not to
+        # `ENDPOINTS`, would simply never be measured and its level would be
+        # chosen the way all five were before this script existed. That is not
+        # hypothetical — the full-text fetch was exactly such an endpoint
+        # until issue #216, and this assertion did not see it because both
+        # sides were driven over a body carrying no record.
         doi, pmid = "10.1/x", "1"
-        record = sampler.DrawnRecord(source="MED", year=2024, doi=doi, pmid=pmid, raw={})
-        client = _ScriptedClient(*[_FakeResponse(200, {}) for _ in range(4)])
-        sampler.probe_record(client, record, "a@b.c", _pace)
-        probed = set(client.urls()) | {
+        probed = set(self._sampler_client(doi, pmid).urls()) | {
             sampler.CLINICALTRIALS_STUDY_URL.format(nct_id="NCT00000001")
         }
         assert probed == self._analyzer_urls(doi, pmid)
+
+    def test_the_full_text_url_is_among_them(self):
+        # The anti-vacuity half of the two assertions above: they are set
+        # comparisons, so a fixture in which neither side builds a full-text
+        # URL satisfies both. Naming it is what keeps them about six
+        # endpoints rather than five.
+        assert sampler._fulltext_url("PMC1") in self._analyzer_urls("10.1/x", "1")
 
     def test_the_pubmed_parameters_are_the_ones_the_analyzer_sends(self):
         # `efetch` is addressed by its query, not its path, so a URL
@@ -1339,24 +1424,25 @@ def _served_shape(endpoint: str) -> sampler.BodyShape:
     a body :func:`observe_body` cannot produce.
     """
     if endpoint == "europepmc_search":
-        return sampler.BodyShape(endpoint=endpoint, top="object", addressability="no-record")
+        return sampler.BodyShape(
+            endpoint=endpoint, top="object", addressing=sampler.RecordAddressing("no-record")
+        )
     return sampler.BodyShape(endpoint=endpoint, top="object")
-
-
-def _epmc_body(**record: object) -> dict:
-    """One EuropePMC search body carrying one record."""
-    return {"resultList": {"result": [record]}}
 
 
 class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
     """The rider populations: issues #207 and #188, on the body already fetched.
 
     ``FullTextStatus.NOT_ATTEMPTED`` is documented *"no request was made, and
-    EuropePMC's own answer is why"* and covers three causes, one of which is a
-    record claiming ``inEPMC: Y`` and carrying nothing to address the text by
-    — a malformed record, not a closed-access paper, and the one cause for
-    which that sentence is false. #207 asks for a fourth member and was filed
-    rather than taken because its population is unmeasured. #188 is the
+    EuropePMC's own answer is why"* and covers several causes, one of which is
+    a record claiming ``inEPMC: Y`` and carrying nothing to address the text
+    by — a malformed record, not a closed-access paper, and the one cause for
+    which that sentence is false. #207 asks for a member of its own for that
+    cause and was filed rather than taken because its population is
+    unmeasured. Stated without an ordinal: this read *"three causes"* and
+    *"a fourth member"*, and #188 added a fourth cause without moving either,
+    so the second was off by one in two directions at once (PR #219's
+    review). #188 is the
     neighbouring split: a record addressed by its bare ``id`` rather than a
     ``pmcid``, which for a ``MED`` record is a request whose 404 is known
     before it leaves and for a ``PPR`` one is the only address there is.
@@ -1373,8 +1459,11 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
             (_epmc_body(id="1", pmcid="PMC1"), "not-claimed"),
             (_epmc_body(inEPMC="N", pmcid="PMC1"), "not-claimed"),
             (_epmc_body(inEPMC="Y", pmcid="PMC1", id="1"), "pmcid"),
-            (_epmc_body(inEPMC="Y", id="PPR123"), "id-only"),
-            (_epmc_body(inEPMC="Y", pmcid="", id="PPR123"), "id-only"),
+            (_epmc_body(inEPMC="Y", id="PPR123"), "id-accession"),
+            (_epmc_body(inEPMC="Y", pmcid="", id="PPR123"), "id-accession"),
+            (_epmc_body(inEPMC="Y", id="PMC4154587"), "id-accession"),
+            (_epmc_body(inEPMC="Y", id="41637542"), "id-not-an-address"),
+            (_epmc_body(inEPMC="Y", id="NBK620630"), "id-not-an-address"),
             (_epmc_body(inEPMC="Y"), "unaddressable"),
             (_epmc_body(inEPMC="Y", pmcid="", id=""), "unaddressable"),
         ],
@@ -1389,7 +1478,7 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
         shape = sampler.observe_body(
             "europepmc_search", _FakeResponse(200, _epmc_body(inEPMC="Y", id="PPR1", source="PPR"))
         )
-        assert shape.address_source == "PPR"
+        assert shape.addressing.source == "PPR"
 
     def test_a_body_that_did_not_decode_is_not_categorised(self):
         shape = sampler.observe_body("europepmc_search", _FakeResponse(200, text="<html>"))
@@ -1441,6 +1530,24 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
             sampler.ADDRESSED_CATEGORIES | sampler.UNADDRESSED_CATEGORIES
         ) == sampler.ALL_ADDRESS_CATEGORIES
 
+    def test_the_id_fallback_set_is_every_category_the_id_branch_produces(self):
+        # The one set here whose next member is lost in *silence*: a third
+        # outcome of `_addressability`'s `ext_id` branch — a `bookid` split is
+        # the obvious next one — omitted from `_ID_FALLBACK_CATEGORIES` loses
+        # its `, source X` suffix and pools two source populations into one
+        # denominator, at exit 0 (PR #219's review). It is derivable, so it is
+        # held against the function rather than against a restated list: every
+        # category reachable with `pmcid` absent and an `id` present.
+        produced = {
+            sampler.observe_body(
+                "europepmc_search", _FakeResponse(200, _epmc_body(inEPMC="Y", id=ext_id))
+            ).addressability
+            for ext_id in ("PPR1", "PMC1", "41637542", "NBK620630", "x")
+        }
+        assert produced == sampler._ID_FALLBACK_CATEGORIES
+        # And the anti-vacuity half: the set is not simply everything.
+        assert sampler._ID_FALLBACK_CATEGORIES < sampler.ALL_ADDRESS_CATEGORIES
+
     def test_every_category_the_code_can_return_is_in_the_partition(self):
         # And the partition is held against what `_addressability` actually
         # produces, not against a restated list — otherwise a new category
@@ -1452,6 +1559,7 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
                 _epmc_body(id="1", pmcid="PMC1"),
                 _epmc_body(inEPMC="Y", pmcid="PMC1"),
                 _epmc_body(inEPMC="Y", id="PPR1"),
+                _epmc_body(inEPMC="Y", id="41637542"),
                 _epmc_body(inEPMC="Y"),
             )
         }
@@ -1459,7 +1567,7 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
 
     def test_a_category_outside_the_partition_is_refused(self):
         with pytest.raises(ValueError, match="unknown address category"):
-            sampler.BodyShape(endpoint="europepmc_search", top="object", addressability="invented")
+            sampler.RecordAddressing("invented")
 
     def test_a_decoded_object_body_always_carries_one(self):
         # The direction that keeps `None` from acquiring a second meaning: an
@@ -1468,19 +1576,39 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
         with pytest.raises(ValueError, match="always categorised"):
             sampler.BodyShape(endpoint="europepmc_search", top="object")
 
+    @pytest.mark.parametrize("top", ["array", "string", "not-json", "null"])
+    def test_a_non_object_body_cannot_carry_a_category(self, top):
+        # The third direction, open until PR #219's review: the guard was
+        # `top == "object" and not addressing`, so a *non-object* EuropePMC
+        # body could carry a category through this constructor — which is the
+        # pre-PR-#213 defect `_addressability` returns `None` for a non-dict
+        # specifically to prevent.
+        with pytest.raises(ValueError, match="nothing else\\s+ever is"):
+            sampler.BodyShape(
+                endpoint="europepmc_search",
+                top=top,
+                addressing=sampler.RecordAddressing("no-record"),
+            )
+
     def test_a_source_without_a_category_is_refused_on_another_endpoint(self):
         # The other half of the endpoint guard, which was written as
         # `addressability or address_source` and tested only through the
         # first: narrowing it to `addressability` alone survived the suite.
         with pytest.raises(ValueError, match="only a EuropePMC record"):
-            sampler.BodyShape(endpoint="crossref", top="object", address_source="PPR")
+            sampler.BodyShape(
+                endpoint="crossref", top="object", addressing=sampler.RecordAddressing("no-record")
+            )
 
     def test_no_other_endpoint_carries_a_category(self):
         assert sampler.observe_body("crossref", _FakeResponse(200, {})).addressability is None
 
     def test_a_category_on_another_endpoint_is_refused(self):
         with pytest.raises(ValueError, match="only a EuropePMC record"):
-            sampler.BodyShape(endpoint="crossref", top="object", addressability="pmcid")
+            sampler.BodyShape(
+                endpoint="crossref",
+                top="object",
+                addressing=sampler.RecordAddressing("pmcid", accession="PMC1"),
+            )
 
 
 class TestTheAddressCategoryAgreesWithWhatTheAnalyzerDoes:
@@ -1508,6 +1636,18 @@ class TestTheAddressCategoryAgreesWithWhatTheAnalyzerDoes:
             (_epmc_body(inEPMC="Y", pmcid="PMC1", id="1"), "PMC1"),
             (_epmc_body(inEPMC="Y", id="PPR123"), "PPR123"),
             (_epmc_body(inEPMC="Y"), None),
+            # Issue #188's own population, and the row this comparison had no
+            # case for while the analyzer asked with anything: a `MED`
+            # record's bare `id` is a PMID, and neither side addresses it.
+            (_epmc_body(inEPMC="Y", id="41637542", source="MED"), None),
+            (_epmc_body(inEPMC="Y", id="NBK620630", source="MED"), None),
+            # Where a *prefix* test and the analyzer's `fullmatch` disagree.
+            # Without this row, restating the accession test as
+            # `ext_id.startswith(("PMC", "PPR"))` passed the whole suite while
+            # the identity assertion below sat there importing a constant it
+            # no longer used (measured by mutation).
+            (_epmc_body(inEPMC="Y", id="PMCnotanumber", source="PMC"), None),
+            (_epmc_body(inEPMC="Y", id="PPR123 ", source="PPR"), None),
         ],
     )
     def test_a_request_is_made_exactly_where_the_category_says_it_would_be(
@@ -1531,7 +1671,422 @@ class TestTheAddressCategoryAgreesWithWhatTheAnalyzerDoes:
         # The anti-vacuity half: were `ADDRESSED_CATEGORIES` every category,
         # `asked` would be constant and the comparison above would pass over
         # a sampler that agreed with nothing.
-        assert sampler.ADDRESSED_CATEGORIES == frozenset({"pmcid", "id-only"})
+        assert sampler.ADDRESSED_CATEGORIES == frozenset({"pmcid", "id-accession"})
+
+    def test_the_accession_test_is_the_analyzers_own(self):
+        # The one predicate this script must **not** restate, for the reason
+        # it imports the URLs: a restated accession test would put a record
+        # in the `id-accession` row that bmlib refuses, or the reverse, in
+        # the one table issue #188 is decided on.
+        #
+        # **This assertion alone is worth little, and saying so is the
+        # point.** It is exactly the "checking that the constant was
+        # imported" this module's own docstring calls weaker than driving
+        # both — a mutant that kept the import and used
+        # `startswith(("PMC", "PPR"))` passed it and the whole suite. What
+        # has teeth is the parametrised comparison above, which now carries
+        # two ids where a prefix test and a fullmatch disagree. This stays as
+        # the statement of intent.
+        from bmlib.transparency.analyzer import _EUROPEPMC_ACCESSION_RE
+
+        assert sampler._EUROPEPMC_ACCESSION_RE is _EUROPEPMC_ACCESSION_RE
+
+    def test_an_address_bmlib_refuses_is_still_probed(self):
+        # Issue #216's whole point surviving issue #188's fix: bmlib stops
+        # asking, and the table that licensed it keeps measuring. Keyed on
+        # `PROBED_CATEGORIES`, which is why that is a second name.
+        assert "id-not-an-address" in sampler.PROBED_CATEGORIES
+        assert "id-not-an-address" not in sampler.ADDRESSED_CATEGORIES
+        probes: list = []
+        client = _ScriptedClient(
+            _FakeResponse(200, {}),
+            _FakeResponse(200, _epmc_body(inEPMC="Y", id="41637542", source="MED")),
+            _FakeResponse(404),
+            _FakeResponse(200, text=""),
+            _FakeResponse(200, {}),
+        )
+        record = sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid="1", raw={})
+        sampler.probe_record(client, record, "a@b.c", _pace, probes)
+        assert sampler._fulltext_url("41637542") in client.urls()
+        assert [p.addressing.category for p in probes] == ["id-not-an-address"]
+
+
+def _address_probe(
+    category: str = "id-accession",
+    *,
+    source: str | None = "MED",
+    open_access: str | None = "Y",
+    cause: str | None = "http-404",
+) -> sampler.AddressProbe:
+    """One full-text address probe, built from its bucket."""
+    # An accession of the category's *own* shape. It read
+    # `f"{category[:3].upper()}1"`, which yields `"ID-1"` for `id-accession` —
+    # a value the analyzer's regex refuses, so the helper built the one state
+    # `_addressability` cannot produce, in the row issue #188 is decided on
+    # (PR #219's review). `RecordAddressing.__post_init__` now refuses it.
+    accession = {"pmcid": "PMC1", "id-accession": "PPR1", "id-not-an-address": "1"}[category]
+    if cause is None:
+        outcome = sampler.ProbeOutcome(
+            endpoint="europepmc_fulltext",
+            status=200,
+            cause=None,
+            shape=sampler.BodyShape(endpoint="europepmc_fulltext", top="served"),
+        )
+    else:
+        kind, _, tail = cause.partition("-")
+        outcome = sampler.ProbeOutcome(
+            endpoint="europepmc_fulltext",
+            status=None if kind == "exception" else int(tail),
+            cause=cause,
+            measured=kind != "unmeasured",
+        )
+    return sampler.AddressProbe(
+        addressing=sampler.RecordAddressing(
+            category, source=source, accession=accession, open_access=open_access
+        ),
+        outcome=outcome,
+    )
+
+
+class TestTheAddressTheTableCategorisesIsTheAddressItProbes:
+    """Issue #216, and what it makes decidable: issue #188.
+
+    The address table said how bmlib *would* address each record's full text
+    and stopped there — nothing in this script ever built
+    ``{EUROPEPMC_REST_BASE}/{accession}/fullTextXML``. So the finding issue
+    #188's remedy rests on, *"the bare ``id`` 404s, three of three, against a
+    ``pmcid`` address serving 53 kB"*, was a spot check quoted in four files
+    beside a committed table that could not produce it; and the 404's own
+    DEBUG level rested on a hand-taken draw in the same position. Both are now
+    rows with a denominator and an interval.
+    """
+
+    def _probe(self, body, *, fulltext=None):
+        probes: list = []
+        client = _ScriptedClient(
+            _FakeResponse(200, {}),
+            _FakeResponse(200, body),
+            fulltext if fulltext is not None else _FakeResponse(404),
+            _FakeResponse(200, text=""),
+            _FakeResponse(200, {}),
+        )
+        record = sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid="1", raw={})
+        sampler.probe_record(client, record, "a@b.c", _pace, probes)
+        return client, probes
+
+    @pytest.mark.parametrize(
+        ("body", "accession"),
+        [
+            (_epmc_body(inEPMC="Y", pmcid="PMC1", id="1"), "PMC1"),
+            (_epmc_body(inEPMC="Y", id="PPR123"), "PPR123"),
+            (_epmc_body(inEPMC="Y", id="41637542"), "41637542"),
+        ],
+    )
+    def test_the_address_the_record_offers_is_the_one_probed(self, body, accession):
+        client, probes = self._probe(body)
+        assert sampler._fulltext_url(accession) in client.urls()
+        assert [p.addressing.accession for p in probes] == [accession]
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"resultList": {"result": []}},
+            _epmc_body(pmcid="PMC1"),
+            _epmc_body(inEPMC="N", pmcid="PMC1"),
+            _epmc_body(inEPMC="Y"),
+        ],
+        ids=["no-record", "not-claimed-absent", "not-claimed-N", "unaddressable"],
+    )
+    def test_a_record_offering_no_address_is_not_probed(self, body):
+        client, probes = self._probe(body)
+        assert not [url for url in client.urls() if url.endswith("/fullTextXML")]
+        assert probes == []
+
+    def test_a_search_that_served_no_body_offers_nothing_to_probe(self):
+        # Guarded on the shape rather than on the record, which is the only
+        # thing that can carry an address: a 404 to the single-record lookup
+        # leaves the sampler with no record at all, and building a URL from
+        # the *draw* page instead would probe an address `analyze()` never
+        # sees.
+        probes: list = []
+        client = _ScriptedClient(*[_FakeResponse(404) for _ in range(4)])
+        record = sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid="1", raw={})
+        sampler.probe_record(client, record, "a@b.c", _pace, probes)
+        assert probes == []
+
+    def test_the_records_own_answers_ride_on_the_probe(self):
+        # All three, because all three are cross-tabulated and none is
+        # re-derived at the table: #188 turns on the source, and its second
+        # population on `isOpenAccess`, which bmlib does not read at all.
+        _client, probes = self._probe(
+            _epmc_body(inEPMC="Y", id="41637542", source="MED", isOpenAccess="N")
+        )
+        assert (probes[0].addressing.source, probes[0].addressing.open_access) == ("MED", "N")
+
+    def test_a_served_address_and_a_refused_one_read_differently(self):
+        _client, served = self._probe(
+            _epmc_body(inEPMC="Y", pmcid="PMC1"), fulltext=_FakeResponse(200, text="<article/>")
+        )
+        _client, refused = self._probe(_epmc_body(inEPMC="Y", pmcid="PMC1"))
+        assert served[0].served
+        assert not refused[0].served
+
+    def test_the_body_shape_of_a_full_text_answer_is_whether_a_document_arrived(self):
+        # Deliberately two values. Everything past this in
+        # `_fetch_europepmc_fulltext` is a judgement about the document, and
+        # an instrument does not import the predicate under test.
+        assert sampler.observe_body("europepmc_fulltext", _FakeResponse(200, text="<a/>")).top == (
+            "served"
+        )
+        assert sampler.observe_body("europepmc_fulltext", _FakeResponse(200, text="")).top == (
+            "empty"
+        )
+
+    def test_a_wholly_whitespace_body_is_served_and_not_empty(self):
+        # The one boundary the analyzer settles deliberately, and the
+        # instrument must agree with it rather than merely happen to: that
+        # module tests `not served` and never `not served.strip()`, because
+        # the stricter form takes a wholly-whitespace body out of the
+        # entirely-nested branch and reports it as nothing served. Mutating
+        # `_fulltext_kind` to `text.strip()` used to leave all 239 green
+        # (PR #219's review), on the endpoint whose whole `empty` row exists
+        # to measure issue #190.
+        assert sampler.observe_body("europepmc_fulltext", _FakeResponse(200, text="   ")).top == (
+            "served"
+        )
+
+    def test_a_full_text_body_is_never_handed_to_a_json_decoder(self):
+        # `_TEXT_ENDPOINTS` is derived from `_BODY_KINDS`, so the two cannot
+        # disagree about which bodies are decoded — an endpoint in one and not
+        # the other either has its XML given to `resp.json()` or reaches a
+        # `KeyError` in the dispatch.
+        assert sampler._TEXT_ENDPOINTS == frozenset(sampler._BODY_KINDS)
+        assert "europepmc_fulltext" in sampler._TEXT_ENDPOINTS
+
+    def test_the_text_endpoints_are_derived_and_not_restated(self):
+        # The assertion above compares *values*, which a restated literal
+        # passes — `frozenset({"pubmed_efetch", "europepmc_fulltext"})` left
+        # all 239 green (PR #219's review). What the comment claims is that
+        # the two *cannot* disagree, which is a property of the statement, so
+        # it is read off the source: `TestTheAuditNetIsComplete`'s rule that
+        # a rule enforced by prose is not enforced.
+        tree = ast.parse(_SAMPLER_PATH.read_text())
+        assigned = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "_TEXT_ENDPOINTS" for t in node.targets)
+        ]
+        assert len(assigned) == 1, "_TEXT_ENDPOINTS is assigned somewhere unexpected"
+        call = assigned[0].value
+        assert isinstance(call, ast.Call), "_TEXT_ENDPOINTS is not built from anything"
+        assert [a.id for a in call.args if isinstance(a, ast.Name)] == ["_BODY_KINDS"], (
+            "_TEXT_ENDPOINTS no longer reads _BODY_KINDS, so the two can disagree about "
+            "which bodies observe_body decodes"
+        )
+
+
+class TestWhatBecameOfEachFullTextAddress:
+    """The table itself — issues #216 and #188."""
+
+    def test_an_absent_population_is_an_error_and_not_a_clean_zero(self):
+        assert "ERROR" in sampler.summarise_addresses([])[0]
+        assert not sampler.addresses_reportable([])
+
+    def test_a_throttled_population_reports_no_distribution(self):
+        probes = [_address_probe(cause="unmeasured-429") for _ in range(4)]
+        assert not sampler.addresses_reportable(probes)
+        assert "throttled" in sampler.summarise_addresses(probes)[0]
+
+    def test_a_throttled_probe_enters_no_denominator(self):
+        # The rule every sampler here follows: the sampler failing is not the
+        # endpoint failing, and a share computed over it sets a level from its
+        # own rate limiting.
+        probes = [
+            *[_address_probe(cause=None) for _ in range(4)],
+            _address_probe(cause="unmeasured-503"),
+        ]
+        row = next(line for line in sampler.summarise_addresses(probes) if "id-accession" in line)
+        assert "4 probed" in row and "4 served" in row
+
+    def test_the_id_fallback_rows_are_split_by_source_and_the_pmcid_row_is_not(self):
+        # #188's whole split: a `PPR` record's bare `id` is the only address
+        # it has and a `MED` record's is a PMID. On a `pmcid` row the source
+        # would fan one population into three for no question.
+        probes = [
+            _address_probe("id-accession", source="MED"),
+            _address_probe("id-accession", source="PPR", cause=None),
+            _address_probe("pmcid", source="MED", cause=None),
+        ]
+        lines = sampler.summarise_addresses(probes)
+        assert any("id-accession, source MED" in line and "0 served" in line for line in lines)
+        assert any("id-accession, source PPR" in line and "1 served" in line for line in lines)
+        assert any(line.strip().startswith("pmcid ") for line in lines)
+        assert not any("pmcid, source" in line for line in lines)
+
+    def test_the_population_the_analyzer_asks_with_is_its_own_row(self):
+        # The row four documents quoted the *pooled* share as. `46 of 52` is
+        # over `PROBED_CATEGORIES`, and issue #188 had just narrowed the 404
+        # branch to `ADDRESSED_CATEGORIES` — 3 of 9 in the same draw, an
+        # interval that does not overlap the pooled one. Without this row the
+        # level's own denominator existed nowhere on the page.
+        probes = [
+            _address_probe("pmcid", cause=None),
+            _address_probe("pmcid"),
+            _address_probe("id-not-an-address"),
+            _address_probe("id-not-an-address"),
+            _address_probe("id-not-an-address"),
+        ]
+        row = next(
+            line
+            for line in sampler.summarise_addresses(probes)
+            if "addresses bmlib asks with" in line
+        )
+        assert "2 probed" in row and "1 served" in row
+        assert "95% CI" in row
+
+    def test_a_probed_category_no_record_offered_says_so(self):
+        # `id-accession` measured 0 in the 2026-09-09 draw, so the fallback
+        # the shape test exists to preserve was unexercised and the table said
+        # nothing — *"served 0 of 0"* and *"never drawn"* being the
+        # distinction this script is built to keep (`summarise_shapes`' own
+        # `NO POPULATION HERE`).
+        lines = sampler.summarise_addresses([_address_probe("pmcid")])
+        assert any("id-accession" in line and "NO POPULATION HERE" in line for line in lines)
+        assert any("id-not-an-address" in line and "NO POPULATION HERE" in line for line in lines)
+        assert not any("pmcid" in line and "NO POPULATION HERE" in line for line in lines)
+
+    def test_an_empty_body_is_not_counted_as_a_served_document(self):
+        # `served` read `outcome.ok`, i.e. HTTP 200 — while `_fulltext_kind`
+        # exists to split a 200 into served and empty, and issue #190's whole
+        # finding is that a 200 alone is not a document. The address table
+        # called such a probe served while the shape table called it empty
+        # (PR #219's review). 0 empty of 6 in the committed draw, so nothing
+        # published moves.
+        empty = sampler.AddressProbe(
+            addressing=sampler.RecordAddressing("pmcid", accession="PMC1"),
+            outcome=sampler.ProbeOutcome(
+                endpoint="europepmc_fulltext",
+                status=200,
+                cause=None,
+                shape=sampler.BodyShape(endpoint="europepmc_fulltext", top="empty"),
+            ),
+        )
+        assert not empty.served
+        assert not empty.is_unmeasured
+        assert _address_probe("pmcid", cause=None).served
+
+    def test_every_row_carries_its_interval(self):
+        # These are the rows that get quoted, and a bare `0.0%` over three
+        # probes and over three hundred read identically — `summarise_shapes`'
+        # own reason, and here it is the strength of #188's claim.
+        lines = sampler.summarise_addresses([_address_probe()])
+        assert all("95% CI" in line for line in lines[1:] if "probed" in line)
+
+    def test_the_open_access_cross_is_reported_beside_it(self):
+        # Issue #188's second population, recorded rather than acted on:
+        # `inEPMC` says EuropePMC holds the text where this endpoint serves
+        # the open-access subset of it.
+        probes = [
+            _address_probe(open_access="N"),
+            _address_probe(open_access="Y", cause=None),
+            _address_probe(open_access=None),
+        ]
+        lines = sampler.summarise_addresses(probes)
+        assert any("isOpenAccess N" in line and "0 served" in line for line in lines)
+        assert any("isOpenAccess Y" in line and "1 served" in line for line in lines)
+        assert any("isOpenAccess (absent)" in line for line in lines)
+
+    def test_a_row_whose_probes_were_all_throttled_says_so_rather_than_scoring_zero(self):
+        # A category can be wholly throttled while the population as a whole
+        # is reportable, and `wilson` refuses a zero denominator — so the row
+        # says it was not measured instead of printing a share of nothing.
+        probes = [
+            _address_probe("pmcid", cause="unmeasured-429"),
+            *[_address_probe("id-accession", cause=None) for _ in range(9)],
+        ]
+        assert sampler.addresses_reportable(probes)
+        assert any(
+            "pmcid" in line and "none measured" in line
+            for line in sampler.summarise_addresses(probes)
+        )
+
+
+class TestAnAddressProbeDescribesAnEventThatHappened:
+    """The same rule ``ProbeOutcome.__post_init__`` makes, one population over."""
+
+    def test_a_category_offering_no_address_cannot_carry_one(self):
+        with pytest.raises(ValueError, match="disagrees with accession"):
+            sampler.RecordAddressing("not-claimed", accession="PMC1")
+
+    def test_a_category_offering_an_address_must_carry_one(self):
+        # The direction that loses records silently: a `pmcid` record with no
+        # accession would simply never be probed, thinning the denominator
+        # issue #188 is decided on with nothing printed.
+        with pytest.raises(ValueError, match="disagrees with accession"):
+            sampler.RecordAddressing("pmcid")
+
+    def test_an_unknown_category_is_refused(self):
+        with pytest.raises(ValueError, match="unknown address category"):
+            sampler.RecordAddressing("invented")
+
+    @pytest.mark.parametrize(
+        ("category", "accession"),
+        [("id-accession", "1"), ("id-not-an-address", "PMC1"), ("id-accession", "ID-1")],
+    )
+    def test_an_id_fallback_category_must_agree_with_the_shape_of_its_id(self, category, accession):
+        # The relation issue #188 turns on, and it is derivable from two
+        # stored fields — so it was re-encodable wrongly, and was: this
+        # module's own helper built `id-accession` carrying `"ID-1"` and
+        # passed the whole suite (PR #219's review).
+        with pytest.raises(ValueError, match="disagrees with the shape"):
+            sampler.RecordAddressing(category, accession=accession)
+
+    def test_a_pmcid_is_not_held_to_that_rule(self):
+        # The anti-vacuity half. `pmcid` is not an `id` fallback, so the shape
+        # rule must not reach it — EuropePMC's `pmcid` field is its own
+        # authority and a malformed one is PR #208's case, not #188's.
+        assert sampler.RecordAddressing("pmcid", accession="whatever")
+
+    def test_a_probe_of_a_record_offering_no_address_is_refused(self):
+        # Unpinned until PR #219's review: replacing this guard with
+        # `if False:` passed all 239 tests, while the branch is live — the
+        # sibling endpoint refusal three lines below it had a test and this
+        # one did not. `_check_trial_results`' own defence, one package over,
+        # was unpinned exactly this way for a release.
+        with pytest.raises(ValueError, match="offers no address to probe"):
+            sampler.AddressProbe(
+                addressing=sampler.RecordAddressing("no-record"),
+                outcome=sampler.ProbeOutcome(
+                    endpoint="europepmc_fulltext", status=404, cause="http-404"
+                ),
+            )
+
+    def test_a_probe_of_another_endpoint_is_not_a_full_text_probe(self):
+        with pytest.raises(ValueError, match="not a 'crossref' one"):
+            sampler.AddressProbe(
+                addressing=sampler.RecordAddressing("pmcid", accession="PMC1"),
+                outcome=sampler.ProbeOutcome(endpoint="crossref", status=404, cause="http-404"),
+            )
+
+    def test_what_the_script_probes_and_what_bmlib_asks_are_different_questions(self):
+        # They coincide today and are two names because issue #188 separates
+        # them: bmlib stops asking with an address it can know will 404, and a
+        # table keyed on what bmlib asks would then stop measuring the very
+        # thing that licensed the refusal.
+        assert sampler.PROBED_CATEGORIES <= sampler.ALL_ADDRESS_CATEGORIES
+        # Not equal, which is the whole of why there are two names — and the
+        # assertion `PROBED_CATEGORIES` names in its own comment.
+        assert sampler.PROBED_CATEGORIES != sampler.ADDRESSED_CATEGORIES
+        assert sampler.PROBED_CATEGORIES - sampler.ADDRESSED_CATEGORIES == {"id-not-an-address"}
+        # Every probed category can carry an address, each of its own shape:
+        # `RecordAddressing` refuses an `id-accession` whose id is not one.
+        for category, accession in (
+            ("pmcid", "PMC1"),
+            ("id-accession", "PPR1"),
+            ("id-not-an-address", "1"),
+        ):
+            assert sampler.RecordAddressing(category, accession=accession)
 
 
 def _efetch_with(*accessions: str) -> _FakeResponse:
@@ -1836,7 +2391,7 @@ class TestTheShapeTableFollowsTheRulesEveryTableHereFollows:
             sampler.ProbeOutcome(endpoint="crossref", status=404, cause="http-404")
             for _ in range(20)
         ]
-        assert sampler.shapes_reportable(outcomes) is False
+        assert sampler.shapes_reportable("crossref", outcomes) is False
         assert any("too few to report" in line for line in sampler.summarise_shapes("cr", outcomes))
 
     def test_a_shape_population_that_mostly_served_is_reported(self):
@@ -1844,7 +2399,73 @@ class TestTheShapeTableFollowsTheRulesEveryTableHereFollows:
         outcomes = [_served("crossref", {}) for _ in range(19)] + [
             sampler.ProbeOutcome(endpoint="crossref", status=404, cause="http-404")
         ]
-        assert sampler.shapes_reportable(outcomes) is True
+        assert sampler.shapes_reportable("crossref", outcomes) is True
+
+    def test_the_endpoint_whose_404_is_the_finding_keeps_its_shape_table(self):
+        # Found by the 2026-09-09 live run rather than by review. That rule
+        # was written for five endpoints at which a non-200 is close to
+        # unheard of; `europepmc_fulltext`'s gate is deliberately wider than
+        # what it serves, so a 404 is its ordinary majority outcome — 46 of
+        # 52 — and the shape table reported ERROR and flipped the exit code
+        # on a clean run. The same outcomes at any other endpoint still do.
+        outcomes = [
+            sampler.ProbeOutcome(
+                endpoint="europepmc_fulltext",
+                status=200,
+                cause=None,
+                shape=sampler.BodyShape(endpoint="europepmc_fulltext", top="served"),
+            )
+        ] + [
+            sampler.ProbeOutcome(endpoint="europepmc_fulltext", status=404, cause="http-404")
+            for _ in range(20)
+        ]
+        assert sampler.shapes_reportable("europepmc_fulltext", outcomes) is True
+        assert sampler.shapes_reportable("crossref", _as(outcomes, "crossref")) is False
+
+    @pytest.mark.parametrize(
+        "endpoint", ["crossref", "europepmc_search", "pubmed_efetch", "openalex", "clinicaltrials"]
+    )
+    def test_no_other_endpoint_gets_the_exception(self, endpoint):
+        # The negative half tested `crossref` alone, so adding a *wrong*
+        # member — `{"europepmc_fulltext", "clinicaltrials"}` — left all 239
+        # green (PR #219's review). A wrongly-added member silently exempts
+        # an endpoint from the thinned-population ERROR that keeps a quoted
+        # share off a remnant.
+        assert endpoint not in sampler._ENDPOINTS_WHOSE_SHAPE_IS_OVER_SERVED_BODIES
+
+    def test_the_exception_has_exactly_one_member(self):
+        # Its own docstring says *"one member, and it earned its place from a
+        # live run"*, which was prose beside a set anyone could widen. The
+        # rule is that a member is earned by a draw, and no test can check
+        # that a draw was taken — so what is checked is that the set did not
+        # grow without this line being edited.
+        assert sampler._ENDPOINTS_WHOSE_SHAPE_IS_OVER_SERVED_BODIES == frozenset(
+            {"europepmc_fulltext"}
+        )
+
+    def test_it_is_not_a_free_pass(self):
+        # The exception drops one rule and keeps the rest: an endpoint that
+        # served nothing at all is still an ERROR, and a throttled population
+        # is still one.
+        assert not sampler.shapes_reportable(
+            "europepmc_fulltext",
+            [
+                sampler.ProbeOutcome(endpoint="europepmc_fulltext", status=404, cause="http-404")
+                for _ in range(4)
+            ],
+        )
+        assert not sampler.shapes_reportable(
+            "europepmc_fulltext",
+            [
+                sampler.ProbeOutcome(
+                    endpoint="europepmc_fulltext",
+                    status=429,
+                    cause="unmeasured-429",
+                    measured=False,
+                )
+                for _ in range(4)
+            ],
+        )
 
     def test_a_field_no_served_body_could_be_asked_says_so_rather_than_vanishing(self):
         # Otherwise "never wrong-typed" and "never reachable" print alike,
@@ -1870,10 +2491,15 @@ class TestTheRiderTablesRefuseAnAbsentPopulation:
     def test_an_address_table_reports_each_category_it_saw(self):
         outcomes = [
             _served("europepmc_search", _epmc_body(inEPMC="Y", pmcid="PMC1")),
-            _served("europepmc_search", _epmc_body(inEPMC="Y", id="X", source="PPR")),
+            _served("europepmc_search", _epmc_body(inEPMC="Y", id="PPR1", source="PPR")),
+            _served("europepmc_search", _epmc_body(inEPMC="Y", id="41637542", source="MED")),
         ]
         text = "\n".join(sampler.summarise_addressing(outcomes))
-        assert "pmcid" in text and "id-only" in text
+        assert "pmcid" in text
+        # Both `id`-fallback categories, split by the source the fallback
+        # turns on — that split is issue #188's whole finding.
+        assert "id-accession, source PPR" in text
+        assert "id-not-an-address, source MED" in text
 
     def test_the_table_says_how_many_records_a_request_would_be_made_for(self):
         # The denominator of the full-text fetch population, and what makes
@@ -1887,15 +2513,22 @@ class TestTheRiderTablesRefuseAnAbsentPopulation:
         text = "\n".join(sampler.summarise_addressing(outcomes))
         assert "1 of 3" in text
 
-    def test_the_id_only_records_are_split_by_source(self):
+    def test_both_id_fallback_categories_are_split_by_source(self):
         # Issue #188 turns on exactly this: a `PPR` accession is the only
-        # address a preprint has, and a `MED` record's bare id never serves.
+        # address a preprint has, and a `MED` record's bare id is a PMID.
+        #
+        # It was named for `id-only` — a category retired by the split it
+        # claims to demonstrate — and built `id="X"` under `source="PPR"`,
+        # which is not an accession, so **both** records were
+        # `id-not-an-address` and the test exercised one category twice. The
+        # loose `"PPR" in text` was what let it pass (PR #219's review).
         outcomes = [
-            _served("europepmc_search", _epmc_body(inEPMC="Y", id="X", source="PPR")),
+            _served("europepmc_search", _epmc_body(inEPMC="Y", id="PPR1", source="PPR")),
             _served("europepmc_search", _epmc_body(inEPMC="Y", id="9", source="MED")),
         ]
         text = "\n".join(sampler.summarise_addressing(outcomes))
-        assert "PPR" in text and "MED" in text
+        assert "id-accession, source PPR" in text
+        assert "id-not-an-address, source MED" in text
 
     def test_a_population_that_found_none_of_its_own_records_is_an_error(self):
         # Every drawn record came from this same API, so a population that is
@@ -2005,13 +2638,14 @@ class TestTheNewTablesReachTheReportAndTheExitCode:
         return sampler.main()
 
     def _page(self, n=1):
-        return {"resultList": {"result": [{"doi": f"10.1/{i}", "pmid": str(i)} for i in range(n)]}}
+        return _draw_page(n)
 
     def test_a_clean_run_prints_every_new_table(self, monkeypatch, capsys):
         assert self._run(monkeypatch, _AlwaysClient(self._page())) == 0
         out = capsys.readouterr().out
         assert "bodies served" in out
         assert "records categorised" in out
+        assert "addresses probed" in out
         assert "papers with at least one accession" in out
         assert "records with a source outcome" in out
 
@@ -2088,7 +2722,8 @@ class TestTheNewTablesReachTheReportAndTheExitCode:
         assert "papers with at least one accession" in out
 
     @pytest.mark.parametrize(
-        "predicate", ["addressing_reportable", "reach_reportable", "checks_reportable"]
+        "predicate",
+        ["addressing_reportable", "addresses_reportable", "reach_reportable", "checks_reportable"],
     )
     def test_each_rider_populations_verdict_reaches_the_exit_code(self, monkeypatch, predicate):
         # The wire, pinned directly, because no fixture separates these three

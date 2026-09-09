@@ -84,13 +84,33 @@ class FullTextStatus(Enum):
     to choose a side.
     """
 
-    #: No request was made, **and Europe PMC's own answer is why** — it never
-    #: claimed to hold full text (``inEPMC != "Y"``), it answered with no
-    #: record for this identifier, or the record claimed full text and carried
-    #: no address for it (which WARNs, being a malformed record rather than an
-    #: ordinary closed-access paper). Distinct from a request that was made
-    #: and answered — with a 404, which is :attr:`NOT_SERVED`, or any other
-    #: way of producing no document, which is :attr:`REQUEST_FAILED`.
+    #: No request was made, **and Europe PMC's own answer is why**. Four
+    #: causes, and the level is part of what tells them apart:
+    #:
+    #: * it never claimed to hold full text (``inEPMC != "Y"``) — the
+    #:   dominant case, an ordinary closed-access paper, and silent;
+    #: * it answered with no record for this identifier, also silent;
+    #: * the record claimed full text and carried an identifier that is not a
+    #:   Europe PMC accession, so no URL could be built from it — at
+    #:   **DEBUG**, since nothing is wrong: a ``MED`` record's bare PMID and a
+    #:   Bookshelf ``bookid`` both land here, measured at 43 of 123 records in
+    #:   a source-stratified draw (2026-09-09, issue #188);
+    #: * the record claimed full text and carried **nothing at all** to
+    #:   address it by — at **WARNING**, being a malformed record. Issue #207
+    #:   is that this one alone makes the member's opening sentence false;
+    #:   measured at 0 of 124.
+    #:
+    #: Distinct from a request that was made and answered — with a 404, which
+    #: is :attr:`NOT_SERVED`, or any other way of producing no document,
+    #: which is :attr:`REQUEST_FAILED`.
+    #:
+    #: **The list carried three causes and the level of one of them into the
+    #: release that added the fourth** (PR #219's review). It named the
+    #: WARNING and not the DEBUG, so a reader seeing this member and no
+    #: warning concluded ``inEPMC != "Y"`` — for what is now the second
+    #: largest cause. That is the drift :attr:`is_refusal`'s own docstring is
+    #: pinned against twelve lines below, and this enumeration is not
+    #: mechanisable the same way: a cause is a branch, not a member.
     #:
     #: **Narrowed in issue #193**, which is the same defect as #191 one step
     #: up the call chain: it also covered the case where the search that

@@ -35,6 +35,7 @@ from bmlib.transparency.analyzer import (
     _DATA_LEVEL_RANK,
     _DATA_PATTERNS,
     _DEPOSITION_DATABANK_LEVELS,
+    _EUROPEPMC_ACCESSION_RE,
     _EUROPEPMC_SEARCH_ORDINARY_STATUSES,
     _FULL_TEXT_PROVENANCE_INDICATORS,
     _INDICATOR_COI_IN_PUBMED,
@@ -3193,6 +3194,163 @@ class TestABodyTruncatedBetweenTagsIsRefused:
             analyzer._check_europepmc(client, _epmc_record(), analysis)
         assert analysis.full_text_status is FullTextStatus.ENTIRELY_NESTED
         assert not [r for r in caplog.records if "did not arrive whole" in r.getMessage()]
+
+
+def _epmc_id_only(ext_id: str, source: str = "MED") -> dict:
+    """A EuropePMC record claiming full text and carrying no ``pmcid``."""
+    return {
+        "resultList": {
+            "result": [{"abstractText": "", "inEPMC": "Y", "source": source, "id": ext_id}]
+        }
+    }
+
+
+class TestARequestWhoseAnswerIsKnownIsNotMade:
+    """Issue #188 — a bare PMID is not an address, and asking anyway is a lie.
+
+    ``_check_europepmc`` builds the identifier as ``record["pmcid"] or
+    record["id"]``. For a ``PMC`` record and a ``PPR`` preprint that is the
+    accession; for a ``MED`` record carrying no ``pmcid`` it is the PMID, and
+    a PMID addresses nothing here. Two costs, and the second persists: a
+    rate-limited request per such analysis, and a stored ``NOT_SERVED`` —
+    documented *"requested and not served"* — for an address bmlib chose
+    rather than one EuropePMC declined. The #187/#190/#191 defect once more.
+
+    Measured on 2026-09-08 over 124 drawn records: **43 (34.7%), and 43 of
+    the 53 claiming ``inEPMC: Y``**, carry no ``pmcid``; all 84 such records
+    in a 150-record ``SRC:MED`` spot draw were NCBI Bookshelf chapters, whose
+    ``bookid`` is not addressable through this endpoint either. There is no
+    full text to recover, so the remedy is to stop asking.
+    """
+
+    def test_a_bare_pmid_costs_no_request(self):
+        analyzer = TransparencyAnalyzer()
+        analysis = _Analysis()
+        client = _FakeFullTextClient("<article>body</article>", ext_id="PMC123")
+        analyzer._check_europepmc(client, _epmc_id_only("41637542"), analysis, "doc-1")
+        assert client.served_urls == []
+        assert analysis.full_text_status is FullTextStatus.NOT_ATTEMPTED
+        assert not analysis.full_text_analyzed
+
+    def test_a_preprint_accession_is_still_the_address_it_is(self):
+        # The load-bearing half, and why this is a shape test and never a
+        # deletion of the `or id` fallback: `SRC:PPR AND IN_EPMC:Y` is 75,841
+        # records (2026-09-08), 50 of 50 sampled carrying no `pmcid`, and
+        # their `id` serves 88-143 kB. Deleting the fallback would lose every
+        # preprint's full text.
+        analyzer = TransparencyAnalyzer()
+        analysis = _Analysis()
+        client = _FakeFullTextClient("<article><body><p>Ours.</p></body></article>", "PPR1301373")
+        analyzer._check_europepmc(client, _epmc_id_only("PPR1301373", "PPR"), analysis, "doc-1")
+        assert client.served_urls == [f"{EUROPEPMC_REST_BASE}/PPR1301373/fullTextXML"]
+        assert analysis.full_text_status is FullTextStatus.ANALYZED
+
+    def test_a_pmc_accession_in_the_id_is_an_address_too(self):
+        analyzer = TransparencyAnalyzer()
+        analysis = _Analysis()
+        client = _FakeFullTextClient("<article><body><p>Ours.</p></body></article>", "PMC4154587")
+        analyzer._check_europepmc(client, _epmc_id_only("PMC4154587", "PMC"), analysis, "doc-1")
+        assert analysis.full_text_status is FullTextStatus.ANALYZED
+
+    def test_a_pmcid_is_what_is_asked_with_when_the_record_carries_one(self):
+        # The anti-vacuity control: the guard is reached only where `pmcid`
+        # was absent, so a record carrying both must still be fetched by the
+        # accession and never fall into the refusal because its `id` is a
+        # PMID.
+        analyzer = TransparencyAnalyzer()
+        analysis = _Analysis()
+        client = _FakeFullTextClient("<article><body><p>Ours.</p></body></article>", "PMC123")
+        analyzer._check_europepmc(client, _epmc_record(), analysis, "doc-1")
+        assert client.served_urls == [f"{EUROPEPMC_REST_BASE}/PMC123/fullTextXML"]
+        assert analysis.full_text_status is FullTextStatus.ANALYZED
+
+    @pytest.mark.parametrize(
+        "ext_id", ["PMC123\n", " PMC123", "PMC123x", "xPMC123", "PMC", "PPR", "NBK620630", "123"]
+    )
+    def test_only_an_accession_is_an_address(self, ext_id):
+        # `fullmatch`, so a trailing newline is not an accession —
+        # `fulltext/service.py`'s `_PMC_ID_RE` for the same reason. `NBK…` is
+        # in the list because it is the identifier the measured population
+        # actually carries beside its PMID, and it 404s too (three of three,
+        # 2026-09-08).
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient("<article>body</article>", ext_id="PMC123")
+        fetch = analyzer._fetch_europepmc_fulltext(client, "MED", ext_id, "doc-1")
+        assert client.served_urls == []
+        assert fetch.status is FullTextStatus.NOT_ATTEMPTED
+
+    @pytest.mark.parametrize("ext_id", ["pmc4154587", "ppr1301373", "PmC123"])
+    def test_a_lowercase_accession_is_still_an_address(self, ext_id):
+        # PR #219's review, and it is a measurement rather than a courtesy:
+        # probed live on 2026-09-09, `pmc4154587` and `ppr1301373` each serve
+        # HTTP 200 with bytes identical to the uppercase form. A
+        # case-sensitive test therefore refuses an address that *serves*,
+        # which is the failure this guard's own comment calls worse than the
+        # request it saves. No draw has turned up a lowercase identifier, so
+        # this pins a direction and not a population — and dropping
+        # `re.IGNORECASE` used to leave the whole suite green.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient("<article><body><p>Ours.</p></body></article>", ext_id=ext_id)
+        fetch = analyzer._fetch_europepmc_fulltext(client, "PMC", ext_id, "doc-1")
+        assert client.served_urls == [f"{EUROPEPMC_REST_BASE}/{ext_id}/fullTextXML"]
+        assert fetch.status is FullTextStatus.ANALYZED
+
+    def test_case_folding_does_not_admit_what_is_not_an_accession(self):
+        # The other edge of the same change: folding case must not widen the
+        # shape. A lowercased *non*-accession is still refused, so
+        # `re.IGNORECASE` buys exactly the case axis and nothing else.
+        analyzer = TransparencyAnalyzer()
+        for ext_id in ("nbk620630", "pmc", "ppr", "pmc12x"):
+            client = _FakeFullTextClient("<article>body</article>", ext_id="PMC123")
+            fetch = analyzer._fetch_europepmc_fulltext(client, "MED", ext_id, "doc-1")
+            assert client.served_urls == []
+            assert fetch.status is FullTextStatus.NOT_ATTEMPTED
+
+    def test_the_two_modules_still_disagree_about_the_identifier(self):
+        # `fulltext/service.py`'s `_normalise_pmc_id` requires a `PMC`
+        # prefix and would reject every preprint. The two agree on the base
+        # and deliberately not on this, so a future "deduplication" of the
+        # two rules loses 75,841 records' full text.
+        from bmlib.fulltext.service import _PMC_ID_RE
+
+        assert _EUROPEPMC_ACCESSION_RE.fullmatch("PPR1301373")
+        assert not _PMC_ID_RE.fullmatch("PPR1301373")
+        assert _EUROPEPMC_ACCESSION_RE.fullmatch("PMC123") and _PMC_ID_RE.fullmatch("PMC123")
+
+    def test_the_refusal_is_quiet_and_the_malformed_record_is_not(self, caplog):
+        # Two guards, two levels, and the asymmetry is the reason for having
+        # two. A record claiming `inEPMC: Y` and carrying *nothing* is
+        # malformed — WARNING. A record carrying a PMID is perfectly ordinary
+        # and its full text simply is not served here — DEBUG, or the line
+        # fires on a third of every corpus analysed, which is the 404's own
+        # argument one step later.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient("<article>body</article>", ext_id="PMC123")
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            analyzer._fetch_europepmc_fulltext(client, "MED", "41637542", "doc-1")
+        matching = [r for r in caplog.records if "not addressable" in r.getMessage()]
+        assert len(matching) == 1
+        assert matching[0].levelno == logging.DEBUG
+        # The line has to name what was not an address, or it says only that
+        # something was refused — issue #184's own lesson about the URL.
+        assert "41637542" in matching[0].getMessage()
+        assert "'MED'" in matching[0].getMessage()
+        assert "doc-1" in matching[0].getMessage()
+        assert not [r for r in caplog.records if "no address for it" in r.getMessage()]
+
+    def test_what_a_stored_result_says_moves(self, caplog):
+        # The blast radius, stated as an assertion rather than in prose: such
+        # a record used to store `NOT_SERVED` — *"EuropePMC served none for
+        # this article"* — and now stores what happened.
+        analyzer = TransparencyAnalyzer()
+        analysis = _Analysis()
+        analyzer._check_europepmc(
+            _FakeFullTextClient(None), _epmc_id_only("41637542"), analysis, "doc-1"
+        )
+        _note_full_text_provenance(analysis)
+        assert analysis.full_text_status is FullTextStatus.NOT_ATTEMPTED
+        assert "no EuropePMC full-text request was made" in " ".join(analysis.indicators)
+        assert "served none for this article" not in " ".join(analysis.indicators)
 
 
 class TestARefusedFullTextLeavesATrace:

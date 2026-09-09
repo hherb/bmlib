@@ -215,8 +215,58 @@ must not be re-done.
   no retry anywhere in `transparency/`, an outage window that stores
   `NOT_SERVED` caches absences indistinguishable from legitimately
   closed-access papers. Measured 2026-09-05 over 200 stratified live probes:
-  81 of 81 non-200s were 404, so the quiet branch is measured over the whole
-  of what it now takes and the loud one fires on nothing in a healthy draw.
+  81 of 81 non-200s were 404, so every non-200 the quiet branch has been seen
+  to take is one and the loud one fires on nothing in a healthy draw. That
+  draw addressed records as `_check_europepmc` addressed them *before* #188,
+  so it is over a superset of what this branch now takes — the committed
+  instrument reports the narrowed population separately (3 of 9 on
+  2026-09-09), and what the level actually rests on is that an
+  `isOpenAccess: N` record with a good accession still 404s, 0 of 53.
+- **An address is recognised by its shape, not by the record's `source`**
+  (#188). The measurement that sized this reads *"the accession expression is
+  right for `PPR` and never right for `MED`, and the record's own `source` is
+  what separates them"*, which is true and is not the rule that got written.
+  The two agree on every population drawn; they differ where an
+  accession-shaped identifier arrives under a source nobody has enumerated,
+  and there the allow-list refuses a fetch that would have worked. That is the
+  loss this issue's own comment calls worse than the wasted request it saves,
+  and it is `_check_europepmc`'s dropped `source` guard (#184) waiting to
+  happen again. `fullmatch` on `(?:PMC|PPR)\d+`, so `"PMC123\n"` is not an
+  address — `fulltext/service.py`'s `_PMC_ID_RE` for the same reason, and the
+  two modules still deliberately disagree about the identifier. Do not
+  "simplify" this into a `source` test, and do not delete the `or id`
+  fallback: 75,841 `SRC:PPR AND IN_EPMC:Y` records have no other address.
+- **It stores `NOT_ATTEMPTED` rather than a member of its own** (#188). The
+  member reads *"no request was made, and Europe PMC's own answer is why"*,
+  and the record **is** Europe PMC's answer: it names no accession for this
+  article. That reading is exact here — which is precisely what #207 says it
+  is not for the sibling cause one guard up (a record claiming `inEPMC: Y` and
+  carrying nothing at all, which is malformed and WARNs). Two guards, two
+  levels, one status. Do not fold the two guards together to save a branch:
+  the levels are the difference, and this one fired for 43 of the 123 records
+  of a source-stratified draw where that one measured 0 of 124. (A share of
+  that draw, not a rate over a caller's corpus, which follows its source mix
+  and is not measured.)
+- **The full-text endpoint keeps its shape table on a rule the other five do
+  not get** (#216, from that instrument's own first run).
+  `shapes_reportable`'s second rule — *"a probe that reached no body is as
+  uninformative as a throttled one"* — was written for five endpoints at which
+  a non-200 is close to unheard of. `europepmc_fulltext` is the one whose gate
+  (`inEPMC`) is deliberately wider than what it serves; applying the rule
+  reported ERROR and flipped the exit code on a clean run. **Two mechanisms
+  produce that 46 of 52 and only one is the gate**: 3 of the 9 accession
+  addresses 404 because `inEPMC` is wider than the open-access subset, and
+  the other 43 are `id-not-an-address` probes the script deliberately keeps
+  making after #188 stopped bmlib making them. The exception is right either
+  way, and the majority is the second mechanism — so *"a 404 is the ordinary
+  majority outcome"* must not be carried out of this row. The exception is a
+  named set of exactly one member (asserted), it drops only that rule
+  (throttling and the empty-population floor still apply), and every row
+  carries its Wilson interval, so a distribution over six bodies prints as
+  one; it **is** the `bool(shapes)` floor PR #213 removed, restored here and
+  nowhere else, and the interval is what makes it safe. Do not generalise the
+  exception to another endpoint without a draw saying its non-200 is ordinary
+  — that is #191's rule one instrument over.
 - **The five `_ORDINARY_STATUSES` sets are empty as a measurement, not as a
   placeholder** (#193). A status is quiet only where a draw measured it to be
   that endpoint's ordinary outcome, which is #191's rule stated forward

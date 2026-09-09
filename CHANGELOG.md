@@ -8,6 +8,87 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **The sampler probes the address it categorises** (issue #216, from PR
+  #213's review). `scripts/sample_api_failures.py` only — no library code and
+  nothing stored moves; the deliverable is the measurement, and it is what
+  licenses the issue #188 fix below.
+
+  That script categorised how bmlib *would* address each record's full text
+  and never built `{EUROPEPMC_REST_BASE}/{accession}/fullTextXML`. So the
+  finding issue #188's remedy rests on — *"the bare `id` 404s, three of
+  three, against a `pmcid` address serving 53 kB"* — was a spot check quoted
+  in four files beside a committed table that could not produce it, and the
+  404's own DEBUG level rested on a hand-taken 200-probe draw in the same
+  position. `europepmc_fulltext` is now the sixth endpoint: one request per
+  record that offers an address, ~50 on the default draw.
+
+  **What the script probes and what bmlib asks are two names.** They
+  coincided until issue #188; a table keyed on what bmlib *asks* would then
+  stop measuring the very thing that licensed the refusal, so
+  `PROBED_CATEGORIES` follows the record's own offer and `id-not-an-address`
+  stays a probed row.
+
+  **Two cross-tabulations over one set of probes**: by address category, with
+  both `id`-fallback categories split by `source` (issue #188's own split);
+  and by `isOpenAccess`, which bmlib does not read but issue #188's second,
+  larger population turns on. Recorded, not acted on — a gate narrowed on a
+  floor silently loses an article that would have been served.
+
+  **`id-only` is gone and did not become either new name.** It counted every
+  record addressed by its bare `id`, which issue #188 splits into the
+  accession that serves and the PMID that cannot; keeping the name for either
+  half would have made a published figure mean something else without
+  changing, which is this repository's own scar. Any figure quoted against
+  `id-only` predates the split.
+
+  The full-text body's shape is deliberately two values, `served` and
+  `empty` — everything past that in `_fetch_europepmc_fulltext` is a
+  *judgement* about the document, and an instrument does not import the
+  predicate under test. And that endpoint keeps its shape table under a rule
+  of its own: `shapes_reportable`'s *"a probe that reached no body is as
+  uninformative as a throttled one"* was written for five endpoints at which
+  a non-200 is close to unheard of, and here the 404 is the finding. That was
+  the instrument's own first run reporting ERROR and flipping the exit code
+  on a clean draw; the rule is withdrawn for that endpoint by a named set and
+  for nothing else.
+
+  **First run of the committed code** (2026-09-09, 123 + 60 records at the
+  documented defaults; the run before it, on the pre-fix instrument, is what
+  exposed the shape-rule defect above): `europepmc_fulltext` 52 probed,
+  **46 not served (88.5%, all 404)**; 6 bodies served, **0 empty**, which is
+  issue #190's population measured for the first time at 0 of 6.
+
+  **That 88.5% is over every address *offered*, and is not the 404 branch's
+  own denominator** — 43 of those 46 are addresses the issue #188 entry below
+  stops bmlib sending. Over the addresses it still sends the same draw
+  measures **3 of 9** not served, `[12.1%, 64.6%]`, and the two intervals do
+  not overlap. The report prints that population as its own row since PR
+  #219's review; before it the pooled share was the only served share on the
+  page and four documents quoted it as the level's evidence.
+
+  **PR #219's own review found six more.** The pooled share above is the
+  largest and is corrected in place. Beside it: `_EUROPEPMC_ACCESSION_RE`
+  folded no case, and the endpoint is case-insensitive — `pmc4154587` and
+  `ppr1301373` each serve 200 with bytes identical to the uppercase form
+  (2026-09-09), so a case-sensitive test refused an address that *serves*,
+  which is the failure that guard's own comment calls worse than the request
+  it saves; `FullTextStatus.NOT_ATTEMPTED`'s docstring still enumerated three
+  causes and named the WARNING of the one nearest the new one, in a file the
+  diff did not touch; `AddressProbe.served` meant HTTP 200 where
+  `_fulltext_kind` splits a 200 into served and empty, so the address table
+  and the shape table reported one probe two ways (0 empty of 6, so nothing
+  published moved); a probed category no record offered now prints
+  `NO POPULATION HERE` rather than vanishing, `id-accession` having drawn
+  nothing; three live guards survived mutation and now die; and the test
+  helper built an `id-accession` carrying `"ID-1"`, a state
+  `_addressability` cannot produce, which `RecordAddressing` now refuses.
+  Filed rather than fixed: issues #220, #221, #222 and #223. The address rows
+  are quoted under the issue #188 entry below. Two further readings ride
+  along: `pubmed_efetch` served `no-citation` for **50 of 60** bodies — the
+  one silent branch of that step, now issue #218 — and `crossref`'s `funder`
+  key was absent in 71 of 73 records, so the funder coercers issue #199 added
+  are reached by a small minority of bodies.
+
 - **A stored result now says what happened, once per claim** (issues #198,
   #202 and #203, all three from PR #195's review).
   `TransparencyResult.trial_results_status` is a new field carrying a new
@@ -464,6 +545,66 @@ All notable changes to bmlib are documented here. The format is based on
   paper.
 
 ### Fixed
+
+- **A request whose answer is known before it leaves is not made** (issue
+  #188, filed from PR #189's review and blocked until PR #213's instrument
+  sized it).
+
+  `_check_europepmc` addresses the full text with `record["pmcid"] or
+  record["id"]`. For a `PMC` record and for a `PPR` preprint that fallback is
+  the accession; for a `MED` record carrying no `pmcid` it is the **PMID**,
+  and a PMID addresses nothing at `fullTextXML`. Two costs, and the second
+  persists: a rate-limited request per such analysis, whose 404 was
+  determined before it left, and a stored `FullTextStatus.NOT_SERVED` —
+  documented *"requested and not served"* — for an address **bmlib chose**
+  rather than one Europe PMC declined. That is the issue #187/#190/#191
+  defect once more: a claim in Europe PMC's mouth that only their 404 to a
+  real address makes.
+
+  A request is now made only for an identifier matching `(?:PMC|PPR)\d+`.
+  Anything else stores `NOT_ATTEMPTED` and logs at DEBUG.
+
+  **`NOT_ATTEMPTED` rather than a member of its own**, and the reading is
+  exact: the member says *"no request was made, and Europe PMC's own answer
+  is why"*, and the record **is** their answer — it names no accession for
+  this article. Issue #207 is the observation that the same member's sibling
+  cause (a record claiming `inEPMC: Y` and carrying nothing at all) makes
+  that sentence false; this cause makes it true. Two guards, two levels, one
+  status: that one is malformed and WARNs, this one is ordinary and does not.
+
+  **A shape test, not a `source` allow-list.** The measurement reads *"the
+  record's own `source` is what separates them"*, which is true and is not
+  the rule that got written: the two agree on every population drawn, and
+  they differ where an accession-shaped identifier arrives under a source
+  nobody has enumerated — where the allow-list refuses a fetch that would
+  have worked. It is **not** a deletion of the `or id` fallback either:
+  `SRC:PPR AND IN_EPMC:Y` is 75,841 records whose only address is that `id`.
+
+  **Measured, with a denominator, by the sampler change above** (2026-09-09,
+  123 records at the documented defaults): **0 of 43** bare-`id` addresses
+  served, 95% CI `[0.0%, 8.2%]`, against **6 of 9** accession addresses. The
+  fix drops 43 of the 52 full-text requests that draw would have made — one
+  per 35.0% of records analysed. Read the 0 as an upper bound rather than a
+  proof: those 43 are a contiguous cursor page's worth of `SRC:MED` records,
+  and the issue's own evidence is that such records are NCBI Bookshelf
+  chapters whose `bookid` is not addressable here either.
+
+  **The larger population beside it is recorded and not acted on.** The same
+  probes cross-tabulate by `isOpenAccess` — the flag bmlib does not read, and
+  the one that would actually predict whether `fullTextXML` serves — at `N`
+  0 of 3 and `Y` 6 of 49. Three probes settle nothing, and a gate narrowed on
+  a floor silently loses an article that would have been served.
+
+  **Stored values move**, which is why this was filed rather than folded into
+  issue #184. Every such record's `full_text_status` moves `NOT_SERVED` →
+  `NOT_ATTEMPTED`, and its provenance line moves from *"EuropePMC served none
+  for this article"* to *"no EuropePMC full-text request was made"*. Where the
+  request was refused or dropped rather than answered it moves
+  `REQUEST_FAILED` → `NOT_ATTEMPTED` instead, and a WARNING stops being
+  emitted for it. Nothing else moves: no full text was scanned on either
+  path, so the score, `coi_disclosed` and `data_availability_level` are what
+  they were. (This named only the 404 transition, which is the modal case and
+  not the whole of it — PR #219's review.)
 
 - **No JSON shape a remote can send escapes the public `analyze()`** (issue
   #199, from PR #195's review; corrected and completed by PR #208's review).
