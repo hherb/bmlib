@@ -1393,12 +1393,21 @@ class TestThePubMedBodyIsShapedToo:
         ids=["eutils-error", "book-article", "empty-set"],
     )
     def test_a_document_carrying_no_citation_is_its_own_kind(self, body):
-        # The branch that was folded into `xml`, and the only silent one of the
-        # four: the other three each WARN, while this one returns empty signals
-        # with no line at any level. Both named bodies are live populations —
-        # NCBI serves the error envelope at 200 under load, and issue #188's own
-        # finding is that every `id-only` `MED` record in a 150-record spot draw
-        # was a Bookshelf chapter, so they are in the drawn population.
+        # The branch that was folded into `xml`, and the one that was silent
+        # where the other three WARN — until issue #218 gave it three lines of
+        # its own. This counter is what sized that, and the category stays one
+        # value: widening it would restate the analyzer's branch predicates
+        # here, and a corpus labelled by the rule under test can only confirm
+        # that rule.
+        #
+        # **The error envelope belongs to a different request** (PR #225's
+        # review): `<eFetchResult><ERROR>` at 200 is what an evicted *history
+        # session* efetch serves, the shape `publications/` guards against,
+        # while this probe is by id. What is live here is a Bookshelf set —
+        # issue #188's finding is that every `id-only` `MED` record in a
+        # 150-record spot draw was a book chapter — and an empty record set for
+        # an id NCBI does not hold. The envelope is kept as a fixture because
+        # the counter must take it if some other error class arrives at 200.
         assert sampler.observe_body("pubmed_efetch", _FakeResponse(200, text=body)).top == (
             "no-citation"
         )
@@ -2106,18 +2115,21 @@ def _efetch_with(*accessions: str) -> _FakeResponse:
 class TestTheResultsCheckSaysWhatItCouldAskAndWhatAnswered:
     """Issue #206's population, on the draw that already probes these accessions.
 
-    Two silences, one per half. ``MAX_TRIAL_IDS_TO_CHECK`` slices an
-    **unbounded** list — ``_parse_pubmed_signals`` extends over every
-    ``<AccessionNumberList>`` entry — so a pooled report's fourth accession is
-    dropped with no log line, no indicator and no test. And ``answered`` goes
-    ``True`` on the *first* accession that replies, so one reachable *"no
-    results"* outvotes any number of unreachable ones and the paper stores
-    *"Registered trial without posted results"*: issue #194's class of false
-    claim, narrowed by the tri-state rather than removed.
+    Two silences, one per half. ``MAX_TRIAL_IDS_TO_CHECK`` sliced an
+    **unbounded** list — ``_parse_pubmed_signals`` collects every
+    ClinicalTrials.gov accession that is a well-formed NCT id — so a pooled
+    report's fourth accession was dropped with no log line and no indicator.
+    And ``answered`` went ``True`` on the *first* accession that replied, so
+    one reachable *"no results"* outvoted any number of unreachable ones and
+    the paper stored *"Registered trial without posted results"*: issue #194's
+    class of false claim, narrowed by the tri-state rather than removed.
 
-    Neither can be decided without knowing how often a paper carries more than
-    three accessions, and how often a check is partly answered. Both are
-    counted here.
+    Neither could be decided without knowing how often a paper carries more
+    than three accessions, and how often a check is partly answered. Both are
+    counted here, and PR #225 acted on the counts: the walk now stores
+    ``TrialResultsStatus.PARTLY_ANSWERED`` and WARNs on a truncation, so these
+    rows size that member rather than a silence. The cap itself is unchanged,
+    so *how far* a list runs past it is still open.
     """
 
     def _check(self, *responses, accessions=("NCT00000001",)):

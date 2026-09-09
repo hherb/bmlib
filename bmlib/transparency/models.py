@@ -305,8 +305,8 @@ class TrialResultsStatus(Enum):
     #: ClinicalTrials.gov was asked and reports posted results. The only
     #: member for which ``trial_results_compliant`` is ``True``.
     POSTED = "posted"
-    #: ClinicalTrials.gov was asked about every accession it answered for, and
-    #: none reports posted results. **With :attr:`POSTED`, one of the two
+    #: ClinicalTrials.gov was asked about **every accession the paper named**,
+    #: and none reports posted results. **With :attr:`POSTED`, one of the two
     #: members that are findings about the trial**; :attr:`REQUEST_FAILED` and
     #: :attr:`NOT_CHECKABLE` are findings about bmlib's ability to ask, which
     #: is the whole distinction issue #194 turned out to rest on — the edge
@@ -323,7 +323,9 @@ class TrialResultsStatus(Enum):
     #: accession that was never asked about or never answered was not
     #: represented here and this member stood for a paper it had not
     #: established anything about. :attr:`PARTLY_ANSWERED` is that case now,
-    #: and the hedge this comment used to carry is gone rather than reworded.
+    #: and the hedge this comment used to carry is gone rather than reworded
+    #: — in the **lead sentence** as well as here, which read *"every accession
+    #: it answered for"* and so asserted nothing at all (PR #225's review).
     NOT_POSTED = "not_posted"
     #: Some accessions were asked about and answered, none reports posted
     #: results, and **the rest were not asked about or did not answer** —
@@ -331,20 +333,42 @@ class TrialResultsStatus(Enum):
     #: finding: the accession nobody reached may be the one with results, so
     #: :attr:`NOT_POSTED`'s claim about the paper cannot be made (issue #206).
     #:
-    #: **The two causes share this member deliberately.** *"Would re-running
-    #: change this?"* separates :attr:`REQUEST_FAILED` from
-    #: :attr:`NOT_CHECKABLE` because results are cacheable; here it does not
-    #: separate anything a caller can act on, since a re-run under the same
-    #: cap truncates identically. Which cause it was reaches an operator as a
-    #: log line, where raising the cap is an action; it does not reach a
-    #: stored field, where nothing would read it.
+    #: **The two causes share this member because they co-occur, not because
+    #: the usual criterion merges them.** *"Would re-running change this?"*
+    #: separates :attr:`REQUEST_FAILED` from :attr:`NOT_CHECKABLE`, and it
+    #: does discriminate here: ``no`` for the cap, which truncates identically
+    #: on a re-run, and ``yes`` for an accession that did not answer. The
+    #: first draft of this comment reasoned about the cap alone and
+    #: generalised to the member, which is issue #191's own defect (PR #225's
+    #: review). What actually rules a split out is that the walk produces
+    #: ``unestablished = dropped + asked - answered``, a **sum**: one paper
+    #: can have both causes at once, so splitting would need three members or
+    #: a second field. Which cause it was reaches an operator as a log line,
+    #: where raising the cap is an action. The residual is that a downstream
+    #: doing selective backfill cannot ask *"retry, or change the config?"* of
+    #: the stored value — filed rather than argued away.
     #:
     #: Measured over the 30 papers naming a ClinicalTrials.gov accession in
-    #: the 2026-09-08 trial-enriched draw: the cap truncates 8, and a request
-    #: went unanswered for 1.
+    #: the 2026-09-08 trial-enriched draw: the cap truncates **8 of 30**, and
+    #: a partly-answered check is **1 of 30**. Read the second as a **floor**
+    #: and the first as measured: that draw predates PR #213's correction of
+    #: ``TrialCheck.answered``, which counted HTTP 200 where bmlib counts a
+    #: non-``None`` return and so *deflated* exactly this row, while the
+    #: truncation count is derived from ``found > probed`` and is independent
+    #: of it. The emphasis-reversing comparison rests on the 8, which needs no
+    #: caveat (PR #225's review).
     PARTLY_ANSWERED = "partly_answered"
     #: Accessions were asked about and not one answered — a refusal, a 404, an
-    #: unusable body, or a request that raised. *"Would re-running change
+    #: unusable body, a request that raised, or a ``hasResults`` of a type
+    #: ``_json_bool`` will not read (which is silent today, issue #226).
+    #: **It also covers a paper whose list bmlib's own cap truncated**, when
+    #: none of the accessions it did ask about answered: :attr:`PARTLY_ANSWERED`
+    #: needs one answer to be partial, so a fully-unanswered walk lands here
+    #: whether or not the list was complete, and *"was this paper's accession
+    #: list complete?"* is unanswerable from storage in both members. Named
+    #: rather than left to be discovered, which is the correction PR #219 made
+    #: to :attr:`FullTextStatus.NOT_ATTEMPTED` one enum over. *"Would re-running
+    #: change
     #: this?"* is ``yes``, and results are cacheable with no retry anywhere in
     #: ``transparency/``, so an outage window otherwise caches absences
     #: indistinguishable from real ones. :attr:`FullTextStatus.REQUEST_FAILED`
@@ -360,13 +384,16 @@ class TrialResultsStatus(Enum):
 
     @property
     def is_answered(self) -> bool:
-        """Did ClinicalTrials.gov answer about this paper's trial?
+        """Does ``trial_results_compliant`` mean what it says?
 
         ``True`` for exactly :attr:`POSTED` and :attr:`NOT_POSTED`, which are
-        the outcomes where ``trial_results_compliant`` means what it says.
-        For the rest the flag is ``False`` because nothing was established,
-        not because the trial fell short — the read both downstreams get
-        wrong today. The authority is :data:`_ANSWERED_TRIAL_RESULTS_STATUSES`
+        the outcomes where it does. For the rest the flag is ``False`` because
+        **not enough** was established, not because the trial fell short — the
+        read both downstreams get wrong today. The summary line asks the
+        contract rather than *"did ClinicalTrials.gov answer?"*, whose plain
+        answer for the partly-answered member is *"yes, partly"* while this
+        property says ``False`` (PR #225's review); "nothing" was likewise
+        false of that member alone. The authority is :data:`_ANSWERED_TRIAL_RESULTS_STATUSES`
         and the partition is pinned by ``test_every_status_chooses_a_side``.
         """
         return self in _ANSWERED_TRIAL_RESULTS_STATUSES

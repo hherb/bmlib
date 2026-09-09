@@ -291,7 +291,9 @@ must not be re-done.
   the other-registry case, so the deferral was resting on a cost comparison
   ("the `FullTextStatus` argument one endpoint over") that overstated it.
   `_check_trial_results` is now `True` / `False` / `None`, and the caller
-  reports three outcomes.
+  reports three outcomes — **four since #206**, which added
+  `PARTLY_ANSWERED`; this entry is reopened in place rather than left counting
+  three, the convention this register keeps.
 
   **The residual was taken too, one session later** (#198). It was recorded
   here as *"not worth a schema change today"* — `trial_results_compliant` is
@@ -433,7 +435,10 @@ must not be re-done.
 - **The three ways a PubMed body can carry no `PubmedArticle` do not share a
   level** (#218). One DEBUG line would have been the cheap reading of the
   issue and would have repeated #191 exactly: the draw that sized the branch
-  — `no-citation` for 50 of 60 served bodies — is heavily NCBI Bookshelf, so
+  — `no-citation` for 50 of 60 served bodies on **2026-09-09**, the run that
+  first carried the counter; quoting it against the 09-08 draw attributes a
+  reading to an instrument that could not produce it — is heavily NCBI
+  Bookshelf, so
   it licenses a quiet level for **book records** and says nothing about the
   other two. A book record is declined by name and carries none of the three
   signals (0 of 60 `statpearls[book]` and 0 of 100 `pubmed books[filter]`,
@@ -483,11 +488,17 @@ must not be re-done.
 - **The cap is reported, not raised** (#206). `MAX_TRIAL_IDS_TO_CHECK = 3`
   bounds requests per paper, and how far the accession-count distribution runs
   past three is unmeasured — `scripts/sample_api_failures.py` records each
-  paper's count before the cap, so a run answers it. What the 2026-09-08 draw
-  did establish is that the cap truncates 8 of 30 papers naming an accession
-  against 1 of 30 for an unanswered request, which reverses the issue's own
-  emphasis. Do not raise the constant on that evidence: it sizes *how often*
-  the cap bites and not *by how much*.
+  paper's count before the cap, so a run would answer it with one more report
+  line; `summarise_trial_checks` prints the verdict distribution and the
+  truncated share, not the distribution of the count. What the 2026-09-08
+  **trial-enriched** draw did establish is that the cap truncates 8 of 30
+  papers naming an accession against a partly-answered check of 1 of 30, which
+  reverses the issue's own emphasis. Read the 1 as a **floor**: that draw
+  predates PR #213's correction of `TrialCheck.answered`, which counted HTTP
+  200 where bmlib counts a non-`None` return and so deflated exactly that row,
+  while the truncation count derives from `found > probed` and is unaffected —
+  which is why the comparison rests on the 8. Do not raise the constant on
+  that evidence: it sizes *how often* the cap bites and not *by how much*.
 - **The cap's WARNING is gated on the walk not having concluded `POSTED`**
   (#206). A posted result settles the paper, so the accessions behind it cost
   nothing and a line there would be noise on the one outcome beyond doubt. It
@@ -496,6 +507,50 @@ must not be re-done.
   hiding it behind an outage would conflate two causes calling for different
   actions. Metric test:
   `tests/test_transparency.py::TestAPartialResultsCheckIsNotAFinding`.
+- **A repeated accession is deduplicated at the parser** (#206, PR #225's
+  review). MEDLINE's `<DataBankList>` is `(DataBank+)` and each `<DataBank>`
+  carries its own `<AccessionNumberList>`, so one paper naming one trial twice
+  is well-formed input — the shape `publications/` already collapses for
+  `<Grant>` at 31 of 575 entries across 200 records. While `answered` was a
+  `bool` and the cap was silent it cost only a redundant request; #206 made
+  `len(ct_ids)` a WARNING's denominator and `dropped` the thing that decides
+  `PARTLY_ANSWERED`, so four entries naming one trial reported a truncation
+  that lost nothing and retracted a `NOT_POSTED` ClinicalTrials.gov had
+  answered for every distinct trial the paper named. That is #206's own false
+  claim in the mirror, manufactured by its fix. It is fixed at
+  `_parse_pubmed_signals` rather than at the walk because the field is what
+  the sampler reads too, so the instrument's own truncation count would
+  otherwise be inflated by repeats; `_find_trial_ids`, the other producer, has
+  deduplicated since #202, and the walk therefore receives a clean list from
+  both. Order-preserving: the cap slices by the paper's own order.
+- **The cap's WARNING names the accessions it dropped** (#206, PR #225's
+  review). They are the whole of what raising the cap would recover, and
+  without them the line had no subject at all — in the same commit whose other
+  half threads a PMID through `_parse_pubmed_signals` for exactly that reason,
+  and in a module whose `TransparencySettings.max_concurrent_analyses` makes
+  interleaved lines the expected case.
+- **The book branch tests children, and every child** (#218, PR #225's
+  review). `.//PubmedBookArticle` matched a book anywhere in the document and
+  was tried first, so a legal mixed set — `PubmedArticleSet` is
+  `(PubmedArticle | PubmedBookArticle)*` — reported an article record carrying
+  no `<MedlineCitation>` at DEBUG on the strength of its book neighbour. The
+  160-record draw licensing that level is of responses that **are** book
+  records, which is narrower than *"carries one"*, so the descendant test was
+  #191's defect inside #218's own fix. A document whose own root is the book
+  element takes the unrecognised-document branch: NCBI wraps every record in a
+  set, so bmlib has no measured reading of a bare one.
+- **`TrialResultsStatus.PARTLY_ANSWERED` merges its two causes because they
+  co-occur, not because the usual criterion merges them** (#206, PR #225's
+  review). *"Would re-running change this?"* is `no` for the cap and `yes` for
+  an accession that did not answer, so the criterion that earns
+  `REQUEST_FAILED` and `NOT_CHECKABLE` separate members does discriminate here
+  — the first draft of the argument reasoned about the cap alone and
+  generalised to the member, which is #191 one more time. What rules a split
+  out is that the walk computes `unestablished = dropped + asked - answered`,
+  a **sum**: one paper can have both causes at once, so splitting needs three
+  members or a second field. The residual is real and filed: a downstream
+  doing selective backfill cannot ask *"retry, or change the config?"* of the
+  stored value.
 
 ## Repository process
 

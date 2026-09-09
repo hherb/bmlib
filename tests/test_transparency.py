@@ -54,6 +54,7 @@ from bmlib.transparency.analyzer import (
     _NESTED_ARTICLE_TOKEN_RE,
     _OPENALEX_ORDINARY_STATUSES,
     _PUBMED_ORDINARY_STATUSES,
+    _PUBMED_SIGNALS_LOST,
     _STATUSES_WITH_NO_PROVENANCE_LINE,
     _TRIAL_REGISTRY_NAMES,
     _UNTERMINATED_OPENER_NAMES,
@@ -2757,15 +2758,20 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
     its level"* applied to the branch that fix did not reach.
 
     **One branch was three populations, and they do not share a level.** The
-    2026-09-08 draw read ``no-citation`` for 50 of 60 served bodies, which
+    **2026-09-09** draw read ``no-citation`` for 50 of 60 served bodies, which
     licenses a quiet level for *that* population and no other — this
     repository's own *"the branch a diagnostic sits on must be no wider than
     the draw"* (issue #191, where DEBUG measured on 404s was applied to every
-    status code). Probed live on 2026-09-10, three ids NCBI will not serve:
+    status code). The date is the 09-09 run because the ``no-citation``
+    category did not exist on 09-08; the earlier run reported these same
+    bodies as plain ``xml``, which is the defect that created it (PR #225's
+    review). Three branches, two of them probed live on 2026-09-10:
 
-    * a **book or book chapter** — declined by bmlib, by name, and measured to
-      carry none of the three signals, so nothing was lost that could have
-      been had. Ordinary, and the majority of that draw. DEBUG.
+    * a set whose records are **all books or book chapters** — declined by
+      bmlib, by name, and measured to carry none of the three signals, so
+      nothing was lost that could have been had. Ordinary, and the majority of
+      that draw. DEBUG. Children and *every* child, because the draw is of
+      responses that **are** book records and a mixed set is outside it.
     * an **empty ``PubmedArticleSet``** at HTTP 200, which is what PMID
       ``999999999`` returns: NCBI holds no record for the identifier bmlib
       asked about, and that identifier came from the caller or from
@@ -2805,10 +2811,12 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
         assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
     def test_an_empty_record_set_warns_that_ncbi_holds_no_record(self, caplog):
-        # Probed 2026-09-10: efetch for PMID 999999999 answers 200 with
-        # exactly this body, 205 bytes. The PMID bmlib asked about does not
-        # resolve, which is a fact about the identifier and not about the
-        # record type.
+        # Probed 2026-09-10: efetch for PMID 999999999 answers 200 with a
+        # 205-byte body of which this is a **reduction** — the served one
+        # carries the XML declaration and the NLM DOCTYPE as well, and calling
+        # the fixture a copy of it was wrong (PR #225's review). The PMID
+        # bmlib asked about does not resolve, which is a fact about the
+        # identifier and not about the record type.
         assert self._signals("<PubmedArticleSet/>", caplog, pmid="999999999") == _PubMedSignals()
         matching = [r for r in caplog.records if "holds no record" in r.getMessage()]
         assert len(matching) == 1
@@ -2846,6 +2854,81 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
         assert matching[0].levelno == logging.WARNING
         assert "PubmedArticleSet" in matching[0].getMessage()
         assert "holds no record" not in matching[0].getMessage()
+
+    def test_every_branch_says_what_was_lost(self, caplog):
+        # `_PUBMED_SIGNALS_LOST` was pinned by nothing: emptying the constant
+        # passed the whole suite, so no test held any of the three lines to
+        # saying what the analysis forfeits (PR #225's review). The manual's
+        # log table promises the clause, and the constant's own docstring
+        # calls sharing it the reason adding a fourth signal is one edit.
+        for body, pmid in (
+            (_pubmed_book_xml(), "28722906"),
+            ("<PubmedArticleSet/>", "999999999"),
+            ("<eFetchResult><ERROR>x</ERROR></eFetchResult>", "12345678"),
+        ):
+            caplog.clear()
+            self._signals(body, caplog, pmid=pmid)
+            [record] = caplog.records
+            # The **literal**, not the constant: `_PUBMED_SIGNALS_LOST in
+            # message` is satisfied by every message once the constant is
+            # emptied, so the first cut of this test let the mutant it was
+            # written for survive — this repository's own *"a log assertion
+            # must be unique to the line"* turned on the assertion itself.
+            assert "no COI, trial-registration or grant signals are available" in (
+                record.getMessage()
+            )
+        # And the constant is what those three lines interpolate, so the
+        # clause cannot be maintained in two places.
+        assert _PUBMED_SIGNALS_LOST == "no COI, trial-registration or grant signals are available"
+
+    def test_an_empty_document_that_is_not_a_record_set_names_its_root(self, caplog):
+        # The other half of the `and` at the empty-record-set branch, which
+        # was enforced by prose alone: deleting `root.tag == ...` passed all
+        # 3769 tests (PR #225's review). Without it an empty `<eFetchResult/>`
+        # is reported as *"an empty PubmedArticleSet — NCBI holds no record"*,
+        # a determinate claim about NCBI's holdings naming an element the
+        # server never sent. That is the class of dishonesty issues
+        # #187/#190/#191 removed, inside issue #218's own fix — and it is what
+        # makes printing the constant beside it an *equivalent* mutant rather
+        # than an untested choice, since the premise is now pinned.
+        assert self._signals("<eFetchResult/>", caplog) == _PubMedSignals()
+        [record] = caplog.records
+        assert "eFetchResult" in record.getMessage()
+        assert "holds no record" not in record.getMessage()
+        assert record.levelno == logging.WARNING
+
+    def test_a_mixed_set_is_not_reported_as_a_book(self, caplog):
+        # `PubmedArticleSet` is declared `(PubmedArticle | PubmedBookArticle)*`,
+        # so a mixed set is legal. A descendant search matched a book anywhere
+        # and was tested first, so an article record carrying no
+        # `<MedlineCitation>` lost its three signals at the *quiet* level on
+        # the strength of a book neighbour — the 0-of-160 draw being about
+        # responses that are book records, which is narrower than the branch.
+        # Generalising a level past its own population is issue #191 exactly.
+        body = (
+            "<PubmedArticleSet>"
+            "<PubmedBookArticle><BookDocument><PMID>1</PMID></BookDocument></PubmedBookArticle>"
+            "<PubmedArticle><PubmedData/></PubmedArticle>"
+            "</PubmedArticleSet>"
+        )
+        assert self._signals(body, caplog) == _PubMedSignals()
+        [record] = caplog.records
+        assert record.levelno == logging.WARNING
+        assert "book or book chapter" not in record.getMessage()
+
+    def test_the_analysed_pmid_reaches_the_line(self, caplog, monkeypatch):
+        # Every test above calls `_parse_pubmed_signals` directly, so passing
+        # `""` at the one call site passed the whole suite — the entire point
+        # of the signature change was unpinned end to end, and a real analysis
+        # would have logged "PubMed for :" (PR #225's review). Driven through
+        # `analyze` so the subject is the PMID the caller asked about.
+        client = _RecordingClient(epmc=_epmc_payload(pmid="24680"), pubmed=_pubmed_book_xml())
+        _install_fake_client(monkeypatch, client)
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            TransparencyAnalyzer().analyze("doc-1", pmid="24680")
+        matching = [r for r in caplog.records if "book or book chapter" in r.getMessage()]
+        assert len(matching) == 1
+        assert "PubMed for 24680:" in matching[0].getMessage()
 
     def test_the_three_branches_do_not_share_a_line(self, caplog):
         # Each of the three must be identifiable from the log alone, or the
@@ -5286,9 +5369,49 @@ class TestAPartialResultsCheckIsNotAFinding:
         assert len(matching) == 1
         assert matching[0].levelno == logging.WARNING
         # The counts, not just the fact: an operator deciding whether to raise
-        # the cap needs to know by how much it fell short.
-        assert str(MAX_TRIAL_IDS_TO_CHECK) in matching[0].getMessage()
-        assert str(MAX_TRIAL_IDS_TO_CHECK + 2) in matching[0].getMessage()
+        # the cap needs to know by how much it fell short. Asserted as the
+        # **phrase** rather than as two separate numbers, because substituting
+        # `len(ct_ids)` for `dropped` passed the whole suite — the one figure
+        # the docstring says is needed was the one figure nothing pinned (PR
+        # #225's review).
+        message = matching[0].getMessage()
+        assert f"{2} of this paper's {MAX_TRIAL_IDS_TO_CHECK + 2} accessions" in message
+        assert str(MAX_TRIAL_IDS_TO_CHECK) in message
+        # And the dropped accessions by name, which is the whole of what
+        # raising the cap would recover, and what gives the line a subject.
+        assert ", ".join(ids[MAX_TRIAL_IDS_TO_CHECK:]) in message
+
+    def test_a_repeated_accession_is_not_a_second_trial(self):
+        # A paper naming one trial several times is well-formed input:
+        # MEDLINE's `<DataBankList>` is `(DataBank+)` and each carries its own
+        # `<AccessionNumberList>`. While `answered` was a `bool` and the cap
+        # was silent, a repeat cost only a redundant request; since issue #206
+        # `len(ct_ids)` is a WARNING's denominator and `dropped` decides
+        # `PARTLY_ANSWERED`, so four entries naming one trial retracted a
+        # finding ClinicalTrials.gov had made about every distinct trial the
+        # paper named — issue #206's own false claim in the mirror,
+        # manufactured by its fix (PR #225's review). Deduplicated at the
+        # parser, where `_find_trial_ids` has deduplicated since issue #202.
+        # Two `<DataBank>` entries naming the same trial, which is the shape
+        # the DTD's `(DataBank+)` produces, plus a repeat inside one list.
+        banks = (
+            ("ClinicalTrials.gov", ("NCT00000001", "NCT00000001")),
+            ("ClinicalTrials.gov", ("NCT00000001", "NCT00000002")),
+        )
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=banks), "1")
+        assert signals.trial_accessions == ("NCT00000001", "NCT00000002")
+        # And the walk then reads a complete list, so the finding stands and
+        # no truncation is reported for a cap that dropped nothing.
+        ids = signals.trial_accessions
+        analysis = self._registration(self._all_saying_no(ids), ids)
+        assert analysis.trial_results_status is TrialResultsStatus.NOT_POSTED
+
+    def test_deduplication_keeps_the_papers_own_order(self):
+        # The cap slices by this order, so it is the paper's and not a set's.
+        ids = ("NCT00000009", "NCT00000003", "NCT00000009", "NCT00000007")
+        banks = (("ClinicalTrials.gov", ids),)
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=banks), "1")
+        assert signals.trial_accessions == ("NCT00000009", "NCT00000003", "NCT00000007")
 
     def test_the_cap_still_bounds_the_requests(self):
         # The line reports the truncation; it does not lift it. The cap is
@@ -5880,6 +6003,15 @@ class TestTrialResultsStatus:
             TrialResultsStatus
         )
         assert not _ANSWERED_TRIAL_RESULTS_STATUSES & _UNANSWERED_TRIAL_RESULTS_STATUSES
+        # And the sets are what `is_answered` actually reads, so neither can
+        # drift into being a description of the property rather than its
+        # definition — the guard `TestFullTextStatus` has carried since issue
+        # #161 and this class was missing (PR #225's review). Without it,
+        # widening the property to report `True` for the newest member — the
+        # exact defect the partition exists to prevent — left this whole class
+        # green and was caught by one test in another one.
+        for status in TrialResultsStatus:
+            assert status.is_answered is (status in _ANSWERED_TRIAL_RESULTS_STATUSES)
 
     def test_the_docstring_names_every_answered_member(self):
         # `TestTheProseAgreesWithThePartition`'s guard, brought across with the
@@ -5903,6 +6035,7 @@ class TestTrialResultsStatus:
     def test_only_an_answer_counts_as_answered(self):
         assert TrialResultsStatus.POSTED.is_answered is True
         assert TrialResultsStatus.NOT_POSTED.is_answered is True
+        assert TrialResultsStatus.PARTLY_ANSWERED.is_answered is False
         assert TrialResultsStatus.REQUEST_FAILED.is_answered is False
         assert TrialResultsStatus.NOT_CHECKABLE.is_answered is False
         assert TrialResultsStatus.NOT_REGISTERED.is_answered is False
@@ -5933,6 +6066,34 @@ class TestTrialResultsStatus:
         assert said_no.trial_results_compliant is never_answered.trial_results_compliant is False
         assert said_no.trial_results_status is TrialResultsStatus.NOT_POSTED
         assert never_answered.trial_results_status is TrialResultsStatus.REQUEST_FAILED
+
+    def test_a_partly_answered_check_is_recorded(self, monkeypatch):
+        # The one member with no public-surface test: every issue #206
+        # assertion drove the private `_check_trial_registration` and read
+        # `_Analysis`, so `TransparencyResult.__post_init__`, the stored
+        # indicator and the round trip were never exercised for it (PR #225's
+        # review). `__post_init__` is the path that would turn a status/flag
+        # disagreement into a `ValueError` out of a public `analyze()`, whose
+        # whole contract is that a misbehaving API costs a component and not
+        # the analysis.
+        ids = tuple(f"NCT{i:08d}" for i in range(1, MAX_TRIAL_IDS_TO_CHECK + 2))
+        banks = (("ClinicalTrials.gov", ids),)
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1"),
+            pubmed=_pubmed_xml(databanks=banks),
+            trial_has_results=False,
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+
+        assert result.trial_results_status is TrialResultsStatus.PARTLY_ANSWERED
+        assert result.trial_results_compliant is False
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE in result.risk_indicators
+        assert _INDICATOR_NO_POSTED_RESULTS not in result.risk_indicators
+        # And it survives the round trip by value, like every other member.
+        assert TransparencyResult.from_dict(result.to_dict()).trial_results_status is (
+            TrialResultsStatus.PARTLY_ANSWERED
+        )
 
     def test_a_registry_with_no_answer_to_give_is_its_own_member(self, monkeypatch):
         # Registration established in another registry: ClinicalTrials.gov was

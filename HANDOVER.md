@@ -262,25 +262,35 @@ in it.
 
 ## This session: #218 and #206, the two silent steps
 
-Both are library-level, both had a measured population waiting from the
-2026-09-08 sampler run, and both had the same shape: a step that costs the
-analysis something and says nothing. **The full argument is in `CHANGELOG.md`
+Both are library-level, both had a measured population waiting from a sampler
+run — #218's from **2026-09-09**, #206's from 2026-09-08 — and both had the
+same shape: a step that costs the analysis something and says nothing. **The full argument is in `CHANGELOG.md`
 and `docs/DECISIONS.md`**; what follows is only what a next session needs.
 
 **#218 — one branch was three populations, and a live probe redrew all three.**
 `_parse_pubmed_signals` returned empty signals in silence for a body that
 parses and carries no `PubmedArticle`, and that was the *majority* outcome of
-the draw that sized it, 50 of 60 served bodies. The cheap reading of the issue
+the draw that sized it, 50 of 60 served bodies on **2026-09-09**. That date is
+the 09-09 run and not the 09-08 one: the `no-citation` counter did not exist
+until then, and the earlier run reported these same bodies as plain `xml`,
+which is the defect that created it — quoting the figure against the earlier
+draw is `_COUNTER_DEFINITIONS_VERSION`'s own scar, and PR #225's review caught
+it in six places. The cheap reading of the issue
 is one DEBUG line, and it would have been #191 exactly — the draw is
 Bookshelf-heavy, so it licenses a quiet level for **book records** and says
 nothing about the rest. Probed live on 2026-09-10:
 
-- A `<PubmedBookArticle>` set is **DEBUG**. Declined by name, and **0 of 60**
+- A set whose records are **all** `<PubmedBookArticle>` is **DEBUG**. Declined
+  by name, and **0 of 60**
   `statpearls[book]` records and **0 of 100** drawn from `pubmed books[filter]`
   carry a `<GrantList>`, `<CoiStatement>` or `<DataBankList>` — which settles
   the issue's second question in favour of the line and nothing else. The old
   comment asserted the first two from the DTD and conceded the third
-  unmeasured.
+  unmeasured. **Children, and every child** — a descendant search matched a
+  book anywhere and was tried first, so a legal mixed set (`PubmedArticleSet`
+  is `(PubmedArticle | PubmedBookArticle)*`) reported an article record at the
+  quiet level on its neighbour's strength, which is #191 inside #218's own fix
+  (PR #225's review).
 - An **empty `<PubmedArticleSet>`** at HTTP 200 — 205 bytes, what PMID
   999999999 returns — is **WARNING**. NCBI holds no record for an identifier
   bmlib was handed or derived, which is a fact about the identifier.
@@ -300,7 +310,10 @@ the unrecognised-document branch is what takes one if it arrives at 200.
 **#206 — the cap and the unanswered accession are one question.** `answered`
 was a `bool` set on the first accession that replied, so one reachable *"no
 results"* outvoted any number of unreachable ones; and `MAX_TRIAL_IDS_TO_CHECK`
-sliced an unbounded list with no line, no indicator and no test. Either way
+sliced an unbounded list with no line, no indicator and no test of the
+analyzer's truncation (`tests/test_api_failure_sampler.py` did reference the
+constant; the wider *"nothing in the suite"* first written was false). Either
+way
 *"Registered trial without posted results"* was stored about a paper whose
 remaining accessions bmlib never reached. `TrialResultsStatus.PARTLY_ANSWERED`
 is both causes, sharing `_INDICATOR_RESULTS_NOT_CHECKABLE` on the argument that
@@ -311,15 +324,25 @@ forward:
 
 - **The measurement reversed the issue's own emphasis.** A partly-answered
   check is 1 of 30 and the cap truncates **8 of 30**, so the half that was
-  entirely silent is the larger one. That sizes how *often* the cap bites and
-  **not by how much**, so it is no argument for raising the constant; the
-  sampler records each paper's count before the cap, and a run answers it.
+  entirely silent is the larger one. **Read the 1 as a floor**: that draw
+  predates PR #213's correction of `TrialCheck.answered`, which counted HTTP
+  200 where bmlib counts a non-`None` return and so deflated exactly that row,
+  while the truncation count derives from `found > probed` and is unaffected —
+  which is why the comparison rests on the 8. That sizes how *often* the cap
+  bites and **not by how much**, so it is no argument for raising the
+  constant; the sampler records each paper's count before the cap, and a run
+  would answer it with one more report line.
 - **The schema addition was free, not cheap.** `trial_results_status` is
   itself unreleased (#198), so this rides the recompute #184 and #194 already
   force. The same rule that overturned #198's own deferral.
 - **The log splits the two causes; the stored field does not.** Raising the
-  cap is an action, so the cap gets a WARNING naming the counts; an unanswered
-  accession already has a line from `_request`. The line is gated on the walk
+  cap is an action, so the cap gets a WARNING naming the counts **and the
+  dropped accessions** — the last being what raising the cap recovers, and
+  what gave the line a subject it had lacked. Four of the five ways an asked
+  accession fails to answer already have a line from `_request`; the fifth,
+  `_json_bool` refusing a wrong-typed value, does not, and the comment
+  claiming otherwise licensed that absence until PR #225's review narrowed it.
+  Filed as **#226**. The line is gated on the walk
   not concluding `POSTED` — a posted result settles the paper — and
   deliberately **not** on the resulting status, or a truncation hides behind
   an outage.
@@ -329,18 +352,58 @@ forward:
   stands"*, which is the reading the issue is about. A session finding it
   should read the comment, not restore it.
 
-**Mutation: 13 mutants, 12 die.** The survivor prints `root.tag` where the code
-prints `_PUBMED_RECORD_SET_ROOT`, and on that branch the two are the same
-string — provably equivalent, and it says so at the site. Two mutants were
-added *after* the first sweep, because the survivor exposed that `len(root) ==
-0` had no fixture separating it from a record set carrying a non-article child.
+**Mutation: 22 mutants, 21 die.** The one survivor prints `root.tag` where the
+code prints `_PUBMED_RECORD_SET_ROOT`, and on that branch the two are the same
+string — provably equivalent, and it says so at the site; its premise is now
+*pinned* by a fixture rather than only argued, which is PR #225's review.
+
+**PR #225's review found six further defects, and four mutants that survived
+the whole suite.** Carry the shape forward rather than the list: every one was
+a claim the change made about itself that nothing checked.
+
+- **A repeated accession manufactured #206's own false claim in the mirror.**
+  `<DataBankList>` is `(DataBank+)`, so one paper naming one trial twice is
+  well-formed input, and until PR #225 four such entries reported a truncation
+  that lost nothing and retracted a `NOT_POSTED` ClinicalTrials.gov had
+  answered for every distinct trial. Deduplicated at the parser, not the walk,
+  because the field is what the sampler's own truncation count reads;
+  `_find_trial_ids` has deduplicated since #202, so the two producers had
+  disagreed and only the un-deduplicated one could reach the new branch.
+- **Four surviving mutants**: deleting the `root.tag ==
+  _PUBMED_RECORD_SET_ROOT` half of the empty-set guard (which let an empty
+  `<eFetchResult/>` be reported as an empty `PubmedArticleSet` NCBI never
+  sent), emptying `_PUBMED_SIGNALS_LOST`, passing `""` for the `pmid` at the
+  one call site — so the *entire point* of the signature change was unpinned
+  end to end — and substituting `len(ct_ids)` for `dropped` in the new
+  WARNING. All die now.
+- **The first cut of the constant's test asserted `_PUBMED_SIGNALS_LOST in
+  message`**, which the mutant satisfies vacuously. That is this repository's
+  own *"a log assertion must be unique to the line"*, turned on the assertion
+  written to enforce it — assert the literal, and pin the constant separately.
+- **The merge argument for `PARTLY_ANSWERED` was corrected.** *"Would
+  re-running change this?"* **does** discriminate the two causes (`no` for the
+  cap, `yes` for an unanswered accession), so the merge rests on their
+  **co-occurring** — `unestablished` is a sum — and not on the criterion.
+- `PARTLY_ANSWERED` gained the `analyze()`-level test every other member had,
+  and `is_answered` the generic partition guard `FullTextStatus` has carried
+  since #161. Without it, moving the member to the wrong side reddened one
+  test in another class; it now reddens three.
 
 **Not measured, and worth saying**: how far the trial-accession distribution
 runs past three; whether any efetch error class reaches HTTP 200 for an
-id-based request; and whether an empty `<PubmedArticleSet>` is common enough to
-justify its WARNING, the 2026-09-08 draw not splitting the three populations
-apart (its `no-citation` counter is deliberately one value — widening it would
-restate the analyzer's predicates inside the instrument).
+id-based request; how often a paper repeats an accession, the shape now
+deduplicated on the DTD's own reading rather than on a count; and whether an
+empty `<PubmedArticleSet>` is common enough to justify its WARNING, the
+2026-09-09 draw not splitting the three populations apart (its `no-citation`
+counter is deliberately one value — widening it would restate the analyzer's
+predicates inside the instrument).
+
+**Two findings were filed rather than fixed**, both out of these issues' scope
+and both the same rule one step over: **#226**, a wrong-typed `hasResults`
+refusing a results check with no line at any level while `REQUEST_FAILED`
+absorbs it — #209's residual at the one site where it decides a stored status;
+and **#227**, the PubMed step that was never asked (no PMID) leaving no line
+and, unlike the full-text step's `NOT_ATTEMPTED`, no stored trace either.
 
 ## Current state
 

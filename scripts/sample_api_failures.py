@@ -122,9 +122,12 @@ record that offers a full-text address, and is the reason issue #216 exists:
   ``trial_registered`` is ``False`` both for a paper with no trial and for one
   bmlib could not look for a trial in.
 * **What each results check could ask, and what answered** (issue #206). The
-  accession cap is silent, and ``answered`` goes true on the first accession
-  that replies, so one reachable *"no results"* outvotes any number of
-  unreachable ones.
+  accession cap *was* silent, and ``answered`` went true on the first
+  accession that replied, so one reachable *"no results"* outvoted any number
+  of unreachable ones. Fixed in PR #225; these counters now size how often
+  ``TrialResultsStatus.PARTLY_ANSWERED`` is stored, and the cap still bounds
+  the requests, so *how far the distribution runs past the cap* remains the
+  open question.
 
 Each is its own population with its own denominator, reports ERROR rather than
 a share when it has none, and can flip the exit code on its own.
@@ -1387,9 +1390,14 @@ def trial_ids_for(record: DrawnRecord, efetch_xml: str | None) -> list[str]:
         # The record's own PMID, not a placeholder: this script drives the
         # analyzer's readers rather than restating them, and since issue #218
         # that argument is what names the record in the three lines a body
-        # carrying no `PubmedArticle` now emits. `efetch_xml` is non-empty
-        # only where the efetch probe ran, which needs a PMID.
-        accessions = list(_parse_pubmed_signals(efetch_xml, record.pmid or "").trial_accessions)
+        # carrying no `PubmedArticle` now emits. It is non-empty wherever
+        # `efetch_xml` is, the efetch probe needing one — **asserted rather
+        # than defaulted past**, because an `or ""` would quietly produce the
+        # subject-less line PR #225 removed from the analyzer, and an
+        # unreachable default a test cannot tell from a reachable one is what
+        # this repository pins or deletes (PR #225's review).
+        assert record.pmid, "an efetch body cannot exist without the PMID that fetched it"
+        accessions = list(_parse_pubmed_signals(efetch_xml, record.pmid).trial_accessions)
         if accessions:
             return accessions
     # A module function since issue #202, and one that makes no request of
@@ -1483,14 +1491,18 @@ def probe_record(
 class TrialCheck:
     """What one paper's results check could ask, and what answered — issue #206.
 
-    ``_check_trial_registration`` walks the paper's accessions and sets
-    ``answered`` on the **first** one that replies, so a single reachable
-    *"no results"* outvotes any number of unreachable ones and the paper
-    stores *"Registered trial without posted results"* — issue #194's class of
-    false claim about a trial, narrowed by PR #195's tri-state rather than
-    removed. And ``MAX_TRIAL_IDS_TO_CHECK`` slices an unbounded list, silently.
+    ``_check_trial_registration`` **used to** set ``answered`` on the
+    **first** accession that replied, so a single reachable *"no results"*
+    outvoted any number of unreachable ones and the paper stored *"Registered
+    trial without posted results"* — issue #194's class of false claim about a
+    trial, narrowed by PR #195's tri-state rather than removed. And
+    ``MAX_TRIAL_IDS_TO_CHECK`` sliced an unbounded list, silently.
 
-    Neither half can be decided without a count, which is what this carries.
+    Neither half could be decided without a count, which is what this carries
+    and what PR #225 acted on. It still carries it: the walk now stores
+    ``TrialResultsStatus.PARTLY_ANSWERED`` for exactly the ``partial`` rows
+    below and WARNs for the truncated ones, so these counters size how often
+    that happens rather than how often a false claim is published.
 
     Attributes:
         found: Accessions the record named, **before** the cap.
@@ -1557,9 +1569,10 @@ class TrialCheck:
     def verdict(self) -> str:
         """``complete``, ``partial``, ``unanswered`` — or ``unmeasured``.
 
-        ``partial`` is the population issue #206 turns on: the check reached
-        an answer for some accessions and not others, and the finding bmlib
-        stores does not say so.
+        ``partial`` is the population issue #206 turned on: the check
+        reached an answer for some accessions and not others. Since PR #225
+        the stored finding **does** say so — ``PARTLY_ANSWERED`` — so this row
+        now sizes that member rather than a silence.
         """
         if self.is_unmeasured:
             return UNMEASURED
@@ -1584,9 +1597,12 @@ def trial_answered(outcome: ProbeOutcome) -> bool:
     since PR #208 routed the value through ``_json_bool`` it returns ``None``
     for a 200 whose body is not an object *and* for one whose ``hasResults``
     is wrong-typed. Counting 200s instead inflated ``complete`` and deflated
-    ``partial`` and ``unanswered`` — the two rows issue #206 turns on, and the
-    ones that decide whether *"Registered trial without posted results"* is
-    being stored over an accession nobody answered. It is also precisely the
+    ``partial`` and ``unanswered`` — the two rows issue #206 turned on, and
+    the ones that decide how often ``TrialResultsStatus.PARTLY_ANSWERED`` is
+    reached. Any figure taken **before** this correction reads those two rows
+    low: the 1-of-30 partly-answered count published for issue #206 comes from
+    the 2026-09-08 draw and is a floor, where the 8-of-30 truncation count is
+    derived from ``found > probed`` and is unaffected. It is also precisely the
     wrong-typed-boolean shape ``_json_bool``'s docstring says no contract net
     can see, which makes this the one population that ought to see it.
 
@@ -2255,9 +2271,13 @@ def summarise_trial_checks(checks: list[TrialCheck]) -> list[str]:
 
     Returns:
         The verdict distribution and the truncated share. ``partial`` is the
-        row the issue turns on: bmlib stores *"Registered trial without posted
-        results"* for such a paper, and the accession that did not answer may
-        be the trial that has them.
+        row issue #206 turned on: bmlib **used to** store *"Registered trial
+        without posted results"* for such a paper, and the accession that did
+        not answer may be the trial that has them. Since PR #225 it stores
+        ``TrialResultsStatus.PARTLY_ANSWERED``, so these rows size how often
+        that member is reached. The distribution of ``found`` past the cap is
+        recorded per row and **not summarised here**, so a run establishes how
+        *often* the cap bites and not by how much.
     """
     if not checks:
         return [f"{'results checks':<18} ERROR — no paper named an accession; nothing to report"]

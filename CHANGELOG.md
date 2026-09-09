@@ -18,8 +18,10 @@ All notable changes to bmlib are documented here. The format is based on
   and set `answered` on the **first** one that replied, so a single reachable
   *"no results"* outvoted any number of unreachable ones. And
   `MAX_TRIAL_IDS_TO_CHECK` sliced an unbounded list — `_parse_pubmed_signals`
-  collects every `<AccessionNumberList>` entry — with no log line, no
-  indicator and no test: nothing in the suite referenced the constant. Either
+  collects every ClinicalTrials.gov accession that is a well-formed NCT id —
+  with no log line, no indicator, and no test of the analyzer's truncation
+  (`tests/test_api_failure_sampler.py` did reference the constant; the wider
+  claim first written here was false, PR #225's review). Either
   way `"Registered trial without posted results"` was stored about a paper
   whose remaining accessions bmlib had never reached, and one of those may be
   the trial with results. That is issue #194's class of false claim, narrowed
@@ -33,9 +35,15 @@ All notable changes to bmlib are documented here. The format is based on
   `NOT_CHECKABLE` already share it — the claim a human can act on is
   identical and it puts nothing in ClinicalTrials.gov's mouth. Which cause it
   was reaches an **operator**, not a stored field: raising the cap is an
-  action, and *"would re-running change this?"* — the question that does earn
-  a member elsewhere — separates nothing here, since a re-run under the same
-  cap truncates identically.
+  action. *"Would re-running change this?"* — the question that does earn a
+  member elsewhere — **does** discriminate here, `no` for the cap and `yes`
+  for an accession that did not answer, and the first statement of this
+  reasoned about the cap alone and generalised to the member, which is issue
+  #191's own defect (PR #225's review). What rules a split out is that the
+  walk computes `unestablished = dropped + asked - answered`, a **sum**: one
+  paper can have both causes at once, so splitting would need three members or
+  a second field. The residual — a downstream cannot ask *"retry, or change
+  the config?"* of the stored value — is filed rather than argued away.
 
   **It sits on the unanswered side of the partition, and that is the
   load-bearing half.** `trial_results_compliant` is what both known
@@ -47,15 +55,50 @@ All notable changes to bmlib are documented here. The format is based on
   emphasis.** Over the 30 papers naming an accession in the 2026-09-08
   trial-enriched sampler draw, a partly-answered check is **1 of 30** and the
   cap truncates **8 of 30** — so the half that was entirely silent is the
-  larger one. The cap still bounds the requests; a truncated walk that did not
-  find posted results now WARNs, naming how many accessions were skipped and
-  what the cap is. That line is gated on the walk not having concluded
-  `POSTED`, because a posted result settles the paper and the accessions
-  behind it cost nothing — and only the **cap** gets a line, an unanswered
-  accession already having one from `_request` naming it and the status code.
+  larger one. Read the 1 as a **floor**: that draw predates PR #213's
+  correction of `TrialCheck.answered`, which counted HTTP 200 where bmlib
+  counts a non-`None` return and so deflated exactly that row, while the
+  truncation count derives from `found > probed` and is unaffected — which is
+  why the comparison rests on the 8 (PR #225's review). The cap still bounds
+  the requests; a truncated walk that did not find posted results now WARNs,
+  naming how many accessions were skipped, what the cap is, and **which
+  accessions they were** — the last being what raising the cap recovers, and
+  what gives the line a subject. That line is gated on the walk not having
+  concluded `POSTED`, because a posted result settles the paper and the
+  accessions behind it cost nothing — and only the **cap** gets a line, four
+  of the five ways an asked accession fails to answer already having one from
+  `_request`. The fifth does not: `_json_bool` refuses a wrong-typed value in
+  silence, which is issue #226 (issue #209's residual at the one site where it
+  decides a stored status), and the comment claiming universal
+  coverage is narrowed rather than the absence licensed by a false premise.
   How far the accession-count distribution runs past three is still
   unmeasured; `scripts/sample_api_failures.py` records each paper's count
-  before the cap, so a run answers it.
+  before the cap, so a run would answer it with one more report line.
+
+  **PR #225's review found six further defects in this change and in the one
+  below, all fixed here.** A **repeated accession** made the cap report a
+  truncation that lost nothing and retract a finding ClinicalTrials.gov had
+  made: `<DataBankList>` is `(DataBank+)`, so one paper naming one trial twice
+  is well-formed input, and `_parse_pubmed_signals` collected the entries
+  verbatim where the funders tuple twelve lines below already deduplicated and
+  `_find_trial_ids` has since issue #202. Deduplicated at the parser, so the
+  sampler's own truncation count is not inflated by repeats either. The
+  **book branch** matched a `<PubmedBookArticle>` anywhere and was tried
+  first, so a legal mixed set reported an article record at DEBUG on the
+  strength of its neighbour — children now, and every child. Four mutants
+  survived the whole suite and now die: deleting `root.tag ==
+  _PUBMED_RECORD_SET_ROOT` (which let an empty `<eFetchResult/>` be reported
+  as an empty `PubmedArticleSet` NCBI never sent), emptying
+  `_PUBMED_SIGNALS_LOST`, passing `""` for the `pmid` at the one call site
+  (so the whole point of the signature change was unpinned end to end), and
+  substituting `len(ct_ids)` for `dropped` in the new WARNING. The first cut
+  of the constant's own test asserted `_PUBMED_SIGNALS_LOST in message`, which
+  the mutant satisfies vacuously — this repository's *"a log assertion must be
+  unique to the line"*, turned on the assertion written to enforce it.
+  `PARTLY_ANSWERED` gained the `analyze()`-level test every other member has,
+  and `is_answered` gained the generic partition guard its `FullTextStatus`
+  twin has carried since issue #161. Three stale counts and the misdated
+  figure above were corrected in the same pass.
 
   **What moves:** for a paper whose results check was partial,
   `trial_results_status` moves `NOT_POSTED` → `PARTLY_ANSWERED` and
@@ -616,7 +659,10 @@ All notable changes to bmlib are documented here. The format is based on
   `_INDICATORS_RETRACTED_BY_PUBMED_COI` is retracted, *"COI disclosure status
   unknown"* stands, and the missing-COI downgrade is free to fire — and it
   was the *majority* outcome of the draw that finally sized it: `no-citation`
-  for 50 of 60 served bodies on 2026-09-08. This is issue #193's *"check the
+  for 50 of 60 served bodies on **2026-09-09** — the run that first carried
+  that counter, the 09-08 one having reported the same bodies as plain `xml`,
+  which is the defect that created it (PR #225's review). This is issue #193's
+  *"check the
   diagnostic exists before arguing about its level"*, applied to the branch
   that fix did not reach.
 
