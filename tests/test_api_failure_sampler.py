@@ -124,6 +124,20 @@ def _pace(_url: str) -> None:
     """A pacer that does nothing, so tests do not sit through the interval."""
 
 
+def _as(outcomes: list, endpoint: str) -> list:
+    """The same outcomes at another endpoint, for comparing a per-endpoint rule."""
+    return [
+        sampler.ProbeOutcome(
+            endpoint=endpoint,
+            status=o.status,
+            cause=o.cause,
+            measured=o.measured,
+            shape=(sampler.BodyShape(endpoint=endpoint, top=o.shape.top) if o.shape else None),
+        )
+        for o in outcomes
+    ]
+
+
 def _epmc_body(**record: object) -> dict:
     """One EuropePMC search body carrying one record."""
     return {"resultList": {"result": [record]}}
@@ -1430,8 +1444,11 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
             (_epmc_body(id="1", pmcid="PMC1"), "not-claimed"),
             (_epmc_body(inEPMC="N", pmcid="PMC1"), "not-claimed"),
             (_epmc_body(inEPMC="Y", pmcid="PMC1", id="1"), "pmcid"),
-            (_epmc_body(inEPMC="Y", id="PPR123"), "id-only"),
-            (_epmc_body(inEPMC="Y", pmcid="", id="PPR123"), "id-only"),
+            (_epmc_body(inEPMC="Y", id="PPR123"), "id-accession"),
+            (_epmc_body(inEPMC="Y", pmcid="", id="PPR123"), "id-accession"),
+            (_epmc_body(inEPMC="Y", id="PMC4154587"), "id-accession"),
+            (_epmc_body(inEPMC="Y", id="41637542"), "id-not-an-address"),
+            (_epmc_body(inEPMC="Y", id="NBK620630"), "id-not-an-address"),
             (_epmc_body(inEPMC="Y"), "unaddressable"),
             (_epmc_body(inEPMC="Y", pmcid="", id=""), "unaddressable"),
         ],
@@ -1509,6 +1526,7 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
                 _epmc_body(id="1", pmcid="PMC1"),
                 _epmc_body(inEPMC="Y", pmcid="PMC1"),
                 _epmc_body(inEPMC="Y", id="PPR1"),
+                _epmc_body(inEPMC="Y", id="41637542"),
                 _epmc_body(inEPMC="Y"),
             )
         }
@@ -1571,6 +1589,18 @@ class TestTheAddressCategoryAgreesWithWhatTheAnalyzerDoes:
             (_epmc_body(inEPMC="Y", pmcid="PMC1", id="1"), "PMC1"),
             (_epmc_body(inEPMC="Y", id="PPR123"), "PPR123"),
             (_epmc_body(inEPMC="Y"), None),
+            # Issue #188's own population, and the row this comparison had no
+            # case for while the analyzer asked with anything: a `MED`
+            # record's bare `id` is a PMID, and neither side addresses it.
+            (_epmc_body(inEPMC="Y", id="41637542", source="MED"), None),
+            (_epmc_body(inEPMC="Y", id="NBK620630", source="MED"), None),
+            # Where a *prefix* test and the analyzer's `fullmatch` disagree.
+            # Without this row, restating the accession test as
+            # `ext_id.startswith(("PMC", "PPR"))` passed the whole suite while
+            # the identity assertion below sat there importing a constant it
+            # no longer used (measured by mutation).
+            (_epmc_body(inEPMC="Y", id="PMCnotanumber", source="PMC"), None),
+            (_epmc_body(inEPMC="Y", id="PPR123 ", source="PPR"), None),
         ],
     )
     def test_a_request_is_made_exactly_where_the_category_says_it_would_be(
@@ -1594,18 +1624,55 @@ class TestTheAddressCategoryAgreesWithWhatTheAnalyzerDoes:
         # The anti-vacuity half: were `ADDRESSED_CATEGORIES` every category,
         # `asked` would be constant and the comparison above would pass over
         # a sampler that agreed with nothing.
-        assert sampler.ADDRESSED_CATEGORIES == frozenset({"pmcid", "id-only"})
+        assert sampler.ADDRESSED_CATEGORIES == frozenset({"pmcid", "id-accession"})
+
+    def test_the_accession_test_is_the_analyzers_own(self):
+        # The one predicate this script must **not** restate, for the reason
+        # it imports the URLs: a restated accession test would put a record
+        # in the `id-accession` row that bmlib refuses, or the reverse, in
+        # the one table issue #188 is decided on.
+        #
+        # **This assertion alone is worth little, and saying so is the
+        # point.** It is exactly the "checking that the constant was
+        # imported" this module's own docstring calls weaker than driving
+        # both — a mutant that kept the import and used
+        # `startswith(("PMC", "PPR"))` passed it and the whole suite. What
+        # has teeth is the parametrised comparison above, which now carries
+        # two ids where a prefix test and a fullmatch disagree. This stays as
+        # the statement of intent.
+        from bmlib.transparency.analyzer import _EUROPEPMC_ACCESSION_RE
+
+        assert sampler._EUROPEPMC_ACCESSION_RE is _EUROPEPMC_ACCESSION_RE
+
+    def test_an_address_bmlib_refuses_is_still_probed(self):
+        # Issue #216's whole point surviving issue #188's fix: bmlib stops
+        # asking, and the table that licensed it keeps measuring. Keyed on
+        # `PROBED_CATEGORIES`, which is why that is a second name.
+        assert "id-not-an-address" in sampler.PROBED_CATEGORIES
+        assert "id-not-an-address" not in sampler.ADDRESSED_CATEGORIES
+        probes: list = []
+        client = _ScriptedClient(
+            _FakeResponse(200, {}),
+            _FakeResponse(200, _epmc_body(inEPMC="Y", id="41637542", source="MED")),
+            _FakeResponse(404),
+            _FakeResponse(200, text=""),
+            _FakeResponse(200, {}),
+        )
+        record = sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid="1", raw={})
+        sampler.probe_record(client, record, "a@b.c", _pace, probes)
+        assert sampler._fulltext_url("41637542") in client.urls()
+        assert [p.addressing.category for p in probes] == ["id-not-an-address"]
 
 
 def _address_probe(
-    category: str = "id-only",
+    category: str = "id-accession",
     *,
     source: str | None = "MED",
     open_access: str | None = "Y",
     cause: str | None = "http-404",
 ) -> sampler.AddressProbe:
     """One full-text address probe, built from its bucket."""
-    accession = "PMC1" if category == "pmcid" else "1"
+    accession = "1" if category == "id-not-an-address" else f"{category[:3].upper()}1"
     if cause is None:
         outcome = sampler.ProbeOutcome(
             endpoint="europepmc_fulltext",
@@ -1752,21 +1819,21 @@ class TestWhatBecameOfEachFullTextAddress:
             *[_address_probe(cause=None) for _ in range(4)],
             _address_probe(cause="unmeasured-503"),
         ]
-        row = next(line for line in sampler.summarise_addresses(probes) if "id-only" in line)
+        row = next(line for line in sampler.summarise_addresses(probes) if "id-accession" in line)
         assert "4 probed" in row and "4 served" in row
 
-    def test_the_id_only_rows_are_split_by_source_and_the_pmcid_row_is_not(self):
+    def test_the_id_fallback_rows_are_split_by_source_and_the_pmcid_row_is_not(self):
         # #188's whole split: a `PPR` record's bare `id` is the only address
         # it has and a `MED` record's is a PMID. On a `pmcid` row the source
         # would fan one population into three for no question.
         probes = [
-            _address_probe("id-only", source="MED"),
-            _address_probe("id-only", source="PPR", cause=None),
+            _address_probe("id-accession", source="MED"),
+            _address_probe("id-accession", source="PPR", cause=None),
             _address_probe("pmcid", source="MED", cause=None),
         ]
         lines = sampler.summarise_addresses(probes)
-        assert any("id-only, source MED" in line and "0 served" in line for line in lines)
-        assert any("id-only, source PPR" in line and "1 served" in line for line in lines)
+        assert any("id-accession, source MED" in line and "0 served" in line for line in lines)
+        assert any("id-accession, source PPR" in line and "1 served" in line for line in lines)
         assert any(line.strip().startswith("pmcid ") for line in lines)
         assert not any("pmcid, source" in line for line in lines)
 
@@ -1797,7 +1864,7 @@ class TestWhatBecameOfEachFullTextAddress:
         # says it was not measured instead of printing a share of nothing.
         probes = [
             _address_probe("pmcid", cause="unmeasured-429"),
-            *[_address_probe("id-only", cause=None) for _ in range(9)],
+            *[_address_probe("id-accession", cause=None) for _ in range(9)],
         ]
         assert sampler.addresses_reportable(probes)
         assert any(
@@ -2142,7 +2209,7 @@ class TestTheShapeTableFollowsTheRulesEveryTableHereFollows:
             sampler.ProbeOutcome(endpoint="crossref", status=404, cause="http-404")
             for _ in range(20)
         ]
-        assert sampler.shapes_reportable(outcomes) is False
+        assert sampler.shapes_reportable("crossref", outcomes) is False
         assert any("too few to report" in line for line in sampler.summarise_shapes("cr", outcomes))
 
     def test_a_shape_population_that_mostly_served_is_reported(self):
@@ -2150,7 +2217,52 @@ class TestTheShapeTableFollowsTheRulesEveryTableHereFollows:
         outcomes = [_served("crossref", {}) for _ in range(19)] + [
             sampler.ProbeOutcome(endpoint="crossref", status=404, cause="http-404")
         ]
-        assert sampler.shapes_reportable(outcomes) is True
+        assert sampler.shapes_reportable("crossref", outcomes) is True
+
+    def test_the_endpoint_whose_404_is_the_finding_keeps_its_shape_table(self):
+        # Found by the 2026-09-09 live run rather than by review. That rule
+        # was written for five endpoints at which a non-200 is close to
+        # unheard of; `europepmc_fulltext`'s gate is deliberately wider than
+        # what it serves, so a 404 is its ordinary majority outcome — 46 of
+        # 52 — and the shape table reported ERROR and flipped the exit code
+        # on a clean run. The same outcomes at any other endpoint still do.
+        outcomes = [
+            sampler.ProbeOutcome(
+                endpoint="europepmc_fulltext",
+                status=200,
+                cause=None,
+                shape=sampler.BodyShape(endpoint="europepmc_fulltext", top="served"),
+            )
+        ] + [
+            sampler.ProbeOutcome(endpoint="europepmc_fulltext", status=404, cause="http-404")
+            for _ in range(20)
+        ]
+        assert sampler.shapes_reportable("europepmc_fulltext", outcomes) is True
+        assert sampler.shapes_reportable("crossref", _as(outcomes, "crossref")) is False
+
+    def test_it_is_not_a_free_pass(self):
+        # The exception drops one rule and keeps the rest: an endpoint that
+        # served nothing at all is still an ERROR, and a throttled population
+        # is still one.
+        assert not sampler.shapes_reportable(
+            "europepmc_fulltext",
+            [
+                sampler.ProbeOutcome(endpoint="europepmc_fulltext", status=404, cause="http-404")
+                for _ in range(4)
+            ],
+        )
+        assert not sampler.shapes_reportable(
+            "europepmc_fulltext",
+            [
+                sampler.ProbeOutcome(
+                    endpoint="europepmc_fulltext",
+                    status=429,
+                    cause="unmeasured-429",
+                    measured=False,
+                )
+                for _ in range(4)
+            ],
+        )
 
     def test_a_field_no_served_body_could_be_asked_says_so_rather_than_vanishing(self):
         # Otherwise "never wrong-typed" and "never reachable" print alike,
@@ -2176,10 +2288,15 @@ class TestTheRiderTablesRefuseAnAbsentPopulation:
     def test_an_address_table_reports_each_category_it_saw(self):
         outcomes = [
             _served("europepmc_search", _epmc_body(inEPMC="Y", pmcid="PMC1")),
-            _served("europepmc_search", _epmc_body(inEPMC="Y", id="X", source="PPR")),
+            _served("europepmc_search", _epmc_body(inEPMC="Y", id="PPR1", source="PPR")),
+            _served("europepmc_search", _epmc_body(inEPMC="Y", id="41637542", source="MED")),
         ]
         text = "\n".join(sampler.summarise_addressing(outcomes))
-        assert "pmcid" in text and "id-only" in text
+        assert "pmcid" in text
+        # Both `id`-fallback categories, split by the source the fallback
+        # turns on — that split is issue #188's whole finding.
+        assert "id-accession, source PPR" in text
+        assert "id-not-an-address, source MED" in text
 
     def test_the_table_says_how_many_records_a_request_would_be_made_for(self):
         # The denominator of the full-text fetch population, and what makes

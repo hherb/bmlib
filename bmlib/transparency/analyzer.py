@@ -312,6 +312,33 @@ _INDUSTRY_COI_KEYWORDS = [
 #: ``test_the_two_modules_agree_on_the_base_and_on_a_pmcid`` — and
 #: deliberately not on the identifier.
 EUROPEPMC_REST_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
+#: What an article's full text is addressed *by*, which is the other half of
+#: the constant above and was left implicit by it (issue #188).
+#:
+#: ``_check_europepmc`` builds the identifier as ``record["pmcid"] or
+#: record["id"]``. For a ``PMC`` record and for a ``PPR`` preprint that is the
+#: accession; for a ``MED`` record carrying no ``pmcid`` it is the **PMID**,
+#: and a PMID is not an address here. So a third of analysed records spent a
+#: rate-limited request on a 404 that was known before it left, and stored
+#: :attr:`~bmlib.transparency.models.FullTextStatus.NOT_SERVED` — documented
+#: *"requested and not served"* — for an address bmlib chose rather than one
+#: EuropePMC declined. That is the #187/#190/#191 defect once more: a claim in
+#: EuropePMC's mouth that only their 404 to a real address makes.
+#:
+#: **A shape test, not a ``source`` allow-list**, though the measurement that
+#: sized this reads *"the record's own source is what separates them"*. The
+#: two agree on every population drawn — a ``MED`` id is numeric, a ``PPR``
+#: id is a ``PPR…`` accession — and they differ in one direction that matters:
+#: an allow-list refuses an accession-shaped address from a source nobody has
+#: enumerated, and losing an article that would have been served is the
+#: failure this issue's own comment calls worse than the wasted request it
+#: saves. The shape refuses only what cannot be an address.
+#:
+#: ``fullmatch``, so ``"PMC123\n"`` is not an address — ``fulltext/
+#: service.py``'s ``_PMC_ID_RE`` for the same reason, and the two modules
+#: still deliberately disagree on the identifier: this one admits ``PPR``,
+#: which that one must reject.
+_EUROPEPMC_ACCESSION_RE = re.compile(r"(?:PMC|PPR)\d+")
 
 # ---- The other three endpoints ----
 #: Named constants rather than f-strings inside the methods, for the reason
@@ -2431,12 +2458,15 @@ class TransparencyAnalyzer:
             source: The record's ``source``. It addresses nothing — see
                 :data:`EUROPEPMC_REST_BASE` — and is used only to name the
                 subject of the log lines, so it may be ``None``.
-            ext_id: What addresses the article. Ordinarily a EuropePMC
-                accession (``PMC…`` or ``PPR…``), but the caller builds it as
-                ``record["pmcid"] or record["id"]``, so for a ``MED`` record
-                carrying no ``pmcid`` it is a bare PMID — a request whose 404
-                is known before it is made (issue #188). Without it no
-                request is made at all.
+            ext_id: The record's identifier, which may or may not be an
+                address. The caller builds it as ``record["pmcid"] or
+                record["id"]``, so for a ``MED`` record carrying no ``pmcid``
+                it is a bare PMID. Deciding that here rather than at the call
+                site keeps *"what addresses an article"* in one place, beside
+                the URL it is interpolated into; a caller cannot both build
+                the identifier and be trusted to know which of its two sources
+                it came from. Without an identifier, or with one that is not a
+                :data:`_EUROPEPMC_ACCESSION_RE` accession, no request is made.
             document_id: The caller's own identifier, so a log line can be
                 joined to the stored result. May be empty.
         """
@@ -2459,6 +2489,36 @@ class TransparencyAnalyzer:
             logger.warning(
                 "EuropePMC says it holds full text for document %s but the record carries "
                 "no address for it (source=%r, id=%r); scanning the abstract instead",
+                document_id or "?",
+                source,
+                ext_id,
+            )
+            return _FullTextFetch(None, FullTextStatus.NOT_ATTEMPTED)
+        if not _EUROPEPMC_ACCESSION_RE.fullmatch(ext_id):
+            # Issue #188. The record carries an identifier and it does not
+            # address full text here — overwhelmingly a `MED` record's bare
+            # PMID, which the caller reaches because `pmcid` was absent. The
+            # request that used to follow could only 404, and stored
+            # `NOT_SERVED` for it.
+            #
+            # **DEBUG, and the asymmetry with the guard above is the whole
+            # point of having two.** That one fires on a record claiming
+            # `inEPMC: Y` and carrying nothing at all, which is malformed;
+            # this one fires on a perfectly ordinary record whose full text
+            # EuropePMC holds under an identifier this endpoint does not
+            # serve — a book chapter, most often. Nothing is wrong, so a
+            # WARNING would be noise on a large share of every corpus
+            # analysed, which is the 404's own argument one step earlier.
+            #
+            # `NOT_ATTEMPTED` and not a new member: its documented meaning is
+            # *"no request was made, and EuropePMC's own answer is why"*, and
+            # the record **is** EuropePMC's answer — it names no accession for
+            # this article. That reading is exact here, where it is the
+            # complaint issue #207 makes of the guard above; splitting that
+            # cause out is #207's, and this is not it.
+            logger.debug(
+                "EuropePMC full text for document %s is not addressable: source=%r carries "
+                "id=%r, which is not a EuropePMC accession; scanning the abstract instead",
                 document_id or "?",
                 source,
                 ext_id,

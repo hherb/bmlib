@@ -217,6 +217,42 @@ must not be re-done.
   closed-access papers. Measured 2026-09-05 over 200 stratified live probes:
   81 of 81 non-200s were 404, so the quiet branch is measured over the whole
   of what it now takes and the loud one fires on nothing in a healthy draw.
+- **An address is recognised by its shape, not by the record's `source`**
+  (#188). The measurement that sized this reads *"the accession expression is
+  right for `PPR` and never right for `MED`, and the record's own `source` is
+  what separates them"*, which is true and is not the rule that got written.
+  The two agree on every population drawn; they differ where an
+  accession-shaped identifier arrives under a source nobody has enumerated,
+  and there the allow-list refuses a fetch that would have worked. That is the
+  loss this issue's own comment calls worse than the wasted request it saves,
+  and it is `_check_europepmc`'s dropped `source` guard (#184) waiting to
+  happen again. `fullmatch` on `(?:PMC|PPR)\d+`, so `"PMC123\n"` is not an
+  address — `fulltext/service.py`'s `_PMC_ID_RE` for the same reason, and the
+  two modules still deliberately disagree about the identifier. Do not
+  "simplify" this into a `source` test, and do not delete the `or id`
+  fallback: 75,841 `SRC:PPR AND IN_EPMC:Y` records have no other address.
+- **It stores `NOT_ATTEMPTED` rather than a member of its own** (#188). The
+  member reads *"no request was made, and Europe PMC's own answer is why"*,
+  and the record **is** Europe PMC's answer: it names no accession for this
+  article. That reading is exact here — which is precisely what #207 says it
+  is not for the sibling cause one guard up (a record claiming `inEPMC: Y` and
+  carrying nothing at all, which is malformed and WARNs). Two guards, two
+  levels, one status. Do not fold the two guards together to save a branch:
+  the levels are the difference, and this one fires on a large share of every
+  corpus analysed where that one measured 0 of 124.
+- **The full-text endpoint keeps its shape table on a rule the other five do
+  not get** (#216, from that instrument's own first run).
+  `shapes_reportable`'s second rule — *"a probe that reached no body is as
+  uninformative as a throttled one"* — was written for five endpoints at which
+  a non-200 is close to unheard of. `europepmc_fulltext` is the one whose gate
+  (`inEPMC`) is deliberately wider than what it serves, so a 404 is its
+  ordinary majority outcome and always will be; applying the rule reported
+  ERROR and flipped the exit code on a clean run. The exception is a named
+  set, it drops only that rule (throttling and the empty-population floor
+  still apply), and every row carries its Wilson interval, so a distribution
+  over six bodies prints as one. Do not generalise the exception to another
+  endpoint without a draw saying its non-200 is ordinary — that is #191's rule
+  one instrument over.
 - **The five `_ORDINARY_STATUSES` sets are empty as a measurement, not as a
   placeholder** (#193). A status is quiet only where a draw measured it to be
   that endpoint's ordinary outcome, which is #191's rule stated forward

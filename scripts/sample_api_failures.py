@@ -173,6 +173,7 @@ from _sampling import (
 )
 
 from bmlib.transparency.analyzer import (
+    _EUROPEPMC_ACCESSION_RE,
     _HTTP_TIMEOUT_SECONDS,
     CLINICALTRIALS_STUDY_URL,
     CROSSREF_WORKS_URL,
@@ -484,26 +485,36 @@ def _kind_at(body: object, steps: tuple[str, ...]) -> str | None:
 
 
 #: The address categories for which bmlib *makes* a full-text request.
-ADDRESSED_CATEGORIES = frozenset({"pmcid", "id-only"})
+ADDRESSED_CATEGORIES = frozenset({"pmcid", "id-accession"})
 #: The categories that offer an address at all, which is what this script
 #: *probes* — and it is deliberately not the same question as
 #: :data:`ADDRESSED_CATEGORIES`, which is what bmlib *asks* with.
 #:
-#: They coincide today. They must be separate names anyway, because the moment
-#: issue #188 is taken they diverge: bmlib stops asking with an address it can
-#: know will 404, and a table keyed on what bmlib asks would then stop
-#: measuring the very thing that licensed the refusal. A guard installed is a
-#: guard whose evidence has to stay re-derivable, which is this repository's
-#: rule about a share going stale silently — so the probe follows the
-#: *record's offer* and the table says, per category, what became of it.
-PROBED_CATEGORIES = ADDRESSED_CATEGORIES
+#: They coincided until issue #188, which is why they are separate names:
+#: bmlib no longer asks with an identifier it can know will 404, and a table
+#: keyed on what bmlib asks would then stop measuring the very thing that
+#: licensed the refusal. A guard installed is a guard whose evidence has to
+#: stay re-derivable — this repository's rule about a share going stale
+#: silently — so the probe follows the *record's offer* and the table says,
+#: per category, what became of it. ``id-not-an-address`` is the row that
+#: exists to keep issue #188 answerable on every later run.
+PROBED_CATEGORIES = ADDRESSED_CATEGORIES | {"id-not-an-address"}
+#: The two categories reached by falling back to the record's own ``id``,
+#: which is the fallback issue #188 narrowed rather than deleted. Named
+#: because the report splits exactly these by ``source`` — that is the field
+#: the fallback turns on — and a ``pmcid`` row split the same way would fan
+#: one population into three for no question.
+_ID_FALLBACK_CATEGORIES = frozenset({"id-accession", "id-not-an-address"})
 #: The categories for which it makes none, and issue #207 is that
 #: ``FullTextStatus`` cannot tell them apart: ``not-claimed`` is an ordinary
 #: closed-access paper, ``no-record`` is EuropePMC answering with no record,
-#: and ``unaddressable`` is a record claiming ``inEPMC: Y`` and then carrying
+#: ``unaddressable`` is a record claiming ``inEPMC: Y`` and then carrying
 #: nothing to address the text by — which the member's own documented meaning
-#: (*"EuropePMC's own answer is why"*) contradicts. All three store
-#: ``NOT_ATTEMPTED`` today.
+#: (*"EuropePMC's own answer is why"*) contradicts — and since issue #188
+#: ``id-not-an-address`` is a record whose only identifier is a PMID or a
+#: ``bookid``. All four store ``NOT_ATTEMPTED``, and for the fourth that
+#: reading is exact: the record is EuropePMC's answer and it names no
+#: accession.
 #:
 #: **Named as a set rather than left to be the complement**, which is this
 #: repository's own rule about ``FullTextStatus.is_refusal``: a sixth category
@@ -512,7 +523,9 @@ PROBED_CATEGORIES = ADDRESSED_CATEGORIES
 #: and silently move the headline figure two issues are blocked on.
 #: ``test_every_address_category_chooses_a_side`` asserts the partition, so a
 #: new member has to choose (PR #213's review).
-UNADDRESSED_CATEGORIES = frozenset({"no-record", "not-claimed", "unaddressable"})
+UNADDRESSED_CATEGORIES = frozenset(
+    {"no-record", "not-claimed", "unaddressable", "id-not-an-address"}
+)
 #: Every category :func:`_addressability` may return, as a partition.
 ALL_ADDRESS_CATEGORIES = ADDRESSED_CATEGORIES | UNADDRESSED_CATEGORIES
 
@@ -616,7 +629,16 @@ def _addressability(body: object) -> RecordAddressing | None:
         return RecordAddressing("pmcid", accession=pmcid, **rest)
     ext_id = _json_text(record.get("id"))
     if ext_id:
-        return RecordAddressing("id-only", accession=ext_id, **rest)
+        # The one place this script's own rule bites hardest: the accession
+        # test is `analyzer.py`'s module constant, so it is **imported**, for
+        # the same reason the URLs are. Restating it would put a record in the
+        # `id-accession` row that bmlib refuses, or the reverse — which is the
+        # drift that made issue #184 survive a release, in the one table
+        # issue #188 is decided on. The `inEPMC` gate above cannot be
+        # imported, is restated, and is pinned by driving both instead.
+        addressable = bool(_EUROPEPMC_ACCESSION_RE.fullmatch(ext_id))
+        category = "id-accession" if addressable else "id-not-an-address"
+        return RecordAddressing(category, accession=ext_id, **rest)
     return RecordAddressing("unaddressable", **rest)
 
 
@@ -1728,11 +1750,37 @@ def instrument_defects(outcomes: list[ProbeOutcome]) -> int:
     return sum(1 for s in _shapes_of(outcomes) if s.top.startswith(_INSTRUMENT_KIND_PREFIX))
 
 
-def shapes_reportable(outcomes: list[ProbeOutcome]) -> bool:
+#: Endpoints at which a probe that served no body is a **measurement** rather
+#: than a hole in the shape population, so :func:`shapes_reportable`'s second
+#: rule does not apply to them.
+#:
+#: One member, and it earned its place from a live run rather than from
+#: review. That rule reads *"for the status table a non-200 is the
+#: measurement; for the shape table it is a probe that reached no body, which
+#: is exactly as uninformative as a throttled one"* — true of the five
+#: endpoints it was written for, where a non-200 is close to unheard of.
+#: ``europepmc_fulltext`` is the one whose gate is deliberately wider than
+#: what it serves: ``inEPMC`` says EuropePMC *holds* the text and this
+#: endpoint serves the open-access subset, so a 404 is the ordinary majority
+#: outcome and always will be. Measured on 2026-09-09: 46 of 52 probes 404'd,
+#: which is the finding, and the shape table nevertheless reported ERROR and
+#: flipped the exit code on a clean run.
+#:
+#: What it does *not* buy is a free pass: the throttling rule still applies,
+#: an endpoint that served nothing at all is still an ERROR, and every row
+#: carries its Wilson interval — so a distribution over six bodies prints as
+#: one, which is what stops this reading like the ``bool(shapes)`` floor PR
+#: #213 removed.
+_ENDPOINTS_WHOSE_SHAPE_IS_OVER_SERVED_BODIES = frozenset({"europepmc_fulltext"})
+
+
+def shapes_reportable(endpoint: str, outcomes: list[ProbeOutcome]) -> bool:
     """Whether this endpoint's shape table is a distribution rather than an ERROR.
 
     Two rules, both of them the module's own, applied to the population the
-    shape table actually has (PR #213's review).
+    shape table actually has (PR #213's review) — and the second is skipped
+    for :data:`_ENDPOINTS_WHOSE_SHAPE_IS_OVER_SERVED_BODIES`, where a probe
+    that served no body is this endpoint's own answer rather than a gap.
 
     The first is :func:`is_reportable`'s, delegated so a shape table can never
     report a distribution the status table above it refused.
@@ -1752,13 +1800,20 @@ def shapes_reportable(outcomes: list[ProbeOutcome]) -> bool:
     ``UNMEASURED_SHARE_ERROR_THRESHOLD`` of its probes reports no shape
     distribution at all. That is deliberate — the shape claim is the one that
     gets quoted, so it is the one that must not rest on a remnant — and it is
-    comfortably clear today, the whole 2026-09-08 draw having recorded a
-    single non-200 in 56 CT.gov probes and none anywhere else.
+    comfortably clear for the five endpoints the rule was written for, the
+    2026-09-08 draw having recorded a single non-200 in 56 CT.gov probes and
+    none anywhere else. It is **not** clear for the sixth, and that is the
+    exception above rather than a threshold moved: 46 of 52 full-text probes
+    404'd on 2026-09-09, which is that endpoint's finding and not its
+    failure.
 
     The parameter it no longer takes was the endpoint's name, which it never
-    read while its docstring promised the answer depended on it.
+    read while its docstring promised the answer depended on it. It takes one
+    again — the exception is per endpoint, so the answer now genuinely does
+    depend on it.
 
     Args:
+        endpoint: Which population these outcomes belong to.
         outcomes: The endpoint's probe outcomes.
 
     Returns:
@@ -1766,6 +1821,8 @@ def shapes_reportable(outcomes: list[ProbeOutcome]) -> bool:
     """
     if not is_reportable(outcomes):
         return False
+    if endpoint in _ENDPOINTS_WHOSE_SHAPE_IS_OVER_SERVED_BODIES:
+        return bool(_shapes_of(outcomes))
     measured = [o for o in outcomes if o.measured]
     return _population_reportable(len(measured), len(measured) - len(_shapes_of(outcomes)))
 
@@ -1805,7 +1862,7 @@ def summarise_shapes(name: str, outcomes: list[ProbeOutcome]) -> list[str]:
     bare ``100.0%`` over four bodies and over four hundred read identically,
     and the status table directly above has carried its interval all along.
     """
-    if not shapes_reportable(outcomes):
+    if not shapes_reportable(name, outcomes):
         measured = [o for o in outcomes if o.measured]
         served = len(_shapes_of(outcomes))
         if not is_reportable(outcomes):
@@ -1881,18 +1938,27 @@ def addressing_reportable(outcomes: list[ProbeOutcome]) -> bool:
 def summarise_addressing(outcomes: list[ProbeOutcome]) -> list[str]:
     """How bmlib would have addressed each record's full text — issues #207, #188.
 
-    Three of the five categories make no request and all three store
+    Four of the six categories make no request and all four store
     ``FullTextStatus.NOT_ATTEMPTED``, whose documented meaning — *"no request
     was made, and EuropePMC's own answer is why"* — is false for
-    ``unaddressable``. Whether that earns a fourth member is what #207 asks,
-    and it was filed rather than taken because the population was unmeasured.
+    ``unaddressable``. Whether that earns a member of its own is what #207
+    asks, and it was filed rather than taken because the population was
+    unmeasured; it measured **0 of 124** on 2026-09-08.
+
+    **``id-only`` is gone and did not become one of the two names below.** It
+    counted every record addressed by its bare ``id``, which issue #188 split
+    into the accession that serves and the PMID that cannot; keeping the name
+    for either half would have made a published figure — *"43 of 124"* — mean
+    something else without changing, which is this repository's own scar
+    (``_COUNTER_DEFINITIONS_VERSION``, four counters redefined in place). Any
+    figure quoted against ``id-only`` is from before that split.
 
     Args:
         outcomes: The EuropePMC probe outcomes.
 
     Returns:
-        The category distribution, with the ``id-only`` records split by the
-        source that decides whether their address is real (issue #188).
+        The category distribution, with both ``id``-fallback categories split
+        by the source that decides whether their address is real (issue #188).
     """
     shapes = _addressed_shapes(outcomes)
     if not shapes:
@@ -1921,12 +1987,12 @@ def summarise_addressing(outcomes: list[ProbeOutcome]) -> list[str]:
             "re-find, which is an instrument result rather than a corpus one"
         )
     by_source = Counter(
-        s.addressing.source or "(no source)"
+        (s.addressing.category, s.addressing.source or "(no source)")
         for s in shapes
-        if s.addressing and s.addressing.category == "id-only"
+        if s.addressing and s.addressing.category in _ID_FALLBACK_CATEGORIES
     )
-    for source, count in sorted(by_source.items()):
-        lines.append(f"{'':<18}     id-only, source {source:<17} {count:>4}")
+    for (category, source), count in sorted(by_source.items()):
+        lines.append(f"{'':<18}     {category}, source {source:<17} {count:>4}")
     return lines
 
 
@@ -2002,7 +2068,7 @@ def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
         # population into three and shrinks every denominator on the page.
         key = (
             f"{addressing.category}, source {addressing.source or '(none)'}"
-            if addressing.category == "id-only"
+            if addressing.category in _ID_FALLBACK_CATEGORIES
             else addressing.category
         )
         by_category.setdefault(key, []).append(probe_result)
@@ -2275,7 +2341,7 @@ def main() -> int:
     # green. They are ANDed into two names rather than six, and
     # `test_each_rider_populations_verdict_reaches_the_exit_code` is what
     # holds each of them individually load-bearing.
-    shaped = all(shapes_reportable(by_endpoint[name]) for name in ENDPOINTS)
+    shaped = all(shapes_reportable(name, by_endpoint[name]) for name in ENDPOINTS)
     sized = (
         addressing_reportable(by_endpoint["europepmc_search"])
         and addresses_reportable(address_probes)
