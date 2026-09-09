@@ -25,8 +25,10 @@ level**, so the level is not being raised here, it is being *invented*: there
 was nothing to raise.
 
 **A sixth joined them for issue #216**, and it is unlike the five: the
-full-text fetch ``_fetch_europepmc_fulltext`` makes logs on every branch, and
-its levels are argued at length. What it has in common with them is where the
+full-text fetch ``_fetch_europepmc_fulltext`` logs on every branch that
+produces no document, and its levels are argued at length. (Not *"every
+branch"*, which is what this said until PR #219's review — the success return
+logs nothing, as a success should.) What it has in common with them is where the
 argument comes from — a draw of *"200 live probes stratified by source and
 publication year, 81 of the 81 non-200s were 404"* taken by hand, recorded in
 a comment, and reproducible by nothing in this repository. Issue #188's remedy
@@ -102,18 +104,20 @@ against the module by an ``ast`` walk
 list in issue #211's own text was already missing ``source`` on the day it was
 written.
 
-Three further populations ride on the same bodies, because each is a decision
-blocked on a count and none of them costs a request:
+Four further populations ride on the same draw, because each is a decision
+blocked on a count. Three of them cost no request; the fourth costs one per
+record that offers a full-text address, and is the reason issue #216 exists:
 
 * **How bmlib would address the full text** (issues #207 and #188).
-  ``FullTextStatus.NOT_ATTEMPTED`` covers three causes, one of which is a
+  ``FullTextStatus.NOT_ATTEMPTED`` covers several causes, one of which is a
   record claiming ``inEPMC: Y`` and carrying nothing to address the text by —
-  for which the member's documented meaning is false. The ``id-only`` records
-  are split by ``source``, which is what tells a preprint's only address from
-  a ``MED`` record's bare PMID. **And what became of that address**, which is
-  the one population above that does cost a request: one per record offering
-  an address, crossed with the category, the source, and the ``isOpenAccess``
-  flag bmlib does not read but issue #188's second population turns on.
+  for which the member's documented meaning is false. Both categories reached
+  by falling back to the record's own ``id`` are split by ``source``, which is
+  what tells a preprint's only address from a ``MED`` record's bare PMID.
+  **And what became of that address**, which is the population that costs the
+  request: one per record offering an address, crossed with the category, the
+  source, and the ``isOpenAccess`` flag bmlib does not read but issue #188's
+  second population turns on.
 * **Which registration sources answered at all** (issue #204).
   ``trial_registered`` is ``False`` both for a paper with no trial and for one
   bmlib could not look for a trial in.
@@ -196,9 +200,10 @@ from bmlib.transparency.analyzer import (
 #:
 #: **The sixth arrived with issue #216**, and it is not one of the five
 #: dropped responses the module docstring opens with: the full-text fetch
-#: logs on every branch. It is here because its levels rest on a draw taken
-#: by hand — *"200 live probes stratified by source and year, 81 of the 81
-#: non-200s were 404"* — that exists in a comment and in no instrument, and
+#: logs on every branch that produces no document. It is here because its
+#: levels rest on a draw taken by hand — *"200 live probes stratified by
+#: source and year, 81 of the 81 non-200s were 404"* — that exists in a
+#: comment and in no instrument, and
 #: because issue #188's remedy rests on *"that address 404s, three of three"*,
 #: which is a spot check printed beside a committed table rather than in it.
 #: Probing it is one request per record that offers an address.
@@ -498,12 +503,31 @@ ADDRESSED_CATEGORIES = frozenset({"pmcid", "id-accession"})
 #: silently — so the probe follows the *record's offer* and the table says,
 #: per category, what became of it. ``id-not-an-address`` is the row that
 #: exists to keep issue #188 answerable on every later run.
-PROBED_CATEGORIES = ADDRESSED_CATEGORIES | {"id-not-an-address"}
+#:
+#: **A literal, not ``ADDRESSED_CATEGORIES | {...}``** (PR #219's review).
+#: Written as a derivation it inherits every narrowing of the set it is
+#: documented to be independent of: issue #188 narrowed that one and this one
+#: had to be widened by hand to compensate, which is the whole argument above
+#: relying on someone remembering it. Spelled out, the next narrowing leaves
+#: this alone, and the disagreement it would create is loud —
+#: ``RecordAddressing.__post_init__`` raises for a category that offers an
+#: address and is not probed. ``test_the_two_questions_are_asked_separately``
+#: pins that the two sets are not equal.
+PROBED_CATEGORIES = frozenset({"pmcid", "id-accession", "id-not-an-address"})
 #: The two categories reached by falling back to the record's own ``id``,
 #: which is the fallback issue #188 narrowed rather than deleted. Named
 #: because the report splits exactly these by ``source`` — that is the field
 #: the fallback turns on — and a ``pmcid`` row split the same way would fan
 #: one population into three for no question.
+#:
+#: **This is the set whose next member is lost in silence** (PR #219's
+#: review), and the loss is the one this script exists to prevent: a third
+#: outcome of :func:`_addressability`'s ``ext_id`` branch — a ``bookid``
+#: split is the obvious next one — omitted here loses its ``, source X``
+#: suffix and **pools two source populations into one denominator**, at exit
+#: 0. It is derivable, being exactly the categories that branch produces, so
+#: ``test_the_id_fallback_set_is_every_category_the_id_branch_produces``
+#: holds it against the function rather than against a restated list.
 _ID_FALLBACK_CATEGORIES = frozenset({"id-accession", "id-not-an-address"})
 #: The categories for which it makes none, and issue #207 is that
 #: ``FullTextStatus`` cannot tell them apart: ``not-claimed`` is an ordinary
@@ -517,12 +541,14 @@ _ID_FALLBACK_CATEGORIES = frozenset({"id-accession", "id-not-an-address"})
 #: accession.
 #:
 #: **Named as a set rather than left to be the complement**, which is this
-#: repository's own rule about ``FullTextStatus.is_refusal``: a sixth category
+#: repository's own rule about ``FullTextStatus.is_refusal``: a category
 #: added to :func:`_addressability` and omitted from
 #: :data:`ADDRESSED_CATEGORIES` would default to *"no request would be made"*
 #: and silently move the headline figure two issues are blocked on.
 #: ``test_every_address_category_chooses_a_side`` asserts the partition, so a
-#: new member has to choose (PR #213's review).
+#: new member has to choose (PR #213's review). Stated without an ordinal —
+#: it read *"a sixth category"* and #188 added the sixth (PR #219's review),
+#: which is ``is_refusal``'s own reason for being phrased that way.
 UNADDRESSED_CATEGORIES = frozenset(
     {"no-record", "not-claimed", "unaddressable", "id-not-an-address"}
 )
@@ -549,8 +575,11 @@ class RecordAddressing:
             preprint has, while a ``MED`` record's bare ``id`` is a PMID whose
             404 is known before the request leaves.
         accession: What bmlib would interpolate into the full-text URL —
-            ``record["pmcid"] or record["id"]``, the analyzer's own
-            expression. ``None`` for a category that offers no address.
+            ``pmcid`` if the record carries one, else its ``id``, which is the
+            analyzer's own fallback *with its coercions*: it reads each
+            through ``_json_text``, and that is load-bearing (PR #208 added
+            it so a mistyped accession could not be interpolated raw).
+            ``None`` for a category that offers no address.
         open_access: The record's ``isOpenAccess``, which bmlib does **not**
             read. It is carried because issue #188's own second population
             turns on it — ``inEPMC`` says EuropePMC *holds* the text while
@@ -569,14 +598,33 @@ class RecordAddressing:
         if self.category not in ALL_ADDRESS_CATEGORIES:
             raise ValueError(f"unknown address category {self.category!r}")
         # Both directions. An accession on a category that offers none would
-        # send a probe for a record bmlib never addresses, putting a request
+        # send a probe for a record that offers no address, putting a request
         # into a denominator nothing licensed; a category that offers one and
         # carries none would drop that record out of the table silently, which
         # is the shape of loss `addressing_reportable` exists to refuse.
+        #
+        # *"offers no address"* and not *"bmlib never addresses"*, which is
+        # what this read until PR #219's review — and which argues for the
+        # opposite of what the check does, `id-not-an-address` being exactly
+        # a record bmlib never addresses and still probed. The two questions
+        # are why there are two names; see `PROBED_CATEGORIES`.
         if (self.accession is not None) != (self.category in PROBED_CATEGORIES):
             raise ValueError(
                 f"category {self.category!r} disagrees with accession {self.accession!r}"
             )
+        # And the relation that decides issue #188, which is derivable from
+        # the two fields and so was re-encodable wrongly: `id-accession` is
+        # *defined* as an `id` the analyzer's own regex accepts. Without this
+        # the test helper built an `id-accession` carrying `"ID-1"` — a state
+        # `_addressability` cannot produce, in the row #188 is decided on —
+        # and passed (PR #219's review). `ProbeOutcome.__post_init__`'s rule
+        # one type up, applied to the fields it is a relation between.
+        if self.category in _ID_FALLBACK_CATEGORIES:
+            addressable = bool(_EUROPEPMC_ACCESSION_RE.fullmatch(self.accession or ""))
+            if addressable != (self.category == "id-accession"):
+                raise ValueError(
+                    f"category {self.category!r} disagrees with the shape of {self.accession!r}"
+                )
 
 
 def _addressability(body: object) -> RecordAddressing | None:
@@ -685,8 +733,21 @@ class BodyShape:
         # `_addressed_shapes` and shrink issue #207's denominator with no line
         # printed — `FullTextStatus`'s own rule that `None` must mean *not
         # recorded* and never a determinate answer (PR #213's review).
-        if self.endpoint == "europepmc_search" and self.top == "object" and not self.addressing:
-            raise ValueError("a decoded EuropePMC object body is always categorised")
+        #
+        # **A biconditional and not a half-guard** (PR #219's review). Written
+        # as `top == "object" and not addressing` it left the third direction
+        # open, so a *non-object* EuropePMC body could carry a category —
+        # which is the pre-PR-#213 defect `_addressability` returns `None` for
+        # a non-dict specifically to prevent, reachable through this
+        # constructor. `is None` rather than falsiness for the module's own
+        # reason: `SEARCH_FAILED` exists because the two differ.
+        if self.endpoint == "europepmc_search" and (self.addressing is not None) != (
+            self.top == "object"
+        ):
+            raise ValueError(
+                "a decoded EuropePMC object body is always categorised and nothing else "
+                f"ever is, but {self.top!r} carries {self.addressing!r}"
+            )
 
     @property
     def addressability(self) -> str | None:
@@ -1256,8 +1317,26 @@ class AddressProbe:
 
     @property
     def served(self) -> bool:
-        """Whether EuropePMC served a document for this address."""
-        return self.outcome.ok
+        """Whether EuropePMC served a *document* for this address.
+
+        **Not ``outcome.ok``**, which is "no cause", i.e. HTTP 200 (PR #219's
+        review). :func:`_fulltext_kind` exists precisely to split a 200 into
+        ``served`` and ``empty``, and issue #190's whole finding is that *a
+        200 alone is not "a document arrived"* — an empty body used to store
+        a refusal that did not happen. Reading `ok` here let the address
+        table call a probe served while the shape table two rows above called
+        the same probe empty.
+
+        Nothing published moves: the 2026-09-09 draw measured 0 empty of 6
+        served. That is the point at which to fix it — a figure that changes
+        meaning without changing is this repository's own scar, and here the
+        change is still free.
+        """
+        return (
+            self.outcome.ok
+            and self.outcome.shape is not None
+            and self.outcome.shape.top == "served"
+        )
 
 
 def _efetch_params(pmid: str, email: str) -> dict[str, str]:
@@ -1310,6 +1389,14 @@ def probe_record(
 ) -> list[ProbeOutcome]:
     """Make the per-record requests ``analyze()`` would make, and classify each.
 
+    **With one deliberate exception, and it is issue #216's whole point.** The
+    full-text probe follows :data:`PROBED_CATEGORIES`, so an ``id-not-an-address``
+    record is probed here and is *not* requested by ``analyze()`` since issue
+    #188. A table keyed on what bmlib asks would stop measuring the thing that
+    licensed the refusal the moment the refusal landed, so the probe follows
+    the record's own offer. This docstring promised the analyzer's own set
+    until PR #219's review, which is the half issue #188 made false.
+
     ClinicalTrials.gov is deliberately **not** among them: its population is
     drawn separately (:data:`TRIAL_STRATA`) and probed by :func:`probe_trials`,
     so the two draws cannot pool into one denominator.
@@ -1325,10 +1412,10 @@ def probe_record(
             table can hold a row keyed on the record's category.
 
     Returns:
-        One outcome per request that would have been made. A record with no
-        DOI contributes nothing to the CrossRef or OpenAlex populations, and a
-        record with no PMID nothing to the PubMed one, which is exactly what
-        bmlib does with them.
+        One outcome per request, including the full-text probe bmlib may
+        refuse to make. A record with no DOI contributes nothing to the
+        CrossRef or OpenAlex populations, and a record with no PMID nothing to
+        the PubMed one, which is exactly what bmlib does with them.
     """
     outcomes: list[ProbeOutcome] = []
 
@@ -1760,17 +1847,30 @@ def instrument_defects(outcomes: list[ProbeOutcome]) -> int:
 #: is exactly as uninformative as a throttled one"* — true of the five
 #: endpoints it was written for, where a non-200 is close to unheard of.
 #: ``europepmc_fulltext`` is the one whose gate is deliberately wider than
-#: what it serves: ``inEPMC`` says EuropePMC *holds* the text and this
-#: endpoint serves the open-access subset, so a 404 is the ordinary majority
-#: outcome and always will be. Measured on 2026-09-09: 46 of 52 probes 404'd,
-#: which is the finding, and the shape table nevertheless reported ERROR and
-#: flipped the exit code on a clean run.
+#: what it serves. Measured on 2026-09-09: 46 of 52 probes 404'd, and the
+#: shape table nevertheless reported ERROR and flipped the exit code on a
+#: clean run.
+#:
+#: **Two mechanisms produce that 46, and only one of them is the gate** (PR
+#: #219's review). ``inEPMC`` says EuropePMC *holds* the text while this
+#: endpoint serves the open-access subset, which is what puts 3 of the 9
+#: accession addresses at 404; the other 43 are ``id-not-an-address`` probes
+#: this script deliberately keeps making after issue #188 stopped bmlib
+#: making them, and they 404 because the URL addresses nothing. The
+#: exception is right either way — a probe that reached no body is this
+#: endpoint's own answer — but the majority is the second mechanism, and
+#: attributing it to the first would licence *"a 404 is the ordinary majority
+#: outcome"* in contexts where it is not. See :func:`summarise_addresses`,
+#: which reports the two separately for exactly this reason.
 #:
 #: What it does *not* buy is a free pass: the throttling rule still applies,
 #: an endpoint that served nothing at all is still an ERROR, and every row
 #: carries its Wilson interval — so a distribution over six bodies prints as
-#: one, which is what stops this reading like the ``bool(shapes)`` floor PR
-#: #213 removed.
+#: one. It **is** the ``bool(shapes)`` floor PR #213 removed, restored for one
+#: endpoint and for no other; the interval is what makes it safe here and its
+#: absence is what made it unsafe there. (This said the interval stopped it
+#: *"reading like"* that floor, which denied a resemblance the code makes
+#: literal.)
 _ENDPOINTS_WHOSE_SHAPE_IS_OVER_SERVED_BODIES = frozenset({"europepmc_fulltext"})
 
 
@@ -1938,7 +2038,8 @@ def addressing_reportable(outcomes: list[ProbeOutcome]) -> bool:
 def summarise_addressing(outcomes: list[ProbeOutcome]) -> list[str]:
     """How bmlib would have addressed each record's full text — issues #207, #188.
 
-    Four of the six categories make no request and all four store
+    Every category but ``pmcid`` and ``id-accession`` makes no request, and
+    all of them store
     ``FullTextStatus.NOT_ATTEMPTED``, whose documented meaning — *"no request
     was made, and EuropePMC's own answer is why"* — is false for
     ``unaddressable``. Whether that earns a member of its own is what #207
@@ -1977,7 +2078,7 @@ def summarise_addressing(outcomes: list[ProbeOutcome]) -> list[str]:
     for category, count in sorted(Counter(s.addressability for s in shapes).items()):
         lines.append(f"{'':<18}   {category:<34} {count:>4}   {100 * count / total:5.1f}%")
     # Called out beside the distribution rather than left as one row among
-    # five: every drawn record came from this same API, so a `no-record` is
+    # the rest: every drawn record came from this same API, so a `no-record` is
     # this script failing to re-find its own draw and not the corpus
     # answering. The share is what a reader needs to judge the rest by.
     no_record = sum(1 for s in shapes if s.addressability == "no-record")
@@ -2009,7 +2110,15 @@ def _served_share(label: str, probes: list[AddressProbe]) -> str:
     over three hundred read identically. Issue #188's whole remedy is *"do not
     make a request that cannot succeed"*, and the strength of that claim is
     the width of this interval.
+
+    An **empty** population and one whose every probe was thrown away are two
+    answers, so they get two lines (PR #219's review): the first is a row the
+    draw never reached, the second is a row the draw reached and lost.
+    Collapsing them is the *"never wrong-typed" versus "never asked"* conflation
+    this script's shape table is built to avoid.
     """
+    if not probes:
+        return f"{'':<18}   {label:<34}    - NO POPULATION HERE (none was drawn)"
     measured = [p for p in probes if not p.is_unmeasured]
     if not measured:
         return f"{'':<18}   {label:<34} {len(probes):>4} probed   none measured"
@@ -2039,6 +2148,25 @@ def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
       gate narrowed on a floor silently loses an article that would have been
       served.
 
+    Above both sits **one row for the population the analyzer's own 404
+    branch takes**, which is :data:`ADDRESSED_CATEGORIES` and not the probed
+    set (PR #219's review). Without it the only served share on the page was
+    over all of :data:`PROBED_CATEGORIES`, and that is what four documents
+    quoted as the DEBUG level's committed denominator — while the branch the
+    level sits on had just been narrowed by issue #188 to exclude 43 of those
+    52 probes. The two disagree by more than their intervals: 46 of 52 not
+    served against 3 of 9, [77.0, 94.6] against [12.1, 64.6]. That is this
+    script's own rule (*"the branch it sits on must be no wider than the
+    draw"*) read the other way round, and it is the ``id-only`` scar again —
+    a published figure meaning something else without changing.
+
+    **Every probed category prints a row even at zero**, for the reason
+    :func:`summarise_shapes` prints ``NO POPULATION HERE``: ``id-accession``
+    measured 0 in the 2026-09-09 draw, so the fallback the shape test exists
+    to preserve was unexercised and the table said nothing at all — *"served
+    0 of 0"* and *"never drawn"* being the distinction this whole script is
+    built to keep.
+
     Args:
         probes: One per record that offered an address.
 
@@ -2060,6 +2188,10 @@ def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
             "(429/503) even after retries; no distribution is reported"
         ]
     lines = [f"{label:<18} {len(probes):>4} addresses probed"]
+    # The analyzer's own population first, because it is the one a log level
+    # is set from and the one every other row can be mistaken for.
+    asked = [p for p in probes if p.addressing.category in ADDRESSED_CATEGORIES]
+    lines.append(_served_share("addresses bmlib asks with", asked))
     by_category: dict[str, list[AddressProbe]] = {}
     for probe_result in probes:
         addressing = probe_result.addressing
@@ -2074,6 +2206,12 @@ def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
         by_category.setdefault(key, []).append(probe_result)
     for key in sorted(by_category):
         lines.append(_served_share(key, by_category[key]))
+    for category in sorted(PROBED_CATEGORIES):
+        if not any(k == category or k.startswith(f"{category}, source ") for k in by_category):
+            lines.append(
+                f"{'':<18}   {category:<34}    - NO POPULATION HERE "
+                "(no record in this draw offered one)"
+            )
     lines.append(f"{'':<18}   and by isOpenAccess, which bmlib does not read:")
     by_access: dict[str, list[AddressProbe]] = {}
     for probe_result in probes:

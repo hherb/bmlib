@@ -318,8 +318,9 @@ EUROPEPMC_REST_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 #: ``_check_europepmc`` builds the identifier as ``record["pmcid"] or
 #: record["id"]``. For a ``PMC`` record and for a ``PPR`` preprint that is the
 #: accession; for a ``MED`` record carrying no ``pmcid`` it is the **PMID**,
-#: and a PMID is not an address here. So a third of analysed records spent a
-#: rate-limited request on a 404 that was known before it left, and stored
+#: and a PMID is not an address here. So 43 of the 123 records in a
+#: source-stratified draw (2026-09-09) spent a rate-limited request on an
+#: address measured at 0 of 43 served, and stored
 #: :attr:`~bmlib.transparency.models.FullTextStatus.NOT_SERVED` — documented
 #: *"requested and not served"* — for an address bmlib chose rather than one
 #: EuropePMC declined. That is the #187/#190/#191 defect once more: a claim in
@@ -332,13 +333,30 @@ EUROPEPMC_REST_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 #: an allow-list refuses an accession-shaped address from a source nobody has
 #: enumerated, and losing an article that would have been served is the
 #: failure this issue's own comment calls worse than the wasted request it
-#: saves. The shape refuses only what cannot be an address.
+#: saves. The shape refuses only what this endpoint cannot serve — which is
+#: a claim about the endpoint, and so is measured rather than assumed.
 #:
 #: ``fullmatch``, so ``"PMC123\n"`` is not an address — ``fulltext/
 #: service.py``'s ``_PMC_ID_RE`` for the same reason, and the two modules
 #: still deliberately disagree on the identifier: this one admits ``PPR``,
 #: which that one must reject.
-_EUROPEPMC_ACCESSION_RE = re.compile(r"(?:PMC|PPR)\d+")
+#:
+#: **Case-insensitive, and that is the measurement and not a courtesy**
+#: (PR #219's review). The first cut folded no case, on the unstated
+#: assumption that an accession is uppercase or nothing. Probed live on
+#: 2026-09-09, ``pmc4154587`` and ``ppr1301373`` each serve **HTTP 200 with
+#: bytes identical to the uppercase form** (53,167 and 143,394), so a
+#: case-sensitive test refuses an address that serves — which is exactly the
+#: failure the paragraph above calls worse than the request it saves, made by
+#: the guard written to avoid it. No population is known to need it: every
+#: ``pmcid`` and ``id`` in the draws taken for this issue is uppercase, which
+#: is how EuropePMC spells its own. So this cannot be justified by a rate,
+#: only by the direction it fails in — it refuses strictly less, and what it
+#: newly admits costs at worst the 404 that was being paid before #188.
+#: ``fulltext/service.py`` folds no case either and is **deliberately not
+#: changed with it**: that module raises on a malformed id where this one
+#: silently declines to fetch, so the two are not the same decision.
+_EUROPEPMC_ACCESSION_RE = re.compile(r"(?:PMC|PPR)\d+", re.IGNORECASE)
 
 # ---- The other three endpoints ----
 #: Named constants rather than f-strings inside the methods, for the reason
@@ -459,7 +477,10 @@ def _user_agent(email: str, httpx_version: str) -> str:
 #: two denominators and neither implies the other: over the 200-probe draw the
 #: 81 are 40.5%, a minority. Both are needed — exhaustive *and* ordinary — and
 #: welding them into one sentence is the denominator error this repo's own
-#: rule names (PR #195's review). Nothing here has either.
+#: rule names (PR #195's review). Nothing here has either. Both of those
+#: draws also predate issue #188's narrowing of what that method addresses,
+#: so they are over a superset of its branch; the caveat is stated in full at
+#: the branch itself and is not repeated here.
 #:
 #: The population is *identifiers bmlib is handed*, which come from indexed
 #: records — a caller passing a malformed or invented DOI is outside the draw,
@@ -638,18 +659,25 @@ _INDICATORS_RETRACTED_BY_PUBMED_COI = frozenset(
 _FULL_TEXT_PROVENANCE_INDICATORS: dict[FullTextStatus, str] = {
     # **Says only that no request was made, which is the member's own name.**
     # It read *"EuropePMC holds no open-access full text for this article"*
-    # until PR #205's review, and `NOT_ATTEMPTED` has three causes of which
-    # the third contradicts that outright: a record carrying `inEPMC == "Y"`
-    # and no address for the text (`_fetch_europepmc_fulltext`'s first guard)
-    # is EuropePMC positively claiming to hold it. `risk_indicators` is
-    # persisted, so that reached storage — the #187/#190/#191 defect, a claim
-    # in EuropePMC's mouth that only one of the causes makes, reintroduced in
-    # the prose half by the fix whose own argument is that *"(full text
-    # unavailable)"* was false for `REQUEST_FAILED`.
+    # until PR #205's review, and `NOT_ATTEMPTED` has several causes of which
+    # two contradict that outright — both of the guards in
+    # `_fetch_europepmc_fulltext` that decline to build a URL. A record
+    # carrying `inEPMC == "Y"` and *nothing at all* to address the text by
+    # (the WARNING guard, #207) and one carrying an identifier that is not an
+    # accession (the DEBUG guard, #188) are each EuropePMC positively
+    # claiming to hold the text. `risk_indicators` is persisted, so that
+    # reached storage — the #187/#190/#191 defect, a claim in EuropePMC's
+    # mouth that only some of the causes make, reintroduced in the prose half
+    # by the fix whose own argument is that *"(full text unavailable)"* was
+    # false for `REQUEST_FAILED`.
     #
     # Keyed on the enum the prose can only be as precise as the member, so a
-    # member conflating three causes gets the line true of all three. Making
-    # the third its own member is filed rather than taken here.
+    # member conflating several causes gets the line true of all of them.
+    # **Stated without an ordinal on purpose** (PR #219's review): this
+    # comment said *"three causes … the third"* and #188 added a fourth
+    # without moving it, which is `FullTextStatus.is_refusal`'s own rule
+    # about a count that moves. Splitting the malformed one out is #207's,
+    # and is filed rather than taken here.
     FullTextStatus.NOT_ATTEMPTED: "Full text not scanned (no EuropePMC full-text request was made)",
     FullTextStatus.SEARCH_FAILED: (
         "Full text not scanned (the EuropePMC search produced no answer)"
@@ -2498,8 +2526,15 @@ class TransparencyAnalyzer:
             # Issue #188. The record carries an identifier and it does not
             # address full text here — overwhelmingly a `MED` record's bare
             # PMID, which the caller reaches because `pmcid` was absent. The
-            # request that used to follow could only 404, and stored
-            # `NOT_SERVED` for it.
+            # request that used to follow **was measured at 0 of 43 served**
+            # (2026-09-09, CI [0.0, 8.2]) and stored `NOT_SERVED` for it.
+            #
+            # *Not "could only 404"*, which is what this comment said until
+            # PR #219's review: the draw bounds the served share at 8.2% and
+            # does not zero it, and a request refused or dropped rather than
+            # answered stored `REQUEST_FAILED` at WARNING, not `NOT_SERVED`.
+            # Generalising a measured 0 into an impossibility is #191's own
+            # move, one branch earlier.
             #
             # **DEBUG, and the asymmetry with the guard above is the whole
             # point of having two.** That one fires on a record claiming
@@ -2507,8 +2542,9 @@ class TransparencyAnalyzer:
             # this one fires on a perfectly ordinary record whose full text
             # EuropePMC holds under an identifier this endpoint does not
             # serve — a book chapter, most often. Nothing is wrong, so a
-            # WARNING would be noise on a large share of every corpus
-            # analysed, which is the 404's own argument one step earlier.
+            # WARNING would be noise on a large share of a corpus whose
+            # source mix reaches this (43 of 123 in the one draw taken),
+            # which is the 404's own argument one step earlier.
             #
             # `NOT_ATTEMPTED` and not a new member: its documented meaning is
             # *"no request was made, and EuropePMC's own answer is why"*, and
@@ -2516,9 +2552,14 @@ class TransparencyAnalyzer:
             # this article. That reading is exact here, where it is the
             # complaint issue #207 makes of the guard above; splitting that
             # cause out is #207's, and this is not it.
+            # *"identifier"* and not *"id"*: `ext_id` is `pmcid or id`, so a
+            # malformed `pmcid` — PR #208's mistyped-accession case — reaches
+            # here too, and naming the field it did not come from sends the
+            # reader to the wrong half of the record (PR #219's review).
             logger.debug(
                 "EuropePMC full text for document %s is not addressable: source=%r carries "
-                "id=%r, which is not a EuropePMC accession; scanning the abstract instead",
+                "identifier=%r, which is not a EuropePMC accession; scanning the abstract "
+                "instead",
                 document_id or "?",
                 source,
                 ext_id,
@@ -2630,14 +2671,29 @@ class TransparencyAnalyzer:
             # #191.** It used to take every status code, which generalised the
             # measurement past what it looked for: a 429, a 503 or a 403 is
             # the ordinary outcome of nothing. Re-probed on 2026-09-05 over
-            # 200 `IN_EPMC:Y` records stratified the same way and addressed
-            # exactly as `_check_europepmc` addresses them, **81 of the 81
-            # non-200s were 404** — so the DEBUG level is measured on the
-            # whole of what this branch now takes, and 0 of the 81 non-200s
-            # is the floor under the branch below. That denominator is the
-            # tight one: 119 of the 200 served, so they could never have
-            # reached it, and "0 of 200" dilutes the claim with probes that
-            # were never eligible for it.
+            # 200 `IN_EPMC:Y` records, **81 of the 81 non-200s were 404** —
+            # so every non-200 this branch has been observed to take is one,
+            # and 0 of the 81 is the floor under the branch below. That
+            # denominator is the tight one: 119 of the 200 served, so they
+            # could never have reached it, and "0 of 200" dilutes the claim
+            # with probes that were never eligible for it.
+            #
+            # **Both draws above are wider than this branch now is** (PR
+            # #219's review). They were addressed as `_check_europepmc`
+            # addressed records *before* issue #188 — by `pmcid or id`, with
+            # no shape test — and 43 of the 53 `inEPMC: Y` records in a later
+            # draw (81%) were addressed by a bare `id` this method no longer
+            # sends. So they measure a superset, and the sentence that used to
+            # stand here (*"measured on the whole of what this branch now
+            # takes"*) is the thing #191 removed, from the other side: a draw
+            # generalised past the branch rather than a branch past its draw.
+            # The committed instrument reports the branch's own population as
+            # its own row since #216 — 3 of 9 not served on 2026-09-09, which
+            # is small, wide [12.1, 64.6], and *not* a majority. What survives
+            # unweakened is the argument the level actually rests on: an
+            # `isOpenAccess: N` record with a perfectly good accession still
+            # 404s (0 of 53 served), so a WARNING fires on every closed-access
+            # paper analysed however the addressing is narrowed.
             #
             # It is logged rather than dropped, though, because #184 lived a
             # whole release inside this silence: every request 404'd and

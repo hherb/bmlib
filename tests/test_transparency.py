@@ -3279,6 +3279,33 @@ class TestARequestWhoseAnswerIsKnownIsNotMade:
         assert client.served_urls == []
         assert fetch.status is FullTextStatus.NOT_ATTEMPTED
 
+    @pytest.mark.parametrize("ext_id", ["pmc4154587", "ppr1301373", "PmC123"])
+    def test_a_lowercase_accession_is_still_an_address(self, ext_id):
+        # PR #219's review, and it is a measurement rather than a courtesy:
+        # probed live on 2026-09-09, `pmc4154587` and `ppr1301373` each serve
+        # HTTP 200 with bytes identical to the uppercase form. A
+        # case-sensitive test therefore refuses an address that *serves*,
+        # which is the failure this guard's own comment calls worse than the
+        # request it saves. No draw has turned up a lowercase identifier, so
+        # this pins a direction and not a population — and dropping
+        # `re.IGNORECASE` used to leave the whole suite green.
+        analyzer = TransparencyAnalyzer()
+        client = _FakeFullTextClient("<article><body><p>Ours.</p></body></article>", ext_id=ext_id)
+        fetch = analyzer._fetch_europepmc_fulltext(client, "PMC", ext_id, "doc-1")
+        assert client.served_urls == [f"{EUROPEPMC_REST_BASE}/{ext_id}/fullTextXML"]
+        assert fetch.status is FullTextStatus.ANALYZED
+
+    def test_case_folding_does_not_admit_what_is_not_an_accession(self):
+        # The other edge of the same change: folding case must not widen the
+        # shape. A lowercased *non*-accession is still refused, so
+        # `re.IGNORECASE` buys exactly the case axis and nothing else.
+        analyzer = TransparencyAnalyzer()
+        for ext_id in ("nbk620630", "pmc", "ppr", "pmc12x"):
+            client = _FakeFullTextClient("<article>body</article>", ext_id="PMC123")
+            fetch = analyzer._fetch_europepmc_fulltext(client, "MED", ext_id, "doc-1")
+            assert client.served_urls == []
+            assert fetch.status is FullTextStatus.NOT_ATTEMPTED
+
     def test_the_two_modules_still_disagree_about_the_identifier(self):
         # `fulltext/service.py`'s `_normalise_pmc_id` requires a `PMC`
         # prefix and would reject every preprint. The two agree on the base

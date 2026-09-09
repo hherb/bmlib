@@ -736,6 +736,17 @@ class TestTheSamplerProbesWhatTheAnalyzerRequests:
     header a remote judged us by — so the comparison is made by driving both
     and diffing, not by checking that a constant was imported, which a
     restated literal passes.
+
+    **The subset relation is conditional on the record's category, and since
+    issue #188 that is not a technicality** (PR #219's review). The sampler
+    probes :data:`~sample_api_failures.PROBED_CATEGORIES` and the analyzer
+    asks with :data:`~sample_api_failures.ADDRESSED_CATEGORIES`, so for an
+    ``id-not-an-address`` record the sampler probes a URL the analyzer does
+    not — by design, and asserted from the other side by
+    ``test_an_address_bmlib_refuses_is_still_probed``. The assertions below
+    hold because ``_RECORD`` carries a ``pmcid``. Parametrising it over the
+    categories would redden them, and the wrong repair is narrowing
+    ``PROBED_CATEGORIES``, which undoes issue #216.
     """
 
     #: The one record body both sides are driven over. It claims full text and
@@ -1423,11 +1434,15 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
     """The rider populations: issues #207 and #188, on the body already fetched.
 
     ``FullTextStatus.NOT_ATTEMPTED`` is documented *"no request was made, and
-    EuropePMC's own answer is why"* and covers three causes, one of which is a
-    record claiming ``inEPMC: Y`` and carrying nothing to address the text by
-    — a malformed record, not a closed-access paper, and the one cause for
-    which that sentence is false. #207 asks for a fourth member and was filed
-    rather than taken because its population is unmeasured. #188 is the
+    EuropePMC's own answer is why"* and covers several causes, one of which is
+    a record claiming ``inEPMC: Y`` and carrying nothing to address the text
+    by — a malformed record, not a closed-access paper, and the one cause for
+    which that sentence is false. #207 asks for a member of its own for that
+    cause and was filed rather than taken because its population is
+    unmeasured. Stated without an ordinal: this read *"three causes"* and
+    *"a fourth member"*, and #188 added a fourth cause without moving either,
+    so the second was off by one in two directions at once (PR #219's
+    review). #188 is the
     neighbouring split: a record addressed by its bare ``id`` rather than a
     ``pmcid``, which for a ``MED`` record is a request whose 404 is known
     before it leaves and for a ``PPR`` one is the only address there is.
@@ -1515,6 +1530,24 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
             sampler.ADDRESSED_CATEGORIES | sampler.UNADDRESSED_CATEGORIES
         ) == sampler.ALL_ADDRESS_CATEGORIES
 
+    def test_the_id_fallback_set_is_every_category_the_id_branch_produces(self):
+        # The one set here whose next member is lost in *silence*: a third
+        # outcome of `_addressability`'s `ext_id` branch — a `bookid` split is
+        # the obvious next one — omitted from `_ID_FALLBACK_CATEGORIES` loses
+        # its `, source X` suffix and pools two source populations into one
+        # denominator, at exit 0 (PR #219's review). It is derivable, so it is
+        # held against the function rather than against a restated list: every
+        # category reachable with `pmcid` absent and an `id` present.
+        produced = {
+            sampler.observe_body(
+                "europepmc_search", _FakeResponse(200, _epmc_body(inEPMC="Y", id=ext_id))
+            ).addressability
+            for ext_id in ("PPR1", "PMC1", "41637542", "NBK620630", "x")
+        }
+        assert produced == sampler._ID_FALLBACK_CATEGORIES
+        # And the anti-vacuity half: the set is not simply everything.
+        assert sampler._ID_FALLBACK_CATEGORIES < sampler.ALL_ADDRESS_CATEGORIES
+
     def test_every_category_the_code_can_return_is_in_the_partition(self):
         # And the partition is held against what `_addressability` actually
         # produces, not against a restated list — otherwise a new category
@@ -1542,6 +1575,20 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
         # and shrink issue #207's denominator with no line printed.
         with pytest.raises(ValueError, match="always categorised"):
             sampler.BodyShape(endpoint="europepmc_search", top="object")
+
+    @pytest.mark.parametrize("top", ["array", "string", "not-json", "null"])
+    def test_a_non_object_body_cannot_carry_a_category(self, top):
+        # The third direction, open until PR #219's review: the guard was
+        # `top == "object" and not addressing`, so a *non-object* EuropePMC
+        # body could carry a category through this constructor — which is the
+        # pre-PR-#213 defect `_addressability` returns `None` for a non-dict
+        # specifically to prevent.
+        with pytest.raises(ValueError, match="nothing else\\s+ever is"):
+            sampler.BodyShape(
+                endpoint="europepmc_search",
+                top=top,
+                addressing=sampler.RecordAddressing("no-record"),
+            )
 
     def test_a_source_without_a_category_is_refused_on_another_endpoint(self):
         # The other half of the endpoint guard, which was written as
@@ -1672,7 +1719,12 @@ def _address_probe(
     cause: str | None = "http-404",
 ) -> sampler.AddressProbe:
     """One full-text address probe, built from its bucket."""
-    accession = "1" if category == "id-not-an-address" else f"{category[:3].upper()}1"
+    # An accession of the category's *own* shape. It read
+    # `f"{category[:3].upper()}1"`, which yields `"ID-1"` for `id-accession` —
+    # a value the analyzer's regex refuses, so the helper built the one state
+    # `_addressability` cannot produce, in the row issue #188 is decided on
+    # (PR #219's review). `RecordAddressing.__post_init__` now refuses it.
+    accession = {"pmcid": "PMC1", "id-accession": "PPR1", "id-not-an-address": "1"}[category]
     if cause is None:
         outcome = sampler.ProbeOutcome(
             endpoint="europepmc_fulltext",
@@ -1790,6 +1842,19 @@ class TestTheAddressTheTableCategorisesIsTheAddressItProbes:
             "empty"
         )
 
+    def test_a_wholly_whitespace_body_is_served_and_not_empty(self):
+        # The one boundary the analyzer settles deliberately, and the
+        # instrument must agree with it rather than merely happen to: that
+        # module tests `not served` and never `not served.strip()`, because
+        # the stricter form takes a wholly-whitespace body out of the
+        # entirely-nested branch and reports it as nothing served. Mutating
+        # `_fulltext_kind` to `text.strip()` used to leave all 239 green
+        # (PR #219's review), on the endpoint whose whole `empty` row exists
+        # to measure issue #190.
+        assert sampler.observe_body("europepmc_fulltext", _FakeResponse(200, text="   ")).top == (
+            "served"
+        )
+
     def test_a_full_text_body_is_never_handed_to_a_json_decoder(self):
         # `_TEXT_ENDPOINTS` is derived from `_BODY_KINDS`, so the two cannot
         # disagree about which bodies are decoded — an endpoint in one and not
@@ -1797,6 +1862,28 @@ class TestTheAddressTheTableCategorisesIsTheAddressItProbes:
         # `KeyError` in the dispatch.
         assert sampler._TEXT_ENDPOINTS == frozenset(sampler._BODY_KINDS)
         assert "europepmc_fulltext" in sampler._TEXT_ENDPOINTS
+
+    def test_the_text_endpoints_are_derived_and_not_restated(self):
+        # The assertion above compares *values*, which a restated literal
+        # passes — `frozenset({"pubmed_efetch", "europepmc_fulltext"})` left
+        # all 239 green (PR #219's review). What the comment claims is that
+        # the two *cannot* disagree, which is a property of the statement, so
+        # it is read off the source: `TestTheAuditNetIsComplete`'s rule that
+        # a rule enforced by prose is not enforced.
+        tree = ast.parse(_SAMPLER_PATH.read_text())
+        assigned = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "_TEXT_ENDPOINTS" for t in node.targets)
+        ]
+        assert len(assigned) == 1, "_TEXT_ENDPOINTS is assigned somewhere unexpected"
+        call = assigned[0].value
+        assert isinstance(call, ast.Call), "_TEXT_ENDPOINTS is not built from anything"
+        assert [a.id for a in call.args if isinstance(a, ast.Name)] == ["_BODY_KINDS"], (
+            "_TEXT_ENDPOINTS no longer reads _BODY_KINDS, so the two can disagree about "
+            "which bodies observe_body decodes"
+        )
 
 
 class TestWhatBecameOfEachFullTextAddress:
@@ -1836,6 +1923,58 @@ class TestWhatBecameOfEachFullTextAddress:
         assert any("id-accession, source PPR" in line and "1 served" in line for line in lines)
         assert any(line.strip().startswith("pmcid ") for line in lines)
         assert not any("pmcid, source" in line for line in lines)
+
+    def test_the_population_the_analyzer_asks_with_is_its_own_row(self):
+        # The row four documents quoted the *pooled* share as. `46 of 52` is
+        # over `PROBED_CATEGORIES`, and issue #188 had just narrowed the 404
+        # branch to `ADDRESSED_CATEGORIES` — 3 of 9 in the same draw, an
+        # interval that does not overlap the pooled one. Without this row the
+        # level's own denominator existed nowhere on the page.
+        probes = [
+            _address_probe("pmcid", cause=None),
+            _address_probe("pmcid"),
+            _address_probe("id-not-an-address"),
+            _address_probe("id-not-an-address"),
+            _address_probe("id-not-an-address"),
+        ]
+        row = next(
+            line
+            for line in sampler.summarise_addresses(probes)
+            if "addresses bmlib asks with" in line
+        )
+        assert "2 probed" in row and "1 served" in row
+        assert "95% CI" in row
+
+    def test_a_probed_category_no_record_offered_says_so(self):
+        # `id-accession` measured 0 in the 2026-09-09 draw, so the fallback
+        # the shape test exists to preserve was unexercised and the table said
+        # nothing — *"served 0 of 0"* and *"never drawn"* being the
+        # distinction this script is built to keep (`summarise_shapes`' own
+        # `NO POPULATION HERE`).
+        lines = sampler.summarise_addresses([_address_probe("pmcid")])
+        assert any("id-accession" in line and "NO POPULATION HERE" in line for line in lines)
+        assert any("id-not-an-address" in line and "NO POPULATION HERE" in line for line in lines)
+        assert not any("pmcid" in line and "NO POPULATION HERE" in line for line in lines)
+
+    def test_an_empty_body_is_not_counted_as_a_served_document(self):
+        # `served` read `outcome.ok`, i.e. HTTP 200 — while `_fulltext_kind`
+        # exists to split a 200 into served and empty, and issue #190's whole
+        # finding is that a 200 alone is not a document. The address table
+        # called such a probe served while the shape table called it empty
+        # (PR #219's review). 0 empty of 6 in the committed draw, so nothing
+        # published moves.
+        empty = sampler.AddressProbe(
+            addressing=sampler.RecordAddressing("pmcid", accession="PMC1"),
+            outcome=sampler.ProbeOutcome(
+                endpoint="europepmc_fulltext",
+                status=200,
+                cause=None,
+                shape=sampler.BodyShape(endpoint="europepmc_fulltext", top="empty"),
+            ),
+        )
+        assert not empty.served
+        assert not empty.is_unmeasured
+        assert _address_probe("pmcid", cause=None).served
 
     def test_every_row_carries_its_interval(self):
         # These are the rows that get quoted, and a bare `0.0%` over three
@@ -1891,6 +2030,38 @@ class TestAnAddressProbeDescribesAnEventThatHappened:
         with pytest.raises(ValueError, match="unknown address category"):
             sampler.RecordAddressing("invented")
 
+    @pytest.mark.parametrize(
+        ("category", "accession"),
+        [("id-accession", "1"), ("id-not-an-address", "PMC1"), ("id-accession", "ID-1")],
+    )
+    def test_an_id_fallback_category_must_agree_with_the_shape_of_its_id(self, category, accession):
+        # The relation issue #188 turns on, and it is derivable from two
+        # stored fields — so it was re-encodable wrongly, and was: this
+        # module's own helper built `id-accession` carrying `"ID-1"` and
+        # passed the whole suite (PR #219's review).
+        with pytest.raises(ValueError, match="disagrees with the shape"):
+            sampler.RecordAddressing(category, accession=accession)
+
+    def test_a_pmcid_is_not_held_to_that_rule(self):
+        # The anti-vacuity half. `pmcid` is not an `id` fallback, so the shape
+        # rule must not reach it — EuropePMC's `pmcid` field is its own
+        # authority and a malformed one is PR #208's case, not #188's.
+        assert sampler.RecordAddressing("pmcid", accession="whatever")
+
+    def test_a_probe_of_a_record_offering_no_address_is_refused(self):
+        # Unpinned until PR #219's review: replacing this guard with
+        # `if False:` passed all 239 tests, while the branch is live — the
+        # sibling endpoint refusal three lines below it had a test and this
+        # one did not. `_check_trial_results`' own defence, one package over,
+        # was unpinned exactly this way for a release.
+        with pytest.raises(ValueError, match="offers no address to probe"):
+            sampler.AddressProbe(
+                addressing=sampler.RecordAddressing("no-record"),
+                outcome=sampler.ProbeOutcome(
+                    endpoint="europepmc_fulltext", status=404, cause="http-404"
+                ),
+            )
+
     def test_a_probe_of_another_endpoint_is_not_a_full_text_probe(self):
         with pytest.raises(ValueError, match="not a 'crossref' one"):
             sampler.AddressProbe(
@@ -1904,7 +2075,18 @@ class TestAnAddressProbeDescribesAnEventThatHappened:
         # table keyed on what bmlib asks would then stop measuring the very
         # thing that licensed the refusal.
         assert sampler.PROBED_CATEGORIES <= sampler.ALL_ADDRESS_CATEGORIES
-        assert all(sampler.RecordAddressing(c, accession="x") for c in sampler.PROBED_CATEGORIES)
+        # Not equal, which is the whole of why there are two names — and the
+        # assertion `PROBED_CATEGORIES` names in its own comment.
+        assert sampler.PROBED_CATEGORIES != sampler.ADDRESSED_CATEGORIES
+        assert sampler.PROBED_CATEGORIES - sampler.ADDRESSED_CATEGORIES == {"id-not-an-address"}
+        # Every probed category can carry an address, each of its own shape:
+        # `RecordAddressing` refuses an `id-accession` whose id is not one.
+        for category, accession in (
+            ("pmcid", "PMC1"),
+            ("id-accession", "PPR1"),
+            ("id-not-an-address", "1"),
+        ):
+            assert sampler.RecordAddressing(category, accession=accession)
 
 
 def _efetch_with(*accessions: str) -> _FakeResponse:
@@ -2240,6 +2422,27 @@ class TestTheShapeTableFollowsTheRulesEveryTableHereFollows:
         assert sampler.shapes_reportable("europepmc_fulltext", outcomes) is True
         assert sampler.shapes_reportable("crossref", _as(outcomes, "crossref")) is False
 
+    @pytest.mark.parametrize(
+        "endpoint", ["crossref", "europepmc_search", "pubmed_efetch", "openalex", "clinicaltrials"]
+    )
+    def test_no_other_endpoint_gets_the_exception(self, endpoint):
+        # The negative half tested `crossref` alone, so adding a *wrong*
+        # member — `{"europepmc_fulltext", "clinicaltrials"}` — left all 239
+        # green (PR #219's review). A wrongly-added member silently exempts
+        # an endpoint from the thinned-population ERROR that keeps a quoted
+        # share off a remnant.
+        assert endpoint not in sampler._ENDPOINTS_WHOSE_SHAPE_IS_OVER_SERVED_BODIES
+
+    def test_the_exception_has_exactly_one_member(self):
+        # Its own docstring says *"one member, and it earned its place from a
+        # live run"*, which was prose beside a set anyone could widen. The
+        # rule is that a member is earned by a draw, and no test can check
+        # that a draw was taken — so what is checked is that the set did not
+        # grow without this line being edited.
+        assert sampler._ENDPOINTS_WHOSE_SHAPE_IS_OVER_SERVED_BODIES == frozenset(
+            {"europepmc_fulltext"}
+        )
+
     def test_it_is_not_a_free_pass(self):
         # The exception drops one rule and keeps the rest: an endpoint that
         # served nothing at all is still an ERROR, and a throttled population
@@ -2310,15 +2513,22 @@ class TestTheRiderTablesRefuseAnAbsentPopulation:
         text = "\n".join(sampler.summarise_addressing(outcomes))
         assert "1 of 3" in text
 
-    def test_the_id_only_records_are_split_by_source(self):
+    def test_both_id_fallback_categories_are_split_by_source(self):
         # Issue #188 turns on exactly this: a `PPR` accession is the only
-        # address a preprint has, and a `MED` record's bare id never serves.
+        # address a preprint has, and a `MED` record's bare id is a PMID.
+        #
+        # It was named for `id-only` — a category retired by the split it
+        # claims to demonstrate — and built `id="X"` under `source="PPR"`,
+        # which is not an accession, so **both** records were
+        # `id-not-an-address` and the test exercised one category twice. The
+        # loose `"PPR" in text` was what let it pass (PR #219's review).
         outcomes = [
-            _served("europepmc_search", _epmc_body(inEPMC="Y", id="X", source="PPR")),
+            _served("europepmc_search", _epmc_body(inEPMC="Y", id="PPR1", source="PPR")),
             _served("europepmc_search", _epmc_body(inEPMC="Y", id="9", source="MED")),
         ]
         text = "\n".join(sampler.summarise_addressing(outcomes))
-        assert "PPR" in text and "MED" in text
+        assert "id-accession, source PPR" in text
+        assert "id-not-an-address, source MED" in text
 
     def test_a_population_that_found_none_of_its_own_records_is_an_error(self):
         # Every drawn record came from this same API, so a population that is

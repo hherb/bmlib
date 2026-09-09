@@ -57,12 +57,19 @@ field alone; **#195**'s tri-state swaps one CT.gov indicator for another.
 moves a scan output for 0.61% of 97,909 articles. **#160** and **#183** move
 nothing measurable. **#202** moves nothing at all.
 
-**#188 moves one field for about a third of records analysed**: a record
-whose EuropePMC entry carries no `pmcid` — 43 of 123 in the 2026-09-09 draw,
-all `source: MED` — stores `full_text_status` `NOT_ATTEMPTED` where it stored
-`NOT_SERVED`, with its provenance line. Nothing else moves, the request it
-replaces having been a guaranteed 404. A downstream counting `NOT_SERVED` as
-*"EuropePMC has no full text for this"* was counting these wrongly.
+**#188 moves one field for about a third of the records in one draw**: a
+record claiming `inEPMC: Y` whose only identifier is neither a `PMC…` nor a
+`PPR…` accession — 43 of 123 on 2026-09-09, all `source: MED` — stores
+`full_text_status` `NOT_ATTEMPTED` where it stored `NOT_SERVED`, with its
+provenance line. A `PPR` preprint also carries no `pmcid`, is still fetched by
+its `id`, and moves nothing; saying *"carries no `pmcid`"* here named the
+75,841-record population this fix deliberately keeps (PR #219's review), and
+the draw is source-stratified, so the share over a caller's own corpus follows
+its source mix and is not measured. Nothing else moves: the request it
+replaces was measured at 0 of 43 served, and where it failed rather than 404'd
+the move is from `REQUEST_FAILED` and costs a WARNING. A downstream counting
+`NOT_SERVED` as *"EuropePMC has no full text for this"* was counting these
+wrongly.
 
 **#199 moves one value for a well-formed body**: `_json_count` refuses a
 `true` or a fractional `cited_by_count`, so such a paper scores 5 points
@@ -139,7 +146,7 @@ net needs its own false-positive net, and it must be free — the autouse
 not the name or the report** (a verdict line invented #162 outright).
 **Asserting that a constant was imported is not asserting that it is used** —
 #216's accession test was pinned by an identity check, and a mutant that kept
-the import and restated the rule as `startswith` passed all 775 tests; pick a
+the import and restated the rule as `startswith` passed both affected test files (775 at the time) and the whole suite; pick a
 fixture where the restatement and the real rule disagree. **A rule
 enforced by prose is not enforced** (`TestTheAuditNetIsComplete`,
 `TestOnlyAnAccumulatingElementReadsTheBuffer`,
@@ -250,9 +257,52 @@ it categorises; `europepmc_fulltext` is its sixth endpoint):
   could have found this.
 - **The accession test was pinned by an identity check on the import**, which
   a mutant that kept the import and restated the rule as `startswith` passed —
-  all 775 tests. That is exactly what this script's own docstring calls weaker
+  both affected test files (775 at the time) and the whole suite. That is
+  exactly what this script's own docstring calls weaker
   than driving both; the comparison now carries two ids where a prefix test and
   a `fullmatch` disagree.
+
+**Six more came out of PR #219's own review**, and one of them is the shape
+this repository keeps making:
+
+- **The pooled 46 of 52 was quoted in five files as the 404's DEBUG
+  denominator, and 43 of those 46 are addresses the same PR stops sending.**
+  Over the branch's own population the draw reads 3 of 9, `[12.1%, 64.6%]`,
+  which does not overlap `[77.0%, 94.6%]`. That is this script's own *"the
+  branch must be no wider than the draw"* read backwards, and it is the
+  `id-only` scar again. `summarise_addresses` now prints that population as
+  its own row, so the level's denominator exists on the page.
+- **The accession test folded no case, and the endpoint is case-insensitive.**
+  Probed 2026-09-09: `pmc4154587` and `ppr1301373` each serve 200 with bytes
+  identical to the uppercase form. A case-sensitive test therefore refuses an
+  address that *serves*, which is the failure the guard's own comment calls
+  worse than the request it saves. No draw has turned up a lowercase
+  identifier, so `re.IGNORECASE` pins a direction and not a population — and
+  dropping it used to leave the whole suite green.
+- **`FullTextStatus.NOT_ATTEMPTED`'s own docstring still listed three causes**
+  and named the WARNING of the one nearest the new cause, so a reader seeing
+  the member and no warning concluded `inEPMC != "Y"`. `models.py` was not in
+  the diff at all. The same *"three causes"* was stale in four more places.
+- **`AddressProbe.served` meant HTTP 200**, while `_fulltext_kind` exists to
+  split a 200 into served and empty and #190's whole finding is that a 200
+  alone is not a document. Two tables reported the same probe two ways; 0
+  empty of 6 in the draw, so nothing published moved and the fix was free.
+- **Three live guards survived mutation** — `AddressProbe`'s no-address
+  refusal (`if False:` passed), `_fulltext_kind`'s whitespace boundary
+  (`.strip()` passed, on the one boundary the analyzer settles deliberately
+  the other way), and `_ENDPOINTS_WHOSE_SHAPE_IS_OVER_SERVED_BODIES` gaining a
+  *wrong* member (the negative half tested `crossref` alone). All three now
+  die, verified.
+- **The test helper built the one state `_addressability` cannot produce**: an
+  `id-accession` carrying `"ID-1"`, in the row #188 is decided on.
+  `RecordAddressing` now enforces the category-to-shape relation, which is
+  what reddened it.
+
+Filed rather than fixed: #220 (`observe_body`'s text branch returns before its
+`try`), #221 (an `id-not-an-address` that serves would refute #188 and reaches
+no exit-code term), #222 (the sixth endpoint reaches the level-wiring net by
+prose alone), #223 (four string vocabularies where the precedent is an enum —
+one sweep with #217).
 
 **#188's three decisions**, each argued in `docs/DECISIONS.md` and not worth
 re-litigating: a **shape** test rather than a `source` allow-list (they agree
@@ -270,12 +320,25 @@ the shape-rule defect, so these come from the committed code):
 
 - **#188's own rows, with a denominator at last**: `id-not-an-address, source
   MED` **0 of 43 served** [0.0%, 8.2%]; `pmcid` **6 of 9**. The fix drops 43 of
-  the 52 full-text requests that draw would have made — one per **35.0%** of
-  records analysed. Read the 0 as an upper bound: those 43 are one contiguous
-  cursor page's worth of `SRC:MED` records, which #188's own evidence says are
-  NCBI Bookshelf chapters.
-- **The 404's DEBUG level now has a committed denominator**: 46 of 52 not
-  served, **every one a 404**, 88.5% [77.0%, 94.6%].
+  the 52 full-text requests that draw would have made — 43 of its 123 records.
+  Read the 0 as an upper bound: those 43 are one contiguous cursor page's worth
+  of `SRC:MED` records, which #188's own evidence says are NCBI Bookshelf
+  chapters. Read the 35.0% as a share of a source-stratified draw and not as a
+  rate over a caller's corpus, which follows its own source mix.
+- **`id-accession` drew nothing**, so the `6 of 9` above are all `pmcid` and
+  the fallback the shape test exists to preserve is unexercised in this draw.
+  It rests on the separate 75,841 hit count and a 50-of-50 hand draw. The
+  table prints the row as `NO POPULATION HERE` since PR #219's review rather
+  than omitting it.
+- **The 404 branch's own denominator is 3 of 9, not 46 of 52.** The pooled
+  88.5% [77.0%, 94.6%] is over every address *offered*, and 43 of those 46
+  are addresses #188 stops bmlib sending; over the ones it still sends the
+  same draw reads **3 of 9** [12.1%, 64.6%], which the two intervals say is a
+  different claim. `summarise_addresses` prints that population as its own
+  row since PR #219's review — before it, the pooled share was the only
+  served share on the page and four documents quoted it as the level's
+  evidence, which is this script's own *"the branch must be no wider than the
+  draw"* read backwards.
 - **#190's population, measured for the first time**: of 6 bodies served, **0
   empty**. Six, so a bound rather than a result.
 - **The `isOpenAccess` half of #188 is still not actionable**, now measured

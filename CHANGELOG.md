@@ -52,11 +52,37 @@ All notable changes to bmlib are documented here. The format is based on
   on a clean draw; the rule is withdrawn for that endpoint by a named set and
   for nothing else.
 
-  **First full run** (2026-09-09, 123 + 60 records at the documented
-  defaults): `europepmc_fulltext` 52 probed, **46 not served (88.5%, all
-  404)**, which is what the 404's DEBUG level has always claimed and now has
-  a committed denominator for; 6 bodies served, **0 empty**, which is issue
-  #190's population measured for the first time at 0 of 6. The address rows
+  **First run of the committed code** (2026-09-09, 123 + 60 records at the
+  documented defaults; the run before it, on the pre-fix instrument, is what
+  exposed the shape-rule defect above): `europepmc_fulltext` 52 probed,
+  **46 not served (88.5%, all 404)**; 6 bodies served, **0 empty**, which is
+  issue #190's population measured for the first time at 0 of 6.
+
+  **That 88.5% is over every address *offered*, and is not the 404 branch's
+  own denominator** — 43 of those 46 are addresses the issue #188 entry below
+  stops bmlib sending. Over the addresses it still sends the same draw
+  measures **3 of 9** not served, `[12.1%, 64.6%]`, and the two intervals do
+  not overlap. The report prints that population as its own row since PR
+  #219's review; before it the pooled share was the only served share on the
+  page and four documents quoted it as the level's evidence.
+
+  **PR #219's own review found six more.** The pooled share above is the
+  largest and is corrected in place. Beside it: `_EUROPEPMC_ACCESSION_RE`
+  folded no case, and the endpoint is case-insensitive — `pmc4154587` and
+  `ppr1301373` each serve 200 with bytes identical to the uppercase form
+  (2026-09-09), so a case-sensitive test refused an address that *serves*,
+  which is the failure that guard's own comment calls worse than the request
+  it saves; `FullTextStatus.NOT_ATTEMPTED`'s docstring still enumerated three
+  causes and named the WARNING of the one nearest the new one, in a file the
+  diff did not touch; `AddressProbe.served` meant HTTP 200 where
+  `_fulltext_kind` splits a 200 into served and empty, so the address table
+  and the shape table reported one probe two ways (0 empty of 6, so nothing
+  published moved); a probed category no record offered now prints
+  `NO POPULATION HERE` rather than vanishing, `id-accession` having drawn
+  nothing; three live guards survived mutation and now die; and the test
+  helper built an `id-accession` carrying `"ID-1"`, a state
+  `_addressability` cannot produce, which `RecordAddressing` now refuses.
+  Filed rather than fixed: issues #220, #221, #222 and #223. The address rows
   are quoted under the issue #188 entry below. Two further readings ride
   along: `pubmed_efetch` served `no-citation` for **50 of 60** bodies — the
   one silent branch of that step, now issue #218 — and `crossref`'s `funder`
@@ -572,9 +598,13 @@ All notable changes to bmlib are documented here. The format is based on
   **Stored values move**, which is why this was filed rather than folded into
   issue #184. Every such record's `full_text_status` moves `NOT_SERVED` →
   `NOT_ATTEMPTED`, and its provenance line moves from *"EuropePMC served none
-  for this article"* to *"no EuropePMC full-text request was made"*. Nothing
-  else moves: the fetch already failed, so the score, `coi_disclosed` and
-  `data_availability_level` are what they were.
+  for this article"* to *"no EuropePMC full-text request was made"*. Where the
+  request was refused or dropped rather than answered it moves
+  `REQUEST_FAILED` → `NOT_ATTEMPTED` instead, and a WARNING stops being
+  emitted for it. Nothing else moves: no full text was scanned on either
+  path, so the score, `coi_disclosed` and `data_availability_level` are what
+  they were. (This named only the 404 transition, which is the modal case and
+  not the whole of it — PR #219's review.)
 
 - **No JSON shape a remote can send escapes the public `analyze()`** (issue
   #199, from PR #195's review; corrected and completed by PR #208's review).
