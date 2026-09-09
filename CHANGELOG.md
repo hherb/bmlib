@@ -8,6 +8,108 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **A partly-answered posted-results check is no longer stored as a finding**
+  (issue #206). `TrialResultsStatus.PARTLY_ANSWERED` is the sixth member, and
+  the schema addition is free rather than cheap: `trial_results_status` is
+  itself unreleased (issue #198), so this rides the recompute issues #184 and
+  #194 already force. After the release it would cost a second one.
+
+  `_check_trial_registration` walked the paper's ClinicalTrials.gov accessions
+  and set `answered` on the **first** one that replied, so a single reachable
+  *"no results"* outvoted any number of unreachable ones. And
+  `MAX_TRIAL_IDS_TO_CHECK` sliced an unbounded list — `_parse_pubmed_signals`
+  collects every ClinicalTrials.gov accession that is a well-formed NCT id —
+  with no log line, no indicator, and no test of the analyzer's truncation
+  (`tests/test_api_failure_sampler.py` did reference the constant; the wider
+  claim first written here was false, PR #225's review). Either
+  way `"Registered trial without posted results"` was stored about a paper
+  whose remaining accessions bmlib had never reached, and one of those may be
+  the trial with results. That is issue #194's class of false claim, narrowed
+  by PR #195's tri-state rather than closed by it — the same shape as
+  correcting the `User-Agent` narrowing #194 without making the `bool` honest.
+
+  **The cap and the unanswered accession are one question**, so they are one
+  member: both mean *"bmlib did not ask about every accession"*, and while
+  either is true the finding has not been earned. They share
+  `_INDICATOR_RESULTS_NOT_CHECKABLE` for the reason `REQUEST_FAILED` and
+  `NOT_CHECKABLE` already share it — the claim a human can act on is
+  identical and it puts nothing in ClinicalTrials.gov's mouth. Which cause it
+  was reaches an **operator**, not a stored field: raising the cap is an
+  action. *"Would re-running change this?"* — the question that does earn a
+  member elsewhere — **does** discriminate here, `no` for the cap and `yes`
+  for an accession that did not answer, and the first statement of this
+  reasoned about the cap alone and generalised to the member, which is issue
+  #191's own defect (PR #225's review). What rules a split out is that the
+  walk computes `unestablished = dropped + asked - answered`, a **sum**: one
+  paper can have both causes at once, so splitting would need three members or
+  a second field. The residual — a downstream cannot ask *"retry, or change
+  the config?"* of the stored value — is filed rather than argued away.
+
+  **It sits on the unanswered side of the partition, and that is the
+  load-bearing half.** `trial_results_compliant` is what both known
+  downstreams render; `False` under `is_answered` `True` reads as *"the trial
+  fell short"*, which is the unearned sentence issue #198 exists to stop
+  being published.
+
+  **The measurement decided which half mattered, and reversed the issue's own
+  emphasis.** Over the 30 papers naming an accession in the 2026-09-08
+  trial-enriched sampler draw, a partly-answered check is **1 of 30** and the
+  cap truncates **8 of 30** — so the half that was entirely silent is the
+  larger one. Read the 1 as a **floor**: that draw predates PR #213's
+  correction of `TrialCheck.answered`, which counted HTTP 200 where bmlib
+  counts a non-`None` return and so deflated exactly that row, while the
+  truncation count derives from `found > probed` and is unaffected — which is
+  why the comparison rests on the 8 (PR #225's review). The cap still bounds
+  the requests; a truncated walk that did not find posted results now WARNs,
+  naming how many accessions were skipped, what the cap is, and **which
+  accessions they were** — the last being what raising the cap recovers, and
+  what gives the line a subject. That line is gated on the walk not having
+  concluded `POSTED`, because a posted result settles the paper and the
+  accessions behind it cost nothing — and only the **cap** gets a line, four
+  of the five ways an asked accession fails to answer already having one from
+  `_request`. The fifth does not: `_json_bool` refuses a wrong-typed value in
+  silence, which is issue #226 (issue #209's residual at the one site where it
+  decides a stored status), and the comment claiming universal
+  coverage is narrowed rather than the absence licensed by a false premise.
+  How far the accession-count distribution runs past three is still
+  unmeasured; `scripts/sample_api_failures.py` records each paper's count
+  before the cap, so a run would answer it with one more report line.
+
+  **PR #225's review found six further defects in this change and in the one
+  below, all fixed here.** A **repeated accession** made the cap report a
+  truncation that lost nothing and retract a finding ClinicalTrials.gov had
+  made: `<DataBankList>` is `(DataBank+)`, so one paper naming one trial twice
+  is well-formed input, and `_parse_pubmed_signals` collected the entries
+  verbatim where the funders tuple twelve lines below already deduplicated and
+  `_find_trial_ids` has since issue #202. Deduplicated at the parser, so the
+  sampler's own truncation count is not inflated by repeats either. The
+  **book branch** matched a `<PubmedBookArticle>` anywhere and was tried
+  first, so a legal mixed set reported an article record at DEBUG on the
+  strength of its neighbour — children now, and every child. Four mutants
+  survived the whole suite and now die: deleting `root.tag ==
+  _PUBMED_RECORD_SET_ROOT` (which let an empty `<eFetchResult/>` be reported
+  as an empty `PubmedArticleSet` NCBI never sent), emptying
+  `_PUBMED_SIGNALS_LOST`, passing `""` for the `pmid` at the one call site
+  (so the whole point of the signature change was unpinned end to end), and
+  substituting `len(ct_ids)` for `dropped` in the new WARNING. The first cut
+  of the constant's own test asserted `_PUBMED_SIGNALS_LOST in message`, which
+  the mutant satisfies vacuously — this repository's *"a log assertion must be
+  unique to the line"*, turned on the assertion written to enforce it.
+  `PARTLY_ANSWERED` gained the `analyze()`-level test every other member has,
+  and `is_answered` gained the generic partition guard its `FullTextStatus`
+  twin has carried since issue #161. Three stale counts and the misdated
+  figure above were corrected in the same pass.
+
+  **What moves:** for a paper whose results check was partial,
+  `trial_results_status` moves `NOT_POSTED` → `PARTLY_ANSWERED` and
+  `risk_indicators` swaps *"Registered trial without posted results"* for
+  *"Trial registration found; posted-results status could not be checked"*.
+  **No score moves** — neither indicator feeds the score, which a test
+  asserts rather than reasons — so a reader diffing stored results should see
+  no number change. One existing test asserted the reverse and is reversed
+  with a comment saying so: it pinned the reading `answered = True` on the
+  first reply encodes, which is what the issue is about.
+
 - **The sampler probes the address it categorises** (issue #216, from PR
   #213's review). `scripts/sample_api_failures.py` only — no library code and
   nothing stored moves; the deliverable is the measurement, and it is what
@@ -543,6 +645,62 @@ All notable changes to bmlib are documented here. The format is based on
   A record claiming `inEPMC="Y"` and carrying no `source`/`pmcid` to address
   it by now WARNs instead of passing silently as an ordinary closed-access
   paper.
+
+### Changed
+
+- **A PubMed body that parses and carries no `PubmedArticle` says which kind
+  it is** (issue #218, filed from PR #219's own live run). Diagnostics only —
+  no stored value moves, and no request is added or removed.
+
+  `_parse_pubmed_signals` returned empty signals in **silence** for such a
+  document, while both of its neighbours reported: a body that will not parse
+  WARNs, and an empty 200 body WARNs one level up. It is not a quiet outcome
+  — empty signals mean no `<CoiStatement>`, so nothing in
+  `_INDICATORS_RETRACTED_BY_PUBMED_COI` is retracted, *"COI disclosure status
+  unknown"* stands, and the missing-COI downgrade is free to fire — and it
+  was the *majority* outcome of the draw that finally sized it: `no-citation`
+  for 50 of 60 served bodies on **2026-09-09** — the run that first carried
+  that counter, the 09-08 one having reported the same bodies as plain `xml`,
+  which is the defect that created it (PR #225's review). This is issue #193's
+  *"check the
+  diagnostic exists before arguing about its level"*, applied to the branch
+  that fix did not reach.
+
+  **One branch was three populations, and they do not share a level.** A
+  single line would have repeated issue #191, whose whole finding is that a
+  level measured on one population must not be applied to a wider branch —
+  that draw is heavily NCBI Bookshelf, so it licenses a quiet level for book
+  records and says nothing about the rest. Probed live on 2026-09-10 against
+  three identifiers NCBI will not serve: a `<PubmedBookArticle>` set is
+  **DEBUG** (declined by name, and nothing was lost that could have been
+  had); an **empty `<PubmedArticleSet>`** at HTTP 200 — 205 bytes, what PMID
+  999999999 returns — is **WARNING**, NCBI holding no record for an
+  identifier that came from the caller or from `_pmid_from_epmc`; anything
+  else that parses is **WARNING**, naming the root element.
+
+  **Reading a book record would recover nothing, and that is measured rather
+  than read off the DTD** — which is the issue's second question. Across 60
+  `statpearls[book]` records and 100 drawn from `pubmed books[filter]`, **not
+  one** carries a `<GrantList>`, a `<CoiStatement>` or a `<DataBankList>`;
+  the existing comment asserted the first two from the DTD and conceded the
+  third unmeasured. Read the zeroes as upper bounds over two draws NCBI's own
+  search ordered.
+
+  **The issue's own third population belongs to a request this module does not
+  make.** It named `<eFetchResult><ERROR>…` at HTTP 200, which is real: an
+  evicted **history session** efetch serves exactly that, probed the same day,
+  and it is why `publications/fetchers/pubmed.py` refuses a root that is not a
+  record set. `transparency` fetches **by id**, where the same probe read 400
+  for a malformed id list and an empty record set for an id NCBI does not
+  hold. Two error classes on one request shape is not every error class, so
+  the unrecognised-document branch is what takes it if one arrives at 200 —
+  and the two modules' comments describe different requests and must not be
+  "reconciled".
+
+  `_parse_pubmed_signals` takes the PMID now, so all four of its outcomes name
+  the record. The neighbouring parse-failure WARNING named no subject at all,
+  so an operator running two analyses could not tell which record produced it
+  — the `subject` every request in this module already carries.
 
 ### Fixed
 

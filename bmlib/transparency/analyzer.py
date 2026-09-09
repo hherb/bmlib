@@ -501,6 +501,18 @@ EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 # NCBI asks every E-utilities caller to identify itself; `email` comes from the
 # analyzer's own contact address.
 EUTILS_TOOL_NAME = "bmlib"
+#: The root element of a PubMed record set. Named because
+#: :func:`_report_pubmed_without_citation` both *tests* for it and *prints* it,
+#: and a body whose root is something else is exactly the case that branch
+#: reports — a restated literal there would let the test and the message drift
+#: apart, which is the shape issue #184 lived a release on one endpoint over.
+_PUBMED_RECORD_SET_ROOT = "PubmedArticleSet"
+#: The record element bmlib declines by name. Matched as a *child* of the set,
+#: never as a descendant — see :func:`_report_pubmed_without_citation`. A
+#: document whose own root is this element takes the unrecognised-document
+#: branch: NCBI wraps every record in a set, so bmlib has no measured reading
+#: of a bare one, and naming the root is what that branch is for.
+_PUBMED_BOOK_RECORD = "PubmedBookArticle"
 
 # `DataBankName` values PubMed emits for clinical-trial registries, lowercased
 # for matching. A name outside this set is not necessarily a data-deposition
@@ -721,13 +733,15 @@ _INDICATOR_NO_POSTED_RESULTS = "Registered trial without posted results"
 # or malformed; saying "registered outside ClinicalTrials.gov" would be a plain
 # falsehood in the second case.
 #
-# **Three appending sites, two enum members** (issue #198, and the comment said
-# two until PR #205's review). Both causes above are `NOT_CHECKABLE`; the third
-# site is `REQUEST_FAILED` — asked, and not one accession answered — which
-# shares this string because the claim a human can act on is identical and
-# neither puts anything in ClinicalTrials.gov's mouth. The difference a caller
-# *can* act on is *"would re-running change this?"*, and that is the enum's to
-# carry, not this line's. See `TrialResultsStatus` and `docs/DECISIONS.md`.
+# **Every member for which bmlib could not establish the status shares this
+# line; the enum carries which one it was.** Stated ordinal-free since PR
+# #225's review, and that is the point rather than the tidying: this comment
+# read *"two appending sites, two enum members"* until PR #205's review and
+# *"three sites, two members"* until issue #206 added a third member to it, so
+# a count here has gone stale on every change that touched the string. The
+# difference a caller *can* act on is *"would re-running change this?"*, and
+# that is the enum's to carry, not this line's. See `TrialResultsStatus` and
+# `docs/DECISIONS.md`.
 _INDICATOR_RESULTS_NOT_CHECKABLE = (
     "Trial registration found; posted-results status could not be checked"
 )
@@ -984,12 +998,140 @@ class _PubMedSignals:
     deposition_databanks: tuple[str, ...] = ()
 
 
-def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
+#: What the PubMed step supplies, named once so that **every** branch failing
+#: to supply it says what was lost without restating the list, and so that
+#: adding a signal to :class:`_PubMedSignals` is one edit.
+#:
+#: Stated without a count on purpose. The first version of this sentence said
+#: *"the three branches"* and *"one edit rather than four"*, and both were
+#: already wrong when written: :meth:`~TransparencyAnalyzer._check_pubmed`
+#: reports an empty 200 body one level up, loses the same signals, and
+#: restated the literal until PR #225's review — so the arithmetic in the
+#: comment justifying the constant was itself the drift the constant exists
+#: to stop. The rule is *"interpolate this, never retype it"*, which needs no
+#: number and cannot go stale as branches are added.
+_PUBMED_SIGNALS_LOST = "no COI, trial-registration or grant signals are available"
+
+
+def _report_pubmed_without_citation(root: ET.Element, pmid: str) -> None:
+    """Say what a parsed ``efetch`` body carrying no ``PubmedArticle`` was.
+
+    **One branch was three populations, and they do not share a level** (issue
+    #218). Until this existed the branch returned empty signals in silence,
+    while both of its neighbours reported — a body that will not parse WARNs
+    above, an empty 200 body WARNs in :meth:`~TransparencyAnalyzer._check_pubmed`
+    — and it was the *majority* outcome of the draw that finally sized it: 50
+    of 60 served bodies on **2026-09-09**. That is issue #193's *"check the
+    diagnostic exists before arguing about its level"*, applied to the branch
+    that fix did not reach.
+
+    **The date is the 09-09 run and not the 09-08 one, and the difference is
+    the counter itself** (PR #225's review). ``_xml_kind``'s ``no-citation``
+    category was created on 2026-09-09; the 09-08 run reported these same
+    bodies as plain ``xml``, which is the defect that created it. Quoting the
+    figure against the earlier draw is ``_COUNTER_DEFINITIONS_VERSION``'s own
+    scar — a reading attributed to a run whose instrument could not produce
+    it.
+
+    A single line would have repeated issue #191 instead, whose whole finding
+    is that a level measured on one population must not be applied to a wider
+    branch. The draw is heavily NCBI Bookshelf — issue #188's evidence is that
+    a ``MED`` record addressed by a bare ``id`` is a book chapter — so it
+    licenses a quiet level for **book records** and says nothing about the
+    rest. Three branches, of which two were probed by identifier on
+    2026-09-10 and the third is what is left over:
+
+    * A set whose records are **all books or book chapters**: bmlib declines
+      them by name, and 0 of 60 ``statpearls[book]`` records and 0 of 100
+      drawn from ``pubmed books[filter]`` carry a ``<GrantList>``,
+      ``<CoiStatement>`` or ``<DataBankList>``. Nothing was lost that could
+      have been had, and it is the ordinary case. DEBUG. **Every child, and
+      children rather than descendants**: the draw is of responses that *are*
+      book records, so a mixed set is outside it and takes the branch below.
+    * An **empty ``PubmedArticleSet``** at HTTP 200 — the 205-byte body PMID
+      999999999 returns, of which the fixture in the tests is a reduction
+      rather than a copy. NCBI holds no record for an identifier that came
+      from the caller or from :func:`_pmid_from_epmc`, so something upstream
+      is wrong and the three signals are lost for a record that would have
+      had them. WARNING.
+    * **Anything else** that parses: bmlib does not recognise what it was
+      served. WARNING.
+
+    **The issue's own third population belongs to a request this module does
+    not make.** It named ``<eFetchResult><ERROR>…`` at HTTP 200, which is
+    real: probed 2026-09-10, an evicted **history session** efetch serves
+    exactly that, which is why ``publications/fetchers/pubmed.py`` refuses a
+    root that is not a record set. This module fetches **by id**, and the same
+    probe read 400 for a malformed id list and an empty record set for an id
+    NCBI does not hold — so the envelope reaches
+    :meth:`~TransparencyAnalyzer._request`'s non-200 path and never arrives
+    here. Two error classes on one request shape is not every error class, so
+    the unrecognised-document branch is what takes it if one does, at the
+    level such a body earns.
+
+    Args:
+        root: The parsed document, known to carry no
+            ``PubmedArticle/MedlineCitation``.
+        pmid: The record asked about, so a line can be attributed to one
+            analysis — the ``subject`` every request in this module carries.
+    """
+    book_records = root.findall(_PUBMED_BOOK_RECORD)
+    if book_records and len(book_records) == len(root):
+        # **The test is as narrow as the evidence, which a descendant search
+        # was not** (PR #225's review). `PubmedArticleSet` is declared
+        # `(PubmedArticle | PubmedBookArticle)*`, so a mixed set is legal, and
+        # `.//PubmedBookArticle` matched one *anywhere* — tested first, so a
+        # `<PubmedArticle>` that carries no `<MedlineCitation>` lost its three
+        # signals at the quiet level on the strength of a book neighbour. The
+        # 0-of-160 draw is about responses that *are* book records, which is
+        # narrower than "carries one", and generalising a level past its own
+        # population is issue #191 exactly. Children rather than descendants,
+        # and every child, so the DEBUG says what it means: NCBI served books
+        # and nothing else.
+        logger.debug(
+            "PubMed for %s: the record is a book or book chapter, which carries none of "
+            "the elements this step reads; %s",
+            pmid,
+            _PUBMED_SIGNALS_LOST,
+        )
+    elif root.tag == _PUBMED_RECORD_SET_ROOT and len(root) == 0:
+        # Printing the constant rather than `root.tag` is an **equivalent
+        # mutant**, not an untested choice: this arm is reached only when the
+        # two are the same string, so swapping them survives the suite and
+        # must. The constant is here because the sentence is a claim about
+        # what bmlib expected, and because the *test* above must not drift
+        # from the message beside it — a restated literal is how issue #184
+        # lived a release one endpoint over.
+        logger.warning(
+            "PubMed for %s: answered 200 with an empty %s — NCBI holds no record for this PMID; %s",
+            pmid,
+            _PUBMED_RECORD_SET_ROOT,
+            _PUBMED_SIGNALS_LOST,
+        )
+    else:
+        logger.warning(
+            "PubMed for %s: answered 200 with a <%s> document carrying no PubmedArticle; %s",
+            pmid,
+            root.tag,
+            _PUBMED_SIGNALS_LOST,
+        )
+
+
+def _parse_pubmed_signals(xml_text: str, pmid: str) -> _PubMedSignals:
     """Extract transparency signals from a PubMed ``efetch`` response.
 
     Returns empty signals for anything unusable — malformed XML, an empty
     result set, a record without the relevant elements — so a surprising
-    response degrades the analysis rather than raising into it.
+    response degrades the analysis rather than raising into it. **Every one of
+    those outcomes now leaves a line**, which is the whole of issue #218; what
+    each is worth is argued at :func:`_report_pubmed_without_citation`.
+
+    Args:
+        xml_text: The served body, known to be non-empty.
+        pmid: The record asked about. Carried only so the lines below can name
+            it: the neighbouring WARNING named no subject at all, so an
+            operator running two analyses could not tell which record produced
+            it, which is what ``_request``'s own ``subject`` exists to avoid.
     """
     try:
         root = ET.fromstring(xml_text)
@@ -1000,16 +1142,17 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
         # PubMed the one endpoint of five whose unusable 200 was invisible by
         # default (PR #195's review). What it costs is stated at
         # `_check_pubmed`.
-        logger.warning("PubMed answered 200 with a body that is not parsable XML: %s", e)
+        logger.warning(
+            "PubMed for %s: answered 200 with a body that is not parsable XML: %s", pmid, e
+        )
         return _PubMedSignals()
 
-    # Only `PubmedArticle` is read. A `PubmedBookArticle` (StatPearls,
-    # GeneReviews, …) carries no `<CoiStatement>` and no `<DataBankList>` in
-    # its DTD, so the two signals worth having are absent by construction and
-    # the record degrades to empty signals rather than being parsed for the
-    # third.
+    # Only `PubmedArticle` is read, and a body carrying none is reported
+    # rather than dropped — see `_report_pubmed_without_citation` for which
+    # of three populations it was and why they do not share a level.
     citation = root.find(".//PubmedArticle/MedlineCitation")
     if citation is None:
+        _report_pubmed_without_citation(root, pmid)
         return _PubMedSignals()
 
     # The MEDLINE DTD declares CoiStatement as (%text;)*, so inline markup
@@ -1062,7 +1205,10 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
                 # Not the same story as a registration in another registry, and
                 # the only place the difference is visible — the result records
                 # followability, not which of the two caused it.
-                logger.debug("ClinicalTrials.gov databank carried no usable accession")
+                logger.debug(
+                    "PubMed for %s: ClinicalTrials.gov databank carried no usable accession",
+                    pmid,
+                )
             registration_not_checkable = True
 
     # Deduplicated: PubMed emits one <Grant> per grant number, so an agency
@@ -1080,7 +1226,24 @@ def _parse_pubmed_signals(xml_text: str) -> _PubMedSignals:
 
     return _PubMedSignals(
         coi_statement=coi_statement,
-        trial_accessions=tuple(accessions),
+        # **Deduplicated for the reason `funders` below is, and since issue
+        # #206 for a sharper one.** MEDLINE's `<DataBankList>` is `(DataBank+)`
+        # and each `<DataBank>` carries its own `<AccessionNumberList>`, so one
+        # paper naming one trial twice is well-formed input — the shape this
+        # module already collapses for `<Grant>` one package over (measured at
+        # 31 of 575 entries across 200 records in `publications/`). While
+        # `answered` was a `bool` and the cap was silent, a repeat cost only a
+        # redundant request. It no longer is: `len(ct_ids)` is the denominator
+        # of a WARNING and `dropped` decides `PARTLY_ANSWERED`, so four entries
+        # naming one trial reported *"1 of this paper's 4 accessions were not
+        # checked"* and retracted a `NOT_POSTED` that ClinicalTrials.gov had
+        # answered for every distinct trial the paper named — issue #206's own
+        # false claim in the mirror, manufactured by its fix. `_find_trial_ids`,
+        # the other producer of this list, has deduplicated since issue #202;
+        # the two producers disagreeing is what made only this one reachable.
+        # Order-preserving, because the accession order is the paper's and the
+        # cap slices by it.
+        trial_accessions=tuple(dict.fromkeys(accessions)),
         registration_not_checkable=registration_not_checkable,
         funders=funders,
         deposition_databanks=tuple(deposition.values()),
@@ -2907,12 +3070,12 @@ class TransparencyAnalyzer:
             return _PubMedSignals()
         if not xml_text:
             logger.warning(
-                "PubMed for %s: answered 200 with an empty body; "
-                "no COI, trial-registration or grant signals are available",
+                "PubMed for %s: answered 200 with an empty body; %s",
                 pmid,
+                _PUBMED_SIGNALS_LOST,
             )
             return _PubMedSignals()
-        return _parse_pubmed_signals(xml_text)
+        return _parse_pubmed_signals(xml_text, pmid)
 
     def _check_openalex(self, client: Any, doi: str, analysis: _Analysis) -> None:
         """Fold open-access status and citation count from OpenAlex into *analysis*."""
@@ -2960,7 +3123,8 @@ class TransparencyAnalyzer:
             analysis.score += SCORE_TRIAL_REGISTERED
 
         if ct_ids:
-            # **Three outcomes, not two** (issue #195's review). Until then
+            # **Four outcomes, not two** (issue #195's review, and three of
+            # them until issue #206 added `PARTLY_ANSWERED`). Until then
             # this was `any(...)` over a `bool`, so a trial nobody managed to
             # ask about was indistinguishable from one that answered "none
             # posted" — and the `else` stored *"Registered trial without
@@ -2979,41 +3143,111 @@ class TransparencyAnalyzer:
             # deliberately not a read of `analysis.results_compliant`: the
             # indicators below report what ClinicalTrials.gov did, which a
             # flag arriving from elsewhere must not be able to retract.
-            answered = False
+            # **The cap and the unanswered accession are one question**
+            # (issue #206). Both mean *"bmlib did not ask about every
+            # accession this paper named"*, and while either is true
+            # `_INDICATOR_NO_POSTED_RESULTS` is a claim the walk has not
+            # earned: the accession nobody reached may be the one with
+            # results. `answered` was a `bool` set on the first reply, so one
+            # reachable *"no"* outvoted any number of unreachable ones — the
+            # tri-state above narrowed issue #194's false claim rather than
+            # closing it, exactly as correcting the `User-Agent` had narrowed
+            # it rather than making the `bool` honest.
+            asked = ct_ids[:MAX_TRIAL_IDS_TO_CHECK]
+            dropped = len(ct_ids) - len(asked)
+            answered = 0
             compliant = False
-            for tid in ct_ids[:MAX_TRIAL_IDS_TO_CHECK]:
+            for tid in asked:
                 posted = self._check_trial_results(client, tid)
                 if posted is None:
                     continue
-                answered = True
+                answered += 1
                 if posted:
                     compliant = True
                     break
+            if dropped and not compliant:
+                # **Only the cap gets a line, and it gets one whenever it
+                # could have changed the outcome** — which is every walk that
+                # did not find posted results, not only the partly-answered
+                # one. The level is WARNING because this is bmlib choosing to
+                # stop asking, which is the one cause of the two an operator
+                # can act on — by raising the cap.
+                #
+                # **The accession that was asked about and did not answer is
+                # not always logged, and the first draft of this comment said
+                # it was** (PR #225's review). Four of the five ways
+                # `_check_trial_results` returns `None` leave a line naming
+                # the accession and the status; the fifth does not, because
+                # `_json_bool` refuses a wrong-typed value in silence. That is
+                # issue #226 — issue #209's residual at this one site, where
+                # it decides a *stored status* — not this branch's to close, and the
+                # claim is narrowed rather than the absence licensed by a
+                # premise that was false — which is how issue #191's own
+                # defect gets made.
+                #
+                # The dropped accessions are named because they are the whole
+                # of what an operator recovers by raising the cap, and because
+                # this line otherwise had no subject at all — the defect the
+                # other half of this same commit fixes one method over.
+                logger.warning(
+                    "ClinicalTrials.gov: %d of this paper's %d accessions were not checked "
+                    "(MAX_TRIAL_IDS_TO_CHECK is %d) — %s; posted results cannot be ruled out "
+                    "for this paper",
+                    dropped,
+                    len(ct_ids),
+                    MAX_TRIAL_IDS_TO_CHECK,
+                    ", ".join(ct_ids[MAX_TRIAL_IDS_TO_CHECK:]),
+                )
             if compliant:
                 analysis.results_compliant = True
                 analysis.trial_results_status = TrialResultsStatus.POSTED
                 analysis.score += SCORE_RESULTS_POSTED
-            elif answered:
-                analysis.trial_results_status = TrialResultsStatus.NOT_POSTED
-                analysis.indicators.append(_INDICATOR_NO_POSTED_RESULTS)
             else:
-                # Asked, and not one accession answered. The same line the
-                # other-registry case gets, because the claim is identical —
-                # *"could not be checked"* — and it puts nothing in
-                # ClinicalTrials.gov's mouth, which is the whole distinction
-                # issues #187/#190/#191 drew. The two causes are not split in
-                # *prose* because nothing downstream could act on the
-                # difference in a sentence; what one can act on is that this
-                # is not a finding.
-                #
-                # The **status** does split them, and that is not a
-                # disagreement (issue #198): *"would re-running change this?"*
-                # is `yes` here and `no` for the other-registry case below,
-                # which is the question `FullTextStatus.REQUEST_FAILED`
-                # exists to answer one endpoint over and the one results
-                # being cacheable makes worth storing.
-                analysis.trial_results_status = TrialResultsStatus.REQUEST_FAILED
-                analysis.indicators.append(_INDICATOR_RESULTS_NOT_CHECKABLE)
+                # Accessions this walk established nothing about: the ones the
+                # cap dropped, plus the ones asked about that did not answer.
+                # Computed **inside the non-compliant arm** rather than beside
+                # the loop, because the `break` leaves the un-walked tail out
+                # of `answered` and the number is wrong there — a comment
+                # saying it is unread is not the protection its being
+                # unreachable is (PR #225's review).
+                unestablished = dropped + len(asked) - answered
+                if answered and unestablished:
+                    analysis.trial_results_status = TrialResultsStatus.PARTLY_ANSWERED
+                    # The line `NOT_CHECKABLE` and `REQUEST_FAILED` already
+                    # share, for the reason they share it: the claim a human
+                    # can act on is identical — bmlib could not establish the
+                    # status — and it puts nothing in ClinicalTrials.gov's
+                    # mouth. What a caller *can* act on is the enum, which is
+                    # where the difference is carried.
+                    analysis.indicators.append(_INDICATOR_RESULTS_NOT_CHECKABLE)
+                elif answered:
+                    analysis.trial_results_status = TrialResultsStatus.NOT_POSTED
+                    analysis.indicators.append(_INDICATOR_NO_POSTED_RESULTS)
+                else:
+                    # Asked, and not one accession answered. The same line the
+                    # other-registry case gets, because the claim is identical
+                    # — *"could not be checked"* — and it puts nothing in
+                    # ClinicalTrials.gov's mouth, which is the whole
+                    # distinction issues #187/#190/#191 drew. The two causes
+                    # are not split in *prose* because nothing downstream
+                    # could act on the difference in a sentence; what one can
+                    # act on is that this is not a finding.
+                    #
+                    # The **status** does split them, and that is not a
+                    # disagreement (issue #198): *"would re-running change
+                    # this?"* is `yes` here and `no` for the other-registry
+                    # case below, which is the question
+                    # `FullTextStatus.REQUEST_FAILED` exists to answer one
+                    # endpoint over and the one results being cacheable makes
+                    # worth storing.
+                    #
+                    # Reached only because `MAX_TRIAL_IDS_TO_CHECK` is at
+                    # least 1: at 0 `asked` would be empty and this arm would
+                    # claim a refusal for a walk that made no request, which
+                    # is the same mouth-stuffing one line up. The constant is
+                    # fixed, so this is a note and not a guard.
+                    analysis.trial_results_status = TrialResultsStatus.REQUEST_FAILED
+                    analysis.indicators.append(_INDICATOR_RESULTS_NOT_CHECKABLE)
         elif pubmed.registration_not_checkable:
             analysis.trial_results_status = TrialResultsStatus.NOT_CHECKABLE
             analysis.indicators.append(_INDICATOR_RESULTS_NOT_CHECKABLE)

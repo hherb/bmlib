@@ -215,12 +215,13 @@ class TransparencySettings:
 class TrialResultsStatus(Enum):
     NOT_REGISTERED = "not_registered"    # no registration established; nothing was asked
     POSTED = "posted"                    # ClinicalTrials.gov answered: results are posted
-    NOT_POSTED = "not_posted"            # ClinicalTrials.gov answered: none posted
+    NOT_POSTED = "not_posted"            # answered about every accession: none posted
+    PARTLY_ANSWERED = "partly_answered"  # some answered "no"; the rest were not asked or did not answer
     REQUEST_FAILED = "request_failed"    # asked, and not one accession answered
     NOT_CHECKABLE = "not_checkable"      # a registration it has no answer to give for
 ```
 
-`trial_results_compliant` says *whether* results were posted; this says what was established, and `False` was four different claims. `POSTED` and `NOT_POSTED` are the findings about the trial; `REQUEST_FAILED` and `NOT_CHECKABLE` are findings about bmlib's ability to ask, and `NOT_REGISTERED` says there was nothing to ask. That middle pair is the distinction issue #194 turned out to rest on: ClinicalTrials.gov's edge refused every request for a release, and a bare `False` published that as *"Registered trial without posted results"* about every registered trial.
+`trial_results_compliant` says *whether* results were posted; this says what was established, and `False` was four different claims. `POSTED` and `NOT_POSTED` are the findings about the trial; `PARTLY_ANSWERED`, `REQUEST_FAILED` and `NOT_CHECKABLE` are findings about bmlib's ability to ask, and `NOT_REGISTERED` says there was nothing to ask. That middle pair is the distinction issue #194 turned out to rest on: ClinicalTrials.gov's edge refused every request for a release, and a bare `False` published that as *"Registered trial without posted results"* about every registered trial.
 
 **`is_answered` is the grouping to branch on**, rather than enumerating members — a member added later then has to choose a side:
 
@@ -232,6 +233,8 @@ if result.trial_results_status is not None and not result.trial_results_status.i
 ```
 
 `is_answered` is `True` for exactly `POSTED` and `NOT_POSTED`.
+
+**`PARTLY_ANSWERED` sits on the *unanswered* side, and that is the point of it** *(unreleased — issue #206)*. ClinicalTrials.gov did answer for some accessions, but not for all of them, so `trial_results_compliant` being `False` does not mean the trial fell short — which is the sentence `is_answered` exists to keep a downstream from rendering. Two causes reach it and they share the member deliberately: bmlib's own `MAX_TRIAL_IDS_TO_CHECK` truncated the list, or a request went unanswered. *"Would re-running change this?"* separates `REQUEST_FAILED` from `NOT_CHECKABLE` because results are cacheable; here it separates nothing a caller can act on, since a re-run under the same cap truncates identically. Which cause it was reaches an **operator**, as a WARNING naming how many accessions were skipped, because raising the cap is an action; it does not reach a stored field, where nothing would read it.
 
 **`REQUEST_FAILED` and `NOT_CHECKABLE` share an indicator string and are separate members**, which is not a disagreement: *"would re-running change this?"* is `yes` for the first and `no` for the second, and results are cacheable with no retry anywhere in `transparency/`. The prose does not split them because nothing downstream can act on the difference in a sentence — the same division of labour `FullTextStatus` makes one endpoint over.
 
@@ -474,6 +477,10 @@ The step-2 search is issued **once** per document: the record is threaded into t
 | HTTP 200 whose body will not decode | `WARNING` | that the body is not JSON (steps 1, 2, 5, 6) or could not be read (step 4), with the decoder's own message |
 | HTTP 200 carrying JSON that is **not an object** | `WARNING` | that the body is not an object, naming the type that arrived and the URL it came from *(unreleased — issue #199)* |
 | step 4 answering 200 with an empty or non-XML body | `WARNING` | that PubMed answered unusably, and that no COI, registration or grant signal is available |
+| step 4 answering 200 with a **book or book chapter** | `DEBUG` | that the record carries none of the elements this step reads *(unreleased — issue #218)* |
+| step 4 answering 200 with an **empty record set** | `WARNING` | that NCBI holds no record for this PMID *(unreleased — issue #218)* |
+| step 4 answering 200 with any other document carrying no `PubmedArticle` | `WARNING` | the root element bmlib was served *(unreleased — issue #218)* |
+| step 6 skipping accessions because of the cap | `WARNING` | how many of the paper's accessions were not checked, and what `MAX_TRIAL_IDS_TO_CHECK` is *(unreleased — issue #206)* |
 | step 2 producing no answer at all | `WARNING` | that no full-text request was made, and how many points are not scored |
 
 The line for a non-200 deliberately does **not** claim a consequence: the helper is shared by five steps whose consequences differ, and the step that knows says so itself — which is why step 2's failure gets its own line above. *(Corrected from "that the component is not scored" in PR #195's review, which was true for steps 1 and 5 and wrong for the rest.)*
@@ -733,6 +740,23 @@ not a publisher's deposit *(unreleased)*.
 
 Step 4's ordering is deliberate. It sits after Europe PMC so a DOI-only analysis can reuse the PMID from the record already fetched, and before ClinicalTrials.gov so a structured registry accession can feed the posted-results check. It costs one request at most, and none at all when no PMID is available. Its four signals — COI, trial registration, data-deposition accessions, and funders — are all publisher-supplied structured metadata, which is why they outrank the text heuristics elsewhere in the module. A PubMed record that is missing, unreachable, or unparsable yields no signals and changes nothing.
 
+**A body that parses and carries no `PubmedArticle` says which kind it is** *(unreleased — issue #218)*. That branch used to return empty signals in silence, while both of its neighbours reported, and it is not a quiet outcome: empty signals mean no `<CoiStatement>`, so nothing is retracted from the COI indicators and the missing-COI downgrade is free to fire. It was also the *majority* outcome of the draw that finally sized it — `no-citation` for 50 of 60 served bodies on **2026-09-09**, a Bookshelf-heavy contiguous page, so read that as a floor rather than a rate. The date is the 09-09 run and not the 09-08 one: the `no-citation` category did not exist until then, and the earlier run reported these same bodies as plain `xml`, which is the defect that created it.
+
+One branch was three populations, and they do not share a level — a level measured on one population must not be applied to a wider branch, which is issue #191's whole finding. Three branches, two of them probed live on 2026-09-10 by identifier:
+
+| what was served | level | why |
+|---|---|---|
+| a set whose records are **all** `<PubmedBookArticle>` | `DEBUG` | bmlib declines them by name, and nothing was lost that could have been had |
+| an empty `<PubmedArticleSet>` (205 bytes, HTTP 200) | `WARNING` | NCBI holds no record for an identifier that came from the caller or from the Europe PMC record |
+| a **mixed** set, or any other document that parses | `WARNING` | see the row below; a book neighbour must not buy an article record the quiet level |
+| a document bmlib does not recognise | `WARNING` | the line names the root element |
+
+**Reading a book record would recover nothing, and that is measured rather than read off the DTD.** Across 60 `statpearls[book]` records and 100 drawn from `pubmed books[filter]` on 2026-09-10, **not one** carries a `<GrantList>`, a `<CoiStatement>` or a `<DataBankList>`. Read the zeroes as upper bounds over two draws NCBI's own search ordered.
+
+**The book test is a child test, and every child** *(unreleased)*. A `PubmedArticleSet` is declared `(PubmedArticle | PubmedBookArticle)*`, so a mixed set is legal; a descendant search matched a book anywhere and was tried first, which cost an article record carrying no `<MedlineCitation>` its three signals at the quiet level on the strength of a book neighbour. The 160-record draw is of responses that *are* book records, which is narrower than *"carries one"*, so the wider test was the level generalising past its own population once more.
+
+The issue's own third population belongs to **a different request**. `<eFetchResult><ERROR>…` at HTTP 200 is real — probed 2026-09-10, an evicted *history session* efetch serves exactly that, which is why the [publications fetcher](publications.md) refuses a root that is not a record set. This step fetches **by id**, where the same probe read 400 for a malformed id list and an empty record set for an id NCBI does not hold, so the envelope reaches the non-200 path and never gets here. Two error classes on one request shape is not every error class; the unrecognised-document row takes it if one arrives at 200.
+
 ### Scoring components
 
 Weights are module-level constants in `bmlib.transparency.analyzer`:
@@ -759,7 +783,7 @@ Note that the score is a *transparency* measure, not a quality measure, and it i
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
-| `MAX_TRIAL_IDS_TO_CHECK` | `3` | Registered trials queried for posted results before giving up. |
+| `MAX_TRIAL_IDS_TO_CHECK` | `3` | Registered trials queried for posted results before giving up. A walk it truncates warns and stores `PARTLY_ANSWERED` rather than a finding *(unreleased — issue #206)*. |
 | `EFETCH_URL` | E-utilities `efetch.fcgi` | PubMed record endpoint. |
 | `EUTILS_TOOL_NAME` | `"bmlib"` | Sent as `tool`, with `email`, to identify the caller to NCBI. |
 | `DEFAULT_INDUSTRY_CONFIDENCE` | `0.8` | Confidence for a structured funder match (CrossRef funder or PubMed grant agency). |
@@ -960,7 +984,20 @@ Neither guard applies to a `<DataBankList>` accession. They exist only because s
 
 ### Posted results
 
-When ClinicalTrials.gov ids are credited, `trial_registered` is `True` and 20 points are awarded. Up to `MAX_TRIAL_IDS_TO_CHECK` (3) of them are then queried for posted results; the first success awards 15 more and stops the loop. **Three outcomes, not two** *(unreleased)*: if at least one accession was answered and none has results, `"Registered trial without posted results"` is appended; if **not one of them answered** — every request refused, 404'd or returned an unusable body — the indicator is `"Trial registration found; posted-results status could not be checked"`, the same line a registration in another registry gets, because the claim is identical and it puts nothing in ClinicalTrials.gov's mouth.
+When ClinicalTrials.gov ids are credited, `trial_registered` is `True` and 20 points are awarded. Up to `MAX_TRIAL_IDS_TO_CHECK` (3) of them are then queried for posted results; the first success awards 15 more and stops the loop. **Four outcomes, not two** *(unreleased)*:
+
+| The walk | Status | Indicator |
+|----------|--------|-----------|
+| An accession reports posted results | `POSTED` | none; 15 points awarded |
+| Every accession the paper named was asked about and answered, none has results | `NOT_POSTED` | `"Registered trial without posted results"` |
+| Some answered "no", and the rest were never asked about or never answered | `PARTLY_ANSWERED` | `"Trial registration found; posted-results status could not be checked"` |
+| Not one accession answered | `REQUEST_FAILED` | the same line |
+
+The last two share a line because the claim is identical — bmlib could not establish the status — and it puts nothing in ClinicalTrials.gov's mouth, which is also why a registration in another registry gets it. What a caller can act on is the enum.
+
+**`PARTLY_ANSWERED` is issue #206** *(unreleased)*, and both of its causes were silent. `answered` was a `bool` set on the first reply, so one reachable *"no results"* outvoted any number of unreachable ones; and `MAX_TRIAL_IDS_TO_CHECK` sliced an unbounded list — `_parse_pubmed_signals` collects every ClinicalTrials.gov accession that is a well-formed NCT id — with no log line and no indicator, and no test of the analyzer's own truncation. Either way `"Registered trial without posted results"` was stored about a paper whose remaining accessions bmlib had never reached, and one of those may be the trial with results. Measured over the 30 papers naming an accession in the 2026-09-08 trial-enriched sampler draw: **the cap truncates 8 of 30, and a partly-answered check is 1 of 30** — so the larger half is the one that had no diagnostic at all. Read the second figure as a **floor**: that draw predates PR #213's correction of `TrialCheck.answered`, which counted HTTP 200 where bmlib counts a non-`None` return and so deflated exactly this row. The truncation count is derived from `found > probed` and is unaffected, which is the half the comparison rests on.
+
+**The cap still bounds the requests; it is only no longer silent.** A truncated walk that did not find posted results logs a WARNING naming how many accessions were skipped, what the cap is, and **which accessions they were** — the last being what raising the cap would recover, and what gives the line a subject. It is gated on the walk not having concluded `POSTED`, because a posted result settles the paper and the accessions behind it cost nothing. How far the accession-count distribution runs past three is **unmeasured** — `scripts/sample_api_failures.py` records each paper's accession count before the cap, so a run would answer it with one more report line; the summary prints the verdict distribution and the truncated share, not the distribution of the count.
 
 `_check_trial_results()` requests `fields=hasResults` and reads the v2 API's top-level `hasResults` boolean. **This was a bug fix in 0.4.0:** the previous implementation requested a `ResultsSection` field but read a `resultsSection` key, so it systematically under-detected posted results and under-scored compliant trials by 15 points.
 
@@ -968,7 +1005,7 @@ Because the request is narrowed to that one field, `hasResults` is the only key 
 
 **Until the fix noted under [Analysis Pipeline](#analysis-pipeline), this step had never once succeeded** *(unreleased)*. ClinicalTrials.gov refused bmlib's `User-Agent` with a 403, and a refused request read as `False` — which in a `bool` was indistinguishable from *"this trial posted no results"*, so `SCORE_RESULTS_POSTED` was never awarded to any paper and `"Registered trial without posted results"` was stored as a false claim about every registered trial (issue #194).
 
-**Correcting the header narrowed that from "always" to "whenever ClinicalTrials.gov does not answer" and left the conflation in place**, so a 404, a 403 or an unusable body still manufactured the same false finding. `_check_trial_results` is now a tri-state — `True`, `False`, or `None` for *"did not answer"* — and the caller distinguishes the three outcomes above (PR #195's review). `"Registered trial without posted results"` now means what it says: at least one accession was asked and answered no.
+**Correcting the header narrowed that from "always" to "whenever ClinicalTrials.gov does not answer" and left the conflation in place**, so a 404, a 403 or an unusable body still manufactured the same false finding. `_check_trial_results` is now a tri-state — `True`, `False`, or `None` for *"did not answer"* — and the caller distinguishes the four outcomes above (PR #195's review, and a fourth since issue #206). `"Registered trial without posted results"` now means what it says: **every accession the paper named** was asked about and answered no. It meant the weaker *"at least one was asked and answered no"* until issue #206, which is the claim `PARTLY_ANSWERED` took away from it.
 
 **And the model followed** *(unreleased — issue #198)*. The residual PR #195 left was that `trial_results_compliant` is a bare `bool`, `False` for *"answered no"*, *"could not be checked"*, *"nobody answered"* and *"no trial at all"* alike — with `risk_indicators` distinguishing three of the four in prose a downstream has to string-match, which both known downstreams do not. [`TrialResultsStatus`](#trialresultsstatus) is the machine-readable half; the flag stays as the compatibility field.
 
