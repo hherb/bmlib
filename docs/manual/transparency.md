@@ -509,11 +509,27 @@ That is measured rather than read off the documentation. Probed on 2026-09-05, t
 
 It is a **shape** test and not a `source` allow-list, though `source` is what the measurement below splits on. The two agree on every population drawn, and they differ in the one direction that matters: an allow-list refuses an accession-shaped address from a source nobody has enumerated, and losing an article that would have been served is worse than the wasted request it saves. It is also **not** a deletion of the `or id` fallback, which is load-bearing: `SRC:PPR AND IN_EPMC:Y` is 75,841 records whose only address is that `id`.
 
+**Measured, with a denominator** (`scripts/sample_api_failures.py` at the documented defaults, 2026-09-09, 123 records):
+
+```
+addressing          123 records categorised; a full-text request would be made for 9 of 123
+                     id-not-an-address                    43    35.0%
+                     not-claimed                          71    57.7%
+                     pmcid                                 9     7.3%
+full-text address    52 addresses probed
+                     id-not-an-address, source MED        43 probed      0 served =   0.0%   95% CI [0.0%, 8.2%]
+                     pmcid                                 9 probed      6 served =  66.7%   95% CI [35.4%, 87.9%]
+```
+
+So **0 of 43** bare-`id` addresses served against 6 of 9 accession addresses, and the fix drops 43 of the 52 requests that draw would have made — 35.0% of every record analysed. Read the 0 as an upper bound of 8.2%, not as a proof that no such record can serve; the 43 are a contiguous cursor page's worth of `SRC:MED` records and issue #188's own evidence is that such records are NCBI Bookshelf chapters, whose `bookid` is not addressable here either.
+
+**The larger population beside it is still not actionable.** The same probes cross-tabulate by `isOpenAccess` — the flag bmlib does not read, and the gate that would actually predict whether `fullTextXML` serves — at `N` 0 of 3 and `Y` 6 of 49. Three probes settle nothing (`[0.0%, 56.2%]`), which is the point of recording it rather than gating on it: narrowing on a floor silently loses an article that would have been served.
+
 **A 404 here is ordinary, and is logged at DEBUG.** `inEPMC` says Europe PMC *holds* the full text; `fullTextXML` serves the open-access subset of it. Of 150 `IN_EPMC:Y` records probed across sources and publication years, no `isOpenAccess: N` record served — 0 of 53 — and `isOpenAccess: Y` still 404'd in 35 of 97. So warning on it would mean a warning on every closed-access paper analysed. Each of those cells is one cursor page rather than a random sample, so they are not population rates; the `0 of 53` is a floor, not a proof that no such record can serve.
 
 **That draw is of 404s, and so is the branch** *(unreleased — issue #191)*. It used to take every status code, which generalised the measurement past what it looked for. A second probe on 2026-09-05 — 200 `IN_EPMC:Y` records, stratified the same way and addressed exactly as the analyzer addresses them — found 119 served and **81 of the 81 non-200s were 404**. So the DEBUG level is now measured over the whole of what its branch takes, and everything else is `REQUEST_FAILED` at WARNING: a 429, a 503 and a 403 are the ordinary outcome of nothing, 0 of 200, and with `cache_results` on and no retry anywhere in the module an outage would otherwise cache absences that cannot be told from closed-access papers. `is_refusal` stays `False` for both, so the *"full text unavailable"* indicator is unchanged; what the split adds is that *"would re-running change this?"* is answerable at all.
 
-**There is no committed instrument for the figures in this section.** Unlike the sampled populations elsewhere in this manual, the URL shapes, the 150-record probe and the 200-record probe behind #191 and #190 were all measured by hand against the live API on 2026-09-05 and no `scripts/sample_*.py` re-derives them. The hit counts (`IN_EPMC:Y`, `SRC:PPR AND IN_EPMC:Y`) are re-checkable in one request each and drift upward daily; the rest would need re-probing.
+**Part of this section now has a committed instrument, and part still does not** *(unreleased — issue #216)*. `scripts/sample_api_failures.py` probes the address it categorises since issue #216, so *"how often does the address bmlib builds actually serve, and does it depend on the category?"* is a table with a denominator and a Wilson interval on every row — see the run below. What no `scripts/sample_*.py` re-derives is the rest: the URL **shapes** (the `{source}/` segment, `textMinedTerms`, `supplementaryFiles`), the 150-record `isOpenAccess` probe and the 200-record probe behind #191 and #190 were measured by hand against the live API on 2026-09-05. The hit counts (`IN_EPMC:Y`, `SRC:PPR AND IN_EPMC:Y`) are re-checkable in one request each and drift upward daily; the rest would need re-probing.
 
 #### The full text is the article's own
 

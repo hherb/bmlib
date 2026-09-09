@@ -47,7 +47,21 @@ All notable changes to bmlib are documented here. The format is based on
   predicate under test. And that endpoint keeps its shape table under a rule
   of its own: `shapes_reportable`'s *"a probe that reached no body is as
   uninformative as a throttled one"* was written for five endpoints at which
-  a non-200 is close to unheard of, and here the 404 is the finding.
+  a non-200 is close to unheard of, and here the 404 is the finding. That was
+  the instrument's own first run reporting ERROR and flipping the exit code
+  on a clean draw; the rule is withdrawn for that endpoint by a named set and
+  for nothing else.
+
+  **First full run** (2026-09-09, 123 + 60 records at the documented
+  defaults): `europepmc_fulltext` 52 probed, **46 not served (88.5%, all
+  404)**, which is what the 404's DEBUG level has always claimed and now has
+  a committed denominator for; 6 bodies served, **0 empty**, which is issue
+  #190's population measured for the first time at 0 of 6. The address rows
+  are quoted under the issue #188 entry below. Two further readings ride
+  along: `pubmed_efetch` served `no-citation` for **50 of 60** bodies — the
+  one silent branch of that step, now issue #218 — and `crossref`'s `funder`
+  key was absent in 71 of 73 records, so the funder coercers issue #199 added
+  are reached by a small minority of bodies.
 
 - **A stored result now says what happened, once per claim** (issues #198,
   #202 and #203, all three from PR #195's review).
@@ -539,6 +553,21 @@ All notable changes to bmlib are documented here. The format is based on
   nobody has enumerated — where the allow-list refuses a fetch that would
   have worked. It is **not** a deletion of the `or id` fallback either:
   `SRC:PPR AND IN_EPMC:Y` is 75,841 records whose only address is that `id`.
+
+  **Measured, with a denominator, by the sampler change above** (2026-09-09,
+  123 records at the documented defaults): **0 of 43** bare-`id` addresses
+  served, 95% CI `[0.0%, 8.2%]`, against **6 of 9** accession addresses. The
+  fix drops 43 of the 52 full-text requests that draw would have made — one
+  per 35.0% of records analysed. Read the 0 as an upper bound rather than a
+  proof: those 43 are a contiguous cursor page's worth of `SRC:MED` records,
+  and the issue's own evidence is that such records are NCBI Bookshelf
+  chapters whose `bookid` is not addressable here either.
+
+  **The larger population beside it is recorded and not acted on.** The same
+  probes cross-tabulate by `isOpenAccess` — the flag bmlib does not read, and
+  the one that would actually predict whether `fullTextXML` serves — at `N`
+  0 of 3 and `Y` 6 of 49. Three probes settle nothing, and a gate narrowed on
+  a floor silently loses an article that would have been served.
 
   **Stored values move**, which is why this was filed rather than folded into
   issue #184. Every such record's `full_text_status` moves `NOT_SERVED` →

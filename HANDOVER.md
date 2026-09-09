@@ -1,17 +1,17 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-08. **0.10.0 is released and on PyPI**; twenty-seven
-changes sit unreleased, the last two of them instrument-only. All five version
-places agree at 0.10.0. Every unreleased ROADMAP row carries an
-`*(unreleased)*` marker._
+_Last updated: 2026-09-09. **0.10.0 is released and on PyPI**; twenty-nine
+changes sit unreleased, three of them instrument-only. All five version places
+agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
+marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Twenty-seven changes, fourteen of them `fulltext` JATS fixes filed within days
+Twenty-nine changes, fourteen of them `fulltext` JATS fixes filed within days
 of each other — whoever cuts the next release should describe those together.
 **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is kept here**,
-because the version number answers the API question and never that one. The
-last two (#211, #212) touch `scripts/` alone and cost a downstream nothing.
+because the version number answers the API question and never that one. Three
+(#211, #212, #216) touch `scripts/` alone and cost a downstream nothing.
 
 **The JATS fixes move what a caller of `JATSParser` gets, and each of those
 moves what a bmlib *sync* stores** — reaching a bmlib path through the cached
@@ -57,17 +57,22 @@ field alone; **#195**'s tri-state swaps one CT.gov indicator for another.
 moves a scan output for 0.61% of 97,909 articles. **#160** and **#183** move
 nothing measurable. **#202** moves nothing at all.
 
+**#188 moves one field for about a third of records analysed**: a record
+whose EuropePMC entry carries no `pmcid` — 43 of 123 in the 2026-09-09 draw,
+all `source: MED` — stores `full_text_status` `NOT_ATTEMPTED` where it stored
+`NOT_SERVED`, with its provenance line. Nothing else moves, the request it
+replaces having been a guaranteed 404. A downstream counting `NOT_SERVED` as
+*"EuropePMC has no full text for this"* was counting these wrongly.
+
 **#199 moves one value for a well-formed body**: `_json_count` refuses a
 `true` or a fractional `cited_by_count`, so such a paper scores 5 points
 lower. For a malformed body it moves values at every site it touches, which is
-the point — 48 of 86 committed rows escaped the public `analyze()` on `main`,
-24 in each identifier column (40 `AttributeError`, 6 `TypeError`, 2
-`KeyError`). **A draw has now looked at how often that fires** (#211,
-2026-09-08): every served body was well-formed at all five endpoints — 0
-non-object, 0 undecodable, 0 empty — so no coercer was *observed* to fire, and
-"unmeasured" is now an upper bound of a few percent. Read it with #212: that
-draw is MED+PPR plus four `PMC/2014` records (60 + 60 + 4): two `SRC:PMC`
-strata contributed no record and the third kept 4 of 20.
+the point — 48 of 86 committed rows escaped the public `analyze()` on `main`.
+**Two draws have now looked at how often that fires** (2026-09-08 and
+-09-09): every served body was well-formed at all five endpoints, so no
+coercer was *observed* to fire and "unmeasured" is an upper bound of a few
+percent. Read both with #212 — the `SRC:PMC` strata contribute almost
+nothing, so each draw is MED + PPR in all but name.
 
 ## Rules carried forward
 
@@ -131,7 +136,11 @@ at any level, so there was none to raise. A
 net needs its own false-positive net, and it must be free — the autouse
 `parser_log` fixture makes all 186 pre-existing fixtures one. Key a counter on
 *structure*, never on the routing it is checking, and **read the increment site,
-not the name or the report** (a verdict line invented #162 outright). **A rule
+not the name or the report** (a verdict line invented #162 outright).
+**Asserting that a constant was imported is not asserting that it is used** —
+#216's accession test was pinned by an identity check, and a mutant that kept
+the import and restated the rule as `startswith` passed all 775 tests; pick a
+fixture where the restatement and the real rule disagree. **A rule
 enforced by prose is not enforced** (`TestTheAuditNetIsComplete`,
 `TestOnlyAnAccumulatingElementReadsTheBuffer`,
 `TestEverySectionIsGatedOnEveryCounterItReads`), and it demands a *choice* rather
@@ -213,86 +222,75 @@ a keyword that fired (#137, #142, #160) *and* four that did not (#147, #164,
 harness restoring with `git checkout -- <file>` deletes whatever is uncommitted
 in it.
 
-## This session: #211, and #212 which it found
+## This session: #216, and #188 which it unblocked
 
-One issue, chosen because it was the *blocking* half of a family: #204, #206,
-#207, #210 and #188 were each waiting on a population nobody had drawn, and one
-run of `scripts/sample_api_failures.py` could size them all. The instrument
-landed, the run happened, and it moved every one of them. What a next session
-should know concretely:
+Two issues in one branch, in the only order that works: the instrument first,
+then the fix it licenses. The previous handover named #188 as the obvious next
+work; #216, filed after that was written, said its decisive evidence was a spot
+check nobody could re-take. **The full argument for both is in `CHANGELOG.md`
+and `docs/DECISIONS.md`**; what follows is only what a next session needs.
 
-- **The issue's own field list was stale on the day it was written** — #211
-  omits `source`, read by `_check_europepmc` since PR #208 coerced it into the
-  full-text URL. So the list is **derived**: an `ast` walk holding the two sets
-  *equal* and failing closed on a literal `.get()` in a function no endpoint
-  claims. The walk also found that *every* literal `.get()` in that module is a
-  body read, which is what let the net be strict rather than carry an excuse
-  list.
-- **Two element steps, because the module does two things with a list.**
-  `_check_crossref` iterates every funder; all three `_epmc_records` callers
-  take `records[0]`. One sentinel would be wider than the code on one endpoint
-  and narrower on the other.
-- **Mutation testing found the exit-code test passing for the wrong reason.**
-  With *every* probe 404ing the rider terms fire together, so deleting the
-  shape term left the suite green; the fixture now fails one endpoint only, and
-  three terms no fixture separates from the probe-level `is_reportable` are
-  pinned on the wire instead. Beside it, a fixture can be wrong in a way that
-  reads as green: the cap tests used `NCT01`, which `_NCT_ID_RE.fullmatch`
-  refuses, so they were measuring "no accession found".
+**Four things to carry forward from #216** (the sampler now probes the address
+it categorises; `europepmc_fulltext` is its sixth endpoint):
 
-**What the run measured** (2026-09-08, `--email … ` at the defaults, 124 + 60
-records; the invocation is the default so the draw is re-derivable):
+- **What the script probes and what bmlib asks are two names.** They coincided
+  until #188. A table keyed on what bmlib *asks* stops measuring the thing that
+  licensed the refusal the moment the refusal lands, so `PROBED_CATEGORIES`
+  follows the record's own offer and `id-not-an-address` stays a probed row.
+- **`id-only` was retired, not reused** for either half of the split — a
+  published figure that changes meaning without changing is
+  `_COUNTER_DEFINITIONS_VERSION`'s scar. Any figure quoted against `id-only`
+  predates 2026-09-09.
+- **The instrument's own first run found a defect in the addition.**
+  `shapes_reportable`'s *"a probe that reached no body is as uninformative as a
+  throttled one"* is right for five endpoints at which a non-200 is close to
+  unheard of, and wrong for the one whose gate is deliberately wider than what
+  it serves: it reported ERROR and flipped the exit code on a clean draw. The
+  rule is withdrawn for that endpoint by a named set and nothing else. No test
+  could have found this.
+- **The accession test was pinned by an identity check on the import**, which
+  a mutant that kept the import and restated the rule as `startswith` passed —
+  all 775 tests. That is exactly what this script's own docstring calls weaker
+  than driving both; the comparison now carries two ids where a prefix test and
+  a `fullmatch` disagree.
 
-- **Every served body was well-formed** — 0 non-object and 0 undecodable
-  across the four JSON endpoints, 0 `not-xml` at the XML one, and 0 empty at
-  all five, over CrossRef 74, EuropePMC 124, PubMed efetch 60, OpenAlex 74 and
-  ClinicalTrials.gov 55 bodies served —
-  0 undecodable, 0 empty. So no coercer #199 added was observed to fire.
-- **#210 is settled**: `hasResults` absent in **0 of 55** bodies. Keep the
-  `False`; what needs changing is the comment, which states the conflation and
-  then performs it.
-- **#207's own population is empty**: `unaddressable` **0 of 124**. Its fourth
-  `FullTextStatus` member has no measured benefit, which is the count it was
-  filed to wait for.
-- **#204's is empty too**: `neither` registration source answering **0 of
-  124**. Its own option 3 (a recorded residual) is the one the evidence
-  supports.
-- **#206's emphasis is reversed**, over the 30 papers in the 60-record trial
-  draw that named an accession: a partly-answered check is **1 of 30**, but
-  the silent accession cap truncates **8 of 30** (26.7%). The half with the
-  large population is the one whose fix is a single WARNING line.
-- **#188 is the big one, and it is confirmed live.** 43 of 124 records
-  (34.7%), and 43 of the 53 claiming `inEPMC: Y` (81%), carry no `pmcid` and
-  are addressed by the record's bare `id`. That URL 404s three of three where
-  a `pmcid` address serves 53 kB; all 84 such records in a 150-record
-  `SRC:MED` draw are NCBI Bookshelf chapters; and a `bookid` is not
-  addressable through `fullTextXML` either (three of three), so **there is no
-  full text to recover and the remedy is to stop asking**. The `PPR` half of
-  the same expression is confirmed load-bearing — 75,841 `SRC:PPR AND
-  IN_EPMC:Y` records (2026-09-08; 75,760 elsewhere is the earlier draw), 50 of 50
-  sampled carrying no `pmcid`, their `id` serving — so the fix is scoped by
-  `source`, never a deletion.
-- One CT.gov 404 of 56 probes: the **first non-200 this sampler has ever
-  recorded**, and far from ordinary, so every `_ORDINARY_STATUSES` set stays
-  empty.
+**#188's three decisions**, each argued in `docs/DECISIONS.md` and not worth
+re-litigating: a **shape** test rather than a `source` allow-list (they agree
+on every population drawn and differ where an accession-shaped id arrives from
+an unenumerated source, where the allow-list refuses a fetch that works);
+**`NOT_ATTEMPTED`** rather than a member of its own (*"Europe PMC's own answer
+is why"* is exact when the record names no accession — which is precisely what
+#207 says is false for the sibling guard one line up, so: two guards, two
+levels, one status); and **not a deletion** of the `or id` fallback, 75,841
+`SRC:PPR AND IN_EPMC:Y` records having no other address.
 
-**#212 is what the run exposed about the instrument itself**, and it qualifies
-every share above. `DrawnRecord` refuses a record carrying neither a DOI nor a
-PMID — correctly, `analyze()` accepting nothing else — and a `SRC:PMC` record
-carries neither, its only identifier being the PMCID. So `PMC/2024` and
-`PMC/2004` drew twenty records apiece and kept none, while the report read
-*"124 records over 7 strata"* with `failed_strata` empty at exit `0`. The
-existing guard tests the **page**; the loss happens one level down. It is now
-named, reported as an ERROR and carried into the exit code — **so the script
-exits non-zero on a clean run** until the population question is decided. Three
-options, three different populations: drop the PMC strata, condition each
-query on the record being analysable, or page each stratum until it fills.
-Also worth noting: `--target 180` yields about 124, which is the *"144 where
-every table says 180"* defect PR #195 found once in this same script, in a
-different place.
+**What the run measured** (2026-09-09, `--email … ` at the documented
+defaults, 123 + 60 records; the second of two runs, the first having exposed
+the shape-rule defect, so these come from the committed code):
 
-**Nothing here changes library code**, so no downstream recompute is owed for
-these two.
+- **#188's own rows, with a denominator at last**: `id-not-an-address, source
+  MED` **0 of 43 served** [0.0%, 8.2%]; `pmcid` **6 of 9**. The fix drops 43 of
+  the 52 full-text requests that draw would have made — one per **35.0%** of
+  records analysed. Read the 0 as an upper bound: those 43 are one contiguous
+  cursor page's worth of `SRC:MED` records, which #188's own evidence says are
+  NCBI Bookshelf chapters.
+- **The 404's DEBUG level now has a committed denominator**: 46 of 52 not
+  served, **every one a 404**, 88.5% [77.0%, 94.6%].
+- **#190's population, measured for the first time**: of 6 bodies served, **0
+  empty**. Six, so a bound rather than a result.
+- **The `isOpenAccess` half of #188 is still not actionable**, now measured
+  rather than asserted: `N` 0 of 3, `Y` 6 of 49.
+- **Two readings nobody was looking for.** `pubmed_efetch` served
+  `no-citation` for **50 of 60** bodies — the one *silent* branch of that step,
+  filed as **#218** — and CrossRef's `funder` key was **absent in 71 of 73**,
+  so #199's funder coercers are reached by a small minority of bodies.
+- The script still **exits 1**, now for #212 alone.
+
+Worth noting for whoever takes #212: the two runs, forty minutes apart, drew
+the **same 123 records over the same seven strata** — more stability than
+`DEFAULT_TARGET`'s *"live and unseeded, so a re-run samples different records"*
+implies. Two runs is not evidence about a week, so that comment stands; this is
+an observation, not a correction.
 
 ## Current state
 
@@ -312,11 +310,14 @@ these two.
   previous release wrote is durable under #95's rule, so the whole window is
   re-fetched once. The two questions are independent, and a downstream reading
   only the number must still read this list.
-- **Tests: 3614 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
-  2026-09-08 on this branch; `main` at PR #208's merge read 3513 + 63, so this
-  branch adds 101, all in `tests/test_api_failure_sampler.py`).
+- **Tests: 3722 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
+  2026-09-09 on this branch; `main` at cdaedc9 measures **3670 + 63** in a
+  clean worktree, so this branch adds **52** — 37 in
+  `tests/test_api_failure_sampler.py`, 15 in `tests/test_transparency.py`.
+  The 3614 the previous handover recorded is not what `main` holds; measure it
+  rather than subtracting, which is how that number survived.)
   **The PostgreSQL half was not re-run for this branch and did not need to be**
-  — it touches `scripts/` only, which carries no SQL. The PostgreSQL half has not been re-run since the
+  — it touches `scripts/` and `transparency/`, neither of which carries SQL. The PostgreSQL half has not been re-run since the
   SQL last moved; the last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set
   is 2435 + 2 on the #105 branch. Of the 63 default skips, 61 are the PostgreSQL
   parameterisations, 1 is a PostgreSQL-only schema test, and 1 is
@@ -337,13 +338,14 @@ these two.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **109 lines carry one** — 40
-  `ROADMAP.md` rows and 69 spots across `docs/manual/transparency.md` (35),
+  `ROADMAP.md` are promoted at release time; **116 lines carry one** — 44
+  `ROADMAP.md` rows and 72 spots across `docs/manual/transparency.md` (38),
   `fulltext.md` (18), `publications.md` (13) and `templates.md` (3).
-  Recounted 2026-09-08 on this branch as
+  Recounted 2026-09-09 on this branch as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md`, so it counts *lines* and
   not markers; the figure is measured, not maintained, so recount rather
-  than adjust it. Grep case-insensitively for `unreleased`, not for
+  than adjust it — the previous handover's 109 was itself four short of what
+  `main` held (42 + 37 + 18 + 13 + 3 = 113), which is what "recount" means. Grep case-insensitively for `unreleased`, not for
   `(unreleased)`: three of 0.10.0's were spelled `*(unreleased, #99)*` and
   `(changed, unreleased — …)`. Write the marker bare, never with a guessed
   version number. Markers inside `docs/superpowers/plans/` are historical records
@@ -359,25 +361,29 @@ these two.
 
 ### Open GitHub issues
 
-**Forty open** as this file is written (`gh issue list --state open --limit
+**Forty-one open** as this file is written, **thirty-nine once this branch
+merges and its two are closed by hand** (`gh issue list --state open --limit
 200`, 2026-09-09 — the limit matters, `gh` pages at 30 and the bare command
-reports a page size as a total): #86, #92, #94, #103, #124, #128, #137,
-#142, #143, #144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175,
-#177, #178, #179, #181, #186, #188, #196, #197, #200, #201, #204, #206, #207,
-#209, #210, #212, #214, #215, #216, #217. **#211 was closed by hand at the
-start of this session** — PR #213 answered it, said in its own body that it
-wanted closing by hand, and merged without anyone doing so; the process rule
+reports a page size as a total): #86, #92, #94, #103, #124, #128, #137, #142,
+#143, #144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177,
+#178, #179, #181, #186, #188, #196, #197, #200, #201, #204, #206, #207, #209,
+#210, #212, #214, #215, #216, #217, #218. This branch answers **#216** and
+**#188** and filed **#218** from its own live run. **#211 was closed by hand
+at the start of this session** — PR #213 answered it, said in its own body that
+it wanted closing by hand, and merged without anyone doing so; the process rule
 below caught its **thirteenth** instance. #199, #198/#202/#203, #193/#194,
 #187/#190/#191, #184, #183 and #161 went the same way in the sessions before.
 
-**#214–#217 are PR #213's review**, all four about the instrument rather than
-the library: **#216** is the sharpest and it qualifies #188 — the sampler
-categorises how bmlib *would* address each record's full text and never builds
-that URL, so *"404 three of three"* is a hand-taken spot check beside a
-committed table. **#214** is the sampler's PubMed population omitting the
-efetch `analyze()` makes for a DOI-only record; **#215** buckets a
+**#214, #215 and #217 are the rest of PR #213's review**, all three about the
+instrument rather than the library: **#214** is the sampler's PubMed population
+omitting the efetch `analyze()` makes for a DOI-only record; **#215** buckets a
 sampler-side exception into the rate a log level is set from; **#217** is
 `ProbeOutcome.cause` being stored and then re-parsed by its own invariant.
+**#218 is this session's**, and it is the only one of the four that is about
+the library: `_parse_pubmed_signals` returns empty signals with **no line at
+any level** for a document carrying no `PubmedArticle`, and that branch served
+**50 of 60** bodies in the 2026-09-09 draw — a Bookshelf-heavy contiguous page,
+so read the share as a floor rather than a rate, but not as rare.
 
 Every open issue was found
 by review or measurement rather than by a failing test, and **none loses
@@ -385,41 +391,32 @@ records** — though **#124** loses an exhibit's footnotes, **#150** renders a
 note-only reference as an empty bullet, and **#128** would lose every figure
 image in a document binding XLink to another prefix.
 
-**Five of them now have their population**, which is what this session was
-for: #204 and #207 measure **empty** (0 of 124 each) and should be closed as
-recorded residuals rather than built; #210 measures empty (0 of 55) and needs
-a comment, not a behaviour change; #206's two halves measure 1 of 30 and **8
-of 30**, so the silent cap is the half worth fixing; and **#188 is confirmed
-live and large** — 43 of 124 records addressed by a bare `id` that never
-serves, all of them NCBI Bookshelf chapters, with no full text recoverable, so
-the fix is to stop asking, scoped by `source` because the `PPR` half of the
-same expression is load-bearing. **#188 is the obvious next piece of work**:
-it has a measured population, a confirmed remedy, and it moves stored values
-(`NOT_SERVED` → whatever is chosen) for about a third of analysed records
-while removing a wasted rate-limited request per record. **#212 blocks nothing
-but qualifies every share above** — decide the strata and the sampler goes
-green again.
+**Three still have a measured-empty population and want closing rather than
+building**: #204 and #207 measure 0 of 124 each, #210 measures 0 of 55, and a
+zero is an argument for a recorded residual — #210's remedy is its comment,
+which states the conflation and then performs it. **#206 is the one of that
+family with work left**, and the emphasis is the reverse of its title: a
+partly-answered check is 1 of 30, the silent accession cap truncates **8 of
+30**, and the big half's fix is a WARNING line. **#212 blocks nothing but
+qualifies every share here** — it is why the sampler exits 1 on a clean run.
+Three options, three different populations: drop the PMC strata, condition
+each query on the record being analysable, or page each stratum until it
+fills.
 
-**#188 is now the one item with a measured population and a confirmed
-remedy** — but read that with **#216**, which says the *confirmation* half is
-a spot check nobody can re-take: the sampler builds no `fullTextXML` URL at
-all, so *"that address 404s, three of three"* sits beside the committed table
-rather than in it. Its option 1 (probe the address the table categorises) is
-one extra request per addressed record and is what makes #188 decidable. Of the
-others: #186 is the last of the full-text-refusal family and is a decision
-rather than a fix (below); #178 is the one open *question*; #196 is a latent
-second site for the #194 class; #197 mechanises a grouping that exists in
-prose; #200/#201 are shape. **#204, #206, #207 and #210 are no longer blocked**
-— the run sized all four, and three of them measure empty, which is an
-argument for closing rather than building. Note that #207's time-sensitivity
-argument (a schema addition being free while the batch is unreleased) now
-points the other way: free is not a reason to add a member whose population is
-zero. **The lesson of #194 is
-worth acting on rather than only recording**: it was a live-only defect that
-the whole suite missed — no test in it makes a live request — found the first time an
-instrument presented bmlib's real identity to a real remote. Nothing else in
-`transparency/` or `fulltext/` has ever been probed that way, so the *class*
-is open even though the instance is closed.
+**#218 is this session's own and the freshest**: a silent branch with a
+measured population and a cheap first step (emit a line at all), plus a second
+question — whether `<PubmedBookArticle>` carries anything the three PubMed
+signals want — that is genuinely open. Of the rest: **#186** is the last of
+the full-text-refusal family and is a decision rather than a fix (below);
+**#178** is the one open *question*; **#196** is a latent second site for the
+#194 class; **#197** mechanises a grouping that exists in prose; **#200**,
+**#201**, **#214**, **#215** and **#217** are shape. **The lesson of #194 is
+worth acting on rather than only recording**: it was a live-only defect the
+whole suite missed — no test in it makes a live request — found the first time
+an instrument presented bmlib's real identity to a real remote. This session
+is the second time that has paid: #216's own first run found a rule wrong in
+the change that added it, which no test could have. Nothing in `fulltext/` has
+ever been probed that way, so the *class* is still open.
 
 **Count them against the repo before trusting that number.** The line has been
 wrong in several sessions, and an issue closed as COMPLETED without being fixed
@@ -428,9 +425,11 @@ reviewing an earlier fix, so the provenance is a chain: **#119** → PR #159,
 filing #158/#160/#161; **#160** → PR #182, filing #183; **#183**/**#161** → PR
 #185, filing #184/#186/#187; **#184** → PR #189, filing #188/#190/#191;
 **#193/#194** → PR #195, filing #196-#203; **#199** → PR #208, filing
-#209/#210/#211 — of which this branch answers **#211**, and it filed **#212**
-not from review but from the instrument's own first live run, which is a new
-link in the chain. Older provenance is in `gh issue view <n>` and
+#209/#210/#211; **#211** → PR #213, filing #212 (from the instrument's own
+first live run rather than from review, which was a new link in the chain) and
+#214-#217 — of which this branch answers **#216** and, through it, **#188**,
+and files **#218** from its own run, the second time the chain has been
+extended by a measurement instead of a reviewer. Older provenance is in `gh issue view <n>` and
 `CHANGELOG.md`. (#149 and #152 were filed and fixed inside one
 PR, so neither ever appeared as open work.)
 
@@ -487,17 +486,15 @@ it by `figures_with_graphic` — over its own population the recent window reads
 published figure says. One remedy restates a share cited in five files and the
 other needs both corpora redrawn, destroying #164's attribution.
 
-**#186 and #188 are the last of the full-text-refusal family**, both in
-`_fetch_europepmc_fulltext` and both a decision rather than a fix — which is
-why #187/#190/#191 and then #193 were taken first. **#186**: the unclosed-region
-refusal holds the element names in a stack and discards them at the return, so
-neither the WARNING nor the stored `UNCLOSED_REGION` says whether a
-`<sub-article>` or a `<response>` was left open. Naming one moves a
+**#186 is the last of the full-text-refusal family**, in
+`_fetch_europepmc_fulltext`, and it is a decision rather than a fix — which is
+why #187/#190/#191, then #193, and now #188 were taken first. The
+unclosed-region refusal holds the element names in a stack and discards them at
+the return, so neither the WARNING nor the stored `UNCLOSED_REGION` says
+whether a `<sub-article>` or a `<response>` was left open. Naming one moves a
 heavily-argued return contract — `_strip_nested_articles` returns `str | None`
 and the `None` *is* the signal — so it wants a small result type or a dedicated
-exception, the shape #160 chose one case over. **#188 is no longer one of them** — it has its draw and its
-remedy is confirmed; the measurement is in the session section above, and it
-is the obvious next piece of work.
+exception, the shape #160 chose one case over.
 
 **#154, #156 and #157 are one job, and it is the funder corpus.** #154:
 `scripts/sample_funder_names.py` writes `tests/data/funder_names.raw.json`,
