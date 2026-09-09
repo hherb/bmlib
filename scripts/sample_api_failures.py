@@ -777,19 +777,33 @@ def _xml_kind(text: str) -> str:
         not parse, ``no-citation`` for one that parses and carries no
         ``PubmedArticle``, else ``xml``.
 
-    **``no-citation`` is the branch that was missing, and it is the only
+    **``no-citation`` is the branch that was missing, and it was the only
     silent one** (PR #213's review). ``_parse_pubmed_signals`` WARNs on a body
     that will not parse and ``_check_pubmed`` WARNs on an empty one — but a
     document that parses and whose ``PubmedArticle/MedlineCitation`` is absent
-    returns empty signals with **no line at any level**, so no
+    returned empty signals with **no line at any level**, so no
     ``<CoiStatement>``, nothing retracted from the COI indicators, and the
-    missing-COI downgrade free to fire. Two populations reach it and neither
-    is hypothetical: NCBI serves ``<eFetchResult><ERROR>…`` at HTTP 200, and a
-    ``<PubmedBookArticle>`` set is declined by name — which is what a
-    Bookshelf PMID returns, and issue #188's own finding is that every
-    ``id-only`` ``MED`` record in a 150-record spot draw was a Bookshelf
-    chapter. Folding those into ``xml`` reported the endpoint as wholly
-    healthy over bodies that gave bmlib nothing.
+    missing-COI downgrade free to fire. Folding those into ``xml`` reported
+    the endpoint as wholly healthy over bodies that gave bmlib nothing.
+
+    **This counter's own reading is what sized issue #218**, and it settled
+    the branch's populations differently from the way this docstring first
+    named them. It claimed two, and one of them is a different request's:
+    ``<eFetchResult><ERROR>…`` at HTTP 200 is what an evicted **history
+    session** efetch serves, probed 2026-09-10, which is the shape
+    ``publications/`` guards against — while the analyzer fetches **by id**,
+    where the same probe read 400 for a malformed id list. What does arrive
+    here is a ``<PubmedBookArticle>`` set, declined by name — issue #188's own
+    finding is that every ``id-only`` ``MED`` record in a 150-record spot draw
+    was a Bookshelf chapter — and an **empty** ``<PubmedArticleSet>`` at HTTP
+    200, which is what an id NCBI does not hold returns.
+
+    **This category stays one value, and the analyzer's three lines are what
+    split them.** Widening it would be restating the analyzer's own branch
+    predicates here, which is the prohibition every sampler in this repository
+    carries: a corpus labelled by the rule under test can only confirm that
+    rule. What the counter answers is *"did the endpoint give bmlib
+    anything?"*, and that question has one answer for all three.
     """
     if not text:
         return "empty"
@@ -1370,7 +1384,12 @@ def trial_ids_for(record: DrawnRecord, efetch_xml: str | None) -> list[str]:
         accessions than bmlib asks about — could never be taken.
     """
     if efetch_xml:
-        accessions = list(_parse_pubmed_signals(efetch_xml).trial_accessions)
+        # The record's own PMID, not a placeholder: this script drives the
+        # analyzer's readers rather than restating them, and since issue #218
+        # that argument is what names the record in the three lines a body
+        # carrying no `PubmedArticle` now emits. `efetch_xml` is non-empty
+        # only where the efetch probe ran, which needs a PMID.
+        accessions = list(_parse_pubmed_signals(efetch_xml, record.pmid or "").trial_accessions)
         if accessions:
             return accessions
     # A module function since issue #202, and one that makes no request of

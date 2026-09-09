@@ -59,6 +59,7 @@ from bmlib.transparency.analyzer import (
     _UNTERMINATED_OPENER_NAMES,
     DEFAULT_INDUSTRY_CONFIDENCE,
     EUROPEPMC_REST_BASE,
+    MAX_TRIAL_IDS_TO_CHECK,
     SCORE_CITED,
     SCORE_COI_DISCLOSED,
     SCORE_DATA_FULL_OPEN,
@@ -2511,15 +2512,15 @@ class TestPubMedSignalParsing:
     """The PubMed record is parsed without HTTP, so parsing is tested alone."""
 
     def test_coi_statement_detected(self):
-        signals = _parse_pubmed_signals(_pubmed_xml(coi="The authors declare none."))
+        signals = _parse_pubmed_signals(_pubmed_xml(coi="The authors declare none."), "12345678")
         assert signals.coi_statement is True
 
     def test_whitespace_only_coi_statement_is_not_a_disclosure(self):
-        signals = _parse_pubmed_signals(_pubmed_xml(coi="   "))
+        signals = _parse_pubmed_signals(_pubmed_xml(coi="   "), "12345678")
         assert signals.coi_statement is False
 
     def test_absent_coi_statement(self):
-        assert _parse_pubmed_signals(_pubmed_xml()).coi_statement is False
+        assert _parse_pubmed_signals(_pubmed_xml(), "12345678").coi_statement is False
 
     def test_a_coi_statement_opening_with_markup_is_still_a_disclosure(self):
         # The MEDLINE DTD declares CoiStatement as (%text;)*, so <b>/<i>/<sup>
@@ -2529,22 +2530,25 @@ class TestPubMedSignalParsing:
         xml = _pubmed_xml(coi="PLACEHOLDER").replace(
             "PLACEHOLDER", "<b>Conflict of interest:</b> Dr X consults for Y."
         )
-        assert _parse_pubmed_signals(xml).coi_statement is True
+        assert _parse_pubmed_signals(xml, "12345678").coi_statement is True
 
     def test_clinicaltrials_accessions_collected_and_upper_cased(self):
         signals = _parse_pubmed_signals(
-            _pubmed_xml(databanks=(("ClinicalTrials.gov", ("nct01234567", "NCT07654321")),))
+            _pubmed_xml(databanks=(("ClinicalTrials.gov", ("nct01234567", "NCT07654321")),)),
+            "12345678",
         )
         assert signals.trial_accessions == ("NCT01234567", "NCT07654321")
 
     def test_non_clinicaltrials_registry_registers_without_accessions(self):
-        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("ISRCTN", ("ISRCTN12345678",)),)))
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("ISRCTN", ("ISRCTN12345678",)),)), "12345678"
+        )
         assert signals.registration_not_checkable is True
         assert signals.trial_accessions == ()
 
     def test_registry_name_matching_ignores_case(self):
         signals = _parse_pubmed_signals(
-            _pubmed_xml(databanks=(("clinicaltrials.gov", ("NCT01234567",)),))
+            _pubmed_xml(databanks=(("clinicaltrials.gov", ("NCT01234567",)),)), "12345678"
         )
         assert signals.trial_accessions == ("NCT01234567",)
 
@@ -2555,7 +2559,8 @@ class TestPubMedSignalParsing:
         # cannot be followed up, which is what `registration_not_checkable`
         # records.
         signals = _parse_pubmed_signals(
-            _pubmed_xml(databanks=(("ClinicalTrials.gov", ("../../../evil", "NCT-nope")),))
+            _pubmed_xml(databanks=(("ClinicalTrials.gov", ("../../../evil", "NCT-nope")),)),
+            "12345678",
         )
         assert signals.trial_accessions == ()
         assert signals.registration_not_checkable is True
@@ -2563,12 +2568,16 @@ class TestPubMedSignalParsing:
     def test_data_deposition_databank_is_not_a_registration(self):
         # GENBANK/PDB accessions are a data-availability signal, deliberately
         # out of scope here — they must not be mistaken for trial registration.
-        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("GENBANK", ("MN908947",)),)))
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("GENBANK", ("MN908947",)),)), "12345678"
+        )
         assert signals.trial_accessions == ()
         assert signals.registration_not_checkable is False
 
     def test_grant_agencies_collected(self):
-        signals = _parse_pubmed_signals(_pubmed_xml(agencies=("NCI NIH HHS", "Wellcome Trust")))
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(agencies=("NCI NIH HHS", "Wellcome Trust")), "12345678"
+        )
         assert signals.funders == ("NCI NIH HHS", "Wellcome Trust")
 
     def test_repeated_agencies_are_collapsed(self):
@@ -2576,15 +2585,15 @@ class TestPubMedSignalParsing:
         # grants on one paper appears four times in the XML. Left as-is, each
         # repeat adds its own "Industry funder: …" line to the result.
         signals = _parse_pubmed_signals(
-            _pubmed_xml(agencies=("Genentech Inc.", "NCI NIH HHS", "Genentech Inc."))
+            _pubmed_xml(agencies=("Genentech Inc.", "NCI NIH HHS", "Genentech Inc.")), "12345678"
         )
         assert signals.funders == ("Genentech Inc.", "NCI NIH HHS")
 
     def test_malformed_xml_yields_no_signals(self):
-        assert _parse_pubmed_signals("<PubmedArticleSet><trunca") == _PubMedSignals()
+        assert _parse_pubmed_signals("<PubmedArticleSet><trunca", "12345678") == _PubMedSignals()
 
     def test_empty_article_set_yields_no_signals(self):
-        assert _parse_pubmed_signals("<PubmedArticleSet/>") == _PubMedSignals()
+        assert _parse_pubmed_signals("<PubmedArticleSet/>", "12345678") == _PubMedSignals()
 
     @pytest.mark.parametrize("name", ["JMACCT", "REPEC", "UMIN CTR"])
     def test_registries_nlm_publishes_are_all_recognised(self, name):
@@ -2593,31 +2602,37 @@ class TestPubMedSignalParsing:
         # registry was spelled "umin-ctr" where NLM's table says "UMIN CTR",
         # so the exact-match test failed on the string PubMed emits. Each
         # silently cost the paper SCORE_TRIAL_REGISTERED.
-        signals = _parse_pubmed_signals(_pubmed_xml(databanks=((name, ("X1",)),)))
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=((name, ("X1",)),)), "12345678")
         assert signals.registration_not_checkable is True
 
     def test_a_deposition_accession_is_collected(self):
-        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("GENBANK", ("MN908947",)),)))
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("GENBANK", ("MN908947",)),)), "12345678"
+        )
         assert signals.deposition_databanks == ("GENBANK",)
 
     def test_pubmeds_own_spelling_is_kept(self):
         # The name is rendered to humans in the indicator line.
-        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("GenBank", ("MN908947",)),)))
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("GenBank", ("MN908947",)),)), "12345678"
+        )
         assert signals.deposition_databanks == ("GenBank",)
 
     def test_repository_matching_ignores_case(self):
-        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("figshare", ("10.6084/m9",)),)))
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("figshare", ("10.6084/m9",)),)), "12345678"
+        )
         assert signals.deposition_databanks == ("figshare",)
 
     def test_one_repository_named_twice_is_one_entry(self):
         signals = _parse_pubmed_signals(
-            _pubmed_xml(databanks=(("GENBANK", ("A1",)), ("GenBank", ("A2",))))
+            _pubmed_xml(databanks=(("GENBANK", ("A1",)), ("GenBank", ("A2",)))), "12345678"
         )
         assert signals.deposition_databanks == ("GENBANK",)
 
     def test_repositories_are_kept_in_document_order(self):
         signals = _parse_pubmed_signals(
-            _pubmed_xml(databanks=(("PDB", ("1ABC",)), ("SRA", ("SRP000001",))))
+            _pubmed_xml(databanks=(("PDB", ("1ABC",)), ("SRA", ("SRP000001",)))), "12345678"
         )
         assert signals.deposition_databanks == ("PDB", "SRA")
 
@@ -2626,7 +2641,9 @@ class TestPubMedSignalParsing:
         # A repository name with no accession is an assertion with no referent
         # — nothing a reader could go and fetch — so it is not the structured
         # proof of a deposit this signal claims to be.
-        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("GENBANK", accessions),)))
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("GENBANK", accessions),)), "12345678"
+        )
         assert signals.deposition_databanks == ()
 
     @pytest.mark.parametrize(
@@ -2639,13 +2656,15 @@ class TestPubMedSignalParsing:
         # these authors shared their data. dbSNP is the sharpest case: it sits
         # right beside dbVar in the deposit set, but a dbSNP citation is
         # overwhelmingly an rs-number reference, not a submission.
-        signals = _parse_pubmed_signals(_pubmed_xml(databanks=((name, ("X1",)),)))
+        signals = _parse_pubmed_signals(_pubmed_xml(databanks=((name, ("X1",)),)), "12345678")
         assert signals.deposition_databanks == ()
 
     def test_a_controlled_access_repository_is_collected_too(self):
         # dbGaP is genuine deposition; the merge step is what knows it is
         # controlled-access and worth `on_request` rather than `full_open`.
-        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("dbGaP", ("phs000001",)),)))
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("dbGaP", ("phs000001",)),)), "12345678"
+        )
         assert signals.deposition_databanks == ("dbGaP",)
 
     def test_a_registry_and_a_repository_in_one_list_feed_both_branches(self):
@@ -2655,13 +2674,16 @@ class TestPubMedSignalParsing:
                     ("ClinicalTrials.gov", ("NCT01234567",)),
                     ("GENBANK", ("MN908947",)),
                 )
-            )
+            ),
+            "12345678",
         )
         assert signals.trial_accessions == ("NCT01234567",)
         assert signals.deposition_databanks == ("GENBANK",)
 
     def test_an_unrecognised_databank_name_is_ignored(self):
-        signals = _parse_pubmed_signals(_pubmed_xml(databanks=(("SomeNewRegistry", ("X1",)),)))
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("SomeNewRegistry", ("X1",)),)), "12345678"
+        )
         assert signals.deposition_databanks == ()
         assert signals.registration_not_checkable is False
 
@@ -2697,6 +2719,205 @@ class TestPubMedSignalParsing:
             _DATA_LEVEL_RANK[level] >= _DATA_LEVEL_RANK["on_request"]
             for level in _DEPOSITION_DATABANK_LEVELS.values()
         )
+
+
+def _pubmed_book_xml(*, pmid: str = "28722906") -> str:
+    """A ``PubmedBookArticle`` set, the shape a Bookshelf PMID returns.
+
+    Reduced from the live body ``efetch`` served for PMID 28722906 on
+    2026-09-10, keeping the element path that decides the branch and the
+    children a ``BookDocument`` actually carries. Whether the three signals
+    could be there is the *second* question issue #218 asks, and the answer is
+    measured: across 60 ``statpearls[book]`` records and 100 drawn from
+    ``pubmed books[filter]``, **not one** carries a ``<GrantList>``,
+    ``<CoiStatement>`` or ``<DataBankList>``.
+    """
+    return (
+        '<?xml version="1.0" ?><PubmedArticleSet><PubmedBookArticle><BookDocument>'
+        f"<PMID>{pmid}</PMID>"
+        "<Book><Publisher><PublisherName>StatPearls Publishing</PublisherName></Publisher>"
+        "<BookTitle>StatPearls</BookTitle></Book>"
+        "<ArticleTitle>Anatomy, Head and Neck</ArticleTitle>"
+        "<Abstract><AbstractText>The mandible is …</AbstractText></Abstract>"
+        "</BookDocument></PubmedBookArticle></PubmedArticleSet>"
+    )
+
+
+class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
+    """Issue #218 — the one branch of the PubMed step that left no line at all.
+
+    ``_parse_pubmed_signals`` reads ``.//PubmedArticle/MedlineCitation``. A
+    document that **parses** and carries none returned empty signals in
+    silence, while the two neighbouring failures each report: a body that will
+    not parse WARNs, and an empty 200 body WARNs one level up. Empty signals
+    are not nothing — no ``<CoiStatement>`` means nothing in
+    :data:`_INDICATORS_RETRACTED_BY_PUBMED_COI` is retracted, *"COI disclosure
+    status unknown"* stands, and the missing-COI downgrade is free to fire —
+    so this is issue #193's *"check the diagnostic exists before arguing about
+    its level"* applied to the branch that fix did not reach.
+
+    **One branch was three populations, and they do not share a level.** The
+    2026-09-08 draw read ``no-citation`` for 50 of 60 served bodies, which
+    licenses a quiet level for *that* population and no other — this
+    repository's own *"the branch a diagnostic sits on must be no wider than
+    the draw"* (issue #191, where DEBUG measured on 404s was applied to every
+    status code). Probed live on 2026-09-10, three ids NCBI will not serve:
+
+    * a **book or book chapter** — declined by bmlib, by name, and measured to
+      carry none of the three signals, so nothing was lost that could have
+      been had. Ordinary, and the majority of that draw. DEBUG.
+    * an **empty ``PubmedArticleSet``** at HTTP 200, which is what PMID
+      ``999999999`` returns: NCBI holds no record for the identifier bmlib
+      asked about, and that identifier came from the caller or from
+      ``_pmid_from_epmc``. WARNING.
+    * **anything else** that parses — bmlib does not recognise what it was
+      served. WARNING.
+
+    **The issue's own third population belongs to a request this module does
+    not make.** ``<eFetchResult><ERROR>`` at HTTP 200 is real — an evicted
+    *history session* efetch serves it, which is the shape
+    ``publications/fetchers/pubmed.py`` refuses — while this step fetches by
+    id, where the same probe read 400 for a malformed id list. The
+    unrecognised-document branch is what takes it if some other error class
+    arrives at 200, which is why it is tested with that body.
+    """
+
+    def _signals(self, xml: str, caplog, *, pmid: str = "12345678"):
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            return _parse_pubmed_signals(xml, pmid)
+
+    def test_a_book_record_yields_no_signals_and_says_so_at_debug(self, caplog):
+        assert self._signals(_pubmed_book_xml(), caplog) == _PubMedSignals()
+        # Unique to this branch: "book or book chapter" appears in no other
+        # line in the module, where "PubMed for 12345678" is shared with the
+        # empty-body WARNING one level up and would pass vacuously.
+        matching = [r for r in caplog.records if "book or book chapter" in r.getMessage()]
+        assert len(matching) == 1
+        assert matching[0].levelno == logging.DEBUG
+        assert "12345678" in matching[0].getMessage()
+
+    def test_a_book_record_does_not_warn(self, caplog):
+        # The level is the whole finding. A book was the majority outcome of
+        # the draw that sized this branch — 50 of 60 served bodies — so a
+        # WARNING here fires on most of a MEDLINE corpus, which is the 404's
+        # own argument one endpoint over.
+        self._signals(_pubmed_book_xml(), caplog)
+        assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+    def test_an_empty_record_set_warns_that_ncbi_holds_no_record(self, caplog):
+        # Probed 2026-09-10: efetch for PMID 999999999 answers 200 with
+        # exactly this body, 205 bytes. The PMID bmlib asked about does not
+        # resolve, which is a fact about the identifier and not about the
+        # record type.
+        assert self._signals("<PubmedArticleSet/>", caplog, pmid="999999999") == _PubMedSignals()
+        matching = [r for r in caplog.records if "holds no record" in r.getMessage()]
+        assert len(matching) == 1
+        assert matching[0].levelno == logging.WARNING
+        assert "999999999" in matching[0].getMessage()
+
+    def test_a_document_that_is_not_a_record_set_warns_and_names_its_root(self, caplog):
+        # The branch the issue's own population would take if NCBI ever
+        # served its error envelope at 200. Naming the root element is what
+        # tells an operator which of the two it was without a packet capture.
+        body = "<eFetchResult><ERROR>ID list is empty!</ERROR></eFetchResult>"
+        assert self._signals(body, caplog) == _PubMedSignals()
+        matching = [r for r in caplog.records if "eFetchResult" in r.getMessage()]
+        assert len(matching) == 1
+        assert matching[0].levelno == logging.WARNING
+
+    def test_a_record_set_carrying_a_deleted_citation_is_not_an_empty_one(self, caplog):
+        # `<DeleteCitation>` is a legal child of `PubmedArticleSet` — the
+        # PubMed fetcher one package over counts around it for the same
+        # reason — so a record set can be non-empty and still carry no
+        # article. It is not *"NCBI holds no record"*: NCBI holds the fact
+        # that the citation was withdrawn. Naming the root is what lets an
+        # operator see that it was a record set at all.
+        #
+        # This is the fixture that separates `len(root) == 0` from its own
+        # widening: without it, relaxing the test to `>= 0` reports every
+        # such body as an empty set and passes the whole file.
+        body = (
+            "<PubmedArticleSet><DeleteCitation><PMID>12345678</PMID>"
+            "</DeleteCitation></PubmedArticleSet>"
+        )
+        assert self._signals(body, caplog) == _PubMedSignals()
+        matching = [r for r in caplog.records if "carrying no PubmedArticle" in r.getMessage()]
+        assert len(matching) == 1
+        assert matching[0].levelno == logging.WARNING
+        assert "PubmedArticleSet" in matching[0].getMessage()
+        assert "holds no record" not in matching[0].getMessage()
+
+    def test_the_three_branches_do_not_share_a_line(self, caplog):
+        # Each of the three must be identifiable from the log alone, or the
+        # split buys nothing: an operator enabling DEBUG to see book records
+        # would otherwise be unable to tell them from a PMID that does not
+        # resolve.
+        seen = set()
+        for body, pmid in (
+            (_pubmed_book_xml(), "28722906"),
+            ("<PubmedArticleSet/>", "999999999"),
+            ("<eFetchResult><ERROR>x</ERROR></eFetchResult>", "12345678"),
+        ):
+            caplog.clear()
+            self._signals(body, caplog, pmid=pmid)
+            messages = [r.getMessage() for r in caplog.records]
+            assert len(messages) == 1
+            seen.add(messages[0])
+        assert len(seen) == 3
+
+    def test_a_record_that_parses_normally_says_nothing(self, caplog):
+        # The false-positive net. A branch that fires on a well-formed record
+        # would put a line in front of an operator for every analysis, which
+        # is how a diagnostic stops being read.
+        signals = self._signals(_pubmed_xml(coi="None declared."), caplog)
+        assert signals.coi_statement is True
+        assert caplog.records == []
+
+    def test_a_body_that_will_not_parse_names_the_record_too(self, caplog):
+        # The neighbouring WARNING named no subject at all, so an operator
+        # running two analyses could not tell which record produced it — the
+        # `subject` every request in this module already carries. Threading
+        # the PMID for the three branches above made it free to fix.
+        assert self._signals("<PubmedArticleSet><trunca", caplog) == _PubMedSignals()
+        matching = [r for r in caplog.records if "not parsable XML" in r.getMessage()]
+        assert len(matching) == 1
+        assert "12345678" in matching[0].getMessage()
+
+
+class TestABookRecordCarriesNoneOfTheSignals:
+    """Issue #218's second question, settled by measurement rather than by DTD.
+
+    *"Decide whether ``<PubmedBookArticle>`` should be read at all."* The
+    comment in ``_parse_pubmed_signals`` asserted the answer from the DTD for
+    two of the three signals and conceded the third — ``<GrantList>`` — was
+    being given up unmeasured.
+
+    Probed live on 2026-09-10: **0 of 60** ``statpearls[book]`` records and
+    **0 of 100** drawn from ``pubmed books[filter]`` carry a ``<GrantList>``,
+    a ``<CoiStatement>`` or a ``<DataBankList>``. Read the zeroes as upper
+    bounds over two draws NCBI's own search ordered, not as a proof — but the
+    honest outcome is the DEBUG line and nothing else, which is what the issue
+    anticipated. This test is what stops that decision being re-opened by
+    inspection: it pins the *reason*, so a future reader who wants the grant
+    list has to change the fixture and say what it measured.
+    """
+
+    def test_the_signals_a_book_would_have_to_carry_are_absent_from_the_shape(self):
+        body = _pubmed_book_xml()
+        for element in ("GrantList", "CoiStatement", "DataBankList"):
+            assert element not in body
+
+    def test_a_book_carrying_a_grant_list_would_still_be_declined(self, caplog):
+        # The fixture NCBI has never served, so the decision is visible rather
+        # than implied: even carrying the one signal the DTD does not forbid,
+        # a book record is declined. Reversing that is a change to this test,
+        # which is the point of writing it.
+        body = _pubmed_book_xml().replace(
+            "<Abstract>",
+            "<GrantList><Grant><Agency>Pfizer Inc</Agency></Grant></GrantList><Abstract>",
+        )
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            assert _parse_pubmed_signals(body, "28722906") == _PubMedSignals()
 
 
 class TestPubMedRequest:
@@ -4924,9 +5145,19 @@ class TestAnUnansweredTrialIsNotAFinding:
             {"NCT00000001": (403, None), "NCT00000002": (200, {"hasResults": False})}
         )
         analysis = self._registration(client, ids=("NCT00000001", "NCT00000002"))
-        # One accession answered, and its answer was "no" — so the finding
-        # stands, but it is now a finding about the trial that answered.
-        assert _INDICATOR_NO_POSTED_RESULTS in analysis.indicators
+        # **This assertion is the reverse of what it was, and issue #206 is
+        # why.** It read *"one accession answered, and its answer was 'no' —
+        # so the finding stands"*, which is the reading `answered = True` on
+        # the first reply encodes. But the stored line is not scoped to the
+        # trial that answered: *"Registered trial without posted results"* is
+        # a claim about the paper, and the accession nobody reached may be the
+        # one with results. That is the same false claim this class exists to
+        # remove, one accession further in — narrowed by the tri-state rather
+        # than closed by it, exactly as correcting the `User-Agent` narrowed
+        # issue #194 without making the `bool` honest.
+        assert _INDICATOR_NO_POSTED_RESULTS not in analysis.indicators
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE in analysis.indicators
+        assert analysis.trial_results_status is TrialResultsStatus.PARTLY_ANSWERED
 
     def test_none_answering_across_several_accessions_is_not_checkable(self):
         client = _PerAccessionClient({"NCT00000001": (403, None), "NCT00000002": (503, None)})
@@ -4964,6 +5195,199 @@ class TestAnUnansweredTrialIsNotAFinding:
         ]
         assert len(named) == 1
         assert named[0].levelno == logging.WARNING
+
+
+class TestAPartialResultsCheckIsNotAFinding:
+    """Issue #206 — the cap and the unanswered accession are one question.
+
+    ``_check_trial_registration`` walked the paper's ClinicalTrials.gov
+    accessions and set ``answered`` on the **first** one that replied, so a
+    single reachable *"no results"* outvoted any number of unreachable ones.
+    And ``MAX_TRIAL_IDS_TO_CHECK`` sliced an unbounded list — ``pubmed
+    .trial_accessions`` collects every ``<AccessionNumberList>`` entry — with
+    no log line, no indicator and no test: nothing in the suite referenced the
+    constant.
+
+    Both mean *"bmlib did not ask about every accession"*, and both let
+    :attr:`TrialResultsStatus.NOT_POSTED` stand for a paper whose remaining
+    accessions were never reached. Its own docstring conceded that and named
+    this issue rather than hedging it away.
+
+    **The measurement decided which half matters.** Over the 30 papers naming
+    an accession in the 2026-09-08 trial-enriched draw, a partly-answered
+    check is **1 of 30** and the cap truncates **8 of 30** — so the title's
+    emphasis is the reverse of the evidence, and the large half is the one
+    that was entirely silent.
+
+    **The remedy is a sixth member and no new prose.** Both causes collapse
+    into :attr:`TrialResultsStatus.PARTLY_ANSWERED`, because the claim a human
+    can act on is identical and it puts nothing in ClinicalTrials.gov's mouth
+    — the argument that already made :attr:`REQUEST_FAILED` and
+    :attr:`NOT_CHECKABLE` share one string. It sits on the **unanswered** side
+    of the partition: something *was* established, but not enough to say this
+    paper's trial has no posted results, and ``trial_results_compliant`` is
+    the field both downstreams render.
+
+    The schema addition is free rather than cheap: ``trial_results_status`` is
+    itself unreleased (issue #198), so this rides the recompute issues #184
+    and #194 already force. After the release it would cost a second one —
+    which is this repository's own *"the cost of a schema addition is not a
+    constant"*.
+    """
+
+    def _registration(self, client, ids) -> _Analysis:
+        analysis = _Analysis()
+        TransparencyAnalyzer()._check_trial_registration(
+            client,
+            analysis,
+            epmc=None,
+            pubmed=_PubMedSignals(trial_accessions=tuple(ids)),
+        )
+        return analysis
+
+    def _all_saying_no(self, ids):
+        return _PerAccessionClient({nct: (200, {"hasResults": False}) for nct in ids})
+
+    @staticmethod
+    def _ids(n: int) -> tuple[str, ...]:
+        return tuple(f"NCT{i:08d}" for i in range(1, n + 1))
+
+    def test_asking_about_every_accession_is_still_a_finding(self, caplog):
+        # The half that must not soften. Under the cap, every accession
+        # answered, and every answer was "no" — that is ClinicalTrials.gov
+        # making a finding about the paper, and it keeps its line.
+        ids = self._ids(MAX_TRIAL_IDS_TO_CHECK)
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            analysis = self._registration(self._all_saying_no(ids), ids)
+        assert analysis.trial_results_status is TrialResultsStatus.NOT_POSTED
+        assert _INDICATOR_NO_POSTED_RESULTS in analysis.indicators
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE not in analysis.indicators
+        assert not [r for r in caplog.records if "not checked" in r.getMessage()]
+
+    def test_a_truncated_accession_list_is_not_a_finding(self):
+        # One past the cap. Before this, the paper stored "Registered trial
+        # without posted results" on the strength of three accessions out of
+        # four, and nothing anywhere said the fourth existed.
+        ids = self._ids(MAX_TRIAL_IDS_TO_CHECK + 1)
+        analysis = self._registration(self._all_saying_no(ids), ids)
+        assert analysis.trial_results_status is TrialResultsStatus.PARTLY_ANSWERED
+        assert _INDICATOR_NO_POSTED_RESULTS not in analysis.indicators
+        assert _INDICATOR_RESULTS_NOT_CHECKABLE in analysis.indicators
+
+    def test_a_truncated_accession_list_says_how_many_were_dropped(self, caplog):
+        # The issue's own minimum step, and the half with the population.
+        # The status says the check was partial; only the line says the cause
+        # was bmlib's cap rather than a remote that would not answer, and
+        # those call for different actions.
+        ids = self._ids(MAX_TRIAL_IDS_TO_CHECK + 2)
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            self._registration(self._all_saying_no(ids), ids)
+        matching = [r for r in caplog.records if "were not checked" in r.getMessage()]
+        assert len(matching) == 1
+        assert matching[0].levelno == logging.WARNING
+        # The counts, not just the fact: an operator deciding whether to raise
+        # the cap needs to know by how much it fell short.
+        assert str(MAX_TRIAL_IDS_TO_CHECK) in matching[0].getMessage()
+        assert str(MAX_TRIAL_IDS_TO_CHECK + 2) in matching[0].getMessage()
+
+    def test_the_cap_still_bounds_the_requests(self):
+        # The line reports the truncation; it does not lift it. The cap is
+        # what stops a pooled report costing one request per constituent
+        # trial, and how far the distribution runs past three is unmeasured.
+        ids = self._ids(MAX_TRIAL_IDS_TO_CHECK + 3)
+        client = self._all_saying_no(ids)
+        self._registration(client, ids)
+        assert client.asked == list(ids[:MAX_TRIAL_IDS_TO_CHECK])
+
+    def test_an_unanswered_accession_makes_the_check_partial(self):
+        # The issue's first half, at 1 of 30 in the draw. One accession
+        # answered "no" and one was never reached, so the paper's status
+        # cannot be asserted either way.
+        client = _PerAccessionClient(
+            {"NCT00000001": (200, {"hasResults": False}), "NCT00000002": (503, None)}
+        )
+        analysis = self._registration(client, ids=("NCT00000001", "NCT00000002"))
+        assert analysis.trial_results_status is TrialResultsStatus.PARTLY_ANSWERED
+        assert _INDICATOR_NO_POSTED_RESULTS not in analysis.indicators
+
+    def test_an_unanswered_accession_is_not_reported_as_the_cap(self, caplog):
+        # The two causes share a status and deliberately not a line: the
+        # unanswered accession already has one from `_request`, naming the
+        # accession and the status code, and inventing a second would report
+        # a truncation that did not happen.
+        client = _PerAccessionClient(
+            {"NCT00000001": (200, {"hasResults": False}), "NCT00000002": (503, None)}
+        )
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            self._registration(client, ids=("NCT00000001", "NCT00000002"))
+        assert not [r for r in caplog.records if "were not checked" in r.getMessage()]
+
+    def test_not_one_accession_answering_is_still_request_failed(self):
+        # `PARTLY_ANSWERED` narrows `NOT_POSTED`, not `REQUEST_FAILED`. The
+        # two are different claims — *"some said no"* against *"nobody
+        # spoke"* — and collapsing them would undo issue #195's tri-state.
+        ids = self._ids(MAX_TRIAL_IDS_TO_CHECK + 1)
+        client = _PerAccessionClient({nct: (503, None) for nct in ids})
+        analysis = self._registration(client, ids)
+        assert analysis.trial_results_status is TrialResultsStatus.REQUEST_FAILED
+
+    def test_a_truncation_is_reported_even_when_nobody_answered(self, caplog):
+        # The line is gated on whether the cap **could have changed the
+        # outcome**, which is every walk that did not find posted results —
+        # not on the status it happened to reach. Gating it on
+        # `PARTLY_ANSWERED` alone would hide the truncation behind an outage,
+        # and the two call for different actions: raise the cap, or wait.
+        ids = self._ids(MAX_TRIAL_IDS_TO_CHECK + 1)
+        client = _PerAccessionClient({nct: (503, None) for nct in ids})
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            self._registration(client, ids)
+        matching = [r for r in caplog.records if "were not checked" in r.getMessage()]
+        assert len(matching) == 1
+        assert matching[0].levelno == logging.WARNING
+
+    def test_posted_results_are_final_however_short_the_walk_was(self):
+        # A positive answer settles the paper, so neither the cap nor an
+        # unreachable accession can weaken it — which is why the loop is
+        # allowed to stop there and why the truncation costs nothing here.
+        ids = self._ids(MAX_TRIAL_IDS_TO_CHECK + 4)
+        client = _PerAccessionClient(
+            {ids[0]: (200, {"hasResults": True})}
+            | {nct: (200, {"hasResults": False}) for nct in ids[1:]}
+        )
+        analysis = self._registration(client, ids)
+        assert analysis.trial_results_status is TrialResultsStatus.POSTED
+        assert analysis.results_compliant is True
+
+    def test_a_truncation_that_cost_nothing_is_not_reported(self, caplog):
+        # The false-positive net for the WARNING. The line is a claim that
+        # the analysis lost something; where the first accession reports
+        # posted results, it lost nothing, and a warning there is noise on
+        # the one outcome that is beyond doubt.
+        ids = self._ids(MAX_TRIAL_IDS_TO_CHECK + 4)
+        client = _PerAccessionClient(
+            {ids[0]: (200, {"hasResults": True})}
+            | {nct: (200, {"hasResults": False}) for nct in ids[1:]}
+        )
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            self._registration(client, ids)
+        assert not [r for r in caplog.records if "were not checked" in r.getMessage()]
+
+    def test_a_partial_check_scores_exactly_as_it_did(self):
+        # The blast radius, asserted rather than reasoned: neither indicator
+        # feeds the score, so what moves is the stored string and the status
+        # and nothing else. A reader diffing stored results across this
+        # change should see no number change.
+        ids = self._ids(MAX_TRIAL_IDS_TO_CHECK + 1)
+        analysis = self._registration(self._all_saying_no(ids), ids)
+        assert analysis.score == SCORE_TRIAL_REGISTERED
+        assert analysis.results_compliant is False
+
+    def test_a_partly_answered_check_is_not_answered(self):
+        # The partition side, and it is the load-bearing half of the member.
+        # `trial_results_compliant` is what both downstreams render; `False`
+        # under `is_answered` True reads as *"the trial fell short"*, which is
+        # the sentence issue #198 exists to stop being published unearned.
+        assert TrialResultsStatus.PARTLY_ANSWERED.is_answered is False
 
 
 class _PerAccessionClient:

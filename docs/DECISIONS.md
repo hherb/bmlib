@@ -430,6 +430,72 @@ must not be re-done.
   The silence is therefore a choice and not a consequence, and the
   per-analysis tally the precedent actually suggests is filed as #209 rather
   than argued away here.
+- **The three ways a PubMed body can carry no `PubmedArticle` do not share a
+  level** (#218). One DEBUG line would have been the cheap reading of the
+  issue and would have repeated #191 exactly: the draw that sized the branch
+  — `no-citation` for 50 of 60 served bodies — is heavily NCBI Bookshelf, so
+  it licenses a quiet level for **book records** and says nothing about the
+  other two. A book record is declined by name and carries none of the three
+  signals (0 of 60 `statpearls[book]` and 0 of 100 `pubmed books[filter]`,
+  probed 2026-09-10), so nothing is lost and it is DEBUG. An empty
+  `<PubmedArticleSet>` means NCBI holds no record for an identifier bmlib was
+  given or derived, which is a fact about the identifier and WARNING. Anything
+  else that parses is a document bmlib does not recognise, also WARNING, with
+  the root element named. Do not fold them back together, and do not read the
+  50 of 60 as a rate: a stratum is one contiguous cursor page.
+- **`<PubmedBookArticle>` stays unread, and the reason is now a measurement
+  rather than a DTD reading** (#218's second question). The old comment
+  asserted from the DTD that a book carries no `<CoiStatement>` and no
+  `<DataBankList>`, and conceded `<GrantList>` was being given up unmeasured.
+  Across 160 live book records not one carries any of the three. Reversing
+  this means changing
+  `tests/test_transparency.py::TestABookRecordCarriesNoneOfTheSignals`, which
+  exists so the decision cannot be re-opened by inspection.
+- **`<eFetchResult><ERROR>` at HTTP 200 is a different request's shape**
+  (#218). Both the issue and `scripts/sample_api_failures.py` named it as a
+  population reaching the no-citation branch, and the claim is not wrong — it
+  is about the **history-session** efetch, which is why
+  `publications/fetchers/pubmed.py` refuses a root that is not a record set,
+  and probing an evicted session on 2026-09-10 reproduced it at 200.
+  `transparency` fetches **by id**, where the same probe read 400 for a
+  malformed id list and an empty record set for an id NCBI does not hold. So
+  nothing was built for it here; the unrecognised-document branch takes it if
+  some other error class turns out to arrive at 200, two classes on one
+  request shape not being every class. Do not "reconcile" the two modules'
+  comments by changing either — they describe different requests.
+- **The truncated accession list and the unanswered accession are one status
+  member, and only the first gets a line** (#206). Both mean bmlib did not ask
+  about every accession, so neither leaves `NOT_POSTED`'s claim about the
+  paper earned; they share `TrialResultsStatus.PARTLY_ANSWERED` and
+  `_INDICATOR_RESULTS_NOT_CHECKABLE` for the reason `REQUEST_FAILED` and
+  `NOT_CHECKABLE` already share a string. The question that does earn a
+  separate member elsewhere — *"would re-running change this?"* — separates
+  nothing here: a re-run under the same cap truncates identically. The **log**
+  splits them because raising the cap is an action an operator can take, and
+  an unanswered accession already has a line from `_request`.
+- **`PARTLY_ANSWERED` is on the unanswered side of the partition** (#206).
+  ClinicalTrials.gov did answer for some accessions, so the answered side
+  looks defensible; it is not. `is_answered` exists so a downstream knows
+  whether `trial_results_compliant` means what it says, and both known
+  downstreams render that flag — `False` under `is_answered` `True` is
+  read as *"the trial fell short"*, the unearned sentence #198 exists to stop
+  being published.
+- **The cap is reported, not raised** (#206). `MAX_TRIAL_IDS_TO_CHECK = 3`
+  bounds requests per paper, and how far the accession-count distribution runs
+  past three is unmeasured — `scripts/sample_api_failures.py` records each
+  paper's count before the cap, so a run answers it. What the 2026-09-08 draw
+  did establish is that the cap truncates 8 of 30 papers naming an accession
+  against 1 of 30 for an unanswered request, which reverses the issue's own
+  emphasis. Do not raise the constant on that evidence: it sizes *how often*
+  the cap bites and not *by how much*.
+- **The cap's WARNING is gated on the walk not having concluded `POSTED`**
+  (#206). A posted result settles the paper, so the accessions behind it cost
+  nothing and a line there would be noise on the one outcome beyond doubt. It
+  is deliberately **not** gated on the resulting status: a walk where nobody
+  answered reaches `REQUEST_FAILED` and the truncation is still real, and
+  hiding it behind an outage would conflate two causes calling for different
+  actions. Metric test:
+  `tests/test_transparency.py::TestAPartialResultsCheckIsNotAFinding`.
 
 ## Repository process
 

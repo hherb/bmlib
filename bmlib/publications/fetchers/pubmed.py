@@ -639,6 +639,15 @@ def _efetch_page(
             empty list — a rejected page wearing the shape of an exhausted one.
             Refused here for the reason ``_esearch`` refuses a response with no
             ``<Count>``, and raised so the caller's handler marks the day failed.
+
+            **The 200 is a property of the history-session request, not of
+            efetch** (probed 2026-09-10 for issue #218, and this guard is why
+            it was worth checking). An evicted session reproduces it; an
+            **id-based** efetch, which is what ``transparency/analyzer.py``
+            makes, answered 400 for a malformed id list and an empty record
+            set for an id NCBI does not hold. So that module reaches this
+            envelope by no measured route and guards a different shape. Do not
+            "reconcile" the two comments — they describe different requests.
     """
     params: dict[str, str | int] = {
         "db": "pubmed",

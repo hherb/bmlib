@@ -317,12 +317,32 @@ class TrialResultsStatus(Enum):
     #: construction :data:`_NOT_REFUSED_FULL_TEXT_STATUSES` retracts above.
     #: Corrected in PR #205's review.)
     #:
-    #: It is a finding about the accessions that **answered**, and the loop
-    #: reaching it stops asking after ``MAX_TRIAL_IDS_TO_CHECK``
-    #: accessions and treats one answer as enough, so an accession that never
-    #: answered is not represented here. Filed as issue #206 rather than
-    #: hedged away in this sentence.
+    #: It is a finding about **every** accession the paper named, which is
+    #: what issue #206 made true: until then the loop stopped after
+    #: ``MAX_TRIAL_IDS_TO_CHECK`` and treated one reply as enough, so an
+    #: accession that was never asked about or never answered was not
+    #: represented here and this member stood for a paper it had not
+    #: established anything about. :attr:`PARTLY_ANSWERED` is that case now,
+    #: and the hedge this comment used to carry is gone rather than reworded.
     NOT_POSTED = "not_posted"
+    #: Some accessions were asked about and answered, none reports posted
+    #: results, and **the rest were not asked about or did not answer** —
+    #: bmlib's own cap truncated the list, or a request was refused. Not a
+    #: finding: the accession nobody reached may be the one with results, so
+    #: :attr:`NOT_POSTED`'s claim about the paper cannot be made (issue #206).
+    #:
+    #: **The two causes share this member deliberately.** *"Would re-running
+    #: change this?"* separates :attr:`REQUEST_FAILED` from
+    #: :attr:`NOT_CHECKABLE` because results are cacheable; here it does not
+    #: separate anything a caller can act on, since a re-run under the same
+    #: cap truncates identically. Which cause it was reaches an operator as a
+    #: log line, where raising the cap is an action; it does not reach a
+    #: stored field, where nothing would read it.
+    #:
+    #: Measured over the 30 papers naming a ClinicalTrials.gov accession in
+    #: the 2026-09-08 trial-enriched draw: the cap truncates 8, and a request
+    #: went unanswered for 1.
+    PARTLY_ANSWERED = "partly_answered"
     #: Accessions were asked about and not one answered — a refusal, a 404, an
     #: unusable body, or a request that raised. *"Would re-running change
     #: this?"* is ``yes``, and results are cacheable with no retry anywhere in
@@ -364,11 +384,20 @@ _ANSWERED_TRIAL_RESULTS_STATUSES = frozenset(
 )
 
 #: The other side. See :data:`_ANSWERED_TRIAL_RESULTS_STATUSES`.
+#:
+#: :attr:`TrialResultsStatus.PARTLY_ANSWERED` sits here even though
+#: ClinicalTrials.gov did answer for some accessions, and that is the
+#: load-bearing half of the member (issue #206). ``is_answered`` exists so a
+#: downstream knows whether ``trial_results_compliant`` means what it says,
+#: and both known downstreams render that flag: ``False`` under
+#: ``is_answered`` ``True`` reads as *"the trial fell short"*, which is the
+#: unearned sentence issue #198 exists to stop being published.
 _UNANSWERED_TRIAL_RESULTS_STATUSES = frozenset(
     {
         TrialResultsStatus.NOT_REGISTERED,
         TrialResultsStatus.REQUEST_FAILED,
         TrialResultsStatus.NOT_CHECKABLE,
+        TrialResultsStatus.PARTLY_ANSWERED,
     }
 )
 
