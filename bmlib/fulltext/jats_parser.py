@@ -2108,7 +2108,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         :meth:`_append_prose`'s refusal arm has no counterpart here: it counts
         and files nothing, which is what ``False`` already says. Which *kind*
         of not-filed a loss was is :meth:`_prose_is_refused_apparatus`'s
-        question, asked separately by the one caller that reports.
+        question, asked separately by the callers that need it — the
+        ``<disp-formula>`` arm, which reports, and
+        :meth:`_prefix_pending_definition_term`, which needs *"filed or
+        reported"* as one condition and so asks both.
 
         Returns:
             ``True`` if the text would be kept.
@@ -2128,11 +2131,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
         The ``<ref-list>`` half of :meth:`_unsectioned_prose_is_the_articles`
         asked from the outside, so a loss can be reported as the decision it
-        is rather than as a routing gap. Two callers reach the same rule from
-        different positions — :meth:`_append_prose`, where the branches above
-        have already excluded every other case, and the ``<disp-formula>`` arm
-        of :meth:`endElement`, where they have not — which is why the guards
-        are restated here in full instead of left to the caller.
+        is rather than as a routing gap. Three callers reach the same rule
+        from different positions — :meth:`_append_prose`, where the branches
+        above have already excluded every other case; the ``<disp-formula>``
+        arm of :meth:`endElement`, where they have not; and
+        :meth:`_prefix_pending_definition_term`, which runs *before* any of
+        them — which is why the guards are restated here in full instead of
+        left to the caller.
 
         It is deliberately narrower than "the prose was not filed". Prose in
         ``<front>``, and prose inside a float with no modelled ``<caption>``
