@@ -334,9 +334,9 @@ is after the fact: **after every merge that mentions an issue in prose, diff `gh
 issue list` against what the commit says it filed and fixed.** That has now caught
 a keyword that fired (#137, #142, #160) *and* six that did not (#147, #164,
 #184, #187/#190/#191, #211, and #188/#216 — each closed by hand a session
-late). **The same diff catches the other direction**: this session's found
-four issues filed after the previous census was written and one filed from
-outside the repo's own PR chain, so the census read four short. Also, a mutation
+late). **The same diff catches the other direction**: the previous session's found
+four issues filed after the census before it was written and one filed from
+outside the repo's own PR chain, so that census read four short. Also, a mutation
 harness restoring with `git checkout -- <file>` deletes whatever is uncommitted
 in it.
 
