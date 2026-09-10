@@ -1524,9 +1524,20 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # Folding the term into its definition's paragraph files it wherever
         # that paragraph routes; where the paragraph routes *nowhere* the pair
         # is lost together, and the term's half is the one no reader could
-        # otherwise see. The measured population is front matter, whose prose
-        # falls past every branch of `_append_prose` with no counter and no
-        # line — issue #230, and not this counter's to fix.
+        # otherwise see.
+        #
+        # **Measured at the drop rather than inferred from the markup**, since
+        # a <front><abstract>'s definition list would be *folded* into the
+        # abstract and a region walk cannot tell that from a drop. Of the
+        # 1,510 dropped in 128 of the 8,118 served articles: 1,441 are in
+        # <front>, whose prose falls past every branch of `_append_prose` with
+        # no counter and no line — issue #230, and not this counter's to fix;
+        # 66 are in a <body> float with no <caption> open, where the
+        # definition is dropped as exhibit furniture, which is #124's
+        # container; and 3 are in <back> outside a float, where back-matter
+        # prose does route, so the only way to reach the drop is to deposit no
+        # routable prose at all — the same 3 as the served items carrying no
+        # <def>. None was reached by a second <term> displacing the first.
         #
         # **Scoped to a <term>, and the shared label-or-term counter #228's
         # own comment proposes is refused on measurement.** An unfiled
@@ -3212,12 +3223,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 pending = self.def_item_stack[-1]
                 if pending:
                     # A second <term> in one item. JATS's own content model
-                    # admits one, and 0 of the 14,186 served items deposit
-                    # two — but bare last-wins with no line is the #116/#143
-                    # class of defect, and a rule resting on a remembered
-                    # content model is the rule this module keeps being caught
-                    # by. The displaced word is counted, not overwritten in
-                    # silence.
+                    # admits one, and 0 of the 14,186 served items deposit two
+                    # — nor do 0 of the 153,256 archive ones — but bare
+                    # last-wins with no line is the #116/#143 class of defect,
+                    # and a rule resting on a remembered content model is the
+                    # rule this module keeps being caught by. The displaced
+                    # word is counted, not overwritten in silence.
                     self.definition_terms_dropped += 1
                 self.def_item_stack[-1] = normalized_text
         elif name == "def-item":
@@ -3230,9 +3241,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # The item closed with its term still pending, so no
                     # paragraph of this definition reached the article to
                     # carry it — measured almost entirely in front matter
-                    # (issue #230), plus the 3 of 14,186 served items that
-                    # deposit no <def> at all. Counted rather than dropped in
-                    # silence; see `definition_terms_dropped`.
+                    # (issue #230), plus the items that deposit no <def>
+                    # at all — 3 of 14,186 served and 23 of 153,256 archive.
+                    # Counted rather than dropped in silence; see
+                    # `definition_terms_dropped`.
                     self.definition_terms_dropped += 1
 
         elif name == "thead":

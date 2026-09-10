@@ -986,6 +986,66 @@ still body-less and `FullTextService` still holds it back rather than caching
 it. `test_back_matter_alone_is_still_not_a_body` is the guard; the mutant that
 counts back paragraphs dies there.
 
+## fulltext — a definition's term is folded in, and the counter is not widened to labels (#228)
+
+**Do not model a definition list, and do not widen
+`definition_terms_dropped` to a `<label>`.** Both look like the obvious next
+step and both were decided against on measurement.
+
+**Why the term joins the paragraph rather than a field.** A `<def-item>`
+pairs a `<term>` with a `<def>` whose `<p>` routes as ordinary prose, and this
+module models no definition list — exactly as it models no `<list>`, whose
+`<list-item>` contributes no text of its own while its `<p>` becomes a
+paragraph. Folding the term in as `"mRNA — messenger RNA"` costs no public
+field, no `to_dict` change and no renderer branch, and it is the shape #124
+proposes for a footnote marker, so one answer serves three containers. A
+`definitions` field on `JATSBodySection` would be a new public shape every
+downstream has to learn *and* would move the definitions out of `paragraphs`,
+so stored values would move twice for one recovery.
+
+**Why the fold is gated on two predicates rather than done unconditionally.**
+`_append_prose` has three outcomes, not two: it files the prose, it refuses it
+as bibliography apparatus and counts that, or it falls past every branch with
+no counter and no line at all. That third case is `<front>`, which is #230 and
+where the measured population of an unfilable term lives. Consuming the term
+there would spend it on a paragraph nobody ever sees and leave the new counter
+reading zero over the one population it exists to size.
+
+**Where the drops are is measured at the drop, not inferred from the markup** —
+a `<front><abstract>`'s definition list is *folded* into the abstract, and a
+region walk over `<term>` elements cannot tell that from a loss. Of the 1,510
+dropped in 128 of the 8,118 served articles: **1,441 in `<front>`** (#230),
+**66 in a `<body>` float with no `<caption>` open** (the definition dropped as
+exhibit furniture, which is #124's container), and **3 in `<back>` outside a
+float** — where back-matter prose does route, so the only way to reach the drop
+is to deposit no routable prose at all, and 3 is also the number of served
+items carrying no `<def>`. **0** were reached by a second `<term>` displacing
+the first. Consuming it on the *refusal* is the opposite
+choice for the opposite reason: that loss already has a line, and counting the
+term as well would report one loss twice, which is precisely what PR #232's
+review had to correct for a `<disp-formula>`.
+
+**Why the counter is a `<term>` and not "a label or term".** #228's own
+comment asked for the wider one, on the good argument that a `<fn>`'s `<label>`
+is the same kind of drop. Measured by owner, an unfiled `<label>` — one whose
+owner is not a formula, a `<fig>`, a `<table-wrap>` or a `<ref>` — reaches
+**6,225 of 8,118 served articles (76.7%)** and **86,516 of 97,909 archive ones
+(88.4%)**, where each of the four counters it would sit beside fires on a
+small minority. A WARNING on three articles in four is noise, and noise is
+how the ERROR channel was nearly spent one level up. The owners are also four
+questions with four answers — a numbered `<sec>`'s number (19,462 served), a
+footnote marker (5,891, #124's), an `<aff>`/`<corresp>` cross-reference marker
+(25,332, which #145 resolves rather than prints) and a `<list-item>` bullet
+(7,351, presentational). Filed with the full table as #235.
+
+**A stack of pending terms, not a slot.** A `<def>` admits a `<def-list>`, so
+definition items nest; held as one value the inner term overwrote the outer
+and the inner close cleared it, which is #115 one element family over. The
+audit carries `open_definition_items` for the same reason it carries every
+other stack, and its cost is a *wrong* value rather than a missing one: a
+stranded frame welds a definition's word onto the next paragraph of any kind
+to arrive.
+
 ## fulltext — an exhibit with no `<label>` gets no fallback search (#162)
 
 **Do not add a descendant search when an exhibit carries no direct-child

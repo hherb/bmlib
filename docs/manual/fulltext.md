@@ -590,11 +590,35 @@ pass.
 > move in none of them. **`html_content` moves in all 5,990**, so a caller
 > holding cached full text should re-fetch.
 >
-> **A `<glossary>` arrives without its terms and the section carries no
-> heading** — `<term>` reaches no handler (#228) and a container's own
-> `<title>` is deliberately dropped (#125), so an abbreviations list renders
-> as a run of bare definitions. That is #231, and it is the one part of this
-> gain that is not unambiguously an improvement.
+> **A `<glossary>`'s section still carries no heading** — a container's own
+> `<title>` is deliberately dropped (#125), because an `<ack>` or a
+> `<glossary>` is not a `<sec>` and bmlib models neither. So the definitions
+> arrive under no heading of their own. That is #231, and it is the part of
+> this gain that is not unambiguously an improvement. The terms themselves
+> now arrive: see the next entry.
+
+> **A definition carries the word it defines** *(unreleased, #228)*. A
+> `<def-list>` pairs a `<term>` with a `<def>`, and the `<def>`'s `<p>` routed
+> as ordinary prose while the `<term>` reached no handler at all — so an
+> abbreviations list rendered as *"messenger RNA / odds ratio /
+> reverse-transcriptase polymerase chain reaction"*, definitions with no words
+> defined. The term is now folded into the definition's own paragraph,
+> `"mRNA — messenger RNA"`, which is what this module already does with a
+> `<list>`, whose `<list-item>` contributes no text of its own and whose `<p>`
+> becomes a paragraph. No model or field changes.
+>
+> Pre-existing in `<body>` and multiplied in `<back>` by the routing above.
+> Measured over two named public artifacts: 14,186 `<def-item>` in 965 of the
+> 8,118 served articles and 153,256 in 9,813 of the 97,909 archive ones, each
+> carrying exactly one `<term>` and every `<term>` a direct child of its
+> `<def-item>`.
+>
+> A term whose definition routes nowhere is lost with it, which in practice
+> means front matter (#230): those are counted and reported once per article
+> at WARNING, so the loss leaves a trace rather than none. The counter is
+> deliberately **not** widened to a `<label>` this parser reads and files
+> nowhere — that reaches 77% of served articles and divides into four separate
+> questions, which is #235.
 
 > **Captions belong to their figure or table, wherever it sits.** JATS carries
 > caption body in `<p>` and the caption lead in `<title>` — the same elements

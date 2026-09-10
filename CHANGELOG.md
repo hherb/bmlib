@@ -704,6 +704,87 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A definition carries the word it defines** (issue #228, this repo's first
+  issue filed from a measurement rather than from a review — the survey issue
+  #224 needed turned it up.)
+
+  `<def-item>` pairs a `<term>` with a `<def>`, and the `<def>`'s `<p>` routes
+  as ordinary prose while the `<term>`'s buffer was popped and discarded — so
+  an abbreviations list arrived as *"messenger RNA / odds ratio /
+  reverse-transcriptase polymerase chain reaction"*, definitions with no words
+  defined. Pre-existing in `<body>`, and multiplied in `<back>` by the routing
+  issue #224 added, `<glossary>` being one of the larger containers it
+  reaches.
+
+  **The term is folded into the definition's own paragraph** —
+  `"mRNA — messenger RNA"` — rather than modelled. That is what this module
+  already does with a `<list>`, whose `<list-item>` contributes no text of its
+  own while its `<p>` becomes a paragraph, and it is the shape issue #124
+  proposes for a footnote marker: one answer for three containers instead of
+  three public fields. A `definitions` field on `JATSBodySection` would be a
+  new public shape every downstream must learn *and* would move the
+  definitions out of `paragraphs`, so stored values would move twice for one
+  recovery.
+
+  **The population, over two named public artifacts.** 14,186 `<def-item>` in
+  965 of the 8,118 served articles of Europe PMC's
+  `PMC10030002_PMC10040000.xml.gz`, and 153,256 in 9,813 of the 97,909 archive
+  articles of PMC's `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`.
+  Every one of them carries exactly one `<term>`, and every `<term>` in both
+  is a direct child of its `<def-item>`, so the parent test this arm uses pins
+  a direction rather than a population.
+
+  **Blast radius, from a diff over all 8,118 served articles.** A paragraph
+  moves in **840 articles (10.3%)** and **12,667 paragraphs change in place**
+  — every move is a change in place, with **0 paragraphs gained and 0 lost**,
+  the totals identical at 329,733 either side. `html_content` moves in the
+  same 840 (+86,253 bytes), so **a downstream holding cached full text should
+  re-fetch**. `has_body`, section titles, `abstract_sections`, figure and
+  table captions and `references` move in **0**.
+
+  The routing tally and the diff agree exactly on both numbers, and their
+  agreeing is what caught a defect in the diff harness: it flattened
+  `body_sections` without recursing into subsections, which hid 48% of the
+  corpus's paragraphs and read 839 moved articles where 840 had moved. Two of
+  bmlib's own counts never settle in favour of the weaker one.
+
+  **A term whose definition routes nowhere is lost with it, and now leaves a
+  line.** The fold is spent only on a paragraph that is *accounted for*:
+  `_append_prose` has three outcomes, not two — filed, refused as bibliography
+  apparatus and counted, or fallen past every branch with no counter at all,
+  which is `<front>` (issue #230). Consuming the term in the third case would
+  hand it to a paragraph nobody sees and leave the new counter reading zero
+  over the population it exists to size; consuming it on the refusal keeps one
+  loss to one count, the rule PR #232's review had to correct for a
+  `<disp-formula>`. `definition_terms_dropped` counts what is left — 1,510
+  terms in 128 of the 8,118 served articles — and `_audit_parse` reports it
+  once per article at WARNING, the granularity and the level `rejected_spans`
+  (#129), `formulas_dropped` (#177) and `refused_apparatus_prose` (#224) all
+  settled.
+
+  Where those 1,510 sit is measured **at the drop** and not inferred from the
+  markup, a `<front><abstract>`'s definition list being *folded* into the
+  abstract rather than lost: 1,441 in `<front>` (issue #230), 66 in a `<body>`
+  float with no `<caption>` open (the definition dropped as exhibit furniture,
+  which is issue #124's container), and 3 in `<back>` outside a float, where
+  prose does route — so the only way there is to deposit no routable prose at
+  all, and 3 is also the number of served items carrying no `<def>`. None was
+  reached by a second `<term>` displacing the first.
+
+  **The shared label-or-term counter issue #228's own comment proposed is
+  refused on measurement**, and filed with its table as issue #235. An
+  unfiled `<label>` — one whose owner is not a formula, a `<fig>`, a
+  `<table-wrap>` or a `<ref>` — reaches 6,225 of the 8,118 served articles
+  (76.7%) and 86,516 of the 97,909 archive ones (88.4%), where each of the
+  four counters it would sit beside fires on a small minority; and its owners
+  are four separate questions with four answers. A WARNING on three articles
+  in four is noise.
+
+  A stack of pending terms rather than a slot, because a `<def>` admits a
+  `<def-list>`; `ParseUnwindState.open_definition_items` audits it, a stranded
+  frame welding a definition's word onto the next paragraph of any kind to
+  arrive.
+
 - **Unsectioned back-matter prose reaches the article** (issue #224, filed by
   the maintainer from a JATS parity check against the Swift port in BioMedLit
   — the first open issue here not filed by a PR reviewing an earlier fix. It

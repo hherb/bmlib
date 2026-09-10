@@ -1551,6 +1551,62 @@ class TestADefinitionCarriesTheTermItDefines:
             "Ordinary prose.",
         ]
 
+    def test_a_term_deposited_inside_an_open_item_prefixes_nothing(self):
+        """The parent test's own mutant, which the loose-``<term>`` case cannot reach.
+
+        A ``<term>`` *before* any ``<def-item>`` leaves the stack empty, so
+        dropping the parent test is inert for it — mutation-measured, the
+        whole suite green. What separates the guard from its mutant is a
+        ``<term>`` with some other parent while an item is open: read from the
+        ambient stack it displaces the real term, counts it as dropped, and
+        renames the definition.
+
+        Constructed rather than drawn. 14,186 of 14,186 ``<term>`` in the
+        served bundle have a ``<def-item>`` parent, and the bundle deposits no
+        ``<index-term>`` at all, so what this pins is that a deposit no draw
+        has shown cannot corrupt the article — the ``<label>`` rule's own
+        argument (#116), where the corruption *was* the measured population.
+        """
+        handler = _run_handler(
+            b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Inner term</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>A</title><def-list><def-item>
+    <term>BMI</term><def><p>body mass <term>index</term></p></def>
+  </def-item></def-list></sec></body>
+</article>"""
+        )
+
+        assert [p for s in handler.body_sections for p in s.paragraphs] == ["BMI — body mass"]
+        assert handler.definition_terms_dropped == 0
+
+    def test_an_empty_paragraph_does_not_spend_the_term(self):
+        """An empty ``<p>`` is a paragraph the document deposited, and takes no term.
+
+        Several tests here pin the empty string a ``<sec>``'s empty ``<p>``
+        appends, so the definition's own empty paragraph must keep that shape
+        — and the term must survive to the paragraph that says something.
+        Spent on the empty one it renders as ``"BMI — "``, a word defined by
+        nothing, which is #162's invented-value rule again.
+        """
+        handler = _run_handler(
+            b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Empty first</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>A</title><def-list><def-item>
+    <term>BMI</term><def><p/><p>body mass index</p></def>
+  </def-item></def-list></sec></body>
+</article>"""
+        )
+
+        assert [p for s in handler.body_sections for p in s.paragraphs] == [
+            "",
+            "BMI — body mass index",
+        ]
+        assert handler.definition_terms_dropped == 0
+
     def test_a_reviewers_definition_term_is_not_this_articles(self):
         """A ``<sub-article>``'s definition list is a nested article's (#110).
 
