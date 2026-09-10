@@ -584,10 +584,10 @@ pass.
 > `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`, 82,058 (83.8%) and
 > 541,481. Both are counted inside the routing rather than by walking the
 > markup, so they exclude paragraphs this branch never reaches. Diffed against
-> the previous behaviour over the served package, prose moves in 5,989 of
+> the previous behaviour over the served package, prose moves in 5,990 of
 > 8,118 articles and every move is an insertion — nothing is lost or altered,
 > and `has_body`, `figures`, `tables`, `references` and `abstract_sections`
-> move in none of them. **`html_content` moves in all 5,989**, so a caller
+> move in none of them. **`html_content` moves in all 5,990**, so a caller
 > holding cached full text should re-fetch.
 >
 > **A `<glossary>` arrives without its terms and the section carries no
@@ -685,8 +685,12 @@ pass.
 > a reaction- or equation-number column the body prose refers back to.
 >
 > Two limitations worth knowing. A display equation deposited somewhere bmlib
-> cannot file it — an appendix with no `<sec>`, or a float with no `<caption>`
-> open — is dropped, and logged once per article at `WARNING` (issue #177). And
+> cannot file it — a float with no `<caption>` open, or anywhere outside
+> `<body>` and `<back>` — is dropped, and logged once per article at `WARNING`
+> (issue #177). An appendix with no `<sec>` used to be the third such place and
+> now reaches the article, as the back-matter note above describes. One shape
+> is *not* logged: a formula merged into a paragraph that is itself dropped
+> goes with the paragraph and no counter sees it (issue #233). And
 > where a formula carries both encodings, the LaTeX replaces the MathML text
 > that previously reached the prose; that is higher fidelity for a renderer and
 > worse for a consumer reading the text as prose, which is issue #178.

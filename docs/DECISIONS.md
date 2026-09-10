@@ -855,15 +855,26 @@ populations measure **0** across both corpora and 0 of 501,132 formulas in the
 package, so both rules are stated rather than confirmed.
 
 **A rendition that reaches nowhere is counted, not dropped.** `_append_prose`
-has four branches and no fallthrough, so a standalone `<disp-formula>` in an
-unsectioned `<back>` (192 in 23 of 97,909 articles), or one the merge
-allow-list sends to the paragraph path from inside a float with no `<caption>`
-open (0 measured), is built and lost. Neither is a regression — `main`
-discarded the whole element — which is exactly why it is counted:
-`formulas_dropped` reports once per article at WARNING, the granularity and
-level `rejected_spans` settled for #129. Routing them is **#177**, left open
-because giving `<back>` an implicit section would move every unsectioned
-`<back>` `<p>` as well, which reaches `has_body`.
+has five branches and no fallthrough, so a standalone `<disp-formula>` reaching
+none of them is built and lost. Not a regression — `main` discarded the whole
+element — which is exactly why it is counted: `formulas_dropped` reports once
+per article at WARNING, the granularity and level `rejected_spans` settled for
+#129.
+
+**#224 took the larger half of #177, and this paragraph used to say the
+opposite.** It named the unsectioned-`<back>` shape (192 formulas in 23 of
+97,909 articles) as the live population and gave the reason for leaving it
+open: *"giving `<back>` an implicit section would move every unsectioned
+`<back>` `<p>` as well, which reaches `has_body`."* Both halves were overturned
+by the branch for #224 — `<back>` now has an implicit section, and it
+deliberately does **not** reach `has_body`, `body_paragraph_count` still
+counting `<body>` alone. See that issue's own entry below before concluding
+anything from this one. What is left of #177 is two latent shapes: a formula
+inside a float with no `<caption>` open (0 measured in both committed corpora),
+and one standing outside `<body>` and `<back>` altogether, which is unmeasured.
+A formula refused as bibliography apparatus goes to `refused_apparatus_prose`
+instead, or a chosen policy prints as a gap in itself. And the counter does not
+see a formula merged into a `<p>` that is itself dropped, which is **#233**.
 
 **Still open: whether LaTeX should win for a both-encoding *inline* formula
 at all** (#178). For a display formula the preference is unambiguous — `main`
@@ -960,7 +971,9 @@ slot, a `</body>` flush that failed would leave its prose pending, `<back>`
 would append to the same builder, and `</back>` would emit the pair as one
 section — the article silently losing the boundary between its body and its
 acknowledgements, with nothing stranded for `_audit_parse` to report. 73.8% of
-the served corpus carries a `<back>`, so almost every document would mask it.
+the served corpus carries a `<back>` — that is the share gaining prose, so a
+`<back>` holding only a `<ref-list>` is not counted and the true share is
+higher — so almost every document would mask it.
 `_flush_implicit_section` therefore picks its slot from `in_body` / `in_back`,
 which is what makes each arm's flush-before-clear ordering load-bearing rather
 than decorative — it was neither when the helper emptied whatever was pending,

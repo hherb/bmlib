@@ -594,6 +594,32 @@ class TestJATSParserUnsectionedBackMatter:
   </back>
 </article>"""
 
+    def test_the_whole_back_matter_shape_is_one_untitled_section(self):
+        """Membership tests cannot see the *shape*, and the shape is a choice.
+
+        Three containers — ``<ack>``, ``<fn-group>``, ``<notes>`` — flush as
+        **one** untitled section, and each container's own ``<title>`` is
+        dropped by the ``<title>`` owner rule (#125, #130). Both are
+        deliberate today and both are what issue #231 is open on, so a change
+        that flushed per container, or that gave the section its container's
+        heading, is a change to *this* and must redden something. Every other
+        test in this class asserts ``"..." in paragraphs``, which such a
+        change passes unaltered.
+        """
+        article = JATSParser(self.BACK_MATTER).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Methods", ["We did the thing."]),
+            (
+                "",
+                [
+                    "This work was funded by grant XYZ from the Example Foundation.",
+                    "The authors declare no competing interests.",
+                    "Data are available from the corresponding author.",
+                ],
+            ),
+        ]
+
     def test_an_acknowledgement_reaches_the_article(self):
         article = JATSParser(self.BACK_MATTER).parse()
         paragraphs = [p for s in article.body_sections for p in s.paragraphs]
@@ -924,7 +950,8 @@ class TestTheBodySlotCannotBeEmptiedByTheBackFlush:
     would emit the pair as one section — the article silently losing the
     boundary between its body and its acknowledgements, with nothing stranded
     for the end-of-parse audit to report. That is not a hypothetical cost:
-    73.8% of the served corpus carries a ``<back>``, so almost every document
+    at least 73.8% of the served corpus carries a ``<back>`` — that is the
+    share gaining prose, so the true share is higher — and almost every document
     would mask it.
     """
 
@@ -943,6 +970,70 @@ class TestTheBodySlotCannotBeEmptiedByTheBackFlush:
         assert [(s.title, s.paragraphs) for s in article.body_sections] == [
             ("", ["Loose body prose."]),
             ("", ["We thank the funders."]),
+        ]
+
+    def test_a_back_inside_a_body_reads_as_the_body_throughout(self):
+        """Both flags set at once, and ``_append_prose`` resolves it to the body.
+
+        DTD-invalid but well-formed, so expat admits it. ``_append_prose``
+        tests ``in_body`` first, so both paragraphs land in the body slot and
+        the article reads as one body section.
+
+        **This shape does not discriminate the flush's branch order** — the
+        back slot is empty either way, so swapping the branches changes
+        nothing here. The shape that does is the mirror one, in
+        ``test_a_body_inside_a_back_does_not_let_the_back_branch_steal_the_flush``
+        below. Kept because the two methods agreeing is the claim the flush's
+        own docstring makes, and this is the half of it that is about
+        ``_append_prose``.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Nested back</article-title>
+  </title-group></article-meta></front>
+  <body><p>Loose body prose.</p>
+    <back><ack><p>We thank the funders.</p></ack></back>
+  </body>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        # One section, because both paragraphs went to the body slot — and
+        # `has_body` agrees, `in_body` being what `_append_prose` asked.
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Loose body prose.", "We thank the funders."])
+        ]
+        assert article.has_body
+
+    def test_a_body_inside_a_back_does_not_let_the_back_branch_steal_the_flush(self):
+        """The shape the flush's ``<body>``-first order is actually for.
+
+        Here the back slot fills *before* ``<body>`` opens, so at ``</body>``
+        both flags are set **and both slots hold prose** — the only state in
+        which the branch order can decide anything. Testing ``in_back`` first
+        would empty the back slot at ``</body>``, leaving ``</back>`` nothing
+        to flush and the body slot stranded: the body's prose lost outright,
+        with the audit reporting it. Testing ``in_body`` first gives each
+        container's close its own slot and loses nothing.
+
+        DTD-invalid, so this is a claim about not compounding a malformed
+        document rather than about any deposit. Document order is not
+        preserved for it, and that is not what the order is protecting.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Nested body</article-title>
+  </title-group></article-meta></front>
+  <back><ack><p>Back prose.</p></ack>
+    <body><p>Body prose.</p></body>
+  </back>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Body prose."]),
+            ("", ["Back prose."]),
         ]
 
     def test_a_missing_body_flush_is_not_laundered_by_the_back_flush(self, monkeypatch, parser_log):
@@ -976,9 +1067,19 @@ class TestTheBodySlotCannotBeEmptiedByTheBackFlush:
         ``_flush_implicit_section`` picks its slot from the very flags those
         arms clear, so the ordering is load-bearing rather than decorative —
         which it was not when one slot was emptied unconditionally, and the
-        comment claiming otherwise outlived the code twice. Emulated by
-        clearing the flag first and then flushing, which is what swapping the
-        two lines does.
+        comment claiming otherwise outlived the code twice.
+
+        **This test documents what the wrong order costs; it does not detect
+        it.** The emulation clears the flag in a wrapper round ``endElement``,
+        so on the real mutant — the two source lines swapped — the wrapper is
+        idempotent and this passes either way. Verified. What kills that
+        mutant is every ordinary fixture in
+        ``TestJATSParserUnsectionedBackMatter``, each of which loses the prose
+        it asserts. Named here because the source comment used to name *this*
+        test as the killer, which is the module's own "a rule enforced by
+        prose is not enforced" one level down, and a reader deleting those
+        fixtures on the strength of this one would leave the ordering
+        unguarded.
         """
         parser_log.expect_errors()
         original = _JATSHandler.endElement
@@ -1027,7 +1128,7 @@ class TestARefusedApparatusParagraphIsReported:
         JATSParser(data).parse()
 
         warnings = parser_log.messages(logging.WARNING)
-        assert any("2 <ref-list> paragraph(s) were refused" in m for m in warnings), warnings
+        assert any("2 <ref-list> item(s) were refused" in m for m in warnings), warnings
 
     def test_an_article_that_refuses_nothing_is_quiet(self, parser_log):
         """The negative control: a counter that always fires reports nothing."""
@@ -1097,7 +1198,10 @@ class TestARefusedApparatusParagraphIsReported:
         JATSParser(data).parse()
 
         warnings = parser_log.messages(logging.WARNING)
-        assert any("were refused as bibliography apparatus" in m for m in warnings), warnings
+        # The **count**, not the substring. Asserting presence alone is what
+        # let a first cut increment at both the formula arm and
+        # `_append_prose` and report this one formula as two.
+        assert any("1 <ref-list> item(s) were refused" in m for m in warnings), warnings
         assert not any("reached no section, caption or cell" in m for m in warnings), warnings
 
     def test_a_float_inside_a_refused_list_is_still_the_float_gap(self, parser_log):
@@ -1110,12 +1214,15 @@ class TestARefusedApparatusParagraphIsReported:
         as one would move a live #177 case out of the counter #177 is sized
         by.
 
-        This is the only reachable guard of the three
-        ``_prose_is_refused_apparatus`` carries. ``in_abstract`` and
-        ``section_stack`` are unreachable from either caller, both being
-        answered ``True`` by ``_prose_reaches_output`` one branch earlier, and
-        the docstring says so rather than leaving a reader to assume all three
-        were measured.
+        This is the only guard of the three ``_prose_is_refused_apparatus``
+        carries that changes an answer. ``in_abstract`` cannot decide —
+        ``_prose_reaches_output`` answers ``True`` for it one branch earlier
+        unless a float is open too, and then the float guard wins. But
+        ``section_stack`` *is* reachable non-empty, which an earlier draft of
+        this docstring denied: a ``<sec>`` inside ``<front><notes>`` leaves it
+        loaded while ``in_body`` and ``in_back`` are both ``False``. It costs
+        nothing only because ``in_back`` is ``False`` there too. See
+        ``test_a_front_matter_section_reaches_the_refusal_predicate``.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -1130,8 +1237,100 @@ class TestARefusedApparatusParagraphIsReported:
         JATSParser(data).parse()
 
         warnings = parser_log.messages(logging.WARNING)
-        assert any("reached no section, caption or cell" in m for m in warnings), warnings
+        assert any("1 display formula(s) were rendered" in m for m in warnings), warnings
         assert not any("bibliography apparatus" in m for m in warnings), warnings
+
+    def test_a_front_matter_section_reaches_the_refusal_predicate(self, monkeypatch, parser_log):
+        """The guard an earlier docstring called unreachable.
+
+        ``<notes>`` in ``<article-meta>`` admits ``sec*``, so a ``<sec>``
+        there loads ``section_stack`` while ``in_body`` and ``in_back`` are
+        both ``False``. ``_prose_reaches_output``'s third branch is a
+        *conjunction* of those, so it does not answer ``True``, and the
+        ``<disp-formula>`` arm calls ``_prose_is_refused_apparatus`` with the
+        stack loaded. The answer is still right — nothing was refused, the
+        formula is the routing gap — but the guard is reached, so it must not
+        be deleted as dead.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Front sec</article-title>
+  </title-group>
+  <notes><sec><title>Competing interests</title>
+    <disp-formula><tex-math>\\begin{document}$$s = 1$$\\end{document}</tex-math>
+    </disp-formula></sec></notes>
+  </article-meta></front>
+  <body><sec><title>M</title><p>Body.</p></sec></body>
+</article>"""
+
+        seen: list[tuple[bool, bool, bool]] = []
+        original = _JATSHandler._prose_is_refused_apparatus
+
+        def spy(self):
+            seen.append((bool(self.section_stack), self.in_body, self.in_back))
+            return original(self)
+
+        monkeypatch.setattr(_JATSHandler, "_prose_is_refused_apparatus", spy)
+
+        JATSParser(data).parse()
+
+        # The claim itself: reached, with the stack loaded and neither
+        # container flag set. Asserting only the WARNING below would pass
+        # whether or not the guard were ever reached.
+        assert (True, False, False) in seen, seen
+
+        warnings = parser_log.messages(logging.WARNING)
+        assert any("1 display formula(s) were rendered" in m for m in warnings), warnings
+        assert not any("bibliography apparatus" in m for m in warnings), warnings
+
+    def test_a_reference_list_in_the_body_keeps_its_apparatus(self, parser_log):
+        """The refusal is scoped to `<back>`, and the scope is a claim.
+
+        ``in_body`` answers first in ``_unsectioned_prose_is_the_articles``,
+        so a ``<ref-list>`` in an unsectioned ``<body>`` keeps its apparatus
+        and counts towards ``body_paragraph_count``. Pre-existing and measured
+        near-empty (0 of 8,118 served), but `docs/DECISIONS.md` publishes it
+        as the rule's scope, so a later "simplification" that unified the two
+        would move stored output with nothing red.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Body refs</article-title>
+  </title-group></article-meta></front>
+  <body><ref-list><p>Papers of special note.</p></ref-list></body>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert [p for s in article.body_sections for p in s.paragraphs] == [
+            "Papers of special note."
+        ]
+        assert article.has_body
+        assert not [m for m in parser_log.messages(logging.WARNING) if "refused" in m]
+
+    def test_a_reference_list_under_an_open_section_keeps_its_apparatus(self, parser_log):
+        """The other half of the same scope, on the `<back>` side.
+
+        Prose under an open ``<sec>`` never reaches the predicate at all, so a
+        ``<ref-list>`` inside a ``<back>`` ``<sec>`` is not refused — 0 of
+        8,118 served and 1 of 97,909 archive articles.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Sec refs</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>M</title><p>Body.</p></sec></body>
+  <back><sec><title>Extras</title>
+    <ref-list><p>Papers of special note.</p></ref-list></sec></back>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("M", ["Body."]),
+            ("Extras", ["Papers of special note."]),
+        ]
+        assert not [m for m in parser_log.messages(logging.WARNING) if "refused" in m]
 
 
 class TestJATSParserUnsectionedBodyFurniture:
@@ -6167,7 +6366,7 @@ the rate follows.</p></sec></body>
 
         assert [p for s in article.body_sections for p in s.paragraphs] == ["Prose."]
         assert any(
-            "reached no section, caption or cell" in message
+            "1 display formula(s) were rendered but reached no section, caption or cell" in message
             for message in parser_log.messages(logging.WARNING)
         )
 
