@@ -290,116 +290,44 @@ in it.
 
 ## This session: #224, the first defect filed from outside the chain
 
-**The only open issue that lost content the document carries, and it is
-answered.** `_append_prose`'s unsectioned branch was gated on `in_body` alone,
-so a `<p>` sitting directly in `<ack>`, `<notes>`, `<fn-group>`, `<app>`,
-`<glossary>` or `<bio>` reached nothing — which is where funding
-acknowledgements and competing-interest statements live. The full argument is
-in `CHANGELOG.md`, `docs/DECISIONS.md` and at the call site; what follows is
-what a next session needs.
+**Answered, and the argument is not kept here.** `_append_prose`'s unsectioned
+branch was gated on `in_body` alone, so a `<p>` sitting directly in `<ack>`,
+`<notes>`, `<fn-group>`, `<app>`, `<glossary>` or `<bio>` reached nothing —
+which is where funding acknowledgements and competing-interest statements
+live. The reasoning is in `CHANGELOG.md`, the two rules a later session must
+not "correct" are in `docs/DECISIONS.md`, the populations are in the routing's
+own docstring, and the blast radius is under *What is unreleased* above. What
+follows is only what none of those carries.
 
-**The survey the issue asked for was run before a line was changed, on both
-renditions — and then re-run through the routing, which is the version to
-quote.** Served: 5,990 of the 8,118 articles of Europe PMC's
-`PMC10030002_PMC10040000.xml.gz` (73.8%), 40,342 paragraphs, 5.91 MB. Archive:
-82,058 of the 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`
-(83.8%), 541,481 paragraphs. By the `<back>` child, served / archive:
-`<fn-group>` 13,650 / 147,635, `<notes>` 10,286 / 192,002, `<glossary>` 10,693
-/ 113,468, `<ack>` 4,892 / 61,319, `<app-group>` 618 / 24,741, `<bio>` 203 /
-2,316.
-
-**The first cut of that table was a raw-XML walk and PR review caught it.** It
+**If you re-take the survey, instrument the routing; do not walk the markup.**
+The first cut of the table was a raw-XML walk and PR review caught it: it
 counted paragraphs the branch never reaches — whitespace-only ones and `<p>`
-inside a back-matter float — so every row was overstated, the archive rows
-summed to 136 fewer than the total printed beside them, and the same entry gave
-40,645 encountered against 40,341 inserted without reconciling them. The
-figures above come from instrumenting `_append_prose` itself and each column
-sums to its own total exactly. **If you re-take this survey, instrument the
-routing; do not walk the markup.**
+inside a back-matter float — so every row was overstated and the archive
+column summed 136 short of the total printed beside it. Ask what the code
+routes, not what the document holds.
 
-**Neither corpus is committed here** — both are named public artifacts,
-the precedent #146/#149 and #147 set — and the committed sampler carries no
-counter for this, which is the thing left undone (below). Every row *is* an
-input under test, though, one case per container in
-`test_every_measured_back_container_reaches_the_article`.
-
-**The issue's suggested fix was the ambient widening, and the survey refused
-part of it.** `in_back` alone also takes a `<ref-list>`'s own `<p>` and a
-`<ref>`'s `<note><p>`, which sampled from that package read *"Faculty Opinions
-Recommendation"* ten times in one article, *"Papers of special note have been
-highlighted as: ..."* and bare DOI fragments. Appended to `body_sections` each
-is a paragraph the publisher never wrote there — a corruption where the
-alternative is a blank, #116's and #162's own preference — and #150, the issue
-that puts a note-only `<ref>` where it belongs, would be left with its content
-misfiled rather than missing and its symptom invisible. So `<ref-list>` is
-refused and **nothing else is**, because every other container already routes
-this way inside `<body>`: refusing one only in `<back>` would make identical
-markup mean two things depending on where the publisher put it. 163 of 40,505
-served (0.40%, in 39 articles), 1,311 of 542,792 archive (0.24%, in 293). It is
-an **ancestor** test on `element_stack` rather than the `in_ref_list` flag,
-which a nested `<ref-list>`'s close clears — #115 one element family over.
-
-**The refusal is counted and reported**, once per article at WARNING
-(`refused_apparatus_prose`), which the first cut did not do: `rejected_spans`
-and `formulas_dropped` had both already settled that a drop gets a line, and a
-refusal this module *argues for* earns one more than the incidental drop it
-replaced. A `<disp-formula>` refused by the same rule shares that counter
-rather than inflating `formulas_dropped`, or a chosen policy prints as a gap in
-itself. **And the rule is scoped to the unsectioned branch** — a `<ref-list>`
-under an open `<sec>`, or one in `<body>`, keeps its apparatus; pre-existing,
-0 of 8,118 served and 1 of 97,909 archive, so a scope to state and not a hole
-to close.
-
-**`has_body` is the invariant the change is built around.**
-`body_paragraph_count` still counts `<body>` prose alone, so a front-matter-
-plus-back-matter document is still body-less and `FullTextService` still holds
-it back rather than caching it and going no further. The mutant that counts
-back paragraphs dies in `test_back_matter_alone_is_still_not_a_body`.
-
-**Blast radius diffed, not reasoned** — and the first metric was wrong in a way
-worth carrying: an *additive prefix* test read 2,324 of 5,989 articles as
-"changed in place", because loose `<ack>` prose flushes ahead of a back `<sec>`
-and so **inserts in the middle** rather than appending. The honest test is
-whether `main`'s paragraph list is a **subsequence** of the branch's, and it is
-in **5,989 of 5,989** — 40,341 paragraphs and 5.91 MB inserted, 0 lost, 0
-altered. `body_sections` gains 6,977, `html_content` moves in all 5,989, and
-`has_body`, `figures`, `.tables`, `references` and `abstract_sections` move in
-**0**.
-
-**The larger half of #177 is answered by this**, which that issue's own text
-anticipated: its 192 `<back>` display formulas in 23 of 97,909 articles now
-reach the article. Its second, latent shape stays open (a formula inside a
-float with no `<caption>` open, 0 measured) and **took a test of its own**,
-because #224 removed the only population the old one exercised and
-`formulas_dropped` would otherwise have gone quietly vacuous. The test that
-pinned the containment is reversed with a comment naming both issues.
+**`has_body` is the invariant the change is built around**, not a happy
+result. `body_paragraph_count` still counts `<body>` prose alone, so a
+front-matter-plus-back-matter document is still body-less and
+`FullTextService` still holds it back rather than caching it and going no
+further. The mutant that counts back paragraphs dies in
+`test_back_matter_alone_is_still_not_a_body`.
 
 **Mutation: 8 mutants, 7 die.** The survivor is the strict-ancestor slice
-`element_stack[:-1]`, and it is **provably equivalent**: `_append_prose` is
+`element_stack[:-1]`, and it is provably equivalent — `_append_prose` is
 reached from the `<p>` and `<disp-formula>` arms only, so the excluded element
-is never the `<ref-list>` being tested for. Recorded at the site as prospective,
-which is what `_inside_mixed_citation`'s own slice already says of itself.
+is never the `<ref-list>` being tested for. Recorded at the site as
+prospective, which is what `_inside_mixed_citation`'s own slice already says
+of itself.
 
-**Two findings were filed rather than fixed.** **#228**: a `<def-list>`'s
-`<term>` reaches no handler, so every definition renders without the word it
-defines — pre-existing, true of a body `<def-list>` too, and this change
-multiplies how often a reader sees it (10,693 back-matter definitions served,
-113,444 archive). A real article now renders *"messenger RNA / odds ratio /
-reverse-transcriptase polymerase chain reaction"* with neither the
-abbreviations nor a heading, the heading being a `<def-list>`'s `<title>` that
-#125 deliberately drops. And **bmlibrarian_lite #204**, the other end of the
-`<ref-list>` divergence: the Swift port takes the apparatus. The note is
-asymmetric and the earlier wording overstated it — this side carries it in
-`docs/DECISIONS.md` and in the routing's own docstring, the Swift side carries
-it as that open issue and **not** as a code comment, so a parity check reading
-only `JATSXMLParser.swift` still finds an unexplained difference.
-
-**Not measured, and worth saying**: how often a *body* `<def-list>` loses its
-terms (#228 counts back matter only). What a `<glossary>` costs a downstream
-reading `body_sections` as prose — a wall of term-less definitions being the
-one part of this gain that is not obviously an improvement — is now **#231**,
-together with whether the untitled back-matter section should carry its
-container's heading.
+**Three findings were filed rather than fixed**: **#228** (a `<def-list>`'s
+terms) and **#231** (what the untitled section they land in costs a reader),
+both described under *Next up*; and **bmlibrarian_lite #204**, the other end
+of the `<ref-list>` divergence, where the Swift port takes the apparatus. That
+note is asymmetric — this side carries the divergence in `docs/DECISIONS.md`
+and in the routing's docstring, the Swift side carries it as an open issue and
+**not** as a code comment, so a parity check reading only `JATSXMLParser.swift`
+still finds an unexplained difference.
 
 ## Current state
 
@@ -476,15 +404,20 @@ container's heading.
 
 ### Open GitHub issues
 
-**Forty-four open** as this file is written, **forty-three once this branch
-merges and #224 is closed by hand** (`gh issue list --state open --limit 200`,
-2026-09-10 — the limit matters, `gh` pages at 30 and the bare command reports a
-page size as a total): #86, #92, #94, #103, #124, #128, #137, #142, #143, #144,
-#145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179,
-#181, #186, #196, #197, #200, #201, #204, #207, #209, #210, #212, #214, #215,
-#217, #221, #222, #223, #224, #226, #227, #228. This branch answers **#224**
-and the larger half of **#177**, and files **#228**. **#206 and #218 were
-closed by hand at the start of this session** — PR #225 answered both and said
+**Forty-five open**, counted against the repo at the end of the session,
+**forty-four once this branch merges and #224 is closed by hand** (`gh issue
+list --state open --limit 200`, 2026-09-10 — the limit matters, `gh` pages at
+30 and the bare command reports a page size as a total): #86, #92, #94, #103,
+#124, #128, #137, #142, #143, #144, #145, #150, #152, #154, #156, #157, #172,
+#173, #174, #175, #177, #178, #179, #181, #186, #196, #197, #200, #201, #204,
+#207, #209, #210, #212, #214, #215, #217, #221, #222, #223, #224, #226, #227,
+#228, #231. This branch answers **#224** and the larger half of **#177**, and
+files **#228** and **#231**. **The line read forty-four when it was first
+written and the repo already held forty-five** — #231 was filed by this same
+session an hour later, and described elsewhere in this file, which is the
+*count, do not project* lesson landing on the session that restated it.
+Re-count at the end against `gh`, not at the point the number is first
+needed. **#206 and #218 were closed by hand at the start of this session** — PR #225 answered both and said
 in its own body that it carried no closing keyword deliberately, then merged
 without anyone doing so; the process rule below caught its **fifteenth**
 instance, and the fourteenth (#188/#216, PR #219) was one session earlier.
@@ -508,7 +441,10 @@ rather than fixed because the shape is a modelling decision — one paragraph pe
 `<def-item>`, as #124 proposes for a footnote marker, or a model on
 `JATSBodySection` — and because the body population is not measured. It joins
 **#124** and **#150** as the issues that lose content the document carries;
-#224 was the fourth and is answered.
+#224 was the fourth and is answered. **#231 is its neighbour rather than its
+duplicate**: #228 is a definition losing the word it defines, #231 is what the
+whole untitled back-matter section costs a reader who takes `body_sections`
+for prose, and whether it should carry its container's own heading.
 
 **#220-#223 are PR #219's leavings**, all instrument-side: #220 is already
 answered; **#221** is an `id-not-an-address` that serves, which would refute
@@ -583,7 +519,8 @@ filing #158/#160/#161; **#160** → PR #182, filing #183; **#183**/**#161** → 
 first live run rather than from review, which was a new link in the chain) and
 #214-#217; **#216/#188** → PR #219, filing #218 from its own run and
 #220-#223 from review; **#218/#206** → PR #225, filing #226 and #227 from its
-own review — of which this branch answers **#224** and files **#228**.
+own review — of which this branch answers **#224** and files **#228** and
+**#231**.
 **#224 is the first link from outside the chain**: filed by the maintainer from
 a parity check against the Swift port, not by any PR here, and **#228 is the
 first filed from a measurement rather than a review** — the survey #224 needed
