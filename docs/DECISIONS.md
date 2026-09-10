@@ -1011,6 +1011,11 @@ where the measured population of an unfilable term lives. Consuming the term
 there would spend it on a paragraph nobody ever sees and leave the new counter
 reading zero over the one population it exists to size.
 
+**Three counts close on both artifacts.** Fold plus drop equals the terms that
+carry a word: 12,667 folded and 1,510 dropped against 14,186 − 9 empty served,
+142,855 and 10,394 against 153,256 − 7 archive. A table of counters owes that,
+and it is what caught #224's archive column summing 136 short of its own total.
+
 **Where the drops are is measured at the drop, not inferred from the markup** —
 a `<front><abstract>`'s definition list is *folded* into the abstract, and a
 region walk over `<term>` elements cannot tell that from a loss. Of the 1,510

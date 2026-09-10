@@ -734,6 +734,14 @@ All notable changes to bmlib are documented here. The format is based on
   is a direct child of its `<def-item>`, so the parent test this arm uses pins
   a direction rather than a population.
 
+  **What the routing does with them.** 12,667 terms folded in 840 of the 8,118
+  served articles and 142,855 in 8,978 of the 97,909 archive ones; 1,510 and
+  10,394 dropped, in 128 and 844 articles. **Three counts close on both
+  artifacts**: fold plus drop equals the terms carrying a word — 12,667 +
+  1,510 = 14,177 = 14,186 − 9 empty, and 142,855 + 10,394 = 153,249 =
+  153,256 − 7 — so the markup walk, the fold counter and the drop counter
+  agree to the unit and the partition sums to its own denominator.
+
   **Blast radius, from a diff over all 8,118 served articles.** A paragraph
   moves in **840 articles (10.3%)** and **12,667 paragraphs change in place**
   — every move is a change in place, with **0 paragraphs gained and 0 lost**,

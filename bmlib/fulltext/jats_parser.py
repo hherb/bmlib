@@ -1526,6 +1526,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # is lost together, and the term's half is the one no reader could
         # otherwise see.
         #
+        # 12,667 terms are folded in 840 of the 8,118 served articles and
+        # 142,855 in 8,978 of the 97,909 archive ones; 1,510 and 10,394 are
+        # dropped, in 128 and 844. **The three counts close on both**: fold
+        # plus drop equals the terms carrying a word, 14,186 − 9 empty served
+        # and 153,256 − 7 archive, so this counter and the fold partition the
+        # population rather than sampling it.
+        #
         # **Measured at the drop rather than inferred from the markup**, since
         # a <front><abstract>'s definition list would be *folded* into the
         # abstract and a region walk cannot tell that from a drop. Of the

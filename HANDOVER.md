@@ -167,10 +167,14 @@ recursing into `subsections`, so 48% of the corpus's paragraphs were invisible
 to it, and the only symptom was the html hash moving in 840 articles where the
 paragraph list moved in 839. A one-article disagreement over a denominator
 wrong by half. **And a survey that mirrors a routing rule by hand is the same
-class of defect one step earlier**: #228's first survey re-implemented
-`_append_prose`'s five branches to decide *"does this definition route
-anywhere?"*, got two of them wrong, and the figure was discarded and taken
-from the real counter instead. Where the code has a predicate, run the code.
+class of defect one step earlier, even when it gets the answer right**: #228's
+first survey re-implemented `_append_prose`'s five branches to decide *"does
+this definition route anywhere?"* and got two of them wrong, so the figure was
+discarded — and the real counter then reproduced it to the unit on both
+artifacts, both wrong branches having an empty population there. Where the
+code has a predicate, run the code; a mirror that happens to agree is not
+evidence the mirror is sound, and you cannot tell the two apart without the
+counter.
 **Measure a drop at the drop**: a `<front><abstract>`'s definition list is
 *folded* into the abstract, so a region walk over the markup cannot tell that
 from a loss.
@@ -358,11 +362,18 @@ before any code was written, because the issue named them as what it was
 blocked on.
 
 **Two instruments were wrong before either produced a number, and each was
-caught by a different rule.** The survey's *"the definition routes nowhere"*
-column mirrored `_append_prose`'s five branches **by hand** and got two of
-them wrong (it had no abstract branch, and read any `<sec>` ancestor as
-routing, which is false in `<front>`); that figure was discarded and taken
-from the real counter instead. Then the blast-radius harness flattened
+caught by a different rule — and one of them turned out to be right anyway.**
+The survey's *"the definition routes nowhere"* column mirrored
+`_append_prose`'s five branches **by hand** and got two of them wrong: it had
+no abstract branch, and it read any `<sec>` ancestor as routing, which is
+false in `<front>`. That figure was discarded and taken from the real counter
+instead — **and the counter then reproduced it exactly, 1,510 served and
+10,394 archive**, because both wrong branches have a measured-empty population
+in these two artifacts. So do not read this as a figure that was wrong; read
+it as a figure that could not be *known* to be right until the code produced
+it, which is the whole of the rule. The mirror is still the wrong instrument:
+its two errors were empty here and neither is empty in principle. Then the
+blast-radius harness flattened
 `body_sections` **without recursing into subsections**, hiding 48% of the
 corpus's paragraphs — and what exposed it was the html hash moving in 840
 articles where the paragraph list moved in 839. One article's disagreement.
@@ -375,6 +386,13 @@ definition list is *folded* into the abstract, so a region walk over `<term>`
 elements cannot tell that from a loss. Of the 1,510 dropped terms: 1,441 in
 `<front>` (#230), 66 in a `<body>` float (#124's container), 3 in `<back>`
 with no routable prose.
+
+**Three counts close on both artifacts, which is the check worth copying.**
+The markup walk's term count, the fold counter and the drop counter agree
+exactly once the empty terms are set aside: 12,667 + 1,510 = 14,177 = 14,186
+− 9 served, and 142,855 + 10,394 = 153,249 = 153,256 − 7 archive. A partition
+that sums to its own denominator is what a table of counters owes, and it is
+the same obligation #224's per-container rows had.
 
 **Mutation: 11 mutants, 9 died first time, and both survivors were fixture
 gaps.** One is the lesson worth carrying: the `<term>` parent test's mutant is
