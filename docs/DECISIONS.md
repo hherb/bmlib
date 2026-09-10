@@ -881,6 +881,58 @@ populations above re-derivable at the next redraw — they are **not**
 re-derivable from the committed corpora today, which carry no row for those
 five counters.
 
+## fulltext — back-matter prose routes, and `<ref-list>` is the one refusal (#224)
+
+**Do not "reconcile" this with the Swift port, and do not widen it to
+`<ref-list>`.** `_append_prose`'s unsectioned branch reads
+`self._unsectioned_prose_is_the_articles()`, which is `in_body or (in_back and
+no <ref-list> ancestor)`. The Swift port in BioMedLit widens the same branch to
+a bare `inBody || inBack`, so a parity check finds a real difference here and
+it is deliberate on this side.
+
+**Why the refusal.** A `<ref>`'s `<note>` and a `<ref-list>`'s own `<p>` are
+bibliography apparatus, not article prose. Sampled from Europe PMC's OA
+package `PMC10030002_PMC10040000.xml.gz` they read *"Faculty Opinions
+Recommendation"* ten times over in one article, *"Papers of special note have
+been highlighted as: • of interest"*, bare DOI fragments, and a chemistry
+paper's supporting-information note attached to the reference it belongs to.
+Appended to `body_sections` each becomes a paragraph of an article that never
+carried one — a corruption where the alternative is a blank, which is the
+preference #116 and #162 already settled here. And #150 is the issue that puts
+a note-only `<ref>` where it belongs: routing it into the prose now would leave
+its content misfiled rather than missing, and its symptom invisible.
+
+**What it costs**: 191 paragraphs in 39 of 8,117 served articles (0.47% of the
+40,645 the change reaches), 1,354 in 307 of 97,909 archive ones (0.25%).
+
+**Nothing else is refused, and that is not an oversight.** Every other
+container here already routes this way *inside* `<body>` — a `<def-list>`'s
+`<def><p>` in a body `<sec>` reaches that section today — so refusing one in
+`<back>` would make identical markup mean two different things depending on
+where the publisher put it. `<glossary>` is the largest such population
+(10,693 served, 113,444 archive) and is routed for exactly that reason, even
+though its `<term>` is dropped on the way through, which is its own filed
+defect rather than an argument for dropping the definition too.
+
+**It is an ancestor test on `element_stack`, not `in_ref_list`.** JATS permits
+a `<ref-list>` inside a `<ref-list>`; the flag is a bare boolean the inner
+close clears, and it would then re-admit the outer list's remaining apparatus
+— #115 one element family over. Pinned by
+`test_a_nested_reference_list_is_refused_to_its_end`.
+
+**The strict-ancestor slice is prospective**, like `_inside_mixed_citation`'s.
+`_append_prose` is reached from the `<p>` and `<disp-formula>` arms only, so
+the excluded element is never the `<ref-list>` being tested for: dropping the
+slice survives the whole suite, and it was the one survivor of this change's
+eight-mutant sweep. Kept so a third caller does not inherit a rule nobody
+restated.
+
+**`has_body` is untouched and must stay untouched.** `body_paragraph_count`
+counts `<body>` prose alone, so a front-matter-plus-back-matter document is
+still body-less and `FullTextService` still holds it back rather than caching
+it. `test_back_matter_alone_is_still_not_a_body` is the guard; the mutant that
+counts back paragraphs dies there.
+
 ## fulltext — an exhibit with no `<label>` gets no fallback search (#162)
 
 **Do not add a descendant search when an exhibit carries no direct-child

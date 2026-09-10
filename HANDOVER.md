@@ -1,13 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-10. **0.10.0 is released and on PyPI**; thirty-one
+_Last updated: 2026-09-10. **0.10.0 is released and on PyPI**; thirty-two
 changes sit unreleased, three of them instrument-only. All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Thirty-one changes, fourteen of them `fulltext` JATS fixes filed within days
+Thirty-two changes, fifteen of them `fulltext` JATS fixes filed within days
 of each other — whoever cuts the next release should describe those together.
 **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is kept here**,
 because the version number answers the API question and never that one. Three
@@ -29,6 +29,18 @@ image), **#147** (prose and cached HTML for 68 of 880 articles, and a LaTeX
 preamble out of every table cell), **#162** (cached HTML for 83 of every 997
 recent articles), **#123/#125/#130** (`body_sections`, about one recent
 article in ten), **#127**, **#120/#140**, **#129**.
+
+**#224 is now the largest of them by population, and the only one measured on
+both renditions.** Unsectioned `<back>` prose — `<ack>`, `<notes>`,
+`<fn-group>`, `<app>`, `<glossary>`, `<bio>` — used to be dropped, and 5,992
+of 8,117 served articles (73.8%) carry some. Diffed against `main` over all
+8,118 articles of `PMC10030002_PMC10040000.xml.gz`: prose moves in 5,989
+(73.8%) and **every move is an insertion** — 40,341 paragraphs and 5.91 MB
+gained, 0 lost, 0 altered — `body_sections` gains 6,977 and `html_content`
+moves in all 5,989, so **a downstream holding cached full text must
+re-fetch**. `has_body`, `figures`, `.tables`, `references` and
+`abstract_sections` move in **0**, which is the invariant the fix is built
+around rather than a happy result.
 
 **Eleven move stored *transparency* values.** Two are large enough that **any
 downstream holding stored transparency results should recompute them**:
@@ -126,7 +138,19 @@ a `.get()` at all, so the fix as described leaves five. **State a blast radius
 from a diff, not from the
 call graph**: PR #148 reasoned soundly from a false premise, and four review
 agents missed what two parses over 880 articles showed in minutes; `gained/lost`
-is blind to the commoner case, a value that changed in place.
+is blind to the commoner case, a value that changed in place. **And the diff's
+own predicate is a claim to check** — #224's first cut asked whether `main`'s
+paragraphs were a *prefix* of the branch's and reported 2,324 of 5,989 articles
+as "altered", when the change inserts in the *middle* (loose `<ack>` prose
+flushes ahead of a back `<sec>`); the honest test is *subsequence*, and it
+reads 5,989 of 5,989. A metric that alarms is as wrong as one that flatters.
+**A committed corpus is not the only honest population**: #224's is two named
+public artifacts at 8,117 and 97,909 articles against the committed corpora's
+997 and 1,000 — bigger, re-derivable by any reader, and the precedent #146/#149
+and #147 set — but nothing in the suite re-derives it, which is the trade to
+state rather than to skip. **A survey can refuse part of a remedy** rather than
+only sizing it: #224's issue proposed the ambient `in_body or in_back`, and the
+draw is what found the `<ref-list>` apparatus that widening would misfile.
 
 *Rules and their neighbours.* When a rule replaces a guard, ask what else that
 guard was holding. **A guard whose reason moves needs its comment moved with
@@ -152,7 +176,11 @@ draw and applied it to a PMID that does not resolve. **And a survivor can be a
 gap in the *fixtures* rather than in the code** — the one equivalent mutant
 here exposed that `len(root) == 0` had nothing separating it from a record set
 carrying a non-article child. A
-detector must report what it *checked*, not what it concluded. **A status enum
+detector must report what it *checked*, not what it concluded. **When a fix
+takes a counter's only measured population, the counter needs a test of its own
+or it goes vacuous the same day** — #224 routed every `<back>` formula
+`formulas_dropped` had ever counted, leaving #177's latent float shape (0
+measured) as the whole of it. **A status enum
 member is a stored claim**, so one covering several causes puts words in a
 third party's mouth (#187/#190/#191, `NOT_SERVED` for a bmlib bug, a 503 and
 an empty 200; #193, `NOT_ATTEMPTED` for an outage). **And before arguing about
@@ -260,150 +288,90 @@ outside the repo's own PR chain, so the census read four short. Also, a mutation
 harness restoring with `git checkout -- <file>` deletes whatever is uncommitted
 in it.
 
-## This session: #218 and #206, the two silent steps
+## This session: #224, the first defect filed from outside the chain
 
-Both are library-level, both had a measured population waiting from a sampler
-run — #218's from **2026-09-09**, #206's from 2026-09-08 — and both had the
-same shape: a step that costs the analysis something and says nothing. **The full argument is in `CHANGELOG.md`
-and `docs/DECISIONS.md`**; what follows is only what a next session needs.
+**The only open issue that lost content the document carries, and it is
+answered.** `_append_prose`'s unsectioned branch was gated on `in_body` alone,
+so a `<p>` sitting directly in `<ack>`, `<notes>`, `<fn-group>`, `<app>`,
+`<glossary>` or `<bio>` reached nothing — which is where funding
+acknowledgements and competing-interest statements live. The full argument is
+in `CHANGELOG.md`, `docs/DECISIONS.md` and at the call site; what follows is
+what a next session needs.
 
-**#218 — one branch was three populations, and a live probe redrew all three.**
-`_parse_pubmed_signals` returned empty signals in silence for a body that
-parses and carries no `PubmedArticle`, and that was the *majority* outcome of
-the draw that sized it, 50 of 60 served bodies on **2026-09-09**. That date is
-the 09-09 run and not the 09-08 one: the `no-citation` counter did not exist
-until then, and the earlier run reported these same bodies as plain `xml`,
-which is the defect that created it — quoting the figure against the earlier
-draw is `_COUNTER_DEFINITIONS_VERSION`'s own scar, and PR #225's review caught
-it in six places. The cheap reading of the issue
-is one DEBUG line, and it would have been #191 exactly — the draw is
-Bookshelf-heavy, so it licenses a quiet level for **book records** and says
-nothing about the rest. Probed live on 2026-09-10:
+**The survey the issue asked for was run before a line was changed, on both
+renditions.** Served: 5,992 of the 8,117 articles of Europe PMC's
+`PMC10030002_PMC10040000.xml.gz` (73.8%), 40,645 paragraphs, 5.95 MB. Archive:
+82,093 of the 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`
+(83.8%), 543,637 paragraphs. By the `<back>` child, served / archive:
+`<fn-group>` 13,728 / 148,284, `<notes>` 10,287 / 192,085, `<glossary>` 10,693
+/ 113,444, `<ack>` 4,891 / 61,322, `<app-group>` 639 / 24,621, `<bio>` 216 /
+2,391. **Neither corpus is committed here** — both are named public artifacts,
+the precedent #146/#149 and #147 set — and the committed sampler carries no
+counter for this, which is the thing left undone (below).
 
-- A set whose records are **all** `<PubmedBookArticle>` is **DEBUG**. Declined
-  by name, and **0 of 60**
-  `statpearls[book]` records and **0 of 100** drawn from `pubmed books[filter]`
-  carry a `<GrantList>`, `<CoiStatement>` or `<DataBankList>` — which settles
-  the issue's second question in favour of the line and nothing else. The old
-  comment asserted the first two from the DTD and conceded the third
-  unmeasured. **Children, and every child** — a descendant search matched a
-  book anywhere and was tried first, so a legal mixed set (`PubmedArticleSet`
-  is `(PubmedArticle | PubmedBookArticle)*`) reported an article record at the
-  quiet level on its neighbour's strength, which is #191 inside #218's own fix
-  (PR #225's review).
-- An **empty `<PubmedArticleSet>`** at HTTP 200 — 205 bytes, what PMID
-  999999999 returns — is **WARNING**. NCBI holds no record for an identifier
-  bmlib was handed or derived, which is a fact about the identifier.
-- Anything else that parses is **WARNING**, naming its root. A
-  `<DeleteCitation>`-only set lands here, and it is the fixture separating
-  `len(root) == 0` from its own widening.
+**The issue's suggested fix was the ambient widening, and the survey refused
+part of it.** `in_back` alone also takes a `<ref-list>`'s own `<p>` and a
+`<ref>`'s `<note><p>`, which sampled from that package read *"Faculty Opinions
+Recommendation"* ten times in one article, *"Papers of special note have been
+highlighted as: ..."* and bare DOI fragments. Appended to `body_sections` each
+is a paragraph the publisher never wrote there — a corruption where the
+alternative is a blank, #116's and #162's own preference — and #150, the issue
+that puts a note-only `<ref>` where it belongs, would be left with its content
+misfiled rather than missing and its symptom invisible. So `<ref-list>` is
+refused and **nothing else is**, because every other container already routes
+this way inside `<body>`: refusing one only in `<back>` would make identical
+markup mean two things depending on where the publisher put it. 191 of 40,645
+served (0.47%), 1,354 of 543,637 archive (0.25%). It is an **ancestor** test on
+`element_stack` rather than the `in_ref_list` flag, which a nested `<ref-list>`'s
+close clears — #115 one element family over.
 
-**The issue's third population belongs to a different request, which is
-sharper than the "refuted" a first cut wrote.** `<eFetchResult><ERROR>` at HTTP
-200 is real — an evicted **history session** efetch serves it, reproduced live,
-and it is why `publications/fetchers/pubmed.py` refuses a non-record-set root.
-`transparency` fetches **by id**, where the same probe read 400 for a malformed
-id list and an empty record set for an unknown id. Two comments, two requests:
-do not reconcile them. Two error classes on one shape is not every class, so
-the unrecognised-document branch is what takes one if it arrives at 200.
+**`has_body` is the invariant the change is built around.**
+`body_paragraph_count` still counts `<body>` prose alone, so a front-matter-
+plus-back-matter document is still body-less and `FullTextService` still holds
+it back rather than caching it and going no further. The mutant that counts
+back paragraphs dies in `test_back_matter_alone_is_still_not_a_body`.
 
-**#206 — the cap and the unanswered accession are one question.** `answered`
-was a `bool` set on the first accession that replied, so one reachable *"no
-results"* outvoted any number of unreachable ones; and `MAX_TRIAL_IDS_TO_CHECK`
-sliced an unbounded list with no line, no indicator and no test of the
-analyzer's truncation (`tests/test_api_failure_sampler.py` did reference the
-constant; the wider *"nothing in the suite"* first written was false). Either
-way
-*"Registered trial without posted results"* was stored about a paper whose
-remaining accessions bmlib never reached. `TrialResultsStatus.PARTLY_ANSWERED`
-is both causes, sharing `_INDICATOR_RESULTS_NOT_CHECKABLE` on the argument that
-already made `REQUEST_FAILED` and `NOT_CHECKABLE` share it, and on the
-**unanswered** side of the partition — which is the load-bearing half, since
-`trial_results_compliant` is what both downstreams render. Four things to carry
-forward:
+**Blast radius diffed, not reasoned** — and the first metric was wrong in a way
+worth carrying: an *additive prefix* test read 2,324 of 5,989 articles as
+"changed in place", because loose `<ack>` prose flushes ahead of a back `<sec>`
+and so **inserts in the middle** rather than appending. The honest test is
+whether `main`'s paragraph list is a **subsequence** of the branch's, and it is
+in **5,989 of 5,989** — 40,341 paragraphs and 5.91 MB inserted, 0 lost, 0
+altered. `body_sections` gains 6,977, `html_content` moves in all 5,989, and
+`has_body`, `figures`, `.tables`, `references` and `abstract_sections` move in
+**0**.
 
-- **The measurement reversed the issue's own emphasis.** A partly-answered
-  check is 1 of 30 and the cap truncates **8 of 30**, so the half that was
-  entirely silent is the larger one. **Read the 1 as a floor**: that draw
-  predates PR #213's correction of `TrialCheck.answered`, which counted HTTP
-  200 where bmlib counts a non-`None` return and so deflated exactly that row,
-  while the truncation count derives from `found > probed` and is unaffected —
-  which is why the comparison rests on the 8. That sizes how *often* the cap
-  bites and **not by how much**, so it is no argument for raising the
-  constant; the sampler records each paper's count before the cap, and a run
-  would answer it with one more report line.
-- **The schema addition was free, not cheap.** `trial_results_status` is
-  itself unreleased (#198), so this rides the recompute #184 and #194 already
-  force. The same rule that overturned #198's own deferral.
-- **The log splits the two causes; the stored field does not.** Raising the
-  cap is an action, so the cap gets a WARNING naming the counts **and the
-  dropped accessions** — the last being what raising the cap recovers, and
-  what gave the line a subject it had lacked. Four of the five ways an asked
-  accession fails to answer already have a line from `_request`; the fifth,
-  `_json_bool` refusing a wrong-typed value, does not, and the comment
-  claiming otherwise licensed that absence until PR #225's review narrowed it.
-  Filed as **#226**. The line is gated on the walk
-  not concluding `POSTED` — a posted result settles the paper — and
-  deliberately **not** on the resulting status, or a truncation hides behind
-  an outage.
-- **One existing test asserted the reverse and is reversed with a comment
-  saying so.** `test_one_refusal_does_not_hide_another_trials_posted_results`
-  pinned *"one accession answered, and its answer was 'no' — so the finding
-  stands"*, which is the reading the issue is about. A session finding it
-  should read the comment, not restore it.
+**The larger half of #177 is answered by this**, which that issue's own text
+anticipated: its 192 `<back>` display formulas in 23 of 97,909 articles now
+reach the article. Its second, latent shape stays open (a formula inside a
+float with no `<caption>` open, 0 measured) and **took a test of its own**,
+because #224 removed the only population the old one exercised and
+`formulas_dropped` would otherwise have gone quietly vacuous. The test that
+pinned the containment is reversed with a comment naming both issues.
 
-**Mutation: 22 mutants, 21 die.** The one survivor prints `root.tag` where the
-code prints `_PUBMED_RECORD_SET_ROOT`, and on that branch the two are the same
-string — provably equivalent, and it says so at the site; its premise is now
-*pinned* by a fixture rather than only argued, which is PR #225's review.
+**Mutation: 8 mutants, 7 die.** The survivor is the strict-ancestor slice
+`element_stack[:-1]`, and it is **provably equivalent**: `_append_prose` is
+reached from the `<p>` and `<disp-formula>` arms only, so the excluded element
+is never the `<ref-list>` being tested for. Recorded at the site as prospective,
+which is what `_inside_mixed_citation`'s own slice already says of itself.
 
-**PR #225's review found six further defects, and four mutants that survived
-the whole suite.** Carry the shape forward rather than the list: every one was
-a claim the change made about itself that nothing checked.
+**Two findings were filed rather than fixed.** **#228**: a `<def-list>`'s
+`<term>` reaches no handler, so every definition renders without the word it
+defines — pre-existing, true of a body `<def-list>` too, and this change
+multiplies how often a reader sees it (10,693 back-matter definitions served,
+113,444 archive). A real article now renders *"messenger RNA / odds ratio /
+reverse-transcriptase polymerase chain reaction"* with neither the
+abbreviations nor a heading, the heading being a `<def-list>`'s `<title>` that
+#125 deliberately drops. And **bmlibrarian_lite #204**, the other end of the
+`<ref-list>` divergence: the Swift port takes the apparatus, and both sides now
+carry a note so a later parity check does not "reconcile" them.
 
-- **A repeated accession manufactured #206's own false claim in the mirror.**
-  `<DataBankList>` is `(DataBank+)`, so one paper naming one trial twice is
-  well-formed input, and until PR #225 four such entries reported a truncation
-  that lost nothing and retracted a `NOT_POSTED` ClinicalTrials.gov had
-  answered for every distinct trial. Deduplicated at the parser, not the walk,
-  because the field is what the sampler's own truncation count reads;
-  `_find_trial_ids` has deduplicated since #202, so the two producers had
-  disagreed and only the un-deduplicated one could reach the new branch.
-- **Four surviving mutants**: deleting the `root.tag ==
-  _PUBMED_RECORD_SET_ROOT` half of the empty-set guard (which let an empty
-  `<eFetchResult/>` be reported as an empty `PubmedArticleSet` NCBI never
-  sent), emptying `_PUBMED_SIGNALS_LOST`, passing `""` for the `pmid` at the
-  one call site — so the *entire point* of the signature change was unpinned
-  end to end — and substituting `len(ct_ids)` for `dropped` in the new
-  WARNING. All die now.
-- **The first cut of the constant's test asserted `_PUBMED_SIGNALS_LOST in
-  message`**, which the mutant satisfies vacuously. That is this repository's
-  own *"a log assertion must be unique to the line"*, turned on the assertion
-  written to enforce it — assert the literal, and pin the constant separately.
-- **The merge argument for `PARTLY_ANSWERED` was corrected.** *"Would
-  re-running change this?"* **does** discriminate the two causes (`no` for the
-  cap, `yes` for an unanswered accession), so the merge rests on their
-  **co-occurring** — `unestablished` is a sum — and not on the criterion.
-- `PARTLY_ANSWERED` gained the `analyze()`-level test every other member had,
-  and `is_answered` the generic partition guard `FullTextStatus` has carried
-  since #161. Without it, moving the member to the wrong side reddened one
-  test in another class; it now reddens three.
-
-**Not measured, and worth saying**: how far the trial-accession distribution
-runs past three; whether any efetch error class reaches HTTP 200 for an
-id-based request; how often a paper repeats an accession, the shape now
-deduplicated on the DTD's own reading rather than on a count; and whether an
-empty `<PubmedArticleSet>` is common enough to justify its WARNING, the
-2026-09-09 draw not splitting the three populations apart (its `no-citation`
-counter is deliberately one value — widening it would restate the analyzer's
-predicates inside the instrument).
-
-**Two findings were filed rather than fixed**, both out of these issues' scope
-and both the same rule one step over: **#226**, a wrong-typed `hasResults`
-refusing a results check with no line at any level while `REQUEST_FAILED`
-absorbs it — #209's residual at the one site where it decides a stored status;
-and **#227**, the PubMed step that was never asked (no PMID) leaving no line
-and, unlike the full-text step's `NOT_ATTEMPTED`, no stored trace either.
+**Not measured, and worth saying**: how often a *body* `<def-list>` loses its
+terms (#228 counts back matter only); whether the untitled back-matter section
+should instead carry the `<ack>`/`<app>` heading, which would need a model for
+those containers and is not filed; and what a `<glossary>` costs a downstream
+reading `body_sections` as prose, since a wall of term-less definitions is the
+one part of this gain that is not obviously an improvement.
 
 ## Current state
 
@@ -452,14 +420,15 @@ and, unlike the full-text step's `NOT_ATTEMPTED`, no stored trace either.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **127 lines carry one** — 46
-  `ROADMAP.md` rows and 81 spots across `docs/manual/transparency.md` (47),
-  `fulltext.md` (18), `publications.md` (13) and `templates.md` (3).
+  `ROADMAP.md` are promoted at release time; **131 lines carry one** — 47
+  `ROADMAP.md` rows and 84 spots across `docs/manual/transparency.md` (48),
+  `fulltext.md` (20), `publications.md` (13) and `templates.md` (3).
   Recounted 2026-09-10 on this branch as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md`, so it counts *lines* and
   not markers; the figure is measured, not maintained, so recount rather
-  than adjust it — the previous handover's 109 was itself four short of what
-  `main` held (42 + 37 + 18 + 13 + 3 = 113), which is what "recount" means. Grep case-insensitively for `unreleased`, not for
+  than adjust it — the previous handover's 127 was one short of what `main`
+  then held, and the one before that four short, which is what "recount"
+  means. Grep case-insensitively for `unreleased`, not for
   `(unreleased)`: three of 0.10.0's were spelled `*(unreleased, #99)*` and
   `(changed, unreleased — …)`. Write the marker bare, never with a guessed
   version number. Markers inside `docs/superpowers/plans/` are historical records
@@ -475,32 +444,39 @@ and, unlike the full-text step's `NOT_ATTEMPTED`, no stored trace either.
 
 ### Open GitHub issues
 
-**Forty-three open** as this file is written, **forty-one once this branch
-merges and its two are closed by hand** (`gh issue list --state open --limit
-200`, 2026-09-10 — the limit matters, `gh` pages at 30 and the bare command
-reports a page size as a total): #86, #92, #94, #103, #124, #128, #137, #142,
-#143, #144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177,
-#178, #179, #181, #186, #196, #197, #200, #201, #204, #206, #207, #209, #210,
-#212, #214, #215, #217, #218, #221, #222, #223, #224. This branch answers
-**#206** and **#218**. **#188 and #216 were closed by hand at the start of
-this session** — PR #219 answered both, said in its own body that it carried no
-closing keyword deliberately, and merged without anyone doing so; the process
-rule below caught its **fourteenth** instance. #211, #199, #198/#202/#203,
-#193/#194, #187/#190/#191, #184, #183 and #161 went the same way before it.
-**The previous census predicted thirty-nine and the repo holds forty-three**,
-because PR #219's own review filed #220-#223 after that line was written and
-#224 arrived from outside the chain entirely. Count, do not project.
+**Forty-four open** as this file is written, **forty-three once this branch
+merges and #224 is closed by hand** (`gh issue list --state open --limit 200`,
+2026-09-10 — the limit matters, `gh` pages at 30 and the bare command reports a
+page size as a total): #86, #92, #94, #103, #124, #128, #137, #142, #143, #144,
+#145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179,
+#181, #186, #196, #197, #200, #201, #204, #207, #209, #210, #212, #214, #215,
+#217, #221, #222, #223, #224, #226, #227, #228. This branch answers **#224**
+and the larger half of **#177**, and files **#228**. **#206 and #218 were
+closed by hand at the start of this session** — PR #225 answered both and said
+in its own body that it carried no closing keyword deliberately, then merged
+without anyone doing so; the process rule below caught its **fifteenth**
+instance, and the fourteenth (#188/#216, PR #219) was one session earlier.
+#211, #199, #198/#202/#203, #193/#194, #187/#190/#191, #184, #183 and #161
+went the same way before those. **The previous census predicted forty-one and
+the repo held forty-five**, because #226 and #227 were filed by the very
+session writing that line and #228 came from this one. Count, do not project.
 
-**#224 is the freshest and the only one filed from outside a PR review** — by
-the maintainer, from a JATS parity check against the Swift port in BioMedLit,
-and it is the one open issue that **loses content the document carries**:
-`_append_paragraph` routes unsectioned back-matter prose only when
-`self.in_body`, so `<ack>`, `<notes>` and `<fn-group>` children reaching
-`<back>` directly are dropped — which is where funding acknowledgements and
-competing-interest statements live, so `transparency` is blind to declarations
-the article did make. The Swift side routes both and its comment names that
-consequence. The suggested fix is three lines; the issue asks for a live survey
-before sizing it, per this repo's own convention.
+**#177 is narrowed rather than closed.** Its `<back>` half — 192 display
+formulas in 23 of 97,909 articles rendered and then dropped — is what #224's
+routing decision takes, and the issue's own text named that remedy. What is
+left is its second, latent shape: a formula inside a `<fig>`/`<table-wrap>`
+with no `<caption>` open, measured 0 in both corpora, which now carries its own
+test.
+
+**#228 is this session's**, and it is the residue of #224 rather than a new
+class: a `<def-list>`'s `<term>` reaches no handler, so a definition list
+renders as definitions with no terms. Pre-existing in `<body>` and multiplied
+by #224 in `<back>` (10,693 served definitions, 113,444 archive). It is filed
+rather than fixed because the shape is a modelling decision — one paragraph per
+`<def-item>`, as #124 proposes for a footnote marker, or a model on
+`JATSBodySection` — and because the body population is not measured. It joins
+**#124** and **#150** as the issues that lose content the document carries;
+#224 was the fourth and is answered.
 
 **#220-#223 are PR #219's leavings**, all instrument-side: #220 is already
 answered; **#221** is an `id-not-an-address` that serves, which would refute
@@ -516,39 +492,53 @@ rate a log level is set from; **#217** is `ProbeOutcome.cause` being stored and
 then re-parsed by its own invariant.
 
 Every open issue was found by review or measurement rather than by a failing
-test, and **#224 is the first that loses records outright**. Beside it, **#124**
-loses an exhibit's footnotes, **#150** renders a note-only reference as an empty
-bullet, and **#128** would lose every figure image in a document binding XLink
-to another prefix.
+test. **#224 was the first that lost content outright and is answered**; what
+still loses content the document carries is **#228** (a `<def-list>`'s terms),
+**#124** (an exhibit's footnotes), **#150** (a note-only reference as an empty
+bullet) and **#128** (every figure image in a document binding XLink to another
+prefix).
 
 **Three still have a measured-empty population and want closing rather than
 building**: #204 and #207 measure 0 of 124 each, #210 measures 0 of 55, and a
 zero is an argument for a recorded residual — #210's remedy is its comment,
-which states the conflation and then performs it. **That family is otherwise
-done**: #206 was the one with work left and this branch takes it. **#212 blocks
-nothing but qualifies every share here** — it is why the sampler exits 1 on a
-clean run. Three options, three different populations: drop the PMC strata,
-condition each query on the record being analysable, or page each stratum until
-it fills.
+which states the conflation and then performs it. **#212 blocks nothing but
+qualifies every share in this file** — it is why the sampler exits 1 on a clean
+run. Three options, three different populations: drop the PMC strata, condition
+each query on the record being analysable, or page each stratum until it fills.
 
-**The obvious next work is #224**, on three counts: it is the only open issue
-that loses content, its remedy is named and small, and it has a cross-project
-witness in the Swift port rather than resting on one reading of the spec. What
-it wants first is the survey the issue asks for — `<ack>`/`<notes>`/`<fn-group>`
-carrying a direct `<p>` in `<back>`, over the two committed corpora, which
-`scripts/sample_jats_exhibits.py` does not currently count. Of the rest:
-**#186** is the last of the full-text-refusal family and is a decision rather
-than a fix (below); **#178** is the one open *question*; **#196** is a latent
-second site for the #194 class; **#197** mechanises a grouping that exists in
-prose; **#200**, **#201** and #214/#215/#217/#221-#223 are shape. **The lesson
-of #194 is worth acting on rather than only recording**: it was a live-only
-defect the whole suite missed — no test in it makes a live request — found the
-first time an instrument presented bmlib's real identity to a real remote. It
-has now paid three times: #216's own first run found a rule wrong in the change
-that added it, and this session's probe of NCBI redrew all three of #218's
-populations and found the fourth claim about them belonged to a different
-request. Nothing in `fulltext/` has ever been probed that way, so the *class*
-is still open.
+**The obvious next work is the JATS content family, and #228 is its head** —
+it is this session's own residue, its population is measured on both
+renditions, and it wants a modelling decision rather than effort: one paragraph
+per `<def-item>` (the shape #124 proposes for a footnote marker) or a model on
+`JATSBodySection`. Take it with **#124** and **#150**, which are the same
+question about three different containers, and settle the shape once.
+
+**What #224 left undone is instrument-side, and it is the honest cost of this
+session.** The survey behind it was run from a scratch script over two named
+public artifacts, not from `scripts/sample_jats_exhibits.py`, which carries no
+counter for unsectioned `<back>` prose. That is the precedent #146/#149 and
+#147 set, and it is weaker than a committed corpus: `TestTheCitedPopulationsAreWhatTheCorporaHold`
+cannot re-derive any figure in the #224 entry. Adding the counter is a
+generation on that sampler **plus a full live redraw of both committed
+corpora** (~50 min, and it moves every figure the two corpora pin), so it is a
+session of its own rather than a tail on this one — and worth weighing against
+simply re-running the scratch survey, since the package draw is 8,117 and
+97,909 articles against the corpora's 997 and 1,000.
+
+Of the rest: **#186** is the last of the full-text-refusal family and is a
+decision rather than a fix (below); **#178** is the one open *question*;
+**#196** is a latent second site for the #194 class; **#197** mechanises a
+grouping that exists in prose; **#200**, **#201** and
+#214/#215/#217/#221-#223 are shape. **The lesson of #194 is worth acting on
+rather than only recording**: it was a live-only defect the whole suite missed
+— no test in it makes a live request — found the first time an instrument
+presented bmlib's real identity to a real remote. It has now paid three times:
+#216's own first run found a rule wrong in the change that added it, and the
+previous session's probe of NCBI redrew all three of #218's populations and
+found the fourth claim about them belonged to a different request. Nothing in
+`fulltext/` has ever been probed that way, so the *class* is still open — and
+#224 is a reminder that the parser's own populations can be had from named
+public artifacts without a live probe at all.
 
 **Count them against the repo before trusting that number.** The line has been
 wrong in several sessions, and an issue closed as COMPLETED without being fixed
@@ -560,9 +550,12 @@ filing #158/#160/#161; **#160** → PR #182, filing #183; **#183**/**#161** → 
 #209/#210/#211; **#211** → PR #213, filing #212 (from the instrument's own
 first live run rather than from review, which was a new link in the chain) and
 #214-#217; **#216/#188** → PR #219, filing #218 from its own run and
-#220-#223 from review — of which this branch answers **#218** and **#206**.
+#220-#223 from review; **#218/#206** → PR #225, filing #226 and #227 from its
+own review — of which this branch answers **#224** and files **#228**.
 **#224 is the first link from outside the chain**: filed by the maintainer from
-a parity check against the Swift port, not by any PR here. Older provenance is in `gh issue view <n>` and
+a parity check against the Swift port, not by any PR here, and **#228 is the
+first filed from a measurement rather than a review** — the survey #224 needed
+turned it up. Older provenance is in `gh issue view <n>` and
 `CHANGELOG.md`. (#149 and #152 were filed and fixed inside one
 PR, so neither ever appeared as open work.)
 

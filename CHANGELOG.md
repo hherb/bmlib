@@ -704,6 +704,83 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **Unsectioned back-matter prose reaches the article** (issue #224, filed by
+  the maintainer from a JATS parity check against the Swift port in BioMedLit
+  — the first open issue here not filed by a PR reviewing an earlier fix, and
+  the first that loses content the document carries).
+
+  `_append_prose`'s unsectioned branch was gated on `in_body` alone. `<sec>`
+  is optional in `<back>` as well, and `<ack>`, `<notes>`, `<fn-group>`,
+  `<app>`, `<glossary>` and `<bio>` routinely hold a `<p>` directly — which is
+  where funding acknowledgements and competing-interest statements live, so
+  every one of them was dropped. The Swift port routes both and its own
+  comment names the same consequence.
+
+  **The population is the largest this module has measured, and it was
+  measured on both renditions rather than reasoned about.** Over the 8,117
+  served articles of Europe PMC's named OA package
+  `PMC10030002_PMC10040000.xml.gz`, **5,992 (73.8%) carry at least one such
+  paragraph** — 40,645 paragraphs, 5.95 MB of prose. Over the 97,909 articles
+  of PMC's `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` (the archive
+  rendition), **82,093 (83.8%)** and 543,637 paragraphs. By the `<back>` child
+  that owns them, served / archive: `<fn-group>` 13,728 / 148,284, `<notes>`
+  10,287 / 192,085, `<glossary>` 10,693 / 113,444, `<ack>` 4,891 / 61,322,
+  `<app-group>` 639 / 24,621, `<bio>` 216 / 2,391. Neither corpus is committed
+  here, so both are quoted from their named public artifacts rather than
+  re-derived by a test.
+
+  **`<ref-list>` is the one refusal, and it is a misfiling rule rather than a
+  taste.** A `<ref>`'s `<note>` and a `<ref-list>`'s own `<p>` are bibliography
+  apparatus: sampled from the served package they read *"Faculty Opinions
+  Recommendation"* ten times in one article, *"Papers of special note have
+  been highlighted as: ..."*, and bare DOI fragments. Appended to
+  `body_sections` they become paragraphs of an article that never carried
+  them — a corruption where the alternative is a blank, which is this module's
+  own preference (issues #116, #162) — and issue #150, which puts a note-only
+  `<ref>` where it belongs, would then be left with its content misfiled
+  rather than missing and its symptom invisible. 191 paragraphs in 39 of the
+  8,117 served articles (0.47%), 1,354 in 307 of the 97,909 archive ones
+  (0.25%). It is also the one place this module and the Swift port
+  deliberately differ, filed there so a later parity check does not
+  "reconcile" it.
+
+  Nothing else is refused, because every other container here already routes
+  this way *inside* `<body>` — a `<def-list>`'s `<def><p>` in a body `<sec>`
+  reaches that section today — so refusing one in `<back>` would make the same
+  markup mean two different things depending on where the publisher put it.
+
+  An **ancestor** test on `element_stack` rather than the `in_ref_list` flag:
+  JATS permits a `<ref-list>` inside a `<ref-list>`, and the flag is a bare
+  boolean the inner close clears, which would re-admit the outer list's
+  remaining apparatus — issue #115 one element family over.
+
+  **`has_body` is untouched, and that is the load-bearing half.**
+  `body_paragraph_count` still counts `<body>` prose alone, so an article that
+  is front matter plus back matter is still body-less and `FullTextService`
+  still holds it back rather than caching it and going no further. Diffed
+  against `main` over all 8,118 articles of the served package: `has_body`,
+  `figures`, `tables`, `references` and `abstract_sections` move in **0**
+  articles.
+
+  **Blast radius, measured by diffing a corpus rather than argued from the
+  call graph.** Prose moves in **5,989 of 8,118 articles (73.8%)**, and in
+  every one of them `main`'s paragraph list is a **subsequence** of this
+  branch's — 40,341 paragraphs and 5.91 MB inserted, **0 lost, 0 altered**.
+  `body_sections` gains 6,977 entries and `html_content`, which is what
+  `FullTextService` caches, moves in the same 5,989. A downstream holding
+  cached full text should re-fetch.
+
+  **The larger half of issue #177 is answered by this.** That issue contained
+  a rendered `<disp-formula>` in an unsectioned `<back>` — 192 in 23 of the
+  97,909 archive articles — as `formulas_dropped`, and named the remedy it
+  deliberately did not take: *"giving `<back>` prose an implicit section the
+  way `<body>` has one"*. Those formulas now reach the article, and the test
+  that pinned the containment is reversed with a comment saying which issue
+  overturned it. What is left of #177 is its second, latent shape — a formula
+  inside a `<fig>`/`<table-wrap>` with no `<caption>` open, measured 0 in both
+  corpora — which now has a test of its own so the counter cannot go quietly
+  vacuous.
+
 - **A request whose answer is known before it leaves is not made** (issue
   #188, filed from PR #189's review and blocked until PR #213's instrument
   sized it).

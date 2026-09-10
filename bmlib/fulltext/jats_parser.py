@@ -1455,10 +1455,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.in_body = False
         self.in_back = False
         self.section_stack: list[_SectionBuilder] = []
-        # <sec> is optional inside <body>, so prose can arrive with an empty
-        # section_stack. It is collected here and flushed to body_sections at
-        # the next <sec> or at </body>, rather than pushed onto section_stack:
-        # a real <sec> opening afterwards would otherwise nest inside it.
+        # <sec> is optional inside <body> — and inside <back>, issue #224 —
+        # so prose can arrive with an empty section_stack. It is collected
+        # here and flushed to body_sections at the next <sec> or at </body>
+        # and </back>, rather than pushed onto section_stack: a real <sec>
+        # opening afterwards would otherwise nest inside it. One slot serves
+        # both, because </body> flushes before <back> opens, so body prose can
+        # never be joined to back matter.
         self.implicit_body_section: _SectionBuilder | None = None
         # Prose found inside <body>. Counted separately from body_sections
         # because back-matter sections land there too, so a non-empty
@@ -1646,13 +1649,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         "current_article_id_type",
         "current_xref_type",
         "current_xref_rid",
-        # Single-slot: unsectioned `<body>` prose accumulates here and is
-        # flushed at `</body>`. Left stranded, the article loses that prose
-        # outright and `has_body` stays True, because `body_paragraph_count`
-        # already counted it — a silent loss of a whole body in the shape this
-        # audit exists to catch. Covered today only because `in_body` is
-        # cleared on the adjacent line, which is an accident of layout rather
-        # than anything asserted.
+        # Single-slot: unsectioned `<body>` and `<back>` prose accumulates
+        # here and is flushed at `</body>` and `</back>` (issue #224). Left
+        # stranded, the article loses that prose outright — and for `<body>`
+        # prose `has_body` stays True, because `body_paragraph_count` already
+        # counted it, so it is a silent loss of a whole body in the shape this
+        # audit exists to catch. Covered today only because `in_body` and
+        # `in_back` are each cleared on the line after their flush, which is
+        # an accident of layout rather than anything asserted — and there are
+        # two such lines now, so the accident has to hold twice.
         "implicit_body_section",
     )
 
@@ -1975,7 +1980,72 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             return True
         if (self.in_body or self.in_back) and self.section_stack:
             return True
-        return self.in_body
+        return self._unsectioned_prose_is_the_articles()
+
+    def _unsectioned_prose_is_the_articles(self) -> bool:
+        """Whether prose arriving with no section open belongs to the article.
+
+        ``<sec>`` is optional in ``<back>`` as well as in ``<body>``, and the
+        elements that hold a bare ``<p>`` there are not spare matter:
+        ``<ack>``, ``<notes>``, ``<fn-group>``, ``<app>`` and ``<bio>`` are
+        where funding acknowledgements and competing-interest statements live.
+        The branch was gated on ``in_body`` alone, so every one of them was
+        dropped — issue #224, found by a JATS parity check against the Swift
+        port, whose own comment names the same consequence.
+
+        **The population is the largest this module has measured.** Over the
+        8,117 served articles of Europe PMC's named OA package
+        ``PMC10030002_PMC10040000.xml.gz``, 5,992 (73.8%) carry at least one
+        such paragraph — 40,645 paragraphs and 5.95 MB of prose. By the
+        ``<back>`` child that owns them: ``<fn-group>`` 13,728 (3,925
+        articles), ``<glossary>`` 10,693 (720), ``<notes>`` 10,287 (2,136),
+        ``<ack>`` 4,891 (4,358), ``<app-group>`` 639 (60), ``<bio>`` 216 (43).
+
+        **``<ref-list>`` is the one refusal, and it is a misfiling rule rather
+        than a taste.** A ``<ref>``'s ``<note>`` and a ``<ref-list>``'s own
+        ``<p>`` are bibliography apparatus: sampled from that package they
+        read *"Faculty Opinions Recommendation"* ten times in one article,
+        *"Papers of special note have been highlighted as: ..."*, and bare DOI
+        fragments. Appended to ``body_sections`` they become paragraphs of an
+        article that never carried them, which is the corruption this module
+        prefers a blank to (#116, #162) — and issue #150, which puts a
+        note-only ``<ref>`` where it belongs, would then be left with its
+        content misfiled instead of missing, and its symptom invisible. It is
+        191 paragraphs in 39 of the 8,117 articles (0.47% of the 40,645), so
+        the refusal costs little; it is also the one place this module and the
+        Swift port deliberately differ, so a later parity check must not
+        "reconcile" them.
+
+        Nothing else is refused. Every other container here already routes
+        this way *inside* ``<body>`` — a ``<def-list>``'s ``<def><p>`` in a
+        body ``<sec>`` reaches that section today — so refusing one in
+        ``<back>`` would make the same markup mean two different things
+        depending on where the publisher put it.
+
+        An **ancestor** test on ``element_stack``, for ``_inside_mixed_citation``'s
+        reason: the claim is inherited down the whole subtree, a ``<note>``
+        sitting inside a ``<ref>`` inside the list. Read from the stack rather
+        than from ``in_ref_list``, which is a bare boolean that a nested
+        ``<ref-list>``'s close clears — JATS permits the nesting, and the flag
+        would then re-admit the outer list's remaining apparatus, which is
+        #115 one element family over.
+
+        The slice excludes the element now closing, and that half is
+        **prospective, so do not read it as load-bearing** —
+        ``_inside_mixed_citation``'s own slice is the same shape and says the
+        same thing. ``_append_prose`` is reached from two arms, ``<p>`` and
+        ``<disp-formula>``, so the excluded element is never the
+        ``<ref-list>`` being tested for: dropping the slice survives the whole
+        suite (measured, and the one survivor of this change's eight-mutant
+        sweep). It is kept because it makes the test say what it means, and
+        because a third caller would otherwise inherit a rule nobody restated.
+
+        Returns:
+            ``True`` if the prose should open or extend the implicit section.
+        """
+        if self.in_body:
+            return True
+        return self.in_back and "ref-list" not in self.element_stack[:-1]
 
     def _append_prose(self, text: str, *, keep_empty: bool) -> None:
         """Route one run of prose to whatever the parse currently has open.
@@ -2020,13 +2090,24 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             if self.in_body and text:
                 self.body_paragraph_count += 1
             self.section_stack[-1].paragraphs.append(text)
-        elif self.in_body and text:
-            # An unsectioned <body> child. Empty paragraphs are dropped
-            # rather than opening a section, so a <body> holding nothing
-            # but whitespace stays body-less.
+        elif text and self._unsectioned_prose_is_the_articles():
+            # An unsectioned <body> or <back> child — <sec> is optional in
+            # both, and the predicate says which back matter is the article's
+            # (issue #224). Empty paragraphs are dropped rather than opening a
+            # section, so a <body> holding nothing but whitespace stays
+            # body-less and a <back> holding nothing but whitespace adds no
+            # untitled section to the rendered article.
             if self.implicit_body_section is None:
                 self.implicit_body_section = _SectionBuilder()
-            self.body_paragraph_count += 1
+            if self.in_body:
+                # <body> alone, because `has_body` is what stops
+                # `FullTextService` caching a body-less document and going no
+                # further. An article that is front matter plus back matter is
+                # not an article, however much acknowledgement prose it
+                # carries — so the counter answers "is there a body?" while
+                # `body_sections` answers "what did the document say?", which
+                # is why the two were separated in the first place.
+                self.body_paragraph_count += 1
             self.implicit_body_section.paragraphs.append(text)
 
     def _append_caption_text(self, text: str) -> None:
@@ -2063,12 +2144,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         builder.caption += text
 
     def _flush_implicit_body_section(self) -> None:
-        """Emit any pending unsectioned ``<body>`` prose as a body section.
+        """Emit any pending unsectioned ``<body>`` or ``<back>`` prose.
 
-        Called when a real ``<sec>`` opens and again at ``</body>``, so loose
-        paragraphs keep their position in document order. The section carries
-        no title — JATS gave it none, and inventing one would put a heading in
-        the rendered article that the publisher never wrote.
+        Called when a real ``<sec>`` opens and again at ``</body>`` and
+        ``</back>``, so loose paragraphs keep their position in document order
+        — a document's acknowledgements land ahead of the appendix section
+        that follows them, not after it. The section carries no title — JATS
+        gave it none, and inventing one would put a heading in the rendered
+        article that the publisher never wrote.
         """
         if self.implicit_body_section is None:
             return
@@ -2619,6 +2702,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self._flush_implicit_body_section()
             self.in_body = False
         elif name == "back":
+            # Mirrors </body>: flush before the flag clears, or unsectioned
+            # back matter is built and then stranded — which the end-of-parse
+            # audit reports as an ERROR, since `implicit_body_section` is one
+            # of its routing slots.
+            self._flush_implicit_body_section()
             self.in_back = False
         elif name == "sec":
             if not self.in_abstract and self.section_stack:
