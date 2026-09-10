@@ -706,8 +706,10 @@ All notable changes to bmlib are documented here. The format is based on
 
 - **Unsectioned back-matter prose reaches the article** (issue #224, filed by
   the maintainer from a JATS parity check against the Swift port in BioMedLit
-  — the first open issue here not filed by a PR reviewing an earlier fix, and
-  the first that loses content the document carries).
+  — the first open issue here not filed by a PR reviewing an earlier fix. It
+  is *not* the first that loses content the document carries: issue #124 is
+  open, predates it by three weeks, and drops table and figure footnote prose
+  entirely.)
 
   `_append_prose`'s unsectioned branch was gated on `in_body` alone. `<sec>`
   is optional in `<back>` as well, and `<ack>`, `<notes>`, `<fn-group>`,
@@ -716,18 +718,29 @@ All notable changes to bmlib are documented here. The format is based on
   every one of them was dropped. The Swift port routes both and its own
   comment names the same consequence.
 
-  **The population is the largest this module has measured, and it was
-  measured on both renditions rather than reasoned about.** Over the 8,117
-  served articles of Europe PMC's named OA package
-  `PMC10030002_PMC10040000.xml.gz`, **5,992 (73.8%) carry at least one such
-  paragraph** — 40,645 paragraphs, 5.95 MB of prose. Over the 97,909 articles
-  of PMC's `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` (the archive
-  rendition), **82,093 (83.8%)** and 543,637 paragraphs. By the `<back>` child
-  that owns them, served / archive: `<fn-group>` 13,728 / 148,284, `<notes>`
-  10,287 / 192,085, `<glossary>` 10,693 / 113,444, `<ack>` 4,891 / 61,322,
-  `<app-group>` 639 / 24,621, `<bio>` 216 / 2,391. Neither corpus is committed
+  **The population is the largest this module has measured, and it is a tally
+  of what the routing does rather than of what the markup holds.** Counted by
+  instrumenting `_append_prose` itself, over the 8,118 served articles of
+  Europe PMC's named OA package `PMC10030002_PMC10040000.xml.gz`, **5,990
+  (73.8%) gain at least one such paragraph** — 40,342 paragraphs, 5.91 MB of
+  prose. Over the 97,909 articles of PMC's
+  `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` (the archive
+  rendition), **82,058 (83.8%)** and 541,481 paragraphs. By the `<back>` child
+  that owns them, served / archive: `<fn-group>` 13,650 / 147,635, `<notes>`
+  10,286 / 192,002, `<glossary>` 10,693 / 113,468, `<ack>` 4,892 / 61,319,
+  `<app-group>` 618 / 24,741, `<bio>` 203 / 2,316. Neither corpus is committed
   here, so both are quoted from their named public artifacts rather than
-  re-derived by a test.
+  re-derived by a test — but every row is an input under test, one case per
+  container, because a table quoted in six files and driven by four cases is
+  the shape `TestTheStatedCountsAreWhatTheCorpusHolds` exists to break.
+
+  **The first cut of that table was a raw-XML walk and did not survive its own
+  arithmetic.** It counted paragraphs this branch never reaches — whitespace-
+  only ones, and `<p>` inside a back-matter float — so every row was
+  overstated, its archive rows summed to 136 fewer than the total printed
+  beside them, and the two figures it gave for the same population, 40,645
+  encountered against 40,341 inserted, were never reconciled. Both columns now
+  sum to their own totals exactly. A count is of what you looked for.
 
   **`<ref-list>` is the one refusal, and it is a misfiling rule rather than a
   taste.** A `<ref>`'s `<note>` and a `<ref-list>`'s own `<p>` are bibliography
@@ -738,16 +751,37 @@ All notable changes to bmlib are documented here. The format is based on
   them — a corruption where the alternative is a blank, which is this module's
   own preference (issues #116, #162) — and issue #150, which puts a note-only
   `<ref>` where it belongs, would then be left with its content misfiled
-  rather than missing and its symptom invisible. 191 paragraphs in 39 of the
-  8,117 served articles (0.47%), 1,354 in 307 of the 97,909 archive ones
-  (0.25%). It is also the one place this module and the Swift port
-  deliberately differ, filed there so a later parity check does not
-  "reconcile" it.
+  rather than missing and its symptom invisible. 163 paragraphs in 39 of the
+  8,118 served articles (0.40% of the 40,505 offered to this branch), 1,311 in
+  293 of the 97,909 archive ones (0.24%). It is also the one place this module
+  and the Swift port deliberately differ, filed there so a later parity check
+  does not "reconcile" it — though the note is asymmetric: this side carries it
+  in code and in `docs/DECISIONS.md`, that side only as its own open issue.
+
+  **And it is reported.** `refused_apparatus_prose` counts it and `_audit_parse`
+  emits one WARNING per article, the granularity `rejected_spans` (#129) and
+  `formulas_dropped` (#177) both settled. Leaving it silent would have been the
+  wrong answer twice over: on `main` this prose was incidental collateral of a
+  branch gated on `in_body`, while here the refusal is named and argued, which
+  earns a line rather than excusing one — and #150 is a downstream that cannot
+  learn the content existed without it. A `<disp-formula>` refused by the same
+  rule goes to the same counter and **not** to `formulas_dropped`, or a policy
+  this module chose would print as a gap in it.
+
+  **The rule is scoped to the unsectioned branch**, which "the one refusal"
+  reads wider than. Prose under an open `<sec>` never reaches the predicate, so
+  a `<ref-list>` inside a `<back>` `<sec>` keeps its apparatus, and so does one
+  in `<body>`. Both are pre-existing and both measure near-empty — 0 apparatus
+  paragraphs in 0 of the 8,118 served articles, 1 in 1 of the 97,909 archive
+  ones — so it is a scope to state, not a hole to close.
 
   Nothing else is refused, because every other container here already routes
   this way *inside* `<body>` — a `<def-list>`'s `<def><p>` in a body `<sec>`
   reaches that section today — so refusing one in `<back>` would make the same
   markup mean two different things depending on where the publisher put it.
+  `<glossary>` is routed on that argument even though #228 drops its `<term>`
+  on the way through and #231 is what the resulting untitled section costs a
+  reader.
 
   An **ancestor** test on `element_stack` rather than the `in_ref_list` flag:
   JATS permits a `<ref-list>` inside a `<ref-list>`, and the flag is a bare
@@ -761,6 +795,19 @@ All notable changes to bmlib are documented here. The format is based on
   against `main` over all 8,118 articles of the served package: `has_body`,
   `figures`, `tables`, `references` and `abstract_sections` move in **0**
   articles.
+
+  **A pending section per container, because one would have hidden a defect in
+  the other.** `</body>` and `</back>` each flush unsectioned prose. Held in
+  one slot, a `</body>` flush that failed would leave its prose pending, the
+  `<back>` that follows would append to the same builder, and `</back>` would
+  emit the pair as one section — the article silently losing the boundary
+  between its body and its acknowledgements, with nothing stranded for
+  `_audit_parse` to report. 73.8% of the served corpus carries a `<back>`, so
+  almost every document would mask it. `_flush_implicit_section` picks its slot
+  from `in_body` / `in_back`, which is what makes each arm's flush-before-clear
+  ordering load-bearing rather than decorative — it was neither while the
+  helper emptied whatever was pending, and a comment asserted otherwise for two
+  revisions.
 
   **Blast radius, measured by diffing a corpus rather than argued from the
   call graph.** Prose moves in **5,989 of 8,118 articles (73.8%)**, and in

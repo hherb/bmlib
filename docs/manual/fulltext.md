@@ -561,7 +561,8 @@ pass.
 > acknowledgements and competing-interest statements live, so a reader was
 > blind to declarations the article did make. It now reaches `body_sections`
 > as its own untitled section, flushed at `</back>` exactly as `<body>`'s is
-> at `</body>`, so the two never merge.
+> at `</body>`. Each container keeps its own pending section, so body prose
+> and back matter cannot be joined.
 >
 > **It does not count towards [`has_body`](#jatsarticle)**, which still counts
 > `<body>` prose alone: an article that is front matter plus back matter is
@@ -572,17 +573,28 @@ pass.
 > Recommendation"*, *"Papers of special note have been highlighted as: ..."*,
 > bare DOI fragments — and appending them to `body_sections` would put
 > paragraphs in the article that the publisher never wrote there. They stay
-> dropped, which is 0.47% of the paragraphs this change reaches.
+> dropped, which is 0.40% of the paragraphs offered to this branch, and the
+> parser logs one WARNING per article naming how many. The rule applies where
+> no section is open, so a `<ref-list>` inside a `<back>` `<sec>` is not
+> refused; that shape measures 0 of 8,118 served articles.
 >
-> Measured over the 8,117 served articles of Europe PMC's OA package
-> `PMC10030002_PMC10040000.xml.gz`: **5,992 (73.8%) carry at least one such
-> paragraph**, 40,645 in all. Over the 97,909 articles of PMC's
-> `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`, 82,093 (83.8%) and
-> 543,637. Diffed against the previous behaviour over the served package,
-> prose moves in 5,989 of 8,118 articles and every move is an insertion —
-> nothing is lost or altered, and `has_body`, `figures`, `tables`,
-> `references` and `abstract_sections` move in none of them. **`html_content`
-> moves in all 5,989**, so a caller holding cached full text should re-fetch.
+> Measured over the 8,118 served articles of Europe PMC's OA package
+> `PMC10030002_PMC10040000.xml.gz`: **5,990 (73.8%) gain at least one such
+> paragraph**, 40,342 in all. Over the 97,909 articles of PMC's
+> `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`, 82,058 (83.8%) and
+> 541,481. Both are counted inside the routing rather than by walking the
+> markup, so they exclude paragraphs this branch never reaches. Diffed against
+> the previous behaviour over the served package, prose moves in 5,989 of
+> 8,118 articles and every move is an insertion — nothing is lost or altered,
+> and `has_body`, `figures`, `tables`, `references` and `abstract_sections`
+> move in none of them. **`html_content` moves in all 5,989**, so a caller
+> holding cached full text should re-fetch.
+>
+> **A `<glossary>` arrives without its terms and the section carries no
+> heading** — `<term>` reaches no handler (#228) and a container's own
+> `<title>` is deliberately dropped (#125), so an abbreviations list renders
+> as a run of bare definitions. That is #231, and it is the one part of this
+> gain that is not unambiguously an improvement.
 
 > **Captions belong to their figure or table, wherever it sits.** JATS carries
 > caption body in `<p>` and the caption lead in `<title>` — the same elements

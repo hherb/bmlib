@@ -32,8 +32,8 @@ article in ten), **#127**, **#120/#140**, **#129**.
 
 **#224 is now the largest of them by population, and the only one measured on
 both renditions.** Unsectioned `<back>` prose — `<ack>`, `<notes>`,
-`<fn-group>`, `<app>`, `<glossary>`, `<bio>` — used to be dropped, and 5,992
-of 8,117 served articles (73.8%) carry some. Diffed against `main` over all
+`<fn-group>`, `<app>`, `<glossary>`, `<bio>` — used to be dropped, and 5,990
+of 8,118 served articles (73.8%) gain some. Diffed against `main` over all
 8,118 articles of `PMC10030002_PMC10040000.xml.gz`: prose moves in 5,989
 (73.8%) and **every move is an insertion** — 40,341 paragraphs and 5.91 MB
 gained, 0 lost, 0 altered — `body_sections` gains 6,977 and `html_content`
@@ -145,7 +145,7 @@ as "altered", when the change inserts in the *middle* (loose `<ack>` prose
 flushes ahead of a back `<sec>`); the honest test is *subsequence*, and it
 reads 5,989 of 5,989. A metric that alarms is as wrong as one that flatters.
 **A committed corpus is not the only honest population**: #224's is two named
-public artifacts at 8,117 and 97,909 articles against the committed corpora's
+public artifacts at 8,118 and 97,909 articles against the committed corpora's
 997 and 1,000 — bigger, re-derivable by any reader, and the precedent #146/#149
 and #147 set — but nothing in the suite re-derives it, which is the trade to
 state rather than to skip. **A survey can refuse part of a remedy** rather than
@@ -299,15 +299,29 @@ in `CHANGELOG.md`, `docs/DECISIONS.md` and at the call site; what follows is
 what a next session needs.
 
 **The survey the issue asked for was run before a line was changed, on both
-renditions.** Served: 5,992 of the 8,117 articles of Europe PMC's
-`PMC10030002_PMC10040000.xml.gz` (73.8%), 40,645 paragraphs, 5.95 MB. Archive:
-82,093 of the 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`
-(83.8%), 543,637 paragraphs. By the `<back>` child, served / archive:
-`<fn-group>` 13,728 / 148,284, `<notes>` 10,287 / 192,085, `<glossary>` 10,693
-/ 113,444, `<ack>` 4,891 / 61,322, `<app-group>` 639 / 24,621, `<bio>` 216 /
-2,391. **Neither corpus is committed here** — both are named public artifacts,
+renditions — and then re-run through the routing, which is the version to
+quote.** Served: 5,990 of the 8,118 articles of Europe PMC's
+`PMC10030002_PMC10040000.xml.gz` (73.8%), 40,342 paragraphs, 5.91 MB. Archive:
+82,058 of the 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`
+(83.8%), 541,481 paragraphs. By the `<back>` child, served / archive:
+`<fn-group>` 13,650 / 147,635, `<notes>` 10,286 / 192,002, `<glossary>` 10,693
+/ 113,468, `<ack>` 4,892 / 61,319, `<app-group>` 618 / 24,741, `<bio>` 203 /
+2,316.
+
+**The first cut of that table was a raw-XML walk and PR review caught it.** It
+counted paragraphs the branch never reaches — whitespace-only ones and `<p>`
+inside a back-matter float — so every row was overstated, the archive rows
+summed to 136 fewer than the total printed beside them, and the same entry gave
+40,645 encountered against 40,341 inserted without reconciling them. The
+figures above come from instrumenting `_append_prose` itself and each column
+sums to its own total exactly. **If you re-take this survey, instrument the
+routing; do not walk the markup.**
+
+**Neither corpus is committed here** — both are named public artifacts,
 the precedent #146/#149 and #147 set — and the committed sampler carries no
-counter for this, which is the thing left undone (below).
+counter for this, which is the thing left undone (below). Every row *is* an
+input under test, though, one case per container in
+`test_every_measured_back_container_reaches_the_article`.
 
 **The issue's suggested fix was the ambient widening, and the survey refused
 part of it.** `in_back` alone also takes a `<ref-list>`'s own `<p>` and a
@@ -320,10 +334,21 @@ that puts a note-only `<ref>` where it belongs, would be left with its content
 misfiled rather than missing and its symptom invisible. So `<ref-list>` is
 refused and **nothing else is**, because every other container already routes
 this way inside `<body>`: refusing one only in `<back>` would make identical
-markup mean two things depending on where the publisher put it. 191 of 40,645
-served (0.47%), 1,354 of 543,637 archive (0.25%). It is an **ancestor** test on
-`element_stack` rather than the `in_ref_list` flag, which a nested `<ref-list>`'s
-close clears — #115 one element family over.
+markup mean two things depending on where the publisher put it. 163 of 40,505
+served (0.40%, in 39 articles), 1,311 of 542,792 archive (0.24%, in 293). It is
+an **ancestor** test on `element_stack` rather than the `in_ref_list` flag,
+which a nested `<ref-list>`'s close clears — #115 one element family over.
+
+**The refusal is counted and reported**, once per article at WARNING
+(`refused_apparatus_prose`), which the first cut did not do: `rejected_spans`
+and `formulas_dropped` had both already settled that a drop gets a line, and a
+refusal this module *argues for* earns one more than the incidental drop it
+replaced. A `<disp-formula>` refused by the same rule shares that counter
+rather than inflating `formulas_dropped`, or a chosen policy prints as a gap in
+itself. **And the rule is scoped to the unsectioned branch** — a `<ref-list>`
+under an open `<sec>`, or one in `<body>`, keeps its apparatus; pre-existing,
+0 of 8,118 served and 1 of 97,909 archive, so a scope to state and not a hole
+to close.
 
 **`has_body` is the invariant the change is built around.**
 `body_paragraph_count` still counts `<body>` prose alone, so a front-matter-
@@ -363,15 +388,18 @@ multiplies how often a reader sees it (10,693 back-matter definitions served,
 reverse-transcriptase polymerase chain reaction"* with neither the
 abbreviations nor a heading, the heading being a `<def-list>`'s `<title>` that
 #125 deliberately drops. And **bmlibrarian_lite #204**, the other end of the
-`<ref-list>` divergence: the Swift port takes the apparatus, and both sides now
-carry a note so a later parity check does not "reconcile" them.
+`<ref-list>` divergence: the Swift port takes the apparatus. The note is
+asymmetric and the earlier wording overstated it — this side carries it in
+`docs/DECISIONS.md` and in the routing's own docstring, the Swift side carries
+it as that open issue and **not** as a code comment, so a parity check reading
+only `JATSXMLParser.swift` still finds an unexplained difference.
 
 **Not measured, and worth saying**: how often a *body* `<def-list>` loses its
-terms (#228 counts back matter only); whether the untitled back-matter section
-should instead carry the `<ack>`/`<app>` heading, which would need a model for
-those containers and is not filed; and what a `<glossary>` costs a downstream
-reading `body_sections` as prose, since a wall of term-less definitions is the
-one part of this gain that is not obviously an improvement.
+terms (#228 counts back matter only). What a `<glossary>` costs a downstream
+reading `body_sections` as prose — a wall of term-less definitions being the
+one part of this gain that is not obviously an improvement — is now **#231**,
+together with whether the untitled back-matter section should carry its
+container's heading.
 
 ## Current state
 
@@ -391,12 +419,16 @@ one part of this gain that is not obviously an improvement.
   previous release wrote is durable under #95's rule, so the whole window is
   re-fetched once. The two questions are independent, and a downstream reading
   only the number must still read this list.
-- **Tests: 3769 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
-  2026-09-10 on this branch; `main` at 4e7ef00 measures **3747 + 63**, so this
-  branch adds **22**, all in `tests/test_transparency.py`. Measure `main`
+- **Tests: 3804 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
+  2026-09-10 on this branch; `main` at 1631223 measures **3776 + 63**, so this
+  branch adds **28**, all in `tests/test_jats_parser.py`. Measure `main`
   rather than subtracting from a previous handover's figure — the 3614
-  recorded two sessions ago was never what `main` held, which is how that
-  number survived.)
+  recorded three sessions ago was never what `main` held, which is how that
+  number survived, and the 3769/3747/+22-in-`test_transparency.py` written
+  here for #224 was the *previous* branch's block carried through unchanged:
+  every one of its four figures was wrong, including the commit it named,
+  while the sentence telling you to re-measure sat beside it. Re-measure both
+  ends, and do it in a worktree so a dirty tree cannot answer for `main`.)
   **The PostgreSQL half was not re-run for this branch and did not need to be**
   — it touches `transparency/`, `scripts/` and one `publications/` docstring,
   none of which carries SQL. The PostgreSQL half has not been re-run since the
@@ -522,7 +554,7 @@ cannot re-derive any figure in the #224 entry. Adding the counter is a
 generation on that sampler **plus a full live redraw of both committed
 corpora** (~50 min, and it moves every figure the two corpora pin), so it is a
 session of its own rather than a tail on this one — and worth weighing against
-simply re-running the scratch survey, since the package draw is 8,117 and
+simply re-running the scratch survey, since the package draw is 8,118 and
 97,909 articles against the corpora's 997 and 1,000.
 
 Of the rest: **#186** is the last of the full-text-refusal family and is a
@@ -599,8 +631,9 @@ evidence; downgrade rather than close.
 **#172–#181 are PR #171's, #176's and #180's leavings.** #178 is the group's
 open *question*: whether LaTeX should win for a both-encoding inline formula at
 all, replacing prose already correct in 20,046 formulas to recover 205. #177
-routes a display formula reaching no section, caption or cell (192 in 23 of
-97,909); #174 is MathML flattening losing spacing and brackets; #175 is a
+routes a display formula reaching no section, caption or cell — **narrowed to
+the float shape by #224**, which took its 192-in-23 `<back>` population, so
+what is left measures 0 in both committed corpora; #174 is MathML flattening losing spacing and brackets; #175 is a
 formula deposited as an image, which no field carries; #172 is the cache
 having no version stamp; #173 is a figure's `alt` duplicating its own
 `figcaption`; #179 is the per-host pacer being per-process, so two concurrent
