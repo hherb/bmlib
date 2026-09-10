@@ -104,12 +104,24 @@ class ParseUnwindState:
             contributor it belongs to; a stranded ``None`` frame drops those
             names instead.
         open_definition_items: ``<def-item>`` elements still open. Each holds
-            the ``<term>`` it has read and not yet filed, so a stranded frame
-            hands that word to the next paragraph to arrive anywhere in the
-            document — a definition's term prefixed onto prose that is not its
-            definition. Counted rather than grouped with ``stuck_flags``
-            because what a stranded frame costs is a *wrong* value in the
-            article, not a missing one.
+            the ``<term>`` it has read and not yet filed. **Both directions
+            cost something and they are opposites**: a frame carrying a word
+            hands it to the next paragraph to arrive anywhere in the document,
+            a definition's term prefixed onto prose that is not its
+            definition; a frame carrying none masks the *enclosing* item's
+            term and suppresses its fold for the rest of the parse, so the
+            article silently loses a word instead of gaining one. Named the
+            way ``open_contribs`` names both of its own (PR #236's review).
+
+            Counted rather than grouped with ``stuck_flags`` because this is a
+            **stack with a depth**: ``stuck_flags`` is a tuple of *names*
+            built by truthiness, so seven stranded items would report as one
+            name, and every other stack in this struct is counted for the same
+            reason. An earlier rationale said the difference was that the cost
+            is a wrong value rather than a missing one, which does not
+            discriminate — ``open_captions``, ``open_contribs``,
+            ``excess_text_buffers`` and ``stuck_flags`` itself all document
+            misroutings too.
         unfilled_author_slots: Slots reserved by a ``<contrib>`` that never
             closed. ``build_authors()`` filters these out without a word,
             which is a silently missing contributor. Counted separately from
@@ -218,8 +230,9 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
     if state.open_definition_items:
         messages.append(
             f"{state.open_definition_items} <def-item> still open: their terms were "
-            "never filed, and the innermost one's term was folded into the next "
-            "paragraph of any kind to arrive"
+            "never filed, so any paragraph arriving after the imbalance took the "
+            "innermost one's term as a prefix — or, where that frame held no term, "
+            "went without the enclosing item's"
         )
     if state.unfilled_author_slots:
         messages.append(

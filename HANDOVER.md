@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-10. **0.10.0 is released and on PyPI**; thirty-three
+_Last updated: 2026-09-11. **0.10.0 is released and on PyPI**; thirty-three
 changes sit unreleased, three of them instrument-only. All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
@@ -411,6 +411,69 @@ drop. It reaches 76.7% of served and 88.4% of archive articles, where each of
 the four counters it would sit beside fires on a small minority — so it is
 refused, filed as **#235** with the per-owner table, and the refusal is
 recorded on #228 rather than left implicit.
+
+### PR #236's review round
+
+Five reviewers, three of which re-derived the committed figures independently
+and reproduced them to the unit. **One behavioural defect, and it was the
+module's own recurring one.** The fold spent the pending `<term>` on whatever
+prose `_append_prose` routed next, which is ambient routing state and not
+ownership — so a `<fig>` or `<table-wrap>` inside a `<def>` (JATS-legal, its
+`<caption>` the first prose to reach output) took the word into a public
+caption field while the definition went without it. `_DefinitionFrame` now
+carries the exhibit depth at the open. **Both committed artifacts measure that
+population empty**, so nothing stored moves; the rule is kept for what it
+prevents, which is silent, permanent, and a corruption rather than a blank.
+
+**Two silent paths closed beside it.** A `<term>` whose parent is not a
+`<def-item>` was read and discarded with no counter, so the fold/drop
+*partition* held only because neither corpus deposits one — a property of the
+draw, not of the code. And the empty string was allowed into the pending slot
+alongside `None`, leaving `if pending:` and `if pending is not None:`
+interchangeable-looking and one of the three sites unpinned; the write site
+normalises now, so the field is genuinely two-state.
+
+**The rule that had been prose is now a test.**
+`test_a_term_is_consumed_only_where_it_is_accounted_for` drives all seven
+routing positions through one invariant — a term this parser read is either
+visible in the article or counted by exactly one counter, never neither and
+never both. It names **both** counters, because the `<ref-list>` row folds the
+term into a paragraph the refusal then discards and counts as apparatus; a
+version naming only `definition_terms_dropped` reports that row as an
+unaccounted loss and pushes the next reader into double-counting it. Verified
+against a one-branch widening of the spend gate, which it catches.
+
+**Four claims were wrong and are withdrawn rather than softened.** *"The one
+imbalance whose cost is a wrong value"* — false, at least six existing
+`ParseUnwindState` fields document misroutings; what makes this one a counted
+field is that it is a stack with a depth. *"Runs before any of them"* — the
+`<disp-formula>` arm asks the refusal predicate before it calls
+`_append_prose`, so the fold runs after that caller. *"The same 3"* — a
+coincidence of two served counts, never a checked identity, and the archive
+does not reproduce it. And the separator's evidence was
+`tests/data/funder_names.json`, a `transparency` corpus of **funder
+organisation names** in the position this module reserves for a rule's
+evidence — #158's own complaint, made by the person writing #158's rule down.
+The `<term>` corpora were in hand all along and answer it directly: 174 of
+14,177 served and 1,597 of 153,388 archive terms contain a colon, against 0
+and 0 containing `" — "`.
+
+**A stale claim had been left in three places, one of them shipped code.**
+`jats_parser.py`, `docs/DECISIONS.md` and `CHANGELOG.md` each still read
+*"#228 drops its `<term>`"* — the defect this branch fixes, asserted in the
+present tense in the register a later session is told to read *before*
+"fixing" anything. Only `CLAUDE.md` had been updated. **When a sentence is
+restated in four files, updating the one you are looking at is not updating
+it**; grep the distinctive phrase.
+
+**And the `<label>` row that read as a contradiction was a scope.** `23,077`
+in the code against `25,332` in four docs is `<aff>` against
+`<aff>`+`<corresp>`, differing by exactly 2,255. Both were right and neither
+named its element set. The same census also refutes *"four questions with four
+answers"*: the four sum to 58,036 of 62,226, and the largest remainder is a
+`<supplementary-material>`'s own label — 2,998 served, 42,901 archive,
+comparable to `<corresp>` — which no issue names. Recorded on **#235**, whose
+own table is the thing that changes.
 
 
 ## Current state

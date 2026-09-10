@@ -646,6 +646,60 @@ class _FormulaFrame:
 
 
 @dataclass
+class _DefinitionFrame:
+    """One open ``<def-item>``: the word it defines, and where it opened.
+
+    A stack of these, for the reason :class:`_ExhibitFrame` is one: a ``<def>``
+    admits a ``<def-list>``, so definition items nest. Held as one slot the
+    inner item's term overwrote the outer one's and the inner close cleared
+    it, which is issue #115 one element family over — and the outer item's own
+    definition, arriving after the nested list, would then take the inner
+    term or none at all.
+
+    ``term`` is the word this item defines, or ``None`` once it has been folded
+    into its definition's prose or where none has arrived. **The two are one
+    state and the write site is what keeps them one**: a ``<term>`` that
+    normalises to the empty string is stored as ``None`` rather than ``""``, so
+    every reader can ask ``if frame.term`` and ``if frame.term is None`` and
+    get the same answer. Carrying the third state let one reader's spelling
+    disagree with another's while both passed (PR #236's review).
+
+    ``exhibit_depth`` is ``len(figure_stack) + len(table_stack)`` at the moment
+    this item opened — the :class:`_ExhibitFrame` idiom of capturing at the
+    open the value a later decision needs. The fold spends the term on the
+    next prose to reach output, and JATS admits a ``<fig>`` or ``<table-wrap>``
+    inside a ``<def>``, whose ``<caption>`` is prose that reaches output while
+    this item is open: without the capture the term was folded onto the
+    *exhibit's caption*, a wrong value in a public field that ``to_html``
+    renders, while the definition itself lost the word (PR #236's review).
+    Comparing against the depth at the open — rather than scanning
+    ``element_stack`` for element names — keeps the test derived from the same
+    two stacks ``in_figure`` and ``in_table_wrap`` derive from, so it cannot
+    drift from the routing it is guarding.
+
+    It is a *depth* and not a flag because exhibits nest, and it is compared
+    against rather than stored as a boolean because a ``<def-list>`` sitting
+    **inside** a caption is legitimate and common: there the exhibit opened
+    before this item, the depth is unchanged, and the fold must proceed.
+
+    **The population is empty on both committed artifacts** — 0 of 14,186
+    ``<def-item>`` in the 8,118 served articles of
+    ``PMC10030002_PMC10040000.xml.gz`` and 0 of 153,395 in the 97,909 archive
+    articles of ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`` hold a
+    float inside their ``<def>``. Those are **whole-document** walks, so the
+    archive denominator is the unscoped 153,395 rather than the 153,256 this
+    parser sees; a zero over the wider set is a zero over the subset, which is
+    why the looser walk is quoted rather than corrected. So this pins a
+    direction and not a population, the standing the ``<term>`` parent test
+    one arm over is given. "No instance" is not "cannot happen", and what it
+    prevents is silent, permanent and a corruption rather than a blank.
+    """
+
+    term: str | None = None
+    exhibit_depth: int = 0
+
+
+@dataclass
 class _ReferenceBuilder:
     id: str = ""
     label: str = ""
@@ -1265,10 +1319,24 @@ _TABLE_CELL_ELEMENTS = frozenset({"td", "th"})
 # proposes for a footnote marker, so one answer serves three containers
 # instead of three public fields.
 #
-# An em dash rather than a colon, and spaced. A term is free text — 41 of one
-# corpus's funder names run past ten words, and a term may itself end in a
-# colon or carry one — so a colon cannot be told from the term's own
-# punctuation, while the dash cannot be mistaken for part of either side.
+# An em dash rather than a colon, and spaced. **Measured on the terms
+# themselves** (whole-document walks of the two named artifacts, so unscoped
+# and wider than what the parser sees): a term is free text — 13 of 14,177
+# served and 240 of 153,388 archive terms run past ten words — and it carries
+# its own punctuation, **174 served (1.2%) and 1,597 archive (1.0%) containing
+# a colon, 164 and 1,401 ending in one**. So a colon separator cannot be told
+# from the term's own text, which is the collision this choice avoids.
+#
+# The spaced em dash does not collide at all: **0 of 14,177 and 0 of 153,388
+# terms contain `" — "`**. Five archive terms carry a bare em dash and none
+# carries the spaced form, so the separator is recoverable by a reader who
+# already knows the paragraph is a definition — which is the whole of what it
+# promises; see `docs/manual/fulltext.md` on why the fold is one-way.
+#
+# A first cut argued this from `tests/data/funder_names.json`, a
+# `transparency` corpus of *funder organisation names* — the wrong population
+# in the position this module reserves for a rule's evidence, and #158's own
+# complaint (PR #236's review). The two `<term>` corpora were already in hand.
 _DEFINITION_SEPARATOR = " — "
 
 # Parents a <disp-formula> merges into rather than standing beside as its own
@@ -1500,22 +1568,18 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # one formula reported as two — the counter this change added to size
         # a loss, over-reporting it.
         self.refused_apparatus_prose = 0
-        # The open <def-item> elements, innermost last, each holding the
-        # <term> this parser has read and not yet filed (issue #228).
-        #
-        # **A stack, because a <def> admits a <def-list>**, so definition
-        # items nest. Held as one slot the inner item's term overwrote the
-        # outer one's and the inner close cleared it, which is #115's defect
-        # one element family over — and the outer item's own definition,
-        # arriving after the nested list, would then take the inner term or
-        # none at all.
+        # The open <def-item> elements, innermost last (issue #228). Each
+        # holds the <term> this parser has read and not yet filed, and the
+        # exhibit depth at which the item opened; see `_DefinitionFrame` for
+        # why it is a stack, why the term is never the empty string, and what
+        # the depth is compared against.
         #
         # The frame is pushed after `startElement`'s suppression return and
         # popped under `endElement`'s matching guard, so the two stay balanced
         # across a nested article's region: unbalanced, a stranded term
         # prefixes the host article's next paragraph with a reviewer's word.
         # `open_definition_items` is the audit's field for exactly that.
-        self.def_item_stack: list[str | None] = []
+        self.def_item_stack: list[_DefinitionFrame] = []
         # Terms this parser read and could not file, counted so `_audit_parse`
         # reports them once per article at WARNING — the granularity and the
         # level `rejected_spans` settled for #129 and `refused_apparatus_prose`
@@ -1533,6 +1597,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # and 153,256 − 7 archive, so this counter and the fold partition the
         # population rather than sampling it.
         #
+        # **The partition is structural and not a property of the draw.**
+        # Until PR #236's review it closed only because neither corpus
+        # deposits a `<term>` outside a `<def-item>`: such a term reached
+        # neither side and was discarded in silence, a third outcome the word
+        # "partition" denied. The `<term>` arm counts it now, so every term
+        # carrying a word is either folded or counted whatever its parent.
+        #
         # **Measured at the drop rather than inferred from the markup**, since
         # a <front><abstract>'s definition list would be *folded* into the
         # abstract and a region walk cannot tell that from a drop. Of the
@@ -1543,8 +1614,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # definition is dropped as exhibit furniture, which is #124's
         # container; and 3 are in <back> outside a float, where back-matter
         # prose does route, so the only way to reach the drop is to deposit no
-        # routable prose at all — the same 3 as the served items carrying no
-        # <def>. None was reached by a second <term> displacing the first.
+        # routable prose at all. The served bundle also holds exactly 3
+        # <def-item> carrying no <def> — **a coincidence of counts, not a
+        # checked identity**, and written as "the same 3" until PR #236's
+        # review. Nothing verifies the two sets are one, and the archive
+        # offers no cross-check: its 10,394 drops were never decomposed this
+        # way, and it holds 23 items with no <def>. None of the served drops
+        # was reached by a second <term> displacing the first.
         #
         # **Scoped to a <term>, and the shared label-or-term counter #228's
         # own comment proposes is refused on measurement.** An unfiled
@@ -1555,9 +1631,19 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # (88.4%), where each of this counter's three siblings fires on a
         # small minority. A line on three articles in four is noise, and the
         # owners are at least four separate questions: an <aff>'s marker
-        # (23,077 served), a numbered <sec>'s own number (19,462), a
-        # <list-item>'s bullet (7,351) and a footnote marker (5,891, which is
-        # #124's). Filed with the owner table rather than pooled here.
+        # (23,077 served — 25,332 with <corresp>, which is the same row under
+        # the wider scope and is how the docs state it; the two figures
+        # differing by exactly <corresp>'s 2,255 was read as a contradiction
+        # in PR #236's review, so both now name their element set), a numbered
+        # <sec>'s own number (19,462), a <list-item>'s bullet (7,351) and a
+        # footnote marker (5,891, which is #124's).
+        #
+        # **"At least" is meant literally**: those four leave ~4,190 of the
+        # 62,226 unaccounted, the largest single remainder being a
+        # <supplementary-material>'s own label — 2,998 served and 42,901
+        # archive, half again the footnote count and comparable to <corresp>,
+        # named by no issue (whole-document walks, so unscoped). Filed with
+        # the owner table rather than pooled here.
         #
         # It counts a *word*, never an element: an empty <term> adds no prefix
         # wherever it lands, so counting one would report a loss the document
@@ -2142,9 +2228,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         from different positions — :meth:`_append_prose`, where the branches
         above have already excluded every other case; the ``<disp-formula>``
         arm of :meth:`endElement`, where they have not; and
-        :meth:`_prefix_pending_definition_term`, which runs *before* any of
-        them — which is why the guards are restated here in full instead of
-        left to the caller.
+        :meth:`_prefix_pending_definition_term`, which runs ahead of all of
+        :meth:`_append_prose`'s own branches — which is why the guards are
+        restated here in full instead of left to the caller. That is a
+        position and not an order: the ``<disp-formula>`` arm asks *before* it
+        calls :meth:`_append_prose`, so the fold runs after that caller, and
+        saying it "runs before any of them" had the sequence backwards
+        (PR #236's review).
 
         It is deliberately narrower than "the prose was not filed". Prose in
         ``<front>``, and prose inside a float with no modelled ``<caption>``
@@ -2249,9 +2339,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         body ``<sec>`` reaches that section today — so refusing one in
         ``<back>`` would make the same markup mean two different things
         depending on where the publisher put it. ``<glossary>`` is routed on
-        exactly that argument even though #228 drops its ``<term>`` on the
-        way through and #231 is what the resulting untitled section costs a
-        reader: those are its defects to fix, not a reason to drop the
+        exactly that argument even though it arrived without its ``<term>``
+        (#228, since answered) and #231 is what the resulting untitled section
+        costs a reader: those are its defects to fix, not a reason to drop the
         definition too.
 
         An **ancestor** test on ``element_stack``, for ``_inside_mixed_citation``'s
@@ -2289,9 +2379,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         (issue #228). See :data:`_DEFINITION_SEPARATOR` for the shape and why.
 
         **Called from :meth:`_append_prose` rather than from the ``<p>`` arm**,
-        so one rule serves all five destinations that method routes to — a
+        so one rule serves all five branches that method routes through — a
         caption, an abstract, a section, the unsectioned branch and the
-        ``<ref-list>`` refusal. A ``<p>`` may carry a ``<def-list>``, so a
+        ``<ref-list>`` refusal, the last of which discards the prose and
+        counts it rather than being a destination in any other sense.
+        A ``<p>`` may carry a ``<def-list>``, so a
         figure legend can hold one, and stating the fold twice would leave two
         spellings of it to keep in step, which is why ``_append_prose`` exists
         at all (issue #147).
@@ -2334,12 +2426,22 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         """
         if not text or not self.def_item_stack:
             return text
-        term = self.def_item_stack[-1]
-        if not term:
+        frame = self.def_item_stack[-1]
+        if frame.term is None:
+            return text
+        if len(self.figure_stack) + len(self.table_stack) > frame.exhibit_depth:
+            # A <fig> or <table-wrap> opened inside this <def-item>, so the
+            # prose reaching output is that exhibit's caption and not this
+            # definition. Folding here put the word into a public caption
+            # field and left the definition without it — a wrong value where
+            # the alternative is a blank, which is the preference #116 and
+            # #162 both settled. The term stays pending for the definition's
+            # own prose, and is counted at </def-item> if none arrives.
             return text
         if not (self._prose_reaches_output() or self._prose_is_refused_apparatus()):
             return text
-        self.def_item_stack[-1] = None
+        term = frame.term
+        frame.term = None
         return f"{term}{_DEFINITION_SEPARATOR}{text}"
 
     def _append_prose(self, text: str, *, keep_empty: bool) -> None:
@@ -2577,8 +2679,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.section_stack.append(_SectionBuilder())
         elif name == "def-item":
             # One frame per open definition item, holding its <term> until the
-            # definition's prose arrives to carry it. See `def_item_stack`.
-            self.def_item_stack.append(None)
+            # definition's prose arrives to carry it, and the exhibit depth it
+            # opened at so a float inside its own <def> cannot take that term
+            # into a caption. See `_DefinitionFrame`.
+            self.def_item_stack.append(
+                _DefinitionFrame(exhibit_depth=len(self.figure_stack) + len(self.table_stack))
+            )
         elif name == "fig":
             # Reserve the slot now, fill it at </fig>: listed where it opened,
             # built where it closed.
@@ -3232,24 +3338,47 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # lines like anything else, and an end-stripped `'RT-PCR\n  assay'`
             # reached a public field once already (issue #146).
             if self._parent_element() == "def-item" and self.def_item_stack:
-                pending = self.def_item_stack[-1]
-                if pending:
+                def_frame = self.def_item_stack[-1]
+                if def_frame.term is not None:
                     # A second <term> in one item. JATS's own content model
-                    # admits one, and 0 of the 14,186 served items deposit two
-                    # — nor do 0 of the 153,256 archive ones — but bare
+                    # admits one, and 0 of the 14,186 served items deposit
+                    # two, as do none of the 153,256 archive ones — but bare
                     # last-wins with no line is the #116/#143 class of defect,
                     # and a rule resting on a remembered content model is the
                     # rule this module keeps being caught by. The displaced
                     # word is counted, not overwritten in silence.
                     self.definition_terms_dropped += 1
-                self.def_item_stack[-1] = normalized_text
+                # Normalised to `None` at the write site, never stored as the
+                # empty string: `_DefinitionFrame.term` is a two-state field,
+                # and letting `""` in is what left one reader's spelling free
+                # to disagree with another's (PR #236's review).
+                def_frame.term = normalized_text or None
+            elif normalized_text:
+                # A <term> that reached no frame: its parent is not a
+                # <def-item>, or — unreachable under SAX — none is open. The
+                # word is read and discarded either way, so it is counted for
+                # the reason every other unfilable term is (PR #236's review).
+                # Without this the fold/drop partition below held only because
+                # the corpora deposit no such term, which is a property of the
+                # draw and not of the code: the routing question and the
+                # accounting question are separate, and `_report_zero_authors`
+                # settled that counting is not parsing.
+                #
+                # It counts a word and never an element, as the arm above
+                # does. `<index-term>` is the other JATS parent a `<term>` may
+                # have and bmlib extracts none, so counting one is honest
+                # rather than over-reporting — and neither corpus deposits it:
+                # **0 of 14,186 served and 0 of 153,395 archive `<term>` have
+                # any parent but `<def-item>`** (whole-document walks, so
+                # unscoped and wider than what the parser sees).
+                self.definition_terms_dropped += 1
         elif name == "def-item":
             if self.def_item_stack:
                 # Guarded for the reason </fig> is: SAX makes a close with
                 # nothing open unreachable, and a suppression region guarded
                 # on startElement alone is how that stops being true.
-                pending = self.def_item_stack.pop()
-                if pending:
+                closed = self.def_item_stack.pop()
+                if closed.term is not None:
                     # The item closed with its term still pending, so no
                     # paragraph of this definition reached the article to
                     # carry it — measured almost entirely in front matter
@@ -3669,10 +3798,20 @@ def _audit_parse(handler: _JATSHandler) -> None:
         # `_report_zero_authors`' rule. And it names the element rather than
         # "abbreviation", because a `<def-list>` is a definition list of any
         # kind and a line that guesses the genre misdescribes most of them.
+        #
+        # **"from the article's prose", not "from the article".** A
+        # `<def-list>` inside a `<td>`/`<th>` is written straight to the
+        # rendered table by `characters()`, bypassing every routing rule, so
+        # both the term and its definition reach `html_content` and the wider
+        # claim would send a reader hunting for words already in front of
+        # them — over-reporting of the kind PR #232's review corrected for a
+        # `<disp-formula>`. Measured 0 of 1,510 served drops and 0 of 10,394
+        # archive ones sit in a cell, so this narrows a claim rather than
+        # describing a live population (PR #236's review).
         logger.warning(
             "JATS parse of %s: %d <def-list> term(s) were read and reached no "
             "definition this parser could file, so those words are missing from "
-            "the article (issue #228)",
+            "the article's prose (issue #228)",
             article,
             handler.definition_terms_dropped,
         )

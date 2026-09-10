@@ -617,8 +617,27 @@ pass.
 > means front matter (#230): those are counted and reported once per article
 > at WARNING, so the loss leaves a trace rather than none. The counter is
 > deliberately **not** widened to a `<label>` this parser reads and files
-> nowhere — that reaches 77% of served articles and divides into four separate
-> questions, which is #235.
+> nowhere — that reaches 77% of served articles and divides into at least four
+> separate questions, which is #235.
+>
+> **The word goes to the definition, never to a figure or table beside it.**
+> JATS admits a `<fig>` or `<table-wrap>` inside a `<def>`, and its caption is
+> prose that arrives while the definition item is still open — so the term
+> would land on `JATSFigureInfo.caption` or `JATSTableInfo.caption` and the
+> definition would go without it. The fold is refused wherever an exhibit
+> opened inside the item, and the term is counted instead. A `<def-list>`
+> sitting *inside* a caption is the other direction and still folds, that
+> being where a figure legend defines its own abbreviations. Neither committed
+> artifact deposits the first shape: 0 of 14,186 served `<def-item>` and 0 of
+> 153,395 archive ones.
+>
+> **The fold is one-way, and splitting arbitrary paragraphs on the separator
+> is not a supported way back.** No term in either artifact contains `" — "`
+> (0 of 14,177 served, 0 of 153,388 archive), so the separator is
+> unambiguous *within* a paragraph already known to be a definition — but
+> nothing marks which paragraphs those are, and ordinary prose carries the
+> same sequence often enough that scanning for it mis-identifies roughly one
+> paragraph in 1,400. Read the definitions as prose, or read the JATS.
 
 > **Captions belong to their figure or table, wherever it sits.** JATS carries
 > caption body in `<p>` and the caption lead in `<title>` — the same elements

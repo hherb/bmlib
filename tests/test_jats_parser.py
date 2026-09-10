@@ -1566,6 +1566,13 @@ class TestADefinitionCarriesTheTermItDefines:
         ``<index-term>`` at all, so what this pins is that a deposit no draw
         has shown cannot corrupt the article — the ``<label>`` rule's own
         argument (#116), where the corruption *was* the measured population.
+
+        The inner word is **counted**, not silently lost. ``<term>``
+        accumulates a buffer and is not inline, so ``index`` is read and
+        discarded whatever this arm decides — pre-existing, and invisible
+        until the drop counter was scoped to reach it (PR #236's review). The
+        definition keeps the parent test's answer and the reader is told a
+        word went missing, which is the pair the counter exists to deliver.
         """
         handler = _run_handler(
             b"""<?xml version="1.0"?>
@@ -1579,7 +1586,7 @@ class TestADefinitionCarriesTheTermItDefines:
         )
 
         assert [p for s in handler.body_sections for p in s.paragraphs] == ["BMI — body mass"]
-        assert handler.definition_terms_dropped == 0
+        assert handler.definition_terms_dropped == 1
 
     def test_an_empty_paragraph_does_not_spend_the_term(self):
         """An empty ``<p>`` is a paragraph the document deposited, and takes no term.
@@ -1612,24 +1619,43 @@ class TestADefinitionCarriesTheTermItDefines:
 
         The frame is pushed after ``startElement``'s suppression return and
         popped under the matching guard, so the two stay balanced across a
-        skipped region — an unbalanced pair strands a term that then prefixes
-        the article's own next paragraph.
+        skipped region. **What an imbalance costs here is a stranded frame,
+        not a stolen word**: the ``<term>`` arm sits behind the same
+        suppression guard, so a reviewer's term is never *read* — hoisting the
+        push above the return leaves a ``None`` frame that masks the host's
+        own pending term and suppresses its folds for the rest of the
+        document. So the stack is asserted directly; reading the host's
+        paragraphs alone left the guard pinned only by the audit's ERROR at
+        teardown (PR #236's review).
+
+        The nested article is deposited **before** ``<body>`` — out of the
+        usual order, and well-formed — so there is host prose after the
+        suppressed region for a stranded frame to reach.
         """
         data = b"""<?xml version="1.0"?>
 <article>
   <front><article-meta><title-group><article-title>Host</article-title>
   </title-group></article-meta></front>
-  <body><sec><title>Results</title><p>Host prose.</p></sec></body>
   <sub-article article-type="peer-review">
     <body><sec><title>Review</title><def-list><def-item>
       <term>REV</term><def><p>reviewer term</p></def>
     </def-item></def-list></sec></body>
   </sub-article>
+  <body><sec><title>Results</title>
+    <def-list><def-item><term>HOST</term><def><p>host sense</p></def></def-item></def-list>
+    <p>Host prose.</p>
+  </sec></body>
 </article>"""
 
         article = JATSParser(data).parse()
+        handler = JATSParser(data)._run_parser()
 
-        assert [p for s in article.body_sections for p in s.paragraphs] == ["Host prose."]
+        assert [p for s in article.body_sections for p in s.paragraphs] == [
+            "HOST — host sense",
+            "Host prose.",
+        ]
+        assert handler.def_item_stack == []
+        assert handler.definition_terms_dropped == 0
 
     def test_a_definition_inside_a_caption_stays_in_the_caption(self):
         """``_append_prose``'s first branch, and the prefix runs before all five.
@@ -1659,6 +1685,266 @@ class TestADefinitionCarriesTheTermItDefines:
             "Prose after the figure."
         ]
 
+    def test_a_float_inside_a_definition_does_not_take_its_term(self):
+        """The exhibit's caption is not this definition (PR #236's review).
+
+        JATS admits a ``<fig>`` inside a ``<def>``, and its ``<caption>`` is
+        the first prose to reach output while the item is open — so the fold
+        spent the word on ``JATSFigureInfo.caption``, a public field
+        ``to_html`` renders, and left the definition without it. The mirror
+        image of the test above, which is why the two sit together: there the
+        exhibit opened *before* the item and the fold is correct.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Float</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>A</title>
+    <def-list><def-item><term>BMI</term><def>
+      <fig id="f1"><caption><p>A legend.</p></caption><graphic xlink:href="f1.jpg"/></fig>
+      <p>body mass index</p>
+    </def></def-item></def-list>
+  </sec></body>
+</article>"""
+
+        article = JATSParser(data).parse()
+        handler = JATSParser(data)._run_parser()
+
+        assert article.figures[0].caption == "A legend."
+        assert [p for s in article.body_sections for p in s.paragraphs] == ["BMI — body mass index"]
+        assert handler.definition_terms_dropped == 0
+
+    def test_a_table_inside_a_definition_does_not_take_its_term(self):
+        """The same rule for the other exhibit, which nests by its own route.
+
+        ``exhibit_depth`` sums both stacks, so a test naming only ``<fig>``
+        would leave the ``<table-wrap>`` half free to regress on its own.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Tbl</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>A</title>
+    <def-list><def-item><term>BMI</term><def>
+      <table-wrap id="t1"><caption><p>Table legend.</p></caption>
+        <table><tr><td>x</td></tr></table></table-wrap>
+      <p>body mass index</p>
+    </def></def-item></def-list>
+  </sec></body>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert article.tables[0].caption == "Table legend."
+        assert [p for s in article.body_sections for p in s.paragraphs] == ["BMI — body mass index"]
+
+    def test_a_definition_that_is_only_a_float_counts_its_term(self, parser_log):
+        """Refusing the fold must not become a silent drop.
+
+        The term stays pending rather than being spent on the caption, so the
+        ``</def-item>`` arm is what has to report it — otherwise the scope
+        test trades a wrong value for the missing one nobody is told about.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>OnlyFloat</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>A</title>
+    <def-list><def-item><term>BMI</term><def>
+      <fig id="f1"><caption><p>Only legend.</p></caption><graphic xlink:href="f1.jpg"/></fig>
+    </def></def-item></def-list>
+    <p>Body.</p>
+  </sec></body>
+</article>"""
+
+        article = JATSParser(data).parse()
+        handler = JATSParser(data)._run_parser()
+
+        assert article.figures[0].caption == "Only legend."
+        assert [p for s in article.body_sections for p in s.paragraphs] == ["Body."]
+        assert handler.definition_terms_dropped == 1
+        assert any("1 <def-list> term(s)" in m for m in parser_log.messages(logging.WARNING))
+
+    def test_a_definition_in_an_abstract_carries_its_term(self):
+        """The abstract is the fifth destination, and it was the unpinned one.
+
+        ``abstract_sections`` is rendered into the HTML ``FullTextService``
+        caches, and JATS admits a ``<def-list>`` directly in an ``<abstract>``
+        — so a mutant excluding the abstract from the spend gate lost the word
+        and passed the whole suite (PR #236's review).
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Abs</article-title>
+  </title-group>
+  <abstract><p>Lead.</p><def-list><def-item>
+    <term>BMI</term><def><p>body mass index</p></def>
+  </def-item></def-list></abstract></article-meta></front>
+  <body><sec><title>A</title><p>Body.</p></sec></body>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert "BMI — body mass index" in " ".join(s.content for s in article.abstract_sections)
+
+    def test_a_definition_in_a_float_with_no_caption_is_counted(self, parser_log):
+        """66 of the 1,510 served drops, and its mutant was silent.
+
+        Prose inside a float but outside a ``<caption>`` is dropped as exhibit
+        furniture (#124's container). Widening the spend gate to consume the
+        term there left ``definition_terms_dropped`` at zero with no line at
+        all — the counter reading zero over a population it exists to size.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Furn</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>A</title>
+    <table-wrap id="t1"><table><tr><td>x</td></tr></table>
+      <table-wrap-foot><fn><def-list><def-item>
+        <term>BMI</term><def><p>body mass index</p></def>
+      </def-item></def-list></fn></table-wrap-foot></table-wrap>
+    <p>Body.</p>
+  </sec></body>
+</article>"""
+
+        handler = JATSParser(data)._run_parser()
+
+        assert handler.definition_terms_dropped == 1
+        assert any("1 <def-list> term(s)" in m for m in parser_log.messages(logging.WARNING))
+
+    @pytest.mark.parametrize(
+        ("position", "body"),
+        [
+            (
+                "section",
+                b"<body><sec><title>A</title>%s<p>After.</p></sec></body>",
+            ),
+            (
+                "unsectioned body",
+                b"<body>%s<p>After.</p></body>",
+            ),
+            (
+                "back matter",
+                b"<body><sec><title>A</title><p>B.</p></sec></body>"
+                b"<back><ack>%s<p>After.</p></ack></back>",
+            ),
+            (
+                "figure caption",
+                b"<body><sec><title>A</title>"
+                b'<fig id="f1"><caption><p>%s</p></caption>'
+                b'<graphic xlink:href="f1.jpg"/></fig><p>After.</p></sec></body>',
+            ),
+            (
+                "reference list",
+                b"<body><sec><title>A</title><p>B.</p></sec></body>"
+                b"<back><ref-list>%s</ref-list></back>",
+            ),
+            (
+                "front matter",
+                b"<body><sec><title>A</title><p>B.</p></sec></body>",
+            ),
+            (
+                "float with no caption",
+                b"<body><sec><title>A</title>"
+                b'<table-wrap id="t1"><table><tr><td>x</td></tr></table>'
+                b"<table-wrap-foot><fn>%s</fn></table-wrap-foot></table-wrap>"
+                b"<p>After.</p></sec></body>",
+            ),
+        ],
+    )
+    def test_a_term_is_consumed_only_where_it_is_accounted_for(self, position, body):
+        """The rule the two-predicate gate exists for, over every routing position.
+
+        ``_prose_reaches_output`` mirrors ``_append_prose``'s filing branches
+        and nothing mechanises the pair, so a branch added to one and not the
+        other silently spends the word on a paragraph that is then dropped —
+        with ``definition_terms_dropped`` reading zero over exactly the
+        population it exists to size (PR #236's review). Driving every
+        position through one invariant is what turns that from prose into a
+        test: **a term this parser read is either visible in the article or
+        counted, never neither and never both.**
+
+        The ``front matter`` row deposits its definition list in the
+        ``<abstract>``'s own ancestor, which is the position with no counter
+        at all (issue #230) — so it is the row that fails if the gate is
+        widened to consume there.
+        """
+        definitions = (
+            b"<def-list><def-item><term>BMI</term>"
+            b"<def><p>body mass index</p></def></def-item></def-list>"
+        )
+        if position == "front matter":
+            front = (
+                b"<front><article-meta><title-group>"
+                b"<article-title>Inv</article-title></title-group>"
+                + definitions
+                + b"</article-meta></front>"
+            )
+            rendered_body = body
+        else:
+            front = (
+                b"<front><article-meta><title-group>"
+                b"<article-title>Inv</article-title></title-group>"
+                b"</article-meta></front>"
+            )
+            rendered_body = body % definitions
+
+        data = b'<?xml version="1.0"?><article>' + front + rendered_body + b"</article>"
+
+        handler = JATSParser(data)._run_parser()
+        article = JATSParser(data).parse()
+
+        rendered = " ".join(
+            [p for s in article.body_sections for p in s.paragraphs]
+            + [s.content for s in article.abstract_sections]
+            + [f.caption for f in article.figures]
+            + [t.caption for t in article.tables]
+        )
+        visible = "BMI — body mass index" in rendered
+        # Either counter accounts for the word. The `<ref-list>` row is why
+        # both are named: there the term *is* folded, into a paragraph the
+        # refusal then discards and counts as apparatus — one loss, one count,
+        # which is the rule PR #232's review had to correct for a
+        # `<disp-formula>`. Naming only the term counter reports that row as
+        # an unaccounted loss and would push a future reader into
+        # double-counting it.
+        counted = bool(handler.definition_terms_dropped) or bool(handler.refused_apparatus_prose)
+
+        assert visible != counted, (
+            f"{position}: visible={visible} "
+            f"dropped={handler.definition_terms_dropped} "
+            f"refused={handler.refused_apparatus_prose} — a term must be "
+            "either folded into the article or counted by exactly one "
+            "counter, never neither and never both"
+        )
+
+    def test_prose_after_an_unconsumed_term_does_not_take_it(self, parser_log):
+        """The pop is what stops a pending term reaching the next paragraph.
+
+        Every other fixture here either consumes the term or ends at the
+        close, which leaves the pop pinned only by the audit's ERROR at
+        teardown — the "both edges" rule: a fixture that stops at the close
+        cannot see a frame that fails to go off.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Edge</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>A</title>
+    <def-list><def-item><term>orphan</term></def-item></def-list>
+    <p>Ordinary prose.</p>
+  </sec></body>
+</article>"""
+
+        article = JATSParser(data).parse()
+        handler = JATSParser(data)._run_parser()
+
+        assert [p for s in article.body_sections for p in s.paragraphs] == ["Ordinary prose."]
+        assert handler.def_item_stack == []
+        assert handler.definition_terms_dropped == 1
+        assert any("1 <def-list> term(s)" in m for m in parser_log.messages(logging.WARNING))
+
 
 class TestATermThatCouldNotBeFiledIsReported:
     """The residue issue 228's own comment asks for a line for.
@@ -1677,7 +1963,8 @@ class TestATermThatCouldNotBeFiledIsReported:
     articles (76.7%) and 86,516 of the 97,909 archive ones (88.4%), where each
     of this counter's three siblings fires on a small minority. A line on
     three articles in four is noise, and the owners divide into at least four
-    separate questions: an ``<aff>``'s marker (23,077 served), a numbered
+    separate questions: an ``<aff>``'s marker (23,077 served, or 25,332
+    counting ``<corresp>`` with it — one row, two scopes), a numbered
     ``<sec>``'s own number (19,462), a ``<list-item>``'s bullet (7,351) and a
     footnote marker (5,891, which is #124's). Filed with the owner table
     rather than pooled here.

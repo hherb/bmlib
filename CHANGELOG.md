@@ -776,8 +776,12 @@ All notable changes to bmlib are documented here. The format is based on
   float with no `<caption>` open (the definition dropped as exhibit furniture,
   which is issue #124's container), and 3 in `<back>` outside a float, where
   prose does route — so the only way there is to deposit no routable prose at
-  all, and 3 is also the number of served items carrying no `<def>`. None was
-  reached by a second `<term>` displacing the first.
+  all. The served bundle also holds exactly 3 items carrying no `<def>` — a
+  coincidence of counts and not a checked identity, written as *"the same 3"*
+  until PR #236's review; nothing verifies the two sets are one, and the
+  archive offers no cross-check, its 10,394 drops never having been decomposed
+  this way against 23 items with no `<def>`. None was reached by a second
+  `<term>` displacing the first.
 
   **The shared label-or-term counter issue #228's own comment proposed is
   refused on measurement**, and filed with its table as issue #235. An
@@ -785,13 +789,51 @@ All notable changes to bmlib are documented here. The format is based on
   `<table-wrap>` or a `<ref>` — reaches 6,225 of the 8,118 served articles
   (76.7%) and 86,516 of the 97,909 archive ones (88.4%), where each of the
   four counters it would sit beside fires on a small minority; and its owners
-  are four separate questions with four answers. A WARNING on three articles
-  in four is noise.
+  are **at least four** separate questions with four answers. Those four leave
+  ~4,190 of the 62,226 unaccounted, the largest remainder a
+  `<supplementary-material>`'s own label (2,998 served, 42,901 archive —
+  comparable to `<corresp>`), so the split is a floor on the number of
+  questions rather than a partition — the exhaustive
+  phrasing was PR #236's review. The `<aff>`/`<corresp>` row is 25,332, of
+  which 23,077 is the `<aff>` alone; the narrower figure is the one
+  `jats_parser.py` states, and the two differ by `<corresp>`'s 2,255 rather
+  than by any disagreement.
 
   A stack of pending terms rather than a slot, because a `<def>` admits a
-  `<def-list>`; `ParseUnwindState.open_definition_items` audits it, a stranded
-  frame welding a definition's word onto the next paragraph of any kind to
-  arrive.
+  `<def-list>`; `ParseUnwindState.open_definition_items` audits it. A stranded
+  frame costs one of two opposite things — carrying a word it welds that onto
+  the next paragraph of any kind to arrive, carrying none it masks the
+  enclosing item's term and suppresses its fold — and the diagnostic names
+  both, as `open_contribs` names its own.
+
+  **Three corrections from PR #236's review, one of them behavioural.**
+
+  *The fold is scoped to the definition's own prose.* JATS admits a `<fig>` or
+  `<table-wrap>` inside a `<def>`, whose `<caption>` is the first prose to
+  reach output while the item is open — so the term was folded onto
+  `JATSFigureInfo.caption` / `JATSTableInfo.caption`, a public field `to_html`
+  renders and `FullTextService` caches, while the definition went without it:
+  a *wrong* value where the alternative is a blank, silent and uncounted, and
+  a third way out of the partition above. `_DefinitionFrame` now captures
+  `len(figure_stack) + len(table_stack)` at the open and the fold is refused
+  where that has grown, the term staying pending to be counted at
+  `</def-item>`. A depth rather than a flag, because a `<def-list>` *inside* a
+  caption is legitimate and common and must still fold. **0 of 14,186 served
+  `<def-item>` and 0 of 153,395 archive ones hold a float inside their
+  `<def>`** (whole-document walks, so the wider denominator), so nothing
+  stored moves and the rule pins a direction.
+
+  *A `<term>` that reaches no frame is counted.* One whose parent is not a
+  `<def-item>` was read and discarded in silence, so the partition closed only
+  because neither corpus deposits one — a property of the draw, not of the
+  code. It is counted now, on the rule that counting is not parsing.
+
+  *The separator's evidence is the terms themselves.* A first cut argued the
+  em dash from `tests/data/funder_names.json`, a `transparency` corpus of
+  funder organisation names — the wrong population in the position this module
+  reserves for a rule's evidence. Measured on the `<term>` corpora instead:
+  174 of 14,177 served and 1,597 of 153,388 archive terms contain a colon (164
+  and 1,401 end in one), against **0 and 0** containing `" — "`.
 
 - **Unsectioned back-matter prose reaches the article** (issue #224, filed by
   the maintainer from a JATS parity check against the Swift port in BioMedLit
@@ -905,9 +947,9 @@ All notable changes to bmlib are documented here. The format is based on
   this way *inside* `<body>` — a `<def-list>`'s `<def><p>` in a body `<sec>`
   reaches that section today — so refusing one in `<back>` would make the same
   markup mean two different things depending on where the publisher put it.
-  `<glossary>` is routed on that argument even though #228 drops its `<term>`
-  on the way through and #231 is what the resulting untitled section costs a
-  reader.
+  `<glossary>` is routed on that argument even though it arrived without its
+  `<term>` (#228, since answered) and #231 is what the resulting untitled
+  section costs a reader.
 
   An **ancestor** test on `element_stack` rather than the `in_ref_list` flag:
   JATS permits a `<ref-list>` inside a `<ref-list>`, and the flag is a bare
