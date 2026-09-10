@@ -948,9 +948,10 @@ container here already routes this way *inside* `<body>` — a `<def-list>`'s
 `<back>` would make identical markup mean two different things depending on
 where the publisher put it. `<glossary>` is a large such population (10,693
 served, second of six on that rendition and third on the archive one) and is
-routed for exactly that reason, even though #228 drops its `<term>` on the way
-through and #231 is what the resulting untitled section costs a reader. Those
-are defects of their own, not an argument for dropping the definition too.
+routed for exactly that reason, even though it arrived without its `<term>`
+(#228, since answered) and #231 is what the resulting untitled section costs a
+reader. Those are defects of their own, not an argument for dropping the
+definition too.
 
 **It is an ancestor test on `element_stack`, not `in_ref_list`.** JATS permits
 a `<ref-list>` inside a `<ref-list>`; the flag is a bare boolean the inner
@@ -985,6 +986,132 @@ counts `<body>` prose alone, so a front-matter-plus-back-matter document is
 still body-less and `FullTextService` still holds it back rather than caching
 it. `test_back_matter_alone_is_still_not_a_body` is the guard; the mutant that
 counts back paragraphs dies there.
+
+## fulltext — a definition's term is folded in, and the counter is not widened to labels (#228)
+
+**Do not model a definition list, and do not widen
+`definition_terms_dropped` to a `<label>`.** Both look like the obvious next
+step and both were decided against on measurement.
+
+**Why the term joins the paragraph rather than a field.** A `<def-item>`
+pairs a `<term>` with a `<def>` whose `<p>` routes as ordinary prose, and this
+module models no definition list — exactly as it models no `<list>`, whose
+`<list-item>` contributes no text of its own while its `<p>` becomes a
+paragraph. Folding the term in as `"mRNA — messenger RNA"` costs no public
+field, no `to_dict` change and no renderer branch, and it is the shape #124
+proposes for a footnote marker, so one answer serves three containers. A
+`definitions` field on `JATSBodySection` would be a new public shape every
+downstream has to learn *and* would move the definitions out of `paragraphs`,
+so stored values would move twice for one recovery.
+
+**Why the fold is gated on two predicates rather than done unconditionally.**
+`_append_prose` has three outcomes, not two: it files the prose, it refuses it
+as bibliography apparatus and counts that, or it falls past every branch with
+no counter and no line at all. That third case is `<front>`, which is #230 and
+where the measured population of an unfilable term lives. Consuming the term
+there would spend it on a paragraph nobody ever sees and leave the new counter
+reading zero over the one population it exists to size.
+
+**Three counts close on both artifacts.** Fold plus drop equals the terms that
+carry a word: 12,667 folded and 1,510 dropped against 14,186 − 9 empty served,
+142,855 and 10,394 against 153,256 − 7 archive. A table of counters owes that,
+and it is what caught #224's archive column summing 136 short of its own total.
+
+**Where the drops are is measured at the drop, not inferred from the markup** —
+a `<front><abstract>`'s definition list is *folded* into the abstract, and a
+region walk over `<term>` elements cannot tell that from a loss. Of the 1,510
+dropped in 128 of the 8,118 served articles: **1,441 in `<front>`** (#230),
+**66 in a `<body>` float with no `<caption>` open** (the definition dropped as
+exhibit furniture, which is #124's container), and **3 in `<back>` outside a
+float** — where back-matter prose does route, so the only way to reach the drop
+is to deposit no routable prose at all, and 3 is also the number of served
+items carrying no `<def>`. **0** were reached by a second `<term>` displacing
+the first. Consuming it on the *refusal* is the opposite
+choice for the opposite reason: that loss already has a line, and counting the
+term as well would report one loss twice, which is precisely what PR #232's
+review had to correct for a `<disp-formula>`.
+
+**Why the counter is a `<term>` and not "a label or term".** #228's own
+comment asked for the wider one, on the good argument that a `<fn>`'s `<label>`
+is the same kind of drop. Measured by owner, an unfiled `<label>` — one whose
+owner is not a formula, a `<fig>`, a `<table-wrap>` or a `<ref>` — reaches
+**6,225 of 8,118 served articles (76.7%)** and **86,516 of 97,909 archive ones
+(88.4%)**, where each of the four counters it would sit beside fires on a
+small minority. A WARNING on three articles in four is noise, and noise is
+how the ERROR channel was nearly spent one level up. The owners are also **at
+least four** questions with four answers — a numbered `<sec>`'s number (19,462
+served), a footnote marker (5,891, #124's), an `<aff>`/`<corresp>`
+cross-reference marker (25,332, which #145 resolves rather than prints) and a
+`<list-item>` bullet (7,351, presentational). Filed with the full table as
+#235.
+
+**"At least four" is meant literally, and the row has two scopes.** Those four
+sum to 58,036 against the 62,226 measured, leaving ~4,190 — the largest single
+remainder a `<supplementary-material>`'s own label — 2,998 served and 42,901
+archive, comparable to `<corresp>` — which no issue names. And the `<aff>`/`<corresp>` row is 25,332 where `jats_parser.py`
+states 23,077: the same row under a narrower scope, differing by `<corresp>`'s
+2,255 exactly. Both figures were correct and neither named its element set,
+which read as a contradiction (PR #236's review); both name it now.
+
+**A stack of pending terms, not a slot.** A `<def>` admits a `<def-list>`, so
+definition items nest; held as one value the inner term overwrote the outer
+and the inner close cleared it, which is #115 one element family over. The
+audit carries `open_definition_items` for the same reason it carries every
+other stack: it has a **depth**, and `stuck_flags` is a tuple of names built
+by truthiness, so seven stranded items would report as one name. It was
+written here as *"its cost is a wrong value rather than a missing one"*, which
+does not discriminate — `open_captions`, `open_contribs`,
+`excess_text_buffers` and `stuck_flags` itself each document a misrouting too
+— and a stranded frame in fact costs one of two **opposite** things: carrying
+a word it welds that onto the next paragraph of any kind to arrive, carrying
+none it masks the enclosing item's term and suppresses its fold for the rest
+of the parse. The diagnostic names both, as `open_contribs` names its own.
+
+## fulltext — the fold is scoped to the definition's own prose (#228, PR #236)
+
+**A pending `<term>` may not be spent on an exhibit's caption.** The fold
+hands the word to whatever prose `_append_prose` routes next while the
+`<def-item>` is open, and that is ambient routing state rather than ownership.
+JATS admits a `<fig>` or `<table-wrap>` inside a `<def>` — `%def-model;` reaches
+`%block-display.class;` — and its `<caption>` is the first prose to reach
+output, so the term landed on `JATSFigureInfo.caption` / `JATSTableInfo.caption`
+and the definition went without it. A *wrong* value in a public field that
+`to_html` renders and `FullTextService` caches, silent and uncounted, and a
+third way out of the fold/drop partition.
+
+`_DefinitionFrame` captures `len(figure_stack) + len(table_stack)` at the open
+and the fold is refused where the depth has grown. Three things about that
+shape are load-bearing:
+
+- **A depth, not a flag.** A `<def-list>` sitting *inside* a caption is
+  legitimate and common — a figure legend defining its own abbreviations — and
+  there the exhibit opened *before* the item, so the depth is unchanged and
+  the fold proceeds. A boolean "is a float open?" refuses both directions.
+- **Derived from the two exhibit stacks, not from `element_stack` names.** It
+  is the same pair `in_figure` and `in_table_wrap` derive from, so the guard
+  cannot drift from the routing it guards. A name scan is a second spelling of
+  the same question, and this module's own history is of two spellings
+  disagreeing.
+- **The refused term stays pending and is counted at `</def-item>`**, or the
+  scope test trades a wrong value for a missing one nobody is told about.
+
+**The population is empty on both artifacts** — 0 of 14,186 served
+`<def-item>` and 0 of 153,395 archive ones hold a float inside their `<def>`
+(whole-document walks, so the archive denominator is the unscoped 153,395 and
+not the 153,256 the parser sees; a zero over the wider set is a zero over the
+subset) — so this pins a direction and not a population, the standing the `<term>`
+parent test one arm over is given. "No instance" is not "cannot happen", and
+what it prevents is silent, permanent and a corruption rather than a blank.
+
+**A `<term>` that reaches no frame is counted too.** One whose parent is not a
+`<def-item>` was read and discarded in silence, so the partition closed only
+because neither corpus deposits one — 0 of 14,186 served and 0 of 153,395
+archive `<term>` have any other parent. That is a property of the draw and not
+of the code, and the routing question (which frame owns this word?) is
+separate from the accounting question (did bmlib lose a word?), which is
+`_report_zero_authors`' own rule: counting is not parsing. `<index-term>` is
+the other JATS parent a `<term>` may have, bmlib extracts none, so counting
+one is honest rather than over-reporting.
 
 ## fulltext — an exhibit with no `<label>` gets no fallback search (#162)
 

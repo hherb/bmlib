@@ -112,6 +112,27 @@ class TestEachImbalanceIsReportedWithItsCost:
         assert "<contrib> still open" in messages[0]
         assert "never built" in messages[0]
 
+    def test_a_definition_item_left_open_is_reported(self):
+        """A stranded ``<def-item>`` frame, whose two directions are opposites.
+
+        Carrying a word, the next paragraph of any kind to arrive anywhere in
+        the document takes it as a prefix — a definition's word welded onto
+        prose that is not its definition (issue #228). Carrying none, it masks
+        the enclosing item's term instead, so the article loses a word rather
+        than gaining one. The message names both.
+
+        It is **not** "the one imbalance here whose cost is a wrong value", as
+        this docstring claimed until PR #236's review: ``open_captions``,
+        ``open_contribs``, ``excess_text_buffers``, ``open_elements`` and
+        ``stuck_flags`` each document a misrouting too. What makes this one a
+        counted field is that it is a stack with a depth.
+        """
+        [message] = unwind_diagnostics(ParseUnwindState(open_definition_items=1))
+
+        assert "<def-item> still open" in message
+        assert "took the innermost one's term as a prefix" in message
+        assert "went without the enclosing item's" in message
+
     def test_an_unfilled_author_slot_is_reported(self):
         messages = unwind_diagnostics(ParseUnwindState(unfilled_author_slots=2))
 
