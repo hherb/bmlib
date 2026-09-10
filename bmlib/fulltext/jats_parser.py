@@ -1435,15 +1435,38 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # Display formulas this parser rendered and then had nowhere to file,
         # counted so `_audit_parse` reports them once per article at WARNING
         # for the two reasons above. `_append_prose` has four branches and no
-        # fallthrough, so a standalone <disp-formula> in <back> with no <sec>
-        # on the stack — 192 in 23 of the PMC012xxxxxx package's 97,909
-        # articles — is built and dropped, as is one the merge allow-list
-        # sends to the paragraph path from inside a float with no <caption>
-        # open. Neither is a regression: `main` discarded the whole element.
-        # That is exactly why it is counted rather than left — the parser now
-        # builds the string, so losing it silently is a new kind of quiet.
-        # Routing them is issue #177.
+        # fallthrough, so a formula the merge allow-list sends to the paragraph
+        # path from inside a float with no <caption> open is built and dropped.
+        # Not a regression: `main` discarded the whole element. That is exactly
+        # why it is counted rather than left — the parser now builds the
+        # string, so losing it silently is a new kind of quiet.
+        #
+        # **This counts a routing gap, never a refusal.** The `<back>` shape
+        # it used to name — 192 formulas in 23 of the PMC012xxxxxx package's
+        # 97,909 articles — reaches the article as of issue #224 and is gone
+        # from here; what is left is the float shape, 0 measured in both
+        # committed corpora, so the counter is latent and issue #177 is what
+        # remains of it. A formula refused as bibliography apparatus is a
+        # *decision* and goes to `refused_apparatus_prose` instead, or the
+        # WARNING would report a policy this module chose as a gap in it.
         self.formulas_dropped = 0
+        # Prose refused by the `<ref-list>` rule in
+        # `_unsectioned_prose_is_the_articles`, counted so `_audit_parse`
+        # reports it once per article at WARNING.
+        #
+        # **A deliberate refusal is exactly the drop no reader can otherwise
+        # see.** On `main` this prose was incidental collateral of a branch
+        # gated on `in_body`; here it is named and argued, which earns it a
+        # line rather than excusing one — the rule `rejected_spans` settled
+        # for #129 and `formulas_dropped` for #177, and issue #150 is the
+        # downstream that cannot learn the content existed without it.
+        # WARNING and not ERROR for `rejected_spans`' reason: a publisher's
+        # deposit reaches it, so it cannot mean "bmlib is wrong".
+        #
+        # It counts both content kinds the refusal takes. Reached by a `<p>`
+        # through `_append_prose` and by a `<disp-formula>` one arm up, which
+        # would otherwise land in `formulas_dropped` and read as a gap.
+        self.refused_apparatus_prose = 0
         self.current_article_id_type: str | None = None
 
         # Abstract state
@@ -1455,11 +1478,27 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.in_body = False
         self.in_back = False
         self.section_stack: list[_SectionBuilder] = []
-        # <sec> is optional inside <body>, so prose can arrive with an empty
-        # section_stack. It is collected here and flushed to body_sections at
-        # the next <sec> or at </body>, rather than pushed onto section_stack:
-        # a real <sec> opening afterwards would otherwise nest inside it.
+        # <sec> is optional inside <body> — and inside <back>, issue #224 —
+        # so prose can arrive with an empty section_stack. It is collected
+        # here and flushed to body_sections at the next <sec> or at the
+        # container's own close, rather than pushed onto section_stack: a real
+        # <sec> opening afterwards would otherwise nest inside it.
+        #
+        # **A slot per container, and the second one is what the audit needs.**
+        # One slot would serve for output, `</body>` flushing before `<back>`
+        # opens in any DTD-valid document — but it would also *launder* a
+        # missing `</body>` flush: the slot survives into `<back>`, collects
+        # acknowledgement prose behind the body's own, and `</back>` empties it,
+        # so the article silently loses the boundary between the two and the
+        # end-of-parse audit sees nothing stranded. That is a real narrowing,
+        # since 73.8% of the served corpus carries a `<back>` (see
+        # `_unsectioned_prose_is_the_articles`), and it is the shape this
+        # module keeps being caught by — a single slot where the state is
+        # per-container. Two slots make the loss structural instead: the body
+        # slot can only be emptied by `</body>`, so a defect there strands it
+        # and `_ROUTING_FLAGS` reports it.
         self.implicit_body_section: _SectionBuilder | None = None
+        self.implicit_back_section: _SectionBuilder | None = None
         # Prose found inside <body>. Counted separately from body_sections
         # because back-matter sections land there too, so a non-empty
         # body_sections does not by itself mean the article has a body.
@@ -1646,14 +1685,21 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         "current_article_id_type",
         "current_xref_type",
         "current_xref_rid",
-        # Single-slot: unsectioned `<body>` prose accumulates here and is
-        # flushed at `</body>`. Left stranded, the article loses that prose
-        # outright and `has_body` stays True, because `body_paragraph_count`
-        # already counted it — a silent loss of a whole body in the shape this
-        # audit exists to catch. Covered today only because `in_body` is
-        # cleared on the adjacent line, which is an accident of layout rather
-        # than anything asserted.
+        # A single slot each: unsectioned `<body>` prose accumulates in the
+        # first and unsectioned `<back>` prose in the second, each emptied by
+        # its own container's close (issue #224).
+        # Left stranded, the article loses that prose outright — and for
+        # `<body>` prose `has_body` stays True, because
+        # `body_paragraph_count` already counted it, so it is a silent loss of
+        # a whole body in the shape this audit exists to catch.
+        #
+        # **Both are listed because a slot per container is what makes either
+        # detectable.** Sharing one slot, `</back>`'s flush empties whatever
+        # `</body>`'s failed to, so a stranded body slot unwinds clean and
+        # this net says nothing — the audit narrowed by exactly the share of
+        # documents that carry a `<back>`. See the slots' own comment.
         "implicit_body_section",
+        "implicit_back_section",
     )
 
     def unwind_state(self) -> ParseUnwindState:
@@ -1964,6 +2010,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         and not the other, which would report a loss that did not happen or,
         worse, stay quiet about one that did.
 
+        The mirror is of the branches that **file** text, so
+        :meth:`_append_prose`'s refusal arm has no counterpart here: it counts
+        and files nothing, which is what ``False`` already says. Which *kind*
+        of not-filed a loss was is :meth:`_prose_is_refused_apparatus`'s
+        question, asked separately by the one caller that reports.
+
         Returns:
             ``True`` if the text would be kept.
         """
@@ -1975,7 +2027,143 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             return True
         if (self.in_body or self.in_back) and self.section_stack:
             return True
-        return self.in_body
+        return self._unsectioned_prose_is_the_articles()
+
+    def _prose_is_refused_apparatus(self) -> bool:
+        """Whether prose here is refused as bibliography apparatus.
+
+        The ``<ref-list>`` half of :meth:`_unsectioned_prose_is_the_articles`
+        asked from the outside, so a loss can be reported as the decision it
+        is rather than as a routing gap. Two callers reach the same rule from
+        different positions — :meth:`_append_prose`, where the branches above
+        have already excluded every other case, and the ``<disp-formula>`` arm
+        of :meth:`endElement`, where they have not — which is why the guards
+        are restated here in full instead of left to the caller.
+
+        It is deliberately narrower than "the prose was not filed". Prose in
+        ``<front>``, and prose inside a float with no modelled ``<caption>``
+        open, are also dropped here and are **not** this refusal: the first is
+        a population nobody has decided (issue #230) and the second is issue
+        #177's routing gap. Answering ``True`` for either would put a claim in
+        this module's mouth that it made a choice it did not make.
+
+        **Only the float guard is reachable, and the other two say so rather
+        than implying they were measured.** ``in_abstract`` and
+        ``section_stack`` are each answered ``True`` by
+        :meth:`_prose_reaches_output` one branch earlier and excluded by
+        :meth:`_append_prose`'s chain before this is reached, so neither
+        caller can arrive here with them set; they are kept because this
+        predicate states a rule rather than a position, and a third caller
+        would otherwise inherit guards nobody restated. The float guard is
+        genuinely load-bearing and pinned: a formula inside a ``<fig>`` inside
+        a refused ``<ref-list>`` is lost to the float branch whether or not
+        the refusal exists, so it belongs to #177 and not here.
+
+        Returns:
+            ``True`` if this module refuses the text as a ``<ref-list>``'s.
+        """
+        if self.in_figure or self.in_table_wrap or self.in_abstract:
+            return False
+        if self.section_stack:
+            return False
+        return self.in_back and not self._unsectioned_prose_is_the_articles()
+
+    def _unsectioned_prose_is_the_articles(self) -> bool:
+        """Whether prose arriving with no section open belongs to the article.
+
+        ``<sec>`` is optional in ``<back>`` as well as in ``<body>``, and the
+        elements that hold a bare ``<p>`` there are not spare matter:
+        ``<ack>``, ``<notes>``, ``<fn-group>``, ``<app>``, ``<glossary>`` and
+        ``<bio>`` are where funding acknowledgements and competing-interest
+        statements live. The branch was gated on ``in_body`` alone, so every
+        one of them was dropped — issue #224, found by a JATS parity check
+        against the Swift port, whose own comment names the same consequence.
+
+        **The population is the largest this module has measured, and the
+        table is a tally of what this method routes rather than of what a
+        walk over the markup finds.** Instrumented at :meth:`_append_prose`
+        over the 8,118 served articles of Europe PMC's named OA package
+        ``PMC10030002_PMC10040000.xml.gz``, 5,990 (73.8%) gain at least one
+        paragraph — 40,342 paragraphs and 5.91 MB of prose. By the ``<back>``
+        child that owns them: ``<fn-group>`` 13,650 (in 3,925 articles),
+        ``<glossary>`` 10,693 (723), ``<notes>`` 10,286 (2,241), ``<ack>``
+        4,892 (4,359), ``<app-group>`` 618 (99), ``<bio>`` 203 (43). The same
+        instrument over the 97,909 articles of PMC's
+        ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`` gives 82,058
+        (83.8%) and 541,481 paragraphs — ``<notes>`` 192,002, ``<fn-group>``
+        147,635, ``<glossary>`` 113,468, ``<ack>`` 61,319, ``<app-group>``
+        24,741, ``<bio>`` 2,316.
+
+        Both sets of rows sum to their own total exactly, which the first cut
+        of this table did not: taken from a raw-XML walk it counted paragraphs
+        this branch never reaches — whitespace-only ones, and ``<p>`` inside a
+        back-matter float — so every row was overstated, the archive column
+        was 136 short of the total printed beside it, and so was the refusal
+        below. A count is of what you looked for, and here what to look for is
+        the routing.
+
+        **``<ref-list>`` is the one refusal, and it is a misfiling rule rather
+        than a taste.** A ``<ref>``'s ``<note>`` and a ``<ref-list>``'s own
+        ``<p>`` are bibliography apparatus: sampled from that package they
+        read *"Faculty Opinions Recommendation"* ten times in one article,
+        *"Papers of special note have been highlighted as: ..."*, and bare DOI
+        fragments. Appended to ``body_sections`` they become paragraphs of an
+        article that never carried them, which is the corruption this module
+        prefers a blank to (#116, #162) — and issue #150, which puts a
+        note-only ``<ref>`` where it belongs, would then be left with its
+        content misfiled instead of missing, and its symptom invisible. It is
+        163 paragraphs in 39 of the 8,118 served articles, 0.40% of the
+        40,505 this branch is offered, and 1,311 in 293 of the 97,909 archive
+        ones, 0.24% of 542,792 — so the refusal costs little; it is also the one
+        place this module and the Swift port deliberately differ, so a later
+        parity check must not "reconcile" them. It is **counted and reported
+        once per article at WARNING** (``refused_apparatus_prose``): a drop
+        this module argued for is more deserving of a line than the
+        incidental one it replaced, not less.
+
+        **The refusal is scoped to this branch, and that is worth stating
+        because "the one refusal" reads wider than it is.** Prose under an
+        open ``<sec>`` never reaches here at all, so a ``<ref-list>`` inside a
+        ``<back>`` ``<sec>`` keeps its apparatus, and so does one in
+        ``<body>``, where ``in_body`` answers first. Both are pre-existing and
+        both measure near-empty — 0 apparatus paragraphs in 0 of the 8,118
+        served articles, 1 in 1 of the 97,909 archive ones — so this is the
+        scope of a rule rather than a hole in it.
+
+        Nothing else is refused. Every other container here already routes
+        this way *inside* ``<body>`` — a ``<def-list>``'s ``<def><p>`` in a
+        body ``<sec>`` reaches that section today — so refusing one in
+        ``<back>`` would make the same markup mean two different things
+        depending on where the publisher put it. ``<glossary>`` is routed on
+        exactly that argument even though #228 drops its ``<term>`` on the
+        way through and #231 is what the resulting untitled section costs a
+        reader: those are its defects to fix, not a reason to drop the
+        definition too.
+
+        An **ancestor** test on ``element_stack``, for ``_inside_mixed_citation``'s
+        reason: the claim is inherited down the whole subtree, a ``<note>``
+        sitting inside a ``<ref>`` inside the list. Read from the stack rather
+        than from ``in_ref_list``, which is a bare boolean that a nested
+        ``<ref-list>``'s close clears — JATS permits the nesting, and the flag
+        would then re-admit the outer list's remaining apparatus, which is
+        #115 one element family over.
+
+        The slice excludes the element now closing, and that half is
+        **prospective, so do not read it as load-bearing** —
+        ``_inside_mixed_citation``'s own slice is the same shape and says the
+        same thing. ``_append_prose`` is reached from two arms, ``<p>`` and
+        ``<disp-formula>``, so the excluded element is never the
+        ``<ref-list>`` being tested for: dropping the slice survives the whole
+        suite (measured, and the one survivor of this change's eight-mutant
+        sweep). It is kept because it makes the test say what it means, and
+        because a third caller would otherwise inherit a rule nobody restated.
+
+        Returns:
+            ``True`` if the prose should open or extend the implicit section.
+        """
+        if self.in_body:
+            return True
+        return self.in_back and "ref-list" not in self.element_stack[:-1]
 
     def _append_prose(self, text: str, *, keep_empty: bool) -> None:
         """Route one run of prose to whatever the parse currently has open.
@@ -2020,14 +2208,40 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             if self.in_body and text:
                 self.body_paragraph_count += 1
             self.section_stack[-1].paragraphs.append(text)
-        elif self.in_body and text:
-            # An unsectioned <body> child. Empty paragraphs are dropped
-            # rather than opening a section, so a <body> holding nothing
-            # but whitespace stays body-less.
-            if self.implicit_body_section is None:
-                self.implicit_body_section = _SectionBuilder()
-            self.body_paragraph_count += 1
-            self.implicit_body_section.paragraphs.append(text)
+        elif text and self._unsectioned_prose_is_the_articles():
+            # An unsectioned <body> or <back> child — <sec> is optional in
+            # both, and the predicate says which back matter is the article's
+            # (issue #224). Empty paragraphs are dropped rather than opening a
+            # section, so a <body> holding nothing but whitespace stays
+            # body-less and a <back> holding nothing but whitespace adds no
+            # untitled section to the rendered article.
+            if self.in_body:
+                if self.implicit_body_section is None:
+                    self.implicit_body_section = _SectionBuilder()
+                # <body> alone, because `has_body` is what stops
+                # `FullTextService` caching a body-less document and going no
+                # further. An article that is front matter plus back matter is
+                # not an article, however much acknowledgement prose it
+                # carries — so the counter answers "is there a body?" while
+                # `body_sections` answers "what did the document say?", which
+                # is why the two were separated in the first place.
+                self.body_paragraph_count += 1
+                self.implicit_body_section.paragraphs.append(text)
+            else:
+                if self.implicit_back_section is None:
+                    self.implicit_back_section = _SectionBuilder()
+                self.implicit_back_section.paragraphs.append(text)
+        elif text and self._prose_is_refused_apparatus():
+            # The <ref-list> refusal. `self.in_back` alone would do here, the
+            # branches above having excluded everything else the predicate
+            # tests, but the formula arm one method over reaches this rule
+            # from a different position and two spellings of one refusal are
+            # two things to keep in step. What neither may become is a bare
+            # `else`: a <front><author-notes><fn><p> also falls past the
+            # branch above, and that population is larger, differently caused
+            # and undecided (issue #230), so pooling the two would report a
+            # refusal this module made and one it never considered as one.
+            self.refused_apparatus_prose += 1
 
     def _append_caption_text(self, text: str) -> None:
         """Append caption prose to the innermost open ``<caption>``'s owner.
@@ -2062,18 +2276,37 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             builder.caption += " "
         builder.caption += text
 
-    def _flush_implicit_body_section(self) -> None:
-        """Emit any pending unsectioned ``<body>`` prose as a body section.
+    def _flush_implicit_section(self) -> None:
+        """Emit the open container's pending unsectioned prose, if any.
 
-        Called when a real ``<sec>`` opens and again at ``</body>``, so loose
-        paragraphs keep their position in document order. The section carries
-        no title — JATS gave it none, and inventing one would put a heading in
-        the rendered article that the publisher never wrote.
+        Called when a real ``<sec>`` opens and again at ``</body>`` and
+        ``</back>``, so loose paragraphs keep their position in document order
+        — a document's acknowledgements land ahead of the appendix section
+        that follows them, not after it. The section carries no title — JATS
+        gave it none, and inventing one would put a heading in the rendered
+        article that the publisher never wrote.
+
+        **It empties one slot, chosen by the container that is open**, which
+        is what makes the call sites' ordering load-bearing rather than
+        decorative: each flush must precede its own ``in_body`` / ``in_back``
+        clear, or it reads the wrong slot and empties nothing. A helper that
+        emptied *whatever* was pending would let ``</back>`` clean up after a
+        missing ``</body>`` flush, which is the laundering the two slots exist
+        to prevent — see their comment in ``__init__``.
+
+        ``<body>`` is tested first so that the DTD-invalid nesting of a
+        ``<back>`` inside a ``<body>`` keeps the reading ``_append_prose``
+        gives it. Neither open is the ordinary case of the article root, where
+        nothing can be pending because nothing routes there.
         """
-        if self.implicit_body_section is None:
+        if self.in_body:
+            pending, self.implicit_body_section = self.implicit_body_section, None
+        elif self.in_back:
+            pending, self.implicit_back_section = self.implicit_back_section, None
+        else:
             return
-        self.body_sections.append(self.implicit_body_section.build())
-        self.implicit_body_section = None
+        if pending is not None:
+            self.body_sections.append(pending.build())
 
     # -- SAX events ----------------------------------------------------------
 
@@ -2150,7 +2383,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             if not self.in_abstract:
                 # Flush first, so prose that preceded this <sec> becomes its own
                 # body section rather than being folded in as the <sec>'s parent.
-                self._flush_implicit_body_section()
+                self._flush_implicit_section()
                 self.section_stack.append(_SectionBuilder())
         elif name == "fig":
             # Reserve the slot now, fill it at </fig>: listed where it opened,
@@ -2587,13 +2820,24 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # open one, and stating that twice would leave two
                     # spellings of one rule to keep in step.
                     if rendered and not self._prose_reaches_output():
-                        # The rendition was built and has nowhere to go: no
-                        # <caption> open inside a float, or <back> prose with
-                        # no section on the stack. Counted rather than dropped
-                        # in silence, the rule `rejected_spans` settled for
-                        # #129 — a formula this parser rendered and then lost
-                        # is exactly the event no reader could otherwise see.
-                        self.formulas_dropped += 1
+                        # The rendition was built and will not be filed.
+                        # Counted rather than dropped in silence, the rule
+                        # `rejected_spans` settled for #129 — a formula this
+                        # parser rendered and then lost is exactly the event
+                        # no reader could otherwise see.
+                        #
+                        # **Which counter says which kind of loss it was.**
+                        # Refused as bibliography apparatus it is a decision
+                        # (issue #224), and reporting a decision as "reached
+                        # no section, caption or cell" would send a reader
+                        # looking for a routing gap this module chose not to
+                        # have. `_append_prose` counts the <p> spelling of the
+                        # same refusal; the two arms share the counter and the
+                        # predicate because they are one rule, not two.
+                        if self._prose_is_refused_apparatus():
+                            self.refused_apparatus_prose += 1
+                        else:
+                            self.formulas_dropped += 1
                     self._append_prose(rendered, keep_empty=False)
                 else:
                     # Inside flowing text, which is where an inline formula
@@ -2616,9 +2860,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         current_table.append_cell_text(rendered)
 
         elif name == "body":
-            self._flush_implicit_body_section()
+            self._flush_implicit_section()
             self.in_body = False
         elif name == "back":
+            # Mirrors </body>, and the order is load-bearing at both arms:
+            # `_flush_implicit_section` picks its slot from these very flags,
+            # so a flush after the clear reads neither slot and strands the
+            # prose — which the end-of-parse audit then reports as an ERROR,
+            # both slots being in `_ROUTING_FLAGS`. Swapping the two lines is
+            # a mutant `test_back_matter_survives_its_own_flush_order` kills.
+            self._flush_implicit_section()
             self.in_back = False
         elif name == "sec":
             if not self.in_abstract and self.section_stack:
@@ -3117,17 +3368,36 @@ def _audit_parse(handler: _JATSHandler) -> None:
 
     if handler.formulas_dropped:
         # WARNING for `rejected_spans`' reason: a publisher's deposit reaches
-        # it — a <disp-formula> in an unsectioned <back>, or under a wrapper
-        # inside a float — so it cannot mean "bmlib is wrong" the way the
-        # audit above does. Phrased as what happened rather than as a
-        # conclusion about the document: the equation was in the deposit and
-        # this parser rendered it, which is what makes the loss reportable.
+        # it — a <disp-formula> under an unlisted wrapper inside a float — so
+        # it cannot mean "bmlib is wrong" the way the audit above does.
+        # Phrased as what happened rather than as a conclusion about the
+        # document: the equation was in the deposit and this parser rendered
+        # it, which is what makes the loss reportable.
         logger.warning(
             "JATS parse of %s: %d display formula(s) were rendered but reached no "
             "section, caption or cell, so their equations are missing from the "
             "article (issue #177)",
             article,
             handler.formulas_dropped,
+        )
+
+    if handler.refused_apparatus_prose:
+        # The same rule and the same level, for a loss this module *chose*
+        # (issue #224). Once per article rather than per paragraph, which is
+        # what `contribs_naming_nobody` settled: one article's reference list
+        # can carry ten of these, and ten identical lines are read as noise.
+        #
+        # It says what bmlib did and never what the document held. "Refused as
+        # bibliography rather than article prose" is a claim about this
+        # parser's rule; "the article had no acknowledgements" would be a
+        # claim about the publisher, and the whole point of the refusal is
+        # that the content *was* deposited.
+        logger.warning(
+            "JATS parse of %s: %d <ref-list> paragraph(s) were refused as "
+            "bibliography apparatus rather than article prose, so they are "
+            "missing from the article (issue #224)",
+            article,
+            handler.refused_apparatus_prose,
         )
 
     if not handler.build_authors():

@@ -881,6 +881,98 @@ populations above re-derivable at the next redraw — they are **not**
 re-derivable from the committed corpora today, which carry no row for those
 five counters.
 
+## fulltext — back-matter prose routes, and `<ref-list>` is the one refusal (#224)
+
+**Do not "reconcile" this with the Swift port, and do not widen it to
+`<ref-list>`.** `_append_prose`'s unsectioned branch reads
+`self._unsectioned_prose_is_the_articles()`, which is `in_body or (in_back and
+no <ref-list> ancestor)`. The Swift port in BioMedLit widens the same branch to
+a bare `inBody || inBack`, so a parity check finds a real difference here and
+it is deliberate on this side.
+
+**Why the refusal.** A `<ref>`'s `<note>` and a `<ref-list>`'s own `<p>` are
+bibliography apparatus, not article prose. Sampled from Europe PMC's OA
+package `PMC10030002_PMC10040000.xml.gz` they read *"Faculty Opinions
+Recommendation"* ten times over in one article, *"Papers of special note have
+been highlighted as: • of interest"*, bare DOI fragments, and a chemistry
+paper's supporting-information note attached to the reference it belongs to.
+Appended to `body_sections` each becomes a paragraph of an article that never
+carried one — a corruption where the alternative is a blank, which is the
+preference #116 and #162 already settled here. And #150 is the issue that puts
+a note-only `<ref>` where it belongs: routing it into the prose now would leave
+its content misfiled rather than missing, and its symptom invisible.
+
+**What it costs**: 163 paragraphs in 39 of 8,118 served articles, 0.40% of the
+40,505 the unsectioned branch is offered; 1,311 in 293 of 97,909 archive ones,
+0.24% of 542,792. The first statement of this said 191 / 0.47% and 1,354 /
+0.25%; those came from a raw-XML walk, which counts paragraphs the branch never
+reaches — whitespace-only ones and `<p>` inside a back-matter float — so the
+figures above are instrumented at `_append_prose` instead, and the per-container
+rows now sum to their own totals, which the archive column did not. Ask what the
+code routes, not what the markup holds.
+
+**And it is reported.** `refused_apparatus_prose` counts it and `_audit_parse`
+emits one WARNING per article, the granularity `rejected_spans` (#129) and
+`formulas_dropped` (#177) both settled. Silence was the wrong answer twice
+over: on `main` this prose was incidental collateral of a branch gated on
+`in_body`, while here the refusal is named and argued, which earns a line
+rather than excusing one — and #150 is a downstream that cannot learn the
+content existed without it. WARNING, not ERROR, because a publisher's deposit
+reaches it. A `<disp-formula>` refused by the same rule goes to the same
+counter and **not** to `formulas_dropped`, or a policy this module chose would
+print as a gap in it.
+
+**The rule is scoped to the unsectioned branch, and "the one refusal" reads
+wider than that.** Prose under an open `<sec>` never reaches the predicate, so
+a `<ref-list>` inside a `<back>` `<sec>` keeps its apparatus, and so does one
+in `<body>`, where `in_body` answers first. Both are pre-existing and both
+measure near-empty — 0 apparatus paragraphs in 0 of 8,118 served articles, 1
+in 1 of 97,909 archive ones — so this is a scope to state, not a hole to
+close. Widening the refusal to the sectioned branch would need a population
+first.
+
+**Nothing else is refused, and that is not an oversight.** Every other
+container here already routes this way *inside* `<body>` — a `<def-list>`'s
+`<def><p>` in a body `<sec>` reaches that section today — so refusing one in
+`<back>` would make identical markup mean two different things depending on
+where the publisher put it. `<glossary>` is a large such population (10,693
+served, second of six on that rendition and third on the archive one) and is
+routed for exactly that reason, even though #228 drops its `<term>` on the way
+through and #231 is what the resulting untitled section costs a reader. Those
+are defects of their own, not an argument for dropping the definition too.
+
+**It is an ancestor test on `element_stack`, not `in_ref_list`.** JATS permits
+a `<ref-list>` inside a `<ref-list>`; the flag is a bare boolean the inner
+close clears, and it would then re-admit the outer list's remaining apparatus
+— #115 one element family over. Pinned by
+`test_a_nested_reference_list_is_refused_to_its_end`.
+
+**The strict-ancestor slice is prospective**, like `_inside_mixed_citation`'s.
+`_append_prose` is reached from the `<p>` and `<disp-formula>` arms only, so
+the excluded element is never the `<ref-list>` being tested for: dropping the
+slice survives the whole suite, and it was the one survivor of this change's
+eight-mutant sweep. Kept so a third caller does not inherit a rule nobody
+restated.
+
+**A slot per container, and one slot would have hidden a defect in the
+other.** `</body>` and `</back>` each flush unsectioned prose. Held in one
+slot, a `</body>` flush that failed would leave its prose pending, `<back>`
+would append to the same builder, and `</back>` would emit the pair as one
+section — the article silently losing the boundary between its body and its
+acknowledgements, with nothing stranded for `_audit_parse` to report. 73.8% of
+the served corpus carries a `<back>`, so almost every document would mask it.
+`_flush_implicit_section` therefore picks its slot from `in_body` / `in_back`,
+which is what makes each arm's flush-before-clear ordering load-bearing rather
+than decorative — it was neither when the helper emptied whatever was pending,
+and a comment claimed otherwise for two revisions. Pinned by
+`TestTheBodySlotCannotBeEmptiedByTheBackFlush`.
+
+**`has_body` is untouched and must stay untouched.** `body_paragraph_count`
+counts `<body>` prose alone, so a front-matter-plus-back-matter document is
+still body-less and `FullTextService` still holds it back rather than caching
+it. `test_back_matter_alone_is_still_not_a_body` is the guard; the mutant that
+counts back paragraphs dies there.
+
 ## fulltext — an exhibit with no `<label>` gets no fallback search (#162)
 
 **Do not add a descendant search when an exhibit carries no direct-child
