@@ -1434,21 +1434,33 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.contribs_naming_nobody = 0
         # Display formulas this parser rendered and then had nowhere to file,
         # counted so `_audit_parse` reports them once per article at WARNING
-        # for the two reasons above. `_append_prose` has four branches and no
-        # fallthrough, so a formula the merge allow-list sends to the paragraph
-        # path from inside a float with no <caption> open is built and dropped.
-        # Not a regression: `main` discarded the whole element. That is exactly
-        # why it is counted rather than left — the parser now builds the
-        # string, so losing it silently is a new kind of quiet.
+        # for the two reasons above. `_append_prose` has five branches and no
+        # fallthrough, so a rendition reaching none of them is built and
+        # dropped. Not a regression: `main` discarded the whole element. That
+        # is exactly why it is counted rather than left — the parser now
+        # builds the string, so losing it silently is a new kind of quiet.
         #
         # **This counts a routing gap, never a refusal.** The `<back>` shape
         # it used to name — 192 formulas in 23 of the PMC012xxxxxx package's
         # 97,909 articles — reaches the article as of issue #224 and is gone
-        # from here; what is left is the float shape, 0 measured in both
-        # committed corpora, so the counter is latent and issue #177 is what
-        # remains of it. A formula refused as bibliography apparatus is a
+        # from here. A formula refused as bibliography apparatus is a
         # *decision* and goes to `refused_apparatus_prose` instead, or the
         # WARNING would report a policy this module chose as a gap in it.
+        #
+        # **Two shapes are left, and naming only one understates what #177 is
+        # sized by.** A formula inside a float with no <caption> open, 0
+        # measured in both committed corpora; and one standing outside
+        # `<body>` and `<back>` altogether — `<front><notes>`, a `<sec>`
+        # inside it, or `<floats-group>` — which is #230's population one
+        # element family over and is not measured at all. Both are latent
+        # here rather than confirmed.
+        #
+        # **And it does not catch every rendered-then-lost formula**, which
+        # the paragraph above would otherwise imply: a `<disp-formula>` whose
+        # parent is in `_DISPLAY_FORMULA_MERGE_PARENTS` is merged into that
+        # parent's buffer and never reaches the standalone arm, so a formula
+        # inside a dropped `<front>` `<p>` is lost by the `<p>`'s own route
+        # and counted by neither counter. That is issue #233.
         self.formulas_dropped = 0
         # Prose refused by the `<ref-list>` rule in
         # `_unsectioned_prose_is_the_articles`, counted so `_audit_parse`
@@ -1463,9 +1475,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # WARNING and not ERROR for `rejected_spans`' reason: a publisher's
         # deposit reaches it, so it cannot mean "bmlib is wrong".
         #
-        # It counts both content kinds the refusal takes. Reached by a `<p>`
-        # through `_append_prose` and by a `<disp-formula>` one arm up, which
-        # would otherwise land in `formulas_dropped` and read as a gap.
+        # It counts both content kinds the refusal takes, and counts each of
+        # them **once**: `_append_prose` is the only site that increments it,
+        # reached by a `<p>` directly and by a `<disp-formula>` through the
+        # standalone arm, which subtracts the refusal from `formulas_dropped`
+        # rather than counting it again. A first cut incremented at both, so
+        # one formula reported as two — the counter this change added to size
+        # a loss, over-reporting it.
         self.refused_apparatus_prose = 0
         self.current_article_id_type: str | None = None
 
@@ -1491,12 +1507,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # acknowledgement prose behind the body's own, and `</back>` empties it,
         # so the article silently loses the boundary between the two and the
         # end-of-parse audit sees nothing stranded. That is a real narrowing,
-        # since 73.8% of the served corpus carries a `<back>` (see
-        # `_unsectioned_prose_is_the_articles`), and it is the shape this
-        # module keeps being caught by — a single slot where the state is
-        # per-container. Two slots make the loss structural instead: the body
-        # slot can only be emptied by `</body>`, so a defect there strands it
-        # and `_ROUTING_FLAGS` reports it.
+        # since **at least** 73.8% of the served corpus carries a `<back>`:
+        # that figure is the share *gaining prose* (see
+        # `_unsectioned_prose_is_the_articles`), so a `<back>` holding only a
+        # `<ref-list>` and sections is outside it and the true share is
+        # higher — a lower bound, not the population, which is this repo's
+        # own "a count is of what you looked for" one comment down. And it is
+        # the shape this module keeps being caught by: a single slot where the
+        # state is per-container. Two slots make the loss structural instead —
+        # the body slot can only be emptied by `</body>`, so a defect there
+        # strands it and `_ROUTING_FLAGS` reports it.
         self.implicit_body_section: _SectionBuilder | None = None
         self.implicit_back_section: _SectionBuilder | None = None
         # Prose found inside <body>. Counted separately from body_sections
@@ -2047,17 +2067,25 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         #177's routing gap. Answering ``True`` for either would put a claim in
         this module's mouth that it made a choice it did not make.
 
-        **Only the float guard is reachable, and the other two say so rather
-        than implying they were measured.** ``in_abstract`` and
-        ``section_stack`` are each answered ``True`` by
-        :meth:`_prose_reaches_output` one branch earlier and excluded by
-        :meth:`_append_prose`'s chain before this is reached, so neither
-        caller can arrive here with them set; they are kept because this
-        predicate states a rule rather than a position, and a third caller
-        would otherwise inherit guards nobody restated. The float guard is
-        genuinely load-bearing and pinned: a formula inside a ``<fig>`` inside
-        a refused ``<ref-list>`` is lost to the float branch whether or not
-        the refusal exists, so it belongs to #177 and not here.
+        **Only the float guard changes an answer, and the other two say what
+        they are rather than implying they were measured.** ``in_abstract``
+        cannot be the deciding guard: :meth:`_prose_reaches_output` answers
+        ``True`` for it one branch earlier unless a float is open too, and
+        then the float guard here answers first. ``section_stack`` *is*
+        reachable non-empty, which a first draft of this comment denied — a
+        ``<sec>`` inside ``<front><notes>`` leaves it populated while
+        ``in_body`` and ``in_back`` are both ``False``, so that method's
+        conjunction does not answer ``True`` and the ``<disp-formula>`` arm
+        arrives here with the stack loaded. It costs nothing only because
+        ``in_back`` is ``False`` in that shape too, so the final line would
+        refuse it anyway. Both are kept because this predicate states a rule
+        rather than a position, and a third caller would otherwise inherit
+        guards nobody restated — but do not delete ``section_stack`` on the
+        strength of an unreachability the ``<front><notes><sec>`` shape
+        refutes. The float guard is genuinely load-bearing and pinned: a
+        formula inside a ``<fig>`` inside a refused ``<ref-list>`` is lost to
+        the float branch whether or not the refusal exists, so it belongs to
+        #177 and not here.
 
         Returns:
             ``True`` if this module refuses the text as a ``<ref-list>``'s.
@@ -2294,9 +2322,21 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         missing ``</body>`` flush, which is the laundering the two slots exist
         to prevent — see their comment in ``__init__``.
 
-        ``<body>`` is tested first so that the DTD-invalid nesting of a
-        ``<back>`` inside a ``<body>`` keeps the reading ``_append_prose``
-        gives it. Neither open is the ordinary case of the article root, where
+        **``<body>`` is tested first, and the shape that needs it is a
+        ``<body>`` nested inside a ``<back>``, not the reverse.** An earlier
+        comment named the reverse, which does not discriminate: with a
+        ``<back>`` inside a ``<body>`` both flags are set but ``_append_prose``
+        files everything in the body slot, so the back slot is empty and
+        either order reads the same — swapping the branches survived the whole
+        suite. Nested the other way the back slot fills *before* ``<body>``
+        opens, so at ``</body>`` both flags are set and both slots hold prose,
+        which is the only state where the order decides: testing ``in_back``
+        first empties the back slot at ``</body>``, leaves ``</back>`` nothing
+        to flush, and strands the body slot, losing that prose outright.
+        Pinned by
+        ``test_a_body_inside_a_back_does_not_let_the_back_branch_steal_the_flush``.
+        Both are DTD-invalid, so this is about not compounding a malformed
+        document. Neither open is the ordinary case of the article root, where
         nothing can be pending because nothing routes there.
         """
         if self.in_body:
@@ -2819,25 +2859,32 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # image-only <disp-formula> renders as "" and must not
                     # open one, and stating that twice would leave two
                     # spellings of one rule to keep in step.
-                    if rendered and not self._prose_reaches_output():
+                    if (
+                        rendered
+                        and not self._prose_reaches_output()
+                        and not self._prose_is_refused_apparatus()
+                    ):
                         # The rendition was built and will not be filed.
                         # Counted rather than dropped in silence, the rule
                         # `rejected_spans` settled for #129 — a formula this
                         # parser rendered and then lost is exactly the event
                         # no reader could otherwise see.
                         #
-                        # **Which counter says which kind of loss it was.**
-                        # Refused as bibliography apparatus it is a decision
-                        # (issue #224), and reporting a decision as "reached
-                        # no section, caption or cell" would send a reader
-                        # looking for a routing gap this module chose not to
-                        # have. `_append_prose` counts the <p> spelling of the
-                        # same refusal; the two arms share the counter and the
-                        # predicate because they are one rule, not two.
-                        if self._prose_is_refused_apparatus():
-                            self.refused_apparatus_prose += 1
-                        else:
-                            self.formulas_dropped += 1
+                        # **This arm counts only the routing gap, and the
+                        # refusal is subtracted rather than counted here.**
+                        # Reported as "reached no section, caption or cell" a
+                        # decision (issue #224) would send a reader after a
+                        # gap this module chose not to have. But the refusal
+                        # itself is counted by `_append_prose` one line down,
+                        # which reaches its own refusal arm on exactly this
+                        # state — so incrementing it here as well reported one
+                        # formula as two, which is what a first cut did and
+                        # what the count in
+                        # `test_a_refused_formula_is_not_reported_as_a_routing_gap`
+                        # now pins — the substring assertion it carried before
+                        # passed either way. One rule, one counting site,
+                        # asked from two positions.
+                        self.formulas_dropped += 1
                     self._append_prose(rendered, keep_empty=False)
                 else:
                     # Inside flowing text, which is where an inline formula
@@ -2867,8 +2914,18 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # `_flush_implicit_section` picks its slot from these very flags,
             # so a flush after the clear reads neither slot and strands the
             # prose — which the end-of-parse audit then reports as an ERROR,
-            # both slots being in `_ROUTING_FLAGS`. Swapping the two lines is
-            # a mutant `test_back_matter_survives_its_own_flush_order` kills.
+            # both slots being in `_ROUTING_FLAGS`.
+            #
+            # **What kills the swap is every ordinary back-matter fixture**,
+            # `TestJATSParserUnsectionedBackMatter`'s in particular, since
+            # each loses the prose it asserts. Not
+            # `test_back_matter_survives_its_own_flush_order`, which this
+            # comment used to name: that test emulates the swap by clearing
+            # the flag in a wrapper round `endElement`, so on the mutant the
+            # emulation is idempotent and it passes either way. It documents
+            # what the wrong order costs; the fixtures are the guard. A
+            # comment naming a test that does not redden is the "a rule
+            # enforced by prose is not enforced" failure one level down.
             self._flush_implicit_section()
             self.in_back = False
         elif name == "sec":
@@ -3392,8 +3449,11 @@ def _audit_parse(handler: _JATSHandler) -> None:
         # parser's rule; "the article had no acknowledgements" would be a
         # claim about the publisher, and the whole point of the refusal is
         # that the content *was* deposited.
+        # "item(s)" rather than "paragraph(s)": the counter also takes a
+        # <disp-formula>'s rendition, which is not a paragraph, and a line
+        # that says what bmlib did must not misdescribe what it did it to.
         logger.warning(
-            "JATS parse of %s: %d <ref-list> paragraph(s) were refused as "
+            "JATS parse of %s: %d <ref-list> item(s) were refused as "
             "bibliography apparatus rather than article prose, so they are "
             "missing from the article (issue #224)",
             article,

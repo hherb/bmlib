@@ -34,10 +34,10 @@ article in ten), **#127**, **#120/#140**, **#129**.
 both renditions.** Unsectioned `<back>` prose — `<ack>`, `<notes>`,
 `<fn-group>`, `<app>`, `<glossary>`, `<bio>` — used to be dropped, and 5,990
 of 8,118 served articles (73.8%) gain some. Diffed against `main` over all
-8,118 articles of `PMC10030002_PMC10040000.xml.gz`: prose moves in 5,989
-(73.8%) and **every move is an insertion** — 40,341 paragraphs and 5.91 MB
-gained, 0 lost, 0 altered — `body_sections` gains 6,977 and `html_content`
-moves in all 5,989, so **a downstream holding cached full text must
+8,118 articles of `PMC10030002_PMC10040000.xml.gz`: prose moves in 5,990
+(73.8%) and **every move is an insertion** — 40,342 paragraphs and 5.91 MB
+gained, 0 lost, 0 altered — `body_sections` gains 6,978 and `html_content`
+moves in all 5,990, so **a downstream holding cached full text must
 re-fetch**. `has_body`, `figures`, `.tables`, `references` and
 `abstract_sections` move in **0**, which is the invariant the fix is built
 around rather than a happy result.
@@ -140,10 +140,29 @@ call graph**: PR #148 reasoned soundly from a false premise, and four review
 agents missed what two parses over 880 articles showed in minutes; `gained/lost`
 is blind to the commoner case, a value that changed in place. **And the diff's
 own predicate is a claim to check** — #224's first cut asked whether `main`'s
-paragraphs were a *prefix* of the branch's and reported 2,324 of 5,989 articles
+paragraphs were a *prefix* of the branch's and reported 2,325 of 5,990 articles
 as "altered", when the change inserts in the *middle* (loose `<ack>` prose
 flushes ahead of a back `<sec>`); the honest test is *subsequence*, and it
-reads 5,989 of 5,989. A metric that alarms is as wrong as one that flatters.
+reads 5,990 of 5,990. A metric that alarms is as wrong as one that flatters.
+**And the harness that produces a blast radius is itself an instrument**:
+#224's first cut published 5,989 / 40,341 / 6,977 against a routing tally of
+5,990 / 40,342, and the one-article gap was carried in four files as if the
+two were measuring different events. Re-derived by parsing all 8,118 served
+articles twice, they agree exactly; the harness had skipped an article. Two of
+bmlib's own counts never settle in favour of the weaker one, and a gap between
+them is a defect in one of them until it is explained.
+**Assert the number a log line prints, not that it printed.** #224's
+`refused_apparatus_prose` incremented at two sites for one refused
+`<disp-formula>`, and both its WARNING tests asserted the substring alone, so
+the counter added to size a loss over-reported it through review and a green
+CI. The `<p>` test beside them already asserted its count, which is what made
+the asymmetry visible; `log-assertions-must-be-unique-to-the-line` is the same
+rule one step short.
+**A closing keyword next to an issue number closes it, quotation or not.**
+Commit 009fec3 wrote *"Filed rather than …: #230"* with the keyword spelled
+out, and GitHub closed the issue that sentence said was being filed. Reopened.
+Never let a keyword and a number sit adjacent in any commit body, issue text or
+comment, however the sentence around them reads.
 **A committed corpus is not the only honest population**: #224's is two named
 public artifacts at 8,118 and 97,909 articles against the committed corpora's
 997 and 1,000 — bigger, re-derivable by any reader, and the precedent #146/#149
@@ -320,9 +339,43 @@ is never the `<ref-list>` being tested for. Recorded at the site as
 prospective, which is what `_inside_mixed_citation`'s own slice already says
 of itself.
 
-**Three findings were filed rather than fixed**: **#228** (a `<def-list>`'s
-terms) and **#231** (what the untitled section they land in costs a reader),
-both described under *Next up*; and **bmlibrarian_lite #204**, the other end
+**Review found one behaviour defect and two comments asserting the wrong
+shape; all three are fixed on the branch.** The defect: a refused
+`<disp-formula>` incremented `refused_apparatus_prose` at the formula arm
+*and* again inside `_append_prose`, reporting one formula as two — 0 live
+occurrences in either corpus, but it is the PR's own fixture that exercises
+it, and both WARNING tests asserted the substring rather than the number. They
+assert counts now. The comments: `_prose_is_refused_apparatus` called its
+`section_stack` guard unreachable, and `<front><notes><sec><disp-formula>`
+reaches it with the stack loaded; and `_flush_implicit_section` said its
+`<body>`-first order was for a `<back>` inside a `<body>`, which does not
+discriminate at all — the shape that does is the mirror one, a `<body>` inside
+a `<back>`, where both slots hold prose at `</body>` and testing `in_back`
+first strands the body's. Each now has a test that reddens on the mutant; the
+branch carries six more tests than when it was opened.
+
+**Also stale and now corrected**: `docs/DECISIONS.md`'s #147 entry still said
+the unsectioned-`<back>` formula shape was dropped and that routing it was
+left open *because it would reach `has_body`* — both overturned by this very
+branch, in the register `CLAUDE.md` tells the next session to read first.
+`docs/manual/fulltext.md` still listed an appendix with no `<sec>` as a
+dropped shape. And the `<glossary>` archive count reached `ROADMAP.md` and
+`HANDOVER.md` as 113,444 from #228's body; 113,468 is the value the archive
+column sums with.
+
+**Six findings were filed rather than fixed.** From the first pass: **#228**
+(a `<def-list>`'s terms) and **#231** (what the untitled section they land in
+costs a reader), both described under *Next up*. From review: **#233** (a
+display formula merged into a `<p>` that is itself dropped reaches neither
+counter, so `formulas_dropped` does not catch every rendered-then-lost
+formula) and **#234** (a `<sec>` in front-matter `<notes>` emits a titled,
+contentless section ahead of the body and into the cached HTML) — both
+pre-existing on `main`, and #234 wants settling with **#230**, which this
+branch closed by accident and which is now reopened. The counting question
+raised against #228 — that a `<term>` or `<label>` this parser reads and does
+not file is exactly the drop #224's own rule says earns a line — is recorded
+as a comment on that issue rather than as a seventh. And **bmlibrarian_lite
+#204**, the other end
 of the `<ref-list>` divergence, where the Swift port takes the apparatus. That
 note is asymmetric — this side carries the divergence in `docs/DECISIONS.md`
 and in the routing's docstring, the Swift side carries it as an open issue and
@@ -404,20 +457,24 @@ still finds an unexplained difference.
 
 ### Open GitHub issues
 
-**Forty-five open**, counted against the repo at the end of the session,
-**forty-four once this branch merges and #224 is closed by hand** (`gh issue
-list --state open --limit 200`, 2026-09-10 — the limit matters, `gh` pages at
-30 and the bare command reports a page size as a total): #86, #92, #94, #103,
-#124, #128, #137, #142, #143, #144, #145, #150, #152, #154, #156, #157, #172,
-#173, #174, #175, #177, #178, #179, #181, #186, #196, #197, #200, #201, #204,
-#207, #209, #210, #212, #214, #215, #217, #221, #222, #223, #224, #226, #227,
-#228, #231. This branch answers **#224** and the larger half of **#177**, and
-files **#228** and **#231**. **The line read forty-four when it was first
-written and the repo already held forty-five** — #231 was filed by this same
-session an hour later, and described elsewhere in this file, which is the
-*count, do not project* lesson landing on the session that restated it.
-Re-count at the end against `gh`, not at the point the number is first
-needed. **#206 and #218 were closed by hand at the start of this session** — PR #225 answered both and said
+**Forty-eight open**, re-counted against the repo after this branch's review
+round, **forty-seven once this branch merges and #224 is closed by hand**
+(`gh issue list --state open --limit 200`, 2026-09-10 — the limit matters,
+`gh` pages at 30 and the bare command reports a page size as a total): #86,
+#92, #94, #103, #124, #128, #137, #142, #143, #144, #145, #150, #152, #154,
+#156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
+#200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
+#224, #226, #227, #228, #230, #231, #233, #234. This branch answers **#224**
+and the larger half of **#177**, and files **#228**, **#231**, **#233** and
+**#234**. **The line has now been wrong twice in one session, in the same
+direction.** It read forty-four when first written and the repo held
+forty-five (#231 was filed by this same session an hour later); it then read
+forty-five and the repo held forty-eight, because review filed #233 and #234
+and reopened #230. Both times the number was projected from what the writer
+remembered rather than counted from `gh` at the moment of writing — which is
+the *count, do not project* lesson landing twice on the file that states it.
+Re-count at the end against `gh`, and re-count **again** after any review
+round, not at the point the number is first needed. **#206 and #218 were closed by hand at the start of this session** — PR #225 answered both and said
 in its own body that it carried no closing keyword deliberately, then merged
 without anyone doing so; the process rule below caught its **fifteenth**
 instance, and the fourteenth (#188/#216, PR #219) was one session earlier.
@@ -436,7 +493,7 @@ test.
 **#228 is this session's**, and it is the residue of #224 rather than a new
 class: a `<def-list>`'s `<term>` reaches no handler, so a definition list
 renders as definitions with no terms. Pre-existing in `<body>` and multiplied
-by #224 in `<back>` (10,693 served definitions, 113,444 archive). It is filed
+by #224 in `<back>` (10,693 served definitions, 113,468 archive). It is filed
 rather than fixed because the shape is a modelling decision — one paragraph per
 `<def-item>`, as #124 proposes for a footnote marker, or a model on
 `JATSBodySection` — and because the body population is not measured. It joins

@@ -708,7 +708,7 @@ All notable changes to bmlib are documented here. The format is based on
   the maintainer from a JATS parity check against the Swift port in BioMedLit
   — the first open issue here not filed by a PR reviewing an earlier fix. It
   is *not* the first that loses content the document carries: issue #124 is
-  open, predates it by three weeks, and drops table and figure footnote prose
+  open, predates it by eighteen days, and drops table and figure footnote prose
   entirely.)
 
   `_append_prose`'s unsectioned branch was gated on `in_body` alone. `<sec>`
@@ -742,6 +742,18 @@ All notable changes to bmlib are documented here. The format is based on
   encountered against 40,341 inserted, were never reconciled. Both columns now
   sum to their own totals exactly. A count is of what you looked for.
 
+  **And the two instruments now agree, which is the check the first cut
+  skipped.** Re-derived over all 8,118 served articles by parsing each one
+  twice, once on `main` and once here: the routing tally and the corpus diff
+  both read **5,990 articles and 40,342 paragraphs**, on the same article set,
+  with `main`'s paragraph list a subsequence of this branch's in all 5,990. So
+  the earlier blast-radius row — 5,989 / 40,341 / 6,977 `body_sections`, and
+  the 2,324 the prefix test reported — was one article short throughout, its
+  harness having skipped one, and the gap that left between the tally and the
+  diff was the harness rather than the two measuring different events. Two of
+  bmlib's own counts never settle in favour of the weaker one, and here they
+  do not have to: they are the same number.
+
   **`<ref-list>` is the one refusal, and it is a misfiling rule rather than a
   taste.** A `<ref>`'s `<note>` and a `<ref-list>`'s own `<p>` are bibliography
   apparatus: sampled from the served package they read *"Faculty Opinions
@@ -767,6 +779,31 @@ All notable changes to bmlib are documented here. The format is based on
   learn the content existed without it. A `<disp-formula>` refused by the same
   rule goes to the same counter and **not** to `formulas_dropped`, or a policy
   this module chose would print as a gap in it.
+
+  **One counting site, and a first cut had two.** The `<disp-formula>` arm
+  incremented `refused_apparatus_prose` and then called `_append_prose`, whose
+  own refusal arm re-evaluated the same predicate on the same state and
+  incremented it again — so one refused formula reported as two, in the
+  counter this change added so a downstream could size the loss. The arm now
+  *subtracts* the refusal from `formulas_dropped` and counts nothing itself.
+  What let it ship is that both WARNING tests asserted the substring and never
+  the number; they assert the count now, and the mutant that restores the
+  second increment reddens one of them. Measured live at **0 occurrences** in
+  both corpora, so no published figure moves — but the shape is reachable from
+  valid JATS and it is the PR's own fixture that exercises it. The line also
+  reads *"item(s)"* rather than *"paragraph(s)"* now, a rendition not being a
+  paragraph.
+
+  **Review-round corrections to the measurements, re-derived rather than
+  argued.** Parsing all 8,118 served articles twice, once on `main` and once
+  here, the routing tally and the corpus diff **agree exactly** — 5,990
+  articles and 40,342 paragraphs, on the same article set, with `main`'s
+  paragraph list a subsequence of this branch's in all 5,990. The blast-radius
+  row first published here was one article short throughout (5,989 / 40,341 /
+  6,977 sections, and the 2,324 the prefix test reported), its harness having
+  skipped one; corrected above. The `<glossary>` archive count is **113,468**,
+  not the 113,444 that reached `ROADMAP.md` and `HANDOVER.md` from issue
+  #228's body — 113,468 is the value the archive column sums with.
 
   **The rule is scoped to the unsectioned branch**, which "the one refusal"
   reads wider than. Prose under an open `<sec>` never reaches the predicate, so
@@ -802,7 +839,9 @@ All notable changes to bmlib are documented here. The format is based on
   `<back>` that follows would append to the same builder, and `</back>` would
   emit the pair as one section — the article silently losing the boundary
   between its body and its acknowledgements, with nothing stranded for
-  `_audit_parse` to report. 73.8% of the served corpus carries a `<back>`, so
+  `_audit_parse` to report. At least 73.8% of the served corpus carries a
+  `<back>` — that is the share gaining prose, so a `<back>` holding only a
+  `<ref-list>` is not in it and the true share is higher — so
   almost every document would mask it. `_flush_implicit_section` picks its slot
   from `in_body` / `in_back`, which is what makes each arm's flush-before-clear
   ordering load-bearing rather than decorative — it was neither while the
@@ -810,11 +849,11 @@ All notable changes to bmlib are documented here. The format is based on
   revisions.
 
   **Blast radius, measured by diffing a corpus rather than argued from the
-  call graph.** Prose moves in **5,989 of 8,118 articles (73.8%)**, and in
+  call graph.** Prose moves in **5,990 of 8,118 articles (73.8%)**, and in
   every one of them `main`'s paragraph list is a **subsequence** of this
-  branch's — 40,341 paragraphs and 5.91 MB inserted, **0 lost, 0 altered**.
-  `body_sections` gains 6,977 entries and `html_content`, which is what
-  `FullTextService` caches, moves in the same 5,989. A downstream holding
+  branch's — 40,342 paragraphs and 5.91 MB inserted, **0 lost, 0 altered**.
+  `body_sections` gains 6,978 entries and `html_content`, which is what
+  `FullTextService` caches, moves in the same 5,990. A downstream holding
   cached full text should re-fetch.
 
   **The larger half of issue #177 is answered by this.** That issue contained
