@@ -400,16 +400,17 @@ still finds an unexplained difference.
   previous release wrote is durable under #95's rule, so the whole window is
   re-fetched once. The two questions are independent, and a downstream reading
   only the number must still read this list.
-- **Tests: 3804 passing + 63 skipped** (`uv run pytest tests/ -q`, measured
-  2026-09-10 on this branch; `main` at 1631223 measures **3776 + 63**, so this
-  branch adds **28**, all in `tests/test_jats_parser.py`. Measure `main`
-  rather than subtracting from a previous handover's figure — the 3614
-  recorded three sessions ago was never what `main` held, which is how that
-  number survived, and the 3769/3747/+22-in-`test_transparency.py` written
-  here for #224 was the *previous* branch's block carried through unchanged:
-  every one of its four figures was wrong, including the commit it named,
-  while the sentence telling you to re-measure sat beside it. Re-measure both
-  ends, and do it in a worktree so a dirty tree cannot answer for `main`.)
+- **Tests: 3810 passing + 63 skipped** on `main` at 9ff92ef (`uv run pytest
+  tests/ -q`, measured 2026-09-10 after PR #232 merged). The #224 branch was
+  recorded here as **3804** and that figure was taken *before* its review
+  round, which added six — so a handover's own branch figure goes stale at the
+  last commit like any other. Measure `main` rather than subtracting from a
+  previous handover's figure: the 3614 recorded four sessions ago was never
+  what `main` held, and the 3769/3747/+22-in-`test_transparency.py` written
+  for #224 was the *previous* branch's block carried through unchanged, every
+  one of its four figures wrong including the commit it named, while the
+  sentence telling you to re-measure sat beside it. Re-measure both ends, and
+  do it in a worktree so a dirty tree cannot answer for `main`.
   **The PostgreSQL half was not re-run for this branch and did not need to be**
   — it touches `transparency/`, `scripts/` and one `publications/` docstring,
   none of which carries SQL. The PostgreSQL half has not been re-run since the
@@ -457,24 +458,22 @@ still finds an unexplained difference.
 
 ### Open GitHub issues
 
-**Forty-eight open**, re-counted against the repo after this branch's review
-round, **forty-seven once this branch merges and #224 is closed by hand**
+**Forty-seven open**, counted against the repo at the start of this session,
+with PR #232 merged and **#224 closed by hand** as its body said it would be
 (`gh issue list --state open --limit 200`, 2026-09-10 — the limit matters,
 `gh` pages at 30 and the bare command reports a page size as a total): #86,
 #92, #94, #103, #124, #128, #137, #142, #143, #144, #145, #150, #152, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
-#224, #226, #227, #228, #230, #231, #233, #234. This branch answers **#224**
-and the larger half of **#177**, and files **#228**, **#231**, **#233** and
-**#234**. **The line has now been wrong twice in one session, in the same
-direction.** It read forty-four when first written and the repo held
+#226, #227, #228, #230, #231, #233, #234. **The line was wrong twice in the
+previous session, in the same direction.** It read forty-four when first written and the repo held
 forty-five (#231 was filed by this same session an hour later); it then read
 forty-five and the repo held forty-eight, because review filed #233 and #234
 and reopened #230. Both times the number was projected from what the writer
 remembered rather than counted from `gh` at the moment of writing — which is
 the *count, do not project* lesson landing twice on the file that states it.
 Re-count at the end against `gh`, and re-count **again** after any review
-round, not at the point the number is first needed. **#206 and #218 were closed by hand at the start of this session** — PR #225 answered both and said
+round, not at the point the number is first needed. **#206 and #218 were closed by hand at the start of the previous session** — PR #225 answered both and said
 in its own body that it carried no closing keyword deliberately, then merged
 without anyone doing so; the process rule below caught its **fifteenth**
 instance, and the fourteenth (#188/#216, PR #219) was one session earlier.

@@ -112,6 +112,19 @@ class TestEachImbalanceIsReportedWithItsCost:
         assert "<contrib> still open" in messages[0]
         assert "never built" in messages[0]
 
+    def test_a_definition_item_left_open_is_reported(self):
+        """The one imbalance here whose cost is a *wrong* value, not a missing one.
+
+        A stranded ``<def-item>`` frame holds a ``<term>`` this parser read,
+        and the next paragraph of any kind to arrive anywhere in the document
+        takes it as a prefix — a definition's word welded onto prose that is
+        not its definition (issue #228).
+        """
+        [message] = unwind_diagnostics(ParseUnwindState(open_definition_items=1))
+
+        assert "<def-item> still open" in message
+        assert "folded into the next paragraph" in message
+
     def test_an_unfilled_author_slot_is_reported(self):
         messages = unwind_diagnostics(ParseUnwindState(unfilled_author_slots=2))
 

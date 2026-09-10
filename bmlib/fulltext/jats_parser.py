@@ -1254,6 +1254,23 @@ _FORMULA_PARTS = _FORMULA_ELEMENTS | {"tex-math"}
 # and two spellings of "a cell" are two things to keep in step.
 _TABLE_CELL_ELEMENTS = frozenset({"td", "th"})
 
+# What separates a definition's term from the definition itself (issue #228).
+#
+# A `<def-list>` pairs a `<term>` with a `<def>`, and this module models no
+# definition list: the `<def>`'s `<p>` routes as ordinary prose, exactly as a
+# `<list-item>`'s does, while the `<term>`'s buffer was popped and discarded —
+# so an abbreviations list arrived as definitions with no words defined. The
+# term is folded into the definition's own paragraph rather than modelled,
+# which is what this module already does with a `<list>` and the shape #124
+# proposes for a footnote marker, so one answer serves three containers
+# instead of three public fields.
+#
+# An em dash rather than a colon, and spaced. A term is free text — 41 of one
+# corpus's funder names run past ten words, and a term may itself end in a
+# colon or carry one — so a colon cannot be told from the term's own
+# punctuation, while the dash cannot be mistaken for part of either side.
+_DEFINITION_SEPARATOR = " — "
+
 # Parents a <disp-formula> merges into rather than standing beside as its own
 # paragraph.
 #
@@ -1483,6 +1500,51 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # one formula reported as two — the counter this change added to size
         # a loss, over-reporting it.
         self.refused_apparatus_prose = 0
+        # The open <def-item> elements, innermost last, each holding the
+        # <term> this parser has read and not yet filed (issue #228).
+        #
+        # **A stack, because a <def> admits a <def-list>**, so definition
+        # items nest. Held as one slot the inner item's term overwrote the
+        # outer one's and the inner close cleared it, which is #115's defect
+        # one element family over — and the outer item's own definition,
+        # arriving after the nested list, would then take the inner term or
+        # none at all.
+        #
+        # The frame is pushed after `startElement`'s suppression return and
+        # popped under `endElement`'s matching guard, so the two stay balanced
+        # across a nested article's region: unbalanced, a stranded term
+        # prefixes the host article's next paragraph with a reviewer's word.
+        # `open_definition_items` is the audit's field for exactly that.
+        self.def_item_stack: list[str | None] = []
+        # Terms this parser read and could not file, counted so `_audit_parse`
+        # reports them once per article at WARNING — the granularity and the
+        # level `rejected_spans` settled for #129 and `refused_apparatus_prose`
+        # for #224.
+        #
+        # Folding the term into its definition's paragraph files it wherever
+        # that paragraph routes; where the paragraph routes *nowhere* the pair
+        # is lost together, and the term's half is the one no reader could
+        # otherwise see. The measured population is front matter, whose prose
+        # falls past every branch of `_append_prose` with no counter and no
+        # line — issue #230, and not this counter's to fix.
+        #
+        # **Scoped to a <term>, and the shared label-or-term counter #228's
+        # own comment proposes is refused on measurement.** An unfiled
+        # <label> — one whose owner is not a formula, a <fig>, a <table-wrap>
+        # or a <ref> — reaches 6,225 of the 8,118 served articles of
+        # `PMC10030002_PMC10040000.xml.gz` (76.7%) and 86,516 of the 97,909
+        # archive articles of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`
+        # (88.4%), where each of this counter's three siblings fires on a
+        # small minority. A line on three articles in four is noise, and the
+        # owners are at least four separate questions: an <aff>'s marker
+        # (23,077 served), a numbered <sec>'s own number (19,462), a
+        # <list-item>'s bullet (7,351) and a footnote marker (5,891, which is
+        # #124's). Filed with the owner table rather than pooled here.
+        #
+        # It counts a *word*, never an element: an empty <term> adds no prefix
+        # wherever it lands, so counting one would report a loss the document
+        # never deposited.
+        self.definition_terms_dropped = 0
         self.current_article_id_type: str | None = None
 
         # Abstract state
@@ -1746,6 +1808,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             open_formulas=len(self.formula_stack),
             open_contrib_groups=len(self.contrib_group_stack),
             open_contribs=len(self.contrib_stack),
+            open_definition_items=len(self.def_item_stack),
             unfilled_author_slots=sum(slot is None for slot in self.author_slots),
             unfilled_figure_slots=sum(slot is None for slot in self.figure_slots),
             unfilled_table_slots=sum(slot is None for slot in self.table_slots),
@@ -2193,6 +2256,69 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             return True
         return self.in_back and "ref-list" not in self.element_stack[:-1]
 
+    def _prefix_pending_definition_term(self, text: str) -> str:
+        """Fold the innermost open ``<def-item>``'s ``<term>`` into its definition.
+
+        A ``<def-list>`` renders as the definitions alone unless the word each
+        one defines is carried with it, and this module models no definition
+        list — so the term joins the definition's own paragraph, which is what
+        already happens to a ``<list-item>``'s prose one element family over
+        (issue #228). See :data:`_DEFINITION_SEPARATOR` for the shape and why.
+
+        **Called from :meth:`_append_prose` rather than from the ``<p>`` arm**,
+        so one rule serves all five destinations that method routes to — a
+        caption, an abstract, a section, the unsectioned branch and the
+        ``<ref-list>`` refusal. A ``<p>`` may carry a ``<def-list>``, so a
+        figure legend can hold one, and stating the fold twice would leave two
+        spellings of it to keep in step, which is why ``_append_prose`` exists
+        at all (issue #147).
+
+        **The term is spent only on a paragraph that is accounted for**, which
+        is the whole of why this asks two predicates instead of prefixing
+        unconditionally. ``_append_prose`` has three outcomes, not two: it
+        files the prose, it refuses it as bibliography apparatus and counts
+        that, or — in ``<front>``, which is where the measured population of
+        an unfilable term lives — it falls past every branch with no counter
+        and no line at all (issue #230). Consuming the term in that third case
+        would hand it to a paragraph nobody ever sees and leave
+        ``definition_terms_dropped`` reading zero over the one population it
+        exists to size; consuming it in the second keeps one loss to one
+        count, which is the rule PR #232's review had to correct for a
+        ``<disp-formula>`` reported as two.
+
+        A ``<def-list>`` inside a float with no ``<caption>`` open reaches the
+        third case too, its definition being dropped as exhibit furniture, so
+        the counter gives that shape its first line as well — it is #124's
+        container, not this rule's, and the word is lost either way.
+
+        The innermost frame is the ``<p>``'s nearest ``<def-item>`` ancestor,
+        frames being pushed and popped with the element, so a nested
+        definition list's term goes to its own definition and the enclosing
+        item keeps its own.
+
+        Empty prose takes no term: ``keep_empty=True`` still appends an empty
+        paragraph a document deposited, and prefixing a term onto it would
+        spend the word on a paragraph that says nothing. The term stays
+        pending for a later paragraph of the same definition, or is counted at
+        ``</def-item>``.
+
+        Args:
+            text: The prose about to be routed, already whitespace-normalised.
+
+        Returns:
+            ``text``, with the pending term and separator ahead of it where
+            there was one to fold in.
+        """
+        if not text or not self.def_item_stack:
+            return text
+        term = self.def_item_stack[-1]
+        if not term:
+            return text
+        if not (self._prose_reaches_output() or self._prose_is_refused_apparatus()):
+            return text
+        self.def_item_stack[-1] = None
+        return f"{term}{_DEFINITION_SEPARATOR}{text}"
+
     def _append_prose(self, text: str, *, keep_empty: bool) -> None:
         """Route one run of prose to whatever the parse currently has open.
 
@@ -2216,6 +2342,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             keep_empty: Whether an empty ``text`` still appends inside a
                 section. Never opens an implicit body section either way.
         """
+        text = self._prefix_pending_definition_term(text)
         if self.in_figure or self.in_table_wrap:
             # Figure and table internals, tested before every prose branch
             # because a <fig> or <table-wrap> usually sits inside a <sec>:
@@ -2425,6 +2552,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # body section rather than being folded in as the <sec>'s parent.
                 self._flush_implicit_section()
                 self.section_stack.append(_SectionBuilder())
+        elif name == "def-item":
+            # One frame per open definition item, holding its <term> until the
+            # definition's prose arrives to carry it. See `def_item_stack`.
+            self.def_item_stack.append(None)
         elif name == "fig":
             # Reserve the slot now, fill it at </fig>: listed where it opened,
             # built where it closed.
@@ -3061,6 +3192,49 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # they sit in `citation`, where the deposit puts them.
                 self.current_reference.label = text
 
+        elif name == "term":
+            # A <term> belongs to the <def-item> that encloses it, and JATS
+            # spells it as a direct child, so the parent decides outright —
+            # the <label> rule immediately above, for the same reason it was
+            # written there (#116): read from an ambient "is a definition list
+            # open?", a <term> deposited anywhere else in the list would
+            # prefix the next paragraph to arrive with a word that defines
+            # nothing in it. 0 of the 14,186 <term> in the 8,118 served
+            # articles of `PMC10030002_PMC10040000.xml.gz` and 0 of the
+            # 153,256 in the 97,909 archive articles of
+            # `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` have any
+            # other parent, so this pins a direction and not a population.
+            #
+            # `normalized_text` rather than `text`: a term wraps across source
+            # lines like anything else, and an end-stripped `'RT-PCR\n  assay'`
+            # reached a public field once already (issue #146).
+            if self._parent_element() == "def-item" and self.def_item_stack:
+                pending = self.def_item_stack[-1]
+                if pending:
+                    # A second <term> in one item. JATS's own content model
+                    # admits one, and 0 of the 14,186 served items deposit
+                    # two — but bare last-wins with no line is the #116/#143
+                    # class of defect, and a rule resting on a remembered
+                    # content model is the rule this module keeps being caught
+                    # by. The displaced word is counted, not overwritten in
+                    # silence.
+                    self.definition_terms_dropped += 1
+                self.def_item_stack[-1] = normalized_text
+        elif name == "def-item":
+            if self.def_item_stack:
+                # Guarded for the reason </fig> is: SAX makes a close with
+                # nothing open unreachable, and a suppression region guarded
+                # on startElement alone is how that stops being true.
+                pending = self.def_item_stack.pop()
+                if pending:
+                    # The item closed with its term still pending, so no
+                    # paragraph of this definition reached the article to
+                    # carry it — measured almost entirely in front matter
+                    # (issue #230), plus the 3 of 14,186 served items that
+                    # deposit no <def> at all. Counted rather than dropped in
+                    # silence; see `definition_terms_dropped`.
+                    self.definition_terms_dropped += 1
+
         elif name == "thead":
             current_table = self.current_table
             if current_table is not None:
@@ -3458,6 +3632,25 @@ def _audit_parse(handler: _JATSHandler) -> None:
             "missing from the article (issue #224)",
             article,
             handler.refused_apparatus_prose,
+        )
+
+    if handler.definition_terms_dropped:
+        # The same rule and the same level again, for the residue of issue
+        # #228: a term is filed wherever its definition's paragraph routes, so
+        # what is left is a definition that routed nowhere and took its term
+        # with it. Once per article rather than per term, which
+        # `contribs_naming_nobody` settled: one glossary can carry fifty.
+        #
+        # It says what bmlib read and lost, never what the document held —
+        # `_report_zero_authors`' rule. And it names the element rather than
+        # "abbreviation", because a `<def-list>` is a definition list of any
+        # kind and a line that guesses the genre misdescribes most of them.
+        logger.warning(
+            "JATS parse of %s: %d <def-list> term(s) were read and reached no "
+            "definition this parser could file, so those words are missing from "
+            "the article (issue #228)",
+            article,
+            handler.definition_terms_dropped,
         )
 
     if not handler.build_authors():

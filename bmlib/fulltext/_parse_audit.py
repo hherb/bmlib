@@ -103,6 +103,13 @@ class ParseUnwindState:
             is innermost goes to that stranded builder instead of the
             contributor it belongs to; a stranded ``None`` frame drops those
             names instead.
+        open_definition_items: ``<def-item>`` elements still open. Each holds
+            the ``<term>`` it has read and not yet filed, so a stranded frame
+            hands that word to the next paragraph to arrive anywhere in the
+            document — a definition's term prefixed onto prose that is not its
+            definition. Counted rather than grouped with ``stuck_flags``
+            because what a stranded frame costs is a *wrong* value in the
+            article, not a missing one.
         unfilled_author_slots: Slots reserved by a ``<contrib>`` that never
             closed. ``build_authors()`` filters these out without a word,
             which is a silently missing contributor. Counted separately from
@@ -139,6 +146,7 @@ class ParseUnwindState:
     open_formulas: int = 0
     open_contrib_groups: int = 0
     open_contribs: int = 0
+    open_definition_items: int = 0
     unfilled_author_slots: int = 0
     unfilled_figure_slots: int = 0
     unfilled_table_slots: int = 0
@@ -206,6 +214,12 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
             f"{state.open_contribs} <contrib> still open: their contributors were "
             "never built, and every contributor name read after the imbalance went "
             "to the stranded builder"
+        )
+    if state.open_definition_items:
+        messages.append(
+            f"{state.open_definition_items} <def-item> still open: their terms were "
+            "never filed, and the innermost one's term was folded into the next "
+            "paragraph of any kind to arrive"
         )
     if state.unfilled_author_slots:
         messages.append(
