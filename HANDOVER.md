@@ -470,14 +470,15 @@ recorded on #228 rather than left implicit.
 
 ### Open GitHub issues
 
-**Forty-seven open** at the end of this session — #228 answered and closed by
-hand, #235 filed from its measurement, so the count did not move
+**Forty-eight open**, counted from `gh` with PR #236 open and unmerged, and
+**forty-seven once it merges and #228 is closed by hand** — this session
+answers #228 and files #235, so the count returns to where it started
 (`gh issue list --state open --limit 200`, 2026-09-10 — the limit matters,
 `gh` pages at 30 and the bare command reports a page size as a total): #86,
 #92, #94, #103, #124, #128, #137, #142, #143, #144, #145, #150, #152, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
-#226, #227, #230, #231, #233, #234, #235. **The line was wrong twice in the
+#226, #227, #228, #230, #231, #233, #234, #235. **The line was wrong twice in the
 previous session, in the same direction** — projected from what the writer
 remembered rather than counted from `gh` at the moment of writing, which is
 the *count, do not project* lesson landing twice on the file that states it.
