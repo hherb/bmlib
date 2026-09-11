@@ -392,8 +392,111 @@ class _GraphicHolder:
             self.graphic_rank = rank
 
 
+@dataclass(kw_only=True)
+class _FootnoteHolder:
+    """The half of an exhibit builder that collects its footnotes (issue #124).
+
+    Shared by :class:`_FigureBuilder` and :class:`_TableBuilder` for
+    :class:`_GraphicHolder`'s reason and one more. The first is that two copies
+    of a rule are two things to keep in step. The second is that the two sides
+    are measured wildly apart — of the 16,935 notes this parser files across the
+    8,118 served articles of ``PMC10030002_PMC10040000.xml.gz``, **2** are a
+    figure's, and 277 of 190,198 across the 97,909 archive articles of
+    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`` — so a per-exhibit
+    implementation would leave the figure half effectively untested by any
+    corpus, and one holder is what makes the table side's exercise the figure
+    side's too.
+
+    ``pending_footnote_label`` is the marker a ``<label>`` read for the ``<fn>``
+    now open, held until the first paragraph of that same note spends it. It is
+    a single slot rather than a stack because a ``<fn>`` does not nest inside a
+    ``<fn>``, and because an exhibit *opened* inside a footnote gets its own
+    holder — the owner walk in
+    :meth:`~bmlib.fulltext.jats_parser._JATSHandler._owning_exhibit_footnote`
+    ends at the first exhibit, so the inner one never reaches this one.
+
+    **Left pending it would be spent on another note's prose**, which is a
+    wrong value where the alternative is a blank, so ``</fn>`` takes it back
+    and counts it. That is #228's own hazard one container over, and the
+    population is 1 of 10,763 served ``<fn>`` — a direction, not a rate.
+
+    ``kw_only`` for :class:`_GraphicHolder`'s reason: these fields are
+    inherited and would otherwise lead both subclasses' generated ``__init__``.
+    """
+
+    footnotes: list[str] = field(default_factory=list)
+    pending_footnote_label: str = ""
+
+    def append_footnote(self, text: str) -> None:
+        """File ``text`` as a note of this exhibit, folding in a held marker.
+
+        The marker is spent by the *first* paragraph of its own ``<fn>``, so a
+        note deposited as several paragraphs is marked once and its
+        continuations arrive unmarked — which is where a reader expects the
+        marker to be, and matches the sibling Swift port's
+        ``append_footnote``.
+
+        Args:
+            text: The note's prose, already whitespace-normalised. An empty
+                string files nothing and leaves the marker pending, so an
+                empty ``<p>`` ahead of a note's real prose does not consume
+                it.
+        """
+        if not text:
+            return
+        if self.pending_footnote_label:
+            text = f"{self.pending_footnote_label} — {text}"
+            self.pending_footnote_label = ""
+        self.footnotes.append(text)
+
+    def hold_footnote_label(self, marker: str) -> str:
+        """Hold ``marker`` for the ``<fn>`` now open, and say what it displaced.
+
+        The class is the sole writer of its own slot, so every way a marker can
+        leave without reaching a note goes through one of these three methods
+        and is answerable to the caller. Assigning the field directly was the
+        ``<term>`` arm's own defect one container over: JATS models ``<fn>``
+        as ``(label?, …)``, so a second ``<label>`` is invalid and *not*
+        ill-formed, expat does not validate a content model, and a bare
+        last-wins put the second marker on the first note's prose with nothing
+        counted — *"a rule resting on a remembered content model is the rule
+        this module keeps being caught by"*.
+
+        An **empty** ``marker`` displaces just as a different one does. ``""``
+        is this field's absent spelling, so an empty ``<label>`` would
+        otherwise erase a good marker *and* leave ``</fn>`` nothing to give
+        back, which is the one route by which a marker could still vanish with
+        no line at all — a note rendering unmarked against a body that still
+        reads ``12.3a``, which is the dangling reference the whole feature
+        exists to prevent.
+
+        Measured 0 of 8,118 served and 0 of 97,909 archive articles deposit a
+        second ``<label>`` in one ``<fn>``, so this pins a direction rather
+        than a population — the standing this module gives the nesting rules
+        beside it. An empty ``<label>`` alone *is* deposited (3 served, 11
+        archive) and costs nothing, there being no marker to displace.
+
+        Args:
+            marker: The marker just read, or ``""``.
+
+        Returns:
+            The marker this one displaced, or ``""`` when the slot was free.
+        """
+        displaced, self.pending_footnote_label = self.pending_footnote_label, marker
+        return displaced
+
+    def take_pending_footnote_label(self) -> str:
+        """Give back an unspent marker at ``</fn>``, and say what it was.
+
+        Returns:
+            The marker no paragraph of that ``<fn>`` claimed, or ``""``.
+        """
+        marker, self.pending_footnote_label = self.pending_footnote_label, ""
+        return marker
+
+
 @dataclass
-class _FigureBuilder(_GraphicHolder):
+class _FigureBuilder(_GraphicHolder, _FootnoteHolder):
     id: str = ""
     label: str = ""
     caption: str = ""
@@ -404,11 +507,12 @@ class _FigureBuilder(_GraphicHolder):
             label=self.label,
             caption=self.caption,
             graphic_url=self.graphic_href or None,
+            footnotes=list(self.footnotes),
         )
 
 
 @dataclass
-class _TableBuilder(_GraphicHolder):
+class _TableBuilder(_GraphicHolder, _FootnoteHolder):
     id: str = ""
     label: str = ""
     caption: str = ""
@@ -497,6 +601,7 @@ class _TableBuilder(_GraphicHolder):
             caption=self.caption,
             html_content=self._build_html_table(),
             graphic_url=self.graphic_href or None,
+            footnotes=list(self.footnotes),
         )
 
     def _build_html_table(self) -> str:
@@ -1279,6 +1384,48 @@ _INLINE_ELEMENTS = frozenset(
 # child would print each of them twice.
 _FORMULA_ELEMENTS = frozenset({"inline-formula", "disp-formula"})
 
+# The containers that make an exhibit's descendant prose that exhibit's
+# *footnote* rather than its furniture (issue #124).
+#
+# Three, and they are NOT equally deposited — the comment says which, because
+# "each is deposited" is what a first cut asserted and a draw refuted.
+# <table-wrap-foot> holds them on the table side and is also the parent of the
+# general note publishers put after the last marked one (5,901 loose <p> in
+# 1,386 of the 8,118 served articles). <fn> is the note itself, and the table
+# side reaches it through the foot wrapper while a <fig> deposits it bare.
+#
+# <fn-group> is **defensive and unexercised**: **0 of the 8,118 served
+# articles and 0 of the 97,909 archive ones deposit an <fn-group> inside an
+# exhibit at all**, by either parent. It is kept because removing it is not
+# free — a loose <p> in such a group has no <fn> below it to be found by, and
+# in a <fig> no <table-wrap-foot> above either, so nothing else in the walk's
+# path answers — and because "no instance" is not "cannot happen", which is
+# the standing this module gives the unreached ARCHIVAL rank two types over.
+#
+# **It is not claimed here that JATS admits the shape.** Five files asserted
+# "JATS admits one in both exhibits" with no citation, in the same breath as
+# calling <fn> the only one of the three a <fig> takes directly — two claims
+# that cannot both hold, since the keep-argument above is entirely about
+# <fig><fn-group><p> (PR #237's review). The content model was not resolvable
+# offline, so the member rests on the walk's own shape and on a measured zero,
+# which is the weaker and honest ground. It costs one frozenset entry.
+#
+# **And it is a deliberate divergence from the normative cross-platform
+# spec**, which a porting reader in either direction has to be told about:
+# `bmlibrarian_lite`'s `doc/cross_platform/jats_parsing.md` specifies
+# `("table-wrap-foot", "fn")`, two elements, and the shipped Swift parser
+# follows it. Neither side is wrong on any measured deposit — the population
+# is 0 — so this is a note, not a defect to reconcile.
+#
+# **Membership is not the whole rule** — this set says only "footnote matter",
+# and which exhibit it is filed on is `_owning_exhibit_footnote`'s ancestor
+# walk. A <back><fn-group><fn> is a member of this set and belongs to no
+# exhibit at all.
+#
+# <table-wrap-foot> is listed rather than left to the <fn> inside it because
+# the loose <p> above has no <fn> to be found by.
+_EXHIBIT_FOOTNOTE_CONTAINERS = frozenset({"table-wrap-foot", "fn", "fn-group"})
+
 # The elements whose text a formula's own arm delivers, so the pop must never
 # merge them. <tex-math> is here because its text is rendered before it is
 # merged — a raw merge is worse than the drop it replaces, since 99.9% of
@@ -1590,12 +1737,21 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # is lost together, and the term's half is the one no reader could
         # otherwise see.
         #
-        # 12,667 terms are folded in 840 of the 8,118 served articles and
-        # 142,855 in 8,978 of the 97,909 archive ones; 1,510 and 10,394 are
-        # dropped, in 128 and 844. **The three counts close on both**: fold
+        # 12,733 terms are folded in 847 of the 8,118 served articles and
+        # 143,781 in 9,037 of the 97,909 archive ones; 1,444 and 9,468 are
+        # dropped, in 120 and 780. **The three counts close on both**: fold
         # plus drop equals the terms carrying a word, 14,186 − 9 empty served
         # and 153,256 − 7 archive, so this counter and the fold partition the
         # population rather than sampling it.
+        #
+        # Those are the **post-#124** figures, re-measured on this revision
+        # rather than derived: an exhibit's footnote is a destination now, so a
+        # `<def-list>` in a `<table-wrap-foot>` is folded where it used to be
+        # dropped, and the pre-#124 split read 12,667 / 1,510 served and
+        # 142,855 / 10,394 archive. Deriving the new fold by adding the known
+        # move to the old one is exactly what `docs/DECISIONS.md` tells a
+        # reader not to trust here — and it would have been wrong by 14, which
+        # is what the closure caught (PR #237's review).
         #
         # **The partition is structural and not a property of the draw.**
         # Until PR #236's review it closed only because neither corpus
@@ -1607,14 +1763,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # **Measured at the drop rather than inferred from the markup**, since
         # a <front><abstract>'s definition list would be *folded* into the
         # abstract and a region walk cannot tell that from a drop. Of the
-        # 1,510 dropped in 128 of the 8,118 served articles: 1,441 are in
+        # 1,444 dropped in 120 of the 8,118 served articles: 1,441 are in
         # <front>, whose prose falls past every branch of `_append_prose` with
         # no counter and no line — issue #230, and not this counter's to fix;
-        # 66 are in a <body> float with no <caption> open, where the
-        # definition is dropped as exhibit furniture, which is #124's
-        # container; and 3 are in <back> outside a float, where back-matter
-        # prose does route, so the only way to reach the drop is to deposit no
-        # routable prose at all. The served bundle also holds exactly 3
+        # and 3 are in <back> outside a float, where back-matter prose does
+        # route, so the only way to reach the drop is to deposit no routable
+        # prose at all. A fourth row has **left** this counter: the 66 in a
+        # <body> float with no <caption> open, dropped as exhibit furniture,
+        # are folded and filed since #124 made a footnote a destination.
+        # The served bundle also holds exactly 3
         # <def-item> carrying no <def> — **a coincidence of counts, not a
         # checked identity**, and written as "the same 3" until PR #236's
         # review. Nothing verifies the two sets are one, and the archive
@@ -1649,6 +1806,21 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # wherever it lands, so counting one would report a loss the document
         # never deposited.
         self.definition_terms_dropped = 0
+        # A footnote marker read for an <fn> that then deposited no prose to
+        # fold it into (issue #124). Counted for `rejected_spans`' reason: the
+        # marker is given back rather than carried, so nothing in the output
+        # shows that the document numbered a note bmlib could not file.
+        #
+        # The population is small — 1 of the 10,763 <fn> inside an exhibit
+        # across the 8,118 served articles of `PMC10030002_PMC10040000.xml.gz`,
+        # and 11 of 137,735 in the 97,909 archive articles of
+        # `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` — so this is a
+        # direction rather than a rate, which is the standing #235's
+        # measurement denied a counter with the opposite shape.
+        #
+        # It counts a *marker*, never an <fn>: a note deposited with no label
+        # at all is not a loss, and 7,661 of the 10,763 served <fn> are that.
+        self.footnote_markers_dropped = 0
         self.current_article_id_type: str | None = None
 
         # Abstract state
@@ -2143,6 +2315,99 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # See the comment at the pop itself for what else moves with it.
         return "mixed-citation" in self.element_stack[:-1]
 
+    def _owning_exhibit_footnote(
+        self, *, including_self: bool = False
+    ) -> _FigureBuilder | _TableBuilder | None:
+        """The exhibit whose footnote the element now closing sits in, if any.
+
+        A ``<table-wrap-foot>``'s prose is the table's own — the abbreviation
+        expansions its cells are unreadable without, and its per-table funding
+        and disclosure notes (issue #124). It reaches :meth:`_append_prose`
+        through the same branch a cell does, so something has to tell the two
+        apart, and this is it.
+
+        **An ancestor walk, answering with whichever it meets first.** Both
+        halves are load-bearing and each has its own failure:
+
+        - Stopping at the exhibit keeps prose belonging to *no* exhibit out of
+          one. A ``<back><fn-group><fn>`` is the article's competing-interest
+          statement and #224 routes it to the article; met from inside a
+          figure it would be filed as that figure's note instead.
+        - Requiring the footnote container *before* the exhibit keeps an
+          exhibit nested inside another's footnote from inheriting it. This is
+          the one the sibling Swift port got wrong, and it is worth naming
+          because the obvious instrument fails at exactly this shape: routed on
+          a parser-wide footnote *depth*, the counter still stands at the outer
+          table's depth while an inner ``<table-wrap>`` is being parsed, so the
+          inner table's own cell ``<p>`` takes the footnote branch and is filed
+          as a footnote — rendered twice, once in the cell and once below it
+          (bmlibrarian_lite#173). A depth cannot answer a question about the
+          *innermost* exhibit; the walk answers it structurally. That port has
+          since **fixed** it — ``inInnermostExhibitFootnote`` is its shipped
+          routing and the depth survives only for its unwind audit — so this
+          names a defect it shipped once, not one it has (PR #237's review).
+        - **A cell ends the walk**, so an ``<fn>`` deposited inside a
+          ``<td>``/``<th>`` files nothing. JATS admits one there, and without
+          this arm the walk sets ``saw_container`` on that ``<fn>`` and carries
+          on outward past the cell to the ``<table-wrap>`` — while
+          ``characters()`` has *already* delivered the same text to
+          ``append_cell_text``, which is gated on ``in_cell`` alone. The note
+          would then be rendered twice, once in the cell and once in the
+          footnote block: bmlibrarian_lite#173's own symptom reached by a
+          different route, and the exact invariant the ``<p>`` branch at
+          :meth:`_append_prose` exists to hold. The module already solves the
+          same collision for a formula in a cell by *withholding* the cell
+          text; a footnote has no such hold, so the walk refuses instead and
+          the cell keeps the one rendition it always had.
+
+        It is therefore neither the parent test this module usually makes
+        (``<label>``, ``<caption>``, ``<article-id>``) nor a bare ancestor
+        membership test like :meth:`_inside_mixed_citation`, but the shape
+        :func:`_graphic_owner` already uses: walk outward and take the first
+        element that decides. A ``<p>`` sits inside ``<fn>`` inside
+        ``<table-wrap-foot>`` inside ``<table-wrap>``, so no single parent
+        names the owner.
+
+        **The nesting population measures 0** — no exhibit opens inside
+        another's footnote across either artifact, the 8,118 served articles
+        of ``PMC10030002_PMC10040000.xml.gz`` or the 97,909 archive ones of
+        ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`` — so the second half pins a
+        direction and not a population, which is the standing this module gives
+        its other structural nesting rules. What it prevents is silent and
+        permanent.
+
+        **``including_self`` is which question is being asked, and both are
+        asked.** ``element_stack.pop()`` sits at the very end of
+        ``endElement``, so the element now closing is still on the stack.
+        Prose asks *"are my ancestors a footnote of an exhibit?"* and takes the
+        strict slice — :meth:`_inside_mixed_citation`'s reason, and costing
+        nothing today since neither ``<p>`` nor ``<disp-formula>`` is a member
+        of either set. ``</fn>`` asks *"which exhibit is this footnote's?"*,
+        where the closing element **is** the container: a ``<fig><fn>`` has no
+        other, so the strict slice would answer ``None`` for exactly the shape
+        a figure deposits and the unspent marker would go uncounted there.
+
+        Args:
+            including_self: Whether the element now closing counts as a
+                footnote container in its own right.
+
+        Returns:
+            The owning exhibit's builder, or ``None`` when this is not an
+            exhibit's footnote matter.
+        """
+        elements = self.element_stack if including_self else self.element_stack[:-1]
+        saw_container = False
+        for element in reversed(elements):
+            if element in _EXHIBIT_FOOTNOTE_CONTAINERS:
+                saw_container = True
+            elif element in _TABLE_CELL_ELEMENTS:
+                return None
+            elif element == "fig":
+                return self.current_figure if saw_container else None
+            elif element == "table-wrap":
+                return self.current_table if saw_container else None
+        return None
+
     # -- Section and caption helpers -----------------------------------------
 
     def _caption_owner(self, parent: str) -> _FigureBuilder | _TableBuilder | None:
@@ -2210,9 +2475,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             ``True`` if the text would be kept.
         """
         if self.in_figure or self.in_table_wrap:
-            # `_append_caption_text` keeps text only for an open <caption>
-            # whose owner this module models.
-            return bool(self.caption_stack) and self.caption_stack[-1] is not None
+            # Two destinations since issue #124, and this mirrors both — in
+            # the same order, since the branches are asked in that order
+            # there. Mirroring only the caption would report a
+            # <disp-formula> in a table footnote as a formula that reached
+            # nowhere, a line claiming a loss that did not happen.
+            if self.caption_stack:
+                # `_append_caption_text` keeps text only for an open <caption>
+                # whose owner this module models.
+                return self.caption_stack[-1] is not None
+            return self._owning_exhibit_footnote() is not None
         if self.in_abstract:
             return True
         if (self.in_body or self.in_back) and self.section_stack:
@@ -2401,10 +2673,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         count, which is the rule PR #232's review had to correct for a
         ``<disp-formula>`` reported as two.
 
-        A ``<def-list>`` inside a float with no ``<caption>`` open reaches the
-        third case too, its definition being dropped as exhibit furniture, so
-        the counter gives that shape its first line as well — it is #124's
-        container, not this rule's, and the word is lost either way.
+        A ``<def-list>`` inside a float reaches the third case too **where the
+        float gives it nowhere to go** — no ``<caption>`` open *and* not
+        footnote matter — its definition being dropped as exhibit furniture,
+        so the counter gives that shape its first line as well. The narrowing
+        is issue #124's: an exhibit's footnote is now a destination, so a
+        definition list deposited in a ``<table-wrap-foot>`` is folded and
+        filed like any other, and that position left this counter's
+        population.
 
         The innermost frame is the ``<p>``'s nearest ``<def-item>`` ancestor,
         frames being pushed and popped with the element, so a nested
@@ -2472,13 +2748,48 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # Figure and table internals, tested before every prose branch
             # because a <fig> or <table-wrap> usually sits inside a <sec>:
             # asking about the section first would blank the caption and
-            # reprint it as article prose. Only <caption> content is kept,
-            # and `_append_caption_text` decides which caption's owner gets
-            # it. Cell and footnote <p> is dropped — characters() already
-            # collects cells into the rendered table, so letting it through
-            # would duplicate furniture into the prose and count it towards
-            # has_body.
-            self._append_caption_text(text)
+            # reprint it as article prose. Two destinations, and everything
+            # else here is dropped.
+            #
+            # A cell's <p> is still dropped, and that is the invariant this
+            # branch exists for: characters() already collects cells into the
+            # rendered table, so letting one through would print the same text
+            # twice and count furniture towards has_body.
+            #
+            # A footnote's is the table's own content and used to be dropped
+            # with it (issue #124) — the abbreviation expansions the cells are
+            # unreadable without, and the per-table funding and disclosure
+            # notes.
+            #
+            # **THE CAPTION IS ASKED FIRST, AND THE ORDER IS A RULE RATHER
+            # THAN A PREFERENCE.** Asking it first is what keeps
+            # `_append_caption_text`'s own rule unconditional: text inside a
+            # <caption> belongs to that caption's owner, and to *nobody* where
+            # this module does not model the owner. The two questions overlap
+            # in exactly one shape, because a <fig> or <table-wrap> opened
+            # inside a footnote ends the owner walk on its own — so the
+            # overlap needs a caption-carrying element the parser does not
+            # model, a <supplementary-material> or a <media> inside an <fn>.
+            # There the footnote-first order would file that element's legend
+            # as the enclosing table's note: a *wrong* value where the
+            # alternative is a blank, which is the preference #116 and #162
+            # both settled.
+            #
+            # Measured 0 of the 8,118 served articles of
+            # `PMC10030002_PMC10040000.xml.gz` and 0 of the 97,909 archive
+            # ones, so the order pins a direction
+            # and moves nothing stored — the standing #236 gave the fold's own
+            # exhibit-depth scope, and for the same reason: what it prevents
+            # is silent and permanent. A footnote's own <p> carries no
+            # <caption> ancestor, so the ordinary deposit reaches the same
+            # place either way.
+            if self.caption_stack:
+                # `_append_caption_text` decides which caption's owner gets it.
+                self._append_caption_text(text)
+            else:
+                footnote_owner = self._owning_exhibit_footnote()
+                if footnote_owner is not None:
+                    footnote_owner.append_footnote(text)
         elif self.in_abstract:
             if text:
                 self.current_abstract_text.append(text)
@@ -2530,11 +2841,18 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elements, which arrive in document order, so they are joined with a
         single space into the one ``caption`` string the models expose.
 
-        Text arriving with no caption open is furniture — a cell, a footnote —
-        and is dropped, which is what keeps table internals out of the prose.
-        Text whose innermost caption has no modelled owner is dropped for the
-        same reason: it belongs to that element, not to the exhibit enclosing
-        it.
+        Text arriving with no caption open is furniture — a cell — and is
+        dropped, which is what keeps table internals out of the prose. Text
+        whose innermost caption has no modelled owner is dropped for the same
+        reason: it belongs to that element, not to the exhibit enclosing it.
+
+        **A footnote no longer reaches here at all** (issue #124). It used to,
+        and was named beside the cell as furniture; the caller now asks
+        :meth:`_owning_exhibit_footnote` first and files it on the exhibit,
+        the notes being the exhibit's own content rather than a second
+        rendition of something already printed. A cell is still furniture for
+        the reason it always was: ``characters()`` has already written it into
+        the rendered table.
 
         Dropped *where this is reached at all*, which is not everywhere a
         <caption> is. The ``<p>`` caller sits behind ``in_figure or
@@ -3320,6 +3638,57 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # is an invented value. The markers are not lost either way;
                 # they sit in `citation`, where the deposit puts them.
                 self.current_reference.label = text
+            elif parent == "fn":
+                # A footnote's own marker — "a", "b", "*" — held until the
+                # first paragraph of that same <fn> folds it in (issue #124).
+                #
+                # It was #116 that established this label is *not* the
+                # exhibit's number, and it discarded it because there was
+                # nowhere else for it to go. There is now, and keeping it is
+                # what makes the note usable: <sup> is an inline element
+                # flattened into the surrounding cell, so the rendered body
+                # still reads `12.3a` and with two footnotes the mapping back
+                # is otherwise unrecoverable — a reference to nothing, which is
+                # #116's own "a swallowed marker is not a blank" one element
+                # down.
+                #
+                # The same parent test, and it is what keeps a <fn-group>'s own
+                # heading — "Notes", "Abbreviations" — out of the marker slot:
+                # that <label>'s parent is the group, not the note. 3,102 of
+                # the 10,763 <fn> inside an exhibit in the 8,118 served
+                # articles carry one, and 39,349 of 137,735 in the archive.
+                #
+                # `including_self=False` is right here for once *and* for the
+                # ordinary reason: the closing element is the <label>, so the
+                # <fn> above it is an ancestor either way.
+                #
+                # The write goes through the holder so a marker it displaces is
+                # counted rather than overwritten in silence — see
+                # `hold_footnote_label`, which is the `<term>` arm's rule forty
+                # lines down applied to the same shape one container over.
+                owner = self._owning_exhibit_footnote()
+                if owner is not None and owner.hold_footnote_label(text):
+                    self.footnote_markers_dropped += 1
+
+        elif name == "fn":
+            # A marker no paragraph of this <fn> claimed. Left pending it would
+            # be folded into whatever footnote prose arrived next — one note's
+            # marker printed on another, silently — which is a *wrong* value
+            # where the alternative is a blank, so it is taken back and
+            # counted. #228's own hazard one container over, and the same
+            # remedy: `_DefinitionFrame.term` is given back at `</def-item>`.
+            #
+            # `including_self=True` because the <fn> now closing is the
+            # container: a <fig><fn> has no other, so the strict slice would
+            # answer None for the figure side entirely.
+            #
+            # Measured 1 of 10,763 served <fn> and 11 of 137,735 archive ones,
+            # so this pins a direction rather than a population — but the
+            # direction is the one that matters, an unspent marker being
+            # invisible in the output it corrupts.
+            owner = self._owning_exhibit_footnote(including_self=True)
+            if owner is not None and owner.take_pending_footnote_label():
+                self.footnote_markers_dropped += 1
 
         elif name == "term":
             # A <term> belongs to the <def-item> that encloses it, and JATS
@@ -3757,10 +4126,17 @@ def _audit_parse(handler: _JATSHandler) -> None:
         # Phrased as what happened rather than as a conclusion about the
         # document: the equation was in the deposit and this parser rendered
         # it, which is what makes the loss reportable.
+        #
+        # **Four destinations, not three.** Issue #124 made an exhibit's
+        # footnote one of them, so a line naming "section, caption or cell"
+        # sent a reader hunting in three places for a rendition the fourth
+        # would have kept — the misdescription the paragraph above forbids,
+        # and the manual was corrected for it while this line was not
+        # (PR #237's review).
         logger.warning(
             "JATS parse of %s: %d display formula(s) were rendered but reached no "
-            "section, caption or cell, so their equations are missing from the "
-            "article (issue #177)",
+            "section, caption, cell or footnote, so their equations are missing "
+            "from the article (issue #177)",
             article,
             handler.formulas_dropped,
         )
@@ -3805,15 +4181,45 @@ def _audit_parse(handler: _JATSHandler) -> None:
         # both the term and its definition reach `html_content` and the wider
         # claim would send a reader hunting for words already in front of
         # them — over-reporting of the kind PR #232's review corrected for a
-        # `<disp-formula>`. Measured 0 of 1,510 served drops and 0 of 10,394
+        # `<disp-formula>`. Measured 0 of 1,444 served drops and 0 of 9,468
         # archive ones sit in a cell, so this narrows a claim rather than
-        # describing a live population (PR #236's review).
+        # describing a live population (PR #236's review; denominators
+        # re-measured for #124 in PR #237's).
         logger.warning(
             "JATS parse of %s: %d <def-list> term(s) were read and reached no "
             "definition this parser could file, so those words are missing from "
             "the article's prose (issue #228)",
             article,
             handler.definition_terms_dropped,
+        )
+
+    if handler.footnote_markers_dropped:
+        # The same rule and the same level once more, for the residue of issue
+        # #124. Two causes reach it and the line covers both: a marker the
+        # first paragraph of its own <fn> never spent, given back at `</fn>`,
+        # and a marker displaced by a second <label> in the same note. Once per
+        # article, `contribs_naming_nobody`'s granularity.
+        #
+        # **It says what bmlib filed, never what the document deposited.** An
+        # earlier wording read "that deposited no prose", which is a claim
+        # about the publisher this parser cannot make and is false for at least
+        # three shapes the branch takes — a <label> arriving *after* the note's
+        # own prose, a bare text node the <p> rule drops, and prose sitting in
+        # a nested float the owner walk refuses. In each the document deposited
+        # a note and bmlib is the one that filed none. What is certain, and all
+        # that is claimed, is that a marker arrived and nothing in the output
+        # carries it (PR #237's review).
+        #
+        # And it names the *marker* as what was lost rather than the note: the
+        # note is either filed already or lost by a rule with its own counter,
+        # so reporting a lost footnote would over-report in the shape PR #232's
+        # review corrected for a `<disp-formula>`.
+        logger.warning(
+            "JATS parse of %s: %d footnote marker(s) were read for an exhibit "
+            "footnote that bmlib filed no prose for, so those markers are "
+            "missing from the article (issue #124)",
+            article,
+            handler.footnote_markers_dropped,
         )
 
     if not handler.build_authors():
@@ -4044,6 +4450,7 @@ def _build_html(h: JATSArticle) -> str:
                 if fig.caption:
                     parts.append(f"    <p>{html_escape(fig.caption)}</p>")
                 parts.append("  </figcaption>")
+            parts.extend(_format_exhibit_footnotes_html(fig.footnotes))
             parts.append("</figure>")
 
     # Tables
@@ -4074,6 +4481,7 @@ def _build_html(h: JATSArticle) -> str:
                 parts.append(
                     f'  <img src="{html_escape(full_url)}" alt="{html_escape(alt)}" loading="lazy">'
                 )
+            parts.extend(_format_exhibit_footnotes_html(tbl.footnotes))
             parts.append("</div>")
 
     # References
@@ -4085,6 +4493,46 @@ def _build_html(h: JATSArticle) -> str:
         parts.append("</ol>")
 
     return "\n".join(parts)
+
+
+def _format_exhibit_footnotes_html(footnotes: list[str]) -> list[str]:
+    """Render an exhibit's footnotes as the block a publisher prints (issue #124).
+
+    Two things deposited in the same block still reach nothing and are
+    counted by nothing — the block's own ``<title>`` and a ``<graphic>`` the
+    ``<fn>`` owns — which is **#238**, filed rather than fixed here because
+    each is consistent with a rule settled elsewhere (#125/#130 for the title,
+    #127's opaque owner for the graphic) and undoing either moves stored
+    values. Measured 0 served and 8 and 7 respectively in 4 archive articles.
+
+    A block after the exhibit's own content and *inside* its container —
+    after ``</figcaption>`` but before ``</figure>``, and inside the table's
+    wrapper — rather than folded into the caption, on two grounds. ("After the
+    exhibit" alone read as a sibling, which is what a consumer writing a
+    selector would have built against; PR #237's review.) It is where the
+    publisher prints them, and it keeps caption and
+    footnote distinguishable in the string ``FullTextService`` caches — which
+    for a service consumer is the only place either is ever seen, since the
+    service discards the :class:`~bmlib.fulltext.models.JATSArticle`. Folded
+    into ``caption`` instead, a per-table funding note would read as part of
+    the legend to every downstream that prints one.
+
+    Emits nothing for an exhibit carrying none, the ``<figcaption>`` rule one
+    branch up: an empty container asserts that something was deposited there.
+
+    Args:
+        footnotes: The exhibit's notes, each with its own marker already
+            folded in.
+
+    Returns:
+        The lines to append, empty when there is nothing to print.
+    """
+    if not footnotes:
+        return []
+    parts = ['  <div class="fn-group">']
+    parts.extend(f"    <p>{html_escape(note)}</p>" for note in footnotes)
+    parts.append("  </div>")
+    return parts
 
 
 def _format_journal_html(h: JATSArticle) -> str:

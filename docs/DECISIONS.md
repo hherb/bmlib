@@ -1013,17 +1013,34 @@ there would spend it on a paragraph nobody ever sees and leave the new counter
 reading zero over the one population it exists to size.
 
 **Three counts close on both artifacts.** Fold plus drop equals the terms that
-carry a word: 12,667 folded and 1,510 dropped against 14,186 − 9 empty served,
-142,855 and 10,394 against 153,256 − 7 archive. A table of counters owes that,
+carry a word: **12,733 folded and 1,444 dropped** against 14,186 − 9 empty
+served, **143,781 and 9,468** against 153,256 − 7 archive — the post-#124
+figures, both halves instrumented on this revision. (Pre-#124 they read 12,667
+/ 1,510 and 142,855 / 10,394.) A table of counters owes that,
 and it is what caught #224's archive column summing 136 short of its own total.
+
+**#124 moved the split and the partition was re-measured rather than
+re-derived — on both artifacts.** An exhibit's footnote is a destination now,
+so a `<def-list>` deposited in a `<table-wrap-foot>` is folded where it used to
+be dropped: the served row reads **12,733 folded and 1,444 dropped in 120
+articles**, summing to the same 14,177, and the archive row **143,781 and
+9,468**, summing to the same 153,249. The archive half was left at its
+pre-#124 values through PR #237's review, recoverable only by the arithmetic
+this paragraph forbids — and that arithmetic would have been **wrong by 14**,
+which only re-measuring showed. Both halves are instrumented counts on this revision — the
+fold through `_prefix_pending_definition_term`, the drop through
+`definition_terms_dropped` — because arithmetic over a known move of 66 is
+exactly the derivation this file tells a reader not to trust.
 
 **Where the drops are is measured at the drop, not inferred from the markup** —
 a `<front><abstract>`'s definition list is *folded* into the abstract, and a
 region walk over `<term>` elements cannot tell that from a loss. Of the 1,510
 dropped in 128 of the 8,118 served articles: **1,441 in `<front>`** (#230),
 **66 in a `<body>` float with no `<caption>` open** (the definition dropped as
-exhibit furniture, which is #124's container), and **3 in `<back>` outside a
-float** — where back-matter prose does route, so the only way to reach the drop
+exhibit furniture — which is #124's container, and **those 66 left this counter
+when #124 landed**: an exhibit's footnote is a destination now, so the served
+figure is 1,444 in 120 articles and this paragraph records the measurement as
+it was taken), and **3 in `<back>` outside a float** — where back-matter prose does route, so the only way to reach the drop
 is to deposit no routable prose at all, and 3 is also the number of served
 items carrying no `<def>`. **0** were reached by a second `<term>` displacing
 the first. Consuming it on the *refusal* is the opposite
@@ -1112,6 +1129,111 @@ separate from the accounting question (did bmlib lose a word?), which is
 `_report_zero_authors`' own rule: counting is not parsing. `<index-term>` is
 the other JATS parent a `<term>` may have, bmlib extracts none, so counting
 one is honest rather than over-reporting.
+
+## fulltext — an exhibit's footnotes, and four rules a later session may want to undo (#124)
+
+**The marker is folded into the note's string, not modelled beside it.** A
+`JATSFootnote(label, text)` would keep `"a"` machine-readable, and it is
+refused: the sibling Swift port's normative spec
+(`doc/cross_platform/jats_parsing.md`) specifies `footnotes: list[string]` with
+`"a — text"`, this is the shape #228 settled one container over for a
+definition's `<term>`, and neither exhibit model has ever carried
+`to_dict()`/`from_dict()` — so a fourth public type would be a new serialisation
+surface for a value a consumer can recover with one `split`. The separator is
+measured on this population and not borrowed: **2 of 16,947** served footnote
+paragraphs already contain `" — "`, against **47** with a spaced hyphen and
+**4,133** with a colon. Do not "improve" the fold into a type without the
+downstream that needs it and a redraw of that table.
+
+**The caption is asked before the footnote, and the order is a rule rather than
+a preference.** A `<fig>` or `<table-wrap>` opened inside a footnote ends the
+owner walk on its own, so the two destinations overlap only under a
+caption-carrying element bmlib does not model — a `<supplementary-material>` or
+`<media>` inside an `<fn>`. Footnote-first files that element's legend as the
+enclosing table's note: a *wrong* value where the alternative is a blank.
+Caption-first keeps `_append_caption_text`'s standing rule unconditional, that
+text inside a caption belongs to that caption's owner and to nobody where the
+owner is unmodelled. Measured **0 of 8,118 served and 0 of 97,909 archive**, so
+it pins a direction and moves nothing stored — and it was a *surviving mutant*
+before it was a decision, both orderings passing the whole suite until
+`test_an_unmodelled_captions_legend_is_not_the_tables_note` was written for the
+overlap.
+
+**`_owning_exhibit_footnote` takes an `including_self` switch because two
+different questions ask it.** Prose asks *"are my ancestors a footnote of an
+exhibit?"* and takes the strict-ancestor slice, `element_stack.pop()` sitting at
+the end of `endElement`. `</fn>` asks *"which exhibit is this footnote's?"*,
+where the closing element **is** the container — and a `<fig><fn>` has no other,
+so the strict slice answers `None` for exactly the shape a figure deposits and
+the unspent marker goes uncounted there. Collapsing the two passes every table
+fixture, `<table-wrap-foot>` being an ancestor of the closing `<fn>` either way.
+
+**`<fn-group>` is a member of `_EXHIBIT_FOOTNOTE_CONTAINERS` in its own right,
+and it is spec-driven and unexercised — the comment says so rather than
+implying a population.** **0 of 8,118 served and 0 of 97,909 archive articles
+deposit an `<fn-group>` inside an exhibit at all**, which is the opposite of
+what five files said before the draw was taken. It is kept because removing it
+is not free: JATS models it `(label?, title?, (fn|p)+)`, so a loose `<p>` may
+sit directly in the group, and in a `<fig>` — which has no foot element and may
+carry no `<fn>` — nothing else in the walk's path answers. Removing it passes
+every fixture that does not deposit that exact shape, which is why one does.
+Its own `<title>` and `<label>` are still dropped by the rules #125/#130 and
+#116 set, and with a measured population of zero that residual is not worth
+filing.
+
+**The nesting rules stand on their argument, not on a draw.** No exhibit opens
+inside another's footnote in either artifact, so requiring the container
+*before* the exhibit pins a direction. It is kept because what it prevents is
+silent and permanent, and because the sibling port shipped the opposite: routed
+on a parser-wide footnote depth, the counter stands at the outer table's depth
+while an inner `<table-wrap>` is parsed, and the inner table's cell `<p>` is
+rendered twice, once in the cell and once below it (bmlibrarian_lite#173). The
+sibling port **fixed** #173 before this was written — `inInnermostExhibitFootnote`
+is its shipped routing and the depth survives only for the unwind audit — so
+read the depth account as what that port shipped once, not as what it does
+(PR #237's review).
+
+**A cell ends the owner walk, and that arm is not optional.** JATS admits an
+`<fn>` inside a `<td>`, and without it the walk sets `saw_container` on that
+`<fn>` and keeps going outward to the `<table-wrap>` — while `characters()`
+has already delivered the same text to `append_cell_text`, which is gated on
+`in_cell` alone. The note is then rendered twice, in the cell and again in the
+footnote block, which is bmlibrarian_lite#173's own symptom reached by a
+different route and the exact invariant the `<p>` branch exists to hold. The
+module solves the same collision for a formula in a cell by *withholding* the
+cell text until one rendition is chosen; a footnote has no such hold, so the
+walk refuses and the cell keeps what it always had. Measured **0 of 8,118
+served and 0 of 97,909 archive**, so it pins a direction — and it shipped as a
+live double-print through a first round of review, caught only by asking what
+each child of an `<fn>` does rather than by any fixture.
+
+**A displaced footnote marker is counted, never overwritten.** The `</label>`
+arm assigned `pending_footnote_label` directly, so a second `<label>` in one
+`<fn>` put the second marker on the first note's prose with nothing counted,
+and an **empty** one erased a good marker outright — `""` being the slot's
+absent spelling, `</fn>` then had nothing to give back either, so the note
+rendered unmarked against a body still reading `12.3a` with no line at any
+level. That is the `<term>` arm's own defect one container over, forty lines
+down in the same method, whose comment already says why: *"a rule resting on a
+remembered content model is the rule this module keeps being caught by"* —
+expat validates no content model, and `(label?, …)` makes a second `<label>`
+invalid rather than ill-formed. `hold_footnote_label` makes the class the sole
+writer of its own slot and returns what it displaced. Measured **0 of 8,118
+served and 0 of 97,909 archive** `<fn>` carrying two labels; an empty `<label>`
+alone is deposited (3 served, 11 archive) and costs nothing, there being no
+marker to displace.
+
+**Do not tell a consumer to split a note on the separator.** `" — "` is also
+`_DEFINITION_SEPARATOR`, and #228's fold runs first, so a `<def-list>` in a
+`<table-wrap-foot>` emits `"BMI — body mass index"` with no marker at all:
+**68 of the 16,935 notes this parser files, in 10 of the 8,118 served
+articles**. The separator was chosen honestly — 2 of 16,947 *deposited*
+paragraphs contain it, against 47 with a spaced hyphen and 4,133 with a colon
+— but that is a measurement of the deposit and the advice is about the
+*emitted* string, which is the population a first cut did not look at. The
+em dash stays: changing it would break the one thing that is right about it,
+and the fold's own collision is the same string by construction, so no third
+separator removes the ambiguity without also removing #228's.
 
 ## fulltext — an exhibit with no `<label>` gets no fallback search (#162)
 
