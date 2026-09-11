@@ -128,7 +128,7 @@ honest population**: two named public artifacts at 8,118 and 97,909 are
 bigger and re-derivable, but nothing in the suite re-derives them — state the
 trade. **A survey can refuse part of a remedy**, not only size it (#224's
 found the `<ref-list>` apparatus; #238's found #175's population under the
-issue's own scope).
+obvious ancestor spelling, which the issue's own owner scope excludes).
 
 *Rules and their neighbours.* When a rule replaces a guard, ask what else that
 guard was holding. **A guard whose reason moves needs its comment moved with
@@ -141,7 +141,13 @@ right for #120 and wrong for #146). **Suppressing a merge does not empty a
 buffer.** **A counter's scope is a decision, and the deposit survey is what
 makes it** — an ancestor test for #238's image counter would have handed
 #175 a counter it never asked for, and a bare parent test would have pooled
-#231's population under #238's name.
+#231's population under #238's name. **And say which guard makes which
+exclusion**: four documents credited the parent test with keeping a
+`<back><fn-group>`'s heading out, which it cannot — `fn-group` is in the set,
+and it is the owner walk — and the same walk excludes a *sectioned* group's
+heading, which is not #231's population and had no issue until PR #239's
+review filed #240. **An empty deposit costs nothing**: every sibling counter
+already made that rule and the first cut of #238's two did not.
 
 *Diagnostics and tests.* A diagnostic's *level* is a claim that has to be
 measured, **and the branch it sits on must be no wider than the draw** (#191).
@@ -233,8 +239,8 @@ review filed **#238**, this session's issue.
 moves.** A `<table-wrap-foot>`'s or exhibit `<fn-group>`'s `<title>` is
 refused by the `<title>` owner rule (#125, #130) and a `<graphic>` the
 footnote matter owns by `_graphic_owner`'s opacity (#127); once #124 made the
-block a destination, those were the two things in it leaving no trace. Both
-drops stay — each is a rule this module argued for — and each is now counted
+block a destination, those were the two things in it leaving no trace beside
+its own `<label>`, which is #235's. Both drops stay — each is a rule this module argued for — and each is now counted
 and reported once per article at WARNING (`footnote_headings_dropped`,
 `footnote_graphics_dropped`), `refused_apparatus_prose`'s rule. Folding the
 heading in was refused on **shape**, not population: the block is a list of
@@ -252,23 +258,53 @@ of which **319 (in 70 articles) are a formula's** — #175's population, a
 formula deposited as an image — 3 a `<boxed-text>`'s, and **7 in 4 the
 `<fn>`'s**. An ancestor test, the obvious spelling, would have pooled all
 three under #238's name; the counter is keyed on an owner *in*
-`_EXHIBIT_FOOTNOTE_CONTAINERS`. The heading counter is keyed on the block's
-own parent for the matching reason: a `<list><title>` in a note is the same
-drop as one in body prose, and a `<back><fn-group>`'s heading is #231's.
+`_EXHIBIT_FOOTNOTE_CONTAINERS`; every owner outside the three sets is #244's
+residual. The heading counter is keyed on the block's own parent *and* on the
+owner walk finding an exhibit, for the matching reason, and each guard keeps
+a different population out: the parent a `<list><title>` in a note, the same
+drop as one in body prose; the walk every `<fn-group>` heading belonging to
+no exhibit — an unsectioned `<back>`'s is #231's, and a sectioned one is
+#125's own residual, #240. **The image counter counts deposits**: an
+`<alternatives>` pair reads 2 and its line says *graphic deposit(s)*, the
+unit the survey counts. **An empty deposit costs nothing on either.**
 **Measured by the counters themselves** (the routing tally, not the survey):
 0 and 0 over 8,118 served, and over 97,909 archive 7 headings in 4 articles
-and 7 images in 4 articles — the tally and the survey agreeing to the unit,
+and 7 deposits in 4 — the *scoped* survey and the tally agreeing to the unit,
 and `footnote_markers_dropped` re-read at its recorded 0 on both artifacts.
-The issue's own 8 headings came from an unscoped whole-document walk.
+The issue's own unscoped whole-document walk agrees for the image (7) and not
+for the heading (8). Re-tallied after PR #239's review's guards landed: the
+same 7 and 7.
 
-**Nine mutants, nine killed, each by exactly the fixture written for it** —
-the two gates on each arm (parent/owner test, exhibit walk), the `<fn-group>`
-member of the block set, the audit line printing the other counter, a missing
-audit line, and a double increment. The sweep ran while the archive tally was
-still parsing: safe because that process imported the parser at start and
-never re-reads it, and done with the on-disk backup, the held-string restore
-and a `__pycache__` clear after every mutant — the rule above says why that
-is not licence to do it casually.
+**Eighteen mutants, seventeen killed, each by exactly the fixture written
+for it** — the three guards on each arm (empty deposit, parent or owner test,
+exhibit walk), `and not self.in_abstract` on the heading guard, `fn-group`
+refused as an image's owner, both block-set members, a double increment on
+each counter, the audit lines chained, cross-gated and removed, and the image
+line's unit reverted. The survivor widens `_EXHIBIT_FOOTNOTE_BLOCKS` to the
+container set, which only an `<fn><title>` — a shape JATS does not admit —
+could tell apart; the set's comment says so. The sweep ran with the on-disk
+backup, the held-string restore and a `__pycache__` clear after every mutant
+— the rule above says why that is not licence to do it casually.
+
+**PR #239's review, applied in the same PR.** Four mutants survived the first
+cut's nine: the image audit line chained as an `elif` of the heading one
+(no fixture held both counters), `and not self.in_abstract` on the heading
+guard (the abstract-exhibit route was exercised by a pre-existing test that
+asserted nothing about it), `fn-group` excluded as an image's *direct* owner,
+and `_EXHIBIT_FOOTNOTE_BLOCKS` widened to the container set — equivalent for
+valid JATS, so documentary rather than pinnable. Two claims were false: both
+counters fired on an *empty* deposit (`<title/>`, an href-less `<graphic/>`)
+and stated a loss that did not happen, where every sibling counter excludes
+empties; and an `<alternatives>` pair printed *"2 image(s)"* for one image,
+so the line now names the deposit as its unit. Four documents attributed the
+`<back><fn-group>` exclusion to the parent test. And five defects older than
+this change were verified by parse and filed rather than fixed — #240
+(sectioned `<fn-group>` heading, #125's residual, 12 in 3 of 997 served),
+#241 (`<alt-text>` welded into prose, a wrong value), #242
+(`<inline-graphic>` unhandled), #243 (prose around an inline `<table-wrap>`
+absorbing cell text, a wrong value), #244 (a `<graphic>` owned by anything
+else, `<td>`'s 82 in 8 of 997 among them) — with the block's own `<label>`
+noted on #235.
 
 **One correction to the record.** `docs/DECISIONS.md`'s #124 entry said the
 block's own `<title>` residual was *"not worth filing"* on a measured zero —
@@ -328,15 +364,16 @@ heading is deposited in the archive. The sentence now says so.
 
 ### Open GitHub issues
 
-**Forty-seven open**, counted from `gh` at the moment of writing with #124
-closed by hand and this session's PR open, and **forty-six once this PR
-merges and #238 is closed by hand** — this session files nothing
+**Fifty-two open**, counted from `gh` at the moment of writing with #124
+closed by hand, this session's PR open and its review's five filed, and
+**fifty-one once this PR merges and #238 is closed by hand**
 (`gh issue list --state open --limit 200`, 2026-09-11; the limit matters, `gh`
 pages at 30): #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150,
 #152, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186,
 #196, #197, #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221,
-#222, #223, #226, #227, #230, #231, #233, #234, #235, #238. Re-count at the
-end against `gh`, and again after any review round.
+#222, #223, #226, #227, #230, #231, #233, #234, #235, #238, #240, #241, #242,
+#243, #244. Re-count at the end against `gh`, and again after any review
+round.
 
 **What still loses content the document carries**: **#230** (front-matter
 prose, the largest silent drop left — 17,612 paragraphs in 49.8% of 15,000
@@ -350,7 +387,17 @@ the 2,789 markers outside an exhibit, and `<supplementary-material>`'s 2,998
 named by nobody), **#128** (every figure image in a document binding XLink to
 another prefix — all 13,624 hrefs measured use `xlink`, so downgrade rather
 than close), and **#175** (a formula deposited as an image — 319 of them sit
-in table footnotes alone, per this session's survey). Every one is a decision
+in exhibit footnote matter alone, per this session's survey). **PR #239's
+review added five**, all older than #238 and each verified by parse: #240
+(a sectioned `<fn-group>`'s heading, dropped uncounted), #241 (a `<graphic>`'s
+`<alt-text>` welded into the sentence and its `<caption>` filed as a stray
+paragraph — a wrong value), #242 (`<inline-graphic>` has no handler, so a
+marker deposited as an image is lost with the note unmarked), #243 (cell
+text reaching the paragraph around an inline `<table-wrap>`,
+`'Before12.3after.'` — a wrong value), and #244 (a `<graphic>` owned by
+neither an exhibit nor its footnote matter, the `<td>`'s 82 in 8 of 997
+first). #241 and #243 are the two to take first, being corruptions rather
+than blanks. Every one is a decision
 rather than effort. **#231** is the presentation residual of #224: back
 matter renders as one untitled section; deciding wants a measurement nobody
 has taken, how often one `<back>` carries several distinct containers. The
@@ -410,9 +457,9 @@ its own, and worth weighing against the package draws being 8,118 and 97,909
 articles against the corpora's 997 and 1,000.
 
 **Provenance is a chain**: almost every open issue was filed by a PR reviewing
-an earlier fix (#224 → PR #232 → #228 → PR #236 → #124 → PR #237 → #238 → this
-PR is the recent run; #224 came from outside the chain, #228 from a
-measurement). `gh issue view <n>` and `CHANGELOG.md` hold the rest.
+an earlier fix (#224 → PR #232 → #228 → PR #236 → #124 → PR #237 → #238 → PR
+#239 → #240–#244 is the recent run; #224 came from outside the chain, #228
+from a measurement). `gh issue view <n>` and `CHANGELOG.md` hold the rest.
 
 ### Worth doing, not yet an issue
 

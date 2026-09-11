@@ -1177,8 +1177,9 @@ is not free: JATS models it `(label?, title?, (fn|p)+)`, so a loose `<p>` may
 sit directly in the group, and in a `<fig>` — which has no foot element and may
 carry no `<fn>` — nothing else in the walk's path answers. Removing it passes
 every fixture that does not deposit that exact shape, which is why one does.
-Its own `<label>` is still dropped by the rule #116 set, and its own `<title>`
-by #125/#130's — the heading now counted (#238, the entry below), where this
+Its own `<label>` is still dropped by the rule #116 set — #235's, noted there
+by PR #239's review — and its own `<title>` by #125/#130's, the heading now
+counted (#238, the entry below), where this
 paragraph first said the residual was *"not worth filing"* on a zero that was
 measured for the `<fn-group>` alone: a `<table-wrap-foot>`'s heading is
 deposited 7 times in 4 of 97,909 archive articles.
@@ -1265,11 +1266,34 @@ every one inside it.** The deposit survey read 329 footnote-matter images in
 the archive: 319 in 70 articles owned by an `<inline-formula>`, which is #175's
 population; 3 in 2 owned by a `<boxed-text>`, dropped wherever the box sits;
 and 7 in 4 owned by the `<fn>`. An ancestor test pools all three under #238's
-name and hands #175 a counter it never asked for. The heading counter is keyed
-on the block's own `<title>` for the matching reason: a `<list><title>` inside
-a note is the same drop as one in body prose, and a `<back><fn-group>`'s
-heading is a container's (#231). Both exclusions are pinned; the mutants that
-widen either die to exactly one fixture each.
+name and hands #175 a counter it never asked for; every owner outside the
+three sets is #244's residual. The heading counter is keyed on the block's
+own `<title>` *and* on the owner walk finding an exhibit, for the matching
+reason, and the two guards keep different populations out: the parent a
+`<list><title>` inside a note, the same drop as one in body prose; the walk
+every `<fn-group>` heading belonging to no exhibit, of which an unsectioned
+`<back>`'s is a container's (#231) and a sectioned one is #125's own residual
+(#240). Four documents attributed the second exclusion to the parent test,
+which cannot make it — `fn-group` *is* in the set — until PR #239's review.
+Every exclusion is pinned; the mutants that widen any die to exactly one
+fixture each.
+
+**The image counter counts deposits, and an empty deposit costs nothing on
+either.** An `<alternatives>` pair is one image in two encodings, transparent
+to the owner walk, and reaches the arm twice, so the counter reads 2 — the
+unit the deposit survey counts and the unit every `<graphic>` figure here is
+in — and the line names it, *graphic deposit(s)*, rather than claiming two
+images are missing. Counting per group would need handler state (which
+`<alternatives>` has already counted), for a number that reaches a log line
+and no stored value, and would put the counter and the survey in different
+units. Re-tallied after the guards landed: none of the archive's 7 deposits
+sits in an `<alternatives>` and every one carries an href, so the two
+readings agree on this draw and the unit is chosen on shape. An empty `<title/>` or an href-less `<graphic/>` is not
+counted: nothing was read, so the line would state a loss that did not
+happen — `offer_graphic`'s rule for the same deposit one branch up and
+`hold_footnote_label`'s for an empty marker. The first cut counted both (PR
+#239's review); none of the archive's 7 headings is empty, so the tally did
+not move.
 
 **Two counters rather than one**, because the two losses call for different
 actions, each may be answered separately later, and a shared counter left

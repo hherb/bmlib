@@ -724,11 +724,16 @@ pass.
 > own `<title>` (a `<table-wrap-foot><title>Note:</title>`, refused by the
 > owner rule that keeps a container's heading from becoming a section's) and
 > a `<graphic>` the footnote matter itself owns (refused by the rule that
-> keeps a nested element's image off the enclosing figure). Both measure 0
-> over the 8,118 served articles and a handful over the 97,909 archive ones
-> — 7 headings in 4 articles and 7 images in 4 articles — so on the rendition bmlib is fed the lines are prospective. A
-> formula deposited as an image inside a note is not this line; it is
-> issue #175's, and unreported today.
+> keeps a nested element's image off the enclosing figure). The image line
+> counts *graphic deposits*: an `<alternatives>` pair is one image in two
+> encodings and reads 2. An empty `<title/>` or a `<graphic/>` with no href
+> is not counted, nothing having been read. Both measure 0 over the 8,118
+> served articles and a handful over the 97,909 archive ones — 7 headings in
+> 4 articles and 7 deposits in 4 — so on the rendition bmlib is fed the
+> lines are prospective. Three neighbouring drops are not these lines: a
+> formula deposited as an image inside a note is issue #175's, an image owned
+> by anything but an exhibit or its footnote matter is #244's, and the
+> block's own `<label>` is #235's — all three unreported today.
 
 > **A formula reaches the prose that contains it** *(unreleased, #147)*. A
 > `<tex-math>` used to be taken from the sentence around it and dropped, and a
