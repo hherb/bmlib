@@ -28,13 +28,14 @@ All notable changes to bmlib are documented here. The format is based on
   issue #228 settled one container over for a definition's `<term>`. #116 is
   what discarded the marker, correctly, because there was nowhere to put it;
   there is now. The separator is measured on **this** population rather than
-  borrowed: of the 16,947 footnote paragraphs in the served artifact, **2**
+  borrowed: of the 16,947 footnote paragraphs the markup survey reads in the
+  served artifact, **2**
   contain `" — "`, against 47 containing a spaced hyphen and 4,133 a colon —
   so the em dash collides an order of magnitude less often than either
   alternative, and a consumer wanting the marker separately can split on it.
   The issue priced this as *"a `footnotes: list[str]` on both, plus
   `to_dict()`/`from_dict()` and the HTML renderer"*; neither exhibit model has
-  ever had those methods, so that half of the cost is not there.
+  ever had those methods, so a third of the predicted work is not there.
 
   **Which exhibit a note belongs to is an ancestor question, and both halves of
   the walk are load-bearing.** `_owning_exhibit_footnote` walks outward from
@@ -133,6 +134,48 @@ All notable changes to bmlib are documented here. The format is based on
   Two more: `</fn>` asks the walk with the closing element included, which only
   a figure's `<fn>` can show, since a table's has `<table-wrap-foot>` above it
   either way; and the caption-first ordering above. All 15 die now.
+
+  **Review of PR #237 found two live defects the sweep could not reach, and
+  both were in what the walk did *not* ask.** A cell did not end the owner
+  walk, so an `<fn>` deposited inside a `<td>` set the container flag and the
+  walk carried on outward to the `<table-wrap>` — while `characters()` had
+  already written that text into the open cell, `append_cell_text` being gated
+  on `in_cell` alone. The note was then rendered **twice**, in the cell and
+  again in the footnote block, in the string `FullTextService` caches. That is
+  bmlibrarian_lite#173's own symptom reached by a different route, and the
+  exact invariant the `<p>` branch's own comment claimed unconditionally. And
+  the `</label>` arm assigned `pending_footnote_label` directly, so a second
+  `<label>` in one `<fn>` displaced the first marker with nothing counted, and
+  an **empty** one erased a good marker outright — `""` is the slot's absent
+  spelling, so `</fn>` found nothing to give back either and the note rendered
+  unmarked against a body still reading `12.3a`, silently. That is the `<term>`
+  arm's defect forty lines down in the same method, whose comment already names
+  the rule: *"a rule resting on a remembered content model is the rule this
+  module keeps being caught by"*. Both populations measure **0 of 8,118 served
+  and 0 of 97,909 archive**, so each pins a direction, which is the standing
+  this entry already gives its nesting and caption-order rules.
+
+  **And the documented way to recover a marker did not work.** `" — "` is also
+  `_DEFINITION_SEPARATOR`; issue #228's fold runs first, so a `<def-list>` in a
+  `<table-wrap-foot>` emits `"BMI — body mass index"` with no marker at all.
+  Measured on what the parser **emits**, which is the population the advice is
+  about: **68 of the 16,935 notes, in 10 of the 8,118 served articles**. The
+  separator choice stands — it was measured on the deposit and is right there —
+  but `models.py` and the manual told a consumer to split unguarded and now
+  say not to. The marked-and-folded case, ambiguous either way, measures 0.
+
+  **Four further mutants survived the whole suite**, each moving a stored value
+  or a counter: taking the *outermost* exhibit rather than the innermost, which
+  is the walk docstring's own headline claim; answering with the wrong exhibit
+  *kind* where a figure and a table are both open; counting a note towards
+  `body_paragraph_count`, which flips `has_body` on an exhibit-only body and
+  would end the retrieval chain on an article with no prose; and reversing the
+  mirror's branch order in `_prose_reaches_output`, which under-reports a real
+  formula loss. Nine tests close them and the two defects above; all twelve
+  mutants die. Six documentation figures were corrected at the same time,
+  including four sites quoting the superseded survey count as the parser's own
+  tally, and issue #238 records what an exhibit footnote still loses in
+  silence.
 
 - **A partly-answered posted-results check is no longer stored as a finding**
   (issue #206). `TrialResultsStatus.PARTLY_ANSWERED` is the sixth member, and

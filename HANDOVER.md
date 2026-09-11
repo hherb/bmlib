@@ -58,6 +58,21 @@ one counter that moves is `definition_terms_dropped` — 1,510 → 1,444 served
 and 10,394 → 9,468 archive — which is #228's own *"66 in a `<body>` float"*
 row leaving that counter for this change.
 
+**Its review found two live defects, and both were in what the walk did not
+ask.** A cell did not end the owner walk, so an `<fn>` inside a `<td>` was
+filed as the table's note while `characters()` had already written it into the
+open cell — the same text rendered twice in the cached HTML, which is
+bmlibrarian_lite#173's symptom by another route and the invariant the `<p>`
+branch's own comment asserted unconditionally. And `</label>` wrote the marker
+slot directly, so a second `<label>` displaced a marker uncounted and an empty
+one erased it with nothing left for `</fn>` to give back. Both measure 0 on
+both artifacts; both are now guarded and pinned. Four further mutants survived
+the whole suite — outermost-instead-of-innermost exhibit, the wrong exhibit
+*kind* where both are open, a note counted towards `has_body`, and the
+mirror's branch order — so the lesson is the sweep's **scope**: 15 mutants all
+died while nothing had been aimed at the counter, the stack index, or the
+branch order. Aim at what a guard *reads*, not only at the guard.
+
 **#228 rides on the same re-fetch and moves values in place rather than
 adding them.** A `<def-list>`'s `<term>` reached no handler, so every
 definition rendered without the word it defines; the term is now folded into
@@ -590,9 +605,12 @@ test.
 **#124 is answered, and it settles the shape of the family rather than only
 its own case.** An exhibit's footnotes fill `footnotes` on both exhibit
 models, marker folded in, rendered as a block after the exhibit. #235's `<fn>`
-half goes with it: the footnote marker that issue counts at 5,891 in 1,582
-served articles is now kept rather than discarded, so the four questions that
-issue splits into are three. **#150 is the head of what is left** — a
+half is **narrowed and not answered**: the marker is kept only where the owner
+walk finds an exhibit, so of the 5,891 `<fn>` labels that issue counts in 1,582
+served articles, #124 keeps the **3,102** deposited inside a figure or a table
+and the remaining 2,789 — an author-note `<fn>`, a `<back><fn-group><fn>`'s
+own marker — are read and discarded exactly as before. That issue still splits
+into four questions; one of them got smaller. **#150 is the head of what is left** — a
 note-only `<ref>` renders as an empty `<li>` — and it is the same shape once
 more, a container whose prose reaches nothing; its decision is whether a
 `<note>` belongs in `citation` or in a field of its own, and it is small,

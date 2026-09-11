@@ -1013,15 +1013,21 @@ there would spend it on a paragraph nobody ever sees and leave the new counter
 reading zero over the one population it exists to size.
 
 **Three counts close on both artifacts.** Fold plus drop equals the terms that
-carry a word: 12,667 folded and 1,510 dropped against 14,186 − 9 empty served,
-142,855 and 10,394 against 153,256 − 7 archive. A table of counters owes that,
+carry a word: **12,733 folded and 1,444 dropped** against 14,186 − 9 empty
+served, **143,781 and 9,468** against 153,256 − 7 archive — the post-#124
+figures, both halves instrumented on this revision. (Pre-#124 they read 12,667
+/ 1,510 and 142,855 / 10,394.) A table of counters owes that,
 and it is what caught #224's archive column summing 136 short of its own total.
 
 **#124 moved the split and the partition was re-measured rather than
-re-derived.** An exhibit's footnote is a destination now, so a `<def-list>`
-deposited in a `<table-wrap-foot>` is folded where it used to be dropped: the
-served row reads **12,733 folded and 1,444 dropped in 120 articles**, summing
-to the same 14,177. Both halves are instrumented counts on this revision — the
+re-derived — on both artifacts.** An exhibit's footnote is a destination now,
+so a `<def-list>` deposited in a `<table-wrap-foot>` is folded where it used to
+be dropped: the served row reads **12,733 folded and 1,444 dropped in 120
+articles**, summing to the same 14,177, and the archive row **143,781 and
+9,468**, summing to the same 153,249. The archive half was left at its
+pre-#124 values through PR #237's review, recoverable only by the arithmetic
+this paragraph forbids — and that arithmetic would have been **wrong by 14**,
+which only re-measuring showed. Both halves are instrumented counts on this revision — the
 fold through `_prefix_pending_definition_term`, the drop through
 `definition_terms_dropped` — because arithmetic over a known move of 66 is
 exactly the derivation this file tells a reader not to trust.
@@ -1181,7 +1187,53 @@ inside another's footnote in either artifact, so requiring the container
 silent and permanent, and because the sibling port shipped the opposite: routed
 on a parser-wide footnote depth, the counter stands at the outer table's depth
 while an inner `<table-wrap>` is parsed, and the inner table's cell `<p>` is
-rendered twice, once in the cell and once below it (bmlibrarian_lite#173).
+rendered twice, once in the cell and once below it (bmlibrarian_lite#173). The
+sibling port **fixed** #173 before this was written — `inInnermostExhibitFootnote`
+is its shipped routing and the depth survives only for the unwind audit — so
+read the depth account as what that port shipped once, not as what it does
+(PR #237's review).
+
+**A cell ends the owner walk, and that arm is not optional.** JATS admits an
+`<fn>` inside a `<td>`, and without it the walk sets `saw_container` on that
+`<fn>` and keeps going outward to the `<table-wrap>` — while `characters()`
+has already delivered the same text to `append_cell_text`, which is gated on
+`in_cell` alone. The note is then rendered twice, in the cell and again in the
+footnote block, which is bmlibrarian_lite#173's own symptom reached by a
+different route and the exact invariant the `<p>` branch exists to hold. The
+module solves the same collision for a formula in a cell by *withholding* the
+cell text until one rendition is chosen; a footnote has no such hold, so the
+walk refuses and the cell keeps what it always had. Measured **0 of 8,118
+served and 0 of 97,909 archive**, so it pins a direction — and it shipped as a
+live double-print through a first round of review, caught only by asking what
+each child of an `<fn>` does rather than by any fixture.
+
+**A displaced footnote marker is counted, never overwritten.** The `</label>`
+arm assigned `pending_footnote_label` directly, so a second `<label>` in one
+`<fn>` put the second marker on the first note's prose with nothing counted,
+and an **empty** one erased a good marker outright — `""` being the slot's
+absent spelling, `</fn>` then had nothing to give back either, so the note
+rendered unmarked against a body still reading `12.3a` with no line at any
+level. That is the `<term>` arm's own defect one container over, forty lines
+down in the same method, whose comment already says why: *"a rule resting on a
+remembered content model is the rule this module keeps being caught by"* —
+expat validates no content model, and `(label?, …)` makes a second `<label>`
+invalid rather than ill-formed. `hold_footnote_label` makes the class the sole
+writer of its own slot and returns what it displaced. Measured **0 of 8,118
+served and 0 of 97,909 archive** `<fn>` carrying two labels; an empty `<label>`
+alone is deposited (3 served, 11 archive) and costs nothing, there being no
+marker to displace.
+
+**Do not tell a consumer to split a note on the separator.** `" — "` is also
+`_DEFINITION_SEPARATOR`, and #228's fold runs first, so a `<def-list>` in a
+`<table-wrap-foot>` emits `"BMI — body mass index"` with no marker at all:
+**68 of the 16,935 notes this parser files, in 10 of the 8,118 served
+articles**. The separator was chosen honestly — 2 of 16,947 *deposited*
+paragraphs contain it, against 47 with a spaced hyphen and 4,133 with a colon
+— but that is a measurement of the deposit and the advice is about the
+*emitted* string, which is the population a first cut did not look at. The
+em dash stays: changing it would break the one thing that is right about it,
+and the fold's own collision is the same string by construction, so no third
+separator removes the ambiguity without also removing #228's.
 
 ## fulltext — an exhibit with no `<label>` gets no fallback search (#162)
 

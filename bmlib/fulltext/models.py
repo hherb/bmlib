@@ -149,8 +149,8 @@ class JATSFigureInfo:
     ``<fn>`` there directly, with no wrapper — each with its own marker folded
     into it (issue #124). See :class:`JATSTableInfo`, which carries the
     argument and the populations; the figure side is deposited almost never in
-    the rendition this parser is fed (2 paragraphs across 8,118 served
-    articles, against 16,945 on the table side), and the field exists on both
+    the rendition this parser is fed (2 notes across 8,118 served articles,
+    against 16,933 on the table side), and the field exists on both
     because one shared holder in the parser is what stops the two exhibits
     drifting apart while one of them is unexercised.
     """
@@ -207,16 +207,32 @@ class JATSTableInfo:
     surrounding cell, so the rendered body still reads ``12.3a`` and a
     reference to nothing is worse than a blank — the rule issue #116
     established for a swallowed label, and the shape issue #228 settled one
-    container over for a definition's ``<term>``. A consumer that needs the
-    marker separately splits on the separator, which no deposit measured here
-    uses: **2 of 16,947** served footnote paragraphs contain ``" — "`` against
-    47 containing a spaced hyphen and 4,133 a colon, so the em dash is the
-    least colliding of the three by an order of magnitude and not a free
-    choice.
+    container over for a definition's ``<term>``. The separator was chosen by
+    measuring the deposit: **2 of 16,947** footnote paragraphs in the served
+    artifact contain ``" — "`` against 47 containing a spaced hyphen and 4,133
+    a colon, so the em dash collides an order of magnitude less often than
+    either alternative and is not a free choice.
+
+    **But splitting on it does not recover the marker, and an earlier draft
+    said it did.** ``" — "`` is also ``_DEFINITION_SEPARATOR``: issue #228
+    folds a ``<def-list>``'s ``<term>`` into its definition with the same
+    string, and that fold runs *before* this one, so an abbreviations list
+    deposited in a ``<table-wrap-foot>`` emits ``"BMI — body mass index"``
+    carrying no marker at all. Measured on what the parser *emits* rather than
+    on the deposit — which is the population the claim is about — **68 of the
+    16,935 notes, in 10 of the 8,118 served articles**, carry the separator
+    with no marker folded; the archive side is the 926 notes
+    ``definition_terms_dropped`` shed when #124 landed. A consumer splitting
+    unguarded reads ``BMI`` as a footnote marker. Split only where the prefix
+    is marker-shaped, or read the deposit. The three-way case, a marked note
+    whose prose is itself a folded definition, measures **0 of 16,935** and
+    would be ambiguous either way (PR #237's review).
 
     The population is the largest this parser has recovered since issue #224:
-    **16,947 paragraphs in 3,707 of 8,118 served articles (45.7%)**, 2.39 MB of
-    prose, over Europe PMC's ``PMC10030002_PMC10040000.xml.gz``. Table
+    **16,935 paragraphs in 3,707 of 8,118 served articles (45.7%)**, 2.37 MB of
+    prose, over Europe PMC's ``PMC10030002_PMC10040000.xml.gz`` — the routing
+    tally, not the markup survey's 16,947, which over-counts by 12 where a
+    note deposits a ``<def-list>`` inside a ``<p>``. Table
     footnotes carry the abbreviation expansions without which the cells are
     unreadable, and the per-table funding and disclosure notes
     ``bmlib.transparency`` scans for — that module reads the raw XML itself

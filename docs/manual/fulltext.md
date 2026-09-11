@@ -689,22 +689,34 @@ pass.
 > **The marker comes with the note**, folded in as `"a — Adjusted for age."`.
 > A `<sup>` is flattened into the cell it sits in, so the rendered body still
 > reads `12.3a`; with two footnotes, dropping the marker makes the mapping
-> back unrecoverable, which is a reference to nothing rather than a blank. To
-> get at the marker separately, split on the separator — no deposit measured
-> here contains it (2 of 16,947 served notes, against 47 with a spaced hyphen
-> and 4,133 with a colon).
+> back unrecoverable, which is a reference to nothing rather than a blank. The
+> em dash was chosen by measuring the deposit: 2 of 16,947 served notes
+> already contain `" — "`, against 47 with a spaced hyphen and 4,133 with a
+> colon.
+>
+> **Do not split on the separator to recover the marker.** The same string
+> separates a definition's term from its definition (#228), and that fold runs
+> first, so an abbreviations list deposited in a `<table-wrap-foot>` arrives as
+> `"BMI — body mass index"` with no marker at all — 68 of the 16,935 notes
+> this parser files, in 10 of the 8,118 served articles. Split only where the
+> prefix is marker-shaped, or read the deposit.
 >
 > Three containers reach it: a `<table-wrap-foot>`, an `<fn>`, and an
-> `<fn-group>`. A loose `<p>` in any of them — the general note after the last
-> marked footnote — is collected too, with no marker. JATS admits an
-> `<fn-group>` in both exhibits, but neither measured artifact deposits one
-> there (0 of 8,118 served and 0 of 97,909 archive articles), so that container
-> is supported on the specification rather than on an observed deposit. A footnote belonging to no exhibit, such as a
+> `<fn-group>`. A loose `<p>` in a `<table-wrap-foot>` or an `<fn-group>` — the
+> general note after the last marked footnote — is collected too, with no
+> marker; a `<p>` inside a labelled `<fn>` gets that note's marker. Neither
+> measured artifact deposits an `<fn-group>` inside an exhibit at all (0 of
+> 8,118 served and 0 of 97,909 archive articles), so that container is
+> defensive rather than observed. A footnote belonging to no exhibit, such as a
 > `<back><fn-group><fn>`, is the article's and reaches `body_sections`
-> instead.
+> instead — and its own marker is *not* kept, the fold being scoped to an
+> exhibit's notes. An `<fn>` deposited inside a `<td>` is left to the cell,
+> which already renders it.
 >
-> A marker read for a note that then deposited no prose is given back rather
-> than carried onto the next note, and reported once per article at WARNING.
+> A marker bmlib could file no prose for is given back rather than carried onto
+> the next note, and reported once per article at WARNING. **A downstream
+> holding cached full text must re-fetch**: `html_content` moves for every
+> article gaining a note, which is 3,707 of the 8,118 served ones (45.7%).
 
 > **A formula reaches the prose that contains it** *(unreleased, #147)*. A
 > `<tex-math>` used to be taken from the sentence around it and dropped, and a

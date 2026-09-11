@@ -1207,7 +1207,9 @@ class TestARefusedApparatusParagraphIsReported:
         # let a first cut increment at both the formula arm and
         # `_append_prose` and report this one formula as two.
         assert any("1 <ref-list> item(s) were refused" in m for m in warnings), warnings
-        assert not any("reached no section, caption or cell" in m for m in warnings), warnings
+        assert not any("reached no section, caption, cell or footnote" in m for m in warnings), (
+            warnings
+        )
 
     def test_a_float_inside_a_refused_list_is_still_the_float_gap(self, parser_log):
         """Where both causes apply, the float wins, and that is not arbitrary.
@@ -3803,8 +3805,11 @@ class TestAnExhibitFootnoteReachesTheExhibit:
 
     Measured over Europe PMC's ``PMC10030002_PMC10040000.xml.gz`` (8,118
     served articles, the rendition ``FullTextService`` feeds this parser):
-    16,947 footnote paragraphs in 3,707 articles (45.7%) and 2.39 MB of prose,
-    of which 10,763 sit in an ``<fn>`` and 3,102 of those carry a marker.
+    this parser files **16,935 notes in 3,707 articles (45.7%) and 2.37 MB of
+    prose**, of which 3,102 carry a marker. That is the routing tally, taken
+    at ``append_footnote``; the markup survey's 16,947 over-counts by 12 where
+    a note deposits a ``<def-list>`` inside a ``<p>``, and is quoted only for
+    the separator, which is a question about the deposit (PR #237's review).
     """
 
     def test_a_table_footnote_reaches_the_table(self):
@@ -3864,6 +3869,31 @@ class TestAnExhibitFootnoteReachesTheExhibit:
         assert [t.footnotes for t in article.tables] == [
             ["a — Adjusted for age.", "b — Two patients excluded."]
         ]
+
+    def test_a_note_of_several_paragraphs_is_marked_once(self):
+        """``append_footnote``'s documented contract, asserted directly.
+
+        The marker is spent by the *first* paragraph of its own ``<fn>``, so a
+        continuation arrives unmarked — which is where a reader expects the
+        marker and what the sibling Swift port does. Until this fixture the
+        rule was pinned only *through* the counter: a mutant repeating the
+        marker was caught because it left the slot dirty and tripped the
+        dropped-marker WARNING, not because anything read the stored value
+        (PR #237's review).
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot>
+          <fn><label>a</label><p>Adjusted for age.</p><p>Two excluded.</p></fn>
+        </table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [t.footnotes for t in article.tables] == [["a — Adjusted for age.", "Two excluded."]]
 
     def test_an_unmarked_footnote_carries_no_separator(self):
         """No marker, no fold — never a leading ``" — "`` over nothing."""
@@ -4003,8 +4033,8 @@ class TestAnExhibitFootnoteReachesTheExhibit:
     def test_a_figures_footnote_reaches_the_figure(self):
         """JATS admits ``<fn>`` directly in ``<fig>``, with no foot wrapper.
 
-        The served rendition deposits almost none — 2 paragraphs in 8,118
-        articles against 16,945 on the table side — so this pins a direction
+        The served rendition deposits almost none — 2 notes in 8,118
+        articles against 16,933 on the table side — so this pins a direction
         and not a population, and the shared holder is what keeps the two
         exhibits from drifting apart while one of them is unexercised.
         """
@@ -4200,6 +4230,113 @@ class TestAFootnoteBelongsToTheExhibitThatEnclosesIt:
         assert [t.footnotes for t in article.tables] == [[]]
         assert "A cell." in article.tables[0].html_content
 
+    def test_a_footnote_inside_a_cell_is_not_the_tables_note(self):
+        """A cell ends the owner walk, so the note is not rendered twice.
+
+        JATS admits an ``<fn>`` inside a ``<td>``. Without the cell arm the
+        walk sets its container flag on that ``<fn>`` and carries on outward
+        past the cell to the ``<table-wrap>`` — while ``characters()`` has
+        *already* delivered the same text to ``append_cell_text``, which is
+        gated on ``in_cell`` alone. The note would then appear in the cell and
+        again in the footnote block, which is bmlibrarian_lite#173's own
+        symptom reached by a different route and the exact invariant the
+        neighbouring test pins for a bare cell ``<p>``.
+
+        Measured 0 of 8,118 served and 0 of 97,909 archive articles, so this
+        pins a direction rather than a population (PR #237's review).
+        """
+        article, html = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr>
+          <td>12.3<fn id="f1"><label>a</label><p>Adjusted for age.</p></fn></td>
+        </tr></tbody></table>
+      </table-wrap>
+    </sec>""")
+        ).parse_with_html()
+
+        assert [t.footnotes for t in article.tables] == [[]]
+        assert html.count("Adjusted for age.") == 1
+
+    def test_a_nested_tables_own_note_is_not_the_outer_tables(self):
+        """Ownership is the *innermost* exhibit, which is the walk's headline.
+
+        The docstring argues that a parser-wide footnote depth cannot answer a
+        question about the innermost exhibit and the walk can. That property is
+        carried by ``current_table`` reading the top of the stack, and until
+        this fixture nothing pinned it: taking the *outermost* instead passed
+        the whole suite while moving the inner note onto the outer table and
+        emptying the inner one (PR #237's review).
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>1</td></tr></tbody></table>
+        <table-wrap-foot><fn><label>a</label>
+          <table-wrap id="T2"><label>Table 2.</label>
+            <table><tbody><tr><td>2</td></tr></tbody></table>
+            <table-wrap-foot><fn><label>b</label>
+              <p>Inner note.</p></fn></table-wrap-foot>
+          </table-wrap>
+          <p>Outer note.</p></fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert {t.id: t.footnotes for t in article.tables} == {
+            "T1": ["a — Outer note."],
+            "T2": ["b — Inner note."],
+        }
+
+    def test_a_figure_in_a_tables_footnote_keeps_its_own_note(self):
+        """Which *kind* of exhibit the walk met decides, not which is open.
+
+        Both stacks are non-empty here, so a walk that answered with the wrong
+        one would file the figure's note on the table and leave the figure
+        empty — and it would take the outer table's marker with it. Nothing
+        pinned that either: every other fixture decides ownership with one
+        exhibit type open (PR #237's review).
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>1</td></tr></tbody></table>
+        <table-wrap-foot><fn><label>a</label>
+          <fig id="F1"><label>Figure S1.</label>
+            <fn><label>*</label><p>Figure note.</p></fn>
+          </fig>
+          <p>Outer note.</p></fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [t.footnotes for t in article.tables] == [["a — Outer note."]]
+        assert [f.footnotes for f in article.figures] == [["* — Figure note."]]
+
+    def test_a_footnote_only_body_still_reports_no_body(self):
+        """A note is the exhibit's content, and an exhibit is not a body.
+
+        ``has_body`` is what stops ``FullTextService`` caching a document that
+        is front matter plus exhibits and going no further down the tier
+        chain, so a note counting towards it would end the chain on an article
+        with no prose. 45.7% of the served corpus now flows through this
+        branch and nothing pinned the counter (PR #237's review).
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <table-wrap id="T1"><label>Table 1.</label>
+      <table><tbody><tr><td>1</td></tr></tbody></table>
+      <table-wrap-foot><fn><label>a</label>
+        <p>Adjusted for age.</p></fn></table-wrap-foot>
+    </table-wrap>""")
+        ).parse()
+
+        assert [t.footnotes for t in article.tables] == [["a — Adjusted for age."]]
+        assert article.has_body is False
+
 
 class TestAFootnoteMarkerThatCouldNotBeFiledIsReported:
     """A marker read with no prose to fold it into is counted, never carried.
@@ -4208,10 +4345,17 @@ class TestAFootnoteMarkerThatCouldNotBeFiledIsReported:
     ``<fn>``. Left pending it would prefix whatever footnote prose arrived
     next — the marker of one note printed on another, which is #228's own
     hazard one container over and a *wrong* value where the alternative is a
-    blank. So ``</fn>`` gives an unspent marker back and counts it.
+    blank. So ``</fn>`` gives an unspent marker back and counts it, and a
+    second ``<label>`` in one ``<fn>`` counts the marker it displaces.
 
-    Measured: 1 of the 10,763 ``<fn>`` in the 8,118 served articles carries a
-    marker and no prose. A direction, not a population.
+    **The counter is wholly prospective and this docstring says so**, because
+    an earlier draft did not and disagreed with the CHANGELOG: 1 of the 10,763
+    ``<fn>`` inside an exhibit in the 8,118 served articles carries no prose,
+    and 11 of 137,735 in the archive — and every one of those twelve carries
+    no marker either, so the counter reads **0** over both artifacts. The
+    displacement half measures **0 of 8,118 served and 0 of 97,909 archive**
+    ``<fn>`` carrying two ``<label>``. A direction, not a rate (PR #237's
+    review).
     """
 
     def test_a_marker_with_no_prose_does_not_reach_the_next_footnote(self):
@@ -4229,11 +4373,80 @@ class TestAFootnoteMarkerThatCouldNotBeFiledIsReported:
         ).parse()
 
         # The second note deposits no marker of its own **on purpose**: giving
-        # it one masks the leak, because its `</label>` overwrites the stranded
-        # marker before any prose arrives. Counting the marker without giving
-        # it back then passes — a survivor of exactly the shape #228's `<term>`
-        # guard had.
+        # it one hides *this* leak behind the give-back, since its `</label>`
+        # would reach a slot `</fn>` had already emptied and nothing would
+        # distinguish the two arms. Counting the marker without giving it back
+        # then passes — a survivor of exactly the shape #228's `<term>` guard
+        # had.
         assert [t.footnotes for t in article.tables] == [["Two patients excluded."]]
+
+    def test_a_second_label_does_not_overwrite_the_first_marker_in_silence(self, parser_log):
+        """A displaced marker is counted, never overwritten (PR #237's review).
+
+        JATS models ``<fn>`` as ``(label?, …)``, so a second ``<label>`` is
+        invalid and *not* ill-formed — expat validates no content model. Bare
+        last-wins put the second marker on the first note's prose with nothing
+        counted, which is the ``<term>`` arm's own defect one container over
+        and what its comment calls *"a rule resting on a remembered content
+        model"*.
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot>
+          <fn><label>a</label><label>b</label><p>Adjusted.</p></fn>
+        </table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [t.footnotes for t in article.tables] == [["b — Adjusted."]]
+        assert any("1 footnote marker(s)" in m for m in parser_log.messages(logging.WARNING))
+
+    def test_an_empty_label_does_not_erase_a_marker_in_silence(self, parser_log):
+        """``""`` is the slot's absent spelling, so an empty ``<label>`` is the
+        one route by which a marker could vanish with no line at all.
+
+        Erased rather than displaced, the note renders **unmarked** while the
+        body still reads ``12.3a`` — the dangling reference the whole feature
+        exists to prevent — and ``</fn>`` finds nothing to give back, so the
+        give-back arm cannot report it either. It is counted at the write.
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot>
+          <fn><label>a</label><label></label><p>Adjusted.</p></fn>
+        </table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [t.footnotes for t in article.tables] == [["Adjusted."]]
+        assert any("1 footnote marker(s)" in m for m in parser_log.messages(logging.WARNING))
+
+    def test_a_lone_empty_label_costs_nothing(self, parser_log):
+        """The negative control for the guard above, and the deposit that is
+        actually measured: 3 served and 11 archive ``<fn>`` carry an empty
+        ``<label>``, none of them beside a real marker, so displacing nothing
+        must report nothing.
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><fn><label></label><p>Adjusted.</p></fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [t.footnotes for t in article.tables] == [["Adjusted."]]
+        assert not [m for m in parser_log.messages(logging.WARNING) if "footnote marker" in m]
 
     def test_the_dropped_marker_is_counted_and_reported_once(self, parser_log):
         """One WARNING per article carrying the count, the ``rejected_spans``
@@ -4326,6 +4539,11 @@ class TestRenderingAnExhibitsFootnotes:
         ).to_html()
 
         assert html.index("</figcaption>") < html.index('<div class="fn-group">')
+        # And *inside* the <figure>, not after it. Asserting only the lower
+        # bound let the block move past `</figure>`, where it is no longer the
+        # figure's at all and, with two figures, sits between them
+        # (PR #237's review).
+        assert html.index('<div class="fn-group">') < html.index("</figure>")
         assert "<p>* — Scale bar 10um.</p>" in html
 
     def test_an_exhibit_with_no_footnotes_renders_no_block(self):
@@ -7737,7 +7955,8 @@ the rate follows.</p></sec></body>
 
         assert [p for s in article.body_sections for p in s.paragraphs] == ["Prose."]
         assert any(
-            "1 display formula(s) were rendered but reached no section, caption or cell" in message
+            "1 display formula(s) were rendered but reached no section, caption, "
+            "cell or footnote" in message
             for message in parser_log.messages(logging.WARNING)
         )
 
@@ -7767,6 +7986,40 @@ the rate follows.</p></sec></body>
 
         assert [t.footnotes for t in article.tables] == [["a — $$s = 1$$"]]
         assert not [m for m in parser_log.messages(logging.WARNING) if "reached no section" in m]
+
+    def test_the_mirror_asks_the_caption_before_the_footnote(self, parser_log):
+        """The predicate mirrors ``_append_prose``'s two branches *in order*.
+
+        The test above kills the deletion of the footnote half and not its
+        reordering, which is the rule the implementation comment states. Under
+        the reversed order this formula — in an unmodelled caption that is
+        itself inside a footnote — is reported as reaching the footnote, so
+        the counter reads 0 and the line vanishes while the rendition really is
+        dropped: a counter silently under-reporting a real loss, which is the
+        same contract read backwards one direction over (PR #237's review).
+        """
+        xml = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>M</title><p>Prose.</p>
+    <table-wrap id="t1"><label>Table 1.</label>
+      <table><tbody><tr><td>1</td></tr></tbody></table>
+      <table-wrap-foot><fn><label>a</label>
+        <supplementary-material id="s1"><caption>\
+<disp-formula><tex-math>\\begin{document}$$s = 1$$\\end{document}</tex-math>\
+</disp-formula></caption></supplementary-material>
+        <p>Adjusted.</p></fn></table-wrap-foot>
+    </table-wrap>
+  </sec></body>
+</article>"""
+        article = JATSParser(xml).parse()
+
+        assert [t.footnotes for t in article.tables] == [["a — Adjusted."]]
+        assert any(
+            "1 display formula(s) were rendered but reached no" in message
+            for message in parser_log.messages(logging.WARNING)
+        )
 
     def test_a_formula_that_reaches_its_section_is_not_reported(self, parser_log):
         """The negative control the counter needs: a rule that fires on every
