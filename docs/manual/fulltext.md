@@ -717,6 +717,18 @@ pass.
 > the next note, and reported once per article at WARNING. **A downstream
 > holding cached full text must re-fetch**: `html_content` moves for every
 > article gaining a note, which is 3,707 of the 8,118 served ones (45.7%).
+>
+> Two things deposited in the same block are still dropped, each by a rule
+> the parser holds elsewhere, and each is now counted and reported once per
+> article at WARNING rather than in silence *(unreleased, #238)*: the block's
+> own `<title>` (a `<table-wrap-foot><title>Note:</title>`, refused by the
+> owner rule that keeps a container's heading from becoming a section's) and
+> a `<graphic>` the footnote matter itself owns (refused by the rule that
+> keeps a nested element's image off the enclosing figure). Both measure 0
+> over the 8,118 served articles and a handful over the 97,909 archive ones
+> — 7 headings in 4 articles and 7 images in 4 articles — so on the rendition bmlib is fed the lines are prospective. A
+> formula deposited as an image inside a note is not this line; it is
+> issue #175's, and unreported today.
 
 > **A formula reaches the prose that contains it** *(unreleased, #147)*. A
 > `<tex-math>` used to be taken from the sentence around it and dropped, and a

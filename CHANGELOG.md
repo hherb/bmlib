@@ -8,6 +8,48 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **A footnote block's own heading and image are counted when they are
+  dropped** (issue #238, filed by PR #237's review). #124 made an exhibit's
+  footnote a destination, and two things deposited in the same block still
+  reached nothing with no counter and no line: a `<table-wrap-foot>`'s or
+  exhibit `<fn-group>`'s own `<title>` — *"Note:"*, *"Abbreviations"* —
+  refused by the `<title>` owner rule (#125, #130), and a `<graphic>` the
+  footnote matter owns, refused by `_graphic_owner`'s opacity (#127). Both
+  refusals are rules this module argued for, so **both drops stay** and each
+  is counted and reported once per article at WARNING — `refused_apparatus_prose`'s
+  rule, that a loss the module chose earns a line rather than excusing one.
+  Folding the heading in as the block's lead, the shape #124 and #228 took for
+  a marker and a term, is refused: a heading belongs to the *block* and the
+  block is a list of notes, so the fold would either put a heading in the list
+  as if it were a note or weld it onto the first note's marker and break the
+  one `split` the #124 decision promises — a *wrong* value where the
+  alternative is a blank, this module's standing preference. `docs/DECISIONS.md`
+  records it.
+
+  **Scoped by a deposit survey, and both exclusions have a home elsewhere.**
+  The heading counter is keyed on the block's own `<title>` — parent
+  `<table-wrap-foot>` or `<fn-group>`, with the owner walk finding an exhibit —
+  so a `<list><title>` inside a note (dropped by the same rule wherever the
+  list sits) and a `<back><fn-group>`'s heading (a container's, issue #231's
+  population) stay out. The image counter is keyed on an owner that *is* the
+  footnote matter, because of the 329 footnote-matter `<graphic>` in the
+  archive artifact 319 (in 70 articles) are an `<inline-formula>`'s — issue
+  #175's population, a formula deposited as an image — and 3 a
+  `<boxed-text>`'s, against **7 in 4 articles owned by the `<fn>`**; an
+  ancestor test would have pooled all three under this issue's name.
+
+  **Measured by the counters themselves**: **0 and 0 over the 8,118 served
+  articles** of `PMC10030002_PMC10040000.xml.gz`, the rendition bmlib is
+  fed, and over the 97,909 archive articles of
+  `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` 7 headings in 4 articles and 7 images in 4 articles — every archive
+  heading a `<table-wrap-foot>`'s reading *"Note"*, *"Note:"* or
+  *"Fontes:"*. The issue's 8 headings came from an unscoped whole-document
+  walk. The deposit survey and the routing tally agree to the unit on both
+  counters, and the same run re-reads `footnote_markers_dropped` at its
+  recorded 0 on both artifacts. **Nothing stored moves**: the counters add two log lines and no
+  value. Nine mutants — both gates on each arm, the block set, the audit
+  lines and the increment — all die, each to the fixture written for it.
+
 - **An exhibit's footnotes reach the exhibit, and the marker with them** (issue
   #124). `JATSFigureInfo` and `JATSTableInfo` gain a `footnotes: list[str]`,
   filled from a `<table-wrap-foot>`'s `<fn>` prose, from an `<fn-group>` — which

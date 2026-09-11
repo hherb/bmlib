@@ -1426,6 +1426,22 @@ _FORMULA_ELEMENTS = frozenset({"inline-formula", "disp-formula"})
 # the loose <p> above has no <fn> to be found by.
 _EXHIBIT_FOOTNOTE_CONTAINERS = frozenset({"table-wrap-foot", "fn", "fn-group"})
 
+# The members of that set that carry a heading of their own (issue #238).
+# JATS models <fn> as `(label?, p+)`, so the block's heading — "Note:",
+# "Abbreviations" — has the <table-wrap-foot> or the <fn-group> as its parent,
+# and the <title> arm counts exactly that parent. Deposit survey over the
+# archive artifact `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` (97,909
+# articles), scoped as the parser routes — suppressed regions skipped, a cell
+# ending the owner walk: **7 headings in 4 articles, every one a
+# <table-wrap-foot>'s**, reading "Note" (4), "Note:" (2) and "Fontes:" (1);
+# **0** in the 8,118 served articles of `PMC10030002_PMC10040000.xml.gz`. The
+# issue's own 8 came from an unscoped whole-document walk, one wider than what
+# the parser reaches. No <fn-group> heading is deposited inside an exhibit in
+# either artifact, which follows from no <fn-group> being deposited there at
+# all (see above); the member is kept for the same reason its parent set keeps
+# it, and a fixture exercises it.
+_EXHIBIT_FOOTNOTE_BLOCKS = frozenset({"table-wrap-foot", "fn-group"})
+
 # The elements whose text a formula's own arm delivers, so the pop must never
 # merge them. <tex-math> is here because its text is rendered before it is
 # merged — a raw merge is worse than the drop it replaces, since 99.9% of
@@ -1821,6 +1837,25 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # It counts a *marker*, never an <fn>: a note deposited with no label
         # at all is not a loss, and 7,661 of the 10,763 served <fn> are that.
         self.footnote_markers_dropped = 0
+        # A footnote block's own <title>, and a <graphic> owned by an exhibit's
+        # footnote matter (issue #238). Each is dropped by a rule this module
+        # argued for — the <title> owner rule (#125, #130), bmlib modelling no
+        # container that carries a heading, and `_graphic_owner`'s opacity
+        # (#127), which is what stops a nested supplement's image being
+        # donated to the figure enclosing it — and once #124 made the block a
+        # destination they were the two things in it leaving no trace. Counted
+        # for `refused_apparatus_prose`'s reason: a drop the module chose earns
+        # a line rather than excusing one. Folding the heading in as the
+        # block's lead is refused — `docs/DECISIONS.md` has the argument.
+        #
+        # Both measure **0 over the 8,118 served articles** of
+        # `PMC10030002_PMC10040000.xml.gz`, the rendition bmlib is fed, and a
+        # handful over the 97,909 archive articles of
+        # `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`: the counters
+        # themselves read 7 headings in 4 articles and 7 images in 4 articles — so each pins a
+        # direction on the served bytes and a population on the archive.
+        self.footnote_headings_dropped = 0
+        self.footnote_graphics_dropped = 0
         self.current_article_id_type: str | None = None
 
         # Abstract state
@@ -3053,6 +3088,21 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # by the same rule a figure's deposits are, because it is the
                 # same rule: see `_GraphicHolder`.
                 current_table.offer_graphic(href, _graphic_suitability(attrs, href))
+            elif (
+                owner in _EXHIBIT_FOOTNOTE_CONTAINERS
+                and self._owning_exhibit_footnote() is not None
+            ):
+                # An image the footnote matter itself owns — a note's, or
+                # the loose general note's — dropped by the opacity rule
+                # above and counted (issue #238). Scoped to that owner and
+                # not to every <graphic> in footnote matter, on measurement:
+                # of the 329 such images in the archive artifact, 319 (in 70
+                # articles) are an <inline-formula>'s, which is issue #175's
+                # population, and 3 (in 2) a <boxed-text>'s, dropped
+                # wherever the box sits — against 7 in 4 articles owned by
+                # the <fn>. The served bundle's one such image is a
+                # formula's. An ancestor test would have pooled all three.
+                self.footnote_graphics_dropped += 1
         elif name == "table-wrap":
             self.table_slots.append(None)
             self.table_stack.append(
@@ -3399,6 +3449,19 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # about, and is recorded here as not load-bearing so a later
                 # reader does not take it for one.
                 self.section_stack[-1].title = normalized_text
+            elif parent in _EXHIBIT_FOOTNOTE_BLOCKS and self._owning_exhibit_footnote() is not None:
+                # The block's own heading, dropped by the owner rule above
+                # and counted (issue #238). Two guards, and each keeps a
+                # different population out. The parent test keeps out a
+                # <list><title> inside a note: that title is dropped by the
+                # same rule wherever the list sits, so counting it only here
+                # would key the counter on the wrong scope. The owner walk
+                # keeps out a <back><fn-group>'s heading, which is a
+                # *container's* and issue #231's population — larger,
+                # differently caused, undecided — so pooling the two would
+                # report a loss this counter sized and one it never measured
+                # as one, the `_prose_is_refused_apparatus` gate's argument.
+                self.footnote_headings_dropped += 1
         elif name == "p":
             self._append_prose(normalized_text, keep_empty=True)
         elif name == "tex-math":
@@ -4220,6 +4283,35 @@ def _audit_parse(handler: _JATSHandler) -> None:
             "missing from the article (issue #124)",
             article,
             handler.footnote_markers_dropped,
+        )
+
+    if handler.footnote_headings_dropped:
+        # The same rule and the same level, for a drop this module chose
+        # (issue #238): a footnote block's own <title>, refused by the owner
+        # rule that keeps an <fn-group>'s heading from renaming a section.
+        # Once per article, `contribs_naming_nobody`'s granularity, and it
+        # says what bmlib did — "filed nowhere" — never what the document
+        # held, since the whole point is that the heading *was* deposited.
+        logger.warning(
+            "JATS parse of %s: %d heading(s) of an exhibit's footnote block were read "
+            "and filed nowhere, so those headings are missing from the article "
+            "(issue #238)",
+            article,
+            handler.footnote_headings_dropped,
+        )
+
+    if handler.footnote_graphics_dropped:
+        # Its sibling, for the block's image (issue #238). "Deposited in an
+        # exhibit's footnote matter" and not "a footnote's image", because the
+        # loose general note's <graphic> is owned by the <table-wrap-foot>
+        # and reaches this counter too; and it names the image as what was
+        # lost, the note's prose having been filed by the ordinary route.
+        logger.warning(
+            "JATS parse of %s: %d image(s) deposited in an exhibit's footnote matter "
+            "were read and filed nowhere, so those images are missing from the "
+            "article (issue #238)",
+            article,
+            handler.footnote_graphics_dropped,
         )
 
     if not handler.build_authors():
