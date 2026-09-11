@@ -1177,9 +1177,12 @@ is not free: JATS models it `(label?, title?, (fn|p)+)`, so a loose `<p>` may
 sit directly in the group, and in a `<fig>` — which has no foot element and may
 carry no `<fn>` — nothing else in the walk's path answers. Removing it passes
 every fixture that does not deposit that exact shape, which is why one does.
-Its own `<title>` and `<label>` are still dropped by the rules #125/#130 and
-#116 set, and with a measured population of zero that residual is not worth
-filing.
+Its own `<label>` is still dropped by the rule #116 set — #235's, noted there
+by PR #239's review — and its own `<title>` by #125/#130's, the heading now
+counted (#238, the entry below), where this
+paragraph first said the residual was *"not worth filing"* on a zero that was
+measured for the `<fn-group>` alone: a `<table-wrap-foot>`'s heading is
+deposited 7 times in 4 of 97,909 archive articles.
 
 **The nesting rules stand on their argument, not on a draw.** No exhibit opens
 inside another's footnote in either artifact, so requiring the container
@@ -1234,6 +1237,68 @@ paragraphs contain it, against 47 with a spaced hyphen and 4,133 with a colon
 em dash stays: changing it would break the one thing that is right about it,
 and the fold's own collision is the same string by construction, so no third
 separator removes the ambiguity without also removing #228's.
+
+## fulltext — a footnote block's heading and image are counted, not folded (#238)
+
+**The two drops stay.** A `<table-wrap-foot>`'s or exhibit `<fn-group>`'s own
+`<title>` is refused by the `<title>` owner rule (#125, #130) — bmlib models no
+container that carries a heading, and that rule is what stops an `<fn-group>`'s
+title renaming a section — and a `<graphic>` owned by the footnote matter is
+refused by `_graphic_owner`'s opacity (#127), which keeps a nested supplement's
+image off the figure enclosing it. Each is counted and reported once per
+article at WARNING (`footnote_headings_dropped`, `footnote_graphics_dropped`),
+which is `refused_apparatus_prose`'s rule for a loss the module chose. The
+issue's own suggested resolution.
+
+**Folding the heading in is refused, on shape and not on population.** #124
+folds a marker into its note and #228 a term into its definition, each into the
+one string it belongs to. A heading belongs to the *block*, and
+`footnotes: list[str]` is a list of notes: folded as its own entry, *"Note:"*
+is indistinguishable from an unmarked note; welded onto the first note it
+reads `"Note: a — A note."` and the `split` the #124 decision promises hands
+back `"Note: a"` as the marker. Both are a *wrong* value where the alternative
+is a blank, the preference #116 and #162 settled. A `footnotes_title` field
+would be a new public shape for a value measured **0 of 8,118 served** and 7 in
+4 of 97,909 archive articles; reopen it with the downstream that reads it.
+
+**The image counter is scoped to the footnote matter's own `<graphic>`, not to
+every one inside it.** The deposit survey read 329 footnote-matter images in
+the archive: 319 in 70 articles owned by an `<inline-formula>`, which is #175's
+population; 3 in 2 owned by a `<boxed-text>`, dropped wherever the box sits;
+and 7 in 4 owned by the `<fn>`. An ancestor test pools all three under #238's
+name and hands #175 a counter it never asked for; every owner outside the
+three sets is #244's residual. The heading counter is keyed on the block's
+own `<title>` *and* on the owner walk finding an exhibit, for the matching
+reason, and the two guards keep different populations out: the parent a
+`<list><title>` inside a note, the same drop as one in body prose; the walk
+every `<fn-group>` heading belonging to no exhibit, of which an unsectioned
+`<back>`'s is a container's (#231) and a sectioned one is #125's own residual
+(#240). Four documents attributed the second exclusion to the parent test,
+which cannot make it — `fn-group` *is* in the set — until PR #239's review.
+Every exclusion is pinned; the mutants that widen any die to exactly one
+fixture each.
+
+**The image counter counts deposits, and an empty deposit costs nothing on
+either.** An `<alternatives>` pair is one image in two encodings, transparent
+to the owner walk, and reaches the arm twice, so the counter reads 2 — the
+unit the deposit survey counts and the unit every `<graphic>` figure here is
+in — and the line names it, *graphic deposit(s)*, rather than claiming two
+images are missing. Counting per group would need handler state (which
+`<alternatives>` has already counted), for a number that reaches a log line
+and no stored value, and would put the counter and the survey in different
+units. Re-tallied after the guards landed: none of the archive's 7 deposits
+sits in an `<alternatives>` and every one carries an href, so the two
+readings agree on this draw and the unit is chosen on shape. An empty `<title/>` or an href-less `<graphic/>` is not
+counted: nothing was read, so the line would state a loss that did not
+happen — `offer_graphic`'s rule for the same deposit one branch up and
+`hold_footnote_label`'s for an empty marker. The first cut counted both (PR
+#239's review); none of the archive's 7 headings is empty, so the tally did
+not move.
+
+**Two counters rather than one**, because the two losses call for different
+actions, each may be answered separately later, and a shared counter left
+reading only the other half would be `_COUNTER_DEFINITIONS_VERSION`'s scar —
+a published figure that changes meaning without changing.
 
 ## fulltext — an exhibit with no `<label>` gets no fallback search (#162)
 

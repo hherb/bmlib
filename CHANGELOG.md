@@ -8,6 +8,80 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **A footnote block's own heading and image are counted when they are
+  dropped** (issue #238, filed by PR #237's review). #124 made an exhibit's
+  footnote a destination, and two things deposited in the same block still
+  reached nothing with no counter and no line: a `<table-wrap-foot>`'s or
+  exhibit `<fn-group>`'s own `<title>` — *"Note:"*, *"Fontes:"* —
+  refused by the `<title>` owner rule (#125, #130), and a `<graphic>` the
+  footnote matter owns, refused by `_graphic_owner`'s opacity (#127). Both
+  refusals are rules this module argued for, so **both drops stay** and each
+  is counted and reported once per article at WARNING — `refused_apparatus_prose`'s
+  rule, that a loss the module chose earns a line rather than excusing one.
+  Folding the heading in as the block's lead, the shape #124 and #228 took for
+  a marker and a term, is refused: a heading belongs to the *block* and the
+  block is a list of notes, so the fold would either put a heading in the list
+  as if it were a note or weld it onto the first note's marker and break the
+  one `split` the #124 decision promises — a *wrong* value where the
+  alternative is a blank, this module's standing preference. `docs/DECISIONS.md`
+  records it.
+
+  **Scoped by a deposit survey, and every exclusion has a home elsewhere.**
+  The heading counter is keyed on the block's own `<title>` — parent
+  `<table-wrap-foot>` or `<fn-group>` — *and* on the owner walk finding an
+  exhibit, and the two guards keep different populations out: the parent a
+  `<list><title>` inside a note (dropped by the same rule wherever the list
+  sits), the walk every `<fn-group>` heading belonging to no exhibit — an
+  unsectioned `<back>`'s, issue #231's population, and a sectioned one, which
+  is #125's own residual and was dropped with no counter and no line until
+  PR #239's review filed it as #240. The image counter is keyed on an owner
+  that *is* the footnote matter, because of the 329 footnote-matter
+  `<graphic>` in the archive artifact 319 (in 70 articles) are an
+  `<inline-formula>`'s — issue #175's population, a formula deposited as an
+  image — and 3 a `<boxed-text>`'s, against **7 in 4 articles owned by the
+  `<fn>`**; an ancestor test would have pooled all three under this issue's
+  name, and every owner outside the three sets is #244's residual. **It
+  counts deposits**: an `<alternatives>` pair is one image in two encodings
+  and reads 2, the unit the survey counts, and its line says *graphic
+  deposit(s)* rather than claiming two images. **An empty deposit costs
+  nothing on either counter** — `<title/>`, a `<graphic/>` with no href —
+  the rule every sibling makes, since nothing was read and the line would
+  state a loss that did not happen; the first cut counted both. The block's
+  own `<label>` is still dropped uncounted and is #235's.
+
+  **Measured by the counters themselves**: **0 and 0 over the 8,118 served
+  articles** of `PMC10030002_PMC10040000.xml.gz`, the rendition bmlib is
+  fed, and over the 97,909 archive articles of
+  `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` 7 headings in 4 articles
+  and 7 graphic deposits in 4 — every archive heading a
+  `<table-wrap-foot>`'s reading *"Note"*, *"Note:"* or *"Fontes:"*, none
+  empty. The *scoped* deposit survey and the routing tally agree to the unit
+  on both counters; the issue's unscoped whole-document walk agrees for the
+  image (7) and not for the heading (8). The same run re-reads
+  `footnote_markers_dropped` at its recorded 0 on both artifacts. **Nothing
+  stored moves**: the counters add two log lines and no value.
+  Eighteen mutants, seventeen killed, each by the fixture written for it —
+  the three guards on each arm (empty deposit, parent or owner test, exhibit
+  walk), the abstract-exhibit route, `fn-group` refused as an owner, both
+  block-set members, a double increment on each counter, the audit lines
+  chained, cross-gated and removed, and the image line's unit reverted. The
+  survivor widens the block set to the container set, which only an
+  `<fn><title>` JATS does not admit could tell apart, and is documented as
+  such rather than pinned.
+
+  **PR #239's review found four surviving mutants and two false claims**,
+  all fixed above — the audit lines were independent `if`s no fixture held
+  both of, the abstract-exhibit route was exercised and unpinned, `fn-group`
+  as an image's direct owner was unpinned, and four documents attributed the
+  `<back><fn-group>` exclusion to the parent test, which cannot make it. It
+  also found five defects older than this change, each verified by parse and
+  filed rather than fixed here: a sectioned `<fn-group>`'s heading dropped
+  uncounted (#240), a `<graphic>`'s `<alt-text>` welded into the surrounding
+  prose (#241), `<inline-graphic>` having no handler at all (#242), prose
+  around an inline `<table-wrap>` absorbing the cell text (#243), and a
+  `<graphic>` owned by anything but an exhibit or its footnote matter
+  dropped uncounted (#244).
+
 - **An exhibit's footnotes reach the exhibit, and the marker with them** (issue
   #124). `JATSFigureInfo` and `JATSTableInfo` gain a `footnotes: list[str]`,
   filled from a `<table-wrap-foot>`'s `<fn>` prose, from an `<fn-group>` — which

@@ -4502,6 +4502,554 @@ class TestAFootnoteMarkerThatCouldNotBeFiledIsReported:
         assert not [m for m in parser_log.messages(logging.WARNING) if "footnote marker" in m]
 
 
+class TestAnExhibitFootnoteBlocksHeadingIsCounted:
+    """A ``<table-wrap-foot>``'s or exhibit ``<fn-group>``'s own ``<title>`` is
+    dropped by the ``<title>`` owner rule (#125, #130) — correctly, bmlib
+    modelling no container that carries one — and since #124 made the block
+    a destination, that drop was one of the two things in it leaving no
+    trace, beside the block's own ``<label>``, which is #235's (issue #238).
+    The drop stays; it is counted and reported once per article at WARNING,
+    the ``refused_apparatus_prose`` rule for a loss this module argued for.
+
+    **Two guards, and each keeps a different population out.** The parent
+    test keeps out a ``<list><title>`` inside a note, dropped by the same
+    rule wherever the list sits; the owner walk keeps out every
+    ``<fn-group>`` heading belonging to no exhibit — an unsectioned
+    ``<back>``'s, which is #231's population, and a sectioned one in
+    ``<body>`` or ``<back>``, which is #240's. Both are pinned below. And an
+    empty ``<title/>`` costs nothing: nothing was read, so nothing is
+    missing, the rule every sibling counter makes for an empty deposit.
+
+    **Measured by the counter itself over both artifacts**: 0 of the 8,118
+    served articles of ``PMC10030002_PMC10040000.xml.gz``, and 7 headings in
+    4 of the 97,909 archive articles of
+    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`` — so it pins a direction
+    on the rendition bmlib is fed and a population on the archive. Every
+    archive heading is a ``<table-wrap-foot>``'s, reading "Note", "Note:" or
+    "Fontes:", none of them empty; the issue's own 8 was an unscoped
+    whole-document walk.
+    """
+
+    def test_a_table_foots_heading_is_dropped_and_counted(self, parser_log):
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><title>Note:</title>
+          <fn><label>a</label><p>A note.</p></fn>
+        </table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [t.footnotes for t in article.tables] == [["a — A note."]]
+        assert [s.title for s in article.body_sections] == ["Results"]
+        assert article.tables[0].caption == ""
+        warnings = [m for m in parser_log.messages(logging.WARNING) if "footnote block" in m]
+        assert len(warnings) == 1
+        assert "1 heading(s) of an exhibit's footnote block" in warnings[0]
+
+    def test_a_figures_fn_group_heading_is_counted_too(self, parser_log):
+        """The figure side: ``<fn-group>`` is the only member of
+        ``_EXHIBIT_FOOTNOTE_BLOCKS`` a ``<fig>`` could hold, there being no
+        foot element — a claim about bmlib's sets, not about what JATS admits
+        (see the ``_EXHIBIT_FOOTNOTE_CONTAINERS`` comment)."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="f1"><label>Figure 1.</label>
+        <fn-group><title>Notes</title><p>A loose note.</p></fn-group>
+      </fig>
+    </sec>""")
+        ).parse()
+
+        assert [f.footnotes for f in article.figures] == [["A loose note."]]
+        assert any(
+            "1 heading(s) of an exhibit's footnote block" in m
+            for m in parser_log.messages(logging.WARNING)
+        )
+
+    def test_a_group_nested_in_the_foot_counts_its_heading_once(self, parser_log):
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><fn-group><title>Abbreviations</title>
+          <fn><p>BMI, body mass index.</p></fn>
+        </fn-group></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [t.footnotes for t in article.tables] == [["BMI, body mass index."]]
+        warnings = [m for m in parser_log.messages(logging.WARNING) if "footnote block" in m]
+        assert len(warnings) == 1
+        assert "1 heading(s)" in warnings[0]
+
+    def test_two_headings_are_reported_once_with_their_count(self, parser_log):
+        """One WARNING per article carrying the count — ``rejected_spans``'
+        granularity, and the count is asserted rather than the line's
+        presence, which is the rule #224's own tests had to learn."""
+        JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>1</td></tr></tbody></table>
+        <table-wrap-foot><title>Note</title><fn><p>One.</p></fn></table-wrap-foot>
+      </table-wrap>
+      <table-wrap id="T2"><label>Table 2.</label>
+        <table><tbody><tr><td>2</td></tr></tbody></table>
+        <table-wrap-foot><title>Note</title><fn><p>Two.</p></fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        warnings = [m for m in parser_log.messages(logging.WARNING) if "footnote block" in m]
+        assert len(warnings) == 1
+        assert "2 heading(s) of an exhibit's footnote block" in warnings[0]
+
+    def test_a_back_fn_groups_heading_is_not_this_counter(self, parser_log):
+        """A ``<back><fn-group><title>`` is a *container's* heading, dropped by
+        the same rule but belonging to no exhibit. Unsectioned, it is issue
+        #231's population — differently caused and unmeasured here — and
+        pooling the two would report a loss this counter sized and one it
+        never measured as one, the ``_prose_is_refused_apparatus`` gate's own
+        argument. This fixture kills a mutant dropping the owner walk.
+        """
+        article = JATSParser(b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="pmc">PMC1234567</article-id>
+    <title-group><article-title>Real article</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>Results</title><p>Prose.</p></sec></body>
+  <back><fn-group><title>Notes</title><fn><p>A competing interest.</p></fn></fn-group></back>
+</article>""").parse()
+
+        assert [s.paragraphs for s in article.body_sections] == [
+            ["Prose."],
+            ["A competing interest."],
+        ]
+        assert not [m for m in parser_log.messages(logging.WARNING) if "footnote block" in m]
+
+    def test_a_sectioned_fn_groups_heading_is_not_this_counter_either(self, parser_log):
+        """The walk excludes every ``<fn-group>`` outside an exhibit, and the
+        sectioned one is not #231's population — that issue is scoped to
+        *unsectioned* back matter. A ``<sec><fn-group><title>Competing
+        interests</title>`` is #125's own shape, measured there at 12 titles
+        in 3 of 997 served articles, and it is dropped with no counter and no
+        line: issue #240, filed by PR #239's review. This pins the direction
+        so the next reader knows the silence is a filed gap and not an
+        oversight of this counter's."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Additional information</title>
+      <fn-group><title>Competing interests</title><fn><p>None declared.</p></fn></fn-group>
+    </sec>""")
+        ).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Additional information", ["None declared."])
+        ]
+        assert not [m for m in parser_log.messages(logging.WARNING) if "footnote block" in m]
+
+    def test_an_empty_heading_costs_nothing(self, parser_log):
+        """``<title/>`` deposits no heading, so nothing was read and nothing
+        is missing — ``offer_graphic``'s rule for an empty href and
+        ``hold_footnote_label``'s for an empty marker. Counted, the line would
+        state a loss that did not happen (PR #239's review)."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><title/><fn><label>a</label><p>A note.</p></fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [t.footnotes for t in article.tables] == [["a — A note."]]
+        assert not [m for m in parser_log.messages(logging.WARNING) if "footnote block" in m]
+
+    def test_a_heading_inside_an_abstracts_exhibit_is_counted(self, parser_log):
+        """The abstract branch declines a ``<title>`` while an exhibit is open
+        (the guard #125 kept there), so a ``<table-wrap-foot><title>`` in a
+        graphical abstract falls through to this arm and is counted — the
+        only trace of that drop, ``abstract_sections`` being the half
+        ``FullTextService`` caches. The abstract stays unsplit; the counter
+        is what this fixture adds to the pre-existing one in
+        ``TestATitleIsRoutedByItsOwner``."""
+        article = JATSParser(b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="pmc">PMC1234567</article-id>
+    <title-group><article-title>Graphical</article-title></title-group>
+    <abstract>
+      <p>Background and results.</p>
+      <table-wrap id="t1"><label>Table 1</label>
+        <table-wrap-foot><title>Notes</title><fn><p>a footnote</p></fn></table-wrap-foot>
+      </table-wrap>
+      <p>Conclusions follow.</p>
+    </abstract>
+  </article-meta></front>
+  <body><sec><title>Results</title><p>Prose.</p></sec></body>
+</article>""").parse()
+
+        assert [(s.title, s.content) for s in article.abstract_sections] == [
+            ("", "Background and results. Conclusions follow.")
+        ]
+        assert [t.footnotes for t in article.tables] == [["a footnote"]]
+        warnings = [m for m in parser_log.messages(logging.WARNING) if "footnote block" in m]
+        assert len(warnings) == 1
+        assert "1 heading(s)" in warnings[0]
+
+    def test_a_heading_inside_a_nested_article_is_not_this_articles(self, parser_log):
+        """Every handler is suppressed inside a ``<sub-article>`` (#110), and
+        an arm added later has to be too — the precedent
+        ``test_a_formula_inside_a_nested_article_is_not_this_articles`` sets,
+        with both of this issue's counters in one region."""
+        article = JATSParser(b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="pmc">PMC1234567</article-id>
+    <title-group><article-title>Real article</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>Results</title><p>Ours.</p></sec></body>
+  <sub-article article-type="reviewer-report">
+    <front-stub><title-group><article-title>Review</article-title></title-group></front-stub>
+    <body><sec><title>R</title>
+      <table-wrap id="T9"><table><tbody><tr><td>1</td></tr></tbody></table>
+        <table-wrap-foot><title>Note:</title>
+          <fn><p>Theirs <graphic xlink:href="theirs.gif"/></p></fn>
+        </table-wrap-foot>
+      </table-wrap>
+    </sec></body>
+  </sub-article>
+</article>""").parse()
+
+        assert [p for s in article.body_sections for p in s.paragraphs] == ["Ours."]
+        assert article.tables == []
+        assert not [m for m in parser_log.messages(logging.WARNING) if "(issue #238)" in m]
+
+    def test_both_counters_in_one_article_print_two_lines(self, parser_log):
+        """The two audit blocks are independent ``if``s. Chained as an
+        ``elif``, the image line vanishes whenever a heading was counted —
+        a mutant that survived every fixture holding one counter at a time
+        (PR #239's review)."""
+        JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><title>Note:</title>
+          <fn><p>Key: <graphic xlink:href="key.gif"/></p></fn>
+        </table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        headings = [m for m in parser_log.messages(logging.WARNING) if "footnote block" in m]
+        images = [
+            m for m in parser_log.messages(logging.WARNING) if "exhibit's footnote matter" in m
+        ]
+        assert len(headings) == 1 and "1 heading(s)" in headings[0]
+        assert len(images) == 1 and "1 graphic deposit(s)" in images[0]
+
+    def test_the_block_set_is_a_subset_of_the_container_set(self):
+        """A member of ``_EXHIBIT_FOOTNOTE_BLOCKS`` outside
+        ``_EXHIBIT_FOOTNOTE_CONTAINERS`` could never set ``saw_container``
+        in the owner walk, so the heading arm would silently go dead for it.
+        The relation is load-bearing and was unasserted (PR #239's review).
+        The two sets are told apart only by input JATS does not admit — an
+        ``<fn><title>`` — so the split is documentary, and no well-formed
+        fixture can pin it."""
+        assert (
+            jats_parser_module._EXHIBIT_FOOTNOTE_BLOCKS
+            <= jats_parser_module._EXHIBIT_FOOTNOTE_CONTAINERS
+        )
+
+    def test_a_lists_title_inside_a_note_is_not_the_blocks_heading(self, parser_log):
+        """The counter is keyed on the block's own ``<title>`` — parent
+        ``<table-wrap-foot>`` or ``<fn-group>`` — and not on every ``<title>``
+        in footnote matter. A ``<list><title>`` inside a note is dropped by the
+        same owner rule wherever the list sits, in body prose as in a note, so
+        counting it only here would key a counter on the wrong scope.
+        """
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><fn><p>See:</p>
+          <list><title>Items</title><list-item><p>First.</p></list-item></list>
+        </fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [t.footnotes for t in article.tables] == [["See:", "First."]]
+        assert not [m for m in parser_log.messages(logging.WARNING) if "footnote block" in m]
+
+
+class TestAGraphicInAnExhibitsFootnoteIsCounted:
+    """A ``<graphic>`` owned by an exhibit's footnote matter is dropped by
+    ``_graphic_owner``'s opacity rule (#127) — correctly, since keeping the
+    transparent set short is what stops a nested supplement's image being
+    donated to the figure enclosing it — and it was the other thing in the
+    block leaving no trace (issue #238). Counted and reported once per article
+    at WARNING; the image is still filed on nothing.
+
+    **Scoped to an owner that is the footnote matter itself** — ``<fn>``, the
+    ``<table-wrap-foot>`` or an ``<fn-group>`` — because the served bundle's
+    one footnote-matter image is an ``<inline-formula>``'s, which is issue
+    #175's population (a formula deposited as an image) and would be pooled
+    into this one by an ancestor test. Every owner outside the three is
+    #244's residual.
+
+    **The unit is the deposit, and the line says so.** An ``<alternatives>``
+    pair is one image in two encodings, transparent to ``_graphic_owner``,
+    and reaches the arm twice; the counter counts ``<graphic>`` elements —
+    the unit the deposit survey counts, and the one `footnote_markers_dropped`
+    is commensurable with — so the line reports *graphic deposits* rather
+    than claiming two images are missing (PR #239's review). An href-less
+    ``<graphic/>`` costs nothing, ``offer_graphic``'s own rule.
+
+    **Measured by the counter itself**: 0 of 8,118 served articles, and 7
+    deposits in 4 of the 97,909 archive ones. The deposit survey behind the
+    scope reads 319 formula-owned and 3 ``<boxed-text>``-owned images in
+    that footnote matter against the 7 owned by an ``<fn>``.
+    """
+
+    def test_a_notes_image_is_dropped_and_counted(self, parser_log):
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot>
+          <fn><label>a</label><p>Marked thus: <graphic xlink:href="mark.gif"/></p></fn>
+        </table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert article.tables[0].graphic_url is None
+        assert [t.footnotes for t in article.tables] == [["a — Marked thus:"]]
+        warnings = [
+            m for m in parser_log.messages(logging.WARNING) if "exhibit's footnote matter" in m
+        ]
+        assert len(warnings) == 1
+        assert "1 graphic deposit(s) in an exhibit's footnote matter" in warnings[0]
+
+    def test_a_figures_footnote_image_is_counted_too(self, parser_log):
+        """The figure carries no image of its own, so a note's image donated
+        to it would show as ``graphic_url`` — with an own image both rank
+        FULL and the figure's wins either way, which is why the first cut's
+        ``== "f1.jpg"`` could not see a donation (PR #239's review)."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="f1"><label>Figure 1.</label>
+        <fn><p>Key: <graphic xlink:href="key.gif"/></p></fn>
+      </fig>
+    </sec>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url is None
+        assert any(
+            "1 graphic deposit(s) in an exhibit's footnote matter" in m
+            for m in parser_log.messages(logging.WARNING)
+        )
+
+    def test_the_loose_general_notes_image_is_counted(self, parser_log):
+        """The ``<p>`` after the last marked note is footnote matter too, and
+        its image's owner is the ``<table-wrap-foot>`` itself."""
+        JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><p>Legend: <graphic xlink:href="legend.gif"/></p></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert any(
+            "1 graphic deposit(s) in an exhibit's footnote matter" in m
+            for m in parser_log.messages(logging.WARNING)
+        )
+
+    def test_two_images_are_reported_once_with_their_count(self, parser_log):
+        JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot>
+          <fn><p>One <graphic xlink:href="a.gif"/></p></fn>
+          <fn><p>Two <graphic xlink:href="b.gif"/></p></fn>
+        </table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        warnings = [
+            m for m in parser_log.messages(logging.WARNING) if "exhibit's footnote matter" in m
+        ]
+        assert len(warnings) == 1
+        assert "2 graphic deposit(s) in an exhibit's footnote matter" in warnings[0]
+
+    def test_a_fn_groups_own_loose_image_is_counted(self, parser_log):
+        """``<fn-group>`` as the image's *direct* owner — the loose ``<p>`` in
+        a figure's group, the one shape where neither ``<fn>`` nor
+        ``<table-wrap-foot>`` is in the path. A mutant excluding that member
+        as an owner survived every other fixture (PR #239's review). Measures
+        0 in both artifacts, so a direction."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <fig id="f1"><label>Figure 1.</label>
+        <fn-group><p>Key: <graphic xlink:href="key.gif"/></p></fn-group>
+      </fig>
+    </sec>""")
+        ).parse()
+
+        assert article.figures[0].graphic_url is None
+        assert [f.footnotes for f in article.figures] == [["Key:"]]
+        warnings = [
+            m for m in parser_log.messages(logging.WARNING) if "exhibit's footnote matter" in m
+        ]
+        assert len(warnings) == 1
+        assert "1 graphic deposit(s)" in warnings[0]
+
+    def test_an_href_less_deposit_costs_nothing(self, parser_log):
+        """``<graphic/>`` with no href references nothing, so nothing is
+        missing — ``offer_graphic`` ignores the same deposit for an exhibit's
+        own slot. Counted, the line would report an image that never
+        existed (PR #239's review)."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><fn><p>Mark: <graphic/></p></fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [t.footnotes for t in article.tables] == [["Mark:"]]
+        assert not [
+            m for m in parser_log.messages(logging.WARNING) if "exhibit's footnote matter" in m
+        ]
+
+    def test_an_alternatives_pair_is_two_deposits_of_one_image(self, parser_log):
+        """``<alternatives>`` is transparent to ``_graphic_owner``, so both
+        encodings reach the arm and the counter reads 2 — the unit the
+        deposit survey counts. The line names that unit; it does not say two
+        images are missing, since the module treats the pair as one image
+        everywhere else (PR #239's review)."""
+        JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><fn><p>Key:
+          <alternatives><graphic xlink:href="k.tif"/><graphic xlink:href="k.jpg"/></alternatives>
+        </p></fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        warnings = [
+            m for m in parser_log.messages(logging.WARNING) if "exhibit's footnote matter" in m
+        ]
+        assert len(warnings) == 1
+        assert "2 graphic deposit(s) in an exhibit's footnote matter" in warnings[0]
+        assert "image(s) they encode" in warnings[0]
+
+    def test_an_exhibit_opened_inside_a_note_keeps_its_own_image(self, parser_log):
+        """A ``<fig>`` inside a note files its own image: its ``<graphic>``'s
+        owner is ``fig``, so the ``owner == "fig"`` branch above the counter
+        arm takes it and the arm is never reached — the ``elif`` order, not
+        the owner walk, is what this fixture pins (a mutant dropping the walk
+        passes it, PR #239's review). Nesting measures 0 in both artifacts;
+        the direction is what is pinned."""
+        article = JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><fn><p>See
+          <fig id="f9"><graphic xlink:href="own.jpg"/></fig>
+        </p></fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert [f.graphic_url for f in article.figures] == ["own.jpg"]
+        assert not [
+            m for m in parser_log.messages(logging.WARNING) if "exhibit's footnote matter" in m
+        ]
+
+    def test_a_formulas_image_inside_a_note_is_not_this_counter(self, parser_log):
+        """The one footnote-matter image the served bundle deposits: a
+        ``<graphic>`` inside an ``<inline-formula>``, whose owner is the
+        formula. That is issue #175's population and stays out of this one."""
+        JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><fn><p>Where
+          <inline-formula><graphic xlink:href="eq.gif"/></inline-formula>
+        </p></fn></table-wrap-foot>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert not [
+            m for m in parser_log.messages(logging.WARNING) if "exhibit's footnote matter" in m
+        ]
+
+    def test_a_cells_footnote_image_is_the_cells(self, parser_log):
+        """A cell ends the owner walk, so an ``<fn>`` inside a ``<td>`` is
+        not exhibit footnote matter and its image is not counted here."""
+        JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr>
+          <td>12.3<fn><p><graphic xlink:href="c.gif"/></p></fn></td>
+        </tr></tbody></table>
+      </table-wrap>
+    </sec>""")
+        ).parse()
+
+        assert not [
+            m for m in parser_log.messages(logging.WARNING) if "exhibit's footnote matter" in m
+        ]
+
+    def test_a_back_footnotes_image_is_not_this_counter(self, parser_log):
+        """Belongs to no exhibit, so it falls off the end of the ``<graphic>``
+        chain uncounted — issue #244's residual, not this counter's — the
+        same pooling refusal the heading counter makes."""
+        JATSParser(b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="pmc">PMC1234567</article-id>
+    <title-group><article-title>Real article</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>Results</title><p>Prose.</p></sec></body>
+  <back><fn-group><fn><p>Signed <graphic xlink:href="sig.gif"/></p></fn></fn-group></back>
+</article>""").parse()
+
+        assert not [
+            m for m in parser_log.messages(logging.WARNING) if "exhibit's footnote matter" in m
+        ]
+
+
 class TestRenderingAnExhibitsFootnotes:
     """``to_html`` prints the notes where the publisher prints them.
 
@@ -8565,6 +9113,8 @@ class TestTheAuditNetIsComplete:
             "definition_terms_dropped",
             "doi",
             "doi_is_typed",
+            "footnote_graphics_dropped",
+            "footnote_headings_dropped",
             "footnote_markers_dropped",
             "formulas_dropped",
             "front_contributor_name_count",
