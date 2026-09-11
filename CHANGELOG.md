@@ -8,6 +8,132 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **An exhibit's footnotes reach the exhibit, and the marker with them** (issue
+  #124). `JATSFigureInfo` and `JATSTableInfo` gain a `footnotes: list[str]`,
+  filled from a `<table-wrap-foot>`'s `<fn>` prose, from an `<fn-group>` — which
+  JATS admits in both exhibits and **neither artifact deposits inside one**, 0 of
+  8,118 served and 0 of 97,909 archive, so that member is spec-driven and
+  unexercised rather than observed — and from the loose `<p>` deposited after the
+  last marked note. `to_html()` prints them as a `<div class="fn-group">`
+  after the exhibit. Nothing collected them before: the `<p>` handler drops
+  exhibit internals so a cell is not printed twice, which is right for a cell
+  and wrong for a note, so a table's abbreviation expansions and its per-table
+  funding and disclosure notes reached nothing at all.
+
+  **The marker is folded into the note rather than modelled**, `"a — Adjusted
+  for age."`. `<sup>` is an inline element flattened into the surrounding cell,
+  so the rendered body still reads `12.3a` and with two footnotes the mapping
+  back is otherwise unrecoverable — a reference to nothing, which is issue
+  #116's *"a swallowed marker is not a blank"* one element down, and the shape
+  issue #228 settled one container over for a definition's `<term>`. #116 is
+  what discarded the marker, correctly, because there was nowhere to put it;
+  there is now. The separator is measured on **this** population rather than
+  borrowed: of the 16,947 footnote paragraphs in the served artifact, **2**
+  contain `" — "`, against 47 containing a spaced hyphen and 4,133 a colon —
+  so the em dash collides an order of magnitude less often than either
+  alternative, and a consumer wanting the marker separately can split on it.
+  The issue priced this as *"a `footnotes: list[str]` on both, plus
+  `to_dict()`/`from_dict()` and the HTML renderer"*; neither exhibit model has
+  ever had those methods, so that half of the cost is not there.
+
+  **Which exhibit a note belongs to is an ancestor question, and both halves of
+  the walk are load-bearing.** `_owning_exhibit_footnote` walks outward from
+  the closing element and answers with whichever it meets first. Stopping at
+  the exhibit keeps a `<back><fn-group><fn>` — the article's own
+  competing-interest statement, which issue #224 routes to the article — out of
+  whatever figure happens to be open. Requiring the footnote container *before*
+  the exhibit keeps an exhibit nested inside another's footnote from inheriting
+  it, and that is the half the sibling Swift port got wrong: routed on a
+  parser-wide footnote **depth**, the counter still stands at the outer table's
+  depth while an inner `<table-wrap>` is parsed, so the inner table's own cell
+  `<p>` takes the footnote branch and is rendered twice, once in the cell and
+  once below it (bmlibrarian_lite#173). A depth cannot answer a question about
+  the *innermost* exhibit. Nesting measures **0 in both artifacts**, so that
+  half pins a direction rather than a population — the standing this module
+  gives its other structural nesting rules.
+
+  **The caption is asked first, and that ordering is a rule.** A `<fig>` or
+  `<table-wrap>` opened inside a footnote ends the owner walk on its own, so
+  the two destinations can only overlap under a caption-carrying element bmlib
+  does not model — a `<supplementary-material>` or `<media>` inside an `<fn>`.
+  Asking the footnote first would file that element's legend as the enclosing
+  table's note, a *wrong* value where the alternative is a blank; asking the
+  caption first keeps `_append_caption_text`'s standing rule unconditional,
+  that text inside a caption belongs to that caption's owner and to nobody
+  where the owner is unmodelled. Measured **0 of 8,118 served and 0 of 97,909
+  archive**, so nothing stored moves and the rule is kept for what it prevents.
+  Both orderings passed the whole suite until a fixture was written for the
+  overlap — it was a surviving mutant, not a reasoned choice, and it is
+  recorded as one.
+
+  **A marker read for a note that deposits no prose is given back and
+  counted.** Left pending it would fold into whatever footnote prose arrived
+  next — one note's marker printed on another, silently — which is #228's own
+  hazard one container over and takes the same remedy `_DefinitionFrame.term`
+  takes at `</def-item>`. `footnote_markers_dropped` reports once per article
+  at WARNING, the `rejected_spans` granularity. **The counter is wholly
+  prospective and says so**: 1 of the 10,763 `<fn>` inside an exhibit in the
+  served artifact carries no prose, and 11 of 137,735 in the archive, and every
+  one of those twelve carries no marker either — so it reads **0** over both
+  artifacts. A direction, not a rate, which is the standing the audit's own
+  predicates are given.
+
+  **Two counts of an `<fn>`'s `<label>` differ by scope, not by disagreement.**
+  3,102 of the served artifact's exhibit footnotes carry a marker (39,349
+  archive); issue #235's table records 5,891 served labels owned by an `<fn>`,
+  which counts **every** `<fn>` including the back-matter and author-notes ones
+  that belong to no exhibit. Both are right and each now names its element set
+  — the `<aff>`-against-`<aff>`+`<corresp>` correction PR #236's review had to
+  make, avoided in advance this time.
+
+  **Blast radius, diffed against `main` over all 8,118 served articles of Europe
+  PMC's `PMC10030002_PMC10040000.xml.gz`.** Notes appear in **3,707 articles
+  (45.7%)** — 16,935 of them, 2.37 MB, of which **2** are on a figure rather
+  than a table — and `html_content` moves in exactly those 3,707, so **a
+  downstream holding cached full text must re-fetch**. Everything else is
+  unmoved by construction and measured to be: prose, section titles,
+  `abstract_sections`, figure and table captions, `references` and `has_body`
+  move in **0**, and 0 paragraphs are gained or lost. The archive artifact
+  agrees on shape and scale — **190,198 notes in 45,099 of the 97,909 articles
+  of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` (46.1%), 277 of them a
+  figure's** — measured as a routing tally rather than diffed. The one counter
+  that moves is `definition_terms_dropped`, **1,510 → 1,444 in 8 served
+  articles and 10,394 → 9,468 in the archive**: a
+  `<def-list>` deposited in a `<table-wrap-foot>` used to route nowhere and be
+  counted as a loss, and it is now folded and filed like any other definition.
+  That is the 66 the #228 entry below records as *"in a `<body>` float"*, and
+  it is this change's population rather than that counter's now.
+
+  **Two instruments were wrong, and each was caught by a count that would not
+  close.** The blast-radius harness read `f.footnotes` unguarded on both sides,
+  so **6,961 of 8,118 `main` rows errored** and the join reported them as
+  errors rather than as a diff — visible only because the error column was
+  non-zero, which is the harness-is-an-instrument lesson the #224 and #228
+  entries below both record. And the markup survey that sized the population
+  **over-counts by 12**: a footnote may deposit a `<def-list>` inside a `<p>`,
+  and a subtree walk counts that wrapper once as itself and again as its
+  definitions, whose text is all it has. The parser's own tally — 16,935 — is
+  the honest one, which is why it is quoted above and the survey's 16,947 is
+  quoted only for the separator, a question about the deposit rather than about
+  the routing. The 12 are where #228's fold is visible inside a note:
+  `"AICc — Akaike information criterion adjusted for small sample size"` where
+  the subtree walk reads `"AICcAkaike information criterion…"`.
+
+  **Mutation: 15 mutants over the walk, the fold, the two arms, the container
+  set and the renderer.** The first sweep left six survivors and every one was
+  a fixture gap rather than dead code. Three are worth carrying. A
+  `<fn-group>`'s own heading — *"Notes"*, *"Abbreviations"* — cannot be
+  separated from a note's marker by any fixture where the note carries a marker
+  of its own, because the note's `</label>` overwrites the leaked heading before
+  prose arrives; only an unmarked note inside a headed group separates them.
+  The unspent-marker guard has the same shape one arm over: a second note
+  carrying its own marker masks the leak. And `<fn-group>`'s membership in the
+  container set is invisible wherever a `<table-wrap-foot>` or an `<fn>` is also
+  in the walk's path, so it takes a loose `<p>` in a *figure's* group to pin it.
+  Two more: `</fn>` asks the walk with the closing element included, which only
+  a figure's `<fn>` can show, since a table's has `<table-wrap-foot>` above it
+  either way; and the caption-first ordering above. All 15 die now.
+
 - **A partly-answered posted-results check is no longer stored as a finding**
   (issue #206). `TrialResultsStatus.PARTLY_ANSWERED` is the sixth member, and
   the schema addition is free rather than cheap: `trial_results_status` is

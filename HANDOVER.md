@@ -1,13 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-11. **0.10.0 is released and on PyPI**; thirty-three
+_Last updated: 2026-09-11. **0.10.0 is released and on PyPI**; thirty-four
 changes sit unreleased, three of them instrument-only. All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Thirty-three changes, sixteen of them `fulltext` JATS fixes filed within days
+Thirty-four changes, seventeen of them `fulltext` JATS fixes filed within days
 of each other — whoever cuts the next release should describe those together.
 **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is kept here**,
 because the version number answers the API question and never that one. Three
@@ -41,6 +41,22 @@ moves in all 5,990, so **a downstream holding cached full text must
 re-fetch**. `has_body`, `figures`, `.tables`, `references` and
 `abstract_sections` move in **0**, which is the invariant the fix is built
 around rather than a happy result.
+
+**#124 is the third of the three that ride on one re-fetch, and it adds
+values rather than moving them.** An exhibit's footnotes — a
+`<table-wrap-foot>`'s `<fn>` prose, the loose general note after it — used to
+reach nothing at all, and now fill `JATSFigureInfo.footnotes` /
+`JATSTableInfo.footnotes` with each note's marker folded in
+(`"a — Adjusted for age."`). Diffed against `main` over all 8,118 served
+articles: notes appear in **3,707 (45.7%)** — 16,935 of them, 2.37 MB, of which
+**2** are a figure's — and `html_content` moves in exactly those 3,707, so **a
+downstream holding cached full text must re-fetch**. Prose, section titles,
+`abstract_sections`, captions, `references` and `has_body` move in **0**, and
+0 paragraphs are gained or lost. The archive artifact agrees as a routing
+tally: 190,198 notes in 45,099 of 97,909 articles (46.1%), 277 a figure's. The
+one counter that moves is `definition_terms_dropped` — 1,510 → 1,444 served
+and 10,394 → 9,468 archive — which is #228's own *"66 in a `<body>` float"*
+row leaving that counter for this change.
 
 **#228 rides on the same re-fetch and moves values in place rather than
 adding them.** A `<def-list>`'s `<term>` reached no handler, so every
@@ -190,6 +206,19 @@ Commit 009fec3 wrote *"Filed rather than …: #230"* with the keyword spelled
 out, and GitHub closed the issue that sentence said was being filed. Reopened.
 Never let a keyword and a number sit adjacent in any commit body, issue text or
 comment, however the sentence around them reads.
+**A mirror over the markup and a tally from the routing are different
+instruments, and where they disagree the routing is the finding.** #124's
+markup survey counts 16,947 footnote paragraphs and the parser files 16,935:
+a footnote may deposit a `<def-list>` inside a `<p>`, and a subtree walk counts
+that wrapper once as itself and again as its definitions, whose text is all it
+has. Quote the routing tally for what the code does and the markup walk only
+for questions about the *deposit* — #124's separator evidence is a markup
+question and its population is a routing one. **And a container you describe
+in prose is a claim too**: five files called `<fn-group>` *"the wrapper some
+publishers put round a run of notes"*, and **0 of 8,118 served and 0 of 97,909
+archive articles deposit one inside an exhibit**. The member is right and the
+sentence was not, which is #158's rule reaching the sentence rather than the
+figure.
 **A committed corpus is not the only honest population**: #224's is two named
 public artifacts at 8,118 and 97,909 articles against the committed corpora's
 997 and 1,000 — bigger, re-derivable by any reader, and the precedent #146/#149
@@ -253,7 +282,25 @@ names it**: #228's `<term>` parent test is exercised by a `<term>` deposited
 outside a `<def-item>`, and deleting the test passed the whole suite because a
 loose `<term>` *before* any item leaves the stack empty and the mutant reads
 that same empty stack. What separates a guard from its mutant is not always
-the shape the rule is about. **An equivalent mutant is not an untested guard**: where
+the shape the rule is about. **A surviving mutant is sometimes an unmade decision rather than a missing
+test.** #124's caption-before-footnote ordering passed the whole suite in both
+directions; they differ only under a caption-carrying element bmlib does not
+model, where footnote-first files that element's legend as the enclosing
+table's note. The mutant is what turned an arbitrary line order into a rule
+with an argument, a fixture and a `docs/DECISIONS.md` entry — and the honest
+record says it reached the branch as an accident. **And a membership is
+invisible wherever a sibling member is also in the walk's path**: `<fn-group>`
+could be deleted from #124's container set with every table fixture green,
+because `<table-wrap-foot>` or an `<fn>` answers first; only a loose `<p>` in a
+*figure's* group separates them. The same shape twice more in that sweep — a
+`<fn-group>`'s heading cannot be told from a note's marker by any fixture where
+the note carries its own, and the unspent-marker guard is masked by a second
+note that carries one.
+**Do not background a mutation sweep beside anything that reads the same
+checkout.** #124's did, and killing it skipped the `finally` and left a mutant
+in the working tree; only the on-disk backup recovered it. One writes the file
+the other reads.
+**An equivalent mutant is not an untested guard**: where
 two independent protections cover one defect (#203's — the line is out of the
 retraction's set *and* appended after it), no single edit changes behaviour.
 Read that as the redundancy working, and say which pair you broke — **and
@@ -344,136 +391,96 @@ outside the repo's own PR chain, so that census read four short. Also, a mutatio
 harness restoring with `git checkout -- <file>` deletes whatever is uncommitted
 in it.
 
-## This session: #228, a definition list's terms
+## Previous session: #228, a definition list's terms
 
-**Answered, and the argument is not kept here.** A `<def-item>` pairs a
-`<term>` with a `<def>`, and the `<def>`'s `<p>` routed as ordinary prose
-while the `<term>`'s buffer was popped and discarded — so every definition
-rendered without the word it defines. The reasoning is in `CHANGELOG.md`, the
-three decisions a later session must not "correct" are in `docs/DECISIONS.md`,
-the populations are in the counter's own comment, and the blast radius is
-under *What is unreleased* above. What follows is only what none of those
-carries.
+**Answered and merged as PR #236.** The reasoning is in `CHANGELOG.md`, the
+decisions in `docs/DECISIONS.md`, the populations in the counters' own
+comments. Three lessons from it are folded into *Rules carried forward* above;
+the rest is not repeated here.
 
-**The scope was the maintainer's call, and the shape too**: fold the term into
-the definition's paragraph rather than model a definition list, and take the
-counter with it rather than #124 and #150 as well. Both were put as questions
-before any code was written, because the issue named them as what it was
-blocked on.
+## This session: #124, an exhibit's footnotes
 
-**Two instruments were wrong before either produced a number, and each was
-caught by a different rule — and one of them turned out to be right anyway.**
-The survey's *"the definition routes nowhere"* column mirrored
-`_append_prose`'s five branches **by hand** and got two of them wrong: it had
-no abstract branch, and it read any `<sec>` ancestor as routing, which is
-false in `<front>`. That figure was discarded and taken from the real counter
-instead — **and the counter then reproduced it exactly, 1,510 served and
-10,394 archive**, because both wrong branches have a measured-empty population
-in these two artifacts. So do not read this as a figure that was wrong; read
-it as a figure that could not be *known* to be right until the code produced
-it, which is the whole of the rule. The mirror is still the wrong instrument:
-its two errors were empty here and neither is empty in principle. Then the
-blast-radius harness flattened
-`body_sections` **without recursing into subsections**, hiding 48% of the
-corpus's paragraphs — and what exposed it was the html hash moving in 840
-articles where the paragraph list moved in 839. One article's disagreement.
-Read that as the rule working: two of bmlib's own counts never settle in
-favour of the weaker one, and a gap between them is a defect in one of them
-until it is explained.
+**Answered, and the argument is not kept here.** A `<table-wrap-foot>`'s `<fn>`
+prose reached neither the rendered table, nor the caption, nor the article — a
+table's abbreviation expansions and its per-table funding and disclosure notes,
+dropped as exhibit furniture. `JATSFigureInfo` and `JATSTableInfo` now carry
+`footnotes: list[str]` with each note's marker folded in, and `to_html` prints
+them as a block after the exhibit. `CHANGELOG.md` carries the reasoning,
+`docs/DECISIONS.md` the four rules a later session may want to undo, and the
+blast radius is under *What is unreleased* above. What follows is only what
+none of those carries.
 
-**Where a drop sits is measured at the drop.** A `<front><abstract>`'s
-definition list is *folded* into the abstract, so a region walk over `<term>`
-elements cannot tell that from a loss. Of the 1,510 dropped terms: 1,441 in
-`<front>` (#230), 66 in a `<body>` float (#124's container), 3 in `<back>`
-with no routable prose.
+**The shape was settled before the session started, and not by this repo.**
+The maintainer chose #124 alone over bundling #150 and #235's `<sec>` half, the
+fold over a `JATSFootnote` type, and a rendered block over folding into the
+caption. The fold was not a free choice: the sibling Swift port's
+`doc/cross_platform/jats_parsing.md` is a **normative** spec for this exact
+feature, down to `"a — text"`, and reading it first is what turned a modelling
+question into a porting one. Read it before touching a parser rule either way.
 
-**Three counts close on both artifacts, which is the check worth copying.**
-The markup walk's term count, the fold counter and the drop counter agree
-exactly once the empty terms are set aside: 12,667 + 1,510 = 14,177 = 14,186
-− 9 served, and 142,855 + 10,394 = 153,249 = 153,256 − 7 archive. A partition
-that sums to its own denominator is what a table of counters owes, and it is
-the same obligation #224's per-container rows had.
+**It also supplied the defect this port avoided.** That spec records
+bmlibrarian_lite#173: routed on a parser-wide footnote *depth*, the counter
+still stands at the outer table's depth while an inner `<table-wrap>` is
+parsed, so the inner table's own cell `<p>` is filed as a footnote and rendered
+twice. bmlib routes on an ancestor walk that ends at the first exhibit, which
+answers structurally what a depth cannot. **Neither artifact deposits the
+nesting** (0 of 8,118 and 0 of 97,909), so the rule pins a direction.
 
-**Mutation: 11 mutants, 9 died first time, and both survivors were fixture
-gaps.** One is the lesson worth carrying: the `<term>` parent test's mutant is
-**inert** for the fixture that names it, because a loose `<term>` deposited
-*before* any `<def-item>` leaves the stack empty and the mutant then reads the
-same empty stack. Separating the guard from its mutant needed a `<term>`
-deposited elsewhere *while an item is open* — a shape no draw has turned up (0
-of 14,186 served `<term>` have any other parent, and the bundle deposits no
-`<index-term>` at all), so it is constructed and says so. The other survivor
-wanted an empty `<p>` ahead of the definition's real prose. Both die now.
+**Three claims were wrong before any number was published, and each was caught
+by a different mechanism.**
 
-**A measured majority is an argument against a counter.** #228's own comment
-asked for a shared *"label or term this parser read and did not file"*
-counter, on the good argument that a `<fn>`'s `<label>` is the same kind of
-drop. It reaches 76.7% of served and 88.4% of archive articles, where each of
-the four counters it would sit beside fires on a small minority — so it is
-refused, filed as **#235** with the per-owner table, and the refusal is
-recorded on #228 rather than left implicit.
+- *A fabricated figure.* A test comment said the change moved "344 of the
+  10,394 archive" definition-term drops. Nothing measured that; it was written
+  to fill a sentence. Measured, it is **926**. Nothing in the process caught
+  it — I caught it re-reading my own diff, which is the weakest of the three
+  and worth saying so.
+- *A count that would not close.* The blast harness read `f.footnotes`
+  unguarded on both sides, so **6,961 of 8,118 `main` rows errored** and the
+  join reported errors where a diff belonged. Visible only because the error
+  column was non-zero. This is the third session running in which the
+  blast-radius harness was itself the defect.
+- *A mirror that over-counts.* The markup survey that sized the population
+  reads **16,947** where the parser files **16,935**. The 12 are a footnote
+  depositing a `<def-list>` inside a `<p>`: a subtree walk counts that wrapper
+  once as itself and again as its definitions, whose text is all it has. The
+  parser's tally is the honest one. The survey is still quoted for the
+  separator, which is a question about the deposit rather than about the
+  routing — that distinction is what makes the two instruments both usable.
 
-### PR #236's review round
+**A container I described as deposited is deposited nowhere.** Five files said
+`<fn-group>` was "the wrapper some publishers put round a run of notes".
+Measured: **0 of 8,118 served and 0 of 97,909 archive articles deposit an
+`<fn-group>` inside an exhibit at all.** The member is kept — in a `<fig>`
+there is no `<table-wrap-foot>` above and a loose `<p>` has no `<fn>` below, so
+nothing else in the walk answers — but it is spec-driven and unexercised, and
+every one of the five now says so. The claim was not measured before it was
+written down five times, which is this repo's standing failure mode reaching
+the session that was being careful about it.
 
-Five reviewers, three of which re-derived the committed figures independently
-and reproduced them to the unit. **One behavioural defect, and it was the
-module's own recurring one.** The fold spent the pending `<term>` on whatever
-prose `_append_prose` routed next, which is ambient routing state and not
-ownership — so a `<fig>` or `<table-wrap>` inside a `<def>` (JATS-legal, its
-`<caption>` the first prose to reach output) took the word into a public
-caption field while the definition went without it. `_DefinitionFrame` now
-carries the exhibit depth at the open. **Both committed artifacts measure that
-population empty**, so nothing stored moves; the rule is kept for what it
-prevents, which is silent, permanent, and a corruption rather than a blank.
+**Mutation: 15 mutants, and the first sweep's six survivors were all fixture
+gaps.** Three shapes recur and are worth carrying. A `<fn-group>`'s own heading
+cannot be told from a note's marker by any fixture where the note *also*
+carries a marker — the note's `</label>` overwrites the leak before prose
+arrives. The unspent-marker guard has that shape one arm over: a second note
+carrying its own marker masks the leak, so the fixture deposits one that does
+not. And a membership is invisible wherever a *sibling* member is also in the
+walk's path, so `<fn-group>` needed a loose `<p>` in a **figure's** group.
 
-**Two silent paths closed beside it.** A `<term>` whose parent is not a
-`<def-item>` was read and discarded with no counter, so the fold/drop
-*partition* held only because neither corpus deposits one — a property of the
-draw, not of the code. And the empty string was allowed into the pending slot
-alongside `None`, leaving `if pending:` and `if pending is not None:`
-interchangeable-looking and one of the three sites unpinned; the write site
-normalises now, so the field is genuinely two-state.
+**One survivor was a decision nobody had made.** Asking the caption before the
+footnote and asking the footnote before the caption both passed the whole
+suite. They differ only under a caption-carrying element bmlib does not
+model — a `<supplementary-material>` in an `<fn>` — where footnote-first files
+that element's legend as the enclosing table's note. Caption-first is right and
+is now argued, tested and recorded; it reached the branch as an arbitrary
+ordering and would have shipped as one. **A surviving mutant is sometimes an
+unmade decision rather than a missing test.**
 
-**The rule that had been prose is now a test.**
-`test_a_term_is_consumed_only_where_it_is_accounted_for` drives all seven
-routing positions through one invariant — a term this parser read is either
-visible in the article or counted by exactly one counter, never neither and
-never both. It names **both** counters, because the `<ref-list>` row folds the
-term into a paragraph the refusal then discards and counts as apparatus; a
-version naming only `definition_terms_dropped` reports that row as an
-unaccounted loss and pushes the next reader into double-counting it. Verified
-against a one-branch widening of the spend gate, which it catches.
-
-**Four claims were wrong and are withdrawn rather than softened.** *"The one
-imbalance whose cost is a wrong value"* — false, at least six existing
-`ParseUnwindState` fields document misroutings; what makes this one a counted
-field is that it is a stack with a depth. *"Runs before any of them"* — the
-`<disp-formula>` arm asks the refusal predicate before it calls
-`_append_prose`, so the fold runs after that caller. *"The same 3"* — a
-coincidence of two served counts, never a checked identity, and the archive
-does not reproduce it. And the separator's evidence was
-`tests/data/funder_names.json`, a `transparency` corpus of **funder
-organisation names** in the position this module reserves for a rule's
-evidence — #158's own complaint, made by the person writing #158's rule down.
-The `<term>` corpora were in hand all along and answer it directly: 174 of
-14,177 served and 1,597 of 153,388 archive terms contain a colon, against 0
-and 0 containing `" — "`.
-
-**A stale claim had been left in three places, one of them shipped code.**
-`jats_parser.py`, `docs/DECISIONS.md` and `CHANGELOG.md` each still read
-*"#228 drops its `<term>`"* — the defect this branch fixes, asserted in the
-present tense in the register a later session is told to read *before*
-"fixing" anything. Only `CLAUDE.md` had been updated. **When a sentence is
-restated in four files, updating the one you are looking at is not updating
-it**; grep the distinctive phrase.
-
-**And the `<label>` row that read as a contradiction was a scope.** `23,077`
-in the code against `25,332` in four docs is `<aff>` against
-`<aff>`+`<corresp>`, differing by exactly 2,255. Both were right and neither
-named its element set. The same census also refutes *"four questions with four
-answers"*: the four sum to 58,036 of 62,226, and the largest remainder is a
-`<supplementary-material>`'s own label — 2,998 served, 42,901 archive,
-comparable to `<corresp>` — which no issue names. Recorded on **#235**, whose
-own table is the thing that changes.
+**And the sweep stranded a mutant.** Backgrounding the mutation harness while
+the blast pass was reading the same checkout was a second mistake on top of the
+first: killing it skipped the `finally`, and the working tree held a mutant
+until the on-disk backup restored it. The backup is the whole reason that was
+recoverable. Do not run the two concurrently — one writes the file the other
+reads.
 
 
 ## Current state
@@ -494,18 +501,15 @@ own table is the thing that changes.
   previous release wrote is durable under #95's rule, so the whole window is
   re-fetched once. The two questions are independent, and a downstream reading
   only the number must still read this list.
-- **Tests: 3831 passing + 63 skipped** on this branch (`uv run pytest tests/
-  -q`, 2026-09-10); `main` at 9ff92ef measures **3810 + 63**, so this branch
-  adds **21**, all in `tests/test_jats_parser.py` bar one in
-  `tests/test_parse_audit.py`. The #224 branch was recorded here as **3804**
-  and that figure was taken *before* its review round, which added six — so a
-  handover's own branch figure goes stale at the last commit like any other.
-  Measure `main` rather than subtracting from a previous handover's figure: the 3614 recorded four sessions ago was never
-  what `main` held, and the 3769/3747/+22-in-`test_transparency.py` written
-  for #224 was the *previous* branch's block carried through unchanged, every
-  one of its four figures wrong including the commit it named, while the
-  sentence telling you to re-measure sat beside it. Re-measure both ends, and
-  do it in a worktree so a dirty tree cannot answer for `main`.
+- **Tests: 3872 passing + 63 skipped** on this branch (`uv run pytest tests/
+  -q`, 2026-09-11); **`main` at 124d181 measures 3844 + 63**, measured in a
+  worktree, so this branch adds **28**, all in `tests/test_jats_parser.py`.
+  **The previous handover's `main` figure was wrong here again** — it recorded
+  3831, which was the #228 *branch* before its review round rather than
+  anything `main` ever held, and it sat three lines above the sentence telling
+  the next session not to do that. So: measure `main` yourself, in a worktree
+  so a dirty tree cannot answer for it, and never subtract from a previous
+  handover's number. Four sessions in a row have now published a wrong one.
   **The PostgreSQL half was not re-run for this branch and did not need to be**
   — it touches `fulltext/` and documentation, neither of which carries SQL. The PostgreSQL half has not been re-run since the
   SQL last moved; the last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set
@@ -528,10 +532,10 @@ own table is the thing that changes.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **133 lines carry one** — 48
-  `ROADMAP.md` rows and 85 spots across `docs/manual/transparency.md` (48),
-  `fulltext.md` (21), `publications.md` (13) and `templates.md` (3).
-  Recounted 2026-09-10 on this branch as
+  `ROADMAP.md` are promoted at release time; **135 lines carry one** — 49
+  `ROADMAP.md` rows and 86 spots across `docs/manual/transparency.md` (48),
+  `fulltext.md` (22), `publications.md` (13) and `templates.md` (3).
+  Recounted 2026-09-11 on this branch as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md`, so it counts *lines* and
   not markers; the figure is measured, not maintained, so recount rather
   than adjust it — a previous handover's 127 was one short of what `main` then
@@ -551,25 +555,27 @@ own table is the thing that changes.
 
 ### Open GitHub issues
 
-**Forty-eight open**, counted from `gh` with PR #236 open and unmerged, and
-**forty-seven once it merges and #228 is closed by hand** — this session
-answers #228 and files #235, so the count returns to where it started
-(`gh issue list --state open --limit 200`, 2026-09-10 — the limit matters,
-`gh` pages at 30 and the bare command reports a page size as a total): #86,
-#92, #94, #103, #124, #128, #137, #142, #143, #144, #145, #150, #152, #154,
-#156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
-#200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
-#226, #227, #228, #230, #231, #233, #234, #235. **The line was wrong twice in the
-previous session, in the same direction** — projected from what the writer
-remembered rather than counted from `gh` at the moment of writing, which is
-the *count, do not project* lesson landing twice on the file that states it.
-Re-count at the end against `gh`, and re-count **again** after any review
-round, not at the point the number is first needed.
+**Forty-seven open**, counted from `gh` at the moment of writing with this
+session's PR open and #228 already closed by hand, and **forty-six once this
+PR merges and #124 is closed by hand** — this session answers #124 and files
+nothing, the one residual it turned up (an `<fn-group>`'s own heading) having
+a measured population of zero on both artifacts, which this file's own rule
+makes an argument against filing (`gh issue list --state open --limit 200`,
+2026-09-11 — the limit matters, `gh` pages at 30 and the bare command reports
+a page size as a total): #86, #92, #94, #103, #124, #128, #137, #142, #143,
+#144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178,
+#179, #181, #186, #196, #197, #200, #201, #204, #207, #209, #210, #212, #214,
+#215, #217, #221, #222, #223, #226, #227, #230, #231, #233, #234, #235.
+**The line was wrong twice in the session before last, in the same
+direction** — projected from what the writer remembered rather than counted
+from `gh`. Re-count at the end against `gh`, and re-count **again** after any
+review round, not at the point the number is first needed.
 
-**The closing-keyword census, sixteen instances deep.** #224 was closed by
-hand at the start of this session; #206 and #218 one session before that, PR
-#225 having said in its own body that it carried no closing keyword
-deliberately and then merged with nobody doing so. #211, #199,
+**The closing-keyword census, seventeen instances deep.** #228 was closed by
+hand at the start of this session, PR #236 having merged without it; #224 one
+session before that, and #206 and #218 the one before, PR #225 having said in
+its own body that it carried no closing keyword deliberately and then merged
+with nobody doing so. #211, #199,
 #198/#202/#203, #193/#194, #187/#190/#191, #184, #183, #161 and #188/#216 went
 the same way before them. So: **after every merge that mentions an issue in
 prose, diff `gh issue list` against what the commit says it filed and fixed.**
@@ -580,6 +586,18 @@ routing decision takes, and the issue's own text named that remedy. What is
 left is its second, latent shape: a formula inside a `<fig>`/`<table-wrap>`
 with no `<caption>` open, measured 0 in both corpora, which now carries its own
 test.
+
+**#124 is answered, and it settles the shape of the family rather than only
+its own case.** An exhibit's footnotes fill `footnotes` on both exhibit
+models, marker folded in, rendered as a block after the exhibit. #235's `<fn>`
+half goes with it: the footnote marker that issue counts at 5,891 in 1,582
+served articles is now kept rather than discarded, so the four questions that
+issue splits into are three. **#150 is the head of what is left** — a
+note-only `<ref>` renders as an empty `<li>` — and it is the same shape once
+more, a container whose prose reaches nothing; its decision is whether a
+`<note>` belongs in `citation` or in a field of its own, and it is small,
+4 instances in one publisher across 880 local articles, so it wants the
+population re-measured on the two named artifacts first.
 
 **#228 is answered and #231 is what is left of it.** A `<def-list>`'s
 `<term>` now joins its definition's paragraph. #231 is its neighbour rather
@@ -616,12 +634,12 @@ rate a log level is set from; **#217** is `ProbeOutcome.cause` being stored and
 then re-parsed by its own invariant.
 
 Every open issue was found by review or measurement rather than by a failing
-test. **#224 and #228 both lost content outright and both are answered**; what
-still loses content the document carries is **#124** (an exhibit's footnotes),
-**#150** (a note-only reference as an empty bullet), **#230** (front-matter
-prose, the largest silent drop left), **#235**'s `<sec>` half (a numbered
-section's number) and **#128** (every figure image in a document binding XLink
-to another prefix).
+test. **#224, #228 and #124 all lost content outright and all three are
+answered**; what still loses content the document carries is **#230**
+(front-matter prose, the largest silent drop left), **#150** (a note-only
+reference as an empty bullet), **#235**'s `<sec>` half (a numbered section's
+number) and **#128** (every figure image in a document binding XLink to
+another prefix).
 
 **Three still have a measured-empty population and want closing rather than
 building**: #204 and #207 measure 0 of 124 each, #210 measures 0 of 55, and a
@@ -631,22 +649,22 @@ qualifies every share in this file** — it is why the sampler exits 1 on a clea
 run. Three options, three different populations: drop the PMC strata, condition
 each query on the record being analysable, or page each stratum until it fills.
 
-**The obvious next work is still the JATS content family, and #124 is now its
-head** — #228 settled the *shape* the family shares (fold the marker into the
-prose it belongs to rather than grow a model), and #124's own issue proposes
-exactly that for a footnote: `"a — Adjusted for age."`. It differs in one way
-that matters, and it is why #124 is bigger than #228 was: an exhibit's
-internals are deliberately kept **out** of the prose, so unlike a definition
-there is nowhere for the text to go without a `footnotes` field on
-`JATSFigureInfo` and `JATSTableInfo` — a public model change with `to_dict` /
-`from_dict` and a renderer branch. Take **#150** with it (a note-only `<ref>`
-rendering as an empty `<li>`) and **#235**'s `<sec>` half, which is the same
-question about a third and fourth container.
+**The JATS content family is now two containers short, and both are decisions
+rather than effort.** #228 and #124 settled the shape it shares — fold the
+marker into the prose it belongs to rather than grow a model — and the two
+left are **#150** (a note-only `<ref>` rendering as an empty `<li>`: is a
+`<note>` prose in `citation`, a field of its own, or a reference to skip?) and
+**#235's `<sec>` half** (a numbered section's `<label>`, which
+`JATSBodySection` has nowhere to hold). #124's own cost estimate is worth
+carrying into both: the issue priced a `to_dict`/`from_dict` pair into the
+model change and **neither exhibit model has ever had those methods**, so a
+third of the predicted work was not there. Check before pricing.
 
-**What #224 and #228 both left undone is instrument-side, and it is the honest
-cost of two sessions.** Both surveys were run from scratch scripts over two
-named public artifacts, not from `scripts/sample_jats_exhibits.py`, which
-carries a counter for neither unsectioned `<back>` prose nor a `<def-list>`.
+**What #224, #228 and #124 all left undone is instrument-side, and it is the
+honest cost of three sessions.** All three surveys were run from scratch
+scripts over two named public artifacts, not from
+`scripts/sample_jats_exhibits.py`, which carries a counter for none of
+unsectioned `<back>` prose, a `<def-list>` or an exhibit footnote.
 That is the precedent #146/#149 and #147 set, and it is weaker than a
 committed corpus: `TestTheCitedPopulationsAreWhatTheCorporaHold` cannot
 re-derive a single figure in either entry. Adding the counters is a generation
@@ -707,12 +725,11 @@ The sample is drawn from the package and the bytes measured from Europe PMC's
 (`last_is_thumb` differs in 156 of 300 compared articles, the archive measuring
 0 against 781 served where it does).
 
-**Three issues lose content the document carries, each blocked on a modelling
-decision, not on effort.** **#124** — no exhibit model has a `footnotes` field,
-so a `<table-wrap-foot><fn>`'s abbreviations and funding notes reach nothing
-while `<sup>` is flattened into the cell (`12.3a` pointing at a note that
-exists nowhere). **#150** — a `<ref>` whose only content is a `<note>` renders
-as an empty `<li>`, 4 instances in one publisher. **#144** — whether
+**Two issues lose content the document carries, each blocked on a modelling
+decision, not on effort** (#124 was the third and is answered). **#150** — a
+`<ref>` whose only content is a `<note>` renders as an empty `<li>`, 4
+instances in one publisher across 880 local articles, a population worth
+re-taking on the two named artifacts before the decision. **#144** — whether
 `<on-behalf-of>` is a name or an attribution.
 
 **#142, #143 and #145 are the rest of PR #141's review**, in `jats_parser`'s

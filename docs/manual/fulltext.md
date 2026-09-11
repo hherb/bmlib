@@ -674,10 +674,37 @@ pass.
 >
 > Everything else inside a `<fig>` or `<table-wrap>` is furniture and is kept
 > out of the prose: table cell text reaches `html_content` through the table
-> renderer, and cell and `<table-wrap-foot>` paragraphs are not repeated into
-> `body_sections`. Nothing inside a figure or table counts towards
-> [`has_body`](#jatsarticle), so a `<body>` carrying only a captioned figure
-> still reports no body.
+> renderer and is not repeated into `body_sections`. Nothing inside a figure
+> or table counts towards [`has_body`](#jatsarticle), so a `<body>` carrying
+> only a captioned figure still reports no body.
+
+> **An exhibit's footnotes are its own content** *(unreleased, #124)*. A
+> `<table-wrap-foot>`'s `<fn>` prose used to be dropped with the cells — it
+> reached neither the rendered table, nor the caption, nor the article — so a
+> table's abbreviation expansions and its per-table funding and disclosure
+> notes were lost. They now fill `JATSFigureInfo.footnotes` /
+> `JATSTableInfo.footnotes`, and `to_html()` prints them as a
+> `<div class="fn-group">` after the exhibit.
+>
+> **The marker comes with the note**, folded in as `"a — Adjusted for age."`.
+> A `<sup>` is flattened into the cell it sits in, so the rendered body still
+> reads `12.3a`; with two footnotes, dropping the marker makes the mapping
+> back unrecoverable, which is a reference to nothing rather than a blank. To
+> get at the marker separately, split on the separator — no deposit measured
+> here contains it (2 of 16,947 served notes, against 47 with a spaced hyphen
+> and 4,133 with a colon).
+>
+> Three containers reach it: a `<table-wrap-foot>`, an `<fn>`, and an
+> `<fn-group>`. A loose `<p>` in any of them — the general note after the last
+> marked footnote — is collected too, with no marker. JATS admits an
+> `<fn-group>` in both exhibits, but neither measured artifact deposits one
+> there (0 of 8,118 served and 0 of 97,909 archive articles), so that container
+> is supported on the specification rather than on an observed deposit. A footnote belonging to no exhibit, such as a
+> `<back><fn-group><fn>`, is the article's and reaches `body_sections`
+> instead.
+>
+> A marker read for a note that then deposited no prose is given back rather
+> than carried onto the next note, and reported once per article at WARNING.
 
 > **A formula reaches the prose that contains it** *(unreleased, #147)*. A
 > `<tex-math>` used to be taken from the sentence around it and dropped, and a
@@ -728,10 +755,12 @@ pass.
 > a reaction- or equation-number column the body prose refers back to.
 >
 > Two limitations worth knowing. A display equation deposited somewhere bmlib
-> cannot file it — a float with no `<caption>` open, or anywhere outside
-> `<body>` and `<back>` — is dropped, and logged once per article at `WARNING`
-> (issue #177). An appendix with no `<sec>` used to be the third such place and
-> now reaches the article, as the back-matter note above describes. One shape
+> cannot file it — a float with neither a `<caption>` open nor a footnote
+> around it, or anywhere outside `<body>` and `<back>` — is dropped, and
+> logged once per article at `WARNING` (issue #177). An appendix with no
+> `<sec>` used to be the third such place and now reaches the article, as the
+> back-matter note above describes; an exhibit's footnote used to be the
+> fourth and now reaches that exhibit's `footnotes`. One shape
 > is *not* logged: a formula merged into a paragraph that is itself dropped
 > goes with the paragraph and no counter sees it (issue #233). And
 > where a formula carries both encodings, the LaTeX replaces the MathML text
@@ -968,6 +997,7 @@ class JATSFigureInfo:
     label: str                     # e.g. "Figure 1"
     caption: str
     graphic_url: str | None = None # The <graphic> href, as deposited
+    footnotes: list[str] = ...     # The <fn> notes, marker folded in
 ```
 
 ### JATSTableInfo
@@ -980,6 +1010,7 @@ class JATSTableInfo:
     caption: str
     html_content: str = ""         # Pre-rendered HTML <table>
     graphic_url: str | None = None # The <graphic> href, as deposited
+    footnotes: list[str] = ...     # The <table-wrap-foot> notes, marker folded in
 ```
 
 `graphic_url` on both is the href **as the document deposited it**, which for
