@@ -1,6 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-12. **0.10.0 is released and on PyPI**; thirty-seven
+_Last updated: 2026-09-13 (start of session: PR #246 merged, issue 243 closed by
+hand). **0.10.0 is released and on PyPI**; thirty-seven
 changes sit unreleased, three of them instrument-only. All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
@@ -246,16 +247,17 @@ nothing (#124 this session, #228, #224, #206/#218, #211, #199,
 closed by hand a session late. It catches the other direction too: issues
 filed after a census was written (#238 this time).
 
-## Previous session: #238, a footnote block's heading and image
+## Two sessions ago: #238, a footnote block's heading and image
 
 **Answered and merged as PR #239**, closed by hand at the start of this one.
 The reasoning is in `CHANGELOG.md`, the decisions in `docs/DECISIONS.md`, the
 lessons folded into *Rules carried forward*. Its review filed **#240–#244**,
 of which #243 is this session's issue.
 
-## This session: #243, a cell's text is the cell's own
+## Previous session: #243, a cell's text is the cell's own
 
-**Answered, and the population is 27.4% of served articles rather than the
+**Answered and merged as PR #246**, closed by hand at the start of the next
+session. **Answered, and the population is 27.4% of served articles rather than the
 edge case the issue supposed.** `characters()` delivered every cell's text to
 the open buffer *as well as* to the cell, so a `<table-wrap>` deposited inside
 a `<p>` spliced the table's numbers into the sentence —

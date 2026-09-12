@@ -1294,6 +1294,18 @@ _TEXT_ACCUMULATING = frozenset(
         # two handler arms read — is defined below this one.
         "td",
         "th",
+        # An object's non-prose metadata, isolated so that no child merging
+        # back can reach the sentence the object stands in (issues #241,
+        # #248). Spelled literally for the reason the cells are:
+        # `_NON_PROSE_METADATA`, which states the rule and the measurement, is
+        # defined below this set.
+        "alt-text",
+        "long-desc",
+        "object-id",
+        "permissions",
+        # Printed content, isolated for the same reason and then *routed*,
+        # which the metadata above never is: see the `</attrib>` arm.
+        "attrib",
     }
 )
 
@@ -1528,6 +1540,62 @@ _FORMULA_PARTS = _FORMULA_ELEMENTS | {"tex-math"}
 # _TEXT_ACCUMULATING membership is the one place the pair is still written
 # out, that set being defined above this one.
 _TABLE_CELL_ELEMENTS = frozenset({"td", "th"})
+
+# An object's metadata that is never a sentence of the article (issues #241,
+# #248): its text alternative, its long description, its identifier, and its
+# copyright and licence block. Nothing inside one reaches a paragraph, a
+# caption, a footnote or a table cell.
+#
+# THESE ACCUMULATED NOWHERE AND HAD NO ARM, so `characters()` appended their
+# text to whatever buffer was open above the object. For a `<fig>` or
+# `<table-wrap>` deposited inside a `<p>` — Elsevier's house style, and 7,248
+# `<table-wrap>` alone sit that way in the served artifact — that buffer is the
+# sentence: `'BeforeTable 2after.'`, and PMC10030262 read `'…in Tables
+# 2.Table 2Table 3'`. A *wrong* value where a blank is the alternative, which is
+# the preference #116 and #162 settled. Measured with the real handler over the
+# 8,118 served articles of `PMC10030002_PMC10040000.xml.gz`, reading which
+# buffer each run landed in off `text_stack` rather than mirroring it: 4,018
+# `<alt-text>` runs in 522 articles reached a `<p>`'s buffer and 67 a table
+# cell, beside 13 `<object-id>`, 5 `<permissions>` and 2 `<long-desc>` runs.
+# Over the 97,909 archive articles of
+# `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`: 15,792 `<alt-text>` into a
+# `<p>` (in TODO-MEASURE articles) and 462 into a cell, 322 `<object-id>`, 164
+# `<permissions>` (111 of them Wiley's `© 2024 WILEY-VCH GmbH` on an author
+# photo) and 10 `<long-desc>`. The values are overwhelmingly `"Fig. 1"`,
+# `"Table 2"`, `"Image 1"`, `"Multimedia component 1"` and a figure's DOI.
+# Where the object stood in a `<sec>` instead the text reached that section's
+# unread buffer, as it still does, so the ordinary block deposit moves nothing.
+#
+# **THREE ROUTES REACH THE ARTICLE, AND MEMBERSHIP OF `_TEXT_ACCUMULATING`
+# ANSWERS ONE OF THEM.** The buffer isolates every child that *merges* — raw
+# character data and an inline run alike — which is #243's argument for a cell
+# and answers an arm added later too. It cannot answer a child that *routes*: a
+# `<p>` goes through its own arm to `_append_prose` whatever buffer surrounds
+# it, and `<license>` was modelled `(p)+` before JATS spelled it
+# `<license-p>`, so that method refuses prose under this metadata and
+# `_prose_reaches_output` mirrors the refusal. And a table cell is filled from
+# `characters()` and from the formula arm directly, bypassing every buffer, so
+# both reach the cell through `_offer_cell_text`, which holds this text back.
+# All 19 `<p>` inside a `<permissions>` in the archive artifact sit in
+# `<article-meta>`, where the paragraph falls past every branch regardless
+# (issue #230), and neither artifact deposits a formula in any member — so the
+# second and third routes pin directions rather than populations.
+#
+# **Membership is by what the element *is*, and `<attrib>` is the neighbour it
+# excludes.** An attribution is typeset — an interview quote's `"(P2, CP)"`, a
+# figure's `"Source: WHO."` — so it takes a buffer too but is routed rather
+# than discarded; see the `</attrib>` arm. `<copyright-statement>`,
+# `<copyright-year>`, `<copyright-holder>` and `<license>` are reached through
+# the `<permissions>` that JATS requires around them, and no member of that
+# family is deposited outside one in either artifact.
+#
+# **The citation rule is left as #146 settled it.** Every descendant of a
+# `<mixed-citation>` is that citation's text, and this set carries no exclusion
+# from the merge the way `_TABLE_CELL_ELEMENTS` does, so a member under a
+# citation merges back exactly as `characters()` delivered it before. That
+# population is 0 in both artifacts; an `<object-id>` in a citation is arguably
+# printed and an `<alt-text>` is not, and no draw decides between them.
+_NON_PROSE_METADATA = frozenset({"alt-text", "long-desc", "object-id", "permissions"})
 
 # What separates a definition's term from the definition itself (issue #228).
 #
@@ -2458,6 +2526,49 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # See the comment at the pop itself for what else moves with it.
         return "mixed-citation" in self.element_stack[:-1]
 
+    def _inside_non_prose_metadata(self) -> bool:
+        """Is the parse inside an object's non-prose metadata?
+
+        An ancestor test that *includes* the element atop the stack, since both
+        callers want the answer for text arriving inside that element: at
+        ``characters()`` the innermost open element may be the ``<alt-text>``
+        itself, and at a ``<p>``'s close the ``<p>`` is atop the stack with the
+        ``<license>`` and ``<permissions>`` above it. See
+        :data:`_NON_PROSE_METADATA` for the three routes this answers two of.
+
+        Derived from ``element_stack`` rather than kept as a depth, so a
+        stranded region is already visible to the audit as the unbalanced
+        element stack it would be, and ``TestTheAuditNetIsComplete`` gains no
+        field to cover — the choice #124 made for its footnote routing.
+
+        Returns:
+            ``True`` when a member of :data:`_NON_PROSE_METADATA` is open.
+        """
+        return any(element in _NON_PROSE_METADATA for element in self.element_stack)
+
+    def _offer_cell_text(self, text: str) -> None:
+        """Deliver ``text`` to the open table cell, unless metadata holds it back.
+
+        A cell is filled by two routes and no buffer sits on either:
+        ``characters()`` for raw character data, and the formula arm for the
+        one rendition it chose (#147). So a test in only one of them leaves the
+        other writing an image's ``<alt-text>`` into the rendered table —
+        ``'12.3Image 1'``, 67 served runs in 10 articles — and this is the one
+        door both go through (issues #241, #248). The builder's own ``in_cell``
+        test still decides whether a cell is open at all.
+
+        Scanned only once a table is known to be open, because ``characters()``
+        is the hottest path in the parser and most of an article is not a
+        table.
+
+        Args:
+            text: The text for the cell, raw as ``characters()`` delivers it or
+                rendered as the formula arm emits it.
+        """
+        current_table = self.current_table
+        if current_table is not None and not self._inside_non_prose_metadata():
+            current_table.append_cell_text(text)
+
     def _owning_exhibit_footnote(
         self, *, including_self: bool = False
     ) -> _FigureBuilder | _TableBuilder | None:
@@ -2622,6 +2733,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         Returns:
             ``True`` if the text would be kept.
         """
+        if self._inside_non_prose_metadata():
+            # `_append_prose`'s first test, mirrored first. Omitted, a pending
+            # definition term is spent on a licence paragraph the method then
+            # declines, and the definition arrives with no word defined.
+            return False
         if self.in_figure or self.in_table_wrap:
             # Two destinations since issue #124, and this mirrors both — in
             # the same order, since the branches are asked in that order
@@ -2891,6 +3007,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             keep_empty: Whether an empty ``text`` still appends inside a
                 section. Never opens an implicit body section either way.
         """
+        if self._inside_non_prose_metadata():
+            # A <p> inside an object's licence is not the article's prose, and
+            # its own arm reaches here whatever buffer surrounds it — the one
+            # route membership of `_TEXT_ACCUMULATING` cannot close (issues
+            # #241, #248). Asked before the definition fold, so a pending term
+            # waits for its definition's real prose, and uncounted: this is
+            # metadata this module declines, not content it loses.
+            return
         text = self._prefix_pending_definition_term(text)
         if self.in_figure or self.in_table_wrap:
             # Figure and table internals, tested before every prose branch
@@ -3310,9 +3434,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # them pasted some 300 characters of \usepackage lines into the
             # cell, in HTML `FullTextService` then caches (issue #147).
             return
-        current_table = self.current_table
-        if current_table is not None:
-            current_table.append_cell_text(content)
+        self._offer_cell_text(content)
 
     def endElement(self, name: str) -> None:
         # Pop text buffer
@@ -3623,6 +3745,46 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.footnote_headings_dropped += 1
         elif name == "p":
             self._append_prose(normalized_text, keep_empty=True)
+        elif name == "attrib":
+            # An attribution is printed content — an interview quote's
+            # "(P2, CP)", a figure's "Source: WHO.", a table's abbreviation
+            # list — so it is routed, where an object's metadata is declined
+            # (issues #241, #248). It accumulated nowhere and had no arm, so
+            # its text reached whatever buffer was open above its owner: where
+            # the owner stood in a <p> that was the sentence, and where it
+            # stood in a <sec> it was the section's unread buffer, *lost with
+            # no line*. Measured with the real handler over the 97,909 archive
+            # articles of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`, of
+            # 5,072 <disp-quote> attributions 3,663 (in 209 articles) were lost
+            # that way and 1,318 (in 90) welded into a sentence; over the
+            # 8,118 served articles of `PMC10030002_PMC10040000.xml.gz`, 217
+            # and 21. Discarding it — the issues' own remedy — would have made
+            # the majority's silent loss total.
+            #
+            # **Routed as a <p> is, with one addition decided by the parent.**
+            # JATS spells <attrib> as a direct child of what it credits, so the
+            # parent test is #116's and exact. An exhibit's *own* attribution
+            # is filed among that exhibit's footnotes, which render below it:
+            # sent through `_append_prose` it would reach neither destination
+            # that method offers inside a float — no <caption> is open around
+            # it and no footnote container stands above it — and be dropped.
+            # Everything else goes where a <p> would go, which is what files a
+            # quote's attribution as the paragraph after the quote, one inside
+            # <table-wrap-foot> as a table note through #124's owner walk, and
+            # one inside a cell nowhere, since `characters()` has already put
+            # it in the cell.
+            #
+            # `normalized_text` for the reason the <term> arm gives: the value
+            # reaches a public field, and a depositor's line break must not.
+            # `keep_empty=False`, and the footnote holder files nothing for an
+            # empty string, so an empty <attrib/> costs nothing either way.
+            parent = self._parent_element()
+            if parent == "fig" and self.current_figure is not None:
+                self.current_figure.append_footnote(normalized_text)
+            elif parent == "table-wrap" and self.current_table is not None:
+                self.current_table.append_footnote(normalized_text)
+            else:
+                self._append_prose(normalized_text, keep_empty=False)
         elif name == "tex-math":
             # Stashed, never merged: the choice between this and the MathML
             # beside it belongs to the formula, which has not closed yet, and
@@ -3663,6 +3825,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         rendered
                         and not self._prose_reaches_output()
                         and not self._prose_is_refused_apparatus()
+                        # An object's metadata is declined, not lost, and is
+                        # counted nowhere (issues #241, #248). The predicate
+                        # above answers False there because `_append_prose`
+                        # files nothing there, so this is subtracted for the
+                        # reason the refusal beside it is.
+                        and not self._inside_non_prose_metadata()
                     ):
                         # The rendition was built and will not be filed.
                         # Counted rather than dropped in silence, the rule
@@ -3696,15 +3864,17 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     if rendered:
                         rendered = _pad_as_deposited(rendered, element_text, formula.display)
                     self._append_text(rendered)
-                    current_table = self.current_table
-                    if current_table is not None and not self.formula_stack:
+                    if not self.formula_stack:
                         # characters() held this formula's text back from the
                         # cell so the LaTeX could be rendered first; this is
                         # where the cell gets its one rendition. Guarded on
                         # the innermost frame alone: a nested formula's
                         # emission is already inside the outer one's buffer,
                         # so offering it to the cell as well prints it twice.
-                        current_table.append_cell_text(rendered)
+                        # Through `_offer_cell_text`, the door `characters()`
+                        # uses, so a formula inside an image's metadata is
+                        # held back by the same test (issues #241, #248).
+                        self._offer_cell_text(rendered)
 
         elif name == "body":
             self._flush_implicit_section()
