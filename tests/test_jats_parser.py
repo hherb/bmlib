@@ -8587,6 +8587,248 @@ the rate follows.</p></sec></body>
         assert not [m for m in parser_log.messages(logging.WARNING) if "reached no section" in m]
 
 
+class TestACellsTextIsTheCellsOwn:
+    """A cell lends its text to no buffer around it — issue #243.
+
+    ``characters()`` delivered every cell's text to the open buffer *as well
+    as* to the cell, so a ``<table-wrap>`` deposited inside a ``<p>`` — legal
+    JATS, and the shape a ``<disp-formula>`` takes 37.3% of the time on the
+    served rendition — stored ``'Before12.3after.'``: the table's numbers
+    spliced into a sentence the publisher never wrote that way, in
+    ``body_sections`` and in the HTML ``FullTextService`` caches. A **wrong
+    value** where a blank was the alternative, which is #116's and #162's own
+    preference and what puts this ahead of the drops beside it.
+
+    **The hold is the cell's own text buffer, not a test in
+    ``characters()``.** The issue proposed the latter, mirroring the formula
+    hold one line up, and it reaches two of the four routes: raw character
+    data, and an inline run merging back (``<italic>``, ``<sup>``). It leaves
+    the other two, and makes one of them *worse* — an ``<xref>`` builds its
+    link from the buffer the hold would have emptied, so the paragraph gains
+    ``'[](#f1)'`` in place of ``'[Fig 1](#f1)'`` — and enumerating the arms
+    that merge is the kind of list #116 established cannot be completed by
+    inspection. ``td``/``th`` join ``_TEXT_ACCUMULATING`` instead: the cell
+    takes a buffer at its open, every child merges into *that*, and the close
+    pops it and reads nothing. The cell itself is unaffected, filling
+    ``current_cell_text`` from ``characters()`` directly.
+
+    The paragraph then reads ``'Beforeafter.'`` — the ``<fig>`` shape's own
+    answer, which has always read ``'Alphaomega.'``, since a ``<caption>``
+    takes a buffer and never merged one back. Spacing round a merged block is
+    #147's open question and is not touched here.
+    """
+
+    #: The issue's own fixture, verbatim.
+    INLINE_TABLE = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>R</title>
+    <p>Before<table-wrap id="T1"><table><tbody><tr><td>12.3</td></tr></tbody></table>\
+</table-wrap>after.</p>
+  </sec></body>
+</article>"""
+
+    def _article(self, body: bytes):
+        xml = (
+            b'<?xml version="1.0"?>\n<article><front><article-meta><title-group>'
+            b"<article-title>T</article-title></title-group></article-meta></front>"
+            b"<body><sec><title>R</title>" + body + b"</sec></body></article>"
+        )
+        return JATSParser(xml).parse()
+
+    def test_the_paragraph_around_an_inline_table_keeps_only_its_own_text(self):
+        """The issue's own reproduction: ``'Before12.3after.'`` on ``main``."""
+        article = JATSParser(self.INLINE_TABLE).parse()
+
+        assert article.body_sections[0].paragraphs == ["Beforeafter."]
+
+    def test_the_cell_keeps_the_text_the_hold_withholds(self):
+        """The negative control: a hold that emptied the cell would pass the
+        assertion above and lose the table, which is the larger loss."""
+        article = JATSParser(self.INLINE_TABLE).parse()
+
+        assert "<td>12.3</td>" in article.tables[0].html_content
+
+    def test_a_formatted_run_in_a_cell_does_not_reach_the_paragraph(self):
+        """``<italic>`` accumulates and merges back, so the hold has to reach
+        the merge and not only the raw character data."""
+        article = self._article(
+            b"<p>Before<table-wrap id='T1'><table><tbody><tr><td>a<italic>b</italic>c"
+            b"</td></tr></tbody></table></table-wrap>after.</p>"
+        )
+
+        assert article.body_sections[0].paragraphs == ["Beforeafter."]
+        assert "<td>abc</td>" in article.tables[0].html_content
+
+    def test_a_cross_reference_in_a_cell_does_not_reach_the_paragraph(self):
+        """The route that separates this fix from the issue's own remedy.
+
+        ``<xref>`` does not merge its text — it *replaces* it with a link
+        built from the popped buffer — so a hold inside ``characters()`` would
+        leave ``'[](#f1)'`` in the sentence: a wrong value replacing a wrong
+        value. Pinned with the link's own text, so a mutant emptying the
+        buffer instead of isolating it is visible here and nowhere else.
+        """
+        article = self._article(
+            b"<p>Before<table-wrap id='T1'><table><tbody><tr><td>"
+            b"<xref ref-type='fig' rid='f1'>Fig 1</xref></td></tr></tbody></table>"
+            b"</table-wrap>after.</p>"
+        )
+
+        assert article.body_sections[0].paragraphs == ["Beforeafter."]
+        assert "<td>Fig 1</td>" in article.tables[0].html_content
+
+    def test_a_formula_in_a_cell_does_not_reach_the_paragraph(self):
+        """The fourth route: the formula arm appends its chosen rendition to
+        the open buffer itself (#147), which ``characters()`` never sees."""
+        article = self._article(
+            b"<p>Before<table-wrap id='T1'><table><tbody><tr><td>"
+            b"<inline-formula><tex-math>$x$</tex-math></inline-formula>"
+            b"</td></tr></tbody></table></table-wrap>after.</p>"
+        )
+
+        assert article.body_sections[0].paragraphs == ["Beforeafter."]
+        assert "<td>$x$</td>" in article.tables[0].html_content
+
+    def test_a_header_cell_is_held_back_like_a_body_cell(self):
+        """``<th>`` fills the same builder by the same route."""
+        article = self._article(
+            b"<p>Before<table-wrap id='T1'><table><thead><tr><th>Dose</th></tr></thead>"
+            b"<tbody><tr><td>12.3</td></tr></tbody></table></table-wrap>after.</p>"
+        )
+
+        assert article.body_sections[0].paragraphs == ["Beforeafter."]
+        assert "<th>Dose</th>" in article.tables[0].html_content
+
+    def test_a_table_inside_a_footnote_does_not_lend_its_cells_to_the_note(self):
+        """The second destination, and the one #124 made reachable.
+
+        An exhibit opened inside another's footnote is 0 of 8,118 served and 0
+        of 97,909 archive articles, so this pins a direction — but the note is
+        a public field the same ``_append_text`` fills, and #124's own walk
+        already refuses the *note* to the inner table for the mirror reason.
+        """
+        article = self._article(
+            b"<table-wrap id='T0'><table><tbody><tr><td>x</td></tr></tbody></table>"
+            b"<table-wrap-foot><fn><label>a</label><p>See"
+            b"<table-wrap id='T1'><table><tbody><tr><td>12.3</td></tr></tbody></table>"
+            b"</table-wrap></p></fn></table-wrap-foot></table-wrap>"
+        )
+
+        outer = next(t for t in article.tables if t.id == "T0")
+        assert outer.footnotes == ["a — See"]
+
+    def test_a_block_table_leaves_the_paragraphs_around_it_untouched(self):
+        """The ordinary deposit, where the enclosing buffer is a ``<sec>``'s
+        and nothing reads it — so the hold must move nothing here."""
+        article = self._article(
+            b"<p>Para.</p><table-wrap id='T1'><table><tbody><tr><td>12.3</td></tr>"
+            b"</tbody></table></table-wrap><p>Next.</p>"
+        )
+
+        assert article.body_sections[0].paragraphs == ["Para.", "Next."]
+        assert "<td>12.3</td>" in article.tables[0].html_content
+
+
+class TestACellThatReachesNoTableIsCounted:
+    """Cell text with no table to receive it leaves a line — issue #245.
+
+    ``<array>`` is JATS's *non-floating* tabular structure: ``<tbody>``,
+    ``<tr>`` and ``<td>`` with no ``<table-wrap>`` and no ``<table>`` above
+    them. bmlib models none of it, so no ``_TableBuilder`` is open and
+    ``append_cell_text`` has nowhere to put the text.
+
+    Until #243 that text still reached the buffer above — the enclosing
+    ``<sec>``'s, where it was discarded, or the enclosing ``<p>``'s, where it
+    was spliced into the sentence as a run-together string the publisher never
+    wrote. Isolating the cell's buffer makes the loss *total* for the second
+    shape as well, which is the right direction by this module's own standing
+    preference (a blank beats a wrong value, #116 and #162) and is exactly the
+    kind of drop it counts rather than excuses.
+
+    **Measured over two named public artifacts**: 355 cells in 8 of the 8,118
+    served articles of ``PMC10030002_PMC10040000.xml.gz``, of which 173 in 3
+    articles sit inside a ``<p>`` and so were visible as corrupt prose; every
+    one of the 355 is an ``<array>``'s. So the counter reports a **pre-existing
+    silent loss** in five of those eight articles and a newly-total one in
+    three.
+
+    The unit is the **cell**, never the character — the rule PR #239's review
+    made for #238's image counter — and an empty cell costs nothing, which is
+    every sibling counter's rule.
+    """
+
+    ARRAY_IN_PROSE = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>T</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>R</title>
+    <p>Before<array><tbody><tr><td>12.3</td><td>45.6</td></tr></tbody></array>after.</p>
+  </sec></body>
+</article>"""
+
+    def test_the_cells_of_an_unmodelled_array_are_counted(self, parser_log):
+        handler = JATSParser(self.ARRAY_IN_PROSE)._run_parser()
+
+        assert handler.cell_text_dropped == 2
+
+    def test_the_count_is_reported_once_for_the_article(self, parser_log):
+        """The number is asserted, not merely the line — #224's counter
+        over-reported through a green CI because nothing read the figure."""
+        JATSParser(self.ARRAY_IN_PROSE).parse()
+
+        lines = [m for m in parser_log.messages(logging.WARNING) if "reached no table" in m]
+        assert len(lines) == 1
+        assert "2 table cell(s)" in lines[0]
+
+    def test_an_empty_cell_costs_nothing(self, parser_log):
+        """A cell that carried nothing cannot have lost anything, so a line
+        here would state a loss that did not happen."""
+        xml = self.ARRAY_IN_PROSE.replace(b"<td>12.3</td><td>45.6</td>", b"<td></td><td> </td>")
+        handler = JATSParser(xml)._run_parser()
+
+        assert handler.cell_text_dropped == 0
+        assert not [m for m in parser_log.messages(logging.WARNING) if "reached no table" in m]
+
+    def test_this_line_survives_beside_another_counters(self, parser_log):
+        """The audit blocks are independent ``if``s. Chained as an ``elif`` of
+        the block above it, this line vanishes whenever that counter also
+        fired — the mutant that survived every fixture holding one counter at
+        a time, in PR #239's review one issue back."""
+        JATSParser(
+            _article_with_body("""
+    <sec><title>Results</title>
+      <table-wrap id="T1"><label>Table 1.</label>
+        <table><tbody><tr><td>12.3</td></tr></tbody></table>
+        <table-wrap-foot><fn><p>Key: <graphic xlink:href="key.gif"/></p></fn></table-wrap-foot>
+      </table-wrap>
+      <p>Also<array><tbody><tr><td>7.1</td></tr></tbody></array>here.</p>
+    </sec>""")
+        ).parse()
+
+        images = [
+            m for m in parser_log.messages(logging.WARNING) if "exhibit's footnote matter" in m
+        ]
+        cells = [m for m in parser_log.messages(logging.WARNING) if "reached no table" in m]
+        assert len(images) == 1
+        assert len(cells) == 1 and "1 table cell(s)" in cells[0]
+
+    def test_a_modelled_tables_cell_is_not_counted(self, parser_log):
+        """The negative control. A cell inside a ``<table-wrap>`` is filed by
+        the builder, so a counter that fired on every cell would report the
+        whole corpus — 1,407,638 cells in 5,153 of 8,118 served articles."""
+        xml = self.ARRAY_IN_PROSE.replace(
+            b"<array><tbody><tr><td>12.3</td><td>45.6</td></tr></tbody></array>",
+            b"<table-wrap id='T1'><table><tbody><tr><td>12.3</td><td>45.6</td></tr>"
+            b"</tbody></table></table-wrap>",
+        )
+        handler = JATSParser(xml)._run_parser()
+
+        assert handler.cell_text_dropped == 0
+        assert not [m for m in parser_log.messages(logging.WARNING) if "reached no table" in m]
+
+
 class TestAnUnparseableSpanCostsOneCellAndNotTheArticle:
     """``colspan`` is CDATA, so a value ``int()`` refuses must not raise — #129.
 
@@ -9109,6 +9351,7 @@ class TestTheAuditNetIsComplete:
             "abstract_sections",
             "body_paragraph_count",
             "body_sections",
+            "cell_text_dropped",
             "contribs_naming_nobody",
             "definition_terms_dropped",
             "doi",

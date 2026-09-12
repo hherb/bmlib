@@ -1249,6 +1249,32 @@ _TEXT_ACCUMULATING = frozenset(
         # the population, so the entries cannot go quietly vacuous again.
         "collab",
         "string-name",
+        # THE ONLY TWO MEMBERS THAT ACCUMULATE IN ORDER TO DISCARD. A cell
+        # fills `_TableBuilder.current_cell_text` from `characters()` directly,
+        # so the buffer these take is read by no arm at all — it exists to be
+        # the thing every child inside the cell merges *into*, and `</td>`
+        # pops it and drops it on the floor (issue #243).
+        #
+        # Without it a `<table-wrap>` deposited inside a `<p>` — legal JATS,
+        # and the shape a `<disp-formula>` takes in 37.3% of cases on the
+        # served rendition — spliced every cell's text into the sentence
+        # around it: `<p>Before<table-wrap>…12.3…</table-wrap>after.</p>`
+        # stored `'Before12.3after.'` in `body_sections` and in the HTML
+        # `FullTextService` caches, and an exhibit opened inside a footnote's
+        # `<p>` gave the outer note `'a — See12.3'`. A *wrong* value where a
+        # blank was the alternative.
+        #
+        # A hold inside `characters()` — the issue's own remedy, mirroring the
+        # formula hold beside it — reaches two of the four routes and leaves
+        # two: a `<xref>` *replaces* its text with a link built from the popped
+        # buffer, so emptying that buffer yields `'[](#f1)'` rather than
+        # nothing, and the formula arm appends its chosen rendition with its
+        # own `_append_text` that `characters()` never sees. Enumerating the
+        # arms that merge is the list #116 established cannot be completed by
+        # inspection; isolating the buffer answers all four at once and
+        # answers an arm added later too.
+        "td",
+        "th",
     }
 )
 
@@ -1874,6 +1900,33 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # archive.
         self.footnote_headings_dropped = 0
         self.footnote_graphics_dropped = 0
+        # A <td>/<th> whose text reached no table (issue #245). <array> is
+        # JATS's *non-floating* tabular structure — <tbody>/<tr>/<td> with no
+        # <table-wrap> and no <table> above them — and bmlib models none of
+        # it, so no `_TableBuilder` is open and `append_cell_text` has nowhere
+        # to put the text.
+        #
+        # Until #243 that text still reached the buffer above: the enclosing
+        # <sec>'s, where it was discarded, or the enclosing <p>'s, where it
+        # was spliced into the sentence as a run-together string the publisher
+        # never wrote. Isolating the cell's own buffer makes the loss total
+        # for the second shape too, which is the right direction by this
+        # module's standing preference — a blank beats a wrong value (#116,
+        # #162) — and is what earns the counter: a drop this module argues for
+        # gets a line rather than an excuse, `refused_apparatus_prose`'s rule.
+        #
+        # Measured over two named public artifacts: 355 cells in 8 of the
+        # 8,118 served articles of `PMC10030002_PMC10040000.xml.gz` — 173 of
+        # them in 3 articles inside a <p>, the only shape where the loss was
+        # visible — and 248,720 in 6,726 of the 97,909 archive articles
+        # of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`. Every one is an
+        # <array>'s on both. So in five of those eight served articles the
+        # counter reports a loss that is **pre-existing and was silent**.
+        #
+        # The unit is the *cell*, never the character (PR #239's review's rule
+        # for #238's image counter), and a cell that carried nothing costs
+        # nothing, which is every sibling counter's rule.
+        self.cell_text_dropped = 0
         self.current_article_id_type: str | None = None
 
         # Abstract state
@@ -3886,6 +3939,17 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             current_table = self.current_table
             if current_table is not None:
                 current_table.end_cell()
+            elif text:
+                # No builder ever opened, so nothing received this cell's
+                # text — an <array>, in every one of the 355 served and
+                # 251,362 archive cells the deposit survey found with no
+                # <table-wrap> above them. Counted at the drop rather than
+                # inferred from the markup, the rule #228's split settled, and
+                # `text` is the cell's own buffer, which `td`/`th`'s membership
+                # of `_TEXT_ACCUMULATING` is what makes reachable here. See the
+                # counter's own comment for why an <array>'s content was
+                # *partly* surviving before #243 and is now wholly lost.
+                self.cell_text_dropped += 1
         elif name == "table-wrap":
             if self.table_stack:
                 # Guarded for the reason </fig> is; SAX makes it unreachable.
@@ -4366,6 +4430,26 @@ def _audit_parse(handler: _JATSHandler) -> None:
             "from the article (issue #238)",
             article,
             handler.footnote_graphics_dropped,
+        )
+
+    if handler.cell_text_dropped:
+        # Issue #245, at the same level and the same once-per-article
+        # granularity as its siblings. It names the *cell* as the unit and
+        # says what bmlib did — no table opened to receive the text — rather
+        # than what the document deposited, which is
+        # `footnote_markers_dropped`'s own correction: the document deposited
+        # a perfectly good <array>, and the reason nothing carries it is that
+        # bmlib models no such element. <array> is named as the *measured*
+        # cause and not as a claim about this document, since the arm sees
+        # only that no builder was open — every one of the 355 served and
+        # 248,720 archive cells is one, but a container nobody has met would
+        # arrive here too.
+        logger.warning(
+            "JATS parse of %s: %d table cell(s) carried text that reached no table, "
+            "no <table-wrap> having opened one (an <array> in every case measured), "
+            "so that content is missing from the article (issue #245)",
+            article,
+            handler.cell_text_dropped,
         )
 
     if not handler.build_authors():

@@ -1300,6 +1300,47 @@ actions, each may be answered separately later, and a shared counter left
 reading only the other half would be `_COUNTER_DEFINITIONS_VERSION`'s scar —
 a published figure that changes meaning without changing.
 
+## fulltext — a cell's text is isolated at the buffer, not held in `characters()` (#243, #245)
+
+**Do not replace the `td`/`th` membership of `_TEXT_ACCUMULATING` with a test
+in `characters()`.** That is the issue's own suggested resolution, mirroring
+the formula hold three lines up, and it is the narrower fix for a rule that has
+four routes. Raw character data and an inline run merging back (`<italic>`,
+`<sup>`) are reached by it. An `<xref>` is not: it *replaces* its text with a
+link built from the popped buffer, so emptying that buffer leaves
+`'[](#f1)'` in the paragraph — a wrong value replacing a wrong value. Nor is a
+formula: its arm appends the one rendition it chose through its own
+`_append_text`, which `characters()` never sees. Enumerating the arms that
+merge is the list #116 established cannot be completed by inspection, and the
+membership answers an arm added later as well.
+`test_a_cross_reference_in_a_cell_does_not_reach_the_paragraph` is the fixture
+that separates the two remedies.
+
+**The two members accumulate in order to discard, and that is not an
+oversight.** No arm reads the buffer a `<td>` takes — a cell fills
+`_TableBuilder.current_cell_text` from `characters()` directly — so the buffer
+exists only to be the thing every child merges *into*, and `</td>` pops it and
+drops it. `TestOnlyAnAccumulatingElementReadsTheBuffer` is one-directional
+(only an accumulating element may read), so a member nothing reads is
+well-formed by that net's own rule.
+
+**The paragraph reads `'Beforeafter.'`, and the missing space is not a
+defect here.** A block merged into a sentence welds without a space either
+side; that is `_pad_as_deposited`'s known gap and issue #147's open question,
+identical for a `<disp-formula>` deposited the same way. Fixing it in this arm
+would answer it for one of the two shapes and leave the module with two
+spacings for one rule.
+
+**An `<array>`'s cell text is dropped, not routed back to the prose** (#245).
+The tempting "fix" is to keep the old splice where no `_TableBuilder` is open,
+since nothing else carries that content. It is wrong for this module's
+standing reason: the splice is a run-together string the publisher never wrote
+— `'…outcomes.CharacteristicValueAge*(year)73.3(7.05)…'` — and a blank beats a
+wrong value (#116, #162, and #224's `<ref-list>` refusal). The drop is counted
+instead (`cell_text_dropped`), and modelling `<array>` is filed as its own
+question. Measured: 355 cells in 8 of 8,118 served articles, 173 of them in
+3 articles where the splice was visible at all.
+
 ## fulltext — an exhibit with no `<label>` gets no fallback search (#162)
 
 **Do not add a descendant search when an exhibit carries no direct-child

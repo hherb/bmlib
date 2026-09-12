@@ -677,6 +677,24 @@ pass.
 > renderer and is not repeated into `body_sections`. Nothing inside a figure
 > or table counts towards [`has_body`](#jatsarticle), so a `<body>` carrying
 > only a captioned figure still reports no body.
+>
+> **That last claim has only just become true** *(unreleased, #243)*. A
+> `<table-wrap>` may be deposited *inside* a `<p>`, and every cell's text was
+> then delivered to the paragraph as well as to the table:
+> `<p>Before<table-wrap>…12.3…</table-wrap>after.</p>` stored
+> `'Before12.3after.'`. It is the ordinary shape rather than an edge case —
+> 7,248 such deposits in 2,237 of 8,118 served articles — and the paragraph
+> now reads `'Beforeafter.'`, as the equivalent `<fig>` shape always has.
+> Spacing round a block merged into a sentence is a separate open question
+> (#147). **A downstream holding cached full text should re-fetch**: a
+> paragraph moves in 2,222 of those 8,118 articles.
+>
+> **Cell text with no table to receive it is counted** *(unreleased, #245)*.
+> `<array>` — JATS's non-floating `<tbody>`/`<tr>`/`<td>` with no
+> `<table-wrap>` above it — is not modelled, so its cells reach nothing at all.
+> They used to leave a run-together string in the surrounding paragraph; they
+> now leave a WARNING naming the count, and nothing in the article. 355 cells
+> in 8 of the 8,118 served articles.
 
 > **An exhibit's footnotes are its own content** *(unreleased, #124)*. A
 > `<table-wrap-foot>`'s `<fn>` prose used to be dropped with the cells — it
