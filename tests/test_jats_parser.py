@@ -8629,9 +8629,10 @@ class TestACellsTextIsTheCellsOwn:
     one back. Two things it does not clean up, so the claim is not read wider:
     spacing round a merged block is #147's open question, and an
     ``<alt-text>``, ``<attrib>``, ``<long-desc>``, ``<object-id>``,
-    ``<copyright-statement>`` or ``<copyright-year>`` accumulates nowhere and
-    still welds into the sentence — 537 of those 8,118 articles, issue #248
-    beside #241. Neither is touched here.
+    ``<copyright-statement>`` or ``<copyright-year>`` accumulated nowhere and
+    still welded into the sentence — 537 of those 8,118 articles, issue #248
+    beside #241. Neither was touched here; the second is answered since by
+    ``TestAnObjectsMetadataIsNotProse`` and ``TestAnAttributionIsRouted``.
     """
 
     #: The issue's own fixture, verbatim.
@@ -9097,15 +9098,33 @@ class TestAnObjectsMetadataIsNotProse:
 
         assert article.tables[0].footnotes == ["a — Marked thus:"]
 
-    def test_an_images_description_does_not_reach_the_cell(self):
+    @pytest.mark.parametrize(
+        "metadata",
+        [
+            b"<alt-text>Image 1</alt-text>",
+            b"<long-desc>A dagger</long-desc>",
+            b"<object-id>10.1/x.i001</object-id>",
+            b"<permissions><copyright-statement>WILEY-VCH</copyright-statement></permissions>",
+        ],
+        ids=["alt-text", "long-desc", "object-id", "permissions"],
+    )
+    def test_an_images_metadata_does_not_reach_the_cell(self, metadata):
         """The cell route, which no buffer reaches: ``characters()`` fills the
         cell directly, so accumulating alone left ``'12.3Image 1'`` in the
-        rendered table. 67 served runs in 10 articles, 452 archive ones in 49."""
+        rendered table — 67 served runs in 10 articles, 462 archive ones.
+
+        Every member separately, because membership of
+        ``_NON_PROSE_METADATA`` is a second decision beside membership of
+        ``_TEXT_ACCUMULATING``: dropping ``long-desc`` or ``object-id`` from the
+        named set alone survived the sentence-level tests, which the buffer
+        still answered.
+        """
         article = JATSParser(
             _article_with_sec(
                 b"<table-wrap id='T1'><table><tbody><tr><td>12.3"
-                b"<inline-graphic xlink:href='i1.gif'><alt-text>Image 1</alt-text>"
-                b"</inline-graphic></td></tr></tbody></table></table-wrap>"
+                b"<inline-graphic xlink:href='i1.gif'>"
+                + metadata
+                + b"</inline-graphic></td></tr></tbody></table></table-wrap>"
             )
         ).parse()
 
@@ -9316,6 +9335,22 @@ class TestAnAttributionIsRouted:
 
         assert article.tables[0].footnotes == ["a — Adjusted.", "Source: Registry."]
 
+    def test_an_attribution_in_a_table_nested_in_a_figure_is_the_tables(self):
+        """The parent test and not an ambient "is a figure open?": inside a
+        ``<fig>`` the ambient flag is true for every descendant, and it would
+        file the nested table's note as the figure's. A ``<table-wrap>``
+        directly in a ``<fig>`` is deposited once in the served artifact."""
+        article = JATSParser(
+            _article_with_sec(
+                b"<fig id='f1'><caption><p>Cap.</p></caption><graphic xlink:href='f1.gif'/>"
+                b"<table-wrap id='T1'><table><tbody><tr><td>12.3</td></tr></tbody></table>"
+                b"<attrib>Source: Registry.</attrib></table-wrap></fig>"
+            )
+        ).parse()
+
+        assert article.tables[0].footnotes == ["Source: Registry."]
+        assert article.figures[0].footnotes == []
+
     def test_an_attribution_in_a_table_foot_is_a_table_note(self):
         """Reached through ``_append_prose`` and #124's owner walk, not the
         parent test: its parent is the foot."""
@@ -9353,6 +9388,14 @@ class TestAnAttributionIsRouted:
         ).parse()
 
         assert article.figures[0].footnotes == ["Source: WHO."]
+
+    def test_a_quotes_attribution_wrapped_across_lines_is_normalised(self):
+        """The same rule on the prose route, which is a separate call."""
+        article = JATSParser(
+            _article_with_sec(b"<disp-quote><p>Q.</p><attrib>(P2,\n      CP)</attrib></disp-quote>")
+        ).parse()
+
+        assert article.body_sections[0].paragraphs == ["Q.", "(P2, CP)"]
 
     def test_an_empty_attribution_files_nothing(self):
         """An empty deposit costs nothing, at either destination."""

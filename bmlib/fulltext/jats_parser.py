@@ -1558,8 +1558,8 @@ _TABLE_CELL_ELEMENTS = frozenset({"td", "th"})
 # `<alt-text>` runs in 522 articles reached a `<p>`'s buffer and 67 a table
 # cell, beside 13 `<object-id>`, 5 `<permissions>` and 2 `<long-desc>` runs.
 # Over the 97,909 archive articles of
-# `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`: 15,792 `<alt-text>` into a
-# `<p>` (in TODO-MEASURE articles) and 462 into a cell, 322 `<object-id>`, 164
+# `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`: 15,792 `<alt-text>` runs into
+# a `<p>` and 462 into a cell, 322 `<object-id>`, 164
 # `<permissions>` (111 of them Wiley's `© 2024 WILEY-VCH GmbH` on an author
 # photo) and 10 `<long-desc>`. The values are overwhelmingly `"Fig. 1"`,
 # `"Table 2"`, `"Image 1"`, `"Multimedia component 1"` and a figure's DOI.
@@ -3351,9 +3351,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # <alternatives> pair, transparent to the owner walk, reaches
                 # this arm twice and reads 2, which is what the survey counts
                 # too; the audit line names that unit rather than claiming
-                # two images. Its <alt-text>, if any, is welded into the
-                # note's prose by a mechanism older than this arm: issue
-                # #241.
+                # two images. Its <alt-text>, if any, no longer welds into the
+                # note's prose, `_NON_PROSE_METADATA` taking a buffer that
+                # never merges (issue #241).
                 self.footnote_graphics_dropped += 1
         elif name == "table-wrap":
             self.table_slots.append(None)

@@ -153,6 +153,14 @@ class JATSFigureInfo:
     against 16,933 on the table side), and the field exists on both
     because one shared holder in the parser is what stops the two exhibits
     drifting apart while one of them is unexercised.
+
+    It also holds the figure's own ``<attrib>`` — ``"Source: WHO."``, an
+    abbreviation list — appended after any notes, in document order (issues
+    #241, #248). That is the figure side's larger population by far: 125
+    attributions across the 8,118 served articles and 677 across the 97,909
+    archive ones. An attribution used to weld into the sentence around a figure
+    deposited in a ``<p>``, or reach nothing at all where the figure stood in a
+    section.
     """
 
     id: str
@@ -197,8 +205,10 @@ class JATSTableInfo:
     ``footnotes`` holds the table's own notes — a ``<table-wrap-foot>``'s
     ``<fn>`` prose, an ``<fn-group>`` (which JATS admits and neither measured
     artifact deposits inside an exhibit — see ``_EXHIBIT_FOOTNOTE_CONTAINERS``),
-    and the
-    general note deposited as a loose ``<p>`` after the last marked one — with
+    the
+    general note deposited as a loose ``<p>`` after the last marked one, and
+    the table's own ``<attrib>`` or one inside its ``<table-wrap-foot>``
+    (issues #241, #248: 21 served and 192 archive attributions) — with
     each note's marker folded into its own string, ``"a — Adjusted for age."``
     (issue #124). Before it the prose reached nothing at all: the ``<p>``
     handler drops exhibit internals so that a cell is not printed twice, which

@@ -1359,9 +1359,9 @@ merged into a sentence welds without a space either side; that is
 for one of the two shapes and leave the module with two spacings for one rule.
 And the sentence is clean of cells, not of exhibit internals: an `<alt-text>`,
 `<attrib>`, `<long-desc>`, `<object-id>`, `<copyright-statement>` or
-`<copyright-year>` accumulates nowhere and still welds in, measured at 537 of
-8,118 served articles and filed as #248 beside #241. Do not read the
-`'Beforeafter.'` claim wider than cells.
+`<copyright-year>` accumulated nowhere and still welded in, measured at 537 of
+8,118 served articles and filed as #248 beside #241 — answered since, see the
+next entry. Do not read the `'Beforeafter.'` claim wider than cells.
 
 **An `<array>`'s cell text is dropped, not routed back to the prose** (#245).
 The tempting "fix" is to keep the old splice where no `_TableBuilder` is open,
@@ -1382,6 +1382,82 @@ wrote that way and taking the silent branch. It is pre-existing, measures 0 of
 8,118 served and 0 of 97,909 archive articles, and is filed as #247 rather
 than fixed alongside — so "every one is an `<array>`'s" describes what the arm
 has seen and not where an `<array>` may sit.
+
+## fulltext — an object's metadata is declined, an attribution is routed (#241, #248)
+
+**Do not "complete" the fix by discarding `<attrib>` with the other four.**
+That is both issues' own suggested resolution, and it is right for
+`<alt-text>`, `<long-desc>`, `<object-id>` and `<permissions>`, whose text
+nobody typesets as a sentence of the article. It is wrong for `<attrib>`,
+which is printed: an interview quote's `"(P2, CP)"`, a figure's `"Source:
+WHO."`, a table's abbreviation list. And `main` was already losing most of it
+in silence — a quote or exhibit standing in a `<sec>` put its attribution in
+the section's unread buffer — so discarding the rest would have made a partial
+silent loss total: 3,663 of the archive artifact's 5,072 quote attributions (in
+209 articles) were lost that way, against 1,318 (in 90) welded into a sentence.
+Routing was chosen over discard-and-count once those numbers were in.
+
+**An `<attrib>` routes exactly as a `<p>`, with one exception decided by its
+parent.** Through `_append_prose` a quote's attribution is the paragraph after
+the quote, one in a `<table-wrap-foot>` a table note via #124's owner walk, and
+one in a cell nowhere (the cell already holds it). An exhibit's *own*
+attribution would reach neither destination that method offers inside a float,
+so the arm files it among that exhibit's `footnotes`, which render below it. The
+parent test and not the ambient `current_figure`: inside a `<fig>` every
+descendant sees a figure open, and a nested `<table-wrap>`'s attribution would
+become the figure's note (`test_an_attribution_in_a_table_nested_in_a_figure_is_the_tables`
+separates the two; a `<table-wrap>` directly in a `<fig>` is deposited once in
+the served artifact). `footnotes`, not `caption`, because an attribution sits
+below the exhibit where its notes are printed, and the caption is what a
+direct-child `<caption>` deposits (#123) — appending to it would blur the one
+rule that field has.
+An unmodelled owner — a `<supplementary-material>`, a `<graphic>` in a `<bio>` —
+gets what its own `<p>` gets. The accounting closes: of the archive's 6,343
+`<attrib>`, 5,378 become paragraphs, 677 figure notes, 192 table notes, 89 stay
+in their cell and 7 are empty, and each destination's count equals the diff's
+insertions to the unit.
+
+**Three routes carry metadata into the article, so there are three guards, and
+two of them look redundant.** Membership of `_TEXT_ACCUMULATING` isolates
+every child that *merges* — #243's argument for a cell. It cannot stop a child
+that *routes*: a `<p>` inside `<license>` (JATS modelled `<license>` as `(p)+`
+before `<license-p>`) goes through its own arm to `_append_prose` whatever
+buffer surrounds it, so that method refuses prose under this metadata. And a
+cell is filled from `characters()` and from the formula arm directly, bypassing
+every buffer, so both go through `_offer_cell_text`. Do not remove the
+`_append_prose` refusal on the strength of its population, which is 0 outside
+`<article-meta>` in both artifacts (all 19 archive `<p>` in a `<permissions>`
+sit there, where the paragraph falls past every branch anyway, #230): nothing
+else closes that route, and it is the one an old deposit reaches.
+
+**`_prose_reaches_output` mirrors the refusal, and on its own that is an
+equivalent mutant.** It has two consumers here and each has a second
+protection: the definition fold is also protected by the refusal running first,
+and the `<disp-formula>` counter subtracts the metadata explicitly, the way it
+subtracts the `<ref-list>` refusal. Removing the mirror alone survives the
+whole suite; removing it together with the refusal's position reddens
+`test_a_definition_term_is_not_spent_on_a_refused_paragraph`. It stays because
+a predicate named "would this be filed?" that answers `True` where nothing is
+filed is the lie the mirror exists to prevent.
+
+**Nothing is counted for declined metadata**, unlike `cell_text_dropped` or
+`refused_apparatus_prose`. Those count content the article carried; this is a
+text alternative, an identifier and a licence, measured almost entirely as
+placeholders (`"Fig. 1"`, `"Image 1"`, a DOI). A line on 7% of served articles
+reporting that bmlib declined `"Image 1"` is noise, and a measured frequent
+event is an argument against a diagnostic (#235).
+
+**The citation rule is left as #146 settled it.** A member under a
+`<mixed-citation>` merges back into the citation exactly as `characters()`
+delivered it before, since every descendant of one is that citation's text.
+The population is 0 in both artifacts, and whether an `<object-id>` in a
+citation is printed (arguably yes) or an `<alt-text>` is (no) is not something
+a zero decides, so no exclusion was added on either side.
+
+**Not used for `<img alt>` either.** That is #173's decision, and the
+measurement posted there cuts against it on the bytes this parser is fed: 2,390
+of 2,491 served figure-level `<alt-text>` are placeholders. A `<graphic>`-level
+one is 99% descriptive, but only the archive rendition deposits it.
 
 ## fulltext — an exhibit with no `<label>` gets no fallback search (#162)
 
