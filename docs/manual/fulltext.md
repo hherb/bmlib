@@ -716,31 +716,37 @@ pass.
 > table deposited inside a paragraph, `'12.3Image 1'` in a table cell, a
 > graphical abstract whose whole content read `"ga1"`. The values are almost
 > always placeholders — `"Fig. 1"`, `"Image 1"`, a figure's DOI, a stock-photo
-> copyright line — so they now reach no paragraph, caption, footnote, abstract
-> or cell. They are not kept anywhere either; nothing is counted, since this is
-> metadata declined rather than content lost. A `<mixed-citation>` is the
-> exception, left as it was: every descendant of one is that citation's text,
-> and neither artifact deposits these elements there.
+> or publisher copyright line — so they now reach no paragraph, caption,
+> footnote, abstract or cell. They are not kept anywhere and nothing is
+> counted, since this is metadata declined rather than content lost. Two
+> places are left exactly as they were: a `<mixed-citation>`, where every
+> descendant is that citation's text, and a cross-reference (`<xref>`), where
+> an image that *is* the reference supplies the link's label — without it the
+> label would read an invented `"Figure"`. Neither artifact deposits these
+> elements in either place.
 >
 > An `<attrib>` is different: it is typeset. An interview quote's
 > `"(P2, CP)"`, a figure's `"Source: Authors' elaboration."` or a table's
 > abbreviation list is content, and it used to be lost outright wherever its
-> quote or exhibit stood in a section (3,663 of 5,072 quote attributions in the
-> archive artifact). It is now routed as a paragraph would be: a quote's
+> quote or exhibit stood in a section — 3,844 of the archive artifact's 5,266
+> quote attributions. It is now routed as a paragraph would be: a quote's
 > attribution becomes the paragraph after the quote, one in a
-> `<table-wrap-foot>` a table note, and an exhibit's *own* attribution is
-> appended to that exhibit's `footnotes`, so `to_html()` prints it below the
-> figure or table. Every `<attrib>` in both named artifacts is accounted for:
-> of the archive's 6,343, 5,378 become paragraphs, 677 figure notes, 192 table
-> notes, 89 stay in the table cell that holds their quote and 7 are empty.
+> `<table-wrap-foot>` a table note, and an exhibit's attribution (or its
+> image's) is appended to that exhibit's `footnotes`, so `to_html()` prints it
+> below the figure or table. It never takes a footnote's marker or a
+> definition's term meant for the paragraph around it. Every `<attrib>` in both
+> named artifacts is accounted for: of the archive's 6,343, 5,378 become
+> paragraphs, 677 figure notes, 192 table notes, 89 stay in the table cell that
+> holds their quote and 7 are empty.
 >
 > What moves, diffed against the previous version over the 8,118 served
 > articles of `PMC10030002_PMC10040000.xml.gz`: rendered HTML in **584
-> (7.2%)**; paragraphs in 577 — 3,200 stripped of metadata in place, 239
-> attribution paragraphs added, and 11 dropped whose whole content was
-> metadata; abstract sections in 121, each a graphical abstract losing its
-> image placeholder — 84 now empty where they read `"Image 1"` or `"ga1"`, 37
-> keeping a summary sentence the placeholder had welded onto; 125 figure notes and 21 table notes added; 12 tables' cells
+> (7.2%)**; paragraphs in 577 — 3,200 stripped in place, of metadata or of a
+> welded attribution, 239 attribution paragraphs added, and 11 dropped whose
+> whole content was metadata; abstract sections in 121, each a graphical
+> abstract losing its image placeholder — 84 now empty where they read
+> `"Image 1"` or `"ga1"`, 37 keeping a summary sentence the placeholder had
+> welded onto; 125 figure notes and 21 table notes added; 12 tables' cells
 > stripped. Section titles, captions, references and `has_body` move in none.
 > Over the 97,909 archive articles, HTML moves in 3,098 (3.2%), 6 figure
 > captions lose an inline image's placeholder (`"colostrum (Image 1)"` becomes

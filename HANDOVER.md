@@ -240,22 +240,19 @@ had.
 not** — never reproduce the substring; describe it or drop the `#`. **After
 every merge, diff `gh issue list` against what the commit says it filed and
 fixed**, both ways: it has caught four keywords that fired and a dozen merges
-that closed nothing (#243 this time, closed by hand a session late).
+that left their issue open (243 this time, shut by hand a session late).
 
 *This session's.* **Before discarding an element, find where its text lands
-on `main`**: an issue listing `<attrib>` among metadata to discard would have
-turned a silent loss into a total one, because a quote standing in a section
-already filed it in a buffer nothing reads (3,663 of 5,072) — read the landing
-buffer off the real handler's `text_stack`, not from the markup. **Isolating a
-buffer answers the children that merge, not the ones that route or write
-directly**: name the routes by *kind* (merge, route, direct builder write) and
-give each its guard. **Reconcile a routing tally against the diff per
-article**, not in total: #241's 20-paragraph excess was two explained shapes,
-and one "lost" pair was the instrument truncating samples before a subsequence
-test. **A child census of the owners you touch finds the next issue for free**
-(#249). **When a remedy's scope is a modelling choice, ask once the numbers
-are in** — the routing of `<attrib>` was the user's call, with the measured
-silent loss as the argument.
+on `main`**, off the real handler's `text_stack`, counting every text-bearing
+element (a direct-text-only count put `<attrib>`'s silent loss at 3,663 of 5,072
+where it is 3,844 of 5,266). **Isolating a buffer answers the children that
+merge, not those that route or write a builder directly** — name the routes by
+kind and guard each. **Reconcile a routing tally against the diff per
+article**, not in total. **A child census of the owners you touch finds the
+next issue** (#249). **Ask once the numbers are in** when scope is a modelling
+choice. **Run a correctness review and a claims review before the PR**: they
+found five legal shapes at 0 population and a "equivalent" mutant pair that was
+equivalent only in its sectioned fixture.
 
 ## Previous session: #243, a cell's text is the cell's own
 
@@ -264,33 +261,37 @@ joined `_TEXT_ACCUMULATING` rather than taking the issue's `characters()` hold,
 which reached two of four routes and made the `<xref>` one worse. `<array>`
 cells now reach nothing and are counted (`cell_text_dropped`, #245). Filed:
 #247 (an `<array>` under a `<table-wrap>`) and #248. The reasoning is in
-`CHANGELOG.md` and `docs/DECISIONS.md`; its lessons are folded into the rules
-above.
+`CHANGELOG.md` and `docs/DECISIONS.md`.
 
 ## This session: #241 and #248, an object's metadata and its attribution
 
 **Answered in one patch, with the scope widened on measurement and by the
 user's choice.** Five elements accumulated nowhere, so an exhibit or image
 inside a `<p>` welded their text into the sentence and an image in a cell into
-the table. Measured with the real handler: 4,018 `<alt-text>` runs in 522 of
-8,118 served articles into a `<p>`, 67 into a cell, almost all placeholders.
+the table: 4,018 `<alt-text>` in 522 of 8,118 served articles into a `<p>`,
+67 (in 9) into a cell, almost all placeholders.
 
 - **`<alt-text>`, `<long-desc>`, `<object-id>`, `<permissions>` are declined**
   (`_NON_PROSE_METADATA`) by three guards, one per route: buffer membership for
   merges, a refusal in `_append_prose` (mirrored in `_prose_reaches_output`)
   for a `<p>` routing out of a `<license>`, and `_offer_cell_text` as the one
-  door for `characters()` and the formula arm. Nothing is counted. A
-  `<mixed-citation>` keeps #146's merge (0 deposits either way).
+  door for `characters()` and the formula arm. Nothing is counted. The text
+  is kept under a `<mixed-citation>` (#146) and an `<xref>` (whose arm would
+  otherwise invent `"Figure"` for an image-only link), 0 deposits either way.
 - **`<attrib>` is routed, not discarded** — asked of the user once the survey
   showed it is printed and already silently lost where its owner stood in a
-  section. It routes as a `<p>`; an exhibit's own attribution joins that
-  exhibit's `footnotes` by a parent test. All 6,343 archive and 385 served
-  attributions are accounted for, each destination equal to the diff's
-  insertions.
-- **Blast radius** (unreleased list above) and **mutation** (26 mutants, 2
-  pairs, four fixture gaps closed) are reconciled to the unit in
-  `CHANGELOG.md`; the mirror alone is an equivalent mutant, its two
-  consumers each carrying a second protection named in their tests.
+  section (3,844 of 5,266 archive quote attributions). It routes as a `<p>`;
+  an exhibit's attribution, or its image's, joins that exhibit's `footnotes`
+  by a parent test; it spends no pending marker or term; in a
+  `<mixed-citation>` it is the citation's alone. All 6,343 archive and 385
+  served attributions are accounted for; notes equal the diff's insertions on
+  both artifacts, and paragraphs on the served one (archive +20, traced).
+- **Blast radius** (unreleased list above), re-run unchanged after the
+  review fixes, and **mutation** (36 mutants and 2 pairs; four first-sweep
+  fixture gaps and five review-found shapes, all pinned) are in
+  `CHANGELOG.md`. The mirror alone is an equivalent mutant: the definition
+  fold is also protected by the refusal's position, and the formula counter
+  by the arm's own subtraction.
 - **Filed #249** (an `<abstract>` inside an exhibit: a second-language
   caption dropped, and a latent abstract-erasing shape). **Commented #137**
   with its first measurement (every supplementary-material/media legend is
@@ -311,10 +312,10 @@ the table. Measured with the real handler: 4,018 `<alt-text>` runs in 522 of
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 3955 passing + 63 skipped** on this branch (`uv run pytest tests/
+- **Tests: 3964 passing + 63 skipped** on this branch (`uv run pytest tests/
   -q`, 2026-09-13); **`main` at 3547dcd collects 3985**, i.e. 3922 + 63,
   measured in a worktree of `main` with `pytest --collect-only`, so this branch
-  adds **33**, all in `tests/test_jats_parser.py`. Measure `main` yourself and
+  adds **42**, all in `tests/test_jats_parser.py`. Measure `main` yourself and
   never subtract from a previous handover's number. **The PostgreSQL half was
   not re-run and did not need to be** (`fulltext/` and documentation only); the
   last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the
@@ -351,13 +352,13 @@ the table. Measured with the real handler: 4,018 `<alt-text>` runs in 522 of
 ### Open GitHub issues
 
 **Fifty-four open** (`gh issue list --state open --limit 200`, 2026-09-13,
-with #243 closed by hand and #249 filed), and **fifty-two once this PR merges
-and #241/#248 close**: #86, #92, #94, #103, #128, #137, #142, #143, #144,
+after shutting 243 by hand and filing 249), and **fifty-two once this PR
+merges and the two issues it answers are shut**. Open now: #86, #92, #94, #103, #128, #137, #142, #143, #144,
 #145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179,
 #181, #186, #196, #197, #200, #201, #204, #207, #209, #210, #212, #214, #215,
 #217, #221, #222, #223, #226, #227, #230, #231, #233, #234, #235, #240, #241,
 #242, #244, #245, #247, #248, #249. Re-count at the end against `gh`, and again
-after any review round — and check that #241 and #248 actually closed.
+after any review round — and check that 241 and 248 actually went.
 
 **What still loses content the document carries**: **#230** (front-matter
 prose, the largest silent drop left — 17,612 paragraphs in 49.8% of 15,000
@@ -370,8 +371,8 @@ population). **#240** (a sectioned `<fn-group>`'s heading, dropped
 uncounted), **#244** (a `<graphic>` owned by neither an exhibit nor its
 footnote matter, the `<td>`'s first), **#150** (a note-only `<ref>` as an empty
 `<li>` — re-measure on the two artifacts first), **#235**'s `<sec>` half,
-**#128** (all 13,624 hrefs measured use `xlink`, so downgrade rather than
-close) and **#175** (a formula deposited as an image). **#137 is now measured
+**#128** (all 13,624 hrefs measured use `xlink`, so downgrade it rather than
+shut it), and **#175** (a formula deposited as an image). **#137 is now measured
 and larger than its title suggests** — every supplementary-material and media
 legend reaches the prose without its title, ≥30.7% of served articles — so it
 is a presentation decision about a big population rather than an edge case.
@@ -410,8 +411,7 @@ against the diff's insertions. Adding them to `scripts/` is a session of its
 own.
 
 **Provenance is a chain**: almost every open issue was filed by a PR reviewing
-an earlier fix; #224 came from outside it, #228 and #249 from measurements.
-`gh issue view <n>` and `CHANGELOG.md` hold the rest.
+an earlier change; #224, #228 and #249 are the exceptions.
 
 
 ### Worth doing, not yet an issue

@@ -1390,69 +1390,92 @@ That is both issues' own suggested resolution, and it is right for
 `<alt-text>`, `<long-desc>`, `<object-id>` and `<permissions>`, whose text
 nobody typesets as a sentence of the article. It is wrong for `<attrib>`,
 which is printed: an interview quote's `"(P2, CP)"`, a figure's `"Source:
-WHO."`, a table's abbreviation list. And `main` was already losing most of it
-in silence — a quote or exhibit standing in a `<sec>` put its attribution in
-the section's unread buffer — so discarding the rest would have made a partial
-silent loss total: 3,663 of the archive artifact's 5,072 quote attributions (in
-209 articles) were lost that way, against 1,318 (in 90) welded into a sentence.
-Routing was chosen over discard-and-count once those numbers were in.
+Authors' elaboration."`, a table's abbreviation list. And `main` was already
+losing most of it in silence — a quote or exhibit standing in a `<sec>` put its
+attribution in the section's unread buffer — so discarding the rest would have
+made a partial silent loss total: of the archive artifact's 5,266 quote
+attributions 3,844 (in 217 articles) were lost that way, against 1,331 (in 94)
+welded into a sentence and 89 in cells. Routing was chosen over
+discard-and-count once those numbers were in. **Count every text-bearing
+element when sizing this**: a first cut counted only attributions with text of
+their own, missed those whose text sits wholly in an `<italic>` or `<xref>`, and
+put the population at 5,072.
 
-**An `<attrib>` routes exactly as a `<p>`, with one exception decided by its
-parent.** Through `_append_prose` a quote's attribution is the paragraph after
-the quote, one in a `<table-wrap-foot>` a table note via #124's owner walk, and
-one in a cell nowhere (the cell already holds it). An exhibit's *own*
-attribution would reach neither destination that method offers inside a float,
-so the arm files it among that exhibit's `footnotes`, which render below it. The
-parent test and not the ambient `current_figure`: inside a `<fig>` every
-descendant sees a figure open, and a nested `<table-wrap>`'s attribution would
-become the figure's note (`test_an_attribution_in_a_table_nested_in_a_figure_is_the_tables`
-separates the two; a `<table-wrap>` directly in a `<fig>` is deposited once in
-the served artifact). `footnotes`, not `caption`, because an attribution sits
-below the exhibit where its notes are printed, and the caption is what a
-direct-child `<caption>` deposits (#123) — appending to it would blur the one
-rule that field has.
-An unmodelled owner — a `<supplementary-material>`, a `<graphic>` in a `<bio>` —
-gets what its own `<p>` gets. The accounting closes: of the archive's 6,343
-`<attrib>`, 5,378 become paragraphs, 677 figure notes, 192 table notes, 89 stay
-in their cell and 7 are empty, and each destination's count equals the diff's
-insertions to the unit.
+**An `<attrib>` routes as a `<p>`, with one exception decided by what it
+credits and three differences.** Through `_append_prose` a quote's attribution
+is the paragraph after the quote, one in a `<table-wrap-foot>` a table note via
+#124's owner walk, and one in a cell nowhere (the cell already holds it). An
+exhibit's attribution — or its image's, the parent being walked past a
+`<graphic>` as `_graphic_owner` walks — would reach neither destination that
+method offers inside a float, so the arm files it among that exhibit's
+`footnotes`, which render below it. The parent and not the ambient
+`current_figure`: inside a `<fig>` every descendant sees a figure open, and a
+nested `<table-wrap>`'s attribution would become the figure's note
+(`test_an_attribution_in_a_table_nested_in_a_figure_is_the_tables`; a
+`<table-wrap>` directly in a `<fig>` is deposited once in the served artifact).
+`footnotes`, not `caption`, because an attribution sits below the exhibit where
+its notes are printed, and the caption is what a direct-child `<caption>`
+deposits (#123). The three differences: `keep_empty=False`; **it spends no
+pending footnote marker or definition term**, because an image credit inside a
+note's `<p>` closes before that `<p>` and took the marker — `['a — Credit: X.',
+'Adjusted for age.']`, the body's `12.3a` pointing at the credit; and **inside a
+`<mixed-citation>` it is not filed**, having merged into the citation already.
+Those two and the image-credit walk were found by PR review at 0 measured
+population. The accounting closes: of the archive's 6,343 `<attrib>`, 5,378
+become paragraphs, 677 figure notes, 192 table notes, 89 stay in their cell and
+7 are empty. Figure and table notes equal the diff's insertions to the unit on
+both artifacts, and so do paragraphs on the served one; on the archive the
+prose tally exceeds inserted paragraphs by 20, every one traced (an enclosing
+paragraph that already held the attribution alone, or arbitrary pairing of two
+empty paragraphs).
 
-**Three routes carry metadata into the article, so there are three guards, and
-two of them look redundant.** Membership of `_TEXT_ACCUMULATING` isolates
-every child that *merges* — #243's argument for a cell. It cannot stop a child
-that *routes*: a `<p>` inside `<license>` (JATS modelled `<license>` as `(p)+`
-before `<license-p>`) goes through its own arm to `_append_prose` whatever
-buffer surrounds it, so that method refuses prose under this metadata. And a
-cell is filled from `characters()` and from the formula arm directly, bypassing
-every buffer, so both go through `_offer_cell_text`. Do not remove the
-`_append_prose` refusal on the strength of its population, which is 0 outside
-`<article-meta>` in both artifacts (all 19 archive `<p>` in a `<permissions>`
-sit there, where the paragraph falls past every branch anyway, #230): nothing
-else closes that route, and it is the one an old deposit reaches.
+**Three routes carry metadata into the article, so there are three guards.**
+Membership of `_TEXT_ACCUMULATING` isolates every child that *merges* — #243's
+argument for a cell. It cannot stop a child that *routes*: a `<p>` inside
+`<license>` (modelled `(p)+` before `<license-p>`) goes through its own arm to
+`_append_prose` whatever buffer surrounds it, so that method refuses prose
+under this metadata. And a cell is written by `characters()` and by the formula
+arm directly, bypassing every buffer, so both go through `_offer_cell_text`.
+**The two that look redundant are the `_append_prose` refusal and the formula
+half of `_offer_cell_text`**: both measure 0 outside `<article-meta>` (all 19
+archive `<p>` in a `<permissions>` sit there, where the paragraph falls past
+every branch anyway, #230; no formula sits in any member). Do not remove them
+on that strength — nothing else closes either route. The `characters()` half of
+the cell guard is not redundant at all: 67 served and 462 archive cells.
 
 **`_prose_reaches_output` mirrors the refusal, and on its own that is an
-equivalent mutant.** It has two consumers here and each has a second
-protection: the definition fold is also protected by the refusal running first,
-and the `<disp-formula>` counter subtracts the metadata explicitly, the way it
-subtracts the `<ref-list>` refusal. Removing the mirror alone survives the
-whole suite; removing it together with the refusal's position reddens
-`test_a_definition_term_is_not_spent_on_a_refused_paragraph`. It stays because
-a predicate named "would this be filed?" that answers `True` where nothing is
-filed is the lie the mirror exists to prevent.
+equivalent mutant — but its protections differ by consumer.** For the
+definition fold, the refusal running ahead of the fold is a second, independent
+protection: removing the mirror and moving the refusal below the fold together
+redden `test_a_definition_term_is_not_spent_on_a_refused_paragraph`. For the
+`<disp-formula>` counter the explicit subtraction in the arm is **the**
+protection: in a section the mirror is what makes the predicate answer `False`
+at all, but in a float or in `<front>` it answers `False` whatever the mirror
+says, so only the subtraction stands between a declined formula and a WARNING
+claiming a loss. A first cut called the mirror and the subtraction "one
+protection, so removing both is equivalent", which was true only of the
+sectioned fixture; the in-float fixture now kills that pair. The mirror stays
+because a predicate named "would this be filed?" that answers `True` where
+nothing is filed is the lie the mirror exists to prevent.
 
-**Nothing is counted for declined metadata**, unlike `cell_text_dropped` or
-`refused_apparatus_prose`. Those count content the article carried; this is a
-text alternative, an identifier and a licence, measured almost entirely as
-placeholders (`"Fig. 1"`, `"Image 1"`, a DOI). A line on 7% of served articles
-reporting that bmlib declined `"Image 1"` is noise, and a measured frequent
-event is an argument against a diagnostic (#235).
+**Declined metadata adds to no counter of its own**, unlike `cell_text_dropped`
+or `refused_apparatus_prose`. Those count content the article carried; this is
+a text alternative, an identifier and a licence, measured almost entirely as
+placeholders (`"Fig. 1"`, `"Image 1"`, a DOI). A line reporting that bmlib
+declined `"Image 1"` would tell nobody about a loss. (An invalid `<def-list>`
+inside a `<license>` still reaches #228's term counter, which counts terms, not
+metadata.)
 
-**The citation rule is left as #146 settled it.** A member under a
-`<mixed-citation>` merges back into the citation exactly as `characters()`
-delivered it before, since every descendant of one is that citation's text.
-The population is 0 in both artifacts, and whether an `<object-id>` in a
-citation is printed (arguably yes) or an `<alt-text>` is (no) is not something
-a zero decides, so no exclusion was added on either side.
+**Two places keep the metadata's text, and each exception leaves `main`'s
+parse exactly as it was.** Under a `<mixed-citation>` it merges, #146 having
+settled that every descendant is the citation's text; whether an `<object-id>`
+there is printed (arguably) or an `<alt-text>` is (no) is not something a zero
+population decides. Under an `<xref>` it merges too: an `<xref>` replaces its
+text with a link label and invents `"Figure"` for an empty one, so isolating
+the `<alt-text>` of an image that *is* the reference turned `[Figure 1](#f1)`
+into `[Figure](#f1)` — an invented label, #162's symptom, found by PR review.
+The price is `main`'s weld where an `<xref>` holds text *and* an image
+(`[Fig. 1icon](#f1)`). No member lands in either place in the two artifacts.
 
 **Not used for `<img alt>` either.** That is #173's decision, and the
 measurement posted there cuts against it on the bytes this parser is fed: 2,390
