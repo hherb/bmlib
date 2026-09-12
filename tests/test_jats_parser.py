@@ -8592,11 +8592,11 @@ class TestACellsTextIsTheCellsOwn:
 
     ``characters()`` delivered every cell's text to the open buffer *as well
     as* to the cell, so a ``<table-wrap>`` deposited inside a ``<p>`` — legal
-    JATS, and the shape a ``<disp-formula>`` takes 37.3% of the time on the
-    served rendition — stored ``'Before12.3after.'``: the table's numbers
-    spliced into a sentence the publisher never wrote that way, in
-    ``body_sections`` and in the HTML ``FullTextService`` caches. A **wrong
-    value** where a blank was the alternative, which is #116's and #162's own
+    JATS, and 7,248 such deposits sit in 2,237 of the 8,118 served articles of
+    ``PMC10030002_PMC10040000.xml.gz`` — stored ``'Before12.3after.'``: the
+    table's numbers spliced into a sentence the publisher never wrote that
+    way, in ``body_sections`` and in the HTML ``FullTextService`` caches. A
+    **wrong value** where a blank was the alternative, which is #116's and #162's own
     preference and what puts this ahead of the drops beside it.
 
     **The hold is the cell's own text buffer, not a test in
@@ -8604,18 +8604,34 @@ class TestACellsTextIsTheCellsOwn:
     hold one line up, and it reaches two of the four routes: raw character
     data, and an inline run merging back (``<italic>``, ``<sup>``). It leaves
     the other two, and makes one of them *worse* — an ``<xref>`` builds its
-    link from the buffer the hold would have emptied, so the paragraph gains
-    ``'[](#f1)'`` in place of ``'[Fig 1](#f1)'`` — and enumerating the arms
-    that merge is the kind of list #116 established cannot be completed by
-    inspection. ``td``/``th`` join ``_TEXT_ACCUMULATING`` instead: the cell
-    takes a buffer at its open, every child merges into *that*, and the close
-    pops it and reads nothing. The cell itself is unaffected, filling
-    ``current_cell_text`` from ``characters()`` directly.
+    link from the buffer the hold would have emptied, and the arm's own
+    ``text or "Figure"`` fallback then fires, so the paragraph gains
+    ``'[Figure](#f1)'`` in place of ``'[Fig 1](#f1)'``: an **invented** label,
+    which is #162's own symptom and worse than the blank it replaces. And
+    enumerating the arms that merge is the kind of list #116 established
+    cannot be completed by inspection, so the argument is about the fifth
+    route nobody has found rather than about these four.
+    ``td``/``th`` join ``_TEXT_ACCUMULATING`` instead: the cell takes a buffer
+    at its open, every child that merges back merges into *that*, and the
+    close pops it and reads nothing but its emptiness (``cell_text_dropped``,
+    #245). The cell itself is unaffected, filling ``current_cell_text`` from
+    ``characters()`` directly.
 
-    The paragraph then reads ``'Beforeafter.'`` — the ``<fig>`` shape's own
-    answer, which has always read ``'Alphaomega.'``, since a ``<caption>``
-    takes a buffer and never merged one back. Spacing round a merged block is
-    #147's open question and is not touched here.
+    Membership needs one exclusion of its own, and
+    ``test_a_cell_under_a_mixed_citation_does_not_join_the_citation`` is why:
+    ``_inside_mixed_citation()`` was the single path left by which a cell's
+    buffer could still merge, so the pop carries ``not is_cell`` beside the
+    terms ``_FORMULA_PARTS`` and ``_UNDIVIDED_NAME_ELEMENTS`` already earn.
+
+    The paragraph then reads ``'Beforeafter.'`` — **of the cells** — which is
+    the ``<fig>`` shape's own answer, and that shape has always read
+    ``'Alphaomega.'`` since a ``<caption>`` takes a buffer and never merged
+    one back. Two things it does not clean up, so the claim is not read wider:
+    spacing round a merged block is #147's open question, and an
+    ``<alt-text>``, ``<attrib>``, ``<long-desc>``, ``<object-id>``,
+    ``<copyright-statement>`` or ``<copyright-year>`` accumulates nowhere and
+    still welds into the sentence — 537 of those 8,118 articles, issue #248
+    beside #241. Neither is touched here.
     """
 
     #: The issue's own fixture, verbatim.
@@ -8666,9 +8682,11 @@ class TestACellsTextIsTheCellsOwn:
 
         ``<xref>`` does not merge its text — it *replaces* it with a link
         built from the popped buffer — so a hold inside ``characters()`` would
-        leave ``'[](#f1)'`` in the sentence: a wrong value replacing a wrong
-        value. Pinned with the link's own text, so a mutant emptying the
-        buffer instead of isolating it is visible here and nowhere else.
+        leave ``'[Figure](#f1)'`` in the sentence, the arm's own
+        ``text or "Figure"`` fallback firing on the emptied buffer: a wrong
+        value replaced by an *invented* one, which is worse. Pinned with the
+        link's own text, so a mutant emptying the buffer instead of isolating
+        it is visible here and nowhere else.
         """
         article = self._article(
             b"<p>Before<table-wrap id='T1'><table><tbody><tr><td>"
@@ -8730,13 +8748,75 @@ class TestACellsTextIsTheCellsOwn:
         assert article.body_sections[0].paragraphs == ["Para.", "Next."]
         assert "<td>12.3</td>" in article.tables[0].html_content
 
+    def test_a_cell_under_a_mixed_citation_does_not_join_the_citation(self, parser_log):
+        """The one path by which a cell's buffer could still have merged.
+
+        ``td``/``th`` are not in ``_INLINE_ELEMENTS``, so
+        ``_inside_mixed_citation()`` was the whole of it — and that helper is
+        a bare ancestor test, deliberately, because mixed content is inherited
+        down the entire subtree (#146). A ``<table-wrap>`` or ``<array>``
+        below a ``<mixed-citation>`` therefore merged the cell into
+        ``JATSReferenceInfo.citation`` exactly as before the fix, while
+        ``append_cell_text`` *also* filled the cell — #243's own splice in a
+        public field, and the doubled rendition ``_FORMULA_PARTS`` earns its
+        own term to prevent. For the unmodelled half it was worse than a
+        leak: ``cell_text_dropped`` reported content missing from the article
+        that was sitting in a public list.
+
+        ``_FORMULA_PARTS`` and ``_UNDIVIDED_NAME_ELEMENTS`` each state their
+        exclusion rather than leaning on the inline set, and this is the third
+        of the same shape. Measured 0 cells under a ``<mixed-citation>`` over
+        both named artifacts, counted the way the parser routes (suppressed
+        regions skipped): 0 of 1,407,638 cells in the 8,118 served articles of
+        ``PMC10030002_PMC10040000.xml.gz``, and 0 of 19,651,769 in the 97,909
+        of ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26``. So it pins a
+        direction and not a population. Found in the review of PR #246.
+        """
+        xml = (
+            b'<?xml version="1.0"?>\n<article><front><article-meta><title-group>'
+            b"<article-title>T</article-title></title-group></article-meta></front>"
+            b"<body><sec><title>R</title><p>x</p></sec></body>"
+            b"<back><ref-list><ref id='R1'><mixed-citation>Smith J. "
+            b"<source>J Med</source>. <array><tbody><tr><td>CELL</td></tr></tbody></array>"
+            b" 2020.</mixed-citation></ref></ref-list></back></article>"
+        )
+        article = JATSParser(xml).parse()
+        handler = JATSParser(xml)._run_parser()
+
+        assert article.references[0].citation == "Smith J. J Med. 2020."
+        # And the counter's claim is then true: the cell reached nothing.
+        assert handler.cell_text_dropped == 1
+
+    def test_a_modelled_cell_under_a_mixed_citation_keeps_its_text_once(self):
+        """The other half, where a builder *is* open.
+
+        Merging would put the cell in the citation string as well as in the
+        table, so the text would be stored twice and the citation would read
+        as though the publisher had typeset the number into it.
+        """
+        xml = (
+            b'<?xml version="1.0"?>\n<article><front><article-meta><title-group>'
+            b"<article-title>T</article-title></title-group></article-meta></front>"
+            b"<body><sec><title>R</title><p>x</p></sec></body>"
+            b"<back><ref-list><ref id='R1'><mixed-citation>Smith J. "
+            b"<source>J Med</source>. <table-wrap id='T1'><table><tbody><tr>"
+            b"<td>LEAK</td></tr></tbody></table></table-wrap>"
+            b" 2020.</mixed-citation></ref></ref-list></back></article>"
+        )
+        article = JATSParser(xml).parse()
+
+        assert article.references[0].citation == "Smith J. J Med. 2020."
+        assert "<td>LEAK</td>" in article.tables[0].html_content
+
 
 class TestACellThatReachesNoTableIsCounted:
     """Cell text with no table to receive it leaves a line — issue #245.
 
     ``<array>`` is JATS's *non-floating* tabular structure: ``<tbody>``,
     ``<tr>`` and ``<td>`` with no ``<table-wrap>`` and no ``<table>`` above
-    them. bmlib models none of it, so no ``_TableBuilder`` is open and
+    them — defined by the wrapper's absence and not a ``<table>``'s, which is
+    what the arm tests, JATS admitting a ``<table>`` inside an ``<array>``.
+    bmlib models none of it, so no ``_TableBuilder`` is open and
     ``append_cell_text`` has nowhere to put the text.
 
     Until #243 that text still reached the buffer above — the enclosing
@@ -8749,10 +8829,18 @@ class TestACellThatReachesNoTableIsCounted:
 
     **Measured over two named public artifacts**: 355 cells in 8 of the 8,118
     served articles of ``PMC10030002_PMC10040000.xml.gz``, of which 173 in 3
-    articles sit inside a ``<p>`` and so were visible as corrupt prose; every
-    one of the 355 is an ``<array>``'s. So the counter reports a **pre-existing
-    silent loss** in five of those eight articles and a newly-total one in
-    three.
+    articles sit inside a ``<p>`` and so were visible as corrupt prose, the
+    other 182 in 5 sitting in a ``<glossary>`` where the text was already
+    being discarded; and 248,720 in 6,726 of the 97,909 archive articles of
+    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26``. Every one is an
+    ``<array>``'s. So the counter reports a **pre-existing silent loss** in
+    five of those eight served articles and a newly-total one in three.
+
+    **It is keyed on no builder being open, which is narrower than "no table
+    received this cell".** An ``<array>`` inside an *open* ``<table-wrap>``
+    routes into that builder and takes the silent branch, splicing a phantom
+    row into a real table — pre-existing, measured 0 on both artifacts, and
+    filed as #247 rather than fixed here.
 
     The unit is the **cell**, never the character — the rule PR #239's review
     made for #238's image counter — and an empty cell costs nothing, which is
@@ -8784,14 +8872,80 @@ class TestACellThatReachesNoTableIsCounted:
 
     def test_an_empty_cell_costs_nothing(self, parser_log):
         """A cell that carried nothing cannot have lost anything, so a line
-        here would state a loss that did not happen."""
+        here would state a loss that did not happen.
+
+        **This fixture is load-bearing three times over**, which its first
+        docstring did not say. It is the sole killer of the mutant counting
+        the *unstripped* buffer (``elif element_text:``), of the one counting
+        every unmodelled cell (``else:``), and — because with ``td`` out of
+        ``_TEXT_ACCUMULATING`` the popped buffer would be the ``<p>``'s and
+        the count would go to 2 — it is what shows the counter reads the
+        cell's **own** buffer rather than the one enclosing it.
+        """
         xml = self.ARRAY_IN_PROSE.replace(b"<td>12.3</td><td>45.6</td>", b"<td></td><td> </td>")
         handler = JATSParser(xml)._run_parser()
 
         assert handler.cell_text_dropped == 0
         assert not [m for m in parser_log.messages(logging.WARNING) if "reached no table" in m]
 
-    def test_this_line_survives_beside_another_counters(self, parser_log):
+    def test_a_header_cell_that_reaches_no_table_is_counted(self, parser_log):
+        """``<th>`` takes the same branch, and nothing pinned it.
+
+        ``elif text and name == "td":`` survived the whole file: every
+        ``<array>`` fixture here deposits body cells only, and
+        ``TestACellsTextIsTheCellsOwn``'s ``<th>`` case is about a *modelled*
+        table, where the counter never fires. Found in the review of PR #246.
+        """
+        xml = self.ARRAY_IN_PROSE.replace(
+            b"<array><tbody>", b"<array><thead><tr><th>Dose</th></tr></thead><tbody>"
+        )
+        handler = JATSParser(xml)._run_parser()
+
+        assert handler.cell_text_dropped == 3
+
+    def test_an_array_outside_a_paragraph_is_counted(self, parser_log):
+        """The majority of the measured population, and it had no fixture.
+
+        Of the 355 cells this counter finds in the served bundle, 173 sit in
+        a ``<p>`` — where the loss was visible as spliced prose — and the
+        other **182, in 5 of the 8 articles, sit in a ``<glossary>``**, where
+        the text was already reaching a buffer nobody reads. That second half
+        is the counter's whole stated reason for existing (*"a loss that is
+        pre-existing and was silent"*) and every fixture in this class put the
+        array in a ``<p>``: ``elif text and len(self.text_stack) > 2:``
+        survived the file. Found in the review of PR #246.
+        """
+        xml = self.ARRAY_IN_PROSE.replace(
+            b"<p>Before<array><tbody><tr><td>12.3</td><td>45.6</td></tr></tbody></array>after.</p>",
+            b"<p>Para.</p><array><tbody><tr><td>12.3</td><td>45.6</td></tr></tbody></array>"
+            b"<p>Next.</p>",
+        )
+        article = JATSParser(xml).parse()
+        handler = JATSParser(xml)._run_parser()
+
+        assert handler.cell_text_dropped == 2
+        # The prose either side is untouched: the cells reached the <sec>'s
+        # buffer before #243 and reach their own now, and neither is read.
+        assert article.body_sections[0].paragraphs == ["Para.", "Next."]
+
+    def test_an_array_outside_the_body_is_counted(self, parser_log):
+        """``elif text and self.in_body:`` survived the file too.
+
+        Every fixture here sits in ``<body>``. The arm is gated on no routing
+        flag and must not become so: a cell reaching no table has lost its
+        content wherever it was deposited, and #224 made back matter a
+        destination for everything around it.
+        """
+        array = b"<array><tbody><tr><td>12.3</td></tr></tbody></array>"
+        xml = self.ARRAY_IN_PROSE.replace(
+            b"</article-meta></front>",
+            b"<abstract><p>A" + array + b"B</p></abstract></article-meta></front>",
+        ).replace(b"</body>", b"</body><back><ack><p>C" + array + b"D</p></ack></back>")
+        handler = JATSParser(xml)._run_parser()
+
+        assert handler.cell_text_dropped == 4
+
+    def test_this_line_survives_beside_another_counters_line(self, parser_log):
         """The audit blocks are independent ``if``s. Chained as an ``elif`` of
         the block above it, this line vanishes whenever that counter also
         fired — the mutant that survived every fixture holding one counter at
@@ -10070,7 +10224,10 @@ _SYNTHETIC_ACCUMULATING = frozenset({"surname", "collab", "source"})
 #: the thing that notices a read leaving the method — so it is a measurement
 #: of the handler and must be re-measured, never edited to make a test pass.
 #: It is read as a floor, so an arm legitimately *added* needs no edit here;
-#: only an arm whose read stops being visible does.
+#: only an arm whose read stops being visible does. ``td``/``th`` are that
+#: legitimate addition (#245's counter tests the popped buffer for emptiness),
+#: and are listed so the inventory stays the *whole* measurement its own
+#: docstring claims rather than drifting into a sample of it.
 _ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER = frozenset(
     {
         "article-id",
@@ -10088,6 +10245,8 @@ _ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER = frozenset(
         "source",
         "string-name",
         "surname",
+        "td",
+        "th",
         "title",
         "volume",
         "xref",
@@ -10914,7 +11073,8 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
         Reads inside a statement that *binds* a buffer are excluded, being the
         preamble rather than an arm — otherwise ``element_text =
         self._pop_text_buffer(...)``, guarded by ``_TEXT_ACCUMULATING``, would
-        enter the inventory as forty-four elements no arm consumes.
+        enter the inventory as the whole accumulating set, most of whose
+        members no arm consumes.
         """
         reads = self._reads_in_the_real_handler()
 

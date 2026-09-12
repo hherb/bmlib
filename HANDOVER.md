@@ -263,17 +263,34 @@ a `<p>` spliced the table's numbers into the sentence —
 exhibit inside a footnote's `<p>` gave the outer note `'a — See12.3'`. A
 **wrong value** where a blank was the alternative.
 
-**The issue's own remedy reaches two of four routes and makes a third worse.**
-A hold inside `characters()` catches raw character data and an inline run
-merging back; an `<xref>` *replaces* its text with a link built from the popped
-buffer, so emptying it yields `'[](#f1)'`, and the formula arm appends its
+**The issue's own remedy reaches two of the four routes found and makes a
+third worse.** A hold inside `characters()` catches raw character data and an
+inline run merging back; an `<xref>` *replaces* its text with a link built
+from the popped buffer, so emptying it fires the arm's own `text or "Figure"`
+fallback and yields `'[Figure](#f1)'` — an **invented** label, #162's own
+symptom and worse than the blank it replaces — and the formula arm appends its
 rendition through its own `_append_text` the method never sees. Enumerating
-the arms that merge is #116's uncompletable list. `td`/`th` join
-`_TEXT_ACCUMULATING` instead, as **the only two members that accumulate in
-order to discard**. The paragraph then reads `'Beforeafter.'`, the `<fig>`
-shape's own long-standing answer; block spacing stays #147's question.
-`docs/DECISIONS.md` has both, with the `<xref>` fixture named as what separates
-the two remedies.
+the arms that merge is #116's uncompletable list, so the argument is about the
+fifth route nobody has found. `td`/`th` join `_TEXT_ACCUMULATING` instead.
+**Accumulating in order to discard is not what is particular about them**:
+nine other members do (`<sec>`, `<abstract>`, `<caption>`, `<def>`,
+`<list-item>`, `<person-group>`, `<element-citation>`, `<alt-title>`,
+`<kwd>`), two documented as such in the module. What is particular is that a
+cell's children route to a *builder*; and one arm does consult a cell's
+buffer, for **emptiness alone**, to decide whether an unmodelled cell lost
+anything (#245) — its content is read nowhere. **Membership needed one
+exclusion of its own**: `_inside_mixed_citation()` was the single path left by
+which a cell's buffer could merge, so the pop carries `not is_cell` beside the
+terms `_FORMULA_PARTS` and `_UNDIVIDED_NAME_ELEMENTS` already earn; without
+it a cell under a citation reached `JATSReferenceInfo.citation` *and* the cell,
+and for the unmodelled half `cell_text_dropped` claimed a loss that had not
+happened. Measured 0 such cells over both artifacts, so it pins a direction.
+The paragraph then reads `'Beforeafter.'` **of the cells** — an `<alt-text>`,
+`<attrib>`, `<long-desc>`, `<object-id>`, `<copyright-statement>` or
+`<copyright-year>` still welds in, 537 of 8,118 served articles, which is #248
+beside #241 — and block spacing stays #147's question.
+`docs/DECISIONS.md` has all of it, with the `<xref>` fixture named as what
+separates the two remedies.
 
 **Blast radius, diffed against `main` over two named public artifacts.**
 Served (`PMC10030002_PMC10040000.xml.gz`, 8,118 articles): a paragraph moves
@@ -292,7 +309,10 @@ characters, so a character-level subsequence test is the exact predicate. The
 10 dropped are each a `<p>` whose only content was the table; three are
 Springer/Adis *"Key Points"* panels present in `.tables` with proper rows, so
 `main` stored that content **twice**. Every lost section title is an *empty*
-one, on both artifacts (6 served, 68 archive, 0 non-empty).
+one, on both artifacts — 6 titles in 6 served articles and 68 in 68 archive ones, so the two units coincide; 0 non-empty either way. A paragraph whose
+whole content was the table is now an empty string rather than absent — 697
+more across 283 served articles, which `_format_body_section_html` skips, so
+no rendered HTML moves for it.
 
 **Each gap between two counts was closed.** 7,248 `<table-wrap>` inside a `<p>`
 in 2,237 of 8,118 served articles, a `<p>` being the only reading buffer that
@@ -300,20 +320,29 @@ carries one. The survey's 2,223 articles with a cell under a reading buffer
 against the diff's 2,222 is one paper whose single inline table holds one
 *empty* cell. On the archive the counter's 248,720 against the survey's
 251,362 is 2,141 blank cells plus 501 whose text sits only in a non-merging
-child, filed by that child's own arm.
+child. Every one of those children resolves to a `<p>`, whose own arm files
+the text — a direction rather than a guarantee, since a child with no arm at
+all (a `<list-item>`) would be dropped with nothing counted, measured 0 on
+both.
 
 **#245 is what the fix makes total rather than partial, and it is counted.**
 `<array>` opens no `_TableBuilder`, so its cells reach nothing; their text used
 to reach the buffer above (a `<sec>`'s, discarded; a `<p>`'s, spliced). A blank
 beats a wrong value, so the drop stays and `cell_text_dropped` reports it once
 per article at WARNING, counting the **cell** and never the character, an empty
-cell costing nothing. **355 cells in 8 of 8,118 served articles** against
-248,720 in 6,726 of 97,909 archive ones — the two renditions disagree roughly
-seventy-fold, on draws from different accession ranges, so rendition and corpus
-cannot be separated; the served figure sizes the priority, being the bytes
-`FullTextService` is fed.
+cell costing nothing. **355 cells in 8 of 8,118 served articles** — 173 in the 3 where the splice
+was visible, the other 182 in 5 inside a `<glossary>` where the text was
+already being discarded — against 248,720 in 6,726 of 97,909 archive ones. The
+two renditions disagree roughly seventy-fold, on draws from different accession
+ranges, so rendition and corpus cannot be separated; the served figure sizes
+the priority, being the bytes `FullTextService` is fed. **The counter is keyed
+on no builder being open, which is narrower than "no table received this
+cell"**: an `<array>` inside an open `<table-wrap>` routes into that builder,
+splices a phantom row into a real table and takes the silent branch —
+pre-existing, 0 of 8,118 served and 0 of 97,909 archive, filed as #247.
 
-**Nine mutants, all killed, each attributed rather than counted** — each set
+**Nine mutants in the first sweep, all killed, each attributed rather than
+counted** — each set
 member separately and together, `td`/`th` made *inline* (which is `main`'s
 behaviour spelled differently), the counter reading the unstripped buffer,
 firing on an empty cell and double-incrementing, and the audit line removed and
@@ -328,6 +357,38 @@ buffer the moment `td` leaves the set.
 `jats_parser.py` was edited while the sweep held that file, so the restore
 discarded the edit. Nothing was lost beyond the edit, re-applied and
 re-verified — but the same slip on a *test* file would have been silent.
+
+**The review found three of those nine mutants had a fourth sibling that
+survived, and the gap was one axis rather than three.** Every `<array>`
+fixture in `TestACellThatReachesNoTableIsCounted` deposited body cells inside
+a `<p>` inside `<body>`, so `elif text and name == "td":`,
+`elif text and len(self.text_stack) > 2:` and `elif text and self.in_body:`
+each passed the whole file. Three fixtures close it — a `<th>` in an
+`<array>`, an `<array>` between two paragraphs rather than inside one, and
+one in `<front><abstract>` and `<back><ack>` — and the second is the
+important one: **182 of the 355 served cells, in 5 of the 8 articles, sit in
+a `<glossary>`**, which is the *"pre-existing and was silent"* half the
+counter exists for and the half no fixture reached. Seven mutants were
+re-swept after the fix and all seven die.
+
+**Eight claims were corrected and none of the code they described was
+wrong.** The `<xref>` fallback makes the rejected remedy yield
+`'[Figure](#f1)'` and not `'[](#f1)'` — which strengthens the argument, an
+invented label being worse than a blank — and that string stood in eight
+files. *"No arm reads the buffer a `<td>` takes"* was refuted by the counter
+added in the same commit; the honest claim is that its **content** is read
+nowhere. *"The only two members that accumulate in order to discard"* has
+nine counterexamples, two of them documented as such in this module. And the
+`'Beforeafter.'` claim is true of **cells**, not of everything an inline
+exhibit holds — #248. A measurement settled the one genuine ambiguity: 68
+titles in 68 archive articles, so both readings of a bare *"68"* were right.
+
+**Two issues were filed rather than fixed, both measuring 0 on both
+artifacts.** #247 is `cell_text_dropped` being keyed on *no builder open*
+rather than on *no table received this cell*, so an `<array>` under a
+`<table-wrap>` splices a phantom row into a real table and takes the silent
+branch. #248 is the exhibit-metadata leak, 3,877 runs in 537 of 8,118 served
+articles, neighbouring #241 and wanting one patch with it.
 
 ## Current state
 
