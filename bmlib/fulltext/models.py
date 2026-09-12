@@ -147,20 +147,17 @@ class JATSFigureInfo:
 
     ``footnotes`` holds the notes deposited inside the ``<fig>`` — JATS admits
     ``<fn>`` there directly, with no wrapper — each with its own marker folded
-    into it (issue #124). See :class:`JATSTableInfo`, which carries the
-    argument and the populations; the figure side is deposited almost never in
-    the rendition this parser is fed (2 notes across 8,118 served articles,
-    against 16,933 on the table side), and the field exists on both
-    because one shared holder in the parser is what stops the two exhibits
-    drifting apart while one of them is unexercised.
-
-    It also holds the figure's own ``<attrib>`` — ``"Source: WHO."``, an
-    abbreviation list — appended after any notes, in document order (issues
-    #241, #248). That is the figure side's larger population by far: 125
-    attributions across the 8,118 served articles and 677 across the 97,909
-    archive ones. An attribution used to weld into the sentence around a figure
-    deposited in a ``<p>``, or reach nothing at all where the figure stood in a
-    section.
+    into it (issue #124), and the figure's own ``<attrib>`` or its image's —
+    ``"Source: Authors' elaboration."``, an abbreviation list — in document
+    order (issues #241, #248). See :class:`JATSTableInfo`, which carries the
+    argument. **The two halves are measured far apart**: a marked note is
+    deposited almost never on a figure in the rendition this parser is fed (2
+    across 8,118 served articles, against 16,933 on the table side), while an
+    attribution is the figure side's larger population by far (125 served, 677
+    across 97,909 archive articles). An attribution used to weld into the
+    sentence around a figure deposited in a ``<p>``, or reach nothing where
+    the figure stood in a section. The field exists on both exhibits because
+    one shared holder in the parser is what stops the two drifting apart.
     """
 
     id: str

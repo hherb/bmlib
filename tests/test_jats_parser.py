@@ -9004,8 +9004,8 @@ class TestAnObjectsMetadataIsNotProse:
     ``'BeforeTable 2after.'``, and Elsevier's house style put two
     ``<alt-text>`` values into PMC10030262 as ``'…in Tables 2.Table 2Table 3'``.
     Measured over the 8,118 served articles of
-    ``PMC10030002_PMC10040000.xml.gz``, 4,018 ``<alt-text>`` runs in 522
-    articles land in a ``<p>``'s buffer and 67 in a table cell; the values are
+    ``PMC10030002_PMC10040000.xml.gz``, 4,018 ``<alt-text>`` elements in 522
+    articles land in a ``<p>``'s buffer and 67 (in 9) in a table cell; the values are
     ``"Fig. 1"``, ``"Table 2"``, ``"Image 1"``, ``"Multimedia component 1"``,
     a figure's DOI, ``"© 2024 WILEY-VCH GmbH"``. A **wrong value** where a
     blank is the alternative.
@@ -9016,11 +9016,13 @@ class TestAnObjectsMetadataIsNotProse:
     the argument #243 made for a cell. It does not answer a child that
     *routes* on its own: a ``<p>`` inside a ``<license>`` goes through
     ``_append_prose`` whatever buffer it sits in, so that method refuses prose
-    under this metadata, and ``_prose_reaches_output`` says so too or a pending
-    definition term is spent on a paragraph nobody sees. And a cell is filled
+    under this metadata, and ``_prose_reaches_output`` mirrors the refusal so
+    the predicate does not answer ``True`` where nothing is filed (on its own
+    an equivalent mutant; see the two tests naming it). And a cell is filled
     from ``characters()`` and from the formula arm directly, bypassing every
     buffer, so both reach the cell through one helper that holds this text
-    back.
+    back. An ``<xref>`` is the one place the metadata still merges, so an image
+    that *is* a cross-reference keeps its label.
     """
 
     def test_the_issues_own_inline_table_keeps_only_the_sentence(self):
@@ -9111,7 +9113,8 @@ class TestAnObjectsMetadataIsNotProse:
     def test_an_images_metadata_does_not_reach_the_cell(self, metadata):
         """The cell route, which no buffer reaches: ``characters()`` fills the
         cell directly, so accumulating alone left ``'12.3Image 1'`` in the
-        rendered table — 67 served runs in 10 articles, 462 archive ones.
+        rendered table — 67 served elements in 9 articles, 462 archive ones in
+        49.
 
         Every member separately, because membership of
         ``_NON_PROSE_METADATA`` is a second decision beside membership of
@@ -9159,18 +9162,37 @@ class TestAnObjectsMetadataIsNotProse:
 
         assert "<td>12.3$x$</td>" in article.tables[0].html_content
 
-    def test_a_paragraph_inside_the_metadata_is_not_filed_as_prose(self):
+    @pytest.mark.parametrize(
+        ("opening", "closing"),
+        [
+            (b"<permissions><license>", b"</license></permissions>"),
+            (b"<alt-text>", b"</alt-text>"),
+            (b"<long-desc>", b"</long-desc>"),
+            (b"<object-id>", b"</object-id>"),
+        ],
+        ids=["permissions", "alt-text", "long-desc", "object-id"],
+    )
+    def test_a_paragraph_inside_the_metadata_is_not_filed_as_prose(self, opening, closing):
         """The routing route. ``<license>`` was modelled ``(p)+`` before JATS
         spelled it ``<license-p>``, and a ``<p>`` goes through its own arm
         whatever buffer surrounds it — so a ``<graphic>`` standing in a
         section filed its licence as the section's first paragraph. All 19
         such ``<p>`` in the archive artifact sit in ``<article-meta>``, where
         the paragraph falls past every branch anyway (#230), so this pins a
-        direction."""
+        direction.
+
+        Every member, though JATS admits a ``<p>`` in only the first: the
+        refusal is keyed on the set, and narrowing it to ``<permissions>``
+        survived the whole file while one member was the only fixture (PR
+        review).
+        """
         article = JATSParser(
             _article_with_sec(
-                b"<graphic xlink:href='g.gif'><permissions><license><p>Licensed CC-BY.</p>"
-                b"</license></permissions></graphic><p>Next.</p>"
+                b"<graphic xlink:href='g.gif'>"
+                + opening
+                + b"<p>Licensed CC-BY.</p>"
+                + closing
+                + b"</graphic><p>Next.</p>"
             )
         ).parse()
 
@@ -9210,24 +9232,54 @@ class TestAnObjectsMetadataIsNotProse:
 
         assert article.body_sections[0].paragraphs == ["BMI — body mass index"]
 
-    def test_a_display_formula_inside_the_metadata_is_declined_and_not_reported(self, parser_log):
+    @pytest.mark.parametrize(
+        "container",
+        [(b"", b""), (b"<fig id='f1'>", b"</fig>")],
+        ids=["in-a-section", "in-a-float"],
+    )
+    def test_a_display_formula_inside_the_metadata_is_declined_and_not_reported(
+        self, parser_log, container
+    ):
         """A licence is declined, not lost, so ``formulas_dropped`` must not
-        claim it. The mirror answers ``False`` there and the formula arm
-        subtracts the metadata for the reason it subtracts the ``<ref-list>``
-        refusal; those two are one protection, so removing both is equivalent
-        and removing the subtraction alone reddens this. Invalid JATS and
+        claim it. **For this counter the subtraction in the formula arm is the
+        protection**, and it needs both shapes: in a section the mirror is what
+        makes ``_prose_reaches_output`` answer ``False`` at all, so removing the
+        mirror *and* the subtraction together read 0 there and survived the
+        file (PR review); in a float or in ``<front>`` the predicate answers
+        ``False`` whatever the mirror says, so only the subtraction stands
+        between the formula and a WARNING claiming a loss. Invalid JATS and
         well-formed, so a direction and no population."""
+        opening, closing = container
         handler = JATSParser(
             _article_with_sec(
-                b"<graphic xlink:href='g.gif'><permissions><license>"
-                b"<disp-formula><tex-math>$$s = 1$$</tex-math></disp-formula>"
-                b"</license></permissions></graphic><p>Next.</p>"
+                opening
+                + b"<graphic xlink:href='g.gif'><permissions><license>"
+                + b"<disp-formula><tex-math>$$s = 1$$</tex-math></disp-formula>"
+                + b"</license></permissions></graphic>"
+                + closing
+                + b"<p>Next.</p>"
             )
         )._run_parser()
 
         assert handler.body_sections[0].paragraphs == ["Next."]
         assert handler.formulas_dropped == 0
         assert not [m for m in parser_log.messages(logging.WARNING) if "reached no section" in m]
+
+    def test_an_images_text_alternative_still_labels_a_cross_reference(self):
+        """The one place declined metadata is kept. An ``<xref>`` replaces its
+        text with a link label and invents ``"Figure"`` for an empty one, so
+        isolating the ``<alt-text>`` of an image that *is* the reference turned
+        ``[Figure 1](#f1)`` into ``[Figure](#f1)`` — an invented label, #162's
+        symptom. Inside an ``<xref>`` the metadata merges as before. Found by
+        PR review; no member lands in an ``<xref>`` in either artifact."""
+        article = JATSParser(
+            _article_with_sec(
+                b"<p>See <xref ref-type='fig' rid='f1'><inline-graphic xlink:href='i.gif'>"
+                b"<alt-text>Figure 1</alt-text></inline-graphic></xref> here.</p>"
+            )
+        ).parse()
+
+        assert article.body_sections[0].paragraphs == ["See [Figure 1](#f1) here."]
 
     def test_a_block_figure_leaves_the_paragraphs_around_it_untouched(self):
         """The ordinary deposit, whose metadata reached a ``<sec>``'s unread
@@ -9269,18 +9321,22 @@ class TestAnAttributionIsRouted:
     Unlike the four elements above, an attribution is typeset: an interview
     quote's ``"(P2, CP)"``, a figure's ``"Source: Authors' elaboration."``, a
     table's abbreviation list. It too accumulated nowhere, so it welded into
-    the sentence where its owner stood in a ``<p>`` (1,318 quote attributions
-    in 90 of the archive artifact's 97,909 articles) and, where its owner stood
+    the sentence where its owner stood in a ``<p>`` (1,331 quote attributions
+    in 94 of the archive artifact's 97,909 articles) and, where its owner stood
     in a ``<sec>``, reached that section's unread buffer and was **lost with no
-    line** — 3,663 quote attributions in 209 articles, the majority. Discarding
-    it, the issues' own remedy, would have made that loss total.
+    line** — 3,844 of its 5,266 quote attributions, in 217 articles, the
+    majority. Discarding it, the issues' own remedy, would have made that loss
+    total.
 
-    So it routes exactly as a ``<p>`` does — a quote's attribution becomes a
-    paragraph after the quote, one inside ``<table-wrap-foot>`` a table note —
-    with one addition decided by its parent (#116's rule): an exhibit's *own*
-    ``<attrib>`` is filed among that exhibit's footnotes, which render below
-    it, because routed as a ``<p>`` it would reach neither destination
-    ``_append_prose`` offers inside a float.
+    So it routes as a ``<p>`` does — a quote's attribution becomes a paragraph
+    after the quote, one inside ``<table-wrap-foot>`` a table note — with one
+    addition decided by what it credits (#116's parent test, walked past a
+    ``<graphic>``): an exhibit's attribution, or its image's, is filed among
+    that exhibit's footnotes, which render below it, because routed as a
+    ``<p>`` it would reach neither destination ``_append_prose`` offers inside
+    a float. It differs from a ``<p>`` in three further ways, each with a test
+    below: an empty one adds nothing, it spends no pending marker or term, and
+    inside a ``<mixed-citation>`` it is the citation's text alone.
     """
 
     def test_a_quotes_attribution_follows_the_quote(self):
@@ -9437,6 +9493,70 @@ class TestAnAttributionIsRouted:
         ).parse()
 
         assert article.body_sections[0].paragraphs == ["Table S1.", "Source: X."]
+
+    def test_an_image_credit_does_not_take_a_notes_marker(self):
+        """An ``<attrib>`` inside a ``<graphic>`` inside a note's ``<p>``
+        closes before that ``<p>``, so routed as prose it arrived first and
+        took the marker: ``['a — Credit: X.', 'Adjusted for age.']``, the body's
+        ``12.3a`` pointing at the credit. It files without spending the
+        marker. Found by PR review; 0 in both artifacts, all 13 archive
+        ``<graphic><attrib>`` sitting in a ``<sec>`` or a ``<bio>``."""
+        article = JATSParser(
+            _article_with_sec(
+                b"<table-wrap id='T1'><table><tbody><tr><td>12.3a</td></tr></tbody></table>"
+                b"<table-wrap-foot><fn><label>a</label><p><graphic xlink:href='m.gif'>"
+                b"<attrib>Credit: X.</attrib></graphic>Adjusted for age.</p></fn>"
+                b"</table-wrap-foot></table-wrap>"
+            )
+        ).parse()
+
+        assert article.tables[0].footnotes == ["Credit: X.", "a — Adjusted for age."]
+
+    def test_an_image_credit_does_not_take_a_definitions_term(self):
+        """The same run with a ``<term>`` pending: ``'BMI — Credit: X.'``
+        would say BMI means the credit."""
+        article = JATSParser(
+            _article_with_sec(
+                b"<def-list><def-item><term>BMI</term><def><p><graphic xlink:href='g.gif'>"
+                b"<attrib>Credit: X.</attrib></graphic>body mass index</p></def></def-item>"
+                b"</def-list>"
+            )
+        ).parse()
+
+        assert article.body_sections[0].paragraphs == ["Credit: X.", "BMI — body mass index"]
+
+    def test_a_figures_image_credit_is_the_figures_note(self):
+        """An ``<attrib>`` on the figure's own ``<graphic>`` credits the
+        figure's image. Its parent is the ``<graphic>``, so a bare parent test
+        dropped it inside the float with nothing counted; the owner is walked
+        past the ``<graphic>`` as ``_graphic_owner`` walks. Found by PR review."""
+        article = JATSParser(
+            _article_with_sec(
+                b"<p>Before<fig id='f1'><graphic xlink:href='f1.gif'>"
+                b"<attrib>Credit: Shutterstock.</attrib></graphic></fig>after.</p>"
+            )
+        ).parse()
+
+        assert article.figures[0].footnotes == ["Credit: Shutterstock."]
+        assert article.body_sections[0].paragraphs == ["Beforeafter."]
+
+    def test_an_attribution_in_a_mixed_citation_is_filed_once(self, parser_log):
+        """#146 merges it into the citation, so routing it as well stored it
+        twice — or, in a back ``<ref-list>``, counted a refusal of text that
+        was filed. Found by PR review; 0 in both artifacts."""
+        xml = (
+            b'<?xml version="1.0"?>\n<article><front><article-meta><title-group>'
+            b"<article-title>T</article-title></title-group></article-meta></front>"
+            b"<body><sec><title>R</title><p>x</p></sec></body>"
+            b"<back><ref-list><ref id='R1'><mixed-citation>Smith J. <source>J Med</source>. "
+            b"<attrib>Cited by permission.</attrib></mixed-citation></ref></ref-list></back>"
+            b"</article>"
+        )
+        handler = JATSParser(xml)._run_parser()
+
+        assert handler.references[0].citation == "Smith J. J Med. Cited by permission."
+        assert [p for s in handler.body_sections for p in s.paragraphs] == ["x"]
+        assert handler.refused_apparatus_prose == 0
 
     def test_an_attribution_is_rendered_below_its_figure(self):
         """``FullTextService`` caches the HTML, so the note has to reach it."""
@@ -10695,11 +10815,20 @@ _SYNTHETIC_ACCUMULATING = frozenset({"surname", "collab", "source"})
 #: legitimate addition (#245's counter tests the popped buffer for emptiness),
 #: and are listed so the inventory stays the *whole* measurement its own
 #: docstring claims rather than drifting into a sample of it.
+#:
+#: **It had drifted anyway, and a floor cannot notice that.** Re-measured
+#: 2026-09-13 for issues #241/#248, whose ``<attrib>`` arm reads the buffer:
+#: the walk also saw ``disp-formula``, ``inline-formula``, ``tex-math`` (#147)
+#: and ``term`` (#228), read by arms added since the inventory was taken and
+#: never listed. Twenty-six elements now; re-measure, never hand-edit.
 _ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER = frozenset(
     {
         "article-id",
         "article-title",
+        "attrib",
         "collab",
+        "disp-formula",
+        "inline-formula",
         "fpage",
         "given-names",
         "issue",
@@ -10713,6 +10842,8 @@ _ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER = frozenset(
         "string-name",
         "surname",
         "td",
+        "term",
+        "tex-math",
         "th",
         "title",
         "volume",
